@@ -1,3 +1,5 @@
+mod circuit;
+
 #[cfg(test)]
 mod tests {
     #[test]
