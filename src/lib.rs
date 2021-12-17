@@ -6,7 +6,4 @@ Copyright (c) 2021 VMware, Inc
 */
 
 pub mod algebra;
-mod circuit;
-
-#[cfg(test)]
-mod tests {}
+pub mod circuit;
