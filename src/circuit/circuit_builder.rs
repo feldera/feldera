@@ -22,8 +22,6 @@
 //!     &source_stream
 //! );
 //! ```
-//!
-//! This module
 
 use std::{
     cell::{RefCell, UnsafeCell},
@@ -38,11 +36,11 @@ use super::operator_traits::{
 /// A stream stores the output of an operator.  Circuits are synchronous, meaning
 /// that each value is produced and consumed in the same clock cycle, so there can
 /// be at most one value in the stream at any time.
-pub struct Stream<D> {
+pub struct Stream<S, D> {
     // Id of the associated operator.
     id: NodeId,
     // Circuit that this stream belongs to.
-    scope: Scope,
+    scope: S,
     // The value (there can be at most one since our circuits are synchronous).
     // We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership tests.
     // We enforce unique ownership by making sure that at most one operator can
@@ -50,7 +48,10 @@ pub struct Stream<D> {
     val: Rc<UnsafeCell<Option<D>>>,
 }
 
-impl<D> Clone for Stream<D> {
+impl<S, D> Clone for Stream<S, D>
+where
+    S: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -60,17 +61,17 @@ impl<D> Clone for Stream<D> {
     }
 }
 
-impl<D> Stream<D> {
+impl<S, D> Stream<S, D> {
     /// Returns id of the operator that writes to this stream.
-    pub fn id(&self) -> NodeId {
+    pub fn node_id(&self) -> NodeId {
         self.id
     }
 }
 
 // Internal streams API only used inside this module.
-impl<D> Stream<D> {
+impl<S, D> Stream<S, D> {
     // Create a new stream within the given scope and with the specified id.
-    fn new(scope: Scope, id: NodeId) -> Self {
+    fn new(scope: S, id: NodeId) -> Self {
         Self {
             id,
             scope,
@@ -116,17 +117,19 @@ trait Node {
 /// Id of an operator, guaranteed to be unique within a circuit.
 pub type NodeId = usize;
 
-// A circuit consists of nodes and edges.  And edge from
-// node1 to node2 indicate that the output stream of node1
+// A circuit consists of nodes and edges.  An edge from
+// node1 to node2 indicates that the output stream of node1
 // is connected to an input of node2.
-struct Circuit {
+struct Circuit<P> {
+    parent: P,
     nodes: Vec<Box<dyn Node>>,
     edges: Vec<(NodeId, NodeId)>,
 }
 
-impl Circuit {
-    fn new() -> Self {
+impl<P> Circuit<P> {
+    fn new(parent: P) -> Self {
         Self {
+            parent,
             nodes: Vec::new(),
             edges: Vec::new(),
         }
@@ -134,19 +137,38 @@ impl Circuit {
 }
 
 /// A handle to a circuit.
-#[derive(Clone)]
-pub struct Scope(Rc<RefCell<Circuit>>);
+pub struct Scope<P>(Rc<RefCell<Circuit<P>>>);
 
-impl Default for Scope {
+impl<P> Clone for Scope<P> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl Scope<()> {
+    /// Create new top-level scope.
+    pub fn new() -> Self {
+        Self::with_parent(())
+    }
+}
+
+impl Default for Scope<()> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Scope {
-    /// Creates an empty scope.
-    pub fn new() -> Self {
-        Scope(Rc::new(RefCell::new(Circuit::new())))
+impl<P> Scope<P>
+where
+    P: 'static + Clone,
+{
+    /// Creates an empty child scope of `parent`.
+    pub fn with_parent(parent: P) -> Self {
+        Scope(Rc::new(RefCell::new(Circuit::new(parent))))
+    }
+
+    pub fn parent(&self) -> P {
+        self.0.borrow().parent.clone()
     }
 
     /// Evaluate operator with the given id.  This method should only be used
@@ -163,7 +185,7 @@ impl Scope {
     }
 
     /// Add a source operator to the scope.  See [`SourceOperator`].
-    pub fn add_source<O, Op>(&self, operator: Op) -> Stream<O>
+    pub fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
     where
         O: Data,
         Op: SourceOperator<O>,
@@ -178,14 +200,14 @@ impl Scope {
 
     /// Add a sink operator that consumes input values by reference.
     /// See [`SinkRefOperator`].
-    pub fn add_ref_sink<I, Op>(&self, operator: Op, input_stream: &Stream<I>) -> NodeId
+    pub fn add_ref_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>) -> NodeId
     where
         I: Data,
         Op: SinkRefOperator<I>,
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
-        let input_id = input_stream.id();
+        let input_id = input_stream.node_id();
         let id = circuit.nodes.len();
         let node = Box::new(SinkRefNode::new(operator, input_stream, self.clone(), id));
         circuit.nodes.push(node as Box<dyn Node>);
@@ -198,8 +220,8 @@ impl Scope {
     pub fn add_unary_ref_operator<I, O, Op>(
         &self,
         operator: Op,
-        input_stream: &Stream<I>,
-    ) -> Stream<O>
+        input_stream: &Stream<Self, I>,
+    ) -> Stream<Self, O>
     where
         I: Data,
         O: Data,
@@ -207,7 +229,7 @@ impl Scope {
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
-        let input_id = input_stream.id();
+        let input_id = input_stream.node_id();
         let id = circuit.nodes.len();
         let node = Box::new(UnaryRefNode::new(operator, input_stream, self.clone(), id));
         let output_stream = node.output_stream();
@@ -221,8 +243,8 @@ impl Scope {
     pub fn add_unary_val_operator<I, O, Op>(
         &self,
         operator: Op,
-        input_stream: &Stream<I>,
-    ) -> Stream<O>
+        input_stream: &Stream<Self, I>,
+    ) -> Stream<Self, O>
     where
         I: Data,
         O: Data,
@@ -230,7 +252,7 @@ impl Scope {
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
-        let input_id = input_stream.id();
+        let input_id = input_stream.node_id();
         let id = circuit.nodes.len();
         let node = Box::new(UnaryValNode::new(operator, input_stream, self.clone(), id));
         let output_stream = node.output_stream();
@@ -244,9 +266,9 @@ impl Scope {
     pub fn add_binary_refref_operator<I1, I2, O, Op>(
         &self,
         operator: Op,
-        input_stream1: &Stream<I1>,
-        input_stream2: &Stream<I2>,
-    ) -> Stream<O>
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+    ) -> Stream<Self, O>
     where
         I1: Data,
         I2: Data,
@@ -256,8 +278,8 @@ impl Scope {
         let mut circuit = self.0.borrow_mut();
         let input_stream1 = input_stream1.clone();
         let input_stream2 = input_stream2.clone();
-        let input_id1 = input_stream1.id();
-        let input_id2 = input_stream2.id();
+        let input_id1 = input_stream1.node_id();
+        let input_id2 = input_stream2.node_id();
         let id = circuit.nodes.len();
         let node = Box::new(BinaryRefRefNode::new(
             operator,
@@ -274,31 +296,32 @@ impl Scope {
     }
 }
 
-struct SourceNode<O, Op>
+struct SourceNode<S, O, Op>
 where
     Op: SourceOperator<O>,
 {
     operator: Op,
-    output_stream: Stream<O>,
+    output_stream: Stream<S, O>,
 }
 
-impl<O, Op> SourceNode<O, Op>
+impl<S, O, Op> SourceNode<S, O, Op>
 where
     Op: SourceOperator<O>,
+    S: Clone,
 {
-    fn new(operator: Op, scope: Scope, id: NodeId) -> Self {
+    fn new(operator: Op, scope: S, id: NodeId) -> Self {
         Self {
             operator,
             output_stream: Stream::new(scope, id),
         }
     }
 
-    fn output_stream(&self) -> Stream<O> {
+    fn output_stream(&self) -> Stream<S, O> {
         self.output_stream.clone()
     }
 }
 
-impl<O, Op> Node for SourceNode<O, Op>
+impl<S, O, Op> Node for SourceNode<S, O, Op>
 where
     Op: SourceOperator<O>,
 {
@@ -316,20 +339,21 @@ where
     }
 }
 
-struct UnaryRefNode<I, O, Op>
+struct UnaryRefNode<S, I, O, Op>
 where
     Op: UnaryRefOperator<I, O>,
 {
     operator: Op,
-    input_stream: Stream<I>,
-    output_stream: Stream<O>,
+    input_stream: Stream<S, I>,
+    output_stream: Stream<S, O>,
 }
 
-impl<I, O, Op> UnaryRefNode<I, O, Op>
+impl<S, I, O, Op> UnaryRefNode<S, I, O, Op>
 where
     Op: UnaryRefOperator<I, O>,
+    S: Clone,
 {
-    fn new(operator: Op, input_stream: Stream<I>, scope: Scope, id: NodeId) -> Self {
+    fn new(operator: Op, input_stream: Stream<S, I>, scope: S, id: NodeId) -> Self {
         Self {
             operator,
             input_stream,
@@ -337,12 +361,12 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<O> {
+    fn output_stream(&self) -> Stream<S, O> {
         self.output_stream.clone()
     }
 }
 
-impl<I, O, Op> Node for UnaryRefNode<I, O, Op>
+impl<S, I, O, Op> Node for UnaryRefNode<S, I, O, Op>
 where
     Op: UnaryRefOperator<I, O>,
 {
@@ -368,19 +392,19 @@ where
     }
 }
 
-struct SinkRefNode<I, Op>
+struct SinkRefNode<S, I, Op>
 where
     Op: SinkRefOperator<I>,
 {
     operator: Op,
-    input_stream: Stream<I>,
+    input_stream: Stream<S, I>,
 }
 
-impl<I, Op> SinkRefNode<I, Op>
+impl<S, I, Op> SinkRefNode<S, I, Op>
 where
     Op: SinkRefOperator<I>,
 {
-    fn new(operator: Op, input_stream: Stream<I>, _scope: Scope, _id: NodeId) -> Self {
+    fn new(operator: Op, input_stream: Stream<S, I>, _scope: S, _id: NodeId) -> Self {
         Self {
             operator,
             input_stream,
@@ -388,7 +412,7 @@ where
     }
 }
 
-impl<I, Op> Node for SinkRefNode<I, Op>
+impl<S, I, Op> Node for SinkRefNode<S, I, Op>
 where
     Op: SinkRefOperator<I>,
 {
@@ -411,20 +435,21 @@ where
     }
 }
 
-struct UnaryValNode<I, O, Op>
+struct UnaryValNode<S, I, O, Op>
 where
     Op: UnaryValOperator<I, O>,
 {
     operator: Op,
-    input_stream: Stream<I>,
-    output_stream: Stream<O>,
+    input_stream: Stream<S, I>,
+    output_stream: Stream<S, O>,
 }
 
-impl<I, O, Op> UnaryValNode<I, O, Op>
+impl<S, I, O, Op> UnaryValNode<S, I, O, Op>
 where
     Op: UnaryValOperator<I, O>,
+    S: Clone,
 {
-    fn new(operator: Op, input_stream: Stream<I>, scope: Scope, id: NodeId) -> Self {
+    fn new(operator: Op, input_stream: Stream<S, I>, scope: S, id: NodeId) -> Self {
         Self {
             operator,
             input_stream,
@@ -432,12 +457,12 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<O> {
+    fn output_stream(&self) -> Stream<S, O> {
         self.output_stream.clone()
     }
 }
 
-impl<I, O, Op> Node for UnaryValNode<I, O, Op>
+impl<S, I, O, Op> Node for UnaryValNode<S, I, O, Op>
 where
     I: Data,
     Op: UnaryValOperator<I, O>,
@@ -464,25 +489,26 @@ where
     }
 }
 
-struct BinaryRefRefNode<I1, I2, O, Op>
+struct BinaryRefRefNode<S, I1, I2, O, Op>
 where
     Op: BinaryRefRefOperator<I1, I2, O>,
 {
     operator: Op,
-    input_stream1: Stream<I1>,
-    input_stream2: Stream<I2>,
-    output_stream: Stream<O>,
+    input_stream1: Stream<S, I1>,
+    input_stream2: Stream<S, I2>,
+    output_stream: Stream<S, O>,
 }
 
-impl<I1, I2, O, Op> BinaryRefRefNode<I1, I2, O, Op>
+impl<S, I1, I2, O, Op> BinaryRefRefNode<S, I1, I2, O, Op>
 where
     Op: BinaryRefRefOperator<I1, I2, O>,
+    S: Clone,
 {
     fn new(
         operator: Op,
-        input_stream1: Stream<I1>,
-        input_stream2: Stream<I2>,
-        scope: Scope,
+        input_stream1: Stream<S, I1>,
+        input_stream2: Stream<S, I2>,
+        scope: S,
         id: NodeId,
     ) -> Self {
         Self {
@@ -493,12 +519,12 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<O> {
+    fn output_stream(&self) -> Stream<S, O> {
         self.output_stream.clone()
     }
 }
 
-impl<I1, I2, O, Op> Node for BinaryRefRefNode<I1, I2, O, Op>
+impl<S, I1, I2, O, Op> Node for BinaryRefRefNode<S, I1, I2, O, Op>
 where
     Op: BinaryRefRefOperator<I1, I2, O>,
 {
@@ -619,8 +645,8 @@ mod tests {
         );
 
         for _ in 0..100 {
-            scope.eval(source.id());
-            scope.eval(integrator.id());
+            scope.eval(source.node_id());
+            scope.eval(integrator.node_id());
             scope.eval(sinkid1);
             scope.eval(sinkid2);
         }
