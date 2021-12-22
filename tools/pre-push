@@ -9,3 +9,4 @@ set -e
 
 cargo fmt -- --check
 cargo clippy -- -D warnings
+RUSTDOCFLAGS="-Dwarnings" cargo doc

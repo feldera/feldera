@@ -20,6 +20,8 @@ jobs:
       run: cargo fmt -- --check --verbose
     - name: Clippy
       run: cargo clippy -- -D warnings
+    - name: cargo doc
+      run: RUSTDOCFLAGS="-Dwarnings" cargo doc
     - name: Build
       run: cargo build --verbose
     - name: Run tests
