@@ -6,4 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- Implemented ZSet
+- Implemented algebraic data structures (Monoid, Group, Ring)
 - Project created

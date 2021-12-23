@@ -1,9 +1,9 @@
 #!/bin/bash
-# Create a symlink from `.git/pre-push` to this script to run the checks below
+# Create a symlink from `.git/hooks/pre-push` to this script to run the checks below
 # before pushing changes to github.  This will avoid CI failures due to clippy
 # lints and formatting issues.
 
-echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tools/prepush.sh'"
+echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tools/pre-push'"
 
 set -e
 
