@@ -19,11 +19,11 @@ impl<T: Clone + 'static> Data for T {}
 /// streams
 ///
 /// ```text
-/// ┌     ┐
-/// │1 2 3│
-/// │4 5 6│
-/// │7 8 9│     
-/// └     ┘
+/// ┌       ┐
+/// │1 2    │
+/// │3 4 5 6│
+/// │7 8 9  |
+/// └       ┘
 /// ```
 ///
 /// to an operator requires the following sequence of invocations
@@ -33,9 +33,9 @@ impl<T: Clone + 'static> Data for T {}
 /// stream_start() // Start nested stream (first row of the matrix).
 /// eval(1)
 /// eval(2)
-/// eval(3)
 /// stream_end()   // End nested stream.
 /// stream_start() // Start nested stream (second row).
+/// eval(3)
 /// eval(4)
 /// eval(5)
 /// eval(6)
@@ -53,6 +53,11 @@ impl<T: Clone + 'static> Data for T {}
 /// or the other way around.  Nested clock domains are implemented by special
 /// operators that wrap a nested circuit and, for each input value, run the nested
 /// circuit to a fixed point (or some other termination condition).
+///
+/// An operator can have multiple input streams, all of which also belong to the
+/// same clock domain and therefore start and end at the same time.  Hence
+/// `start_stream` and `end_stream` apply to all input and output streams of the
+/// operator.
 pub trait Operator: 'static {
     fn stream_start(&mut self);
     fn stream_end(&mut self);

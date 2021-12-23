@@ -114,6 +114,9 @@ trait Node {
     // operators, which don't have an output stream).
     unsafe fn eval(&mut self);
 
+    // Notify the node about start/end of input streams.  The node
+    // should forward the notification to it inner operator.  In
+    // addition, it should clear its output channel on `stream_end`.
     fn stream_start(&mut self);
     unsafe fn stream_end(&mut self);
 }
