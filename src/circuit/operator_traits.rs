@@ -91,3 +91,25 @@ pub trait UnaryValOperator<I, O>: Operator {
 pub trait BinaryRefRefOperator<I1, I2, O>: Operator {
     fn eval(&mut self, i1: &I1, i2: &I2) -> O;
 }
+
+/// The output of a strict operator only depends on inputs from previous timestamps and
+/// hence can be produced before consuming new inputs.  This way a strict operator can
+/// be used as part of a feedback loop where its output is needed before input for the
+/// current timestamp is available.
+pub trait StrictOperator<O>: Operator {
+    /// Returns the output value computed based on data consumed by the operator during
+    /// previous timestamps.  This method is invoked **before** `eval_strict()` has been invoked
+    /// for the current timestamp.  It can be invoked **at most once** for each timestamp,
+    /// as the implementation may mutate or destroy the operator's internal state
+    /// (for example [Z1](`crate::circuit::operator::Z1`) returns its inner value, leaving
+    /// the operator empty).
+    fn get_output(&mut self) -> O;
+}
+
+/// A strict unary operator that consumes a stream of inputs of type `I`
+/// by reference and produces a stream of outputs of type `O`.
+pub trait StrictUnaryValOperator<I, O>: StrictOperator<O> {
+    /// Feed input for the current timestamp to the operator.  The output will be consumed
+    /// via [`get_output`](`StrictOperator::get_output`) during the next timestamp.
+    fn eval_strict(&mut self, i: I);
+}

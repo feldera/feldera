@@ -6,6 +6,8 @@
 //! to its output stream that can be used as input to potentially
 //! multiple other operators.
 //!
+//! # Examples
+//!
 //! ```
 //! use dbsp::circuit::Scope;
 //! use dbsp::circuit::operator::{Inspect, Repeat};
@@ -25,12 +27,14 @@
 
 use std::{
     cell::{RefCell, UnsafeCell},
+    marker::PhantomData,
     ops::Deref,
     rc::Rc,
 };
 
 use super::operator_traits::{
-    BinaryRefRefOperator, Data, SinkRefOperator, SourceOperator, UnaryRefOperator, UnaryValOperator,
+    BinaryRefRefOperator, Data, SinkRefOperator, SourceOperator, StrictUnaryValOperator,
+    UnaryRefOperator, UnaryValOperator,
 };
 
 /// A stream stores the output of an operator.  Circuits are synchronous, meaning
@@ -171,8 +175,9 @@ where
         self.0.borrow().parent.clone()
     }
 
-    /// Evaluate operator with the given id.  This method should only be used
-    /// by schedulers.
+    /// Evaluate operator with the given id.
+    ///
+    /// This method should only be used by schedulers.
     pub fn eval(&self, id: usize) {
         let mut circuit = self.0.borrow_mut();
         // This is safe because `eval` can never invoke the
@@ -293,6 +298,88 @@ where
         circuit.edges.push((input_id1, id));
         circuit.edges.push((input_id2, id));
         output_stream
+    }
+
+    /// Add a feedback loop to the circuit.
+    ///
+    /// Other methods in this API only support the construction of acyclic graphs, as they require
+    /// the input stream to exist before nodes that consumes it are created.  This method
+    /// instantiates an operator whose input stream can be connected later, and thus may depend on
+    /// the operator's output.  This enables the construction of feedback loops.  Since all loops
+    /// in a well-formed circuit must include a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator` must be strict.
+    ///
+    /// Returns the output stream of the operator and an object that can be used to later
+    /// connect its input.
+    ///
+    /// # Examples
+    /// We build the following circuit to compute the sum of input values received from `source`.
+    /// `z1` stores the sum accumulated during previous timestamps.  At every timestamp,
+    /// the [`crate::circuit::operator::Plus`] operator (`+`) computes the sum of the new value
+    /// received from source with the value stored in `z1`.
+    ///
+    /// ```text
+    ///                ┌─┐
+    /// source ───────►│+├───┬─►
+    ///           ▲    └─┘   │
+    ///           │          │
+    ///           │    ┌──┐  │
+    ///           └────┤z1│◄─┘
+    ///                └──┘
+    /// ```
+    ///
+    /// ```
+    /// # use dbsp::circuit::{
+    /// #   Scope,
+    /// #   operator::{Z1, Plus, Repeat},
+    /// # };
+    /// # let scope = Scope::new();
+    /// // Create a data source.
+    /// let source = scope.add_source(Repeat::new(10));
+    /// // Create z1.  `z1_output` will contain the output stream of `z1`; `z1_feedback`
+    /// // is a placeholder where we can later plug the input stream.
+    /// let (z1_output, z1_feedback) = scope.add_feedback(Z1::new());
+    /// // Connect outputs of `source` and `z1` to the plus operator.
+    /// let plus = scope.add_binary_refref_operator(Plus::new(), &source, &z1_output);
+    /// // Connect the output of `+` as input to `z1`.
+    /// let z1_input_id = z1_feedback.connect(&plus);
+    /// ```
+    pub fn add_feedback<I, O, Op>(
+        &self,
+        operator: Op,
+    ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryValOperator<I, O>,
+    {
+        let mut circuit = self.0.borrow_mut();
+        let operator = Rc::new(UnsafeCell::new(operator));
+        let connector = FeedbackConnector::new(self.clone(), operator.clone());
+        let id = circuit.nodes.len();
+        let output_node = Box::new(FeedbackOutputNode::new(operator, self.clone(), id));
+        let output_stream = output_node.output_stream();
+        circuit.nodes.push(output_node as Box<dyn Node>);
+        (output_stream, connector)
+    }
+
+    fn connect_feedback<I, O, Op>(
+        &self,
+        operator: Rc<UnsafeCell<Op>>,
+        input_stream: &Stream<Self, I>,
+    ) -> NodeId
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryValOperator<I, O>,
+    {
+        let mut circuit = self.0.borrow_mut();
+        let input_id = input_stream.node_id();
+        let id = circuit.nodes.len();
+        let output_node = Box::new(FeedbackInputNode::new(operator, input_stream.clone()));
+        circuit.nodes.push(output_node as Box<dyn Node>);
+        circuit.edges.push((input_id, id));
+        id
     }
 }
 
@@ -555,10 +642,148 @@ where
     }
 }
 
+struct FeedbackOutputNode<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+{
+    operator: Rc<UnsafeCell<Op>>,
+    output_stream: Stream<S, O>,
+    phantom_input: PhantomData<I>,
+}
+
+impl<S, I, O, Op> FeedbackOutputNode<S, I, O, Op>
+where
+    S: Clone,
+    Op: StrictUnaryValOperator<I, O>,
+{
+    fn new(operator: Rc<UnsafeCell<Op>>, scope: S, id: NodeId) -> Self {
+        Self {
+            operator,
+            output_stream: Stream::new(scope, id),
+            phantom_input: PhantomData,
+        }
+    }
+
+    fn output_stream(&self) -> Stream<S, O> {
+        self.output_stream.clone()
+    }
+}
+
+impl<S, I, O, Op> Node for FeedbackOutputNode<S, I, O, Op>
+where
+    I: Data,
+    Op: StrictUnaryValOperator<I, O>,
+{
+    unsafe fn eval(&mut self) {
+        self.output_stream
+            .put((&mut *self.operator.get()).get_output());
+    }
+
+    fn stream_start(&mut self) {
+        unsafe {
+            (&mut *self.operator.get()).stream_start();
+        }
+    }
+
+    unsafe fn stream_end(&mut self) {
+        (&mut *self.operator.get()).stream_end();
+        self.output_stream.clear();
+    }
+}
+
+struct FeedbackInputNode<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+{
+    operator: Rc<UnsafeCell<Op>>,
+    input_stream: Stream<S, I>,
+    phantom_output: PhantomData<O>,
+}
+
+impl<S, I, O, Op> FeedbackInputNode<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+{
+    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<S, I>) -> Self {
+        Self {
+            operator,
+            input_stream,
+            phantom_output: PhantomData,
+        }
+    }
+}
+
+impl<S, I, O, Op> Node for FeedbackInputNode<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+    I: Data,
+{
+    unsafe fn eval(&mut self) {
+        (&mut *self.operator.get()).eval_strict(
+            self.input_stream
+                .get()
+                .clone()
+                .expect("operator scheduled before its input is ready"),
+        );
+    }
+
+    // Don't call `stream_start`/`stream_end` on the operator.  `FeedbackOutputNode` will do that.
+    fn stream_start(&mut self) {}
+
+    unsafe fn stream_end(&mut self) {}
+}
+
+/// Input connector of a feedback operator.
+///
+/// This struct is part of the mechanism for constructing a feedback loop in a circuit.
+/// It is returned by [`Scope::add_feedback`] and represents the input port of an operator
+/// whose input stream does not exist yet.  Once the input stream has been created, it
+/// can be connected to the operator using [`FeedbackConnector::connect`].
+/// See [`Scope::add_feedback`] for details.
+pub struct FeedbackConnector<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+{
+    circuit: S,
+    operator: Rc<UnsafeCell<Op>>,
+    phantom_input: PhantomData<I>,
+    phantom_output: PhantomData<O>,
+}
+
+impl<S, I, O, Op> FeedbackConnector<S, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+{
+    fn new(circuit: S, operator: Rc<UnsafeCell<Op>>) -> Self {
+        Self {
+            circuit,
+            operator,
+            phantom_input: PhantomData,
+            phantom_output: PhantomData,
+        }
+    }
+}
+
+impl<P, I, O, Op> FeedbackConnector<Scope<P>, I, O, Op>
+where
+    Op: StrictUnaryValOperator<I, O>,
+    I: Data,
+    O: Data,
+    P: Clone + 'static,
+{
+    /// Connect `input_stream` as input to the operator.
+    /// See [`Scope::add_feedback`] for details.
+    /// Returns node id of the input node.
+    // TODO: The return value won't be needed once we have schedulers.
+    pub fn connect(self, input_stream: &Stream<Scope<P>, I>) -> NodeId {
+        self.circuit.connect_feedback(self.operator, input_stream)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Scope;
-    use crate::circuit::operator::Inspect;
+    use crate::circuit::operator::{Inspect, Plus, Z1};
     use crate::circuit::operator_traits::{
         Operator, SinkRefOperator, SourceOperator, UnaryRefOperator,
     };
@@ -630,7 +855,7 @@ mod tests {
         }
     }
 
-    // Compute the sump of numbers from 0 to 99.
+    // Compute the sum of numbers from 0 to 99.
     #[test]
     fn sum_circuit() {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
@@ -660,5 +885,35 @@ mod tests {
         assert_eq!(&expected_output, actual_output.borrow().deref());
     }
 
-    // TODO: Recursive circuit
+    // Recursive circuit
+    #[test]
+    fn recursive_sum_circuit() {
+        let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
+        let actual_output_clone = actual_output.clone();
+        let scope = Scope::new();
+        let source = scope.add_source(Counter::new());
+        let (z1_output, z1_feedback) = scope.add_feedback(Z1::new());
+        let plus = scope.add_binary_refref_operator(Plus::new(), &source, &z1_output);
+        let sinkid = scope.add_ref_sink(
+            Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
+            &plus,
+        );
+        let z1_input_id = z1_feedback.connect(&plus);
+
+        for _ in 0..100 {
+            scope.eval(z1_output.node_id());
+            scope.eval(source.node_id());
+            scope.eval(plus.node_id());
+            scope.eval(z1_input_id);
+            scope.eval(sinkid);
+        }
+
+        let mut sum = 0;
+        let mut expected_output: Vec<usize> = Vec::with_capacity(100);
+        for i in 0..100 {
+            sum += i;
+            expected_output.push(sum);
+        }
+        assert_eq!(&expected_output, actual_output.borrow().deref());
+    }
 }
