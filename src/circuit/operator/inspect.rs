@@ -4,7 +4,8 @@
 use crate::circuit::operator_traits::{Operator, SinkRefOperator};
 use std::marker::PhantomData;
 
-/// Sink operator that applies a user-provided callback to each input.
+/// Sink operator that consumes a stream of values of type `T` and
+/// applies a user-provided callback to each input.
 pub struct Inspect<T, F>
 where
     F: FnMut(&T),

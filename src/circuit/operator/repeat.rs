@@ -1,4 +1,4 @@
-//! Defines a source operator that generate an infinite stream of identical values.
+//! Defines a source operator that generates an infinite stream of identical values.
 
 use crate::circuit::operator_traits::{Data, Operator, SourceOperator};
 
