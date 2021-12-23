@@ -8,16 +8,25 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    env:
+        RUSTDOCFLAGS: -Dwarnings
+
 
     steps:
     - uses: actions/checkout@v2
+    
     - name: cargo fmt
       run: cargo fmt -- --check --verbose
     - name: Clippy
       run: cargo clippy -- -D warnings
     - name: cargo doc
-      run: RUSTDOCFLAGS="-Dwarnings" cargo doc
+      run: cargo doc
     - name: Build
       run: cargo build --verbose
     - name: Run tests
