@@ -72,6 +72,9 @@ impl<C, D> Stream<C, D> {
 }
 
 // Internal streams API only used inside this module.
+//
+// Safety: All unsafe methods in this `impl` assume that there is
+// at most one node accessing the stream at any time.
 impl<C, D> Stream<C, D> {
     // Create a new stream within the given circuit and with the specified id.
     fn new(circuit: C, id: NodeId) -> Self {
@@ -107,6 +110,10 @@ impl<C, D> Stream<C, D> {
 
 // Node in a circuit.  A node wraps an operator with strongly typed
 // input and output streams.
+// Safety: All unsafe methods in this trait assume that at most one
+// node can be scheduled at any time (i.e., a node cannot invoke another
+// node), and hence at most one node can hold a reference to the value
+// in a stream.
 trait Node {
     // Evaluate the operator.  Reads one value from each input stream
     // and pushes a new value to the output stream (except for sink
