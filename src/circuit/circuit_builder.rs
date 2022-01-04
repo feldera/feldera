@@ -9,8 +9,7 @@
 //! # Examples
 //!
 //! ```
-//! use dbsp::circuit::Circuit;
-//! use dbsp::circuit::operator::{Inspect, Repeat};
+//! use dbsp::circuit::{Circuit, operator::{Inspect, Repeat}};
 //!
 //! // Create an empty circuit.
 //! let circuit = Circuit::new();
@@ -122,7 +121,9 @@ trait Node {
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
-pub type NodeId = usize;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct NodeId(usize);
 
 // A circuit consists of nodes and edges.  An edge from
 // node1 to node2 indicates that the output stream of node1
@@ -144,6 +145,7 @@ impl<P> CircuitInner<P> {
 }
 
 /// A handle to a circuit.
+#[repr(transparent)]
 pub struct Circuit<P>(Rc<RefCell<CircuitInner<P>>>);
 
 impl<P> Clone for Circuit<P> {
@@ -152,16 +154,16 @@ impl<P> Clone for Circuit<P> {
     }
 }
 
+impl Default for Circuit<()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Circuit<()> {
     /// Create new top-level circuit.
     pub fn new() -> Self {
         Self::with_parent(())
-    }
-}
-
-impl Default for Circuit<()> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -181,7 +183,7 @@ where
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
-    pub fn eval(&self, id: usize) {
+    pub fn eval(&self, id: NodeId) {
         let mut circuit = self.0.borrow_mut();
         // This is safe because `eval` can never invoke the
         // `eval` method of another node.  To circumvent
@@ -189,7 +191,7 @@ where
         // reference to a node and pass it to an operator,
         // but this module doesn't expose nodes, only
         // channels.
-        unsafe { circuit.nodes[id].eval() };
+        unsafe { circuit.nodes[id.0].eval() };
     }
 
     /// Add a source operator to the circuit.  See [`SourceOperator`].
@@ -199,7 +201,7 @@ where
         Op: SourceOperator<O>,
     {
         let mut circuit = self.0.borrow_mut();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let node = Box::new(SourceNode::new(operator, self.clone(), id));
         let output_stream = node.output_stream();
         circuit.nodes.push(node as Box<dyn Node>);
@@ -216,7 +218,7 @@ where
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let node = Box::new(SinkRefNode::new(operator, input_stream, self.clone(), id));
         circuit.nodes.push(node as Box<dyn Node>);
         circuit.edges.push((input_id, id));
@@ -238,7 +240,7 @@ where
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let node = Box::new(UnaryRefNode::new(operator, input_stream, self.clone(), id));
         let output_stream = node.output_stream();
         circuit.nodes.push(node as Box<dyn Node>);
@@ -261,7 +263,7 @@ where
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let node = Box::new(UnaryValNode::new(operator, input_stream, self.clone(), id));
         let output_stream = node.output_stream();
         circuit.nodes.push(node as Box<dyn Node>);
@@ -288,7 +290,7 @@ where
         let input_stream2 = input_stream2.clone();
         let input_id1 = input_stream1.node_id();
         let input_id2 = input_stream2.node_id();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let node = Box::new(BinaryRefRefNode::new(
             operator,
             input_stream1,
@@ -359,7 +361,7 @@ where
         let mut circuit = self.0.borrow_mut();
         let operator = Rc::new(UnsafeCell::new(operator));
         let connector = FeedbackConnector::new(self.clone(), operator.clone());
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let output_node = Box::new(FeedbackOutputNode::new(operator, self.clone(), id));
         let output_stream = output_node.output_stream();
         circuit.nodes.push(output_node as Box<dyn Node>);
@@ -378,7 +380,7 @@ where
     {
         let mut circuit = self.0.borrow_mut();
         let input_id = input_stream.node_id();
-        let id = circuit.nodes.len();
+        let id = NodeId(circuit.nodes.len());
         let output_node = Box::new(FeedbackInputNode::new(operator, input_stream.clone()));
         circuit.nodes.push(output_node as Box<dyn Node>);
         circuit.edges.push((input_id, id));
