@@ -5,6 +5,8 @@ use crate::circuit::operator_traits::{
 };
 use std::mem::swap;
 
+use num::Zero;
+
 /// z^-1 operator delays its input by one timestamp.  It outputs the default
 /// value of `T` in the first timestamp after [stream_start](`Z1::stream_start`).
 /// For all subsequent timestamps, it outputs the value received as input at the
@@ -29,7 +31,7 @@ pub struct Z1<T> {
 
 impl<T> Default for Z1<T>
 where
-    T: Default,
+    T: Zero,
 {
     fn default() -> Self {
         Self::new()
@@ -38,22 +40,20 @@ where
 
 impl<T> Z1<T>
 where
-    T: Default,
+    T: Zero,
 {
     pub fn new() -> Self {
-        Self {
-            val: Default::default(),
-        }
+        Self { val: Zero::zero() }
     }
 
     fn reset(&mut self) {
-        self.val = Default::default()
+        self.val = Zero::zero()
     }
 }
 
 impl<T> Operator for Z1<T>
 where
-    T: Default + 'static,
+    T: Zero + 'static,
 {
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {
@@ -63,7 +63,7 @@ where
 
 impl<T> UnaryValOperator<T, T> for Z1<T>
 where
-    T: Default + 'static,
+    T: Zero + 'static,
 {
     fn eval(&mut self, mut i: T) -> T {
         swap(&mut self.val, &mut i);
@@ -73,10 +73,10 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Default + 'static,
+    T: Zero + 'static,
 {
     fn get_output(&mut self) -> T {
-        let mut old_val = Default::default();
+        let mut old_val = Zero::zero();
         swap(&mut self.val, &mut old_val);
         old_val
     }
@@ -84,7 +84,7 @@ where
 
 impl<T> StrictUnaryValOperator<T, T> for Z1<T>
 where
-    T: Default + 'static,
+    T: Zero + 'static,
 {
     fn eval_strict(&mut self, i: T) {
         self.val = i
@@ -95,27 +95,20 @@ where
 fn sum_circuit() {
     let mut z1 = Z1::new();
 
-    let expected_result = vec![
-        "".to_string(),
-        "foo".to_string(),
-        "bar".to_string(),
-        "".to_string(),
-        "x".to_string(),
-        "y".to_string(),
-    ];
+    let expected_result = vec![0, 1, 2, 0, 4, 5];
 
     // Test `UnaryValOperator` API.
     let mut res = Vec::new();
     z1.stream_start();
-    res.push(z1.eval("foo".to_string()));
-    res.push(z1.eval("bar".to_string()));
-    res.push(z1.eval("buzz".to_string()));
+    res.push(z1.eval(1));
+    res.push(z1.eval(2));
+    res.push(z1.eval(3));
     z1.stream_end();
 
     z1.stream_start();
-    res.push(z1.eval("x".to_string()));
-    res.push(z1.eval("y".to_string()));
-    res.push(z1.eval("z".to_string()));
+    res.push(z1.eval(4));
+    res.push(z1.eval(5));
+    res.push(z1.eval(6));
     z1.stream_end();
 
     assert_eq!(res, expected_result);
@@ -124,20 +117,20 @@ fn sum_circuit() {
     let mut res = Vec::new();
     z1.stream_start();
     res.push(z1.get_output());
-    z1.eval_strict("foo".to_string());
+    z1.eval_strict(1);
     res.push(z1.get_output());
-    z1.eval_strict("bar".to_string());
+    z1.eval_strict(2);
     res.push(z1.get_output());
-    z1.eval_strict("buzz".to_string());
+    z1.eval_strict(3);
     z1.stream_end();
 
     z1.stream_start();
     res.push(z1.get_output());
-    z1.eval_strict("x".to_string());
+    z1.eval_strict(4);
     res.push(z1.get_output());
-    z1.eval_strict("y".to_string());
+    z1.eval_strict(5);
     res.push(z1.get_output());
-    z1.eval_strict("z".to_string());
+    z1.eval_strict(6);
     z1.stream_end();
 
     assert_eq!(res, expected_result);
