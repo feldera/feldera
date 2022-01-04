@@ -5,12 +5,11 @@ use crate::circuit::operator_traits::{
 };
 use std::mem::swap;
 
-use num::Zero;
-
-/// z^-1 operator delays its input by one timestamp.  It outputs the default
-/// value of `T` in the first timestamp after [stream_start](`Z1::stream_start`).
+/// z^-1 operator delays its input by one timestamp.  It outputs a user-defined
+/// "zero" value in the first timestamp after [stream_start](`Z1::stream_start`).
 /// For all subsequent timestamps, it outputs the value received as input at the
-/// previous timestamp.
+/// previous timestamp.  The zero value is typically the neutral element of
+/// a monoid (e.g., 0 for addition or 1 for multiplication).
 ///
 /// # Examples
 ///
@@ -26,34 +25,29 @@ use num::Zero;
 ///
 /// It is a strict operator
 pub struct Z1<T> {
+    zero: T,
     val: T,
-}
-
-impl<T> Default for Z1<T>
-where
-    T: Zero,
-{
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<T> Z1<T>
 where
-    T: Zero,
+    T: Clone,
 {
-    pub fn new() -> Self {
-        Self { val: Zero::zero() }
+    pub fn new(zero: T) -> Self {
+        Self {
+            zero: zero.clone(),
+            val: zero,
+        }
     }
 
     fn reset(&mut self) {
-        self.val = Zero::zero()
+        self.val = self.zero.clone();
     }
 }
 
 impl<T> Operator for Z1<T>
 where
-    T: Zero + 'static,
+    T: Clone + 'static,
 {
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {
@@ -63,7 +57,7 @@ where
 
 impl<T> UnaryValOperator<T, T> for Z1<T>
 where
-    T: Zero + 'static,
+    T: Clone + 'static,
 {
     fn eval(&mut self, mut i: T) -> T {
         swap(&mut self.val, &mut i);
@@ -73,10 +67,10 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Zero + 'static,
+    T: Clone + 'static,
 {
     fn get_output(&mut self) -> T {
-        let mut old_val = Zero::zero();
+        let mut old_val = self.zero.clone();
         swap(&mut self.val, &mut old_val);
         old_val
     }
@@ -84,7 +78,7 @@ where
 
 impl<T> StrictUnaryValOperator<T, T> for Z1<T>
 where
-    T: Zero + 'static,
+    T: Clone + 'static,
 {
     fn eval_strict(&mut self, i: T) {
         self.val = i
@@ -93,7 +87,7 @@ where
 
 #[test]
 fn sum_circuit() {
-    let mut z1 = Z1::new();
+    let mut z1 = Z1::new(0);
 
     let expected_result = vec![0, 1, 2, 0, 4, 5];
 

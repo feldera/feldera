@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 num = { version = "0.4.0" }
 string-builder = { version = "0.2.0 "}
+petgraph = { version = "0.6.0" }
