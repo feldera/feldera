@@ -324,7 +324,7 @@ where
     /// ```text
     ///                ┌─┐
     /// source ───────►│+├───┬─►
-    ///           ▲    └─┘   │
+    ///            ───►└─┘   │
     ///           │          │
     ///           │    ┌──┐  │
     ///           └────┤z1│◄─┘
@@ -340,7 +340,7 @@ where
     /// // Create a data source.
     /// let source = circuit.add_source(Repeat::new(10));
     /// // Create z1.  `z1_output` will contain the output stream of `z1`; `z1_feedback`
-    /// // is a placeholder where we can later plug the input stream.
+    /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new());
     /// // Connect outputs of `source` and `z1` to the plus operator.
     /// let plus = circuit.add_binary_refref_operator(Plus::new(), &source, &z1_output);
@@ -645,6 +645,11 @@ where
     }
 }
 
+// The output half of a feedback node.  We implement a feedback node using a pair of nodes:
+// `FeedbackOutputNode` is connected to the circuit as a source node (i.e., it does not have
+// an input stream) and thus gets evaluated first in each time stamp.  `FeedbackInputNode`
+// is a sink node.  This way the circuit graph remains acyclic and can be scheduled in a
+// topological order.
 struct FeedbackOutputNode<C, I, O, Op>
 where
     Op: StrictUnaryValOperator<I, O>,
