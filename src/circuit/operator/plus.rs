@@ -18,7 +18,7 @@ impl<T> Default for Plus<T> {
 }
 
 impl<T> Plus<T> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             phantom: PhantomData,
         }
