@@ -11,10 +11,7 @@ pub struct Plus<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T> Default for Plus<T>
-where
-    T: Default,
-{
+impl<T> Default for Plus<T> {
     fn default() -> Self {
         Self::new()
     }

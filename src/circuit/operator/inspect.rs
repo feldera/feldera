@@ -6,10 +6,7 @@ use std::marker::PhantomData;
 
 /// Sink operator that consumes a stream of values of type `T` and
 /// applies a user-provided callback to each input.
-pub struct Inspect<T, F>
-where
-    F: FnMut(&T),
-{
+pub struct Inspect<T, F> {
     callback: F,
     phantom: PhantomData<T>,
 }

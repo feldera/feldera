@@ -386,10 +386,7 @@ where
     }
 }
 
-struct SourceNode<C, O, Op>
-where
-    Op: SourceOperator<O>,
-{
+struct SourceNode<C, O, Op> {
     operator: Op,
     output_stream: Stream<C, O>,
 }
@@ -429,10 +426,7 @@ where
     }
 }
 
-struct UnaryRefNode<C, I, O, Op>
-where
-    Op: UnaryRefOperator<I, O>,
-{
+struct UnaryRefNode<C, I, O, Op> {
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
@@ -482,10 +476,7 @@ where
     }
 }
 
-struct SinkRefNode<C, I, Op>
-where
-    Op: SinkRefOperator<I>,
-{
+struct SinkRefNode<C, I, Op> {
     operator: Op,
     input_stream: Stream<C, I>,
 }
@@ -525,10 +516,7 @@ where
     }
 }
 
-struct UnaryValNode<C, I, O, Op>
-where
-    Op: UnaryValOperator<I, O>,
-{
+struct UnaryValNode<C, I, O, Op> {
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
@@ -579,10 +567,7 @@ where
     }
 }
 
-struct BinaryRefRefNode<C, I1, I2, O, Op>
-where
-    Op: BinaryRefRefOperator<I1, I2, O>,
-{
+struct BinaryRefRefNode<C, I1, I2, O, Op> {
     operator: Op,
     input_stream1: Stream<C, I1>,
     input_stream2: Stream<C, I2>,
@@ -650,10 +635,7 @@ where
 // an input stream) and thus gets evaluated first in each time stamp.  `FeedbackInputNode`
 // is a sink node.  This way the circuit graph remains acyclic and can be scheduled in a
 // topological order.
-struct FeedbackOutputNode<C, I, O, Op>
-where
-    Op: StrictUnaryValOperator<I, O>,
-{
+struct FeedbackOutputNode<C, I, O, Op> {
     operator: Rc<UnsafeCell<Op>>,
     output_stream: Stream<C, O>,
     phantom_input: PhantomData<I>,
@@ -699,10 +681,7 @@ where
     }
 }
 
-struct FeedbackInputNode<C, I, O, Op>
-where
-    Op: StrictUnaryValOperator<I, O>,
-{
+struct FeedbackInputNode<C, I, O, Op> {
     operator: Rc<UnsafeCell<Op>>,
     input_stream: Stream<C, I>,
     phantom_output: PhantomData<O>,
@@ -748,10 +727,7 @@ where
 /// whose input stream does not exist yet.  Once the input stream has been created, it
 /// can be connected to the operator using [`FeedbackConnector::connect`].
 /// See [`Circuit::add_feedback`] for details.
-pub struct FeedbackConnector<C, I, O, Op>
-where
-    Op: StrictUnaryValOperator<I, O>,
-{
+pub struct FeedbackConnector<C, I, O, Op> {
     circuit: C,
     operator: Rc<UnsafeCell<Op>>,
     phantom_input: PhantomData<I>,
