@@ -8,6 +8,7 @@ Copyright (c) 2021 VMware, Inc
 //! This module contains declarations of abstract algebraic concepts:
 //! monoids, groups, rings, etc.
 
+pub mod finite_map;
 pub mod zset;
 
 use num::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
