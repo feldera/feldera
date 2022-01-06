@@ -176,10 +176,10 @@ mod integer_ring_tests {
     fn fixed_integer_tests() {
         assert_eq!(0, i64::zero());
         assert_eq!(1, i64::one());
-        let two = i64::one().add(i64::one());
+        let two = i64::one().add_by_ref(&i64::one());
         assert_eq!(2, two);
-        assert_eq!(-2, two.neg());
-        assert_eq!(-4, two.mul(two.neg()));
+        assert_eq!(-2, two.neg_by_ref());
+        assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
     }
 }
 
