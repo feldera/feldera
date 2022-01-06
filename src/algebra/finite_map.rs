@@ -9,23 +9,23 @@ Copyright (c) 2021 VMware, Inc
 //! from values to a group.
 
 use super::GroupValue;
-use num::Zero;
+use super::*;
 use std::collections::hash_map::Entry;
 use std::collections::{hash_map, HashMap};
 use std::fmt::{Display, Formatter, Result};
 use std::hash::Hash;
-use std::ops::{Add, AddAssign, Neg};
 
 ////////////////////////////////////////////////////////
 /// Finite map trait.
 ///
 /// A finite map maps arbitrary values (comparable for equality)
-/// to values in a group.
+/// to values in a group.  It has finite support: it is non-zero
+/// only for a finite number of values.
 ///
 /// `DataType` - Type of values stored in finite map.
-///
 /// `ResultType` - Type of results.
-pub trait FiniteMap<DataType, ResultType>
+pub trait FiniteMap<DataType, ResultType>:
+    GroupValue + IntoIterator<Item = (DataType, ResultType)> + FromIterator<(DataType, ResultType)>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
@@ -35,21 +35,18 @@ where
     /// Return the set of values that are mapped to non-zero values.
     // FIXME: the return type is wrong, the result should be a more abstract iterator.
     fn support(&self) -> hash_map::Keys<'_, DataType, ResultType>;
-    /// The size of the support
-    fn size(&self) -> usize;
-    /// Add one value `key` to the zset with the specified `weight`
-    fn insert(&mut self, key: &DataType, weight: &ResultType);
+    /// The size of the support: number of elements for which the map does not return zero.
+    fn support_size(&self) -> usize;
+    /// Increase the value associated to `key` by the specified `value`
+    fn increment(&mut self, key: &DataType, value: &ResultType);
     /// Create a map containing a singleton value.
-    fn singleton(key: &DataType, value: &ResultType) -> Self;
-}
-
-/// A FiniteMap that has GroupValue as codomain is itself a group.
-pub trait FiniteMapGroupValue<DataType, ResultType>:
-    FiniteMap<DataType, ResultType> + GroupValue
-where
-    DataType: Clone + Hash + Eq + 'static,
-    ResultType: GroupValue,
-{
+    fn singleton(key: DataType, value: ResultType) -> Self;
+    /// Apply map to every 'key' in the support of this map and generate a new map.
+    //  TODO: it would be nice for this to return a trait instead of a type.
+    fn map<F, ConvertedDataType>(&self, mapper: F) -> FiniteHashMap<ConvertedDataType, ResultType>
+    where
+        F: Fn(DataType) -> ConvertedDataType,
+        ConvertedDataType: Clone + Hash + Eq + 'static;
 }
 
 #[derive(Debug, Clone)]
@@ -60,8 +57,8 @@ where
     // Unfortunately I cannot just implement these traits for
     // HashMap since they conflict with some existing traits.
     // We maintain the invariant that the keys (and only these keys)
-    // that have non-zero weights are in this map.
-    pub value: HashMap<DataType, ResultType>,
+    // that have non-zero values are in this map.
+    pub(super) value: HashMap<DataType, ResultType>,
 }
 
 impl<DataType, ResultType> FiniteHashMap<DataType, ResultType>
@@ -81,47 +78,96 @@ where
     }
 }
 
+impl<DataType, ResultType> IntoIterator for FiniteHashMap<DataType, ResultType>
+where
+    DataType: Clone + Hash + Eq + 'static,
+    ResultType: GroupValue,
+{
+    type Item = (DataType, ResultType);
+    type IntoIter = std::collections::hash_map::IntoIter<DataType, ResultType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.value.into_iter()
+    }
+}
+
+impl<DataType, ResultType> FromIterator<(DataType, ResultType)>
+    for FiniteHashMap<DataType, ResultType>
+where
+    DataType: Clone + Hash + Eq + 'static,
+    ResultType: GroupValue,
+{
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (DataType, ResultType)>,
+    {
+        let mut result = FiniteHashMap::new();
+        for (k, v) in iter {
+            result.increment(&k, &v);
+        }
+        result
+    }
+}
+
 impl<DataType, ResultType> FiniteMap<DataType, ResultType> for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
 {
-    fn singleton(key: &DataType, value: &ResultType) -> FiniteHashMap<DataType, ResultType> {
-        let mut result = FiniteHashMap::with_capacity(1);
-        result.insert(key, value);
+    fn singleton(key: DataType, value: ResultType) -> Self {
+        let mut result = Self::with_capacity(1);
+        result.value.insert(key, value);
         result
     }
+
     fn lookup(&self, key: &DataType) -> ResultType {
         let val = self.value.get(key);
         match val {
-            Some(weight) => weight.clone(),
+            Some(w) => w.clone(),
             None => ResultType::zero(),
         }
     }
+
     fn support<'a>(&self) -> hash_map::Keys<'_, DataType, ResultType> {
         self.value.keys()
     }
-    fn size(&self) -> usize {
+
+    fn support_size(&self) -> usize {
         self.value.len()
     }
-    fn insert(&mut self, key: &DataType, weight: &ResultType) {
-        if weight.is_zero() {
+
+    fn increment(&mut self, key: &DataType, value: &ResultType) {
+        if value.is_zero() {
             return;
         }
-        let value = self.value.entry(key.clone());
-        match value {
-            Entry::Vacant(e) => {
-                e.insert(weight.clone());
+        // TODO: the HashMap API does not support avoiding this clone.
+        // This has been a known issue since 2015: https://github.com/rust-lang/rust/issues/56167
+        // We should use a different implementation or API if one becomes available.
+        let e = self.value.entry(key.clone());
+        match e {
+            Entry::Vacant(ve) => {
+                ve.insert(value.clone());
             }
-            Entry::Occupied(mut e) => {
-                let w = e.get().clone().add(weight.clone());
-                if ResultType::is_zero(&w) {
-                    e.remove_entry();
+            Entry::Occupied(mut oe) => {
+                let w = oe.get().add_by_ref(value);
+                if w.is_zero() {
+                    oe.remove_entry();
                 } else {
-                    e.insert(w);
+                    oe.insert(w);
                 };
             }
         };
+    }
+
+    fn map<F, ConvertedDataType>(&self, mapper: F) -> FiniteHashMap<ConvertedDataType, ResultType>
+    where
+        F: Fn(DataType) -> ConvertedDataType,
+        ConvertedDataType: Clone + Hash + Eq + 'static,
+    {
+        self.clone()
+            .into_iter()
+            .map(|(k, v)| (mapper(k), v))
+            .collect()
     }
 }
 
@@ -136,24 +182,24 @@ where
     }
 }
 
-impl<DataType, ResultType> Add for FiniteHashMap<DataType, ResultType>
+impl<DataType, ResultType> AddByRef for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
 {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        let mut result = self;
-        for (k, v) in other.value {
-            let entry = result.value.entry(k);
+    fn add_by_ref(&self, other: &Self) -> Self {
+        let mut result = self.clone();
+        for (k, v) in &other.value {
+            // TODO: unfortunately there is no way to avoid this k.clone() currently.
+            // See also note on 'insert' below.
+            let entry = result.value.entry(k.clone());
             match entry {
                 Entry::Vacant(e) => {
                     e.insert(v.clone());
                 }
                 Entry::Occupied(mut e) => {
-                    let w = e.get().clone().add(v.clone());
-                    if ResultType::is_zero(&w) {
+                    let w = e.get().add_by_ref(v);
+                    if w.is_zero() {
                         e.remove_entry();
                     } else {
                         e.insert(w);
@@ -165,21 +211,22 @@ where
     }
 }
 
-impl<DataType, ResultType> AddAssign for FiniteHashMap<DataType, ResultType>
+impl<DataType, ResultType> AddAssignByRef for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
 {
-    fn add_assign(&mut self, other: Self) {
-        for (k, v) in other.value {
-            let entry = self.value.entry(k);
+    fn add_assign_by_ref(&mut self, other: &Self) {
+        for (k, v) in &other.value {
+            // TODO: unfortunately there is no way to avoid this clone.
+            let entry = self.value.entry(k.clone());
             match entry {
                 Entry::Vacant(e) => {
                     e.insert(v.clone());
                 }
                 Entry::Occupied(mut e) => {
-                    let w = e.get().clone().add(v.clone());
-                    if ResultType::is_zero(&w) {
+                    let w = e.get().add_by_ref(v);
+                    if w.is_zero() {
                         e.remove_entry();
                     } else {
                         e.insert(w);
@@ -190,7 +237,7 @@ where
     }
 }
 
-impl<DataType, ResultType> Zero for FiniteHashMap<DataType, ResultType>
+impl<DataType, ResultType> HasZero for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
@@ -198,31 +245,30 @@ where
     fn zero() -> Self {
         FiniteHashMap::default()
     }
+
     fn is_zero(&self) -> bool {
         self.value.is_empty()
     }
 }
 
-impl<DataType, ResultType> Neg for FiniteHashMap<DataType, ResultType>
+impl<DataType, ResultType> NegByRef for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
     ResultType: GroupValue,
 {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        let mut result = self;
+    fn neg_by_ref(&self) -> Self {
+        let mut result = self.clone();
         for val in result.value.values_mut() {
-            *val = -val.clone();
+            *val = val.clone().neg_by_ref();
         }
         result
     }
 }
 
-impl<DataType, WeightType> PartialEq for FiniteHashMap<DataType, WeightType>
+impl<DataType, ResultType> PartialEq for FiniteHashMap<DataType, ResultType>
 where
     DataType: Clone + Hash + Eq + 'static,
-    WeightType: GroupValue,
+    ResultType: GroupValue,
 {
     fn eq(&self, other: &Self) -> bool {
         self.value.eq(&other.value)
@@ -264,60 +310,61 @@ where
     }
 }
 
-// zset to string
-pub fn to_string<DataType, ResultType>(z: &FiniteHashMap<DataType, ResultType>) -> String
-where
-    DataType: Clone + 'static + Hash + Display + Ord,
-    ResultType: GroupValue + Display,
-{
-    format!("{}", &z)
-}
-
 #[test]
 fn hashmap_tests() {
     let mut z = FiniteHashMap::<i64, i64>::with_capacity(5);
-    assert_eq!(0, z.size());
-    assert_eq!("{}", to_string(&z));
-    assert_eq!(0, z.lookup(&0)); // not present -> weight 0
+    assert_eq!(0, z.support_size());
+    assert_eq!("{}", z.to_string());
+    assert_eq!(0, z.lookup(&0)); // not present -> 0
     assert_eq!(z, FiniteHashMap::<i64, i64>::zero());
     assert!(z.is_zero());
     let z2 = FiniteHashMap::<i64, i64>::new();
     assert_eq!(z, z2);
 
-    z.insert(&0, &1);
-    assert_eq!(1, z.size());
-    assert_eq!("{0=>1}", to_string(&z));
+    let z3 = FiniteHashMap::singleton(3, 4);
+    assert_eq!("{3=>4}", z3.to_string());
+
+    z.increment(&0, &1);
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
     assert_eq!(1, z.lookup(&0));
     assert_eq!(0, z.lookup(&1));
     assert_ne!(z, FiniteHashMap::<i64, i64>::zero());
     assert_eq!(false, z.is_zero());
 
-    z.insert(&2, &0);
-    assert_eq!(1, z.size());
-    assert_eq!("{0=>1}", to_string(&z));
+    z.increment(&2, &0);
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
 
-    z.insert(&1, &-1);
-    assert_eq!(2, z.size());
-    assert_eq!("{0=>1,1=>-1}", to_string(&z));
+    z.increment(&1, &-1);
+    assert_eq!(2, z.support_size());
+    assert_eq!("{0=>1,1=>-1}", z.to_string());
 
-    z.insert(&-1, &1);
-    assert_eq!(3, z.size());
-    assert_eq!("{-1=>1,0=>1,1=>-1}", to_string(&z));
+    z.increment(&-1, &1);
+    assert_eq!(3, z.support_size());
+    assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
 
-    let d = z.clone().neg();
-    assert_eq!(3, d.size());
-    assert_eq!("{-1=>-1,0=>-1,1=>1}", to_string(&d));
+    let d = z.neg_by_ref();
+    assert_eq!(3, d.support_size());
+    assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
     assert_ne!(d, z);
 
-    z.insert(&1, &1);
-    assert_eq!(2, z.size());
-    assert_eq!("{-1=>1,0=>1}", to_string(&z));
+    let i = d.clone().into_iter().collect::<FiniteHashMap<i64, i64>>();
+    assert_eq!(i, d);
 
-    let mut z2 = z.clone().add(z.clone());
-    assert_eq!(2, z2.size());
-    assert_eq!("{-1=>2,0=>2}", to_string(&z2));
+    z.increment(&1, &1);
+    assert_eq!(2, z.support_size());
+    assert_eq!("{-1=>1,0=>1}", z.to_string());
 
-    z2.add_assign(z.clone());
-    assert_eq!(2, z2.size());
-    assert_eq!("{-1=>3,0=>3}", to_string(&z2));
+    let mut z2 = z.add_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>2,0=>2}", z2.to_string());
+
+    z2.add_assign_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>3,0=>3}", z2.to_string());
+
+    let z3 = z2.map(|_x| 0);
+    assert_eq!(1, z3.support_size());
+    assert_eq!("{0=>6}", z3.to_string());
 }

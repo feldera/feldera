@@ -11,44 +11,132 @@ Copyright (c) 2021 VMware, Inc
 pub mod finite_map;
 pub mod zset;
 
-use num::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
+use num::{CheckedAdd, CheckedMul, CheckedSub};
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Add, AddAssign, Mul, Neg};
 
+/// A trait for types that have a zero value.
+/// This is simlar to the standard Zero trait, but that
+/// trait depends on Add and HasZero doesn't.
+pub trait HasZero {
+    fn is_zero(&self) -> bool;
+    fn zero() -> Self;
+}
+
+/// Implementation of HasZero for types that already implement Zero
+impl<T> HasZero for T
+where
+    T: num::traits::Zero,
+{
+    fn zero() -> Self {
+        T::zero()
+    }
+    fn is_zero(&self) -> bool {
+        T::is_zero(self)
+    }
+}
+
+/// A trait for types that have a one value.
+/// This is similar to the standard One trait, but that
+/// trait depends on Mul and HasOne doesn't.
+pub trait HasOne {
+    fn one() -> Self;
+}
+
+/// Implementation of HasOne for types that already implement One
+impl<T> HasOne for T
+where
+    T: num::traits::One,
+{
+    fn one() -> Self {
+        T::one()
+    }
+}
+
+/// Like the Add trait, but with arguments by reference.
+pub trait AddByRef {
+    fn add_by_ref(&self, other: &Self) -> Self;
+}
+
+/// Implementation of AddByRef for types that have an Add and a Copy.
+impl<T> AddByRef for T
+where
+    T: Add<Output = T> + Copy,
+{
+    fn add_by_ref(&self, other: &Self) -> Self {
+        T::add(*self, *other)
+    }
+}
+
+/// Like the Neg trait, but with arguments by reference.
+pub trait NegByRef {
+    fn neg_by_ref(&self) -> Self;
+}
+
+/// Implementation of AddByRef for types that have an Add and a Copy.
+impl<T> NegByRef for T
+where
+    T: Neg<Output = T> + Copy,
+{
+    fn neg_by_ref(&self) -> Self {
+        T::neg(*self)
+    }
+}
+
+/// Like the AddAsssign trait, but with arguments by reference
+pub trait AddAssignByRef {
+    fn add_assign_by_ref(&mut self, other: &Self);
+}
+
+/// Implemenation of AddAssignByRef for types that already have AddAssign and Copy
+impl<T> AddAssignByRef for T
+where
+    T: AddAssign<T> + Copy,
+{
+    fn add_assign_by_ref(&mut self, other: &Self) {
+        self.add_assign(*other)
+    }
+}
+
+/// Like the Mul trait, but with arguments by reference
+pub trait MulByRef {
+    fn mul_by_ref(&self, other: &Self) -> Self;
+}
+
+/// Implementation of MulByRef for types that already have Mul and Copy
+impl<T> MulByRef for T
+where
+    T: Mul<Output = T> + Copy,
+{
+    fn mul_by_ref(&self, other: &Self) -> Self {
+        T::mul(*self, *other)
+    }
+}
+
 /// A type with an associative addition and a zero.
 /// We trust the implementation to have an associative addition.
-/// This contains methods 'is_zero', 'zero' and 'add'
-pub trait MonoidValue: Clone + Eq + 'static + Add<Output = Self> + Zero + AddAssign {}
+/// (this cannot be checked statically).
+pub trait MonoidValue: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef {}
 
-/// Default implementation for all types that have an addition.
-impl<T> MonoidValue for T where T: Clone + Eq + 'static + Add<Output = Self> + Zero + AddAssign {}
+/// Default implementation for all types that have an addition and a zero.
+impl<T> MonoidValue for T where T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef {}
 
-/// A `MonoidValue` with negation.
-/// In addition we expect all our groups to be commutative.
-/// This adds the 'neg' method to the MonoidValue methods.
-pub trait GroupValue: MonoidValue + Neg<Output = Self> {}
+/// A Group is a Monoid with a with negation operation.
+/// We expect all our groups to be commutative.
+pub trait GroupValue: MonoidValue + NegByRef {}
 
-/// Default implementation for all types that have the required traits.
+/// Default implementation of GroupValue for all types that have the required traits.
 impl<T> GroupValue for T where
-    T: Clone + Eq + 'static + Add<Output = Self> + Zero + AddAssign + Neg<Output = Self>
+    T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef + NegByRef
 {
 }
 
-/// A Group with a multiplication operation
-/// This adds the 'mul' method
-pub trait RingValue: GroupValue + Mul<Output = Self> + One {}
+/// A Group with a multiplication operation is a Ring.
+pub trait RingValue: GroupValue + MulByRef + HasOne {}
 
-/// Default implementation for all types that have the required traits.
+/// Default implementation of RingValue for all types that have the required traits.
 impl<T> RingValue for T where
-    T: Clone
-        + Eq
-        + 'static
-        + Add<Output = Self>
-        + Zero
-        + AddAssign
-        + Neg<Output = Self>
-        + Mul<Output = Self>
-        + One
+    T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef + NegByRef + MulByRef + HasOne
 {
 }
 
@@ -58,18 +146,18 @@ pub trait ZRingValue: RingValue {
     fn ge0(&self) -> bool;
 }
 
-/// Default implementation for all types that have the required traits.
+/// Default implementation of ZRingValue for all types that have the required traits.
 impl<T> ZRingValue for T
 where
     T: Clone
         + Eq
         + 'static
-        + Add<Output = Self>
-        + Zero
-        + AddAssign
-        + Neg<Output = Self>
-        + Mul<Output = Self>
-        + One
+        + HasZero
+        + AddByRef
+        + AddAssignByRef
+        + NegByRef
+        + MulByRef
+        + HasOne
         + Ord,
 {
     fn ge0(&self) -> bool {
@@ -109,13 +197,11 @@ impl<T> CheckedInt<T> {
     }
 }
 
-impl<T> Add for CheckedInt<T>
+impl<T> AddByRef for CheckedInt<T>
 where
     T: CheckedAdd,
 {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
+    fn add_by_ref(&self, other: &Self) -> Self {
         // intentional panic on overflow
         Self {
             value: self.value.checked_add(&other.value).expect("overflow"),
@@ -123,21 +209,20 @@ where
     }
 }
 
-impl<T> AddAssign for CheckedInt<T>
+impl<T> AddAssignByRef for CheckedInt<T>
 where
     T: CheckedAdd,
 {
-    fn add_assign(&mut self, other: Self) {
+    fn add_assign_by_ref(&mut self, other: &Self) {
         self.value = self.value.checked_add(&other.value).expect("overflow")
     }
 }
 
-impl<T> Mul for CheckedInt<T>
+impl<T> MulByRef for CheckedInt<T>
 where
     T: CheckedMul,
 {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self::Output {
+    fn mul_by_ref(&self, rhs: &Self) -> Self {
         // intentional panic on overflow
         Self {
             value: self.value.checked_mul(&rhs.value).expect("overflow"),
@@ -145,13 +230,11 @@ where
     }
 }
 
-impl<T> Neg for CheckedInt<T>
+impl<T> NegByRef for CheckedInt<T>
 where
-    T: CheckedSub + Zero,
+    T: CheckedSub + ::num::traits::Zero,
 {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
+    fn neg_by_ref(&self) -> Self {
         Self {
             // intentional panic on overflow
             value: T::zero().checked_sub(&self.value).expect("overflow"),
@@ -159,9 +242,9 @@ where
     }
 }
 
-impl<T> Zero for CheckedInt<T>
+impl<T> HasZero for CheckedInt<T>
 where
-    T: Zero + CheckedAdd,
+    T: ::num::traits::Zero + CheckedAdd,
 {
     fn zero() -> Self {
         CheckedInt::new(T::zero())
@@ -171,9 +254,9 @@ where
     }
 }
 
-impl<T> One for CheckedInt<T>
+impl<T> HasOne for CheckedInt<T>
 where
-    T: One + CheckedMul,
+    T: ::num::traits::One + CheckedMul,
 {
     fn one() -> Self {
         CheckedInt::new(T::one())
@@ -182,7 +265,14 @@ where
 
 impl<T> ZRingValue for CheckedInt<T>
 where
-    T: Ord + Zero + One + CheckedAdd + CheckedMul + CheckedSub + Clone + 'static,
+    T: Ord
+        + ::num::traits::Zero
+        + ::num::traits::One
+        + CheckedAdd
+        + CheckedMul
+        + CheckedSub
+        + Clone
+        + 'static,
 {
     fn ge0(&self) -> bool {
         self.value >= T::zero()
@@ -226,12 +316,12 @@ mod checked_integer_ring_tests {
     fn fixed_integer_tests() {
         assert_eq!(0i64, CheckedI64::zero().into());
         assert_eq!(1i64, CheckedI64::one().into());
-        let two = CheckedI64::one().add(CheckedI64::one());
+        let two = CheckedI64::one().add_by_ref(&CheckedI64::one());
         assert_eq!(2i64, two.clone().into());
-        assert_eq!(-2i64, two.clone().neg().into());
-        assert_eq!(-4i64, two.clone().mul(two.clone().neg()).into());
+        assert_eq!(-2i64, two.neg_by_ref().into());
+        assert_eq!(-4i64, two.clone().mul_by_ref(&two.neg_by_ref()).into());
         let mut three = two;
-        three.add_assign(CheckedI64::from(1i64));
+        three.add_assign_by_ref(&CheckedI64::from(1i64));
         assert_eq!(3i64, three.clone().into());
         assert_eq!(false, three.is_zero());
     }
@@ -240,6 +330,6 @@ mod checked_integer_ring_tests {
     #[should_panic]
     fn overflow_test() {
         let max = CheckedI64::from(i64::MAX);
-        let _ = max.add(CheckedI64::one());
+        let _ = max.add_by_ref(&CheckedI64::one());
     }
 }
