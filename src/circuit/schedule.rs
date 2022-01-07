@@ -1,6 +1,6 @@
 //! A schedule controls the execution of a circuit.
 
-use super::circuit_builder::{Circuit, NodeId, Stream};
+use super::circuit_builder::{Circuit, NodeId};
 
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use std::ops::Deref;
@@ -47,27 +47,27 @@ pub(crate) trait Scheduler<P>: 'static {
     fn run(&self, circuit: &Circuit<P>);
 }
 
-/// An iterative scheduler evaluates the circuit until the circuit writes value `true` to
-/// a designated termination stream.  Every time the scheduler is invoked, it first send
-/// the `stream_start` notification to all operators in the circuit, it then evaluates the
-/// circuit until the termination condition is satisfied (but at least once), and finally
-/// calls `stream_end` on it.
-pub(crate) struct IterativeScheduler<P> {
-    termination_stream: Stream<Circuit<P>, bool>,
+/// An iterative scheduler evaluates the circuit until the `termination_check` callback returns
+/// true.  Every time the scheduler is invoked, it first sends the `stream_start` notification
+/// to all operators in the circuit. It then evaluates the circuit until the termination condition
+/// is satisfied (but at least once), and finally calls `stream_end` on it.
+pub(crate) struct IterativeScheduler<F> {
+    termination_check: F,
     schedule: Schedule,
 }
 
-impl<P> IterativeScheduler<P> {
-    pub(crate) fn new(circuit: &Circuit<P>, termination_stream: Stream<Circuit<P>, bool>) -> Self {
+impl<F> IterativeScheduler<F> {
+    pub(crate) fn new<P>(circuit: &Circuit<P>, termination_check: F) -> Self {
         Self {
-            termination_stream,
+            termination_check,
             schedule: Schedule::schedule_circuit(circuit),
         }
     }
 }
 
-impl<P> Scheduler<P> for IterativeScheduler<P>
+impl<P, F> Scheduler<P> for IterativeScheduler<F>
 where
+    F: Fn() -> bool + 'static,
     P: Clone + 'static,
 {
     fn run(&self, circuit: &Circuit<P>) {
@@ -75,7 +75,7 @@ where
 
         loop {
             self.schedule.step(circuit);
-            if unsafe { *self.termination_stream.get() } == Some(true) {
+            if (self.termination_check)() {
                 break;
             }
         }

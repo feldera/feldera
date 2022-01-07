@@ -485,6 +485,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::circuit::{
     ///     Root,
     ///     operator::{Generator, Inspect, Map, Map2, NestedSource, Z1},
@@ -493,7 +494,12 @@ where
     /// let root = Root::build(|circuit| {
     ///     let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
     ///     let fact = circuit.iterate(|child| {
-    ///         let countdown = child.add_source(NestedSource::new(source, child, |n: &mut usize| *n = *n - 1));
+    ///         let counter = Rc::new(RefCell::new(0));
+    ///         let counter_clone = counter.clone();
+    ///         let countdown = child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
+    ///             *n = *n - 1;
+    ///             *counter_clone.borrow_mut() = *n;
+    ///         }));
     ///         let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
     ///         let mul = child.add_binary_operator(
     ///             Map2::new(|n1: &usize, n2: &usize| n1 * n2),
@@ -501,9 +507,7 @@ where
     ///             &z1_output,
     ///         );
     ///         z1_feedback.connect(&mul);
-    ///         let termination_channel =
-    ///             child.add_unary_operator(Map::new(|n: &usize| *n <= 1), &countdown);
-    ///         (termination_channel, mul.leave())
+    ///         (move || *counter.borrow() <= 1, mul.leave())
     ///     });
     ///     circuit.add_sink(
     ///         Inspect::new(move |n| eprintln!("Output: {}", n)),
@@ -511,13 +515,14 @@ where
     ///     );
     /// });
     /// ```
-    pub fn iterate<F, T>(&self, constructor: F) -> T
+    pub fn iterate<F, C, T>(&self, constructor: F) -> T
     where
-        F: FnOnce(&mut Circuit<Self>) -> (Stream<Circuit<Self>, bool>, T),
+        F: FnOnce(&mut Circuit<Self>) -> (C, T),
+        C: Fn() -> bool + 'static,
     {
         self.subcircuit(|child| {
-            let (termination_stream, res) = constructor(child);
-            let scheduler = IterativeScheduler::new(child, termination_stream);
+            let (termination_check, res) = constructor(child);
+            let scheduler = IterativeScheduler::new(child, termination_check);
             (res, scheduler)
         })
     }
@@ -965,7 +970,7 @@ impl Drop for Root {
 #[cfg(test)]
 mod tests {
     use super::Root;
-    use crate::circuit::operator::{Generator, Inspect, Map, Map2, NestedSource, Z1};
+    use crate::circuit::operator::{Generator, Inspect, Map2, NestedSource, Z1};
     use crate::circuit::operator_traits::{Operator, SinkOperator, UnaryOperator};
     use std::{cell::RefCell, fmt::Display, marker::PhantomData, ops::Deref, rc::Rc, vec::Vec};
 
@@ -1086,9 +1091,12 @@ mod tests {
         let root = Root::build(|circuit| {
             let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
             let fact = circuit.iterate(|child| {
+                let counter = Rc::new(RefCell::new(0));
+                let counter_clone = counter.clone();
                 let countdown =
-                    child.add_source(NestedSource::new(source, child, |n: &mut usize| {
-                        *n = *n - 1
+                    child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
+                        *n = *n - 1;
+                        *counter_clone.borrow_mut() = *n;
                     }));
                 let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
                 let mul = child.add_binary_operator(
@@ -1097,9 +1105,7 @@ mod tests {
                     &z1_output,
                 );
                 z1_feedback.connect(&mul);
-                let termination_channel =
-                    child.add_unary_operator(Map::new(|n: &usize| *n <= 1), &countdown);
-                (termination_channel, mul.leave())
+                (move || *counter.borrow() <= 1, mul.leave())
             });
             circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
