@@ -24,7 +24,9 @@
 //! ```
 
 use std::{
-    cell::{Ref, RefCell, UnsafeCell},
+    cell::{Ref, RefCell, RefMut, UnsafeCell},
+    fmt,
+    fmt::{Debug, Display, Write},
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
@@ -41,15 +43,15 @@ use super::{
 /// that each value is produced and consumed in the same clock cycle, so there can
 /// be at most one value in the stream at any time.
 pub struct Stream<C, D> {
-    // Id of the operator that writes to the stream.
-    // `None` if this is a parent stream introduced to the child circuit using `enter`.
+    /// Id of the operator that writes to the stream.
+    /// `None` if this is a parent stream introduced to the child circuit using `enter`.
     node_id: Option<NodeId>,
-    // Circuit that this stream belongs to.
+    /// Circuit that this stream belongs to.
     circuit: C,
-    // The value (there can be at most one since our circuits are synchronous).
-    // We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership tests.
-    // We enforce unique ownership by making sure that at most one operator can
-    // run (and access the stream) at any time.
+    /// The value (there can be at most one since our circuits are synchronous).
+    /// We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership tests.
+    /// We enforce unique ownership by making sure that at most one operator can
+    /// run (and access the stream) at any time.
     val: Rc<UnsafeCell<Option<D>>>,
 }
 
@@ -105,9 +107,6 @@ where
 }
 
 // Internal streams API only used inside this module.
-//
-// Safety: All unsafe methods in this `impl` assume that there is
-// at most one node accessing the stream at any time.
 impl<C, D> Stream<C, D> {
     // Create a new stream within the given circuit, connected to the specified node id.
     fn new(circuit: C, node_id: NodeId) -> Self {
@@ -118,13 +117,21 @@ impl<C, D> Stream<C, D> {
         }
     }
 
-    // Returns `Some` if the operator has produced output for the current timestamp and `None`
-    // otherwise.
+    /// Returns `Some` if the operator has produced output for the current timestamp and `None`
+    /// otherwise.
+    ///
+    /// #Safety
+    ///
+    /// The caller must have exclusive access to the current stream.
     pub(super) unsafe fn get(&self) -> &Option<D> {
         &*self.val.get()
     }
 
-    // Puts a value in the stream, overwriting the previous value if any.
+    /// Puts a value in the stream, overwriting the previous value if any.
+    ///
+    /// #Safety
+    ///
+    /// The caller must have exclusive access to the current stream.
     unsafe fn put(&self, val: D) {
         *self.val.get() = Some(val);
     }
@@ -141,24 +148,35 @@ impl<C, D> Stream<C, D> {
     }*/
 }
 
-// Node in a circuit.  A node wraps an operator with strongly typed
-// input and output streams.
-// Safety: All unsafe methods in this trait assume that at most one
-// node can be scheduled at any time (i.e., a node cannot invoke another
-// node), and hence at most one node can hold a reference to the value
-// in a stream.
+/// Node in a circuit.  A node wraps an operator with strongly typed
+/// input and output streams.
 pub(crate) trait Node {
-    // Node id unique within its parent circuit.
+    /// Node id unique within its parent circuit.
     fn id(&self) -> NodeId;
 
-    // Evaluate the operator.  Reads one value from each input stream
-    // and pushes a new value to the output stream (except for sink
-    // operators, which don't have an output stream).
+    /// Evaluate the operator.  Reads one value from each input stream
+    /// and pushes a new value to the output stream (except for sink
+    /// operators, which don't have an output stream).
+    ///
+    /// # Safety
+    ///
+    /// Only one node may be scheduled at any given time (a node cannot invoke
+    /// another node).
     unsafe fn eval(&mut self);
 
-    // Notify the node about start/end of input streams.  The node
-    // should forward the notification to its inner operator.
+    // TODO: we need to fix the terminology along with method names.
+    // This is really the start/end of a clock epoch.
+    /// Notify the node about start of input streams.  The node
+    /// should forward the notification to its inner operator.
     fn stream_start(&mut self);
+
+    /// Notify the node about end of input streams.  The node
+    /// should forward the notification to its inner operator.
+    ///
+    /// # Safety
+    ///
+    /// Only one node may be scheduled at any given time (a node cannot invoke
+    /// another node).
     unsafe fn stream_end(&mut self);
 }
 
@@ -167,9 +185,16 @@ pub(crate) trait Node {
 #[repr(transparent)]
 pub struct NodeId(usize);
 
-// A circuit consists of nodes and edges.  An edge from
-// node1 to node2 indicates that the output stream of node1
-// is connected to an input of node2.
+impl Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_char('n')?;
+        Debug::fmt(&self.0, f)
+    }
+}
+
+/// A circuit consists of nodes and edges.  An edge from
+/// node1 to node2 indicates that the output stream of node1
+/// is connected to an input of node2.
 struct CircuitInner<P> {
     parent: P,
     // Circuit's node id within the parent circuit.
@@ -214,30 +239,40 @@ impl Circuit<()> {
 
 // Internal API.
 impl<P> Circuit<P> {
-    // Create an empty nested circuit of `parent`.
+    /// Create an empty nested circuit of `parent`.
     fn with_parent(parent: P, id: NodeId) -> Self {
         Circuit(Rc::new(RefCell::new(CircuitInner::new(parent, id))))
     }
 
-    // Circuit's node id within the parent circuit.  Returns 0 for the root circuit.
+    /// Mutably borrow the inner circuit.
+    fn inner_mut(&self) -> RefMut<'_, CircuitInner<P>> {
+        self.0.borrow_mut()
+    }
+
+    /// Immutably borrow the inner circuit.
+    fn inner(&self) -> Ref<'_, CircuitInner<P>> {
+        self.0.borrow()
+    }
+
+    /// Circuit's node id within the parent circuit.  Returns 0 for the root circuit.
     fn node_id(&self) -> NodeId {
-        let circuit = self.0.borrow();
+        let circuit = self.inner();
         circuit.node_id
     }
 
     fn add_edge(&self, from: Option<NodeId>, to: NodeId) {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         circuit.add_edge(from, to);
     }
 
     pub(super) fn edges(&self) -> Ref<'_, [(NodeId, NodeId)]> {
-        let circuit = self.0.borrow();
+        let circuit = self.inner();
         Ref::map(circuit, |c| c.edges.as_slice())
     }
 
     // Deliver `stream_start` notification to all nodes in the circuit.
     pub(super) fn stream_start(&self) {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         for node in circuit.nodes.iter_mut() {
             node.stream_start();
         }
@@ -245,7 +280,7 @@ impl<P> Circuit<P> {
 
     // Deliver `stream_end` notification to all nodes in the circuit.
     pub(super) unsafe fn stream_end(&self) {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         for node in circuit.nodes.iter_mut() {
             node.stream_end();
         }
@@ -258,15 +293,16 @@ where
 {
     /// Returns the parent circuit of `self`.
     pub fn parent(&self) -> P {
-        self.0.borrow().parent.clone()
+        self.inner().parent.clone()
     }
 
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
     pub(crate) fn eval_node(&self, id: NodeId) {
-        let mut circuit = self.0.borrow_mut();
-        // This is safe because `eval` can never invoke the
+        let mut circuit = self.inner_mut();
+
+        // Safety: `eval` cannot invoke the
         // `eval` method of another node.  To circumvent
         // this invariant the user would have to extract a
         // reference to a node and pass it to an operator,
@@ -281,7 +317,7 @@ where
         O: Data,
         Op: SourceOperator<O>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let id = NodeId(circuit.nodes.len());
         let node = Box::new(SourceNode::new(operator, self.clone(), id));
         let output_stream = node.output_stream();
@@ -296,7 +332,7 @@ where
         I: Data,
         Op: SinkOperator<I>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
         let id = NodeId(circuit.nodes.len());
@@ -317,7 +353,7 @@ where
         O: Data,
         Op: UnaryOperator<I, O>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
         let id = NodeId(circuit.nodes.len());
@@ -342,7 +378,7 @@ where
         O: Data,
         Op: BinaryOperator<I1, I2, O>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let input_stream1 = input_stream1.clone();
         let input_stream2 = input_stream2.clone();
         let input_id1 = input_stream1.node_id();
@@ -383,7 +419,7 @@ where
     /// ```text
     ///                ┌─┐
     /// source ───────►│+├───┬─►
-    ///            ───►└─┘   │
+    ///           ┌───►└─┘   │
     ///           │          │
     ///           │    ┌──┐  │
     ///           └────┤z1│◄─┘
@@ -416,7 +452,7 @@ where
         O: Data,
         Op: StrictUnaryOperator<I, O>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let operator = Rc::new(UnsafeCell::new(operator));
         let connector = FeedbackConnector::new(self.clone(), operator.clone());
         let id = NodeId(circuit.nodes.len());
@@ -435,7 +471,7 @@ where
         O: Data,
         Op: StrictUnaryOperator<I, O>,
     {
-        let mut circuit = self.0.borrow_mut();
+        let mut circuit = self.inner_mut();
         let input_id = input_stream.node_id();
         let id = NodeId(circuit.nodes.len());
         let output_node = Box::new(FeedbackInputNode::new(operator, input_stream.clone(), id));
@@ -458,11 +494,11 @@ where
         F: FnOnce(&mut Circuit<Self>) -> (T, S),
         S: Scheduler<Self>,
     {
-        let id = NodeId(self.0.borrow().nodes.len());
+        let id = NodeId(self.inner().nodes.len());
         let mut child_circuit = Circuit::with_parent(self.clone(), id);
         let (res, scheduler) = child_constructor(&mut child_circuit);
         let child = Box::new(<ChildNode<Self, S>>::new(child_circuit, scheduler, id));
-        self.0.borrow_mut().nodes.push(child as Box<dyn Node>);
+        self.inner_mut().nodes.push(child as Box<dyn Node>);
         res
     }
 

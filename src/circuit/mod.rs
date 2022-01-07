@@ -12,8 +12,8 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! each of its input streams and emitting a single value to the output stream.
 
 mod circuit_builder;
-pub use circuit_builder::*;
 
 pub mod operator;
 pub mod operator_traits;
 pub mod schedule;
+pub use circuit_builder::{Circuit, FeedbackConnector, NodeId, Root, Stream};

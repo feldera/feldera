@@ -88,11 +88,11 @@ pub trait SourceOperator<O>: Operator {
 /// by the circuit to the outside world.
 pub trait SinkOperator<I>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, i: &I);
+    fn eval(&mut self, input: &I);
 
     /// Consume input by value.
-    fn eval_owned(&mut self, i: I) {
-        self.eval(&i);
+    fn eval_owned(&mut self, input: I) {
+        self.eval(&input);
     }
 }
 
@@ -100,11 +100,11 @@ pub trait SinkOperator<I>: Operator {
 /// and produces a stream of outputs of type `O`.
 pub trait UnaryOperator<I, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, i: &I) -> O;
+    fn eval(&mut self, input: &I) -> O;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, i: I) -> O {
-        self.eval(&i)
+    fn eval_owned(&mut self, input: I) -> O {
+        self.eval(&input)
     }
 }
 
@@ -112,11 +112,11 @@ pub trait UnaryOperator<I, O>: Operator {
 /// of types `I1` and `I2` and produces a stream of outputs of type `O`.
 pub trait BinaryOperator<I1, I2, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, i1: &I1, i2: &I2) -> O;
+    fn eval(&mut self, lhs: &I1, rhs: &I2) -> O;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, i1: I1, i2: I2) -> O {
-        self.eval(&i1, &i2)
+    fn eval_owned(&mut self, lhs: I1, rhs: I2) -> O {
+        self.eval(&lhs, &rhs)
     }
 }
 
@@ -140,10 +140,12 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     /// Feed input for the current timestamp to the operator by reference.  The output
     /// will be consumed via [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict(&mut self, i: &I);
+    fn eval_strict(&mut self, input: &I);
 
     /// Feed input for the current timestamp to the operator by value.  The output
     /// will be consumed via [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict_owned(&mut self, i: I);
+    fn eval_strict_owned(&mut self, input: I) {
+        self.eval_strict(&input);
+    }
 }
