@@ -16,7 +16,7 @@
 //!     let source_stream = circuit.add_source(Repeat::new("Hello, world!".to_owned()));
 //!
 //!     // Add a sink operator and wire the source directly to it.
-//!     circuit.add_ref_sink(
+//!     circuit.add_sink(
 //!         Inspect::new(|n| println!("New output: {}", n)),
 //!         &source_stream
 //!     );
@@ -32,8 +32,7 @@ use std::{
 
 use super::{
     operator_traits::{
-        BinaryRefRefOperator, Data, SinkRefOperator, SourceOperator, StrictUnaryValOperator,
-        UnaryRefOperator, UnaryValOperator,
+        BinaryOperator, Data, SinkOperator, SourceOperator, StrictUnaryOperator, UnaryOperator,
     },
     schedule::{IterativeScheduler, OnceScheduler, Scheduler},
 };
@@ -291,24 +290,24 @@ where
     }
 
     /// Add a sink operator that consumes input values by reference.
-    /// See [`SinkRefOperator`].
-    pub fn add_ref_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    /// See [`SinkOperator`].
+    pub fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
     where
         I: Data,
-        Op: SinkRefOperator<I>,
+        Op: SinkOperator<I>,
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
         let id = NodeId(circuit.nodes.len());
-        let node = Box::new(SinkRefNode::new(operator, input_stream, self.clone(), id));
+        let node = Box::new(SinkNode::new(operator, input_stream, self.clone(), id));
         circuit.nodes.push(node as Box<dyn Node>);
         circuit.add_edge(input_id, id);
     }
 
     /// Add a unary operator that consumes input values by reference.
-    /// See [`UnaryRefOperator`].
-    pub fn add_unary_ref_operator<I, O, Op>(
+    /// See [`UnaryOperator`].
+    pub fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
         input_stream: &Stream<Self, I>,
@@ -316,36 +315,13 @@ where
     where
         I: Data,
         O: Data,
-        Op: UnaryRefOperator<I, O>,
+        Op: UnaryOperator<I, O>,
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream = input_stream.clone();
         let input_id = input_stream.node_id();
         let id = NodeId(circuit.nodes.len());
-        let node = Box::new(UnaryRefNode::new(operator, input_stream, self.clone(), id));
-        let output_stream = node.output_stream();
-        circuit.nodes.push(node as Box<dyn Node>);
-        circuit.add_edge(input_id, id);
-        output_stream
-    }
-
-    /// Add a unary operator that consumes inputs by value.
-    /// See [`UnaryValOperator`].
-    pub fn add_unary_val_operator<I, O, Op>(
-        &self,
-        operator: Op,
-        input_stream: &Stream<Self, I>,
-    ) -> Stream<Self, O>
-    where
-        I: Data,
-        O: Data,
-        Op: UnaryValOperator<I, O>,
-    {
-        let mut circuit = self.0.borrow_mut();
-        let input_stream = input_stream.clone();
-        let input_id = input_stream.node_id();
-        let id = NodeId(circuit.nodes.len());
-        let node = Box::new(UnaryValNode::new(operator, input_stream, self.clone(), id));
+        let node = Box::new(UnaryNode::new(operator, input_stream, self.clone(), id));
         let output_stream = node.output_stream();
         circuit.nodes.push(node as Box<dyn Node>);
         circuit.add_edge(input_id, id);
@@ -353,8 +329,8 @@ where
     }
 
     /// Add a binary operator that consumes both inputs by reference.
-    /// See [`BinaryRefRefOperator`].
-    pub fn add_binary_refref_operator<I1, I2, O, Op>(
+    /// See [`BinaryOperator`].
+    pub fn add_binary_operator<I1, I2, O, Op>(
         &self,
         operator: Op,
         input_stream1: &Stream<Self, I1>,
@@ -364,7 +340,7 @@ where
         I1: Data,
         I2: Data,
         O: Data,
-        Op: BinaryRefRefOperator<I1, I2, O>,
+        Op: BinaryOperator<I1, I2, O>,
     {
         let mut circuit = self.0.borrow_mut();
         let input_stream1 = input_stream1.clone();
@@ -372,7 +348,7 @@ where
         let input_id1 = input_stream1.node_id();
         let input_id2 = input_stream2.node_id();
         let id = NodeId(circuit.nodes.len());
-        let node = Box::new(BinaryRefRefNode::new(
+        let node = Box::new(BinaryNode::new(
             operator,
             input_stream1,
             input_stream2,
@@ -426,7 +402,7 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit.add_binary_refref_operator(Map2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output);
+    /// let plus = circuit.add_binary_operator(Map2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output);
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -438,7 +414,7 @@ where
     where
         I: Data,
         O: Data,
-        Op: StrictUnaryValOperator<I, O>,
+        Op: StrictUnaryOperator<I, O>,
     {
         let mut circuit = self.0.borrow_mut();
         let operator = Rc::new(UnsafeCell::new(operator));
@@ -457,7 +433,7 @@ where
     ) where
         I: Data,
         O: Data,
-        Op: StrictUnaryValOperator<I, O>,
+        Op: StrictUnaryOperator<I, O>,
     {
         let mut circuit = self.0.borrow_mut();
         let input_id = input_stream.node_id();
@@ -519,17 +495,17 @@ where
     ///     let fact = circuit.iterate(|child| {
     ///         let countdown = child.add_source(NestedSource::new(source, child, |n: &mut usize| *n = *n - 1));
     ///         let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
-    ///         let mul = child.add_binary_refref_operator(
+    ///         let mul = child.add_binary_operator(
     ///             Map2::new(|n1: &usize, n2: &usize| n1 * n2),
     ///             &countdown,
     ///             &z1_output,
     ///         );
     ///         z1_feedback.connect(&mul);
     ///         let termination_channel =
-    ///             child.add_unary_ref_operator(Map::new(|n: &usize| *n <= 1), &countdown);
+    ///             child.add_unary_operator(Map::new(|n: &usize| *n <= 1), &countdown);
     ///         (termination_channel, mul.leave())
     ///     });
-    ///     circuit.add_ref_sink(
+    ///     circuit.add_sink(
     ///         Inspect::new(move |n| eprintln!("Output: {}", n)),
     ///         &fact,
     ///     );
@@ -592,16 +568,16 @@ where
     }
 }
 
-struct UnaryRefNode<C, I, O, Op> {
+struct UnaryNode<C, I, O, Op> {
     id: NodeId,
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
 }
 
-impl<C, I, O, Op> UnaryRefNode<C, I, O, Op>
+impl<C, I, O, Op> UnaryNode<C, I, O, Op>
 where
-    Op: UnaryRefOperator<I, O>,
+    Op: UnaryOperator<I, O>,
     C: Clone,
 {
     fn new(operator: Op, input_stream: Stream<C, I>, circuit: C, id: NodeId) -> Self {
@@ -618,9 +594,9 @@ where
     }
 }
 
-impl<C, I, O, Op> Node for UnaryRefNode<C, I, O, Op>
+impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
-    Op: UnaryRefOperator<I, O>,
+    Op: UnaryOperator<I, O>,
 {
     fn id(&self) -> NodeId {
         self.id
@@ -647,15 +623,15 @@ where
     }
 }
 
-struct SinkRefNode<C, I, Op> {
+struct SinkNode<C, I, Op> {
     id: NodeId,
     operator: Op,
     input_stream: Stream<C, I>,
 }
 
-impl<C, I, Op> SinkRefNode<C, I, Op>
+impl<C, I, Op> SinkNode<C, I, Op>
 where
-    Op: SinkRefOperator<I>,
+    Op: SinkOperator<I>,
 {
     fn new(operator: Op, input_stream: Stream<C, I>, _circuit: C, id: NodeId) -> Self {
         Self {
@@ -666,9 +642,9 @@ where
     }
 }
 
-impl<C, I, Op> Node for SinkRefNode<C, I, Op>
+impl<C, I, Op> Node for SinkNode<C, I, Op>
 where
-    Op: SinkRefOperator<I>,
+    Op: SinkOperator<I>,
 {
     fn id(&self) -> NodeId {
         self.id
@@ -693,63 +669,7 @@ where
     }
 }
 
-struct UnaryValNode<C, I, O, Op> {
-    id: NodeId,
-    operator: Op,
-    input_stream: Stream<C, I>,
-    output_stream: Stream<C, O>,
-}
-
-impl<C, I, O, Op> UnaryValNode<C, I, O, Op>
-where
-    Op: UnaryValOperator<I, O>,
-    C: Clone,
-{
-    fn new(operator: Op, input_stream: Stream<C, I>, circuit: C, id: NodeId) -> Self {
-        Self {
-            id,
-            operator,
-            input_stream,
-            output_stream: Stream::new(circuit, id),
-        }
-    }
-
-    fn output_stream(&self) -> Stream<C, O> {
-        self.output_stream.clone()
-    }
-}
-
-impl<C, I, O, Op> Node for UnaryValNode<C, I, O, Op>
-where
-    I: Data,
-    Op: UnaryValOperator<I, O>,
-{
-    fn id(&self) -> NodeId {
-        self.id
-    }
-
-    unsafe fn eval(&mut self) {
-        self.output_stream.put(
-            self.operator.eval(
-                // TODO: avoid clone when we are the last consumer of the value.
-                self.input_stream
-                    .get()
-                    .clone()
-                    .expect("operator scheduled before its input is ready"),
-            ),
-        );
-    }
-
-    fn stream_start(&mut self) {
-        self.operator.stream_start();
-    }
-
-    unsafe fn stream_end(&mut self) {
-        self.operator.stream_end();
-    }
-}
-
-struct BinaryRefRefNode<C, I1, I2, O, Op> {
+struct BinaryNode<C, I1, I2, O, Op> {
     id: NodeId,
     operator: Op,
     input_stream1: Stream<C, I1>,
@@ -757,9 +677,9 @@ struct BinaryRefRefNode<C, I1, I2, O, Op> {
     output_stream: Stream<C, O>,
 }
 
-impl<C, I1, I2, O, Op> BinaryRefRefNode<C, I1, I2, O, Op>
+impl<C, I1, I2, O, Op> BinaryNode<C, I1, I2, O, Op>
 where
-    Op: BinaryRefRefOperator<I1, I2, O>,
+    Op: BinaryOperator<I1, I2, O>,
     C: Clone,
 {
     fn new(
@@ -783,9 +703,9 @@ where
     }
 }
 
-impl<C, I1, I2, O, Op> Node for BinaryRefRefNode<C, I1, I2, O, Op>
+impl<C, I1, I2, O, Op> Node for BinaryNode<C, I1, I2, O, Op>
 where
-    Op: BinaryRefRefOperator<I1, I2, O>,
+    Op: BinaryOperator<I1, I2, O>,
 {
     fn id(&self) -> NodeId {
         self.id
@@ -832,7 +752,7 @@ struct FeedbackOutputNode<C, I, O, Op> {
 impl<C, I, O, Op> FeedbackOutputNode<C, I, O, Op>
 where
     C: Clone,
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
 {
     fn new(operator: Rc<UnsafeCell<Op>>, circuit: C, id: NodeId) -> Self {
         Self {
@@ -851,7 +771,7 @@ where
 impl<C, I, O, Op> Node for FeedbackOutputNode<C, I, O, Op>
 where
     I: Data,
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
 {
     fn id(&self) -> NodeId {
         self.id
@@ -882,7 +802,7 @@ struct FeedbackInputNode<C, I, O, Op> {
 
 impl<C, I, O, Op> FeedbackInputNode<C, I, O, Op>
 where
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
 {
     fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<C, I>, id: NodeId) -> Self {
         Self {
@@ -896,7 +816,7 @@ where
 
 impl<C, I, O, Op> Node for FeedbackInputNode<C, I, O, Op>
 where
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
     I: Data,
 {
     fn id(&self) -> NodeId {
@@ -907,7 +827,8 @@ where
         (&mut *self.operator.get()).eval_strict(
             self.input_stream
                 .get()
-                .clone()
+                .deref()
+                .as_ref()
                 .expect("operator scheduled before its input is ready"),
         );
     }
@@ -934,7 +855,7 @@ pub struct FeedbackConnector<C, I, O, Op> {
 
 impl<C, I, O, Op> FeedbackConnector<C, I, O, Op>
 where
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
 {
     fn new(circuit: C, operator: Rc<UnsafeCell<Op>>) -> Self {
         Self {
@@ -948,7 +869,7 @@ where
 
 impl<P, I, O, Op> FeedbackConnector<Circuit<P>, I, O, Op>
 where
-    Op: StrictUnaryValOperator<I, O>,
+    Op: StrictUnaryOperator<I, O>,
     I: Data,
     O: Data,
     P: Clone + 'static,
@@ -1045,7 +966,7 @@ impl Drop for Root {
 mod tests {
     use super::Root;
     use crate::circuit::operator::{Generator, Inspect, Map, Map2, NestedSource, Z1};
-    use crate::circuit::operator_traits::{Operator, SinkRefOperator, UnaryRefOperator};
+    use crate::circuit::operator_traits::{Operator, SinkOperator, UnaryOperator};
     use std::{cell::RefCell, fmt::Display, marker::PhantomData, ops::Deref, rc::Rc, vec::Vec};
 
     // Operator that integrates its input stream.
@@ -1063,7 +984,7 @@ mod tests {
             self.sum = 0;
         }
     }
-    impl UnaryRefOperator<usize, usize> for Integrator {
+    impl UnaryOperator<usize, usize> for Integrator {
         fn eval(&mut self, i: &usize) -> usize {
             self.sum = self.sum + *i;
             self.sum
@@ -1085,7 +1006,7 @@ mod tests {
         fn stream_start(&mut self) {}
         fn stream_end(&mut self) {}
     }
-    impl<T: Display + 'static> SinkRefOperator<T> for Printer<T> {
+    impl<T: Display + 'static> SinkOperator<T> for Printer<T> {
         fn eval(&mut self, i: &T) {
             println!("new output: {}", i);
         }
@@ -1098,9 +1019,9 @@ mod tests {
         let actual_output_clone = actual_output.clone();
         let root = Root::build(|circuit| {
             let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n = *n + 1));
-            let integrator = circuit.add_unary_ref_operator(Integrator::new(), &source);
-            circuit.add_ref_sink(Printer::new(), &integrator);
-            circuit.add_ref_sink(
+            let integrator = circuit.add_unary_operator(Integrator::new(), &source);
+            circuit.add_sink(Printer::new(), &integrator);
+            circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &integrator,
             );
@@ -1128,12 +1049,12 @@ mod tests {
         let root = Root::build(|circuit| {
             let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n = *n + 1));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-            let plus = circuit.add_binary_refref_operator(
+            let plus = circuit.add_binary_operator(
                 Map2::new(|n1: &usize, n2: &usize| *n1 + *n2),
                 &source,
                 &z1_output,
             );
-            circuit.add_ref_sink(
+            circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &plus,
             );
@@ -1170,17 +1091,17 @@ mod tests {
                         *n = *n - 1
                     }));
                 let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
-                let mul = child.add_binary_refref_operator(
+                let mul = child.add_binary_operator(
                     Map2::new(|n1: &usize, n2: &usize| n1 * n2),
                     &countdown,
                     &z1_output,
                 );
                 z1_feedback.connect(&mul);
                 let termination_channel =
-                    child.add_unary_ref_operator(Map::new(|n: &usize| *n <= 1), &countdown);
+                    child.add_unary_operator(Map::new(|n: &usize| *n <= 1), &countdown);
                 (termination_channel, mul.leave())
             });
-            circuit.add_ref_sink(
+            circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &fact,
             );

@@ -61,40 +61,63 @@ impl<T: Clone + 'static> Data for T {}
 pub trait Operator: 'static {
     fn stream_start(&mut self);
     fn stream_end(&mut self);
+
+    /// With the exception of [`SourceOperator`]s, all operators consume one or
+    /// more input streams.  By default, operators consume values by reference;
+    /// however some operators have alternative implementations optimized to work
+    /// with owned values, available via operator's `eval_owned` method.  This
+    /// method tells the scheduler that the operator has an optimized `eval_owned`
+    /// implementation (the default implementation simply delegates to the `eval`
+    /// method) and prefers to consume inputs by value.  This request is not
+    /// guaranteed, but may be taken into account by the scheduler.
+    fn prefer_owned_input(&self) -> bool {
+        false
+    }
 }
 
 /// A source operator that injects data from the outside world or from the parent
 /// circuit into the local circuit.  Consumes no input streams and emits a single
 /// output stream.
 pub trait SourceOperator<O>: Operator {
-    /// Yield the next value
+    /// Yield the next value.
     fn eval(&mut self) -> O;
 }
 
-/// A sink operator that consumes an input stream, but does not produce an output
+/// A sink operator consumes an input stream, but does not produce an output
 /// stream.  Such operators are used to send results of the computation performed
 /// by the circuit to the outside world.
-pub trait SinkRefOperator<I>: Operator {
+pub trait SinkOperator<I>: Operator {
+    /// Consume input by reference.
     fn eval(&mut self, i: &I);
+
+    /// Consume input by value.
+    fn eval_owned(&mut self, i: I) {
+        self.eval(&i);
+    }
 }
 
 /// A unary operator that consumes a stream of inputs of type `I`
-/// by reference and produces a stream of outputs of type `O`.
-pub trait UnaryRefOperator<I, O>: Operator {
+/// and produces a stream of outputs of type `O`.
+pub trait UnaryOperator<I, O>: Operator {
+    /// Consume input by reference.
     fn eval(&mut self, i: &I) -> O;
+
+    /// Consume input by value.
+    fn eval_owned(&mut self, i: I) -> O {
+        self.eval(&i)
+    }
 }
 
-/// A unary operator that consumes a stream of inputs of type `I`
-/// by value and produces a stream of outputs of type `O`.
-pub trait UnaryValOperator<I, O>: Operator {
-    fn eval(&mut self, i: I) -> O;
-}
-
-/// A binary operator that consumes two input streams carrying values
-/// of types `I1` and `I2` by reference and produces a stream of
-/// outputs of type `O`.
-pub trait BinaryRefRefOperator<I1, I2, O>: Operator {
+/// A binary operator consumes two input streams carrying values
+/// of types `I1` and `I2` and produces a stream of outputs of type `O`.
+pub trait BinaryOperator<I1, I2, O>: Operator {
+    /// Consume input by reference.
     fn eval(&mut self, i1: &I1, i2: &I2) -> O;
+
+    /// Consume input by value.
+    fn eval_owned(&mut self, i1: I1, i2: I2) -> O {
+        self.eval(&i1, &i2)
+    }
 }
 
 /// The output of a strict operator only depends on inputs from previous timestamps and
@@ -113,8 +136,14 @@ pub trait StrictOperator<O>: Operator {
 
 /// A strict unary operator that consumes a stream of inputs of type `I`
 /// by reference and produces a stream of outputs of type `O`.
-pub trait StrictUnaryValOperator<I, O>: StrictOperator<O> {
-    /// Feed input for the current timestamp to the operator.  The output will be consumed
-    /// via [`get_output`](`StrictOperator::get_output`) during the next timestamp.
-    fn eval_strict(&mut self, i: I);
+pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
+    /// Feed input for the current timestamp to the operator by reference.  The output
+    /// will be consumed via [`get_output`](`StrictOperator::get_output`) during the
+    /// next timestamp.
+    fn eval_strict(&mut self, i: &I);
+
+    /// Feed input for the current timestamp to the operator by value.  The output
+    /// will be consumed via [`get_output`](`StrictOperator::get_output`) during the
+    /// next timestamp.
+    fn eval_strict_owned(&mut self, i: I);
 }

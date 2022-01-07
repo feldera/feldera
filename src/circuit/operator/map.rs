@@ -1,6 +1,6 @@
 //! Operator that applies an arbitrary function to its input.
 
-use crate::circuit::operator_traits::{Operator, UnaryRefOperator};
+use crate::circuit::operator_traits::{Operator, UnaryOperator};
 
 /// Map operator.
 ///
@@ -26,7 +26,7 @@ where
     fn stream_end(&mut self) {}
 }
 
-impl<T1, T2, F> UnaryRefOperator<T1, T2> for Map<F>
+impl<T1, T2, F> UnaryOperator<T1, T2> for Map<F>
 where
     F: Fn(&T1) -> T2 + 'static,
 {

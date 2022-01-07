@@ -1,6 +1,6 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
-use crate::circuit::operator_traits::{BinaryRefRefOperator, Operator};
+use crate::circuit::operator_traits::{BinaryOperator, Operator};
 
 /// Binary map operator.
 ///
@@ -26,7 +26,7 @@ where
     fn stream_end(&mut self) {}
 }
 
-impl<T1, T2, T3, F> BinaryRefRefOperator<T1, T2, T3> for Map2<F>
+impl<T1, T2, T3, F> BinaryOperator<T1, T2, T3> for Map2<F>
 where
     F: Fn(&T1, &T2) -> T3 + 'static,
 {

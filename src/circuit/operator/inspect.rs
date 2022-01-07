@@ -1,7 +1,7 @@
 //! Defines a sink operator that inspects every element of its input stream by applying a
 //! user-provided callback to it.
 
-use crate::circuit::operator_traits::{Operator, SinkRefOperator};
+use crate::circuit::operator_traits::{Operator, SinkOperator};
 use std::marker::PhantomData;
 
 /// Sink operator that consumes a stream of values of type `T` and
@@ -34,7 +34,7 @@ where
     fn stream_end(&mut self) {}
 }
 
-impl<T, F> SinkRefOperator<T> for Inspect<T, F>
+impl<T, F> SinkOperator<T> for Inspect<T, F>
 where
     T: 'static,
     F: FnMut(&T) + 'static,

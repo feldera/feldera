@@ -1,7 +1,7 @@
 //! z^-1 operator delays its input by one timestamp.
 
 use crate::circuit::operator_traits::{
-    Operator, StrictOperator, StrictUnaryValOperator, UnaryValOperator,
+    Operator, StrictOperator, StrictUnaryOperator, UnaryOperator,
 };
 use std::mem::swap;
 
@@ -53,13 +53,22 @@ where
     fn stream_end(&mut self) {
         self.reset();
     }
+    fn prefer_owned_input(&self) -> bool {
+        true
+    }
 }
 
-impl<T> UnaryValOperator<T, T> for Z1<T>
+impl<T> UnaryOperator<T, T> for Z1<T>
 where
     T: Clone + 'static,
 {
-    fn eval(&mut self, mut i: T) -> T {
+    fn eval(&mut self, i: &T) -> T {
+        let mut res = i.clone();
+        swap(&mut self.val, &mut res);
+        res
+    }
+
+    fn eval_owned(&mut self, mut i: T) -> T {
         swap(&mut self.val, &mut i);
         i
     }
@@ -76,12 +85,16 @@ where
     }
 }
 
-impl<T> StrictUnaryValOperator<T, T> for Z1<T>
+impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
     T: Clone + 'static,
 {
-    fn eval_strict(&mut self, i: T) {
-        self.val = i
+    fn eval_strict(&mut self, i: &T) {
+        self.val = i.clone();
+    }
+
+    fn eval_strict_owned(&mut self, i: T) {
+        self.val = i;
     }
 }
 
@@ -91,40 +104,40 @@ fn sum_circuit() {
 
     let expected_result = vec![0, 1, 2, 0, 4, 5];
 
-    // Test `UnaryValOperator` API.
+    // Test `UnaryOperator` API.
     let mut res = Vec::new();
     z1.stream_start();
-    res.push(z1.eval(1));
-    res.push(z1.eval(2));
-    res.push(z1.eval(3));
+    res.push(z1.eval(&1));
+    res.push(z1.eval(&2));
+    res.push(z1.eval(&3));
     z1.stream_end();
 
     z1.stream_start();
-    res.push(z1.eval(4));
-    res.push(z1.eval(5));
-    res.push(z1.eval(6));
+    res.push(z1.eval_owned(4));
+    res.push(z1.eval_owned(5));
+    res.push(z1.eval_owned(6));
     z1.stream_end();
 
     assert_eq!(res, expected_result);
 
-    // Test `StrictUnaryValOperator` API.
+    // Test `StrictUnaryOperator` API.
     let mut res = Vec::new();
     z1.stream_start();
     res.push(z1.get_output());
-    z1.eval_strict(1);
+    z1.eval_strict(&1);
     res.push(z1.get_output());
-    z1.eval_strict(2);
+    z1.eval_strict(&2);
     res.push(z1.get_output());
-    z1.eval_strict(3);
+    z1.eval_strict(&3);
     z1.stream_end();
 
     z1.stream_start();
     res.push(z1.get_output());
-    z1.eval_strict(4);
+    z1.eval_strict_owned(4);
     res.push(z1.get_output());
-    z1.eval_strict(5);
+    z1.eval_strict_owned(5);
     res.push(z1.get_output());
-    z1.eval_strict(6);
+    z1.eval_strict_owned(6);
     z1.stream_end();
 
     assert_eq!(res, expected_result);
