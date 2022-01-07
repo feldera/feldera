@@ -5,29 +5,32 @@ use super::circuit_builder::{Circuit, NodeId, Stream};
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use std::ops::Deref;
 
-// A schedule defines the order in which operators in a circuit should be evaluated.  A valid
-// schedule evals each operator exactly once, after all of its upstream operators have been
-// evaluated.
+/// A schedule defines the order in which nodes in a circuit should be evaluated.  A valid
+/// schedule evals each node exactly once, after all of its upstream nodes have been
+/// evaluated.  Note that this works for circuits with logical cycles, as all such cycles
+/// must contain a strict operator, which maps into a pair of source and sink nodes, so
+/// that the resulting circuit is still acyclic and output of the strict operator is
+/// evaluated before feed input to it.
 struct Schedule {
     schedule: Vec<NodeId>,
 }
 
 impl Schedule {
-    // Compute schedule for a circuit.  We may want to support multiple scheduling algorithms
-    // in the future, but for now simple topological sorting seems good enough.
-    // TODO: compute a schedule that takes into account operators that consume inputs by-value.
+    /// Compute schedule for a circuit.  We may want to support multiple scheduling algorithms
+    /// in the future, but for now simple topological sorting seems good enough.
+    /// TODO: compute a schedule that takes into account operators that consume inputs by-value.
     fn schedule_circuit<P>(circuit: &Circuit<P>) -> Self {
         let g = DiGraphMap::<NodeId, ()>::from_edges(circuit.edges().deref());
         // `toposort` fails if the graph contains cycles.
-        // The circuit_builder API should make it impossible to construct such graphs.
+        // The circuit_builder API makes it impossible to construct such graphs.
         let schedule =
             toposort(&g, None).unwrap_or_else(|e| panic!("cycle in the circuit graph: {:?}", e));
         Self { schedule }
     }
 
-    // Run the schedule against a circuit.  `circuit` must be the same circuit for which the
-    // schedule was computed.
-    fn run<P>(&self, circuit: &Circuit<P>)
+    /// Run the schedule against a circuit, evaluating each node exactly once.
+    /// `circuit` must be the same circuit for which the schedule was computed.
+    fn step<P>(&self, circuit: &Circuit<P>)
     where
         P: Clone + 'static,
     {
@@ -71,7 +74,7 @@ where
         circuit.stream_start();
 
         loop {
-            self.schedule.run(circuit);
+            self.schedule.step(circuit);
             if unsafe { *self.termination_stream.get() } == Some(true) {
                 break;
             }
@@ -99,6 +102,6 @@ where
     P: Clone + 'static,
 {
     fn run(&self, circuit: &Circuit<P>) {
-        self.schedule.run(circuit);
+        self.schedule.step(circuit);
     }
 }

@@ -453,7 +453,7 @@ where
     ///
     /// Most users should invoke higher-level APIs like [`iterate`] instead of using this method
     /// directly.
-    pub(crate) fn add_child<F, T, S>(&self, child_constructor: F) -> T
+    pub(crate) fn subcircuit<F, T, S>(&self, child_constructor: F) -> T
     where
         F: FnOnce(&mut Circuit<Self>) -> (T, S),
         S: Scheduler<Self>,
@@ -515,7 +515,7 @@ where
     where
         F: FnOnce(&mut Circuit<Self>) -> (Stream<Circuit<Self>, bool>, T),
     {
-        self.add_child(|child| {
+        self.subcircuit(|child| {
             let (termination_stream, res) = constructor(child);
             let scheduler = IterativeScheduler::new(child, termination_stream);
             (res, scheduler)
@@ -947,7 +947,7 @@ impl Root {
     /// This function drives the execution of the circuit.  Every call corresponds to one tick of
     /// the global logical clock and causes each operator in the circuit to get evaluated once,
     /// consuming one value from each of its input streams.
-    pub fn eval(&self) {
+    pub fn step(&self) {
         // TODO: We need a protocol to make sure that all sources have data available before
         // running the circuit and to either block or fail if they don't.
         self.scheduler.run(&self.circuit);
@@ -1028,7 +1028,7 @@ mod tests {
         });
 
         for _ in 0..100 {
-            root.eval()
+            root.step()
         }
 
         let mut sum = 0;
@@ -1062,7 +1062,7 @@ mod tests {
         });
 
         for _ in 0..100 {
-            root.eval();
+            root.step();
         }
 
         let mut sum = 0;
@@ -1108,7 +1108,7 @@ mod tests {
         });
 
         for _ in 1..10 {
-            root.eval();
+            root.step();
         }
 
         let mut expected_output: Vec<usize> = Vec::with_capacity(10);
