@@ -218,6 +218,11 @@ impl<P> CircuitInner<P> {
             self.edges.push((from, to));
         }
     }
+
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.edges.clear();
+    }
 }
 
 /// A handle to a circuit.
@@ -284,6 +289,10 @@ impl<P> Circuit<P> {
         for node in circuit.nodes.iter_mut() {
             node.stream_end();
         }
+    }
+
+    fn clear(&mut self) {
+        self.inner_mut().clear();
     }
 }
 
@@ -930,6 +939,14 @@ struct ChildNode<P, S> {
     scheduler: S,
 }
 
+impl<P, S> Drop for ChildNode<P, S> {
+    fn drop(&mut self) {
+        // Explicitly deallocate all nodes in the circuit to break
+        // cyclic `Rc` references between circuits and streams.
+        self.circuit.clear();
+    }
+}
+
 impl<P, S> ChildNode<P, S> {
     fn new(circuit: Circuit<P>, scheduler: S, id: NodeId) -> Self {
         Self {
@@ -967,6 +984,19 @@ pub struct Root {
     scheduler: OnceScheduler,
 }
 
+impl Drop for Root {
+    fn drop(&mut self) {
+        unsafe {
+            self.circuit.stream_end();
+        }
+        // We must explicitly deallocate all nodes in the circuit to break
+        // cyclic `Rc` references between circuits and streams.  Alternatively,
+        // we could use weak references to break cycles, but we'd have to
+        // pay the cost of upgrading weak references on each access.
+        self.circuit.clear();
+    }
+}
+
 impl Root {
     /// Create an empty circuit and populate it with operators by calling a user-provided
     /// constructor function.  Attach a scheduler to the resulting circuit.
@@ -992,14 +1022,6 @@ impl Root {
         // TODO: We need a protocol to make sure that all sources have data available before
         // running the circuit and to either block or fail if they don't.
         self.scheduler.run(&self.circuit);
-    }
-}
-
-impl Drop for Root {
-    fn drop(&mut self) {
-        unsafe {
-            self.circuit.stream_end();
-        }
     }
 }
 
