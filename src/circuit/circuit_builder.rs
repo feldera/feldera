@@ -1006,8 +1006,10 @@ impl Drop for Root {
 #[cfg(test)]
 mod tests {
     use super::Root;
-    use crate::circuit::operator::{Generator, Inspect, Map2, NestedSource, Z1};
-    use crate::circuit::operator_traits::{Operator, SinkOperator, UnaryOperator};
+    use crate::circuit::{
+        operator::{Generator, Inspect, Map2, NestedSource, Z1},
+        operator_traits::{Operator, SinkOperator, UnaryOperator},
+    };
     use std::{cell::RefCell, fmt::Display, marker::PhantomData, ops::Deref, rc::Rc, vec::Vec};
 
     // Operator that integrates its input stream.

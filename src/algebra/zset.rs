@@ -9,11 +9,16 @@ Copyright (c) 2021 VMware, Inc
 //! A ZSet maps arbitrary keys (which only need to support equality and hashing)
 //! to weights.  The weights must implement the ZRingValue trait.
 
-use super::*;
-use finite_map::*;
+use super::{
+    finite_map::{FiniteHashMap, FiniteMap, KeyProperties},
+    AddAssignByRef, HasZero, ZRingValue,
+};
+#[cfg(test)]
+use super::{AddByRef, CheckedI64, NegByRef};
 #[cfg(test)]
 use std::cmp::Ordering;
-use std::hash::Hash;
+#[cfg(test)]
+use std::fmt::{Display, Error, Formatter};
 
 ////////////////////////////////////////////////////////
 /// Z-set trait.
@@ -25,7 +30,7 @@ use std::hash::Hash;
 /// `WeightType` - Type of weights.  Must be a value from a Ring.
 pub trait ZSet<DataType, WeightType>: FiniteMap<DataType, WeightType>
 where
-    DataType: Clone + Hash + Eq + 'static,
+    DataType: KeyProperties,
     WeightType: ZRingValue,
 {
     //type KeyIterator: Iterator<Item=DataType>;
@@ -35,9 +40,60 @@ where
     /// not the same, since `mul_add_assign` multiplies `self`, whereas
     /// this trait multiplies `other`.
     fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self);
+
     /// Returns a Z-set that contains all elements with positive weights from `self`
     /// with weights set to 1.
     fn distinct(&self) -> Self;
+
+    /// Given a Z-set 'set' partition it using a 'partitioner'
+    /// function which is applied independently to each tuple.
+    /// This consumes the Z-set.
+    fn partition<KeyType, F>(
+        self,
+        partitioner: &F,
+    ) -> IndexedZSetMap<KeyType, DataType, WeightType>
+    where
+        KeyType: KeyProperties,
+        F: Fn(&DataType) -> KeyType;
+
+    /// Cartesian product between this zset and `other`.
+    /// Every data value in this set paired with every
+    /// data value in `other` and the merger is applied.  The result has a weight
+    /// equal to the product of the data weights, and everything
+    /// is summed into a ZSetHashMap.
+    //  TODO: this should return a trait, and not an implementation.
+    fn cartesian<DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        merger: &F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>;
+
+    /// Join two sets.  `K` is the type of keys used to perform the join.
+    /// `left_key` is the function that computes the key for each tuple of self.
+    /// `right_key` is the function that computes the key for each tuple of `other`.
+    /// `merger` is the function that merges elements that have the same key.
+    fn join<K, KF, KF2, DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        left_key: &KF,
+        right_key: &KF2,
+        merger: F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        K: KeyProperties,
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        KF: Fn(&DataType) -> K,
+        KF2: Fn(&DataType2) -> K,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>;
 }
 
 ///////////////////////////////////////////////////////
@@ -46,9 +102,19 @@ type ZSetHashMap<DataType, WeightType> = FiniteHashMap<DataType, WeightType>;
 
 impl<DataType, WeightType> ZSet<DataType, WeightType> for ZSetHashMap<DataType, WeightType>
 where
-    DataType: Clone + Hash + Eq + 'static,
+    DataType: KeyProperties,
     WeightType: ZRingValue,
 {
+    fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self) {
+        if weight.is_zero() {
+            return;
+        }
+        for (key, value) in &other.value {
+            let new_weight = value.mul_by_ref(weight);
+            self.increment(key, &new_weight);
+        }
+    }
+
     fn distinct(&self) -> Self {
         let mut result = Self::new();
         for (key, value) in &self.value {
@@ -59,14 +125,71 @@ where
         result
     }
 
-    fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self) {
-        if weight.is_zero() {
-            return;
+    fn partition<KeyType, F>(self, partitioner: &F) -> IndexedZSetMap<KeyType, DataType, WeightType>
+    where
+        KeyType: KeyProperties,
+        F: Fn(&DataType) -> KeyType,
+    {
+        let mut result = FiniteHashMap::<KeyType, ZSetHashMap<DataType, WeightType>>::new();
+        for (t, w) in self {
+            let k = partitioner(&t);
+            let zs = ZSetHashMap::<DataType, WeightType>::singleton(t, w);
+            result.increment(&k, &zs);
         }
-        for (key, value) in &other.value {
-            let new_weight = value.mul_by_ref(weight);
-            self.increment(key, &new_weight);
+        result
+    }
+
+    fn cartesian<DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        merger: &F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>,
+    {
+        let mut result = ZSetHashMap::<DataType3, WeightType>::new();
+        for (k, v) in self {
+            for (k2, v2) in other {
+                let data = merger(k, k2);
+                let weight = v.mul_by_ref(v2);
+                result.increment(&data, &weight)
+            }
         }
+        result
+    }
+
+    fn join<K, KF, KF2, DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        left_key: &KF,
+        right_key: &KF2,
+        merger: F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        K: KeyProperties,
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        KF: Fn(&DataType) -> K,
+        KF2: Fn(&DataType2) -> K,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>,
+    {
+        let combiner = move |left: &ZSetHashMap<DataType, WeightType>,
+                             right: &ZSetHashMap<DataType2, WeightType>| {
+            left.cartesian::<DataType2, ZSetHashMap<DataType2, WeightType>, DataType3, _>(
+                right, &merger,
+            )
+        };
+        let li: IndexedZSetMap<K, DataType, WeightType> = self.clone().partition(left_key);
+        let ri: IndexedZSetMap<K, DataType2, WeightType> = other.clone().partition(right_key);
+        li.match_keys::<ZSetHashMap<DataType2, WeightType>,
+            ZSetHashMap<DataType3, WeightType>,
+            IndexedZSetMap<K, DataType2,WeightType>,_>(&ri, &combiner).sum()
     }
 }
 
@@ -271,6 +394,14 @@ fn zset_tuple_tests() {
     z2.add_assign_by_ref(&z);
     assert_eq!(2, z2.support_size());
     assert_eq!("{(-1,0)=>3,(0,0)=>3}", z2.to_string());
+
+    let prod = z2.cartesian(&z2, &|t, t2| {
+        TestTuple::new(t.left + t2.left, t.right - t2.right)
+    });
+    assert_eq!("{(-2,0)=>9,(-1,0)=>18,(0,0)=>9}", prod.to_string());
+
+    let j = z2.join(&z2, &|s| s.left, &|s| s.left, |a, _| a.clone());
+    assert_eq!("{(-1,0)=>9,(0,0)=>9}", j.to_string());
 }
 
 type IndexedZSetMap<KeyType, DataType, WeightType> =
@@ -280,23 +411,17 @@ type IndexedZSetMap<KeyType, DataType, WeightType> =
 /// to Z-set values
 impl<KeyType, DataType, WeightType> IndexedZSetMap<KeyType, DataType, WeightType>
 where
-    DataType: Clone + 'static + Hash + Eq,
-    KeyType: Clone + 'static + Hash + Eq,
+    DataType: KeyProperties,
+    KeyType: KeyProperties,
     WeightType: ZRingValue,
+    for<'a> &'a Self: IntoIterator<Item = (&'a KeyType, &'a ZSetHashMap<DataType, WeightType>)>,
 {
-    /// Given a Z-set 'set' partition it using a 'partitioned'
-    /// function which is applied independently to each tuple.
-    pub fn partition<ZS>(set: ZS, partitioner: fn(&DataType) -> KeyType) -> Self
-    where
-        ZS: ZSet<DataType, WeightType>,
-    {
-        let mut result = FiniteHashMap::<KeyType, ZSetHashMap<DataType, WeightType>>::new();
-        for t in set.support() {
-            let k = partitioner(t);
-            let w = set.lookup(t);
-            let zs = ZSetHashMap::<DataType, WeightType>::singleton(t.clone(), w);
-            result.increment(&k, &zs);
-        }
+    /// Add all the data in all partitions into a single zset.
+    pub fn sum(&self) -> ZSetHashMap<DataType, WeightType> {
+        let mut result = ZSetHashMap::<DataType, WeightType>::zero();
+        self.into_iter()
+            // fold does not seem to work with add_assign.
+            .for_each(|(_, v)| result.add_assign_by_ref(v));
         result
     }
 }
@@ -309,7 +434,9 @@ pub fn indexed_zset_tests() {
     z.increment(&TestTuple::new(2, 0), &CheckedI64::from(2));
     z.increment(&TestTuple::new(1, 0), &CheckedI64::from(-1));
     z.increment(&TestTuple::new(-1, 0), &CheckedI64::from(1));
-    let ps = IndexedZSetMap::partition(z, |t: &TestTuple| t.left.abs() % 2);
+    let ps = z.clone().partition(&|t: &TestTuple| t.left.abs() % 2);
     let s = ps.to_string();
     assert_eq!("{0=>{(0,0)=>1,(2,0)=>2},1=>{(-1,0)=>1,(1,0)=>-1}}", s);
+    let z2 = ps.sum();
+    assert_eq!(z, z2);
 }

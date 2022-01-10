@@ -21,3 +21,6 @@ lcov.info
 
 # vim swap files
 **/*.swp
+
+.idea
+*.iml

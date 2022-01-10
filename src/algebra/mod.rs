@@ -12,8 +12,10 @@ pub mod finite_map;
 pub mod zset;
 
 use num::{CheckedAdd, CheckedMul, CheckedSub};
-use std::fmt::{Display, Error, Formatter};
-use std::ops::{Add, AddAssign, Mul, Neg};
+use std::{
+    fmt::{Display, Error, Formatter},
+    ops::{Add, AddAssign, Mul, Neg},
+};
 
 /// A trait for types that have a zero value.
 /// This is simlar to the standard Zero trait, but that
@@ -28,11 +30,11 @@ impl<T> HasZero for T
 where
     T: num::traits::Zero,
 {
-    fn zero() -> Self {
-        T::zero()
-    }
     fn is_zero(&self) -> bool {
         T::is_zero(self)
+    }
+    fn zero() -> Self {
+        T::zero()
     }
 }
 
@@ -246,11 +248,11 @@ impl<T> HasZero for CheckedInt<T>
 where
     T: ::num::traits::Zero + CheckedAdd,
 {
-    fn zero() -> Self {
-        CheckedInt::new(T::zero())
-    }
     fn is_zero(&self) -> bool {
         T::is_zero(&self.value)
+    }
+    fn zero() -> Self {
+        CheckedInt::new(T::zero())
     }
 }
 
