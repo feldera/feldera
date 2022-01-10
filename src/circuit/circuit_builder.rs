@@ -219,6 +219,13 @@ impl<P> CircuitInner<P> {
         }
     }
 
+    fn add_node<N>(&mut self, node: N)
+    where
+        N: Node + 'static,
+    {
+        self.nodes.push(Box::new(node) as Box<dyn Node>);
+    }
+
     fn clear(&mut self) {
         self.nodes.clear();
         self.edges.clear();
@@ -268,6 +275,23 @@ impl<P> Circuit<P> {
     fn add_edge(&self, from: Option<NodeId>, to: NodeId) {
         let mut circuit = self.inner_mut();
         circuit.add_edge(from, to);
+    }
+
+    /// Add a node to the circuit.  Allocates a new node id and invokes a user
+    /// callback to create a new node instance.  The callback may use the node id,
+    /// e.g., to add an edge to this node.
+    fn add_node<F, N, T>(&self, f: F) -> T
+    where
+        F: FnOnce(NodeId) -> (N, T),
+        N: Node + 'static,
+    {
+        let id = self.inner().nodes.len();
+
+        // We don't hold a reference to `self.inner()` while calling `f`, so it can
+        // safely modify the circuit, e.g., add edges.
+        let (node, res) = f(NodeId(id));
+        self.inner_mut().add_node(node);
+        res
     }
 
     pub(super) fn edges(&self) -> Ref<'_, [(NodeId, NodeId)]> {
@@ -326,12 +350,11 @@ where
         O: Data,
         Op: SourceOperator<O>,
     {
-        let mut circuit = self.inner_mut();
-        let id = NodeId(circuit.nodes.len());
-        let node = Box::new(SourceNode::new(operator, self.clone(), id));
-        let output_stream = node.output_stream();
-        circuit.nodes.push(node as Box<dyn Node>);
-        output_stream
+        self.add_node(|id| {
+            let node = SourceNode::new(operator, self.clone(), id);
+            let output_stream = node.output_stream();
+            (node, output_stream)
+        })
     }
 
     /// Add a sink operator that consumes input values by reference.
@@ -341,13 +364,12 @@ where
         I: Data,
         Op: SinkOperator<I>,
     {
-        let mut circuit = self.inner_mut();
-        let input_stream = input_stream.clone();
-        let input_id = input_stream.node_id();
-        let id = NodeId(circuit.nodes.len());
-        let node = Box::new(SinkNode::new(operator, input_stream, self.clone(), id));
-        circuit.nodes.push(node as Box<dyn Node>);
-        circuit.add_edge(input_id, id);
+        self.add_node(|id| {
+            let input_stream = input_stream.clone();
+            let input_id = input_stream.node_id();
+            self.add_edge(input_id, id);
+            (SinkNode::new(operator, input_stream, self.clone(), id), ())
+        });
     }
 
     /// Add a unary operator that consumes input values by reference.
@@ -362,15 +384,14 @@ where
         O: Data,
         Op: UnaryOperator<I, O>,
     {
-        let mut circuit = self.inner_mut();
-        let input_stream = input_stream.clone();
-        let input_id = input_stream.node_id();
-        let id = NodeId(circuit.nodes.len());
-        let node = Box::new(UnaryNode::new(operator, input_stream, self.clone(), id));
-        let output_stream = node.output_stream();
-        circuit.nodes.push(node as Box<dyn Node>);
-        circuit.add_edge(input_id, id);
-        output_stream
+        self.add_node(|id| {
+            let input_stream = input_stream.clone();
+            let input_id = input_stream.node_id();
+            let node = UnaryNode::new(operator, input_stream, self.clone(), id);
+            let output_stream = node.output_stream();
+            self.add_edge(input_id, id);
+            (node, output_stream)
+        })
     }
 
     /// Add a binary operator that consumes both inputs by reference.
@@ -387,24 +408,17 @@ where
         O: Data,
         Op: BinaryOperator<I1, I2, O>,
     {
-        let mut circuit = self.inner_mut();
-        let input_stream1 = input_stream1.clone();
-        let input_stream2 = input_stream2.clone();
-        let input_id1 = input_stream1.node_id();
-        let input_id2 = input_stream2.node_id();
-        let id = NodeId(circuit.nodes.len());
-        let node = Box::new(BinaryNode::new(
-            operator,
-            input_stream1,
-            input_stream2,
-            self.clone(),
-            id,
-        ));
-        let output_stream = node.output_stream();
-        circuit.nodes.push(node as Box<dyn Node>);
-        circuit.add_edge(input_id1, id);
-        circuit.add_edge(input_id2, id);
-        output_stream
+        self.add_node(|id| {
+            let input_stream1 = input_stream1.clone();
+            let input_stream2 = input_stream2.clone();
+            let input_id1 = input_stream1.node_id();
+            let input_id2 = input_stream2.node_id();
+            let node = BinaryNode::new(operator, input_stream1, input_stream2, self.clone(), id);
+            let output_stream = node.output_stream();
+            self.add_edge(input_id1, id);
+            self.add_edge(input_id2, id);
+            (node, output_stream)
+        })
     }
 
     /// Add a feedback loop to the circuit.
@@ -461,14 +475,13 @@ where
         O: Data,
         Op: StrictUnaryOperator<I, O>,
     {
-        let mut circuit = self.inner_mut();
-        let operator = Rc::new(UnsafeCell::new(operator));
-        let connector = FeedbackConnector::new(self.clone(), operator.clone());
-        let id = NodeId(circuit.nodes.len());
-        let output_node = Box::new(FeedbackOutputNode::new(operator, self.clone(), id));
-        let output_stream = output_node.output_stream();
-        circuit.nodes.push(output_node as Box<dyn Node>);
-        (output_stream, connector)
+        self.add_node(|id| {
+            let operator = Rc::new(UnsafeCell::new(operator));
+            let connector = FeedbackConnector::new(self.clone(), operator.clone());
+            let output_node = FeedbackOutputNode::new(operator, self.clone(), id);
+            let output_stream = output_node.output_stream();
+            (output_node, (output_stream, connector))
+        })
     }
 
     fn connect_feedback<I, O, Op>(
@@ -480,12 +493,12 @@ where
         O: Data,
         Op: StrictUnaryOperator<I, O>,
     {
-        let mut circuit = self.inner_mut();
-        let input_id = input_stream.node_id();
-        let id = NodeId(circuit.nodes.len());
-        let output_node = Box::new(FeedbackInputNode::new(operator, input_stream.clone(), id));
-        circuit.nodes.push(output_node as Box<dyn Node>);
-        circuit.add_edge(input_id, id);
+        self.add_node(|id| {
+            let input_id = input_stream.node_id();
+            let output_node = FeedbackInputNode::new(operator, input_stream.clone(), id);
+            self.add_edge(input_id, id);
+            (output_node, ())
+        });
     }
 
     /// Add a child circuit.
@@ -503,12 +516,12 @@ where
         F: FnOnce(&mut Circuit<Self>) -> (T, S),
         S: Scheduler<Self>,
     {
-        let id = NodeId(self.inner().nodes.len());
-        let mut child_circuit = Circuit::with_parent(self.clone(), id);
-        let (res, scheduler) = child_constructor(&mut child_circuit);
-        let child = Box::new(<ChildNode<Self, S>>::new(child_circuit, scheduler, id));
-        self.inner_mut().nodes.push(child as Box<dyn Node>);
-        res
+        self.add_node(|id| {
+            let mut child_circuit = Circuit::with_parent(self.clone(), id);
+            let (res, scheduler) = child_constructor(&mut child_circuit);
+            let child = <ChildNode<Self, S>>::new(child_circuit, scheduler, id);
+            (child, res)
+        })
     }
 
     /// Add an iteratively scheduled child circuit.
