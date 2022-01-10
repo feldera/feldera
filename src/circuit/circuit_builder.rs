@@ -85,7 +85,7 @@ where
     /// clock tick, even if the nested circuit iterates multiple times
     /// for each parent clock cycle.
     pub fn enter(&self, circuit: &Circuit<Circuit<P>>) -> Stream<Circuit<Circuit<P>>, D> {
-        self.circuit.add_edge(self.node_id(), circuit.node_id());
+        self.circuit.connect_stream(self, circuit.node_id());
         Stream {
             node_id: None,
             circuit: circuit.clone(),
@@ -272,9 +272,11 @@ impl<P> Circuit<P> {
         circuit.node_id
     }
 
-    fn add_edge(&self, from: Option<NodeId>, to: NodeId) {
+    /// Connect `stream` as input to `to`.
+    fn connect_stream<T>(&self, stream: &Stream<Self, T>, to: NodeId) {
+        debug_assert_eq!(self.node_id(), stream.circuit.node_id());
         let mut circuit = self.inner_mut();
-        circuit.add_edge(from, to);
+        circuit.add_edge(stream.node_id(), to);
     }
 
     /// Add a node to the circuit.  Allocates a new node id and invokes a user
@@ -365,10 +367,8 @@ where
         Op: SinkOperator<I>,
     {
         self.add_node(|id| {
-            let input_stream = input_stream.clone();
-            let input_id = input_stream.node_id();
-            self.add_edge(input_id, id);
-            (SinkNode::new(operator, input_stream, self.clone(), id), ())
+            self.connect_stream(input_stream, id);
+            (SinkNode::new(operator, input_stream.clone(), self.clone(), id), ())
         });
     }
 
@@ -385,11 +385,9 @@ where
         Op: UnaryOperator<I, O>,
     {
         self.add_node(|id| {
-            let input_stream = input_stream.clone();
-            let input_id = input_stream.node_id();
-            let node = UnaryNode::new(operator, input_stream, self.clone(), id);
+            let node = UnaryNode::new(operator, input_stream.clone(), self.clone(), id);
             let output_stream = node.output_stream();
-            self.add_edge(input_id, id);
+            self.connect_stream(input_stream, id);
             (node, output_stream)
         })
     }
@@ -409,14 +407,10 @@ where
         Op: BinaryOperator<I1, I2, O>,
     {
         self.add_node(|id| {
-            let input_stream1 = input_stream1.clone();
-            let input_stream2 = input_stream2.clone();
-            let input_id1 = input_stream1.node_id();
-            let input_id2 = input_stream2.node_id();
-            let node = BinaryNode::new(operator, input_stream1, input_stream2, self.clone(), id);
+            let node = BinaryNode::new(operator, input_stream1.clone(), input_stream2.clone(), self.clone(), id);
             let output_stream = node.output_stream();
-            self.add_edge(input_id1, id);
-            self.add_edge(input_id2, id);
+            self.connect_stream(input_stream1, id);
+            self.connect_stream(input_stream2, id);
             (node, output_stream)
         })
     }
@@ -494,9 +488,8 @@ where
         Op: StrictUnaryOperator<I, O>,
     {
         self.add_node(|id| {
-            let input_id = input_stream.node_id();
             let output_node = FeedbackInputNode::new(operator, input_stream.clone(), id);
-            self.add_edge(input_id, id);
+            self.connect_stream(input_stream, id);
             (output_node, ())
         });
     }
