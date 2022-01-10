@@ -7,6 +7,10 @@ echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tool
 
 set -e
 
-cargo fmt -- --check
-cargo clippy -- -D warnings
+if [ $# -gt 0 ]; then
+    cargo fmt -- --config imports_granularity=Crate
+else
+    cargo fmt -- --check
+    cargo clippy -- -D warnings
+fi
 RUSTDOCFLAGS="-Dwarnings" cargo doc
