@@ -9,12 +9,16 @@ Copyright (c) 2021 VMware, Inc
 //! A ZSet maps arbitrary keys (which only need to support equality and hashing)
 //! to weights.  The weights must implement the ZRingValue trait.
 
-use super::*;
+use super::{
+    finite_map::{FiniteHashMap, FiniteMap, KeyProperties},
+    AddAssignByRef, HasZero, ZRingValue,
+};
+#[cfg(test)]
+use super::{AddByRef, CheckedI64, NegByRef};
+#[cfg(test)]
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
-use std::collections::{hash_map, HashMap};
-use std::hash::Hash;
-use string_builder::Builder;
+#[cfg(test)]
+use std::fmt::{Display, Error, Formatter};
 
 ////////////////////////////////////////////////////////
 /// Z-set trait.
@@ -23,484 +27,416 @@ use string_builder::Builder;
 /// Weights belong to some ring.
 ///
 /// `DataType` - Type of values stored in Z-set
-///
 /// `WeightType` - Type of weights.  Must be a value from a Ring.
-pub trait ZSet<DataType, WeightType>: GroupValue
+pub trait ZSet<DataType, WeightType>: FiniteMap<DataType, WeightType>
 where
-    DataType: Clone + Hash + Eq + 'static,
+    DataType: KeyProperties,
     WeightType: ZRingValue,
 {
     //type KeyIterator: Iterator<Item=DataType>;
 
-    /// Find the weight associated to the specified key
-    fn lookup(&self, key: &DataType) -> WeightType;
     /// Multiply each value in the other Z-set by `weight`
     /// and add it to this set.  This is similar to `mul_add_assign`, but
     /// not the same, since `mul_add_assign` multiplies `self`, whereas
     /// this trait multiplies `other`.
     fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self);
-    // FIXME: the return type is wrong, the result should be a more abstract iterator.
-    fn support(&self) -> hash_map::Keys<'_, DataType, WeightType>;
+
     /// Returns a Z-set that contains all elements with positive weights from `self`
     /// with weights set to 1.
     fn distinct(&self) -> Self;
-    /// Add one value `key` to the zset with the specified `weight`
-    fn insert(&mut self, key: DataType, weight: &WeightType);
-    /// The size of the support
-    fn size(&self) -> usize;
-}
 
-trait ZSetPrinter<DataType, WeightType, ZS, C>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-    ZS: ZSet<DataType, WeightType>,
-    C: FnMut(&DataType, &DataType) -> Ordering,
-{
-    /// Write a string representation of set `z` into an internal builder.
-    /// The `elem_compare` function is used to sort keys to get a deterministic output.
-    fn serialize(&mut self, z: &ZS, elem_compare: C);
+    /// Given a Z-set 'set' partition it using a 'partitioner'
+    /// function which is applied independently to each tuple.
+    /// This consumes the Z-set.
+    fn partition<KeyType, F>(
+        self,
+        partitioner: &F,
+    ) -> IndexedZSetMap<KeyType, DataType, WeightType>
+    where
+        KeyType: KeyProperties,
+        F: Fn(&DataType) -> KeyType;
+
+    /// Cartesian product between this zset and `other`.
+    /// Every data value in this set paired with every
+    /// data value in `other` and the merger is applied.  The result has a weight
+    /// equal to the product of the data weights, and everything
+    /// is summed into a ZSetHashMap.
+    //  TODO: this should return a trait, and not an implementation.
+    fn cartesian<DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        merger: &F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>;
+
+    /// Join two sets.  `K` is the type of keys used to perform the join.
+    /// `left_key` is the function that computes the key for each tuple of self.
+    /// `right_key` is the function that computes the key for each tuple of `other`.
+    /// `merger` is the function that merges elements that have the same key.
+    fn join<K, KF, KF2, DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        left_key: &KF,
+        right_key: &KF2,
+        merger: F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        K: KeyProperties,
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        KF: Fn(&DataType) -> K,
+        KF2: Fn(&DataType2) -> K,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>;
 }
 
 ///////////////////////////////////////////////////////
 /// Implementation of ZSets in terms of HashMaps
-#[derive(Debug, Clone)]
-struct ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    map: HashMap<DataType, WeightType>,
-}
-
-impl<DataType, WeightType> ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    /// Allocate an empty ZSetHashMap
-    fn new() -> Self {
-        ZSetHashMap::default()
-    }
-    /// Allocate an empty ZSetHashMap that is expected to hold 'size' values.
-    pub fn with_capacity(size: usize) -> Self {
-        ZSetHashMap::<DataType, WeightType> {
-            map: HashMap::with_capacity(size),
-        }
-    }
-}
-
-impl<DataType, WeightType> Default for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    fn default() -> Self {
-        ZSetHashMap::<DataType, WeightType> {
-            map: HashMap::default(),
-        }
-    }
-}
-
-impl<DataType, WeightType> PartialEq for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.map.eq(&other.map)
-    }
-}
-
-impl<DataType, WeightType> Eq for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-}
-
-impl<DataType, WeightType> Neg for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    type Output = Self;
-    fn neg(self) -> Self::Output {
-        let mut result = ZSetHashMap::<DataType, WeightType>::with_capacity(self.size());
-        for (key, value) in self.map {
-            result.map.insert(key, value.neg());
-        }
-        result
-    }
-}
-
-impl<DataType, WeightType> Add for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    type Output = Self;
-    fn add(mut self, value: Self) -> Self {
-        self.add_assign_weighted(&WeightType::one(), &value);
-        self
-    }
-}
-
-impl<DataType, WeightType> AddAssign for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    fn add_assign(&mut self, value: Self) {
-        self.add_assign_weighted(&WeightType::one(), &value);
-    }
-}
-
-impl<DataType, WeightType> Zero for ZSetHashMap<DataType, WeightType>
-where
-    DataType: Clone + Hash + Eq + 'static,
-    WeightType: ZRingValue,
-{
-    fn is_zero(&self) -> bool {
-        self.size() == 0
-    }
-    fn zero() -> Self {
-        ZSetHashMap::new()
-    }
-}
+type ZSetHashMap<DataType, WeightType> = FiniteHashMap<DataType, WeightType>;
 
 impl<DataType, WeightType> ZSet<DataType, WeightType> for ZSetHashMap<DataType, WeightType>
 where
-    DataType: Clone + Hash + Eq + 'static,
+    DataType: KeyProperties,
     WeightType: ZRingValue,
 {
-    /// Look up the weight of the 'key'.  
-    fn lookup(&self, key: &DataType) -> WeightType {
-        let val = self.map.get(key);
-        match val {
-            Some(weight) => weight.clone(),
-            None => WeightType::zero(),
+    fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self) {
+        if weight.is_zero() {
+            return;
+        }
+        for (key, value) in &other.value {
+            let new_weight = value.mul_by_ref(weight);
+            self.increment(key, &new_weight);
         }
     }
+
     fn distinct(&self) -> Self {
         let mut result = Self::new();
-        for (key, value) in &self.map {
+        for (key, value) in &self.value {
             if value.ge0() {
-                result.insert(key.clone(), value);
+                result.increment(key, &WeightType::one());
             }
         }
         result
     }
-    fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self) {
-        if WeightType::is_zero(weight) {
-            return;
+
+    fn partition<KeyType, F>(self, partitioner: &F) -> IndexedZSetMap<KeyType, DataType, WeightType>
+    where
+        KeyType: KeyProperties,
+        F: Fn(&DataType) -> KeyType,
+    {
+        let mut result = FiniteHashMap::<KeyType, ZSetHashMap<DataType, WeightType>>::new();
+        for (t, w) in self {
+            let k = partitioner(&t);
+            let zs = ZSetHashMap::<DataType, WeightType>::singleton(t, w);
+            result.increment(&k, &zs);
         }
-        for (key, value) in &other.map {
-            let new_weight = value.clone().mul(weight.clone());
-            self.insert(key.clone(), &new_weight);
-        }
+        result
     }
-    fn support<'a>(&self) -> hash_map::Keys<'_, DataType, WeightType> {
-        self.map.keys()
-    }
-    fn size(&self) -> usize {
-        self.map.len()
-    }
-    fn insert(&mut self, key: DataType, weight: &WeightType) {
-        if weight.is_zero() {
-            return;
-        }
-        let value = self.map.entry(key);
-        match value {
-            Entry::Vacant(e) => {
-                e.insert(weight.clone());
+
+    fn cartesian<DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        merger: &F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>,
+    {
+        let mut result = ZSetHashMap::<DataType3, WeightType>::new();
+        for (k, v) in self {
+            for (k2, v2) in other {
+                let data = merger(k, k2);
+                let weight = v.mul_by_ref(v2);
+                result.increment(&data, &weight)
             }
-            Entry::Occupied(mut e) => {
-                let w = e.get().clone().add(weight.clone());
-                if WeightType::is_zero(&w) {
-                    e.remove_entry();
-                } else {
-                    e.insert(w);
-                };
-            }
+        }
+        result
+    }
+
+    fn join<K, KF, KF2, DataType2, ZS2, DataType3, F>(
+        &self,
+        other: &ZS2,
+        left_key: &KF,
+        right_key: &KF2,
+        merger: F,
+    ) -> ZSetHashMap<DataType3, WeightType>
+    where
+        K: KeyProperties,
+        DataType2: KeyProperties,
+        DataType3: KeyProperties,
+        KF: Fn(&DataType) -> K,
+        KF2: Fn(&DataType2) -> K,
+        F: Fn(&DataType, &DataType2) -> DataType3,
+        ZS2: ZSet<DataType2, WeightType>,
+        for<'a> &'a ZS2: IntoIterator<Item = (&'a DataType2, &'a WeightType)>,
+    {
+        let combiner = move |left: &ZSetHashMap<DataType, WeightType>,
+                             right: &ZSetHashMap<DataType2, WeightType>| {
+            left.cartesian::<DataType2, ZSetHashMap<DataType2, WeightType>, DataType3, _>(
+                right, &merger,
+            )
         };
+        let li: IndexedZSetMap<K, DataType, WeightType> = self.clone().partition(left_key);
+        let ri: IndexedZSetMap<K, DataType2, WeightType> = other.clone().partition(right_key);
+        li.match_keys::<ZSetHashMap<DataType2, WeightType>,
+            ZSetHashMap<DataType3, WeightType>,
+            IndexedZSetMap<K, DataType2,WeightType>,_>(&ri, &combiner).sum()
     }
 }
 
-struct Printer {
-    builder: Builder,
+#[test]
+fn zset_integer_tests() {
+    let mut z = ZSetHashMap::<i64, i64>::with_capacity(5);
+    assert_eq!(0, z.support_size());
+    assert_eq!("{}", z.to_string());
+    assert_eq!(0, z.lookup(&0)); // not present -> weight 0
+    assert_eq!(z, ZSetHashMap::<i64, i64>::zero());
+    assert!(z.is_zero());
+    let z2 = ZSetHashMap::<i64, i64>::new();
+    assert_eq!(z, z2);
+
+    z.increment(&0, &1);
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
+    assert_eq!(1, z.lookup(&0));
+    assert_eq!(0, z.lookup(&1));
+    assert_ne!(z, ZSetHashMap::<i64, i64>::zero());
+    assert_eq!(false, z.is_zero());
+
+    z.increment(&2, &0);
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
+
+    z.increment(&1, &-1);
+    assert_eq!(2, z.support_size());
+    assert_eq!("{0=>1,1=>-1}", z.to_string());
+
+    z.increment(&-1, &1);
+    assert_eq!(3, z.support_size());
+    assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
+
+    let d = z.distinct();
+    assert_eq!(2, d.support_size());
+    assert_eq!("{-1=>1,0=>1}", d.to_string());
+
+    let d = z.neg_by_ref();
+    assert_eq!(3, d.support_size());
+    assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
+    assert_ne!(d, z);
+
+    z.increment(&1, &1);
+    assert_eq!(2, z.support_size());
+    assert_eq!("{-1=>1,0=>1}", z.to_string());
+
+    let mut z2 = z.clone().add_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>2,0=>2}", z2.to_string());
+
+    z2.add_assign_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>3,0=>3}", z2.to_string());
 }
 
-/// This class knows how to convert a ZSet to a string.
-/// It does this by using a comparator which can sort the elements of
-/// the ZSet in a canonical order.  This makes testing much simpler
-/// since printing ZSets using this class gives a deterministic result.
-/// This also makes the requirements on ZSet lesser, since we can
-/// have ZSets that do not support Cmp on keys.
-impl<DataType, WeightType, ZS, C> ZSetPrinter<DataType, WeightType, ZS, C> for Printer
+#[test]
+fn checked_zset_integer_weights_tests() {
+    let mut z = ZSetHashMap::<i64, CheckedI64>::with_capacity(5);
+    assert_eq!(0, z.support_size());
+    assert_eq!("{}", z.to_string());
+    assert_eq!(CheckedI64::from(0), z.lookup(&0)); // not present -> weight 0
+    assert_eq!(z, ZSetHashMap::<i64, CheckedI64>::zero());
+    assert!(z.is_zero());
+    let z2 = ZSetHashMap::<i64, CheckedI64>::new();
+    assert_eq!(z, z2);
+
+    z.increment(&0, &CheckedI64::from(1));
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
+    assert_eq!(CheckedI64::from(1), z.lookup(&0));
+    assert_eq!(CheckedI64::from(0), z.lookup(&1));
+    assert_ne!(z, ZSetHashMap::<i64, CheckedI64>::zero());
+    assert_eq!(false, z.is_zero());
+
+    z.increment(&2, &CheckedI64::from(0));
+    assert_eq!(1, z.support_size());
+    assert_eq!("{0=>1}", z.to_string());
+
+    z.increment(&1, &CheckedI64::from(-1));
+    assert_eq!(2, z.support_size());
+    assert_eq!("{0=>1,1=>-1}", z.to_string());
+
+    z.increment(&-1, &CheckedI64::from(1));
+    assert_eq!(3, z.support_size());
+    assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
+
+    let d = z.distinct();
+    assert_eq!(2, d.support_size());
+    assert_eq!("{-1=>1,0=>1}", d.to_string());
+
+    let d = z.neg_by_ref();
+    assert_eq!(3, d.support_size());
+    assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
+    assert_ne!(d, z);
+
+    z.increment(&1, &CheckedI64::from(1));
+    assert_eq!(2, z.support_size());
+    assert_eq!("{-1=>1,0=>1}", z.to_string());
+
+    let mut z2 = z.clone().add_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>2,0=>2}", z2.to_string());
+
+    z2.add_assign_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{-1=>3,0=>3}", z2.to_string());
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct TestTuple {
+    left: i64,
+    right: i64,
+}
+
+#[cfg(test)]
+impl TestTuple {
+    fn new(left: i64, right: i64) -> Self {
+        Self { left, right }
+    }
+}
+
+#[cfg(test)]
+impl Display for TestTuple {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "({},{})", self.left, self.right)
+    }
+}
+
+#[cfg(test)]
+impl PartialOrd for TestTuple {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let lo = self.left.cmp(&other.left);
+        if lo != Ordering::Equal {
+            return Some(lo);
+        }
+        Some(self.right.cmp(&other.right))
+    }
+}
+
+#[cfg(test)]
+impl Ord for TestTuple {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let lo = self.left.cmp(&other.left);
+        if lo != Ordering::Equal {
+            return lo;
+        }
+        self.right.cmp(&other.right)
+    }
+}
+
+#[test]
+fn zset_tuple_tests() {
+    let mut z = ZSetHashMap::<TestTuple, CheckedI64>::with_capacity(5);
+    assert_eq!(0, z.support_size());
+    assert_eq!("{}", z.to_string());
+    assert_eq!(CheckedI64::from(0), z.lookup(&TestTuple::new(0, 0))); // not present -> weight 0
+    assert_eq!(z, ZSetHashMap::<TestTuple, CheckedI64>::zero());
+    assert!(z.is_zero());
+    let z2 = ZSetHashMap::<TestTuple, CheckedI64>::new();
+    assert_eq!(z, z2);
+
+    z.increment(&TestTuple::new(0, 0), &CheckedI64::from(1));
+    assert_eq!(1, z.support_size());
+    assert_eq!("{(0,0)=>1}", z.to_string());
+    assert_eq!(CheckedI64::from(1), z.lookup(&TestTuple::new(0, 0)));
+    assert_eq!(CheckedI64::from(0), z.lookup(&TestTuple::new(0, 1)));
+    assert_ne!(z, ZSetHashMap::<TestTuple, CheckedI64>::zero());
+    assert_eq!(false, z.is_zero());
+
+    z.increment(&TestTuple::new(2, 0), &CheckedI64::from(0));
+    assert_eq!(1, z.support_size());
+    assert_eq!("{(0,0)=>1}", z.to_string());
+
+    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(-1));
+    assert_eq!(2, z.support_size());
+    assert_eq!("{(0,0)=>1,(1,0)=>-1}", z.to_string());
+
+    z.increment(&TestTuple::new(-1, 0), &CheckedI64::from(1));
+    assert_eq!(3, z.support_size());
+    assert_eq!("{(-1,0)=>1,(0,0)=>1,(1,0)=>-1}", z.to_string());
+
+    let d = z.distinct();
+    assert_eq!(2, d.support_size());
+    assert_eq!("{(-1,0)=>1,(0,0)=>1}", d.to_string());
+
+    let d = z.neg_by_ref();
+    assert_eq!(3, d.support_size());
+    assert_eq!("{(-1,0)=>-1,(0,0)=>-1,(1,0)=>1}", d.to_string());
+    assert_ne!(d, z);
+
+    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(1));
+    assert_eq!(2, z.support_size());
+    assert_eq!("{(-1,0)=>1,(0,0)=>1}", z.to_string());
+
+    let mut z2 = z.clone().add_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    let z2str = z2.to_string();
+    assert_eq!("{(-1,0)=>2,(0,0)=>2}", z2str);
+
+    z2.add_assign_by_ref(&z);
+    assert_eq!(2, z2.support_size());
+    assert_eq!("{(-1,0)=>3,(0,0)=>3}", z2.to_string());
+
+    let prod = z2.cartesian(&z2, &|t, t2| {
+        TestTuple::new(t.left + t2.left, t.right - t2.right)
+    });
+    assert_eq!("{(-2,0)=>9,(-1,0)=>18,(0,0)=>9}", prod.to_string());
+
+    let j = z2.join(&z2, &|s| s.left, &|s| s.left, |a, _| a.clone());
+    assert_eq!("{(-1,0)=>9,(0,0)=>9}", j.to_string());
+}
+
+type IndexedZSetMap<KeyType, DataType, WeightType> =
+    FiniteHashMap<KeyType, ZSetHashMap<DataType, WeightType>>;
+
+/// An indexed Z-set is a structure that maps arbitrary keys of type KeyType
+/// to Z-set values
+impl<KeyType, DataType, WeightType> IndexedZSetMap<KeyType, DataType, WeightType>
 where
-    DataType: Clone + Hash + Eq + 'static + Display,
-    WeightType: ZRingValue + Display,
-    ZS: ZSet<DataType, WeightType>,
-    C: FnMut(&DataType, &DataType) -> Ordering,
+    DataType: KeyProperties,
+    KeyType: KeyProperties,
+    WeightType: ZRingValue,
+    for<'a> &'a Self: IntoIterator<Item = (&'a KeyType, &'a ZSetHashMap<DataType, WeightType>)>,
 {
-    /// Write the ZSet string representation into the internal builder.
-    /// 'elem_compare' is a function that can compare two ZSet keys.
-    /// It is used to sort the Zset keys prior to writing into the builder.
-    fn serialize(&mut self, z: &ZS, elem_compare: C) {
-        let mut vec: Vec<DataType> = z.support().cloned().collect();
-        vec.sort_by(elem_compare);
-        self.builder.append("{");
-
-        let mut first = true;
-        for k in vec {
-            if !first {
-                self.builder.append(",");
-            } else {
-                first = false;
-            }
-            let val = z.lookup(&k);
-            let kf = format!("{}", k);
-            self.builder.append(kf);
-            self.builder.append("=>");
-            let vf = format!("{}", val);
-            self.builder.append(vf);
-        }
-        self.builder.append("}");
+    /// Add all the data in all partitions into a single zset.
+    pub fn sum(&self) -> ZSetHashMap<DataType, WeightType> {
+        let mut result = ZSetHashMap::<DataType, WeightType>::zero();
+        self.into_iter()
+            // fold does not seem to work with add_assign.
+            .for_each(|(_, v)| result.add_assign_by_ref(v));
+        result
     }
 }
 
-#[cfg(test)]
-impl Printer {
-    pub fn new() -> Printer {
-        Printer {
-            builder: Builder::new(10),
-        }
-    }
-    pub fn to_string(self) -> String {
-        self.builder.string().unwrap()
-    }
-    pub fn serialize_set<DataType, WeightType, ZS>(&mut self, z: &ZS)
-    where
-        DataType: Clone + 'static + Hash + Display + Ord,
-        WeightType: ZRingValue + Display,
-        ZS: ZSet<DataType, WeightType>,
-    {
-        self.serialize(z, DataType::cmp);
-    }
-}
-
-#[cfg(test)]
-mod zset_tests {
-    use super::*;
-
-    // zset to string
-    fn to_string<DataType, WeightType, ZS>(z: &ZS) -> String
-    where
-        DataType: Clone + 'static + Hash + Display + Ord,
-        WeightType: ZRingValue + Display,
-        ZS: ZSet<DataType, WeightType>,
-    {
-        let mut pr = Printer::new();
-        pr.serialize_set(z);
-        pr.to_string()
-    }
-
-    #[test]
-    fn zset_integer_tests() {
-        let mut z = ZSetHashMap::<i64, i64>::with_capacity(5);
-        assert_eq!(0, z.size());
-        assert_eq!("{}", to_string(&z));
-        assert_eq!(0, z.lookup(&0)); // not present -> weight 0
-        assert_eq!(z, ZSetHashMap::<i64, i64>::zero());
-        assert!(z.is_zero());
-        let z2 = ZSetHashMap::<i64, i64>::new();
-        assert_eq!(z, z2);
-
-        z.insert(0, &1);
-        assert_eq!(1, z.size());
-        assert_eq!("{0=>1}", to_string(&z));
-        assert_eq!(1, z.lookup(&0));
-        assert_eq!(0, z.lookup(&1));
-        assert_ne!(z, ZSetHashMap::<i64, i64>::zero());
-        assert_eq!(false, z.is_zero());
-
-        z.insert(2, &0);
-        assert_eq!(1, z.size());
-        assert_eq!("{0=>1}", to_string(&z));
-
-        z.insert(1, &-1);
-        assert_eq!(2, z.size());
-        assert_eq!("{0=>1,1=>-1}", to_string(&z));
-
-        z.insert(-1, &1);
-        assert_eq!(3, z.size());
-        assert_eq!("{-1=>1,0=>1,1=>-1}", to_string(&z));
-
-        let d = z.distinct();
-        assert_eq!(2, d.size());
-        assert_eq!("{-1=>1,0=>1}", to_string(&d));
-
-        let d = z.clone().neg();
-        assert_eq!(3, d.size());
-        assert_eq!("{-1=>-1,0=>-1,1=>1}", to_string(&d));
-        assert_ne!(d, z);
-
-        z.insert(1, &1);
-        assert_eq!(2, z.size());
-        assert_eq!("{-1=>1,0=>1}", to_string(&z));
-
-        let mut z2 = z.clone().add(z.clone());
-        assert_eq!(2, z2.size());
-        assert_eq!("{-1=>2,0=>2}", to_string(&z2));
-
-        z2.add_assign(z.clone());
-        assert_eq!(2, z2.size());
-        assert_eq!("{-1=>3,0=>3}", to_string(&z2));
-    }
-
-    #[test]
-    fn checked_zset_integer_weights_tests() {
-        let mut z = ZSetHashMap::<i64, CheckedI64>::with_capacity(5);
-        assert_eq!(0, z.size());
-        assert_eq!("{}", to_string(&z));
-        assert_eq!(CheckedI64::from(0), z.lookup(&0)); // not present -> weight 0
-        assert_eq!(z, ZSetHashMap::<i64, CheckedI64>::zero());
-        assert!(z.is_zero());
-        let z2 = ZSetHashMap::<i64, CheckedI64>::new();
-        assert_eq!(z, z2);
-
-        z.insert(0, &CheckedI64::from(1));
-        assert_eq!(1, z.size());
-        assert_eq!("{0=>1}", to_string(&z));
-        assert_eq!(CheckedI64::from(1), z.lookup(&0));
-        assert_eq!(CheckedI64::from(0), z.lookup(&1));
-        assert_ne!(z, ZSetHashMap::<i64, CheckedI64>::zero());
-        assert_eq!(false, z.is_zero());
-
-        z.insert(2, &CheckedI64::from(0));
-        assert_eq!(1, z.size());
-        assert_eq!("{0=>1}", to_string(&z));
-
-        z.insert(1, &CheckedI64::from(-1));
-        assert_eq!(2, z.size());
-        assert_eq!("{0=>1,1=>-1}", to_string(&z));
-
-        z.insert(-1, &CheckedI64::from(1));
-        assert_eq!(3, z.size());
-        assert_eq!("{-1=>1,0=>1,1=>-1}", to_string(&z));
-
-        let d = z.distinct();
-        assert_eq!(2, d.size());
-        assert_eq!("{-1=>1,0=>1}", to_string(&d));
-
-        let d = z.clone().neg();
-        assert_eq!(3, d.size());
-        assert_eq!("{-1=>-1,0=>-1,1=>1}", to_string(&d));
-        assert_ne!(d, z);
-
-        z.insert(1, &CheckedI64::from(1));
-        assert_eq!(2, z.size());
-        assert_eq!("{-1=>1,0=>1}", to_string(&z));
-
-        let mut z2 = z.clone().add(z.clone());
-        assert_eq!(2, z2.size());
-        assert_eq!("{-1=>2,0=>2}", to_string(&z2));
-
-        z2.add_assign(z.clone());
-        assert_eq!(2, z2.size());
-        assert_eq!("{-1=>3,0=>3}", to_string(&z2));
-    }
-
-    #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-    struct TestTuple {
-        left: i64,
-        right: i64,
-    }
-
-    impl TestTuple {
-        fn new(left: i64, right: i64) -> Self {
-            Self { left, right }
-        }
-    }
-
-    impl Display for TestTuple {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-            write!(f, "({},{})", self.left, self.right)
-        }
-    }
-
-    impl PartialOrd for TestTuple {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            let lo = self.left.cmp(&other.left);
-            if lo != Ordering::Equal {
-                return Some(lo);
-            }
-            Some(self.right.cmp(&other.right))
-        }
-    }
-
-    impl Ord for TestTuple {
-        fn cmp(&self, other: &Self) -> Ordering {
-            let lo = self.left.cmp(&other.left);
-            if lo != Ordering::Equal {
-                return lo;
-            }
-            self.right.cmp(&other.right)
-        }
-    }
-
-    #[test]
-    fn zset_tuple_tests() {
-        let mut z = ZSetHashMap::<TestTuple, CheckedI64>::with_capacity(5);
-        assert_eq!(0, z.size());
-        assert_eq!("{}", to_string(&z));
-        assert_eq!(CheckedI64::from(0), z.lookup(&TestTuple::new(0, 0))); // not present -> weight 0
-        assert_eq!(z, ZSetHashMap::<TestTuple, CheckedI64>::zero());
-        assert!(z.is_zero());
-        let z2 = ZSetHashMap::<TestTuple, CheckedI64>::new();
-        assert_eq!(z, z2);
-
-        z.insert(TestTuple::new(0, 0), &CheckedI64::from(1));
-        assert_eq!(1, z.size());
-        assert_eq!("{(0,0)=>1}", to_string(&z));
-        assert_eq!(CheckedI64::from(1), z.lookup(&TestTuple::new(0, 0)));
-        assert_eq!(CheckedI64::from(0), z.lookup(&TestTuple::new(0, 1)));
-        assert_ne!(z, ZSetHashMap::<TestTuple, CheckedI64>::zero());
-        assert_eq!(false, z.is_zero());
-
-        z.insert(TestTuple::new(2, 0), &CheckedI64::from(0));
-        assert_eq!(1, z.size());
-        assert_eq!("{(0,0)=>1}", to_string(&z));
-
-        z.insert(TestTuple::new(1, 0), &CheckedI64::from(-1));
-        assert_eq!(2, z.size());
-        assert_eq!("{(0,0)=>1,(1,0)=>-1}", to_string(&z));
-
-        z.insert(TestTuple::new(-1, 0), &CheckedI64::from(1));
-        assert_eq!(3, z.size());
-        assert_eq!("{(-1,0)=>1,(0,0)=>1,(1,0)=>-1}", to_string(&z));
-
-        let d = z.distinct();
-        assert_eq!(2, d.size());
-        assert_eq!("{(-1,0)=>1,(0,0)=>1}", to_string(&d));
-
-        let d = z.clone().neg();
-        assert_eq!(3, d.size());
-        assert_eq!("{(-1,0)=>-1,(0,0)=>-1,(1,0)=>1}", to_string(&d));
-        assert_ne!(d, z);
-
-        z.insert(TestTuple::new(1, 0), &CheckedI64::from(1));
-        assert_eq!(2, z.size());
-        assert_eq!("{(-1,0)=>1,(0,0)=>1}", to_string(&z));
-
-        let mut z2 = z.clone().add(z.clone());
-        assert_eq!(2, z2.size());
-        let z2str = to_string(&z2);
-        assert_eq!("{(-1,0)=>2,(0,0)=>2}", z2str);
-
-        z2.add_assign(z.clone());
-        assert_eq!(2, z2.size());
-        assert_eq!("{(-1,0)=>3,(0,0)=>3}", to_string(&z2));
-    }
+#[test]
+pub fn indexed_zset_tests() {
+    let mut z = ZSetHashMap::<TestTuple, CheckedI64>::with_capacity(5);
+    assert_eq!(0, z.support_size());
+    z.increment(&TestTuple::new(0, 0), &CheckedI64::from(1));
+    z.increment(&TestTuple::new(2, 0), &CheckedI64::from(2));
+    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(-1));
+    z.increment(&TestTuple::new(-1, 0), &CheckedI64::from(1));
+    let ps = z.clone().partition(&|t: &TestTuple| t.left.abs() % 2);
+    let s = ps.to_string();
+    assert_eq!("{0=>{(0,0)=>1,(2,0)=>2},1=>{(-1,0)=>1,(1,0)=>-1}}", s);
+    let z2 = ps.sum();
+    assert_eq!(z, z2);
 }
