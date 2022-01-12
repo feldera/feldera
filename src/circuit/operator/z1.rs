@@ -49,6 +49,10 @@ impl<T> Operator for Z1<T>
 where
     T: Clone + 'static,
 {
+    fn name(&self) -> &str {
+        "Z^-1"
+    }
+
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {
         self.reset();

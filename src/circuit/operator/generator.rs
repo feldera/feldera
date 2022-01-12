@@ -32,6 +32,9 @@ where
     T: Data,
     F: 'static,
 {
+    fn name(&self) -> &str {
+        "Generator"
+    }
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {
         self.val = self.seed.clone();

@@ -49,11 +49,16 @@ where
     F: 'static,
     T: Data + Default,
 {
+    fn name(&self) -> &str {
+        "NestedSource"
+    }
+
     fn stream_start(&mut self) {
         self.val = unsafe { self.input_stream.get() }
             .clone()
             .unwrap_or_default();
     }
+
     fn stream_end(&mut self) {
         self.val = T::default();
     }
