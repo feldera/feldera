@@ -30,6 +30,10 @@ where
     T: 'static,
     F: FnMut(&T) + 'static,
 {
+    fn name(&self) -> &str {
+        "Inspect"
+    }
+
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {}
 }

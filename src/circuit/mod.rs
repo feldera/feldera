@@ -16,4 +16,5 @@ mod circuit_builder;
 pub mod operator;
 pub mod operator_traits;
 pub mod schedule;
-pub use circuit_builder::{Circuit, FeedbackConnector, NodeId, Root, Stream};
+pub mod trace;
+pub use circuit_builder::{Circuit, FeedbackConnector, GlobalNodeId, NodeId, Root, Stream};

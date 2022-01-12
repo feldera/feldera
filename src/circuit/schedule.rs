@@ -1,6 +1,6 @@
 //! A schedule controls the execution of a circuit.
 
-use super::circuit_builder::{Circuit, NodeId};
+use super::{trace::SchedulerEvent, Circuit, NodeId};
 
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use std::ops::Deref;
@@ -34,9 +34,13 @@ impl Schedule {
     where
         P: Clone + 'static,
     {
+        circuit.log_scheduler_event(&SchedulerEvent::step_start());
+
         for node_id in self.schedule.iter() {
             circuit.eval_node(*node_id);
         }
+
+        circuit.log_scheduler_event(&SchedulerEvent::step_end());
     }
 }
 
@@ -71,6 +75,7 @@ where
     P: Clone + 'static,
 {
     fn run(&self, circuit: &Circuit<P>) {
+        circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.stream_start();
 
         loop {
@@ -80,6 +85,7 @@ where
             }
         }
 
+        circuit.log_scheduler_event(&SchedulerEvent::clock_end());
         unsafe { circuit.stream_end() };
     }
 }

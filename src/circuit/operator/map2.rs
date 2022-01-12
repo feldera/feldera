@@ -22,6 +22,10 @@ impl<F> Operator for Map2<F>
 where
     F: 'static,
 {
+    fn name(&self) -> &str {
+        "Map2"
+    }
+
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {}
 }

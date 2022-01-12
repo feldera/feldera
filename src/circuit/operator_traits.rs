@@ -59,6 +59,8 @@ impl<T: Clone + 'static> Data for T {}
 /// `start_stream` and `end_stream` apply to all input and output streams of the
 /// operator.
 pub trait Operator: 'static {
+    fn name(&self) -> &str;
+
     fn stream_start(&mut self);
     fn stream_end(&mut self);
 

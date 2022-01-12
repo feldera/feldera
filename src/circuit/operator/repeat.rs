@@ -13,6 +13,10 @@ impl<T> Repeat<T> {
     }
 }
 impl<T: Data> Operator for Repeat<T> {
+    fn name(&self) -> &str {
+        "Repeat"
+    }
+
     fn stream_start(&mut self) {}
     fn stream_end(&mut self) {}
 }
