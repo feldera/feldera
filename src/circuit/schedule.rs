@@ -3,7 +3,7 @@
 use super::{trace::SchedulerEvent, Circuit, NodeId};
 
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
-use std::ops::Deref;
+use std::{ops::Deref, thread::yield_now};
 
 /// A schedule defines the order in which nodes in a circuit should be evaluated.  A valid
 /// schedule evals each node exactly once, after all of its upstream nodes have been
@@ -12,19 +12,26 @@ use std::ops::Deref;
 /// that the resulting circuit is still acyclic and output of the strict operator is
 /// evaluated before feed input to it.
 struct Schedule {
-    schedule: Vec<NodeId>,
+    schedule: Vec<(NodeId, bool)>,
 }
 
 impl Schedule {
     /// Compute schedule for a circuit.  We may want to support multiple scheduling algorithms
     /// in the future, but for now simple topological sorting seems good enough.
     /// TODO: compute a schedule that takes into account operators that consume inputs by-value.
-    fn schedule_circuit<P>(circuit: &Circuit<P>) -> Self {
+    fn schedule_circuit<P>(circuit: &Circuit<P>) -> Self
+    where
+        P: Clone + 'static,
+    {
         let g = DiGraphMap::<NodeId, ()>::from_edges(circuit.edges().deref());
         // `toposort` fails if the graph contains cycles.
         // The circuit_builder API makes it impossible to construct such graphs.
-        let schedule =
-            toposort(&g, None).unwrap_or_else(|e| panic!("cycle in the circuit graph: {:?}", e));
+        let schedule = toposort(&g, None)
+            .unwrap_or_else(|e| panic!("cycle in the circuit graph: {:?}", e))
+            .into_iter()
+            .map(|node_id| (node_id, circuit.is_async_node(node_id)))
+            .collect();
+
         Self { schedule }
     }
 
@@ -36,8 +43,18 @@ impl Schedule {
     {
         circuit.log_scheduler_event(&SchedulerEvent::step_start());
 
-        for node_id in self.schedule.iter() {
-            circuit.eval_node(*node_id);
+        for (node_id, is_async) in self.schedule.iter() {
+            if !is_async {
+                circuit.eval_node(*node_id);
+            } else {
+                loop {
+                    if circuit.ready(*node_id) {
+                        circuit.eval_node(*node_id);
+                        break;
+                    }
+                    yield_now();
+                }
+            }
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end());
@@ -61,7 +78,10 @@ pub(crate) struct IterativeScheduler<F> {
 }
 
 impl<F> IterativeScheduler<F> {
-    pub(crate) fn new<P>(circuit: &Circuit<P>, termination_check: F) -> Self {
+    pub(crate) fn new<P>(circuit: &Circuit<P>, termination_check: F) -> Self
+    where
+        P: Clone + 'static,
+    {
         Self {
             termination_check,
             schedule: Schedule::schedule_circuit(circuit),
@@ -96,7 +116,10 @@ pub(crate) struct OnceScheduler {
 }
 
 impl OnceScheduler {
-    pub(crate) fn new<P>(circuit: &Circuit<P>) -> Self {
+    pub(crate) fn new<P>(circuit: &Circuit<P>) -> Self
+    where
+        P: Clone + 'static,
+    {
         Self {
             schedule: Schedule::schedule_circuit(circuit),
         }

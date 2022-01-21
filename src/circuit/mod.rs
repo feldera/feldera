@@ -12,9 +12,12 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! each of its input streams and emitting a single value to the output stream.
 
 mod circuit_builder;
+mod runtime;
 
 pub mod operator;
 pub mod operator_traits;
 pub mod schedule;
 pub mod trace;
+
 pub use circuit_builder::{Circuit, FeedbackConnector, GlobalNodeId, NodeId, Root, Stream};
+pub use runtime::{LocalStore, LocalStoreMarker, Runtime};

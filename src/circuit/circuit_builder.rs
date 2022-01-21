@@ -170,6 +170,14 @@ pub(crate) trait Node {
     /// Node id unique within its parent circuit.
     fn id(&self) -> NodeId;
 
+    /// `true` if the node encapsulates an asynchronous operator (see [`Operator::is_async()`]).
+    /// `false` for synchronous operators and subcircuits.
+    fn is_async(&self) -> bool;
+
+    /// `true` if the node is ready to execute (see [`Operator::ready()`]).
+    /// Always returns `true` for synchronous operators and subcircuits.
+    fn ready(&self) -> bool;
+
     /// Evaluate the operator.  Reads one value from each input stream
     /// and pushes a new value to the output stream (except for sink
     /// operators, which don't have an output stream).
@@ -501,13 +509,25 @@ impl<P> Circuit<P> {
 
     /// Connect `stream` as input to `to`.
     fn connect_stream<T>(&self, stream: &Stream<Self, T>, to: NodeId) {
-        self.log_circuit_event(&CircuitEvent::edge(
+        self.log_circuit_event(&CircuitEvent::stream(
             stream.origin_node_id().clone(),
             GlobalNodeId::child_of(self, to),
         ));
 
-        debug_assert_eq!(self.node_id(), stream.circuit.node_id());
+        debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
         self.inner_mut().add_edge(stream.local_node_id(), to);
+    }
+
+    /// Register a dependency between `from` and `to` nodes.  A dependency tells the
+    /// scheduler that `from` must be evaluated before `to` in each clock cycle even
+    /// though there may not be an edge or a path connecting them.
+    fn add_dependency(&self, from: NodeId, to: NodeId) {
+        self.log_circuit_event(&CircuitEvent::dependency(
+            GlobalNodeId::child_of(self, from),
+            GlobalNodeId::child_of(self, to),
+        ));
+
+        self.inner_mut().add_edge(Some(from), to);
     }
 
     /// Add a node to the circuit.  Allocates a new node id and invokes a user
@@ -570,6 +590,14 @@ where
         self.inner().parent.clone()
     }
 
+    pub(crate) fn ready(&self, id: NodeId) -> bool {
+        self.inner().nodes[id.0].ready()
+    }
+
+    pub(crate) fn is_async_node(&self, id: NodeId) -> bool {
+        self.inner().nodes[id.0].is_async()
+    }
+
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
@@ -608,6 +636,70 @@ where
             let output_stream = node.output_stream();
             (node, output_stream)
         })
+    }
+
+    /// Add a pair of operators that implement cross-worker communication.
+    ///
+    /// Operators that exchange data across workers are split into two operators:
+    /// the **sender** responsible for partitioning values read from the input stream
+    /// and distributing them across workers and the **receiver**, which receives and
+    /// reassembles data received from its peers.  Splitting communication into two
+    /// halves allows the scheduler to schedule useful work in between them instead of
+    /// blocking to wait for the receiver.
+    ///
+    /// Exchange operators use some form of IPC or shared memory instead of streams to
+    /// communicate.  Therefore, the sender must implement trait [`SinkOperator`], while
+    /// the receiver implements [`SourceOperator`].
+    ///
+    /// This function adds both operators to the circuit and registers a dependency
+    /// between them, making sure that the scheduler will evaluate the sender before
+    /// the receiver even though there is no explicit stream connecting them.
+    ///
+    /// Returns the output stream produced by the receiver operator.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the sender half of the pair.  The sender must be a sink operator
+    ///
+    /// * `receiver` - the receiver half of the pair.  Must be a source
+    ///
+    /// * `input_stream` - stream to connect as input to the `sender`.
+    ///
+    ///
+    pub fn add_exchange<I, SndOp, O, RcvOp>(
+        &self,
+        sender: SndOp,
+        receiver: RcvOp,
+        input_stream: &Stream<Self, I>,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        SndOp: SinkOperator<I>,
+        RcvOp: SourceOperator<O>,
+    {
+        let sender_id = self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                sender.name(),
+            ));
+            let node = SinkNode::new(sender, input_stream.clone(), self.clone(), id);
+            self.connect_stream(input_stream, id);
+            (node, id)
+        });
+
+        let output_stream = self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                receiver.name(),
+            ));
+            let node = SourceNode::new(receiver, self.clone(), id);
+            let output_stream = node.output_stream();
+            (node, output_stream)
+        });
+
+        self.add_dependency(sender_id, output_stream.local_node_id().unwrap());
+        output_stream
     }
 
     /// Add a sink operator that consumes input values by reference.
@@ -778,6 +870,7 @@ where
 
             let output_node = FeedbackInputNode::new(operator, input_stream.clone(), id);
             self.connect_stream(input_stream, id);
+            self.add_dependency(output_node_id, id);
             (output_node, ())
         });
     }
@@ -903,6 +996,14 @@ where
         self.id
     }
 
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream.put(self.operator.eval());
     }
@@ -955,6 +1056,14 @@ where
         self.id
     }
 
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream.put(
             self.operator.eval(
@@ -1001,6 +1110,14 @@ where
 {
     fn id(&self) -> NodeId {
         self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
     }
 
     unsafe fn eval(&mut self) {
@@ -1062,6 +1179,14 @@ where
 {
     fn id(&self) -> NodeId {
         self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
     }
 
     unsafe fn eval(&mut self) {
@@ -1130,6 +1255,14 @@ where
         self.id
     }
 
+    fn is_async(&self) -> bool {
+        unsafe { &*self.operator.get() }.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        unsafe { &*self.operator.get() }.ready()
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream
             .put((&mut *self.operator.get()).get_output());
@@ -1176,6 +1309,14 @@ where
 {
     fn id(&self) -> NodeId {
         self.id
+    }
+
+    fn is_async(&self) -> bool {
+        unsafe { &*self.operator.get() }.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        unsafe { &*self.operator.get() }.ready()
     }
 
     unsafe fn eval(&mut self) {
@@ -1271,6 +1412,14 @@ where
 {
     fn id(&self) -> NodeId {
         self.id
+    }
+
+    fn is_async(&self) -> bool {
+        false
+    }
+
+    fn ready(&self) -> bool {
+        true
     }
 
     unsafe fn eval(&mut self) {

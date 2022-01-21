@@ -21,6 +21,10 @@ lcov.info
 
 # vim swap files
 **/*.swp
+**/*.swo
+
+# perf data files
+**/perf.data*
 
 .idea
 *.iml
