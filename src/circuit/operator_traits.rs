@@ -66,6 +66,8 @@ pub trait Operator: 'static {
     fn stream_start(&mut self);
     fn stream_end(&mut self);
 
+    /// Returns `true` if `self` prefers to consume owned inputs.
+    ///
     /// With the exception of [`SourceOperator`]s, all operators consume one or
     /// more input streams.  By default, operators consume values by reference;
     /// however some operators have alternative implementations optimized to work
@@ -76,6 +78,54 @@ pub trait Operator: 'static {
     /// guaranteed, but may be taken into account by the scheduler.
     fn prefer_owned_input(&self) -> bool {
         false
+    }
+
+    /// Returns `true` if `self` is an asynchronous operator.
+    ///
+    /// An asynchronous operator may need to wait for external inputs, i.e., inputs
+    /// from outside the circuit.  While a regular synchronous operator is ready to
+    /// be triggered as soon as all of its input streams contain data, an async
+    /// operator may require additional inputs that arrive asynchronously with
+    /// respect to the operation of the circuit (e.g., from an I/O device or via
+    /// an IPC channel).
+    ///
+    /// We do not allow operators to block, therefore the scheduler must not schedule
+    /// an async operator until it has all external inputs available.  The scheduler
+    /// checks that the operator is ready to execute using the [`ready`](`Self::ready`) method.
+    fn is_async(&self) -> bool {
+        false
+    }
+
+    /// Returns `true` if `self` has received all required external inputs and is
+    /// ready to run.
+    ///
+    /// This method must always returns `true` for synchronous operators.  For an
+    /// asynchronous operator, it returns `true` if the operator has all external
+    /// inputs available (see [`is_async`](`Self::is_async`) documentation).  Once the operator is
+    /// ready, it remains ready within the current clock cycle, thus the scheduler
+    /// can safely evaluate the operator.
+    fn ready(&self) -> bool {
+        true
+    }
+
+    /// Register callback to be invoked when an asynchronous operator becomes ready.
+    ///
+    /// This method should only be used for asynchronous operators (see documentation
+    /// for [`is_async`](`Self::is_async`) and [`ready`](`Self::ready`)) in order to
+    /// enable dynamic schedulers to run async operators as they become ready without
+    /// continuously polling them.  It can be invoked at most once per operator;
+    /// invoking it more than once is undefined behavior.
+    ///
+    /// Once the callback has been registered, the operator will invoke the callback
+    /// at every clock cycle, when the operator becomes ready.   The callback in
+    /// invoked with at-least-once semantics, meaning that spurious invocations are
+    /// possible.  The scheduler must always check if the operator is ready ro run
+    /// by calling [`ready`](`Self::ready`) and must be prepared to wait if it
+    /// returns `false`.
+    fn register_scheduler_callback<F>(&mut self, _cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
     }
 }
 

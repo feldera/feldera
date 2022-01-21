@@ -20,6 +20,16 @@ use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 use super::{GlobalNodeId, NodeId};
 pub use trace_monitor::TraceMonitor;
 
+/// Type of edge in a circuit graph.
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub enum EdgeKind {
+    /// A stream edge indicates that there is a stream that connects two operators.
+    Stream,
+    /// A dependency edge indicates that the source operator must be evaluated before
+    /// the destination.
+    Dependency,
+}
+
 /// Events related to circuit construction.  A handler listening to these
 /// events should be able to reconstruct complete circuit topology,
 /// including operators, nested circuits, and streams connecting them.
@@ -62,6 +72,7 @@ pub enum CircuitEvent {
     /// A new edge between nodes connected as producer and consumer to the same stream.
     /// Producer and consumer nodes can be located in different subcircuits.
     Edge {
+        kind: EdgeKind,
         /// Global id of the producer operator that writes to the stream.
         from: GlobalNodeId,
         /// Global id of an operator or subcircuit that reads values from the stream.
@@ -92,8 +103,19 @@ impl Display for CircuitEvent {
                     node_id,
                 )
             }
-            Self::Edge { from, to } => {
-                write!(f, "Edge({} -> {})", from, to)
+            Self::Edge {
+                kind: EdgeKind::Stream,
+                from,
+                to,
+            } => {
+                write!(f, "Stream({} -> {})", from, to)
+            }
+            Self::Edge {
+                kind: EdgeKind::Dependency,
+                from,
+                to,
+            } => {
+                write!(f, "Dependency({} -> {})", from, to)
             }
         }
     }
@@ -122,8 +144,21 @@ impl CircuitEvent {
     }
 
     /// Create a [`CircuitEvent::Edge`] event instance.
-    pub fn edge(from: GlobalNodeId, to: GlobalNodeId) -> Self {
-        Self::Edge { from, to }
+    pub fn stream(from: GlobalNodeId, to: GlobalNodeId) -> Self {
+        Self::Edge {
+            kind: EdgeKind::Stream,
+            from,
+            to,
+        }
+    }
+
+    /// Create a [`CircuitEvent::Edge`] event instance.
+    pub fn dependency(from: GlobalNodeId, to: GlobalNodeId) -> Self {
+        Self::Edge {
+            kind: EdgeKind::Dependency,
+            from,
+            to,
+        }
     }
 
     /// `true` if `self` is a [`CircuitEvent::StrictOperatorInput`]
@@ -216,6 +251,15 @@ impl CircuitEvent {
     pub fn to(&self) -> Option<&GlobalNodeId> {
         if let Self::Edge { to, .. } = self {
             Some(to)
+        } else {
+            None
+        }
+    }
+
+    /// If `self` is a `CircuitEvent::Edge`, returns `self.kind`.
+    pub fn edge_kind(&self) -> Option<&EdgeKind> {
+        if let Self::Edge { kind, .. } = self {
+            Some(kind)
         } else {
             None
         }
@@ -345,7 +389,7 @@ mod trace_monitor {
     };
 
     use crate::circuit::{
-        trace::{CircuitEvent, SchedulerEvent},
+        trace::{CircuitEvent, EdgeKind, SchedulerEvent},
         Circuit, GlobalNodeId, NodeId,
     };
 
@@ -441,9 +485,10 @@ mod trace_monitor {
     struct CircuitGraph {
         /// Tree of nodes.
         nodes: Node,
-        /// Matches a node to the vector of nodes that read from its output stream.
+        /// Matches a node to the vector of nodes that read from its output stream
+        /// or have a dependency on it.
         /// A node can occur in this vector multiple times.
-        edges: HashMap<GlobalNodeId, Vec<GlobalNodeId>>,
+        edges: HashMap<GlobalNodeId, Vec<(GlobalNodeId, EdgeKind)>>,
     }
 
     impl CircuitGraph {
@@ -470,13 +515,13 @@ mod trace_monitor {
             self.nodes.node_mut(id.path().iter())
         }
 
-        fn add_edge(&mut self, from: &GlobalNodeId, to: &GlobalNodeId) {
+        fn add_edge(&mut self, from: &GlobalNodeId, to: &GlobalNodeId, kind: &EdgeKind) {
             match self.edges.entry(from.clone()) {
                 Entry::Occupied(mut oe) => {
-                    oe.get_mut().push(to.clone());
+                    oe.get_mut().push((to.clone(), kind.clone()));
                 }
                 Entry::Vacant(ve) => {
-                    ve.insert(vec![to.clone()]);
+                    ve.insert(vec![(to.clone(), kind.clone())]);
                 }
             }
         }
@@ -662,13 +707,14 @@ mod trace_monitor {
             } else if event.is_edge_event() {
                 let from = event.from().unwrap();
                 let to = event.to().unwrap();
+                let kind = event.edge_kind().unwrap();
                 self.circuit
                     .node_ref(from)
                     .ok_or_else(|| TraceError::UnknownNode(from.clone()))?;
                 self.circuit
                     .node_ref(to)
                     .ok_or_else(|| TraceError::UnknownNode(to.clone()))?;
-                self.circuit.add_edge(from, to);
+                self.circuit.add_edge(from, to, kind);
                 Ok(())
             } else {
                 panic!("unknown event")
