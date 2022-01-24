@@ -18,6 +18,7 @@
 use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
 use super::{GlobalNodeId, NodeId};
+pub use trace_monitor::TraceMonitor;
 
 /// Events related to circuit construction.  A handler listening to these
 /// events should be able to reconstruct complete circuit topology,
@@ -86,13 +87,9 @@ impl Display for CircuitEvent {
             Self::Subcircuit { node_id, iterative } => {
                 write!(
                     f,
-                    "Subcircuit[{}]({})",
+                    "{}Subcircuit({})",
+                    if *iterative { "Iterative" } else { "" },
                     node_id,
-                    if *iterative {
-                        "iterative"
-                    } else {
-                        "non-iterative"
-                    }
                 )
             }
             Self::Edge { from, to } => {
@@ -292,18 +289,10 @@ impl Display for SchedulerEvent {
             Self::EvalEnd { node_id } => {
                 write!(f, "EvalEnd({})", node_id)
             }
-            Self::StepStart => {
-                write!(f, "StepStart")
-            }
-            Self::StepEnd => {
-                write!(f, "StepEnd")
-            }
-            Self::ClockStart => {
-                write!(f, "ClockStart")
-            }
-            Self::ClockEnd => {
-                write!(f, "ClockEnd")
-            }
+            Self::StepStart => f.write_str("StepStart"),
+            Self::StepEnd => f.write_str("StepEnd"),
+            Self::ClockStart => f.write_str("ClockStart"),
+            Self::ClockEnd => f.write_str("ClockEnd"),
         }
     }
 }
@@ -339,8 +328,6 @@ impl SchedulerEvent {
         Self::ClockEnd
     }
 }
-
-pub use trace_monitor::TraceMonitor;
 
 // Don't gate this with `#[cfg(test)]`, since this can be used to find bugs
 // in the wild, not just in the context of tests in this crate.
