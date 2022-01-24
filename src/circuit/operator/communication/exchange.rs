@@ -318,7 +318,7 @@ where
 /// `ExchangeSender` is an asynchronous operator., i.e., [`ExchangeSender::is_async`]
 /// returns `true`.  It becomes schedulable ([`ExchangeSender::ready`] returns `true`)
 /// once all peers have retrieved values written by the operator in the previous clock
-/// cycle.  The scheduler should use [`ExchangeSender::register_scheduler_callback`]
+/// cycle.  The scheduler should use [`ExchangeSender::register_ready_callback`]
 /// to get notified when the operator becomes schedulable.
 ///
 /// `ExchangeSender` doesn't have a public constructor and must be instantiated using
@@ -424,7 +424,7 @@ where
         true
     }
 
-    fn register_scheduler_callback<F>(&mut self, cb: F)
+    fn register_ready_callback<F>(&mut self, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {
@@ -465,7 +465,7 @@ where
 /// `ExchangeReceiver` is an asynchronous operator., i.e., [`ExchangeReceiver::is_async`]
 /// returns `true`.  It becomes schedulable ([`ExchangeReceiver::ready`] returns `true`)
 /// once all peers have sent values for this worker in the current clock
-/// cycle.  The scheduler should use [`ExchangeReceiver::register_scheduler_callback`]
+/// cycle.  The scheduler should use [`ExchangeReceiver::register_ready_callback`]
 /// to get notified when the operator becomes schedulable.
 pub struct ExchangeReceiver<T, L> {
     worker_index: usize,
@@ -503,7 +503,7 @@ where
         true
     }
 
-    fn register_scheduler_callback<F>(&mut self, cb: F)
+    fn register_ready_callback<F>(&mut self, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {

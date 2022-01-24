@@ -122,7 +122,7 @@ pub trait Operator: 'static {
     /// possible.  The scheduler must always check if the operator is ready ro run
     /// by calling [`ready`](`Self::ready`) and must be prepared to wait if it
     /// returns `false`.
-    fn register_scheduler_callback<F>(&mut self, _cb: F)
+    fn register_ready_callback<F>(&mut self, _cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {
