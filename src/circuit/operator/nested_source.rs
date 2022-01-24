@@ -4,6 +4,7 @@ use crate::circuit::{
     circuit_builder::{Circuit, Stream},
     operator_traits::{Data, Operator, SourceOperator},
 };
+use std::borrow::Cow;
 
 /// An operator that feeds data from the parent circuit to a nested circuit with
 /// a nested time domain (i.e., a circuit that performs multiple iterations for
@@ -49,8 +50,8 @@ where
     F: 'static,
     T: Data + Default,
 {
-    fn name(&self) -> &str {
-        "NestedSource"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("NestedSource")
     }
 
     fn stream_start(&mut self) {

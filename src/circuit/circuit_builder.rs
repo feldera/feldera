@@ -1369,6 +1369,7 @@ mod tests {
         trace::TraceMonitor,
     };
     use std::{
+        borrow::Cow,
         cell::RefCell,
         fmt::Display,
         marker::PhantomData,
@@ -1388,8 +1389,8 @@ mod tests {
         }
     }
     impl Operator for Integrator {
-        fn name(&self) -> &str {
-            "Integrator"
+        fn name(&self) -> Cow<'static, str> {
+            Cow::from("Integrator")
         }
         fn stream_start(&mut self) {}
         fn stream_end(&mut self) {
@@ -1415,8 +1416,8 @@ mod tests {
         }
     }
     impl<T: 'static> Operator for Printer<T> {
-        fn name(&self) -> &str {
-            "Printer"
+        fn name(&self) -> Cow<'static, str> {
+            Cow::from("Printer")
         }
         fn stream_start(&mut self) {}
         fn stream_end(&mut self) {}

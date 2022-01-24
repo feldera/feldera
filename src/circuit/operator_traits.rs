@@ -3,6 +3,8 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
+use std::borrow::Cow;
+
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
 
@@ -59,7 +61,7 @@ impl<T: Clone + 'static> Data for T {}
 /// `start_stream` and `end_stream` apply to all input and output streams of the
 /// operator.
 pub trait Operator: 'static {
-    fn name(&self) -> &str;
+    fn name(&self) -> Cow<'static, str>;
 
     fn stream_start(&mut self);
     fn stream_end(&mut self);

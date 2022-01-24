@@ -15,7 +15,7 @@
 //! Event handlers are invoked synchronously and therefore must complete
 //! quickly, with any expensive processing completed asynchronously.
 
-use std::{fmt, fmt::Display, hash::Hash};
+use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
 use super::{GlobalNodeId, NodeId};
 
@@ -29,7 +29,7 @@ pub enum CircuitEvent {
         /// Global id of the new operator.
         node_id: GlobalNodeId,
         /// Operator name.
-        name: String,
+        name: Cow<'static, str>,
     },
     /// The output half of a [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`).
     /// A strict operator is activated twice in each clock cycle: first, its output computed based
@@ -39,7 +39,7 @@ pub enum CircuitEvent {
     StrictOperatorOutput {
         node_id: GlobalNodeId,
         /// Operator name.
-        name: String,
+        name: Cow<'static, str>,
     },
     /// The input half of a strict operator is added to the circuit.  This event is triggered when
     /// the circuit builder connects an input stream to the strict operator.  The output node
@@ -104,18 +104,12 @@ impl Display for CircuitEvent {
 
 impl CircuitEvent {
     /// Create a [`CircuitEvent::Operator`] event instance.
-    pub fn operator(node_id: GlobalNodeId, name: &str) -> Self {
-        Self::Operator {
-            node_id,
-            name: name.to_string(),
-        }
+    pub fn operator(node_id: GlobalNodeId, name: Cow<'static, str>) -> Self {
+        Self::Operator { node_id, name }
     }
     /// Create a [`CircuitEvent::StrictOperatorOutput`] event instance.
-    pub fn strict_operator_output(node_id: GlobalNodeId, name: &str) -> Self {
-        Self::StrictOperatorOutput {
-            node_id,
-            name: name.to_string(),
-        }
+    pub fn strict_operator_output(node_id: GlobalNodeId, name: Cow<'static, str>) -> Self {
+        Self::StrictOperatorOutput { node_id, name }
     }
     /// Create a [`CircuitEvent::StrictOperatorInput`] event instance.
     pub fn strict_operator_input(node_id: GlobalNodeId, output_node_id: NodeId) -> Self {
