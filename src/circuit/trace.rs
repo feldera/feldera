@@ -336,7 +336,10 @@ mod trace_monitor {
     ///! used to test both the tracing mechanism and the circuit engine
     ///! itself.
     use std::{
+        borrow::Cow,
         collections::{hash_map::Entry, HashMap, HashSet},
+        fmt,
+        fmt::Display,
         slice,
         sync::{Arc, Mutex},
     };
@@ -513,6 +516,33 @@ mod trace_monitor {
         }
     }
 
+    /// Error type that describes invalid traces.
+    #[derive(Debug)]
+    pub enum TraceError {
+        /// Attempt to create a node in the global scope.
+        EmptyPath,
+        /// Attempt to access node that does not exist.
+        UnknownNode(GlobalNodeId),
+        /// Attemp to create a node with id that already exists.
+        NodeExists(GlobalNodeId),
+        /// Attempt to add a node to a parent that is not a circuit node.
+        NotACircuit(GlobalNodeId),
+        /// Invalid event in the current state of the circuit automaton.
+        InvalidEvent(Cow<'static, str>),
+    }
+
+    impl Display for TraceError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::EmptyPath => f.write_str("cannot create node at an empty path"),
+                Self::UnknownNode(node) => write!(f, "unknown node {}", node),
+                Self::NodeExists(node) => write!(f, "node already exists: {}", node),
+                Self::NotACircuit(node) => write!(f, "not a circuit node {}", node),
+                Self::InvalidEvent(descr) => f.write_str(descr),
+            }
+        }
+    }
+
     /// `TraceMonitor` listens to and validates event traces emitted by a circuit.
     ///
     /// The monitor uses [`CircuitEvent`](`super::CircuitEvent`)s, to build up a model
@@ -538,9 +568,9 @@ mod trace_monitor {
         /// no further `SchedulerEvent`'s are allowed.
         state: Vec<CircuitState>,
         /// Callback to invoke on each invalid `CircuitEvent`.
-        circuit_error_handler: Box<dyn Fn(&CircuitEvent, &str)>,
+        circuit_error_handler: Box<dyn Fn(&CircuitEvent, &TraceError)>,
         /// Callback to invoke on each invalid `SchedulerEvent`.
-        scheduler_error_handler: Box<dyn Fn(&SchedulerEvent, &str)>,
+        scheduler_error_handler: Box<dyn Fn(&SchedulerEvent, &TraceError)>,
     }
 
     impl TraceMonitor {
@@ -570,8 +600,8 @@ mod trace_monitor {
         /// Create a new trace monitor with user-provided event handlers.
         pub fn new<CE, SE>(circuit_error_handler: CE, scheduler_error_handler: SE) -> Self
         where
-            CE: Fn(&CircuitEvent, &str) + 'static,
-            SE: Fn(&SchedulerEvent, &str) + 'static,
+            CE: Fn(&CircuitEvent, &TraceError) + 'static,
+            SE: Fn(&SchedulerEvent, &TraceError) + 'static,
         {
             Self {
                 circuit: CircuitGraph::new(),
@@ -589,21 +619,19 @@ mod trace_monitor {
             )
         }
 
-        fn circuit_event(&mut self, event: &CircuitEvent) -> Result<(), String> {
+        fn circuit_event(&mut self, event: &CircuitEvent) -> Result<(), TraceError> {
             if event.is_node_event() {
                 let path = event.node_id().unwrap().path();
-                let local_node_id = *path
-                    .last()
-                    .ok_or_else(|| "cannot create node at an empty path".to_string())?;
+                let local_node_id = *path.last().ok_or(TraceError::EmptyPath)?;
                 let parent_id = GlobalNodeId::from_path(path.split_last().unwrap().1);
                 let parent_node = self
                     .circuit
                     .node_mut(&parent_id)
-                    .ok_or_else(|| format!("parent node {} does not exist", parent_id))?;
+                    .ok_or_else(|| TraceError::UnknownNode(parent_id.clone()))?;
                 match &mut parent_node.kind {
                     NodeKind::Circuit { children, .. } => {
                         if children.get(&local_node_id).is_some() {
-                            return Err("node already exists at this path".to_string());
+                            return Err(TraceError::NodeExists(event.node_id().unwrap().clone()));
                         };
                         let new_node =
                             if event.is_operator_event() || event.is_strict_output_event() {
@@ -611,7 +639,9 @@ mod trace_monitor {
                             } else if event.is_strict_input_event() {
                                 let output = event.output_node_id().unwrap();
                                 if children.get(&output).is_none() {
-                                    return Err(format!("unknown output node {}", output));
+                                    return Err(TraceError::UnknownNode(GlobalNodeId::child(
+                                        &parent_id, output,
+                                    )));
                                 };
 
                                 Node::new("", NodeKind::StrictInput { output })
@@ -627,30 +657,30 @@ mod trace_monitor {
                         children.insert(local_node_id, new_node);
                         Ok(())
                     }
-                    _ => Err(format!("{} is not a circuit node", parent_id)),
+                    _ => Err(TraceError::NotACircuit(parent_id)),
                 }
             } else if event.is_edge_event() {
                 let from = event.from().unwrap();
                 let to = event.to().unwrap();
                 self.circuit
                     .node_ref(from)
-                    .ok_or_else(|| format!("node {} does not exist", from))?;
+                    .ok_or_else(|| TraceError::UnknownNode(from.clone()))?;
                 self.circuit
                     .node_ref(to)
-                    .ok_or_else(|| format!("node {} does not exist", to))?;
+                    .ok_or_else(|| TraceError::UnknownNode(to.clone()))?;
                 self.circuit.add_edge(from, to);
                 Ok(())
             } else {
-                Err("unknown event".to_string())
+                panic!("unknown event")
             }
         }
 
-        fn scheduler_event(&mut self, event: &SchedulerEvent) -> Result<(), String> {
+        fn scheduler_event(&mut self, event: &SchedulerEvent) -> Result<(), TraceError> {
             //eprintln!("scheduler event: {}", event);
             if !self.running() {
-                return Err(
-                    "scheduler event received after circuit execution has terminated".to_string(),
-                );
+                return Err(TraceError::InvalidEvent(Cow::from(
+                    "scheduler event received after circuit execution has terminated",
+                )));
             }
             let current_node_id = self.current_node_id();
             match event {
@@ -661,16 +691,16 @@ mod trace_monitor {
                         .unwrap()
                         .is_iterative()
                     {
-                        return Err(
-                            "received 'ClockStart' event for a non-iterative circuit".to_string()
-                        );
+                        return Err(TraceError::InvalidEvent(Cow::from(
+                            "received 'ClockStart' event for a non-iterative circuit",
+                        )));
                     }
 
                     if !self.current_state().is_idle() {
-                        return Err(format!(
+                        return Err(TraceError::InvalidEvent(Cow::from(format!(
                             "received 'ClockStart' event in state {}",
                             self.current_state().name()
-                        ));
+                        ))));
                     }
 
                     self.set_current_state(CircuitState::Running);
@@ -678,10 +708,10 @@ mod trace_monitor {
                 }
                 SchedulerEvent::ClockEnd => {
                     if !self.current_state().is_running() {
-                        return Err(format!(
+                        return Err(TraceError::InvalidEvent(Cow::from(format!(
                             "received 'ClockEnd' event in state {}",
                             self.current_state().name()
-                        ));
+                        ))));
                     }
 
                     self.pop_state();
@@ -695,10 +725,10 @@ mod trace_monitor {
                         .is_iterative()
                         && !self.current_state().is_running()
                     {
-                        return Err(format!(
+                        return Err(TraceError::InvalidEvent(Cow::from(format!(
                             "received 'StepStart' event in state {} of an iterative circuit",
                             self.current_state().name()
-                        ));
+                        ))));
                     }
                     if !self
                         .circuit
@@ -707,10 +737,10 @@ mod trace_monitor {
                         .is_iterative()
                         && !self.current_state().is_idle()
                     {
-                        return Err(format!(
+                        return Err(TraceError::InvalidEvent(Cow::from(format!(
                             "received 'StepStart' event in state {} of a non-iterative subcircuit",
                             self.current_state().name()
-                        ));
+                        ))));
                     }
 
                     self.set_current_state(CircuitState::Step(HashSet::new()));
@@ -727,14 +757,14 @@ mod trace_monitor {
                                 .unwrap()
                                 .len();
                             if visited_nodes.len() != expected_len {
-                                return Err(format!("received 'StepEnd' event after evaluating {} nodes instead of the expected {}", visited_nodes.len(), expected_len));
+                                return Err(TraceError::InvalidEvent(Cow::from(format!("received 'StepEnd' event after evaluating {} nodes instead of the expected {}", visited_nodes.len(), expected_len))));
                             }
                         }
                         state => {
-                            return Err(format!(
+                            return Err(TraceError::InvalidEvent(Cow::from(format!(
                                 "received 'StepEnd' event in state {}",
                                 state.name()
-                            ));
+                            ))));
                         }
                     }
 
@@ -755,15 +785,15 @@ mod trace_monitor {
                     match state {
                         CircuitState::Step(visited_nodes) => {
                             if visited_nodes.contains(node_id) {
-                                return Err(format!(
+                                return Err(TraceError::InvalidEvent(Cow::from(format!(
                                     "node id {} evaluated twice in one clock cycle",
                                     node_id
-                                ));
+                                ))));
                             }
                             let global_id = current_node_id.child(*node_id);
                             let node = match self.circuit.node_ref(&global_id) {
                                 None => {
-                                    return Err(format!("unknown node id {}", global_id));
+                                    return Err(TraceError::UnknownNode(global_id));
                                 }
                                 Some(node) => node,
                             };
@@ -771,7 +801,7 @@ mod trace_monitor {
                             if node.is_strict_input() {
                                 let output_id = node.output_id().unwrap();
                                 if !visited_nodes.contains(&output_id) {
-                                    return Err(format!("input node {} of a strict operator is evaluated before the output node {}", node_id, output_id));
+                                    return Err(TraceError::InvalidEvent(Cow::from(format!("input node {} of a strict operator is evaluated before the output node {}", node_id, output_id))));
                                 }
                             };
 
@@ -786,8 +816,10 @@ mod trace_monitor {
                         }
                         state => {
                             // Restore state on error.
-                            let err =
-                                format!("received 'EvalStart' event in state {}", state.name());
+                            let err = TraceError::InvalidEvent(Cow::from(format!(
+                                "received 'EvalStart' event in state {}",
+                                state.name()
+                            )));
                             self.push_state(state);
                             Err(err)
                         }
@@ -797,7 +829,7 @@ mod trace_monitor {
                     match self.current_state() {
                         CircuitState::Eval(visited_nodes, eval_node_id) => {
                             if eval_node_id != node_id {
-                                return Err(format!("received 'EvalEnd' event for node id {} while evaluating node {}", node_id, eval_node_id));
+                                return Err(TraceError::InvalidEvent(Cow::from(format!("received 'EvalEnd' event for node id {} while evaluating node {}", node_id, eval_node_id))));
                             }
                             let mut visited_nodes = visited_nodes.clone();
                             visited_nodes.insert(*eval_node_id);
@@ -805,10 +837,10 @@ mod trace_monitor {
                             Ok(())
                         }
                         state => {
-                            return Err(format!(
+                            return Err(TraceError::InvalidEvent(Cow::from(format!(
                                 "received 'EvalEnd' event in state {}",
                                 state.name()
-                            ));
+                            ))));
                         }
                     }
                 }
