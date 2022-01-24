@@ -540,24 +540,31 @@ where
 /// # Arguments
 ///
 /// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators are created.
-///
 /// * `worker_index` - index of the current worker.
-///
 /// * `partition` - partitioning logic that, for each element of the input stream, returns
 ///     an iterator with exactly `runtime.num_workers()` values.
-///
 /// * `combine` - re-assemble logic that combines values received from all peers into a single
 ///     output value.
-pub fn new_exchange_operators<TI, TO, TE, SL, I, CL>(
+///
+/// # Type arguments
+/// * `TI` - Type of values in the input stream consumed by `ExchangeSender`.
+/// * `TO` - Type of values in the output stream produced by `ExchangeReceiver`.
+/// * `TE` - Type of values sent across workers.
+/// * `PL` - Type of closure that splits a value of type `TI` into `runtime.num_workers()`
+///    values of type `TE`.
+/// * `I` - Iterator returned by `PL`.
+/// * `CL` - Type of closure that folds `num_workers` values of type `TE` into
+///   a value of type `TO`.
+pub fn new_exchange_operators<TI, TO, TE, PL, I, CL>(
     runtime: &Runtime,
     worker_index: usize,
-    partition: SL,
+    partition: PL,
     combine: CL,
-) -> (ExchangeSender<TE, SL>, ExchangeReceiver<TE, CL>)
+) -> (ExchangeSender<TE, PL>, ExchangeReceiver<TE, CL>)
 where
     TO: Default + Clone,
     TE: Default + Send + Sync + 'static,
-    SL: Fn(TI) -> I + 'static,
+    PL: Fn(TI) -> I + 'static,
     I: Iterator<Item = TE>,
     CL: Fn(&mut TO, TE) + 'static,
 {

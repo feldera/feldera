@@ -660,12 +660,8 @@ where
     /// # Arguments
     ///
     /// * `sender` - the sender half of the pair.  The sender must be a sink operator
-    ///
     /// * `receiver` - the receiver half of the pair.  Must be a source
-    ///
     /// * `input_stream` - stream to connect as input to the `sender`.
-    ///
-    ///
     pub fn add_exchange<I, SndOp, O, RcvOp>(
         &self,
         sender: SndOp,

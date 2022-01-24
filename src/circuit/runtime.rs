@@ -25,8 +25,8 @@ impl RuntimeInner {
     }
 }
 
-/// A multithreaded runtime that hosts `N` instances of a circuit running in
-/// parallel worker threads.
+/// A multithreaded runtime that hosts `N` circuits running in parallel worker threads.
+/// Typically, all `N` circuits are identical, but this is not required or enforced.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct Runtime(Arc<RuntimeInner>);
