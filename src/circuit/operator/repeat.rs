@@ -1,6 +1,7 @@
 //! Defines a source operator that generates an infinite stream of identical values.
 
 use crate::circuit::operator_traits::{Data, Operator, SourceOperator};
+use std::borrow::Cow;
 
 /// Source operator that yields the same value on each clock tick.
 pub struct Repeat<T> {
@@ -13,8 +14,8 @@ impl<T> Repeat<T> {
     }
 }
 impl<T: Data> Operator for Repeat<T> {
-    fn name(&self) -> &str {
-        "Repeat"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Repeat")
     }
 
     fn stream_start(&mut self) {}

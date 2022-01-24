@@ -1,6 +1,7 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
 use crate::circuit::operator_traits::{BinaryOperator, Operator};
+use std::borrow::Cow;
 
 /// Binary map operator.
 ///
@@ -22,8 +23,8 @@ impl<F> Operator for Map2<F>
 where
     F: 'static,
 {
-    fn name(&self) -> &str {
-        "Map2"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Map2")
     }
 
     fn stream_start(&mut self) {}

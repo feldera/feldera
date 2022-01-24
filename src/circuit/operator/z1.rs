@@ -3,7 +3,7 @@
 use crate::circuit::operator_traits::{
     Operator, StrictOperator, StrictUnaryOperator, UnaryOperator,
 };
-use std::mem::swap;
+use std::{borrow::Cow, mem::swap};
 
 /// z^-1 operator delays its input by one timestamp.  It outputs a user-defined
 /// "zero" value in the first timestamp after [stream_start](`Z1::stream_start`).
@@ -49,8 +49,8 @@ impl<T> Operator for Z1<T>
 where
     T: Clone + 'static,
 {
-    fn name(&self) -> &str {
-        "Z^-1"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Z^-1")
     }
 
     fn stream_start(&mut self) {}

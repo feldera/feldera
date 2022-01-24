@@ -2,7 +2,7 @@
 //! user-provided callback to it.
 
 use crate::circuit::operator_traits::{Operator, SinkOperator};
-use std::marker::PhantomData;
+use std::{borrow::Cow, marker::PhantomData};
 
 /// Sink operator that consumes a stream of values of type `T` and
 /// applies a user-provided callback to each input.
@@ -30,8 +30,8 @@ where
     T: 'static,
     F: FnMut(&T) + 'static,
 {
-    fn name(&self) -> &str {
-        "Inspect"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Inspect")
     }
 
     fn stream_start(&mut self) {}

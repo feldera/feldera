@@ -1,6 +1,7 @@
 //! Operator that applies an arbitrary function to its input.
 
 use crate::circuit::operator_traits::{Operator, UnaryOperator};
+use std::borrow::Cow;
 
 /// Map operator.
 ///
@@ -22,8 +23,8 @@ impl<F> Operator for Map<F>
 where
     F: 'static,
 {
-    fn name(&self) -> &str {
-        "Map"
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Map")
     }
 
     fn stream_start(&mut self) {}
