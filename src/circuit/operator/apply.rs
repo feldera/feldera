@@ -3,39 +3,37 @@
 use crate::circuit::operator_traits::{Operator, UnaryOperator};
 use std::borrow::Cow;
 
-/// Map operator.
-///
-/// Applies a user provided function to its input for each timestamp.
-pub struct Map<F> {
-    map: F,
+/// Operator that applies a user provided function to its input at each timestamp.
+pub struct Apply<F> {
+    func: F,
 }
 
-impl<F> Map<F> {
-    pub const fn new(map: F) -> Self
+impl<F> Apply<F> {
+    pub const fn new(func: F) -> Self
     where
         F: 'static,
     {
-        Self { map }
+        Self { func }
     }
 }
 
-impl<F> Operator for Map<F>
+impl<F> Operator for Apply<F>
 where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Map")
+        Cow::from("Apply")
     }
 
     fn clock_start(&mut self) {}
     fn clock_end(&mut self) {}
 }
 
-impl<T1, T2, F> UnaryOperator<T1, T2> for Map<F>
+impl<T1, T2, F> UnaryOperator<T1, T2> for Apply<F>
 where
     F: Fn(&T1) -> T2 + 'static,
 {
     fn eval(&mut self, i1: &T1) -> T2 {
-        (self.map)(i1)
+        (self.func)(i1)
     }
 }
