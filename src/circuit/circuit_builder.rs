@@ -810,7 +810,7 @@ where
     ///
     /// ```
     /// # use dbsp::circuit::{
-    /// #   operator::{Z1, Map2, Repeat},
+    /// #   operator::{Z1, Apply2, Repeat},
     /// #   Root,
     /// # };
     /// # let root = Root::build(|circuit| {
@@ -820,7 +820,7 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit.add_binary_operator(Map2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output);
+    /// let plus = circuit.add_binary_operator(Apply2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output);
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -920,7 +920,7 @@ where
     /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::circuit::{
     ///     Root,
-    ///     operator::{Generator, Inspect, Map, Map2, NestedSource, Z1},
+    ///     operator::{Generator, Inspect, Apply2, NestedSource, Z1},
     /// };
     ///
     /// let root = Root::build(|circuit| {
@@ -934,7 +934,7 @@ where
     ///         }));
     ///         let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
     ///         let mul = child.add_binary_operator(
-    ///             Map2::new(|n1: &usize, n2: &usize| n1 * n2),
+    ///             Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
     ///             &countdown,
     ///             &z1_output,
     ///         );
@@ -1509,7 +1509,7 @@ impl Root {
 mod tests {
     use super::Root;
     use crate::circuit::{
-        operator::{Generator, Inspect, Map2, NestedSource, Z1},
+        operator::{Apply2, Generator, Inspect, NestedSource, Z1},
         operator_traits::{Operator, SinkOperator, UnaryOperator},
         trace::TraceMonitor,
     };
@@ -1622,7 +1622,7 @@ mod tests {
             let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n = *n + 1));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
             let plus = circuit.add_binary_operator(
-                Map2::new(|n1: &usize, n2: &usize| *n1 + *n2),
+                Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
                 &source,
                 &z1_output,
             );
@@ -1673,7 +1673,7 @@ mod tests {
                     }));
                 let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
                 let mul = child.add_binary_operator(
-                    Map2::new(|n1: &usize, n2: &usize| n1 * n2),
+                    Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
                     &countdown,
                     &z1_output,
                 );

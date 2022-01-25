@@ -3,11 +3,11 @@
 mod inspect;
 pub use inspect::Inspect;
 
-mod map;
-pub use map::Map;
+mod apply;
+pub use apply::Apply;
 
-mod map2;
-pub use map2::Map2;
+mod apply2;
+pub use apply2::Apply2;
 
 mod repeat;
 pub use repeat::Repeat;
