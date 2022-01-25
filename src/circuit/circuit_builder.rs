@@ -37,7 +37,7 @@ use super::{
     operator_traits::{
         BinaryOperator, Data, SinkOperator, SourceOperator, StrictUnaryOperator, UnaryOperator,
     },
-    schedule::{IterativeScheduler, OnceScheduler, Scheduler},
+    schedule::{Executor, IterativeExecutor, OnceExecutor, Scheduler, StaticScheduler},
     trace::{CircuitEvent, SchedulerEvent},
 };
 
@@ -876,15 +876,15 @@ where
     /// Creates an empty circuit with `self` as parent and invokes `child_constructor` to populate
     /// the circuit.  `child_constructor` typically captures some of the streams in `self` and
     /// connects them to source nodes of the child circuit.  It is also responsible for attaching
-    /// a scheduler to the child circuit.  The return type `T` will typically contain output
+    /// an executor to the child circuit.  The return type `T` will typically contain output
     /// streams of the child.
     ///
     /// Most users should invoke higher-level APIs like [`iterate`] instead of using this method
     /// directly.
-    pub(crate) fn subcircuit<F, T, S>(&self, iterative: bool, child_constructor: F) -> T
+    pub(crate) fn subcircuit<F, T, E>(&self, iterative: bool, child_constructor: F) -> T
     where
-        F: FnOnce(&mut Circuit<Self>) -> (T, S),
-        S: Scheduler<Self>,
+        F: FnOnce(&mut Circuit<Self>) -> (T, E),
+        E: Executor<Self>,
     {
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::subcircuit(
@@ -892,8 +892,8 @@ where
                 iterative,
             ));
             let mut child_circuit = Circuit::with_parent(self.clone(), id);
-            let (res, scheduler) = child_constructor(&mut child_circuit);
-            let child = <ChildNode<Self, S>>::new(child_circuit, scheduler, id);
+            let (res, executor) = child_constructor(&mut child_circuit);
+            let child = <ChildNode<Self>>::new::<E>(child_circuit, executor, id);
             (child, res)
         })
     }
@@ -901,17 +901,17 @@ where
     /// Add an iteratively scheduled child circuit.
     ///
     /// Add a child circuit with a nested clock.  The child will execute multiple times for each
-    /// parent timestamp, until its termination condition is satisfied.  Specifically, this
-    /// function attaches an iterative scheduler to the child.  Every time the child circuit is
-    /// activated by the parent (once per parent timestamp), the scheduler calls `clock_start` on
+    /// parent timestamp, until its termination condition is satisfied.  Every time the child
+    /// circuit is activated by the parent (once per parent timestamp), the executor calls
+    /// [`clock_start`](`crate::circuit::operator_traits::Operator::clock_start`) on
     /// each child operator.  It then calls `eval` on all child operators in a causal order and
     /// checks if the termination condition is satisfied by reading from a user-specified
-    /// "termination" stream.  If the value in the stream is `false`, the scheduler `eval`s all
-    /// operators again.  Once the termination condition is `true`, the scheduler calls
+    /// "termination" stream.  If the value in the stream is `false`, the executor `eval`s all
+    /// operators again.  Once the termination condition is `true`, the executor calls
     /// `clock_end` on all child operators and returns control back to the parent scheduler.
     ///
     /// The `constructor` closure populates the child circuit and returns the termination stream
-    /// used by the scheduler to check termination condition on each iteration and an arbitrary
+    /// used by the executor to check termination condition on each iteration and an arbitrary
     /// user-defined return value that typically contains output streams of the child.
     ///
     /// # Examples
@@ -952,10 +952,24 @@ where
         F: FnOnce(&mut Circuit<Self>) -> (C, T),
         C: Fn() -> bool + 'static,
     {
+        self.iterate_with_scheduler::<F, C, T, StaticScheduler>(constructor)
+    }
+
+    /// Add an iteratively scheduled child circuit.
+    ///
+    ///
+    /// Similar to [`iterate`](`Self::iterate`), but with a user-specified [`Scheduler`]
+    /// implementation.
+    pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> T
+    where
+        F: FnOnce(&mut Circuit<Self>) -> (C, T),
+        C: Fn() -> bool + 'static,
+        S: Scheduler + 'static,
+    {
         self.subcircuit(true, |child| {
             let (termination_check, res) = constructor(child);
-            let scheduler = IterativeScheduler::new(child, termination_check);
-            (res, scheduler)
+            let executor = <IterativeExecutor<_, S>>::new(child, termination_check);
+            (res, executor)
         })
     }
 }
@@ -1378,13 +1392,13 @@ where
 }
 
 // A nested circuit instantiated as a node in a parent circuit.
-struct ChildNode<P, S> {
+struct ChildNode<P> {
     id: NodeId,
     circuit: Circuit<P>,
-    scheduler: S,
+    executor: Box<dyn Executor<P>>,
 }
 
-impl<P, S> Drop for ChildNode<P, S> {
+impl<P> Drop for ChildNode<P> {
     fn drop(&mut self) {
         // Explicitly deallocate all nodes in the circuit to break
         // cyclic `Rc` references between circuits and streams.
@@ -1392,19 +1406,22 @@ impl<P, S> Drop for ChildNode<P, S> {
     }
 }
 
-impl<P, S> ChildNode<P, S> {
-    fn new(circuit: Circuit<P>, scheduler: S, id: NodeId) -> Self {
+impl<P> ChildNode<P> {
+    fn new<E>(circuit: Circuit<P>, executor: E, id: NodeId) -> Self
+    where
+        E: Executor<P>,
+    {
         Self {
             id,
             circuit,
-            scheduler,
+            executor: Box::new(executor) as Box<dyn Executor<P>>,
         }
     }
 }
 
-impl<P, S> Node for ChildNode<P, S>
+impl<P> Node for ChildNode<P>
 where
-    S: Scheduler<P>,
+    P: 'static,
 {
     fn id(&self) -> NodeId {
         self.id
@@ -1419,7 +1436,7 @@ where
     }
 
     unsafe fn eval(&mut self) {
-        self.scheduler.run(&self.circuit);
+        self.executor.run(&self.circuit);
     }
 
     fn clock_start(&mut self) {
@@ -1431,10 +1448,10 @@ where
     }
 }
 
-/// Top-level circuit with scheduler.
+/// Top-level circuit with executor.
 pub struct Root {
     circuit: Circuit<()>,
-    scheduler: OnceScheduler,
+    executor: Box<dyn Executor<()>>,
 }
 
 impl Drop for Root {
@@ -1453,33 +1470,51 @@ impl Drop for Root {
 }
 
 impl Root {
-    /// Create an empty circuit and populate it with operators by calling a user-provided
-    /// constructor function.  Attach a scheduler to the resulting circuit.
+    /// Create a circuit and prepate it for execution.
+    ///
+    /// Creates an empty circuit and populates it with operators by calling a
+    /// user-provided `constructor` function.  The circuit will be scheduled
+    /// using the default scheduler (currently [`StaticScheduler`]).
     pub fn build<F>(constructor: F) -> Self
     where
         F: FnOnce(&mut Circuit<()>),
     {
+        // TODO: use dynamic scheduler by default.
+        Self::build_with_scheduler::<F, StaticScheduler>(constructor)
+    }
+
+    /// Create a circuit and prepate it for execution.
+    ///
+    /// Similar to [`build`](`Self::build`), but with a user-specified [`Scheduler`]
+    /// implementation.
+    pub fn build_with_scheduler<F, S>(constructor: F) -> Self
+    where
+        F: FnOnce(&mut Circuit<()>),
+        S: Scheduler + 'static,
+    {
         let mut circuit = Circuit::new();
         constructor(&mut circuit);
-        let scheduler = OnceScheduler::new(&circuit);
+        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)) as Box<dyn Executor<()>>;
 
         // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so that the
         // user can reset the circuit at runtime and start evaluation from clean state without
         // having to rebuild it from scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start();
-        Self { circuit, scheduler }
+        Self { circuit, executor }
     }
 
-    /// This function drives the execution of the circuit.  Every call corresponds to one tick of
-    /// the global logical clock and causes each operator in the circuit to get evaluated once,
-    /// consuming one value from each of its input streams.
+    /// Function that drives the execution of the circuit.
+    ///
+    /// Every call to `step()` corresponds to one tick of the global logical clock and causes
+    /// each operator in the circuit to get evaluated once, consuming one value from each of
+    /// its input streams.
     pub fn step(&self) {
         // TODO: Add a runtime check to prevent re-entering this method from an operator.
 
         // TODO: We need a protocol to make sure that all sources have data available before
         // running the circuit and to either block or fail if they don't.
-        self.scheduler.run(&self.circuit);
+        self.executor.run(&self.circuit);
     }
 
     /// Attach a scheduler event handler to the circuit.

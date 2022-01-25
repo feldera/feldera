@@ -5,21 +5,49 @@ use super::{trace::SchedulerEvent, Circuit, NodeId};
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use std::{ops::Deref, thread::yield_now};
 
-/// A schedule defines the order in which nodes in a circuit should be evaluated.  A valid
-/// schedule evals each node exactly once, after all of its upstream nodes have been
+/// A scheduler defines the order in which nodes in a circuit are evaluated at runtime.
+///
+/// A valid schedule evaluates each node exactly once, after all of its upstream nodes have been
 /// evaluated.  Note that this works for circuits with logical cycles, as all such cycles
 /// must contain a strict operator, which maps into a pair of source and sink nodes, so
 /// that the resulting circuit is still acyclic and output of the strict operator is
-/// evaluated before feed input to it.
-struct Schedule {
+/// evaluated before feed input to it.  In addition, the scheduler must wait for an async
+/// operator to be in a ready state before evaluating it
+/// (see [`Operator::is_async`](`crate::circuit::operator_traits::Operator`)).
+pub trait Scheduler {
+    /// Create a scheduler for a circuit.
+    ///
+    /// This method is invoked at circuit construction time to perform any required
+    /// preparatory computation, e.g., compute a complete static schedule or build
+    /// data structures needed for dynamic scheduling.
+    fn prepare<P>(circuit: &Circuit<P>) -> Self
+    where
+        P: Clone + 'static;
+
+    /// Evaluate the circuit at runtime.
+    ///
+    /// Evaluates each node in the circuit exactly once in an order that respects
+    /// (1) its dependency graph, and (2) the [`ready`](`crate::circuit::operator_traits::Operator::ready`)
+    /// status of async operators.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit` - circuit to schedule, this must be the same circuit for which the schedule
+    ///   was computed.
+    fn step<P>(&self, circuit: &Circuit<P>)
+    where
+        P: Clone + 'static;
+}
+
+pub struct StaticScheduler {
     schedule: Vec<(NodeId, bool)>,
 }
 
-impl Schedule {
-    /// Compute schedule for a circuit.  We may want to support multiple scheduling algorithms
-    /// in the future, but for now simple topological sorting seems good enough.
-    /// TODO: compute a schedule that takes into account operators that consume inputs by-value.
-    fn schedule_circuit<P>(circuit: &Circuit<P>) -> Self
+impl Scheduler for StaticScheduler {
+    // Compute a schedule that respects the dependency graph by arranging
+    // nodes in a topological order.
+    // TODO: compute a schedule that takes into account operators that consume inputs by-value.
+    fn prepare<P>(circuit: &Circuit<P>) -> Self
     where
         P: Clone + 'static,
     {
@@ -35,8 +63,6 @@ impl Schedule {
         Self { schedule }
     }
 
-    /// Run the schedule against a circuit, evaluating each node exactly once.
-    /// `circuit` must be the same circuit for which the schedule was computed.
     fn step<P>(&self, circuit: &Circuit<P>)
     where
         P: Clone + 'static,
@@ -61,45 +87,47 @@ impl Schedule {
     }
 }
 
-/// A scheduler executes a circuit by evaluating all of its operators according to a `Schedule`.
-/// It can run the circuit exactly once or multiple times, until some termimation condition is
+/// An executor executes a circuit by evaluating all of its operators using a `Scheduler`.
+/// It can run the circuit exactly once or multiple times, until some termination condition is
 /// reached.
-pub(crate) trait Scheduler<P>: 'static {
+pub(crate) trait Executor<P>: 'static {
     fn run(&self, circuit: &Circuit<P>);
 }
 
-/// An iterative scheduler evaluates the circuit until the `termination_check` callback returns
-/// true.  Every time the scheduler is invoked, it first sends the `clock_start` notification
+/// An iterative executor evaluates the circuit until the `termination_check` callback returns
+/// true.  Every time the executor is invoked, it first sends the `clock_start` notification
 /// to all operators in the circuit. It then evaluates the circuit until the termination condition
 /// is satisfied (but at least once), and finally calls `clock_end` on it.
-pub(crate) struct IterativeScheduler<F> {
+pub(crate) struct IterativeExecutor<F, S> {
     termination_check: F,
-    schedule: Schedule,
+    scheduler: S,
 }
 
-impl<F> IterativeScheduler<F> {
+impl<F, S> IterativeExecutor<F, S> {
     pub(crate) fn new<P>(circuit: &Circuit<P>, termination_check: F) -> Self
     where
         P: Clone + 'static,
+        S: Scheduler,
     {
         Self {
             termination_check,
-            schedule: Schedule::schedule_circuit(circuit),
+            scheduler: <S as Scheduler>::prepare(circuit),
         }
     }
 }
 
-impl<P, F> Scheduler<P> for IterativeScheduler<F>
+impl<P, F, S> Executor<P> for IterativeExecutor<F, S>
 where
     F: Fn() -> bool + 'static,
     P: Clone + 'static,
+    S: Scheduler + 'static,
 {
     fn run(&self, circuit: &Circuit<P>) {
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start();
 
         loop {
-            self.schedule.step(circuit);
+            self.scheduler.step(circuit);
             if (self.termination_check)() {
                 break;
             }
@@ -110,27 +138,31 @@ where
     }
 }
 
-/// A scheduler that evaluates the circuit exactly once every time it is invoked.
-pub(crate) struct OnceScheduler {
-    schedule: Schedule,
+/// An executor that evaluates the circuit exactly once every time it is invoked.
+pub(crate) struct OnceExecutor<S> {
+    scheduler: S,
 }
 
-impl OnceScheduler {
+impl<S> OnceExecutor<S>
+where
+    S: Scheduler,
+{
     pub(crate) fn new<P>(circuit: &Circuit<P>) -> Self
     where
         P: Clone + 'static,
     {
         Self {
-            schedule: Schedule::schedule_circuit(circuit),
+            scheduler: <S as Scheduler>::prepare(circuit),
         }
     }
 }
 
-impl<P> Scheduler<P> for OnceScheduler
+impl<P, S> Executor<P> for OnceExecutor<S>
 where
     P: Clone + 'static,
+    S: Scheduler + 'static,
 {
     fn run(&self, circuit: &Circuit<P>) {
-        self.schedule.step(circuit);
+        self.scheduler.step(circuit);
     }
 }
