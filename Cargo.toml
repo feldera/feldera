@@ -10,5 +10,5 @@ num = "0.4.0"
 string-builder = "0.2.0 "
 petgraph = "0.6.0"
 typedmap = { version = "0.2.0", features = ["dashmap"] }
-crossbeam = "0.8.1"
+crossbeam-utils = "0.8.6"
 once_cell = "1.9.0"

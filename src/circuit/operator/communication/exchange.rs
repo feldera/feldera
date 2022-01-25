@@ -9,7 +9,7 @@ use crate::circuit::{
     operator_traits::{Operator, SinkOperator, SourceOperator},
     LocalStoreMarker, Runtime,
 };
-use crossbeam::utils::CachePadded;
+use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
 use std::{
     borrow::Cow,
