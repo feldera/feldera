@@ -1,9 +1,9 @@
-//! A schedule controls the execution of a circuit.
+//! The scheduling framework controls the execution of a circuit at runtime.
 
-use super::{trace::SchedulerEvent, Circuit, NodeId};
+use super::{trace::SchedulerEvent, Circuit};
 
-use petgraph::{algo::toposort, graphmap::DiGraphMap};
-use std::{ops::Deref, thread::yield_now};
+mod static_scheduler;
+pub use static_scheduler::StaticScheduler;
 
 /// A scheduler defines the order in which nodes in a circuit are evaluated at runtime.
 ///
@@ -37,54 +37,6 @@ pub trait Scheduler {
     fn step<P>(&self, circuit: &Circuit<P>)
     where
         P: Clone + 'static;
-}
-
-pub struct StaticScheduler {
-    schedule: Vec<(NodeId, bool)>,
-}
-
-impl Scheduler for StaticScheduler {
-    // Compute a schedule that respects the dependency graph by arranging
-    // nodes in a topological order.
-    // TODO: compute a schedule that takes into account operators that consume inputs by-value.
-    fn prepare<P>(circuit: &Circuit<P>) -> Self
-    where
-        P: Clone + 'static,
-    {
-        let g = DiGraphMap::<NodeId, ()>::from_edges(circuit.edges().deref());
-        // `toposort` fails if the graph contains cycles.
-        // The circuit_builder API makes it impossible to construct such graphs.
-        let schedule = toposort(&g, None)
-            .unwrap_or_else(|e| panic!("cycle in the circuit graph: {:?}", e))
-            .into_iter()
-            .map(|node_id| (node_id, circuit.is_async_node(node_id)))
-            .collect();
-
-        Self { schedule }
-    }
-
-    fn step<P>(&self, circuit: &Circuit<P>)
-    where
-        P: Clone + 'static,
-    {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start());
-
-        for (node_id, is_async) in self.schedule.iter() {
-            if !is_async {
-                circuit.eval_node(*node_id);
-            } else {
-                loop {
-                    if circuit.ready(*node_id) {
-                        circuit.eval_node(*node_id);
-                        break;
-                    }
-                    yield_now();
-                }
-            }
-        }
-
-        circuit.log_scheduler_event(&SchedulerEvent::step_end());
-    }
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a `Scheduler`.
