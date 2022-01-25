@@ -14,7 +14,7 @@ impl<T: Clone + 'static> Data for T {}
 /// Methods in this trait are necessary to support operators over nested streams.
 /// A nested stream is a stream whose elements are streams.  Since streams are
 /// generated one value at a time, we need a separate operator invocation for each
-/// element of the inner-most stream.  The `stream_start` and `stream_end` methods
+/// element of the inner-most stream.  The `clock_start` and `clock_end` methods
 /// signals respectively the start and completion of a nested stream.
 ///
 /// For example, feeding the following matrix, where rows represent nested
@@ -31,23 +31,23 @@ impl<T: Clone + 'static> Data for T {}
 /// to an operator requires the following sequence of invocations
 ///
 /// ```text
-/// stream_start() // Start outer stream.
-/// stream_start() // Start nested stream (first row of the matrix).
+/// clock_start() // Start outer stream.
+/// clock_start() // Start nested stream (first row of the matrix).
 /// eval(1)
 /// eval(2)
-/// stream_end()   // End nested stream.
-/// stream_start() // Start nested stream (second row).
+/// clock_end()   // End nested stream.
+/// clock_start() // Start nested stream (second row).
 /// eval(3)
 /// eval(4)
 /// eval(5)
 /// eval(6)
-/// stream_end()   // End nested stream.
-/// stream_start() // Start nested strea (second row).
+/// clock_end()   // End nested stream.
+/// clock_start() // Start nested strea (second row).
 /// eval(7)
 /// eval(8)
 /// eval(9)
-/// stream_end()   // End nested stream.
-/// stream_end()   // End outer stream.
+/// clock_end()   // End nested stream.
+/// clock_end()   // End outer stream.
 /// ```
 ///
 /// Note that the input and output of an operator always belong to the same clock
@@ -63,8 +63,8 @@ impl<T: Clone + 'static> Data for T {}
 pub trait Operator: 'static {
     fn name(&self) -> Cow<'static, str>;
 
-    fn stream_start(&mut self);
-    fn stream_end(&mut self);
+    fn clock_start(&mut self);
+    fn clock_end(&mut self);
 
     /// Returns `true` if `self` prefers to consume owned inputs.
     ///

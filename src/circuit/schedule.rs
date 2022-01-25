@@ -69,9 +69,9 @@ pub(crate) trait Scheduler<P>: 'static {
 }
 
 /// An iterative scheduler evaluates the circuit until the `termination_check` callback returns
-/// true.  Every time the scheduler is invoked, it first sends the `stream_start` notification
+/// true.  Every time the scheduler is invoked, it first sends the `clock_start` notification
 /// to all operators in the circuit. It then evaluates the circuit until the termination condition
-/// is satisfied (but at least once), and finally calls `stream_end` on it.
+/// is satisfied (but at least once), and finally calls `clock_end` on it.
 pub(crate) struct IterativeScheduler<F> {
     termination_check: F,
     schedule: Schedule,
@@ -96,7 +96,7 @@ where
 {
     fn run(&self, circuit: &Circuit<P>) {
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
-        circuit.stream_start();
+        circuit.clock_start();
 
         loop {
             self.schedule.step(circuit);
@@ -106,7 +106,7 @@ where
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
-        unsafe { circuit.stream_end() };
+        unsafe { circuit.clock_end() };
     }
 }
 

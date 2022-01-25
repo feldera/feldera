@@ -6,7 +6,7 @@ use crate::circuit::operator_traits::{
 use std::{borrow::Cow, mem::swap};
 
 /// z^-1 operator delays its input by one timestamp.  It outputs a user-defined
-/// "zero" value in the first timestamp after [stream_start](`Z1::stream_start`).
+/// "zero" value in the first timestamp after [clock_start](`Z1::clock_start`).
 /// For all subsequent timestamps, it outputs the value received as input at the
 /// previous timestamp.  The zero value is typically the neutral element of
 /// a monoid (e.g., 0 for addition or 1 for multiplication).
@@ -53,8 +53,8 @@ where
         Cow::from("Z^-1")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {
         self.reset();
     }
     fn prefer_owned_input(&self) -> bool {
@@ -110,39 +110,39 @@ fn sum_circuit() {
 
     // Test `UnaryOperator` API.
     let mut res = Vec::new();
-    z1.stream_start();
+    z1.clock_start();
     res.push(z1.eval(&1));
     res.push(z1.eval(&2));
     res.push(z1.eval(&3));
-    z1.stream_end();
+    z1.clock_end();
 
-    z1.stream_start();
+    z1.clock_start();
     res.push(z1.eval_owned(4));
     res.push(z1.eval_owned(5));
     res.push(z1.eval_owned(6));
-    z1.stream_end();
+    z1.clock_end();
 
     assert_eq!(res, expected_result);
 
     // Test `StrictUnaryOperator` API.
     let mut res = Vec::new();
-    z1.stream_start();
+    z1.clock_start();
     res.push(z1.get_output());
     z1.eval_strict(&1);
     res.push(z1.get_output());
     z1.eval_strict(&2);
     res.push(z1.get_output());
     z1.eval_strict(&3);
-    z1.stream_end();
+    z1.clock_end();
 
-    z1.stream_start();
+    z1.clock_start();
     res.push(z1.get_output());
     z1.eval_strict_owned(4);
     res.push(z1.get_output());
     z1.eval_strict_owned(5);
     res.push(z1.get_output());
     z1.eval_strict_owned(6);
-    z1.stream_end();
+    z1.clock_end();
 
     assert_eq!(res, expected_result);
 }

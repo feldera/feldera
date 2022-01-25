@@ -34,8 +34,8 @@ where
         Cow::from("Inspect")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {}
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {}
 }
 
 impl<T, F> SinkOperator<T> for Inspect<T, F>

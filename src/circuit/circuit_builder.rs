@@ -192,7 +192,7 @@ pub(crate) trait Node {
     // This is really the start/end of a clock epoch.
     /// Notify the node about start of input streams.  The node
     /// should forward the notification to its inner operator.
-    fn stream_start(&mut self);
+    fn clock_start(&mut self);
 
     /// Notify the node about end of input streams.  The node
     /// should forward the notification to its inner operator.
@@ -201,7 +201,7 @@ pub(crate) trait Node {
     ///
     /// Only one node may be scheduled at any given time (a node cannot invoke
     /// another node).
-    unsafe fn stream_end(&mut self);
+    unsafe fn clock_end(&mut self);
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -552,17 +552,17 @@ impl<P> Circuit<P> {
         Ref::map(circuit, |c| c.edges.as_slice())
     }
 
-    /// Deliver `stream_start` notification to all nodes in the circuit.
-    pub(super) fn stream_start(&self) {
+    /// Deliver `clock_start` notification to all nodes in the circuit.
+    pub(super) fn clock_start(&self) {
         for node in self.inner_mut().nodes.iter_mut() {
-            node.stream_start();
+            node.clock_start();
         }
     }
 
-    /// Deliver `stream_end` notification to all nodes in the circuit.
-    pub(super) unsafe fn stream_end(&self) {
+    /// Deliver `clock_end` notification to all nodes in the circuit.
+    pub(super) unsafe fn clock_end(&self) {
         for node in self.inner_mut().nodes.iter_mut() {
-            node.stream_end();
+            node.clock_end();
         }
     }
 
@@ -903,12 +903,12 @@ where
     /// Add a child circuit with a nested clock.  The child will execute multiple times for each
     /// parent timestamp, until its termination condition is satisfied.  Specifically, this
     /// function attaches an iterative scheduler to the child.  Every time the child circuit is
-    /// activated by the parent (once per parent timestamp), the scheduler calls `stream_start` on
+    /// activated by the parent (once per parent timestamp), the scheduler calls `clock_start` on
     /// each child operator.  It then calls `eval` on all child operators in a causal order and
     /// checks if the termination condition is satisfied by reading from a user-specified
     /// "termination" stream.  If the value in the stream is `false`, the scheduler `eval`s all
     /// operators again.  Once the termination condition is `true`, the scheduler calls
-    /// `stream_end` on all child operators and returns control back to the parent scheduler.
+    /// `clock_end` on all child operators and returns control back to the parent scheduler.
     ///
     /// The `constructor` closure populates the child circuit and returns the termination stream
     /// used by the scheduler to check termination condition on each iteration and an arbitrary
@@ -1004,12 +1004,12 @@ where
         self.output_stream.put(self.operator.eval());
     }
 
-    fn stream_start(&mut self) {
-        self.operator.stream_start();
+    fn clock_start(&mut self) {
+        self.operator.clock_start();
     }
 
-    unsafe fn stream_end(&mut self) {
-        self.operator.stream_end();
+    unsafe fn clock_end(&mut self) {
+        self.operator.clock_end();
     }
 }
 
@@ -1072,12 +1072,12 @@ where
         );
     }
 
-    fn stream_start(&mut self) {
-        self.operator.stream_start();
+    fn clock_start(&mut self) {
+        self.operator.clock_start();
     }
 
-    unsafe fn stream_end(&mut self) {
-        self.operator.stream_end();
+    unsafe fn clock_end(&mut self) {
+        self.operator.clock_end();
     }
 }
 
@@ -1126,12 +1126,12 @@ where
         );
     }
 
-    fn stream_start(&mut self) {
-        self.operator.stream_start();
+    fn clock_start(&mut self) {
+        self.operator.clock_start();
     }
 
-    unsafe fn stream_end(&mut self) {
-        self.operator.stream_end();
+    unsafe fn clock_end(&mut self) {
+        self.operator.clock_end();
     }
 }
 
@@ -1202,12 +1202,12 @@ where
         );
     }
 
-    fn stream_start(&mut self) {
-        self.operator.stream_start();
+    fn clock_start(&mut self) {
+        self.operator.clock_start();
     }
 
-    unsafe fn stream_end(&mut self) {
-        self.operator.stream_end();
+    unsafe fn clock_end(&mut self) {
+        self.operator.clock_end();
     }
 }
 
@@ -1264,14 +1264,14 @@ where
             .put((&mut *self.operator.get()).get_output());
     }
 
-    fn stream_start(&mut self) {
+    fn clock_start(&mut self) {
         unsafe {
-            (&mut *self.operator.get()).stream_start();
+            (&mut *self.operator.get()).clock_start();
         }
     }
 
-    unsafe fn stream_end(&mut self) {
-        (&mut *self.operator.get()).stream_end();
+    unsafe fn clock_end(&mut self) {
+        (&mut *self.operator.get()).clock_end();
     }
 }
 
@@ -1325,10 +1325,10 @@ where
         );
     }
 
-    // Don't call `stream_start`/`stream_end` on the operator.  `FeedbackOutputNode` will do that.
-    fn stream_start(&mut self) {}
+    // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode` will do that.
+    fn clock_start(&mut self) {}
 
-    unsafe fn stream_end(&mut self) {}
+    unsafe fn clock_end(&mut self) {}
 }
 
 /// Input connector of a feedback operator.
@@ -1422,12 +1422,12 @@ where
         self.scheduler.run(&self.circuit);
     }
 
-    fn stream_start(&mut self) {
-        self.circuit.stream_start();
+    fn clock_start(&mut self) {
+        self.circuit.clock_start();
     }
 
-    unsafe fn stream_end(&mut self) {
-        self.circuit.stream_end();
+    unsafe fn clock_end(&mut self) {
+        self.circuit.clock_end();
     }
 }
 
@@ -1442,7 +1442,7 @@ impl Drop for Root {
         self.circuit
             .log_scheduler_event(&SchedulerEvent::clock_end());
         unsafe {
-            self.circuit.stream_end();
+            self.circuit.clock_end();
         }
         // We must explicitly deallocate all nodes in the circuit to break
         // cyclic `Rc` references between circuits and streams.  Alternatively,
@@ -1463,11 +1463,11 @@ impl Root {
         constructor(&mut circuit);
         let scheduler = OnceScheduler::new(&circuit);
 
-        // Alternatively, `Root` should expose `stream_start` and `stream_end` APIs, so that the
+        // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so that the
         // user can reset the circuit at runtime and start evaluation from clean state without
         // having to rebuild it from scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
-        circuit.stream_start();
+        circuit.clock_start();
         Self { circuit, scheduler }
     }
 
@@ -1537,8 +1537,8 @@ mod tests {
         fn name(&self) -> Cow<'static, str> {
             Cow::from("Integrator")
         }
-        fn stream_start(&mut self) {}
-        fn stream_end(&mut self) {
+        fn clock_start(&mut self) {}
+        fn clock_end(&mut self) {
             self.sum = 0;
         }
     }
@@ -1564,8 +1564,8 @@ mod tests {
         fn name(&self) -> Cow<'static, str> {
             Cow::from("Printer")
         }
-        fn stream_start(&mut self) {}
-        fn stream_end(&mut self) {}
+        fn clock_start(&mut self) {}
+        fn clock_end(&mut self) {}
     }
     impl<T: Display + 'static> SinkOperator<T> for Printer<T> {
         fn eval(&mut self, i: &T) {
