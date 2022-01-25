@@ -18,8 +18,8 @@ impl<T: Data> Operator for Repeat<T> {
         Cow::from("Repeat")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {}
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {}
 }
 
 impl<T: Data> SourceOperator<T> for Repeat<T> {

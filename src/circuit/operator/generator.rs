@@ -5,7 +5,7 @@ use crate::circuit::operator_traits::{Data, Operator, SourceOperator};
 use std::borrow::Cow;
 
 /// A source operator that yields an infinite output stream from an initial
-/// seed and a transformer function.  On `stream_start`, the internal operator
+/// seed and a transformer function.  On `clock_start`, the internal operator
 /// state is reset to the seed value.  On each `eval`, the operator outputs
 /// its current state before updating the state using the transformer function.
 pub struct Generator<T, F> {
@@ -36,8 +36,8 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Generator")
     }
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {
         self.val = self.seed.clone();
     }
 }

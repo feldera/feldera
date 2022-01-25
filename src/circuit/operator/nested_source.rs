@@ -54,13 +54,13 @@ where
         Cow::from("NestedSource")
     }
 
-    fn stream_start(&mut self) {
+    fn clock_start(&mut self) {
         self.val = unsafe { self.input_stream.get() }
             .clone()
             .unwrap_or_default();
     }
 
-    fn stream_end(&mut self) {
+    fn clock_end(&mut self) {
         self.val = T::default();
     }
 }

@@ -413,8 +413,8 @@ where
         Cow::from("ExchangeSender")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {}
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {}
 
     fn prefer_owned_input(&self) -> bool {
         true
@@ -496,8 +496,8 @@ where
         Cow::from("ExchangeReceiver")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {}
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {}
 
     fn is_async(&self) -> bool {
         true

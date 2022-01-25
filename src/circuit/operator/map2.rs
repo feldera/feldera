@@ -27,8 +27,8 @@ where
         Cow::from("Map2")
     }
 
-    fn stream_start(&mut self) {}
-    fn stream_end(&mut self) {}
+    fn clock_start(&mut self) {}
+    fn clock_end(&mut self) {}
 }
 
 impl<T1, T2, T3, F> BinaryOperator<T1, T2, T3> for Map2<F>
