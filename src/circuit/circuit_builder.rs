@@ -178,6 +178,10 @@ pub(crate) trait Node {
     /// Always returns `true` for synchronous operators and subcircuits.
     fn ready(&self) -> bool;
 
+    /// Register callback to be invoked when an asynchronous operator becomes ready
+    /// (see [`Operator::register_ready_callback`]).
+    fn register_ready_callback(&mut self, _cb: Box<dyn Fn() + Send + Sync>) {}
+
     /// Evaluate the operator.  Reads one value from each input stream
     /// and pushes a new value to the output stream (except for sink
     /// operators, which don't have an output stream).
@@ -212,6 +216,11 @@ pub struct NodeId(usize);
 impl NodeId {
     pub fn new(id: usize) -> Self {
         Self(id)
+    }
+
+    /// Extracts numeric representation of the node id.
+    pub fn id(&self) -> usize {
+        self.0
     }
 
     pub(super) fn root() -> Self {
@@ -552,6 +561,14 @@ impl<P> Circuit<P> {
         Ref::map(circuit, |c| c.edges.as_slice())
     }
 
+    pub(super) fn num_nodes(&self) -> usize {
+        self.inner().nodes.len()
+    }
+
+    pub(super) fn node_ids(&self) -> Vec<NodeId> {
+        self.inner().nodes.iter().map(|node| node.id()).collect()
+    }
+
     /// Deliver `clock_start` notification to all nodes in the circuit.
     pub(super) fn clock_start(&self) {
         for node in self.inner_mut().nodes.iter_mut() {
@@ -592,6 +609,10 @@ where
 
     pub(crate) fn ready(&self, id: NodeId) -> bool {
         self.inner().nodes[id.0].ready()
+    }
+
+    pub(crate) fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {
+        self.inner_mut().nodes[id.0].register_ready_callback(cb);
     }
 
     pub(crate) fn is_async_node(&self, id: NodeId) -> bool {
@@ -1014,6 +1035,10 @@ where
         self.operator.ready()
     }
 
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream.put(self.operator.eval());
     }
@@ -1074,6 +1099,10 @@ where
         self.operator.ready()
     }
 
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream.put(
             self.operator.eval(
@@ -1128,6 +1157,10 @@ where
 
     fn ready(&self) -> bool {
         self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
     }
 
     unsafe fn eval(&mut self) {
@@ -1197,6 +1230,10 @@ where
 
     fn ready(&self) -> bool {
         self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
     }
 
     unsafe fn eval(&mut self) {
@@ -1273,6 +1310,10 @@ where
         unsafe { &*self.operator.get() }.ready()
     }
 
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
+    }
+
     unsafe fn eval(&mut self) {
         self.output_stream
             .put((&mut *self.operator.get()).get_output());
@@ -1327,6 +1368,10 @@ where
 
     fn ready(&self) -> bool {
         unsafe { &*self.operator.get() }.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
     }
 
     unsafe fn eval(&mut self) {
@@ -1546,6 +1591,7 @@ mod tests {
     use crate::circuit::{
         operator::{Apply2, Generator, Inspect, NestedSource, Z1},
         operator_traits::{Operator, SinkOperator, UnaryOperator},
+        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         trace::TraceMonitor,
     };
     use std::{
@@ -1608,12 +1654,24 @@ mod tests {
         }
     }
 
-    // Compute the sum of numbers from 0 to 99.
     #[test]
-    fn sum_circuit() {
+    fn sum_circuit_static() {
+        sum_circuit::<StaticScheduler>();
+    }
+
+    #[test]
+    fn sum_circuit_dynamic() {
+        sum_circuit::<DynamicScheduler>();
+    }
+
+    // Compute the sum of numbers from 0 to 99.
+    fn sum_circuit<S>()
+    where
+        S: Scheduler + 'static,
+    {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
-        let root = Root::build(|circuit| {
+        let root = Root::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::attach(
                 Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
                 circuit,
@@ -1643,11 +1701,23 @@ mod tests {
 
     // Recursive circuit
     #[test]
-    fn recursive_sum_circuit() {
+    fn recursive_sum_circuit_static() {
+        recursive_sum_circuit::<StaticScheduler>()
+    }
+
+    #[test]
+    fn recursive_sum_circuit_dynamic() {
+        recursive_sum_circuit::<DynamicScheduler>()
+    }
+
+    fn recursive_sum_circuit<S>()
+    where
+        S: Scheduler + 'static,
+    {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let root = Root::build(|circuit| {
+        let root = Root::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::attach(
                 Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
                 circuit,
@@ -1681,16 +1751,28 @@ mod tests {
         assert_eq!(&expected_output, actual_output.borrow().deref());
     }
 
+    #[test]
+    fn factorial_static() {
+        factorial::<StaticScheduler>();
+    }
+
+    #[test]
+    fn factorial_dynamic() {
+        factorial::<DynamicScheduler>();
+    }
+
     // Nested circuit.  The root circuit contains a source node that counts up from 1.  For
     // each `n` output by the source node, the nested circuit computes factorial(n) using a
     // `NestedSource` operator that counts from n down to `1` and a multiplier that multiplies
     // the next count by the product computed so far (stored in z-1).
-    #[test]
-    fn factorial() {
+    fn factorial<S>()
+    where
+        S: Scheduler + 'static,
+    {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let root = Root::build(|circuit| {
+        let root = Root::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::attach(
                 Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
                 circuit,
@@ -1698,7 +1780,7 @@ mod tests {
             );
 
             let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
-            let fact = circuit.iterate(|child| {
+            let fact = circuit.iterate_with_scheduler::<_, _, _, S>(|child| {
                 let counter = Rc::new(RefCell::new(0));
                 let counter_clone = counter.clone();
                 let countdown =

@@ -171,17 +171,30 @@ mod tests {
     use super::Runtime;
     use crate::circuit::{
         operator::{Generator, Inspect},
+        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         Root,
     };
     use std::{cell::RefCell, rc::Rc};
 
     #[test]
-    fn test_runtime() {
+    fn test_runtime_static() {
+        test_runtime::<StaticScheduler>();
+    }
+
+    #[test]
+    fn test_runtime_dynamic() {
+        test_runtime::<DynamicScheduler>();
+    }
+
+    fn test_runtime<S>()
+    where
+        S: Scheduler + 'static,
+    {
         let hruntime = Runtime::run(4, |runtime, index| {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
             let runtime = runtime.clone();
-            let root = Root::build(move |circuit| {
+            let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                 let rtclone = runtime.clone();
                 // Generator that produces values using `sequence_next`.
                 let source = circuit.add_source(Generator::new(
