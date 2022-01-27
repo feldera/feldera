@@ -580,6 +580,7 @@ mod tests {
     use super::Exchange;
     use crate::circuit::{
         operator::{communication::new_exchange_operators, Generator, Inspect},
+        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         Root, Runtime,
     };
     use std::{iter::repeat, thread::yield_now};
@@ -619,19 +620,34 @@ mod tests {
         hruntime.join().unwrap();
     }
 
+    #[test]
+    fn test_exchange_operators_static() {
+        test_exchange_operators::<StaticScheduler>();
+    }
+
+    #[test]
+    fn test_exchange_operators_dynamic() {
+        test_exchange_operators::<DynamicScheduler>();
+    }
+
     // Create a circuit with `WORKERS` concurrent workers with the following structure:
     // `Generator - ExchangeSender -> ExchangeReceiver -> Inspect`.
     // `Generator` - yields sequential numbers 0, 1, 2, ...
     // `ExchangeSender` - sends each number to all peers.
     // `ExchangeReceiver` - combines all received numbers in a vector.
     // `Inspect` - validates the output of the receiver.
-    #[test]
-    fn test_exchange_operators() {
+    fn test_exchange_operators<S>()
+    where
+        S: Scheduler + 'static,
+    {
         const ROUNDS: usize = 2048;
 
-        fn do_test(workers: usize) {
+        fn do_test<S>(workers: usize)
+        where
+            S: Scheduler + 'static,
+        {
             let hruntime = Runtime::run(workers.clone(), move |runtime, index| {
-                let root = Root::build(move |circuit| {
+                let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                     let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n += 1));
                     let (sender, receiver) = new_exchange_operators(
                         runtime,
@@ -658,8 +674,8 @@ mod tests {
             hruntime.join().unwrap();
         }
 
-        do_test(1);
-        do_test(16);
-        do_test(32);
+        do_test::<S>(1);
+        do_test::<S>(16);
+        do_test::<S>(32);
     }
 }

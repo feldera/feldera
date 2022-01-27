@@ -5,6 +5,9 @@ use super::{trace::SchedulerEvent, Circuit};
 mod static_scheduler;
 pub use static_scheduler::StaticScheduler;
 
+mod dynamic_scheduler;
+pub use dynamic_scheduler::DynamicScheduler;
+
 /// A scheduler defines the order in which nodes in a circuit are evaluated at runtime.
 ///
 /// A valid schedule evaluates each node exactly once, after all of its upstream nodes have been
