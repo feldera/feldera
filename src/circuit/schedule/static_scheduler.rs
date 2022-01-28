@@ -18,7 +18,14 @@ impl Scheduler for StaticScheduler {
     where
         P: Clone + 'static,
     {
-        let g = DiGraphMap::<NodeId, ()>::from_edges(circuit.edges().deref());
+        let mut g = DiGraphMap::<NodeId, ()>::new();
+        for node_id in circuit.node_ids().into_iter() {
+            g.add_node(node_id);
+        }
+        for (from, to) in circuit.edges().deref().iter() {
+            g.add_edge(*from, *to, ());
+        }
+
         // `toposort` fails if the graph contains cycles.
         // The circuit_builder API makes it impossible to construct such graphs.
         let schedule = toposort(&g, None)
