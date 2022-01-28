@@ -667,7 +667,7 @@ mod tests {
                 });
 
                 for _ in 1..ROUNDS {
-                    root.step();
+                    root.step().unwrap();
                 }
             });
 

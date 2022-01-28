@@ -1,6 +1,11 @@
 //! Static scheduler.
 
-use crate::circuit::{schedule::Scheduler, trace::SchedulerEvent, Circuit, NodeId};
+use crate::circuit::{
+    runtime::Runtime,
+    schedule::{Error, Scheduler},
+    trace::SchedulerEvent,
+    Circuit, NodeId,
+};
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use std::{ops::Deref, thread::yield_now};
 
@@ -37,7 +42,7 @@ impl Scheduler for StaticScheduler {
         Self { schedule }
     }
 
-    fn step<P>(&self, circuit: &Circuit<P>)
+    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
     where
         P: Clone + 'static,
     {
@@ -45,11 +50,17 @@ impl Scheduler for StaticScheduler {
 
         for (node_id, is_async) in self.schedule.iter() {
             if !is_async {
-                circuit.eval_node(*node_id);
+                if Runtime::kill_in_progress() {
+                    return Err(Error::Killed);
+                }
+                circuit.eval_node(*node_id)?;
             } else {
                 loop {
+                    if Runtime::kill_in_progress() {
+                        return Err(Error::Killed);
+                    }
                     if circuit.ready(*node_id) {
-                        circuit.eval_node(*node_id);
+                        circuit.eval_node(*node_id)?;
                         break;
                     }
                     yield_now();
@@ -58,5 +69,6 @@ impl Scheduler for StaticScheduler {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end());
+        Ok(())
     }
 }

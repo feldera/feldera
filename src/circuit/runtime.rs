@@ -1,12 +1,29 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel fashion.
 
+use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
-    sync::Arc,
-    thread::{Builder, JoinHandle, Result as ThreadResult},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::sync_channel,
+        Arc,
+    },
+    thread::{Builder, JoinHandle, LocalKey, Result as ThreadResult},
 };
 use typedmap::{TypedDashMap, TypedMapKey};
 
 pub struct LocalStoreMarker;
+
+// Thread-local variables used by the termination protocol.
+thread_local! {
+    // Parker that must be used by all schedulers within the worker
+    // thread so that the scheduler gets woken up by `RuntimeHandle::kill`.
+    static PARKER: Parker = Parker::new();
+
+    // Set to `true` by `RuntimeHandle::kill`.
+    // Schedulers must check this signal before evaluating each operator
+    // and exit immediately returning `SchedulerError::Killed`.
+    static KILL_SIGNAL: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+}
 
 /// Local data store shared by all workers in a runtime.
 pub type LocalStore = TypedDashMap<LocalStoreMarker>;
@@ -62,7 +79,7 @@ impl Runtime {
     ///
     ///     // Run circuit for 100 clock cycles.
     ///     for _ in 0..100 {
-    ///         root.step();
+    ///         root.step().unwrap();
     ///     }
     /// });
     ///
@@ -82,12 +99,22 @@ impl Runtime {
             let f = f.clone();
             let builder = Builder::new().name(format!("worker{}", i));
 
-            let worker = builder
+            let (init_sender, init_receiver) = sync_channel(0);
+
+            let join_handle = builder
                 .spawn(move || {
+                    init_sender
+                        .send((
+                            PARKER.with(|parker| parker.unparker().clone()),
+                            KILL_SIGNAL.with(|s| s.clone()),
+                        ))
+                        .unwrap();
                     f(&runtime, i);
                 })
                 .unwrap_or_else(|_| panic!("failed to spawn worker thread {}", i));
-            workers.push(worker);
+
+            let (unparker, kill_signal) = init_receiver.recv().unwrap();
+            workers.push(WorkerHandle::new(join_handle, unparker, kill_signal));
         }
 
         RuntimeHandle::new(runtime, workers)
@@ -129,16 +156,51 @@ impl Runtime {
         *entry += 1;
         result
     }
+
+    /// Returns current worker's parker to be used by schedulers.
+    ///
+    /// Whenever a circuit scheduler needs to block waiting for
+    /// an operator to become ready, it must use this parker.
+    /// This ensures that the thread will be woken up when the
+    /// user tries to terminate the runtime using
+    /// [`RuntimeHandle::kill`].
+    pub fn parker() -> &'static LocalKey<Parker> {
+        &PARKER
+    }
+
+    /// `true` if the current worker thread has received a kill signal
+    /// and should exit asap.  Schedulers should use this method before
+    /// scheduling the next operator and after parking.
+    pub fn kill_in_progress() -> bool {
+        KILL_SIGNAL.with(|signal| signal.load(Ordering::SeqCst))
+    }
+}
+
+/// Per-worker controls.
+struct WorkerHandle {
+    join_handle: JoinHandle<()>,
+    unparker: Unparker,
+    kill_signal: Arc<AtomicBool>,
+}
+
+impl WorkerHandle {
+    fn new(join_handle: JoinHandle<()>, unparker: Unparker, kill_signal: Arc<AtomicBool>) -> Self {
+        Self {
+            join_handle,
+            unparker,
+            kill_signal,
+        }
+    }
 }
 
 /// Handle returned by `Runtime::run`.
 pub struct RuntimeHandle {
     runtime: Runtime,
-    workers: Vec<JoinHandle<()>>,
+    workers: Vec<WorkerHandle>,
 }
 
 impl RuntimeHandle {
-    fn new(runtime: Runtime, workers: Vec<JoinHandle<()>>) -> Self {
+    fn new(runtime: Runtime, workers: Vec<WorkerHandle>) -> Self {
         Self { runtime, workers }
     }
 
@@ -147,13 +209,33 @@ impl RuntimeHandle {
         &self.runtime
     }
 
+    /// Terminate the runtime and all worker threads without waiting for any
+    /// in-progress computation to complete.
+    ///
+    /// Signals all workers to exit.  Any operators already running are
+    /// evaluated to completion, after which the worker thread terminates
+    /// even if the circuit has not been fully evaluated for the current
+    /// clock cycle.
+    pub fn kill(self) -> ThreadResult<()> {
+        for worker in self.workers.iter() {
+            worker.kill_signal.store(true, Ordering::SeqCst);
+            worker.unparker.unpark();
+        }
+
+        self.join()
+    }
+
     /// Wait for all workers in the runtime to terminate.
     ///
     /// The calling thread blocks until all worker threads have terminated.
     pub fn join(self) -> ThreadResult<()> {
         // Insist on joining all threads even if some of them fail.
         #[allow(clippy::needless_collect)]
-        let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
+        let results: Vec<ThreadResult<()>> = self
+            .workers
+            .into_iter()
+            .map(|h| h.join_handle.join())
+            .collect();
         results.into_iter().collect::<ThreadResult<()>>()
     }
 }
@@ -174,7 +256,7 @@ mod tests {
         schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         Root,
     };
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
     #[test]
     fn test_runtime_static() {
@@ -208,12 +290,48 @@ mod tests {
             });
 
             for _ in 0..100 {
-                root.step();
+                root.step().unwrap();
             }
 
             assert_eq!(&*data.borrow(), &(0..100).collect::<Vec<usize>>());
         });
 
         hruntime.join().unwrap();
+    }
+
+    #[test]
+    fn test_kill_static() {
+        test_kill::<StaticScheduler>();
+    }
+
+    #[test]
+    fn test_kill_dynamic() {
+        test_kill::<DynamicScheduler>();
+    }
+
+    // Test `RuntimeHandle::kill`.
+    fn test_kill<S>()
+    where
+        S: Scheduler + 'static,
+    {
+        let hruntime = Runtime::run(16, |_runtime, _index| {
+            // Create a nested circuit that iterates forever.
+            let root = Root::build_with_scheduler::<_, S>(move |circuit| {
+                circuit.iterate_with_scheduler::<_, _, _, S>(|child| {
+                    let source = child.add_source(Generator::new(0, |n: &mut usize| *n += 1));
+                    child.add_sink(Inspect::new(|_: &usize| {}), &source);
+                    (|| false, ())
+                });
+            });
+
+            loop {
+                if root.step().is_err() {
+                    return;
+                }
+            }
+        });
+
+        sleep(Duration::from_millis(100));
+        hruntime.kill().unwrap();
     }
 }

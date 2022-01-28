@@ -45,8 +45,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::circuit::{schedule::Scheduler, trace::SchedulerEvent, Circuit, NodeId};
-use crossbeam_utils::sync::{Parker, Unparker};
+use crate::circuit::{
+    runtime::Runtime,
+    schedule::{Error, Scheduler},
+    trace::SchedulerEvent,
+    Circuit, NodeId,
+};
+use crossbeam_utils::sync::Unparker;
 use priority_queue::PriorityQueue;
 
 /// A task is a unit of work scheduled by the dynamic scheduler.
@@ -144,9 +149,6 @@ struct Inner {
     /// Tasks are stored in the same order as nodes in the circuit and
     /// task index is equal to the node id.
     tasks: Vec<Task>,
-
-    /// A handle to wait on when there are no runnable tasks left.
-    parker: Parker,
 
     // Mutable fields.
     /// Ready notifications received while the scheduler was busy or sleeping.
@@ -257,11 +259,9 @@ impl Inner {
             });
         }
 
-        let parker = Parker::new();
-        let unparker = parker.unparker().clone();
+        let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
         let scheduler = Self {
             tasks,
-            parker,
             notifications: Notifications::new(num_async_nodes, unparker),
             runnable: RunQueue::with_capacity(num_nodes),
         };
@@ -286,7 +286,7 @@ impl Inner {
         scheduler
     }
 
-    fn step<P>(&mut self, circuit: &Circuit<P>)
+    fn step<P>(&mut self, circuit: &Circuit<P>) -> Result<(), Error>
     where
         P: Clone + 'static,
     {
@@ -304,6 +304,9 @@ impl Inner {
         }
 
         while completed_tasks < self.tasks.len() {
+            if Runtime::kill_in_progress() {
+                return Err(Error::Killed);
+            }
             match self.dequeue_next_task() {
                 None => {
                     // No more tasks in the run queue -- try to add some by
@@ -313,11 +316,11 @@ impl Inner {
                     // Still nothing to do -- sleep waiting for a notification to
                     // unpark us.
                     if self.runnable.is_empty() {
-                        self.parker.park();
+                        Runtime::parker().with(|parker| parker.park());
                     }
                 }
                 Some(node_id) => {
-                    circuit.eval_node(node_id);
+                    circuit.eval_node(node_id)?;
                     if self.tasks[node_id.id()].is_async {
                         self.tasks[node_id.id()].is_ready = false;
                     }
@@ -327,6 +330,7 @@ impl Inner {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end());
+        Ok(())
     }
 }
 
@@ -346,10 +350,10 @@ impl Scheduler for DynamicScheduler {
         Self(RefCell::new(Inner::prepare(circuit)))
     }
 
-    fn step<P>(&self, circuit: &Circuit<P>)
+    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
     where
         P: Clone + 'static,
     {
-        self.inner_mut().step(circuit);
+        self.inner_mut().step(circuit)
     }
 }

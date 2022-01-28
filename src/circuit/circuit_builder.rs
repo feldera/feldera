@@ -37,7 +37,10 @@ use super::{
     operator_traits::{
         BinaryOperator, Data, SinkOperator, SourceOperator, StrictUnaryOperator, UnaryOperator,
     },
-    schedule::{Executor, IterativeExecutor, OnceExecutor, Scheduler, StaticScheduler},
+    schedule::{
+        Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor, Scheduler,
+        StaticScheduler,
+    },
     trace::{CircuitEvent, SchedulerEvent},
 };
 
@@ -190,7 +193,7 @@ pub(crate) trait Node {
     ///
     /// Only one node may be scheduled at any given time (a node cannot invoke
     /// another node).
-    unsafe fn eval(&mut self);
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError>;
 
     // TODO: we need to fix the terminology along with method names.
     // This is really the start/end of a clock epoch.
@@ -622,8 +625,9 @@ where
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
-    pub(crate) fn eval_node(&self, id: NodeId) {
+    pub(crate) fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
         let mut circuit = self.inner_mut();
+        debug_assert!(id.0 < circuit.nodes.len());
 
         // Notify loggers while holding a reference to the inner circuit.
         // We normally avoid this, since a nested call from event handler
@@ -637,9 +641,11 @@ where
         // reference to a node and pass it to an operator,
         // but this module doesn't expose nodes, only
         // streams.
-        unsafe { circuit.nodes[id.0].eval() };
+        unsafe { circuit.nodes[id.0].eval()? };
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(id));
+
+        Ok(())
     }
 
     /// Add a source operator to the circuit.  See [`SourceOperator`].
@@ -1039,8 +1045,9 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.output_stream.put(self.operator.eval());
+        Ok(())
     }
 
     fn clock_start(&mut self) {
@@ -1103,7 +1110,7 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.output_stream.put(
             self.operator.eval(
                 self.input_stream
@@ -1113,6 +1120,7 @@ where
                     .expect("operator scheduled before its input is ready"),
             ),
         );
+        Ok(())
     }
 
     fn clock_start(&mut self) {
@@ -1163,7 +1171,7 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.operator.eval(
             self.input_stream
                 .get()
@@ -1171,6 +1179,7 @@ where
                 .as_ref()
                 .expect("operator scheduled before its input is ready"),
         );
+        Ok(())
     }
 
     fn clock_start(&mut self) {
@@ -1236,7 +1245,7 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.output_stream.put(
             self.operator.eval(
                 self.input_stream1
@@ -1251,6 +1260,7 @@ where
                     .expect("operator scheduled before its input is ready"),
             ),
         );
+        Ok(())
     }
 
     fn clock_start(&mut self) {
@@ -1314,9 +1324,10 @@ where
         unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.output_stream
             .put((&mut *self.operator.get()).get_output());
+        Ok(())
     }
 
     fn clock_start(&mut self) {
@@ -1374,7 +1385,7 @@ where
         unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) {
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         (&mut *self.operator.get()).eval_strict(
             self.input_stream
                 .get()
@@ -1382,6 +1393,7 @@ where
                 .as_ref()
                 .expect("operator scheduled before its input is ready"),
         );
+        Ok(())
     }
 
     // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode` will do that.
@@ -1480,8 +1492,8 @@ where
         true
     }
 
-    unsafe fn eval(&mut self) {
-        self.executor.run(&self.circuit);
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
+        self.executor.run(&self.circuit)
     }
 
     fn clock_start(&mut self) {
@@ -1554,12 +1566,12 @@ impl Root {
     /// Every call to `step()` corresponds to one tick of the global logical clock and causes
     /// each operator in the circuit to get evaluated once, consuming one value from each of
     /// its input streams.
-    pub fn step(&self) {
+    pub fn step(&self) -> Result<(), SchedulerError> {
         // TODO: Add a runtime check to prevent re-entering this method from an operator.
 
         // TODO: We need a protocol to make sure that all sources have data available before
         // running the circuit and to either block or fail if they don't.
-        self.executor.run(&self.circuit);
+        self.executor.run(&self.circuit)
     }
 
     /// Attach a scheduler event handler to the circuit.
@@ -1687,7 +1699,7 @@ mod tests {
         });
 
         for _ in 0..100 {
-            root.step()
+            root.step().unwrap();
         }
 
         let mut sum = 0;
@@ -1739,7 +1751,7 @@ mod tests {
         });
 
         for _ in 0..100 {
-            root.step();
+            root.step().unwrap();
         }
 
         let mut sum = 0;
@@ -1804,7 +1816,7 @@ mod tests {
         });
 
         for _ in 1..10 {
-            root.step();
+            root.step().unwrap();
         }
 
         let mut expected_output: Vec<usize> = Vec::with_capacity(10);
