@@ -8,6 +8,14 @@ pub use static_scheduler::StaticScheduler;
 mod dynamic_scheduler;
 pub use dynamic_scheduler::DynamicScheduler;
 
+/// Scheduler errors.
+#[derive(Debug)]
+pub enum Error {
+    /// Execution of the circuit interrupted by the user (via
+    /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
+    Killed,
+}
+
 /// A scheduler defines the order in which nodes in a circuit are evaluated at runtime.
 ///
 /// A valid schedule evaluates each node exactly once, after all of its upstream nodes have been
@@ -37,7 +45,7 @@ pub trait Scheduler {
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for which the schedule
     ///   was computed.
-    fn step<P>(&self, circuit: &Circuit<P>)
+    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
     where
         P: Clone + 'static;
 }
@@ -46,7 +54,7 @@ pub trait Scheduler {
 /// It can run the circuit exactly once or multiple times, until some termination condition is
 /// reached.
 pub(crate) trait Executor<P>: 'static {
-    fn run(&self, circuit: &Circuit<P>);
+    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check` callback returns
@@ -77,12 +85,12 @@ where
     P: Clone + 'static,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &Circuit<P>) {
+    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error> {
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start();
 
         loop {
-            self.scheduler.step(circuit);
+            self.scheduler.step(circuit)?;
             if (self.termination_check)() {
                 break;
             }
@@ -90,6 +98,7 @@ where
 
         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
         unsafe { circuit.clock_end() };
+        Ok(())
     }
 }
 
@@ -117,7 +126,7 @@ where
     P: Clone + 'static,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &Circuit<P>) {
-        self.scheduler.step(circuit);
+    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error> {
+        self.scheduler.step(circuit)
     }
 }
