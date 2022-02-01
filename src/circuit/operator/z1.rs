@@ -1,7 +1,8 @@
 //! z^-1 operator delays its input by one timestamp.
 
-use crate::circuit::operator_traits::{
-    Operator, StrictOperator, StrictUnaryOperator, UnaryOperator,
+use crate::circuit::{
+    operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
+    OwnershipPreference,
 };
 use std::{borrow::Cow, mem::swap};
 
@@ -57,9 +58,6 @@ where
     fn clock_end(&mut self) {
         self.reset();
     }
-    fn prefer_owned_input(&self) -> bool {
-        true
-    }
 }
 
 impl<T> UnaryOperator<T, T> for Z1<T>
@@ -75,6 +73,10 @@ where
     fn eval_owned(&mut self, mut i: T) -> T {
         swap(&mut self.val, &mut i);
         i
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
     }
 }
 
@@ -99,6 +101,10 @@ where
 
     fn eval_strict_owned(&mut self, i: T) {
         self.val = i;
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
     }
 }
 

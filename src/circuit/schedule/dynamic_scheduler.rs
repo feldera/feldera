@@ -47,11 +47,15 @@ use std::{
 
 use crate::circuit::{
     runtime::Runtime,
-    schedule::{Error, Scheduler},
+    schedule::{
+        util::{circuit_graph, ownership_constraints},
+        Error, Scheduler,
+    },
     trace::SchedulerEvent,
-    Circuit, NodeId,
+    Circuit, GlobalNodeId, NodeId,
 };
 use crossbeam_utils::sync::Unparker;
+use petgraph::algo::toposort;
 use priority_queue::PriorityQueue;
 
 /// A task is a unit of work scheduled by the dynamic scheduler.
@@ -215,17 +219,46 @@ impl Inner {
         }
     }
 
-    fn prepare<P>(circuit: &Circuit<P>) -> Self
+    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
     where
         P: Clone + 'static,
     {
+        // Check that ownership constraints don't introduce cycles.
+        let mut g = circuit_graph(circuit);
+
+        let extra_constraints = ownership_constraints(circuit)?;
+
+        for (from, to) in extra_constraints.iter() {
+            g.add_edge(*from, *to, ());
+        }
+
+        // `toposort` fails if the graph contains cycles.
+        toposort(&g, None).map_err(|e| Error::CyclicCircuit {
+            node_id: GlobalNodeId::child_of(circuit, e.node_id()),
+        })?;
+
         let num_nodes = circuit.num_nodes();
         let mut successors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
 
-        for (from, to) in circuit.edges().iter() {
-            successors.entry(*from).or_insert_with(Vec::new).push(*to);
-            predecessors.entry(*to).or_insert_with(Vec::new).push(*from);
+        for edge in circuit.edges().iter() {
+            if let Some(from) = edge.from {
+                successors
+                    .entry(from)
+                    .or_insert_with(Vec::new)
+                    .push(edge.to);
+
+                predecessors
+                    .entry(edge.to)
+                    .or_insert_with(Vec::new)
+                    .push(from);
+            }
+        }
+
+        // Add ownership constraints to the graph.
+        for (from, to) in extra_constraints.into_iter() {
+            successors.entry(from).or_insert_with(Vec::new).push(to);
+            predecessors.entry(to).or_insert_with(Vec::new).push(from);
         }
 
         let mut tasks = Vec::with_capacity(num_nodes);
@@ -283,7 +316,7 @@ impl Inner {
             }
         }
 
-        scheduler
+        Ok(scheduler)
     }
 
     fn step<P>(&mut self, circuit: &Circuit<P>) -> Result<(), Error>
@@ -343,11 +376,11 @@ impl DynamicScheduler {
 }
 
 impl Scheduler for DynamicScheduler {
-    fn prepare<P>(circuit: &Circuit<P>) -> Self
+    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
     where
         P: Clone + 'static,
     {
-        Self(RefCell::new(Inner::prepare(circuit)))
+        Ok(Self(RefCell::new(Inner::prepare(circuit)?)))
     }
 
     fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>

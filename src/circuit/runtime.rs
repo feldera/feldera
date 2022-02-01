@@ -75,7 +75,8 @@ impl Runtime {
     ///
     ///     let root = Root::build(move |circuit| {
     ///         // Populate `circuit` with operators.
-    ///     });
+    ///     })
+    ///     .unwrap();
     ///
     ///     // Run circuit for 100 clock cycles.
     ///     for _ in 0..100 {
@@ -287,7 +288,8 @@ mod tests {
                     Inspect::new(move |n: &usize| data_clone.borrow_mut().push(*n)),
                     &source,
                 );
-            });
+            })
+            .unwrap();
 
             for _ in 0..100 {
                 root.step().unwrap();
@@ -317,12 +319,15 @@ mod tests {
         let hruntime = Runtime::run(16, |_runtime, _index| {
             // Create a nested circuit that iterates forever.
             let root = Root::build_with_scheduler::<_, S>(move |circuit| {
-                circuit.iterate_with_scheduler::<_, _, _, S>(|child| {
-                    let source = child.add_source(Generator::new(0, |n: &mut usize| *n += 1));
-                    child.add_sink(Inspect::new(|_: &usize| {}), &source);
-                    (|| false, ())
-                });
-            });
+                circuit
+                    .iterate_with_scheduler::<_, _, _, S>(|child| {
+                        let source = child.add_source(Generator::new(0, |n: &mut usize| *n += 1));
+                        child.add_sink(Inspect::new(|_: &usize| {}), &source);
+                        Ok((|| false, ()))
+                    })
+                    .unwrap();
+            })
+            .unwrap();
 
             loop {
                 if root.step().is_err() {

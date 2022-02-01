@@ -1,8 +1,40 @@
 //! Defines a sink operator that inspects every element of its input stream by applying a
 //! user-provided callback to it.
 
-use crate::circuit::operator_traits::{Operator, SinkOperator};
+use crate::circuit::{
+    operator_traits::{Operator, SinkOperator},
+    Circuit, Stream,
+};
 use std::{borrow::Cow, marker::PhantomData};
+
+impl<P, D> Stream<Circuit<P>, D>
+where
+    D: Clone + 'static,
+    P: Clone + 'static,
+{
+    /// Apply [`Inspect`] operator to `self`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dbsp::circuit::{
+    /// #     operator::Generator,
+    /// #     Root,
+    /// # };
+    /// let root = Root::build(move |circuit| {
+    ///     let stream = circuit.add_source(Generator::new(1, |n: &mut usize| *n+=1));
+    ///     // Print all values in `stream`.
+    ///     stream.inspect(|n| println!("inspect: {}", n));
+    /// })
+    /// .unwrap();
+    /// ```
+    pub fn inspect<F>(&self, callback: F)
+    where
+        F: FnMut(&D) + 'static,
+    {
+        self.circuit().add_sink(Inspect::new(callback), self);
+    }
+}
 
 /// Sink operator that consumes a stream of values of type `T` and
 /// applies a user-provided callback to each input.

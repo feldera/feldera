@@ -44,7 +44,7 @@ where
 
 impl<T, F> SourceOperator<T> for Generator<T, F>
 where
-    F: Fn(&mut T) + 'static,
+    F: FnMut(&mut T) + 'static,
     T: Data,
 {
     fn eval(&mut self) -> T {

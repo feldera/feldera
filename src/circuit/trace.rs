@@ -17,14 +17,14 @@
 
 use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
-use super::{GlobalNodeId, NodeId};
+use super::{GlobalNodeId, NodeId, OwnershipPreference};
 pub use trace_monitor::TraceMonitor;
 
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum EdgeKind {
     /// A stream edge indicates that there is a stream that connects two operators.
-    Stream,
+    Stream(OwnershipPreference),
     /// A dependency edge indicates that the source operator must be evaluated before
     /// the destination.
     Dependency,
@@ -104,11 +104,11 @@ impl Display for CircuitEvent {
                 )
             }
             Self::Edge {
-                kind: EdgeKind::Stream,
+                kind: EdgeKind::Stream(preference),
                 from,
                 to,
             } => {
-                write!(f, "Stream({} -> {})", from, to)
+                write!(f, "Stream({} -> [{}]{})", from, preference, to)
             }
             Self::Edge {
                 kind: EdgeKind::Dependency,
@@ -144,9 +144,13 @@ impl CircuitEvent {
     }
 
     /// Create a [`CircuitEvent::Edge`] event instance.
-    pub fn stream(from: GlobalNodeId, to: GlobalNodeId) -> Self {
+    pub fn stream(
+        from: GlobalNodeId,
+        to: GlobalNodeId,
+        ownership_preference: OwnershipPreference,
+    ) -> Self {
         Self::Edge {
-            kind: EdgeKind::Stream,
+            kind: EdgeKind::Stream(ownership_preference),
             from,
             to,
         }

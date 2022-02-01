@@ -3,6 +3,7 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
+use crate::circuit::OwnershipPreference;
 use std::borrow::Cow;
 
 /// Minimal requirements for values exchanged by operators.
@@ -65,20 +66,6 @@ pub trait Operator: 'static {
 
     fn clock_start(&mut self);
     fn clock_end(&mut self);
-
-    /// Returns `true` if `self` prefers to consume owned inputs.
-    ///
-    /// With the exception of [`SourceOperator`]s, all operators consume one or
-    /// more input streams.  By default, operators consume values by reference;
-    /// however some operators have alternative implementations optimized to work
-    /// with owned values, available via operator's `eval_owned` method.  This
-    /// method tells the scheduler that the operator has an optimized `eval_owned`
-    /// implementation (the default implementation simply delegates to the `eval`
-    /// method) and prefers to consume inputs by value.  This request is not
-    /// guaranteed, but may be taken into account by the scheduler.
-    fn prefer_owned_input(&self) -> bool {
-        false
-    }
 
     /// Returns `true` if `self` is an asynchronous operator.
     ///
@@ -148,6 +135,12 @@ pub trait SinkOperator<I>: Operator {
     fn eval_owned(&mut self, input: I) {
         self.eval(&input);
     }
+
+    /// Ownership preference on the operator's input stream
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::INDIFFERENT
+    }
 }
 
 /// A unary operator that consumes a stream of inputs of type `I`
@@ -160,6 +153,12 @@ pub trait UnaryOperator<I, O>: Operator {
     fn eval_owned(&mut self, input: I) -> O {
         self.eval(&input)
     }
+
+    /// Ownership preference on the operator's input stream
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::INDIFFERENT
+    }
 }
 
 /// A binary operator consumes two input streams carrying values
@@ -171,6 +170,25 @@ pub trait BinaryOperator<I1, I2, O>: Operator {
     /// Consume input by value.
     fn eval_owned(&mut self, lhs: I1, rhs: I2) -> O {
         self.eval(&lhs, &rhs)
+    }
+
+    /// Consume the first input by value and the second by reference.
+    fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> O {
+        self.eval(&lhs, rhs)
+    }
+
+    /// Consume the first input by reference and the second by value.
+    fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> O {
+        self.eval(lhs, &rhs)
+    }
+
+    /// Ownership preference on the operator's input streams
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+        )
     }
 }
 
@@ -201,5 +219,11 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     /// next timestamp.
     fn eval_strict_owned(&mut self, input: I) {
         self.eval_strict(&input);
+    }
+
+    /// Ownership preference on the operator's input stream
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::INDIFFERENT
     }
 }
