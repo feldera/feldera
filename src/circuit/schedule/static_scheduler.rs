@@ -2,12 +2,15 @@
 
 use crate::circuit::{
     runtime::Runtime,
-    schedule::{Error, Scheduler},
+    schedule::{
+        util::{circuit_graph, ownership_constraints},
+        Error, Scheduler,
+    },
     trace::SchedulerEvent,
-    Circuit, NodeId,
+    Circuit, GlobalNodeId, NodeId,
 };
-use petgraph::{algo::toposort, graphmap::DiGraphMap};
-use std::{ops::Deref, thread::yield_now};
+use petgraph::algo::toposort;
+use std::thread::yield_now;
 
 /// Static scheduler evaluates nodes in the circuit in a fixed order computed
 /// based on its dependency graph.
@@ -19,27 +22,30 @@ impl Scheduler for StaticScheduler {
     // Compute a schedule that respects the dependency graph by arranging
     // nodes in a topological order.
     // TODO: compute a schedule that takes into account operators that consume inputs by-value.
-    fn prepare<P>(circuit: &Circuit<P>) -> Self
+    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
     where
         P: Clone + 'static,
     {
-        let mut g = DiGraphMap::<NodeId, ()>::new();
-        for node_id in circuit.node_ids().into_iter() {
-            g.add_node(node_id);
-        }
-        for (from, to) in circuit.edges().deref().iter() {
-            g.add_edge(*from, *to, ());
+        let mut g = circuit_graph(circuit);
+
+        // Add ownership constraints to the graph.
+        let extra_constraints = ownership_constraints(circuit)?;
+
+        for (from, to) in extra_constraints.into_iter() {
+            g.add_edge(from, to, ());
         }
 
         // `toposort` fails if the graph contains cycles.
         // The circuit_builder API makes it impossible to construct such graphs.
         let schedule = toposort(&g, None)
-            .unwrap_or_else(|e| panic!("cycle in the circuit graph: {:?}", e))
+            .map_err(|e| Error::CyclicCircuit {
+                node_id: GlobalNodeId::child_of(circuit, e.node_id()),
+            })?
             .into_iter()
             .map(|node_id| (node_id, circuit.is_async_node(node_id)))
             .collect();
 
-        Self { schedule }
+        Ok(Self { schedule })
     }
 
     fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>

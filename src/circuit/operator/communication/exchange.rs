@@ -7,7 +7,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator, SourceOperator},
-    LocalStoreMarker, Runtime,
+    LocalStoreMarker, OwnershipPreference, Runtime,
 };
 use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
@@ -375,7 +375,7 @@ where
 ///             assert_eq!(&vec![round; WORKERS], v);
 ///             round += 1;
 ///         }), &combined)
-///     });
+///     }).unwrap();
 ///
 ///     for _ in 1 .. ROUNDS {
 ///         root.step();
@@ -416,10 +416,6 @@ where
     fn clock_start(&mut self) {}
     fn clock_end(&mut self) {}
 
-    fn prefer_owned_input(&self) -> bool {
-        true
-    }
-
     fn is_async(&self) -> bool {
         true
     }
@@ -454,6 +450,10 @@ where
             .exchange
             .try_send_all(self.worker_index, &mut (self.partition)(input));
         debug_assert!(_res);
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
     }
 }
 
@@ -664,7 +664,8 @@ mod tests {
                         }),
                         &combined,
                     )
-                });
+                })
+                .unwrap();
 
                 for _ in 1..ROUNDS {
                     root.step().unwrap();

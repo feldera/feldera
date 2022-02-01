@@ -24,12 +24,12 @@
 //! ```
 
 use std::{
+    borrow::Cow,
     cell::{Ref, RefCell, RefMut, UnsafeCell},
     collections::HashMap,
     fmt,
     fmt::{Debug, Display, Write},
     marker::PhantomData,
-    ops::Deref,
     rc::Rc,
 };
 
@@ -38,8 +38,8 @@ use super::{
         BinaryOperator, Data, SinkOperator, SourceOperator, StrictUnaryOperator, UnaryOperator,
     },
     schedule::{
-        Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor, Scheduler,
-        StaticScheduler,
+        DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
+        Scheduler,
     },
     trace::{CircuitEvent, SchedulerEvent},
 };
@@ -57,10 +57,14 @@ pub struct Stream<C, D> {
     /// Circuit that this stream belongs to.
     circuit: C,
     /// The value (there can be at most one since our circuits are synchronous).
+    /// The second component of the tuple tracks the number of consumers who retrieved
+    /// the value in the current clock cycle.  The last consumer to read from the
+    /// stream will obtain an owned value rather than a borrow.  See description of
+    /// [ownership-aware scheduling](`OwnershipPreference`) for details.
     /// We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership tests.
     /// We enforce unique ownership by making sure that at most one operator can
     /// run (and access the stream) at any time.
-    val: Rc<UnsafeCell<Option<D>>>,
+    val: Rc<UnsafeCell<(Option<D>, usize)>>,
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -88,6 +92,11 @@ impl<C, D> Stream<C, D> {
     pub fn origin_node_id(&self) -> &GlobalNodeId {
         &self.origin_node_id
     }
+
+    /// Reference to the circuit the stream belongs to.
+    pub fn circuit(&self) -> &C {
+        &self.circuit
+    }
 }
 
 impl<P, D> Stream<Circuit<P>, D>
@@ -98,8 +107,10 @@ where
     /// The stream will contain the same value throughout a parent
     /// clock tick, even if the nested circuit iterates multiple times
     /// for each parent clock cycle.
+    // TODO: Do we need `enter_with_preference`?
     pub fn enter(&self, circuit: &Circuit<Circuit<P>>) -> Stream<Circuit<Circuit<P>>, D> {
-        self.circuit.connect_stream(self, circuit.node_id());
+        self.circuit
+            .connect_stream(self, circuit.node_id(), OwnershipPreference::INDIFFERENT);
         Stream {
             local_node_id: None,
             origin_node_id: self.origin_node_id.clone(),
@@ -130,20 +141,47 @@ impl<P, D> Stream<Circuit<P>, D> {
             local_node_id: Some(node_id),
             origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
             circuit,
-            val: Rc::new(UnsafeCell::new(None)),
+            val: Rc::new(UnsafeCell::new((None, 0))),
         }
     }
 }
 
-impl<C, D> Stream<C, D> {
-    /// Returns `Some` if the operator has produced output for the current timestamp and `None`
-    /// otherwise.
+impl<C, D> Stream<C, D>
+where
+    D: Clone,
+{
+    /// Consume a value from the stream.
+    ///
+    /// This function is invoked exactly once per clock cycle by each
+    /// consumer connected to the stream.  The last consumer receives
+    /// an owned value (`Cow::Owned`).
     ///
     /// #Safety
     ///
     /// The caller must have exclusive access to the current stream.
-    pub(super) unsafe fn get(&self) -> &Option<D> {
-        &*self.val.get()
+    pub(super) unsafe fn take(&'_ self) -> Cow<'_, D> {
+        let (val, refs) = &mut *self.val.get();
+        debug_assert!(*refs > 0);
+        *refs -= 1;
+        if *refs == 0 {
+            Cow::Owned(val.take().unwrap())
+        } else {
+            Cow::Borrowed(val.as_ref().unwrap())
+        }
+    }
+
+    pub(super) unsafe fn try_take(&'_ self) -> Option<Cow<'_, D>> {
+        let (val, refs) = &mut *self.val.get();
+        if *refs > 0 {
+            *refs -= 1;
+            if *refs == 0 {
+                Some(Cow::Owned(val.take().unwrap()))
+            } else {
+                Some(Cow::Borrowed(val.as_ref().unwrap()))
+            }
+        } else {
+            None
+        }
     }
 
     /// Puts a value in the stream, overwriting the previous value if any.
@@ -152,19 +190,19 @@ impl<C, D> Stream<C, D> {
     ///
     /// The caller must have exclusive access to the current stream.
     unsafe fn put(&self, val: D) {
-        *self.val.get() = Some(val);
+        // We assume that the only references to the stream are held by
+        // the producer and consumer nodes, so we can calculate the number
+        // of consumers as total number of references - 1.  If this is
+        // no longer true, an additional explicit reference count will
+        // be needed.
+        let consumer_count = Rc::strong_count(&self.val) - 1;
+
+        // If the stream is not connected to any consumers, drop the output
+        // on the floor.
+        if consumer_count > 0 {
+            *self.val.get() = (Some(val), consumer_count);
+        };
     }
-
-    /*unsafe fn take(&self) -> Option<D> {
-        let mut val = None;
-        swap(&mut *self.val.get(), &mut val);
-        val
-    }*/
-
-    // Remove the value in the stream, if any, leaving the stream empty.
-    /*unsafe fn clear(&self) {
-        *self.val.get() = None;
-    }*/
 }
 
 /// Node in a circuit.  A node wraps an operator with strongly typed
@@ -301,6 +339,111 @@ type SchedulerEventHandler = Box<dyn Fn(&SchedulerEvent)>;
 type CircuitEventHandlers = Rc<RefCell<HashMap<String, CircuitEventHandler>>>;
 type SchedulerEventHandlers = Rc<RefCell<HashMap<String, SchedulerEventHandler>>>;
 
+/// Operator's preference to consume input data by value.
+///
+/// # Background
+///
+/// A stream in a circuit can be connected to multiple consumers.  It is therefore generally
+/// impossible to provide each consumer with an owned copy of the data without cloning it.  At the
+/// same time, many operators can be more efficient when working with owned inputs.  For instance,
+/// when computing a sum of two z-sets, if one of the input z-sets is owned we can just add values
+/// from the other z-set to it without cloning the first z-set.  If both inputs are owned then we
+/// additionally do not need to clone key/value pairs when inserting them.  Furthermore, the
+/// implementation can choose to add the contents of the smaller z-set to the larger one.
+///
+/// # Ownership-aware scheduling
+///
+/// To leverage such optimizations, we adopt the best-effort approach: operators consume streaming
+/// data by-value when possible while falling back to pass-by-reference otherwise.  In a
+/// synchronous circuit, each operator reads its input stream precisely once in each clock cycle.
+/// It is therefore possible to determine the last consumer at each clock cycle and give it the
+/// owned value from the channel.  It is furthermore possible for the scheduler to schedule
+/// operators that strongly prefer owned values last.
+///
+/// We capture ownership preferences at two levels.  First, each individual operator that consumes
+/// one or more streams exposes its preferences on a per-stream basis via an API method
+/// (e.g., `[UnaryOperator::input_preference]`).  The [`Circuit`] API allows the circuit builder
+/// to override these preferences when instantiating an operator, taking into account circuit topology
+/// and workload.  We express preference as a numeric value.
+///
+/// These preferences are associated with each edge in the circuit graph.  The schedulers we have
+/// built so far implement a limited form of ownership-aware scheduling.  They only consider strong
+/// preferences (`OwnershipPreference::require_owned` and stronger) and model them internally as hard
+/// constraints that must be satisfied for the circuit to be schedulable.  Weaker preferences are
+/// ignored.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[repr(transparent)]
+pub struct OwnershipPreference(usize);
+
+impl OwnershipPreference {
+    /// Create a new instance with given numeric preference value (higher
+    /// value means stronger preference).
+    pub const fn new(val: usize) -> Self {
+        Self(val)
+    }
+
+    /// The operator does not gain any speed up from consuming an owned value.
+    pub const INDIFFERENT: Self = Self::new(0);
+
+    /// The operator is likely to run faster provided an owned input.
+    ///
+    /// Preference levels above `prefer_owned` should not be used by operators and
+    /// are reserved for use by circuit builders through the `Circuit` API.
+    pub const PREFER_OWNED: Self = Self::new(50);
+
+    /// The circuit will suffer a significant performance hit if the operator
+    /// cannot consume data in the channel by-value.
+    pub const STRONGLY_PREFER_OWNED: Self = Self::new(100);
+
+    /// Returns the numeric value of the preference.
+    pub const fn raw(&self) -> usize {
+        self.0
+    }
+}
+
+impl Display for OwnershipPreference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::INDIFFERENT => f.write_str("Indifferent"),
+            Self::PREFER_OWNED => f.write_str("PreferOwned"),
+            Self::STRONGLY_PREFER_OWNED => f.write_str("StronglyPreferOwned"),
+            _ => write!(f, "Preference({})", self.raw()),
+        }
+    }
+}
+
+/// An edge in a circuit graph represents a stream connecting two
+/// operators or a dependency (i.e., a requirement that one operator
+/// must be evaluated before the other even if they are not connected
+/// by a stream).
+pub(super) struct Edge {
+    /// Source node or `None` if this is a stream imported from the
+    /// parent circuit.
+    pub from: Option<NodeId>,
+    /// Destination node.
+    pub to: NodeId,
+    /// Origin node that generates the stream.  If the origin belongs
+    /// to the local circuit, this is just the full path to the `from`
+    /// node.
+    pub origin: GlobalNodeId,
+    /// Ownership preference associated with the consumer of this
+    /// stream or `None` if this is a dependency edge.
+    pub ownership_preference: Option<OwnershipPreference>,
+}
+
+#[allow(dead_code)]
+impl Edge {
+    /// `true` if `self` is a dependency edge.
+    pub(super) fn is_dependency(&self) -> bool {
+        self.ownership_preference.is_none()
+    }
+
+    /// `true` if `self` is a stream edge.
+    pub(super) fn is_stream(&self) -> bool {
+        self.ownership_preference.is_some()
+    }
+}
+
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1
 /// is connected to an input of node2.
@@ -310,7 +453,7 @@ struct CircuitInner<P> {
     node_id: NodeId,
     global_node_id: GlobalNodeId,
     nodes: Vec<Box<dyn Node>>,
-    edges: Vec<(NodeId, NodeId)>,
+    edges: Vec<Edge>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
 }
@@ -334,10 +477,8 @@ impl<P> CircuitInner<P> {
         }
     }
 
-    fn add_edge(&mut self, from: Option<NodeId>, to: NodeId) {
-        if let Some(from) = from {
-            self.edges.push((from, to));
-        }
+    fn add_edge(&mut self, edge: Edge) {
+        self.edges.push(edge);
     }
 
     fn add_node<N>(&mut self, node: N)
@@ -520,14 +661,25 @@ impl<P> Circuit<P> {
     }
 
     /// Connect `stream` as input to `to`.
-    fn connect_stream<T>(&self, stream: &Stream<Self, T>, to: NodeId) {
+    fn connect_stream<T>(
+        &self,
+        stream: &Stream<Self, T>,
+        to: NodeId,
+        ownership_preference: OwnershipPreference,
+    ) {
         self.log_circuit_event(&CircuitEvent::stream(
             stream.origin_node_id().clone(),
             GlobalNodeId::child_of(self, to),
+            ownership_preference,
         ));
 
         debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
-        self.inner_mut().add_edge(stream.local_node_id(), to);
+        self.inner_mut().add_edge(Edge {
+            from: stream.local_node_id(),
+            to,
+            origin: stream.origin_node_id().clone(),
+            ownership_preference: Some(ownership_preference),
+        });
     }
 
     /// Register a dependency between `from` and `to` nodes.  A dependency tells the
@@ -539,12 +691,19 @@ impl<P> Circuit<P> {
             GlobalNodeId::child_of(self, to),
         ));
 
-        self.inner_mut().add_edge(Some(from), to);
+        let origin = GlobalNodeId::child_of(self, from);
+        self.inner_mut().add_edge(Edge {
+            from: Some(from),
+            to,
+            origin,
+            ownership_preference: None,
+        });
     }
 
-    /// Add a node to the circuit.  Allocates a new node id and invokes a user
-    /// callback to create a new node instance.  The callback may use the node id,
-    /// e.g., to add an edge to this node.
+    /// Add a node to the circuit.
+    ///
+    /// Allocates a new node id and invokes a user callback to create a new node instance.
+    /// The callback may use the node id, e.g., to add an edge to this node.
     fn add_node<F, N, T>(&self, f: F) -> T
     where
         F: FnOnce(NodeId) -> (N, T),
@@ -559,15 +718,32 @@ impl<P> Circuit<P> {
         res
     }
 
-    pub(super) fn edges(&self) -> Ref<'_, [(NodeId, NodeId)]> {
+    /// Like `add_node`, but the node is not created if the closure fails.
+    fn try_add_node<F, N, T, E>(&self, f: F) -> Result<T, E>
+    where
+        F: FnOnce(NodeId) -> Result<(N, T), E>,
+        N: Node + 'static,
+    {
+        let id = self.inner().nodes.len();
+
+        // We don't hold a reference to `self.inner()` while calling `f`, so it can
+        // safely modify the circuit, e.g., add edges.
+        let (node, res) = f(NodeId(id))?;
+        self.inner_mut().add_node(node);
+        Ok(res)
+    }
+
+    pub(super) fn edges(&self) -> Ref<'_, [Edge]> {
         let circuit = self.inner();
         Ref::map(circuit, |c| c.edges.as_slice())
     }
 
+    /// Number of nodes in the circuit.
     pub(super) fn num_nodes(&self) -> usize {
         self.inner().nodes.len()
     }
 
+    /// Returns vector of local node ids in the circuit.
     pub(super) fn node_ids(&self) -> Vec<NodeId> {
         self.inner().nodes.iter().map(|node| node.id()).collect()
     }
@@ -701,13 +877,32 @@ where
         SndOp: SinkOperator<I>,
         RcvOp: SourceOperator<O>,
     {
+        let preference = sender.input_preference();
+        self.add_exchange_with_preference(sender, receiver, input_stream, preference)
+    }
+
+    /// Like [`Self::add_exchange`], but overrides the ownership
+    /// preference on the input stream with `input_preference`.
+    pub fn add_exchange_with_preference<I, SndOp, O, RcvOp>(
+        &self,
+        sender: SndOp,
+        receiver: RcvOp,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        SndOp: SinkOperator<I>,
+        RcvOp: SourceOperator<O>,
+    {
         let sender_id = self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
                 sender.name(),
             ));
             let node = SinkNode::new(sender, input_stream.clone(), self.clone(), id);
-            self.connect_stream(input_stream, id);
+            self.connect_stream(input_stream, id, input_preference);
             (node, id)
         });
 
@@ -732,6 +927,21 @@ where
         I: Data,
         Op: SinkOperator<I>,
     {
+        let preference = operator.input_preference();
+        self.add_sink_with_preference(operator, input_stream, preference)
+    }
+
+    /// Like [`Self::add_sink`], but overrides the ownership preference on the input
+    /// stream with `input_preference`.
+    pub fn add_sink_with_preference<I, Op>(
+        &self,
+        operator: Op,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) where
+        I: Data,
+        Op: SinkOperator<I>,
+    {
         self.add_node(|id| {
             // Log the operator event before the connection event, so that handlers
             // don't observe edges that connect to nodes they haven't seen yet.
@@ -740,7 +950,7 @@ where
                 operator.name(),
             ));
 
-            self.connect_stream(input_stream, id);
+            self.connect_stream(input_stream, id, input_preference);
             (
                 SinkNode::new(operator, input_stream.clone(), self.clone(), id),
                 (),
@@ -760,6 +970,23 @@ where
         O: Data,
         Op: UnaryOperator<I, O>,
     {
+        let preference = operator.input_preference();
+        self.add_unary_operator_with_preference(operator, input_stream, preference)
+    }
+
+    /// Like [`Self::add_unary_operator`], but overrides the ownership preference on the input
+    /// stream with `input_preference`.
+    pub fn add_unary_operator_with_preference<I, O, Op>(
+        &self,
+        operator: Op,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: UnaryOperator<I, O>,
+    {
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
@@ -768,7 +995,7 @@ where
 
             let node = UnaryNode::new(operator, input_stream.clone(), self.clone(), id);
             let output_stream = node.output_stream();
-            self.connect_stream(input_stream, id);
+            self.connect_stream(input_stream, id, input_preference);
             (node, output_stream)
         })
     }
@@ -780,6 +1007,32 @@ where
         operator: Op,
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        O: Data,
+        Op: BinaryOperator<I1, I2, O>,
+    {
+        let (pref1, pref2) = operator.input_preference();
+        self.add_binary_operator_with_preference(
+            operator,
+            input_stream1,
+            input_stream2,
+            pref1,
+            pref2,
+        )
+    }
+
+    /// Like [`Self::add_binary_operator`], but overrides the ownership preference on both
+    /// input streams with `input_preference1` and `input_preference2` respectively.
+    pub fn add_binary_operator_with_preference<I1, I2, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_preference1: OwnershipPreference,
+        input_preference2: OwnershipPreference,
     ) -> Stream<Self, O>
     where
         I1: Data,
@@ -801,8 +1054,8 @@ where
                 id,
             );
             let output_stream = node.output_stream();
-            self.connect_stream(input_stream1, id);
-            self.connect_stream(input_stream2, id);
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
             (node, output_stream)
         })
     }
@@ -875,11 +1128,12 @@ where
         })
     }
 
-    fn connect_feedback<I, O, Op>(
+    fn connect_feedback_with_preference<I, O, Op>(
         &self,
         output_node_id: NodeId,
         operator: Rc<UnsafeCell<Op>>,
         input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
     ) where
         I: Data,
         O: Data,
@@ -892,7 +1146,7 @@ where
             ));
 
             let output_node = FeedbackInputNode::new(operator, input_stream.clone(), id);
-            self.connect_stream(input_stream, id);
+            self.connect_stream(input_stream, id, input_preference);
             self.add_dependency(output_node_id, id);
             (output_node, ())
         });
@@ -908,20 +1162,24 @@ where
     ///
     /// Most users should invoke higher-level APIs like [`iterate`] instead of using this method
     /// directly.
-    pub(crate) fn subcircuit<F, T, E>(&self, iterative: bool, child_constructor: F) -> T
+    pub(crate) fn subcircuit<F, T, E>(
+        &self,
+        iterative: bool,
+        child_constructor: F,
+    ) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> (T, E),
+        F: FnOnce(&mut Circuit<Self>) -> Result<(T, E), SchedulerError>,
         E: Executor<Self>,
     {
-        self.add_node(|id| {
+        self.try_add_node(|id| {
             self.log_circuit_event(&CircuitEvent::subcircuit(
                 GlobalNodeId::child_of(self, id),
                 iterative,
             ));
             let mut child_circuit = Circuit::with_parent(self.clone(), id);
-            let (res, executor) = child_constructor(&mut child_circuit);
+            let (res, executor) = child_constructor(&mut child_circuit)?;
             let child = <ChildNode<Self>>::new::<E>(child_circuit, executor, id);
-            (child, res)
+            Ok((child, res))
         })
     }
 
@@ -966,37 +1224,36 @@ where
     ///             &z1_output,
     ///         );
     ///         z1_feedback.connect(&mul);
-    ///         (move || *counter.borrow() <= 1, mul.leave())
-    ///     });
+    ///         Ok((move || *counter.borrow() <= 1, mul.leave()))
+    ///     }).unwrap();
     ///     circuit.add_sink(
     ///         Inspect::new(move |n| eprintln!("Output: {}", n)),
     ///         &fact,
     ///     );
     /// });
     /// ```
-    pub fn iterate<F, C, T>(&self, constructor: F) -> T
+    pub fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> (C, T),
+        F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
         C: Fn() -> bool + 'static,
     {
-        self.iterate_with_scheduler::<F, C, T, StaticScheduler>(constructor)
+        self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
     }
 
     /// Add an iteratively scheduled child circuit.
     ///
-    ///
     /// Similar to [`iterate`](`Self::iterate`), but with a user-specified [`Scheduler`]
     /// implementation.
-    pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> T
+    pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> (C, T),
+        F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
         C: Fn() -> bool + 'static,
         S: Scheduler + 'static,
     {
         self.subcircuit(true, |child| {
-            let (termination_check, res) = constructor(child);
-            let executor = <IterativeExecutor<_, S>>::new(child, termination_check);
-            (res, executor)
+            let (termination_check, res) = constructor(child)?;
+            let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+            Ok((res, executor))
         })
     }
 }
@@ -1027,6 +1284,7 @@ where
 
 impl<C, O, Op> Node for SourceNode<C, O, Op>
 where
+    O: Clone,
     Op: SourceOperator<O>,
 {
     fn id(&self) -> NodeId {
@@ -1092,6 +1350,8 @@ where
 
 impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
+    I: Clone,
+    O: Clone,
     Op: UnaryOperator<I, O>,
 {
     fn id(&self) -> NodeId {
@@ -1111,15 +1371,10 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(
-            self.operator.eval(
-                self.input_stream
-                    .get()
-                    .deref()
-                    .as_ref()
-                    .expect("operator scheduled before its input is ready"),
-            ),
-        );
+        self.output_stream.put(match self.input_stream.take() {
+            Cow::Owned(v) => self.operator.eval_owned(v),
+            Cow::Borrowed(v) => self.operator.eval(v),
+        });
         Ok(())
     }
 
@@ -1153,6 +1408,7 @@ where
 
 impl<C, I, Op> Node for SinkNode<C, I, Op>
 where
+    I: Clone,
     Op: SinkOperator<I>,
 {
     fn id(&self) -> NodeId {
@@ -1172,13 +1428,10 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.operator.eval(
-            self.input_stream
-                .get()
-                .deref()
-                .as_ref()
-                .expect("operator scheduled before its input is ready"),
-        );
+        match self.input_stream.take() {
+            Cow::Owned(v) => self.operator.eval_owned(v),
+            Cow::Borrowed(v) => self.operator.eval(v),
+        };
         Ok(())
     }
 
@@ -1227,6 +1480,9 @@ where
 
 impl<C, I1, I2, O, Op> Node for BinaryNode<C, I1, I2, O, Op>
 where
+    I1: Clone,
+    I2: Clone,
+    O: Clone,
     Op: BinaryOperator<I1, I2, O>,
 {
     fn id(&self) -> NodeId {
@@ -1247,18 +1503,12 @@ where
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         self.output_stream.put(
-            self.operator.eval(
-                self.input_stream1
-                    .get()
-                    .deref()
-                    .as_ref()
-                    .expect("operator scheduled before its input is ready"),
-                self.input_stream2
-                    .get()
-                    .deref()
-                    .as_ref()
-                    .expect("operator scheduled before its input is ready"),
-            ),
+            match (self.input_stream1.take(), self.input_stream2.take()) {
+                (Cow::Owned(v1), Cow::Owned(v2)) => self.operator.eval_owned(v1, v2),
+                (Cow::Owned(v1), Cow::Borrowed(v2)) => self.operator.eval_owned_and_ref(v1, v2),
+                (Cow::Borrowed(v1), Cow::Owned(v2)) => self.operator.eval_ref_and_owned(v1, v2),
+                (Cow::Borrowed(v1), Cow::Borrowed(v2)) => self.operator.eval(v1, v2),
+            },
         );
         Ok(())
     }
@@ -1306,6 +1556,7 @@ where
 impl<C, I, O, Op> Node for FeedbackOutputNode<C, I, O, Op>
 where
     I: Data,
+    O: Clone,
     Op: StrictUnaryOperator<I, O>,
 {
     fn id(&self) -> NodeId {
@@ -1386,13 +1637,10 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        (&mut *self.operator.get()).eval_strict(
-            self.input_stream
-                .get()
-                .deref()
-                .as_ref()
-                .expect("operator scheduled before its input is ready"),
-        );
+        match self.input_stream.take() {
+            Cow::Owned(v) => (&mut *self.operator.get()).eval_strict_owned(v),
+            Cow::Borrowed(v) => (&mut *self.operator.get()).eval_strict(v),
+        };
         Ok(())
     }
 
@@ -1440,11 +1688,24 @@ where
     P: Clone + 'static,
 {
     /// Connect `input_stream` as input to the operator.
+    ///
     /// See [`Circuit::add_feedback`] for details.
     /// Returns node id of the input node.
     pub fn connect(self, input_stream: &Stream<Circuit<P>, I>) {
-        self.circuit
-            .connect_feedback(self.output_node_id, self.operator, input_stream);
+        self.connect_with_preference(input_stream, OwnershipPreference::INDIFFERENT)
+    }
+
+    pub fn connect_with_preference(
+        self,
+        input_stream: &Stream<Circuit<P>, I>,
+        input_preference: OwnershipPreference,
+    ) {
+        self.circuit.connect_feedback_with_preference(
+            self.output_node_id,
+            self.operator,
+            input_stream,
+            input_preference,
+        );
     }
 }
 
@@ -1531,34 +1792,34 @@ impl Root {
     ///
     /// Creates an empty circuit and populates it with operators by calling a
     /// user-provided `constructor` function.  The circuit will be scheduled
-    /// using the default scheduler (currently [`StaticScheduler`]).
-    pub fn build<F>(constructor: F) -> Self
+    /// using the default scheduler (currently [`DynamicScheduler`]).
+    pub fn build<F>(constructor: F) -> Result<Self, SchedulerError>
     where
         F: FnOnce(&mut Circuit<()>),
     {
         // TODO: use dynamic scheduler by default.
-        Self::build_with_scheduler::<F, StaticScheduler>(constructor)
+        Self::build_with_scheduler::<F, DynamicScheduler>(constructor)
     }
 
     /// Create a circuit and prepate it for execution.
     ///
     /// Similar to [`build`](`Self::build`), but with a user-specified [`Scheduler`]
     /// implementation.
-    pub fn build_with_scheduler<F, S>(constructor: F) -> Self
+    pub fn build_with_scheduler<F, S>(constructor: F) -> Result<Self, SchedulerError>
     where
         F: FnOnce(&mut Circuit<()>),
         S: Scheduler + 'static,
     {
         let mut circuit = Circuit::new();
         constructor(&mut circuit);
-        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)) as Box<dyn Executor<()>>;
+        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
 
         // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so that the
         // user can reset the circuit at runtime and start evaluation from clean state without
         // having to rebuild it from scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start();
-        Self { circuit, executor }
+        Ok(Self { circuit, executor })
     }
 
     /// Function that drives the execution of the circuit.
@@ -1696,7 +1957,8 @@ mod tests {
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &integrator,
             );
-        });
+        })
+        .unwrap();
 
         for _ in 0..100 {
             root.step().unwrap();
@@ -1748,7 +2010,8 @@ mod tests {
                 &plus,
             );
             z1_feedback.connect(&plus);
-        });
+        })
+        .unwrap();
 
         for _ in 0..100 {
             root.step().unwrap();
@@ -1792,28 +2055,31 @@ mod tests {
             );
 
             let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
-            let fact = circuit.iterate_with_scheduler::<_, _, _, S>(|child| {
-                let counter = Rc::new(RefCell::new(0));
-                let counter_clone = counter.clone();
-                let countdown =
-                    child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
-                        *n = *n - 1;
-                        *counter_clone.borrow_mut() = *n;
-                    }));
-                let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
-                let mul = child.add_binary_operator(
-                    Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-                    &countdown,
-                    &z1_output,
-                );
-                z1_feedback.connect(&mul);
-                (move || *counter.borrow() <= 1, mul.leave())
-            });
+            let fact = circuit
+                .iterate_with_scheduler::<_, _, _, S>(|child| {
+                    let counter = Rc::new(RefCell::new(0));
+                    let counter_clone = counter.clone();
+                    let countdown =
+                        child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
+                            *n = *n - 1;
+                            *counter_clone.borrow_mut() = *n;
+                        }));
+                    let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
+                    let mul = child.add_binary_operator(
+                        Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
+                        &countdown,
+                        &z1_output,
+                    );
+                    z1_feedback.connect(&mul);
+                    Ok((move || *counter.borrow() <= 1, mul.leave()))
+                })
+                .unwrap();
             circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &fact,
             );
-        });
+        })
+        .unwrap();
 
         for _ in 1..10 {
             root.step().unwrap();

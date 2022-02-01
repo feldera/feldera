@@ -55,9 +55,10 @@ where
     }
 
     fn clock_start(&mut self) {
-        self.val = unsafe { self.input_stream.get() }
-            .clone()
-            .unwrap_or_default();
+        self.val = match unsafe { self.input_stream.try_take() }.unwrap_or_default() {
+            Cow::Owned(v) => v,
+            Cow::Borrowed(v) => v.clone(),
+        }
     }
 
     fn clock_end(&mut self) {
