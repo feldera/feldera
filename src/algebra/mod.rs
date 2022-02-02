@@ -60,13 +60,13 @@ pub trait AddByRef {
     fn add_by_ref(&self, other: &Self) -> Self;
 }
 
-/// Implementation of AddByRef for types that have an Add and a Copy.
+/// Implementation of AddByRef for types that have an Add.
 impl<T> AddByRef for T
 where
-    T: Add<Output = T> + Copy,
+    for<'a> &'a T: Add<Output = T>,
 {
     fn add_by_ref(&self, other: &Self) -> Self {
-        T::add(*self, *other)
+        self.add(other)
     }
 }
 
@@ -75,13 +75,13 @@ pub trait NegByRef {
     fn neg_by_ref(&self) -> Self;
 }
 
-/// Implementation of AddByRef for types that have an Add and a Copy.
+/// Implementation of AddByRef for types that have an Add.
 impl<T> NegByRef for T
 where
-    T: Neg<Output = T> + Copy,
+    for<'a> &'a T: Neg<Output = T>,
 {
     fn neg_by_ref(&self) -> Self {
-        T::neg(*self)
+        self.neg()
     }
 }
 
@@ -90,13 +90,13 @@ pub trait AddAssignByRef {
     fn add_assign_by_ref(&mut self, other: &Self);
 }
 
-/// Implemenation of AddAssignByRef for types that already have AddAssign and Copy
+/// Implemenation of AddAssignByRef for types that already have `AddAssign<&T>`.
 impl<T> AddAssignByRef for T
 where
-    T: AddAssign<T> + Copy,
+    for<'a> T: AddAssign<&'a T>,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
-        self.add_assign(*other)
+        self.add_assign(other)
     }
 }
 
@@ -105,13 +105,13 @@ pub trait MulByRef {
     fn mul_by_ref(&self, other: &Self) -> Self;
 }
 
-/// Implementation of MulByRef for types that already have Mul and Copy
+/// Implementation of MulByRef for types that already have Mul.
 impl<T> MulByRef for T
 where
-    T: Mul<Output = T> + Copy,
+    for<'a> &'a T: Mul<Output = T>,
 {
     fn mul_by_ref(&self, other: &Self) -> Self {
-        T::mul(*self, *other)
+        self.mul(other)
     }
 }
 
