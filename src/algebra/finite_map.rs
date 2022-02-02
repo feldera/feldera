@@ -49,7 +49,7 @@ where
     fn support_size(&self) -> usize;
 
     /// Increase the value associated to `key` by the specified `value`
-    fn increment(&mut self, key: &KeyType, value: &ValueType);
+    fn increment(&mut self, key: &KeyType, value: ValueType);
 
     /// Create a map containing a singleton value.
     fn singleton(key: KeyType, value: ValueType) -> Self;
@@ -171,7 +171,7 @@ where
     {
         let mut result = FiniteHashMap::new();
         for (k, v) in iter {
-            result.increment(&k, &v);
+            result.increment(&k, v);
         }
         result
     }
@@ -198,7 +198,7 @@ where
         self.value.len()
     }
 
-    fn increment(&mut self, key: &KeyType, value: &ValueType) {
+    fn increment(&mut self, key: &KeyType, value: ValueType) {
         if value.is_zero() {
             return;
         }
@@ -208,15 +208,13 @@ where
         let e = self.value.entry(key.clone());
         match e {
             Entry::Vacant(ve) => {
-                ve.insert(value.clone());
+                ve.insert(value);
             }
             Entry::Occupied(mut oe) => {
-                let w = oe.get().add_by_ref(value);
-                if w.is_zero() {
+                oe.get_mut().add_assign(value);
+                if oe.get().is_zero() {
                     oe.remove_entry();
-                } else {
-                    oe.insert(w);
-                };
+                }
             }
         };
     }
@@ -290,7 +288,7 @@ where
                     continue;
                 }
                 let merged = merger(v, &v2);
-                result.increment(k, &merged)
+                result.increment(k, merged)
             }
         } else {
             for (k, v2) in other {
@@ -299,7 +297,7 @@ where
                     continue;
                 }
                 let merged = merger(&v, v2);
-                result.increment(k, &merged)
+                result.increment(k, merged)
             }
         }
         result
@@ -317,35 +315,109 @@ where
     }
 }
 
+impl<KeyType, ValueType> Add<FiniteHashMap<KeyType, ValueType>>
+    for FiniteHashMap<KeyType, ValueType>
+where
+    KeyType: KeyProperties,
+    ValueType: GroupValue,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        fn do_add<KeyType, ValueType>(
+            mut this: FiniteHashMap<KeyType, ValueType>,
+            other: FiniteHashMap<KeyType, ValueType>,
+        ) -> FiniteHashMap<KeyType, ValueType>
+        where
+            KeyType: KeyProperties,
+            ValueType: GroupValue,
+        {
+            for (k, v) in other.value {
+                let entry = this.value.entry(k);
+                match entry {
+                    Entry::Vacant(e) => {
+                        e.insert(v);
+                    }
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().add_assign(v);
+                        if e.get().is_zero() {
+                            e.remove_entry();
+                        }
+                    }
+                }
+            }
+            this
+        }
+        if self.support_size() > other.support_size() {
+            do_add(self, other)
+        } else {
+            do_add(other, self)
+        }
+    }
+}
 impl<KeyType, ValueType> AddByRef for FiniteHashMap<KeyType, ValueType>
 where
     KeyType: KeyProperties,
     ValueType: GroupValue,
 {
     fn add_by_ref(&self, other: &Self) -> Self {
-        let mut result = self.clone();
-        for (k, v) in &other.value {
-            // TODO: unfortunately there is no way to avoid this k.clone() currently.
-            // See also note on 'insert' below.
-            let entry = result.value.entry(k.clone());
-            match entry {
-                Entry::Vacant(e) => {
-                    e.insert(v.clone());
-                }
-                Entry::Occupied(mut e) => {
-                    let w = e.get().add_by_ref(v);
-                    if w.is_zero() {
-                        e.remove_entry();
-                    } else {
-                        e.insert(w);
-                    };
+        fn do_add<KeyType, ValueType>(
+            mut this: FiniteHashMap<KeyType, ValueType>,
+            other: &FiniteHashMap<KeyType, ValueType>,
+        ) -> FiniteHashMap<KeyType, ValueType>
+        where
+            KeyType: KeyProperties,
+            ValueType: GroupValue,
+        {
+            for (k, v) in &other.value {
+                // TODO: unfortunately there is no way to avoid this k.clone() currently.
+                // See also note on 'insert' below.
+                let entry = this.value.entry(k.clone());
+                match entry {
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().add_assign_by_ref(v);
+                        if e.get().is_zero() {
+                            e.remove_entry();
+                        }
+                    }
                 }
             }
+            this
         }
-        result
+
+        if self.support_size() > other.support_size() {
+            do_add(self.clone(), other)
+        } else {
+            do_add(other.clone(), self)
+        }
     }
 }
 
+impl<KeyType, ValueType> AddAssign for FiniteHashMap<KeyType, ValueType>
+where
+    KeyType: KeyProperties,
+    ValueType: GroupValue,
+{
+    fn add_assign(&mut self, other: Self) {
+        for (k, v) in other.value {
+            let entry = self.value.entry(k);
+            match entry {
+                Entry::Vacant(e) => {
+                    e.insert(v);
+                }
+                Entry::Occupied(mut e) => {
+                    e.get_mut().add_assign(v);
+                    if e.get().is_zero() {
+                        e.remove_entry();
+                    }
+                }
+            }
+        }
+    }
+}
 impl<KeyType, ValueType> AddAssignByRef for FiniteHashMap<KeyType, ValueType>
 where
     KeyType: KeyProperties,
@@ -360,12 +432,10 @@ where
                     e.insert(v.clone());
                 }
                 Entry::Occupied(mut e) => {
-                    let w = e.get().add_by_ref(v);
-                    if w.is_zero() {
+                    e.get_mut().add_assign_by_ref(v);
+                    if e.get().is_zero() {
                         e.remove_entry();
-                    } else {
-                        e.insert(w);
-                    };
+                    }
                 }
             }
         }
@@ -459,7 +529,7 @@ fn hashmap_tests() {
     let z3 = FiniteHashMap::singleton(3, 4);
     assert_eq!("{3=>4}", z3.to_string());
 
-    z.increment(&0, &1);
+    z.increment(&0, 1);
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
     assert_eq!(1, z.lookup(&0));
@@ -467,15 +537,15 @@ fn hashmap_tests() {
     assert_ne!(z, FiniteHashMap::<i64, i64>::zero());
     assert_eq!(false, z.is_zero());
 
-    z.increment(&2, &0);
+    z.increment(&2, 0);
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
 
-    z.increment(&1, &-1);
+    z.increment(&1, -1);
     assert_eq!(2, z.support_size());
     assert_eq!("{0=>1,1=>-1}", z.to_string());
 
-    z.increment(&-1, &1);
+    z.increment(&-1, 1);
     assert_eq!(3, z.support_size());
     assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
 
@@ -487,13 +557,17 @@ fn hashmap_tests() {
     let i = d.clone().into_iter().collect::<FiniteHashMap<i64, i64>>();
     assert_eq!(i, d);
 
-    z.increment(&1, &1);
+    z.increment(&1, 1);
     assert_eq!(2, z.support_size());
     assert_eq!("{-1=>1,0=>1}", z.to_string());
 
     let mut z2 = z.add_by_ref(&z);
     assert_eq!(2, z2.support_size());
     assert_eq!("{-1=>2,0=>2}", z2.to_string());
+
+    let z2_owned = z.clone().add(z.clone());
+    assert_eq!(2, z2_owned.support_size());
+    assert_eq!("{-1=>2,0=>2}", z2_owned.to_string());
 
     z2.add_assign_by_ref(&z);
     assert_eq!(2, z2.support_size());
@@ -507,7 +581,7 @@ fn hashmap_tests() {
     assert_eq!(1, z4.support_size());
     assert_eq!("{0=>3}", z4.to_string());
 
-    z2.increment(&4, &2);
+    z2.increment(&4, 2);
     let z5 = z2.flatmap(&|x| std::iter::once(*x));
     assert_eq!(&z5, &z2);
     let z5 = z2.flatmap(&|x| {

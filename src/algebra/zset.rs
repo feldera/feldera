@@ -98,7 +98,7 @@ where
 
 ///////////////////////////////////////////////////////
 /// Implementation of ZSets in terms of HashMaps
-type ZSetHashMap<DataType, WeightType> = FiniteHashMap<DataType, WeightType>;
+pub type ZSetHashMap<DataType, WeightType> = FiniteHashMap<DataType, WeightType>;
 
 impl<DataType, WeightType> ZSet<DataType, WeightType> for ZSetHashMap<DataType, WeightType>
 where
@@ -111,7 +111,7 @@ where
         }
         for (key, value) in &other.value {
             let new_weight = value.mul_by_ref(weight);
-            self.increment(key, &new_weight);
+            self.increment(key, new_weight);
         }
     }
 
@@ -119,7 +119,7 @@ where
         let mut result = Self::new();
         for (key, value) in &self.value {
             if value.ge0() {
-                result.increment(key, &WeightType::one());
+                result.increment(key, WeightType::one());
             }
         }
         result
@@ -134,7 +134,7 @@ where
         for (t, w) in self {
             let k = partitioner(&t);
             let zs = ZSetHashMap::<DataType, WeightType>::singleton(t, w);
-            result.increment(&k, &zs);
+            result.increment(&k, zs);
         }
         result
     }
@@ -156,7 +156,7 @@ where
             for (k2, v2) in other {
                 let data = merger(k, k2);
                 let weight = v.mul_by_ref(v2);
-                result.increment(&data, &weight)
+                result.increment(&data, weight)
             }
         }
         result
@@ -204,7 +204,7 @@ fn zset_integer_tests() {
     let z2 = ZSetHashMap::<i64, i64>::new();
     assert_eq!(z, z2);
 
-    z.increment(&0, &1);
+    z.increment(&0, 1);
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
     assert_eq!(1, z.lookup(&0));
@@ -212,15 +212,15 @@ fn zset_integer_tests() {
     assert_ne!(z, ZSetHashMap::<i64, i64>::zero());
     assert_eq!(false, z.is_zero());
 
-    z.increment(&2, &0);
+    z.increment(&2, 0);
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
 
-    z.increment(&1, &-1);
+    z.increment(&1, -1);
     assert_eq!(2, z.support_size());
     assert_eq!("{0=>1,1=>-1}", z.to_string());
 
-    z.increment(&-1, &1);
+    z.increment(&-1, 1);
     assert_eq!(3, z.support_size());
     assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
 
@@ -233,7 +233,7 @@ fn zset_integer_tests() {
     assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
     assert_ne!(d, z);
 
-    z.increment(&1, &1);
+    z.increment(&1, 1);
     assert_eq!(2, z.support_size());
     assert_eq!("{-1=>1,0=>1}", z.to_string());
 
@@ -257,7 +257,7 @@ fn checked_zset_integer_weights_tests() {
     let z2 = ZSetHashMap::<i64, CheckedI64>::new();
     assert_eq!(z, z2);
 
-    z.increment(&0, &CheckedI64::from(1));
+    z.increment(&0, CheckedI64::from(1));
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
     assert_eq!(CheckedI64::from(1), z.lookup(&0));
@@ -265,15 +265,15 @@ fn checked_zset_integer_weights_tests() {
     assert_ne!(z, ZSetHashMap::<i64, CheckedI64>::zero());
     assert_eq!(false, z.is_zero());
 
-    z.increment(&2, &CheckedI64::from(0));
+    z.increment(&2, CheckedI64::from(0));
     assert_eq!(1, z.support_size());
     assert_eq!("{0=>1}", z.to_string());
 
-    z.increment(&1, &CheckedI64::from(-1));
+    z.increment(&1, CheckedI64::from(-1));
     assert_eq!(2, z.support_size());
     assert_eq!("{0=>1,1=>-1}", z.to_string());
 
-    z.increment(&-1, &CheckedI64::from(1));
+    z.increment(&-1, CheckedI64::from(1));
     assert_eq!(3, z.support_size());
     assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
 
@@ -286,7 +286,7 @@ fn checked_zset_integer_weights_tests() {
     assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
     assert_ne!(d, z);
 
-    z.increment(&1, &CheckedI64::from(1));
+    z.increment(&1, CheckedI64::from(1));
     assert_eq!(2, z.support_size());
     assert_eq!("{-1=>1,0=>1}", z.to_string());
 
@@ -353,7 +353,7 @@ fn zset_tuple_tests() {
     let z2 = ZSetHashMap::<TestTuple, CheckedI64>::new();
     assert_eq!(z, z2);
 
-    z.increment(&TestTuple::new(0, 0), &CheckedI64::from(1));
+    z.increment(&TestTuple::new(0, 0), CheckedI64::from(1));
     assert_eq!(1, z.support_size());
     assert_eq!("{(0,0)=>1}", z.to_string());
     assert_eq!(CheckedI64::from(1), z.lookup(&TestTuple::new(0, 0)));
@@ -361,15 +361,15 @@ fn zset_tuple_tests() {
     assert_ne!(z, ZSetHashMap::<TestTuple, CheckedI64>::zero());
     assert_eq!(false, z.is_zero());
 
-    z.increment(&TestTuple::new(2, 0), &CheckedI64::from(0));
+    z.increment(&TestTuple::new(2, 0), CheckedI64::from(0));
     assert_eq!(1, z.support_size());
     assert_eq!("{(0,0)=>1}", z.to_string());
 
-    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(-1));
+    z.increment(&TestTuple::new(1, 0), CheckedI64::from(-1));
     assert_eq!(2, z.support_size());
     assert_eq!("{(0,0)=>1,(1,0)=>-1}", z.to_string());
 
-    z.increment(&TestTuple::new(-1, 0), &CheckedI64::from(1));
+    z.increment(&TestTuple::new(-1, 0), CheckedI64::from(1));
     assert_eq!(3, z.support_size());
     assert_eq!("{(-1,0)=>1,(0,0)=>1,(1,0)=>-1}", z.to_string());
 
@@ -382,7 +382,7 @@ fn zset_tuple_tests() {
     assert_eq!("{(-1,0)=>-1,(0,0)=>-1,(1,0)=>1}", d.to_string());
     assert_ne!(d, z);
 
-    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(1));
+    z.increment(&TestTuple::new(1, 0), CheckedI64::from(1));
     assert_eq!(2, z.support_size());
     assert_eq!("{(-1,0)=>1,(0,0)=>1}", z.to_string());
 
@@ -430,10 +430,10 @@ where
 pub fn indexed_zset_tests() {
     let mut z = ZSetHashMap::<TestTuple, CheckedI64>::with_capacity(5);
     assert_eq!(0, z.support_size());
-    z.increment(&TestTuple::new(0, 0), &CheckedI64::from(1));
-    z.increment(&TestTuple::new(2, 0), &CheckedI64::from(2));
-    z.increment(&TestTuple::new(1, 0), &CheckedI64::from(-1));
-    z.increment(&TestTuple::new(-1, 0), &CheckedI64::from(1));
+    z.increment(&TestTuple::new(0, 0), CheckedI64::from(1));
+    z.increment(&TestTuple::new(2, 0), CheckedI64::from(2));
+    z.increment(&TestTuple::new(1, 0), CheckedI64::from(-1));
+    z.increment(&TestTuple::new(-1, 0), CheckedI64::from(1));
     let ps = z.clone().partition(&|t: &TestTuple| t.left.abs() % 2);
     let s = ps.to_string();
     assert_eq!("{0=>{(0,0)=>1,(2,0)=>2},1=>{(-1,0)=>1,(1,0)=>-1}}", s);
