@@ -118,10 +118,16 @@ where
 /// A type with an associative addition and a zero.
 /// We trust the implementation to have an associative addition.
 /// (this cannot be checked statically).
-pub trait MonoidValue: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef {}
+pub trait MonoidValue:
+    Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef
+{
+}
 
 /// Default implementation for all types that have an addition and a zero.
-impl<T> MonoidValue for T where T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef {}
+impl<T> MonoidValue for T where
+    T: Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef
+{
+}
 
 /// A Group is a Monoid with a with negation operation.
 /// We expect all our groups to be commutative.
@@ -129,7 +135,7 @@ pub trait GroupValue: MonoidValue + NegByRef {}
 
 /// Default implementation of GroupValue for all types that have the required traits.
 impl<T> GroupValue for T where
-    T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef + NegByRef
+    T: Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef + NegByRef
 {
 }
 
@@ -138,7 +144,17 @@ pub trait RingValue: GroupValue + MulByRef + HasOne {}
 
 /// Default implementation of RingValue for all types that have the required traits.
 impl<T> RingValue for T where
-    T: Clone + Eq + 'static + HasZero + AddByRef + AddAssignByRef + NegByRef + MulByRef + HasOne
+    T: Clone
+        + Eq
+        + 'static
+        + HasZero
+        + Add
+        + AddByRef
+        + AddAssign
+        + AddAssignByRef
+        + NegByRef
+        + MulByRef
+        + HasOne
 {
 }
 
@@ -155,7 +171,9 @@ where
         + Eq
         + 'static
         + HasZero
+        + Add
         + AddByRef
+        + AddAssign
         + AddAssignByRef
         + NegByRef
         + MulByRef
@@ -199,6 +217,20 @@ impl<T> CheckedInt<T> {
     }
 }
 
+impl<T> Add for CheckedInt<T>
+where
+    T: CheckedAdd,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        // intentional panic on overflow
+        Self {
+            value: self.value.checked_add(&other.value).expect("overflow"),
+        }
+    }
+}
+
 impl<T> AddByRef for CheckedInt<T>
 where
     T: CheckedAdd,
@@ -208,6 +240,15 @@ where
         Self {
             value: self.value.checked_add(&other.value).expect("overflow"),
         }
+    }
+}
+
+impl<T> AddAssign for CheckedInt<T>
+where
+    T: CheckedAdd,
+{
+    fn add_assign(&mut self, other: Self) {
+        self.value = self.value.checked_add(&other.value).expect("overflow")
     }
 }
 
