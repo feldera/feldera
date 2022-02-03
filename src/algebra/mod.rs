@@ -201,6 +201,16 @@ mod integer_ring_tests {
         assert_eq!(-2, two.neg_by_ref());
         assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
     }
+
+    #[test]
+    fn fixed_isize_tests() {
+        assert_eq!(0, isize::zero());
+        assert_eq!(1, isize::one());
+        let two = isize::one().add_by_ref(&isize::one());
+        assert_eq!(2, two);
+        assert_eq!(-2, two.neg_by_ref());
+        assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
+    }
 }
 
 ////////////////////////////////////////////////////////

@@ -350,7 +350,8 @@ where
 /// let hruntime = Runtime::run(WORKERS, |runtime, index| {
 ///     let root = Root::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
-///         let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n += 1));
+///         let mut n: usize = 0;
+///         let source = circuit.add_source(Generator::new(move || { let result = n; n += 1; result }));
 ///
 ///         // Create an `ExchangeSender`/`ExchangeReceiver pair`.
 ///         let (sender, receiver) = new_exchange_operators(
@@ -648,7 +649,12 @@ mod tests {
         {
             let hruntime = Runtime::run(workers.clone(), move |runtime, index| {
                 let root = Root::build_with_scheduler::<_, S>(move |circuit| {
-                    let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n += 1));
+                    let mut n: usize = 0;
+                    let source = circuit.add_source(Generator::new(move || {
+                        let result = n;
+                        n += 1;
+                        result
+                    }));
                     let (sender, receiver) = new_exchange_operators(
                         runtime,
                         index,

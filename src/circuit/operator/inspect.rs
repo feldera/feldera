@@ -22,7 +22,8 @@ where
     /// #     Root,
     /// # };
     /// let root = Root::build(move |circuit| {
-    ///     let stream = circuit.add_source(Generator::new(1, |n: &mut usize| *n+=1));
+    ///     let mut n = 1;
+    ///     let stream = circuit.add_source(Generator::new(move || {let res = n; n+=1; res}));
     ///     // Print all values in `stream`.
     ///     stream.inspect(|n| println!("inspect: {}", n));
     /// })

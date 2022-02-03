@@ -1,3 +1,10 @@
+/*
+MIT License
+SPDX-License-Identifier: MIT
+
+Copyright (c) $CURRENT_YEAR VMware, Inc
+*/
+
 //! API to construct circuits.
 //!
 //! The API exposes two abstractions [`Circuit`]s and [`Stream`]s.
@@ -156,10 +163,10 @@ where
     /// consumer connected to the stream.  The last consumer receives
     /// an owned value (`Cow::Owned`).
     ///
-    /// #Safety
+    /// # Safety
     ///
     /// The caller must have exclusive access to the current stream.
-    pub(super) unsafe fn take(&'_ self) -> Cow<'_, D> {
+    pub(crate) unsafe fn take(&'_ self) -> Cow<'_, D> {
         let (val, refs) = &mut *self.val.get();
         debug_assert!(*refs > 0);
         *refs -= 1;
@@ -170,7 +177,7 @@ where
         }
     }
 
-    pub(super) unsafe fn try_take(&'_ self) -> Option<Cow<'_, D>> {
+    pub(crate) unsafe fn try_take(&'_ self) -> Option<Cow<'_, D>> {
         let (val, refs) = &mut *self.val.get();
         if *refs > 0 {
             *refs -= 1;
@@ -1209,7 +1216,8 @@ where
     /// };
     ///
     /// let root = Root::build(|circuit| {
-    ///     let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
+    ///     let mut n: usize = 0;
+    ///     let source = circuit.add_source(Generator::new(move || { let result = n; n = n + 1; result}));
     ///     let fact = circuit.iterate(|child| {
     ///         let counter = Rc::new(RefCell::new(0));
     ///         let counter_clone = counter.clone();
@@ -1863,70 +1871,18 @@ mod tests {
     use super::Root;
     use crate::circuit::{
         operator::{Apply2, Generator, Inspect, NestedSource, Z1},
-        operator_traits::{Operator, SinkOperator, UnaryOperator},
         schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         trace::TraceMonitor,
     };
     use std::{
-        borrow::Cow,
         cell::RefCell,
-        fmt::Display,
-        marker::PhantomData,
         ops::Deref,
         rc::Rc,
         sync::{Arc, Mutex},
         vec::Vec,
     };
 
-    // Operator that integrates its input stream.
-    struct Integrator {
-        sum: usize,
-    }
-    impl Integrator {
-        fn new() -> Self {
-            Self { sum: 0 }
-        }
-    }
-    impl Operator for Integrator {
-        fn name(&self) -> Cow<'static, str> {
-            Cow::from("Integrator")
-        }
-        fn clock_start(&mut self) {}
-        fn clock_end(&mut self) {
-            self.sum = 0;
-        }
-    }
-    impl UnaryOperator<usize, usize> for Integrator {
-        fn eval(&mut self, i: &usize) -> usize {
-            self.sum = self.sum + *i;
-            self.sum
-        }
-    }
-
-    // Sink operator that prints all elements in its input stream.
-    struct Printer<T> {
-        phantom: PhantomData<T>,
-    }
-    impl<T> Printer<T> {
-        fn new() -> Self {
-            Self {
-                phantom: PhantomData,
-            }
-        }
-    }
-    impl<T: 'static> Operator for Printer<T> {
-        fn name(&self) -> Cow<'static, str> {
-            Cow::from("Printer")
-        }
-        fn clock_start(&mut self) {}
-        fn clock_end(&mut self) {}
-    }
-    impl<T: Display + 'static> SinkOperator<T> for Printer<T> {
-        fn eval(&mut self, i: &T) {
-            println!("new output: {}", i);
-        }
-    }
-
+    // Compute the sum of numbers from 0 to 99.
     #[test]
     fn sum_circuit_static() {
         sum_circuit::<StaticScheduler>();
@@ -1942,7 +1898,7 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
+        let actual_output: Rc<RefCell<Vec<isize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
         let root = Root::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::attach(
@@ -1950,13 +1906,15 @@ mod tests {
                 circuit,
                 "monitor",
             );
-            let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n = *n + 1));
-            let integrator = circuit.add_unary_operator(Integrator::new(), &source);
-            circuit.add_sink(Printer::new(), &integrator);
-            circuit.add_sink(
-                Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
-                &integrator,
-            );
+            let mut n: isize = 0;
+            let source = circuit.add_source(Generator::new(move || {
+                let result = n;
+                n = n + 1;
+                result
+            }));
+            let integrator = source.integrate();
+            integrator.inspect(|n| println!("{}", n));
+            integrator.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
         .unwrap();
 
@@ -1965,7 +1923,7 @@ mod tests {
         }
 
         let mut sum = 0;
-        let mut expected_output: Vec<usize> = Vec::with_capacity(100);
+        let mut expected_output: Vec<isize> = Vec::with_capacity(100);
         for i in 0..100 {
             sum += i;
             expected_output.push(sum);
@@ -1998,7 +1956,12 @@ mod tests {
                 "monitor",
             );
 
-            let source = circuit.add_source(Generator::new(0, |n: &mut usize| *n = *n + 1));
+            let mut n: usize = 0;
+            let source = circuit.add_source(Generator::new(move || {
+                let result = n;
+                n = n + 1;
+                result
+            }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
             let plus = circuit.add_binary_operator(
                 Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
@@ -2054,7 +2017,11 @@ mod tests {
                 "monitor",
             );
 
-            let source = circuit.add_source(Generator::new(1, |n: &mut usize| *n = *n + 1));
+            let mut n: usize = 0;
+            let source = circuit.add_source(Generator::new(move || {
+                n = n + 1;
+                n
+            }));
             let fact = circuit
                 .iterate_with_scheduler::<_, _, _, S>(|child| {
                     let counter = Rc::new(RefCell::new(0));

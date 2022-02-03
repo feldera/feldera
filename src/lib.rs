@@ -9,3 +9,4 @@ extern crate num;
 
 pub mod algebra;
 pub mod circuit;
+mod test;
