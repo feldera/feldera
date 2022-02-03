@@ -1,9 +1,9 @@
 //! Some basic operators.
 
-mod inspect;
+pub(crate) mod inspect;
 pub use inspect::Inspect;
 
-mod apply;
+pub(crate) mod apply;
 pub use apply::Apply;
 
 mod apply2;
@@ -27,3 +27,6 @@ pub use generator::Generator;
 mod integrate;
 
 pub mod communication;
+
+mod differentiate;
+pub use differentiate::Differentiate;

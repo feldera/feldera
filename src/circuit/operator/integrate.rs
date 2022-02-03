@@ -31,7 +31,7 @@ where
     /// # };
     /// let root = Root::build(move |circuit| {
     ///     // Generate a stream of 1's.
-    ///     let stream = circuit.add_source(Generator::new(1, |n: &mut usize| {}));
+    ///     let stream = circuit.add_source(Generator::new(|| 1));
     ///     // Integrate the stream.
     ///     let (sum, delayed_sum) = stream.integrate_core();
     /// #   let mut counter1 = 0;
@@ -121,7 +121,7 @@ mod test {
     #[test]
     fn scalar_integrate() {
         let root = Root::build(move |circuit| {
-            let source = circuit.add_source(Generator::new(1, |_: &mut usize| {}));
+            let source = circuit.add_source(Generator::new(|| 1));
             let mut counter = 0;
             source.integrate().inspect(move |n| {
                 counter += 1;
@@ -139,13 +139,13 @@ mod test {
     fn zset_integrate() {
         let root = Root::build(move |circuit| {
             let mut counter1 = 0;
-            let source = circuit.add_source(Generator::new(
-                ZSetHashMap::new(),
-                move |s: &mut ZSetHashMap<usize, isize>| {
-                    s.increment(&counter1, 1);
-                    counter1 += 1;
-                },
-            ));
+            let mut s = ZSetHashMap::new();
+            let source = circuit.add_source(Generator::new(move || {
+                let res = s.clone();
+                s.increment(&counter1, 1);
+                counter1 += 1;
+                res
+            }));
 
             let (integral, integral_delayed) = source.integrate_core();
             let mut counter2 = 0;

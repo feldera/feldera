@@ -25,9 +25,11 @@ where
     /// # };
     /// let root = Root::build(move |circuit| {
     ///     // Stream of non-negative values: 0, 1, 2, ...
-    ///     let source1 = circuit.add_source(Generator::new(0, |n: &mut isize| *n += 1));
+    ///     let mut n = 0;
+    ///     let source1 = circuit.add_source(Generator::new(move || {let res = n; n += 1; res}));
     ///     // Stream of non-positive values: 0, -1, -2, ...
-    ///     let source2 = circuit.add_source(Generator::new(0, |n: &mut isize| *n -= 1));
+    ///     let mut n = 0;
+    ///     let source2 = circuit.add_source(Generator::new(move || {let res = n; n -= 1; res}));
     ///     // Compute pairwise sums of values in the stream; the output stream will contain zeros.
     ///     source1.plus(&source2).inspect(|n| assert_eq!(*n, 0));
     /// })
@@ -110,8 +112,18 @@ mod test {
     #[test]
     fn scalar_plus() {
         let root = Root::build(move |circuit| {
-            let source1 = circuit.add_source(Generator::new(0, |n: &mut usize| *n += 1));
-            let source2 = circuit.add_source(Generator::new(100, |n: &mut usize| *n -= 1));
+            let mut n = 0;
+            let source1 = circuit.add_source(Generator::new(move || {
+                let res = n;
+                n += 1;
+                res
+            }));
+            let mut n = 100;
+            let source2 = circuit.add_source(Generator::new(move || {
+                let res = n;
+                n -= 1;
+                res
+            }));
             source1.plus(&source2).inspect(|n| assert_eq!(*n, 100));
         })
         .unwrap();
@@ -124,14 +136,18 @@ mod test {
     #[test]
     fn zset_plus() {
         let build_circuit = |circuit: &Circuit<()>| {
-            let source1 = circuit.add_source(Generator::new(
-                ZSetHashMap::new(),
-                |s: &mut ZSetHashMap<usize, isize>| s.increment(&5, 1),
-            ));
-            let source2 = circuit.add_source(Generator::new(
-                ZSetHashMap::new(),
-                |s: &mut ZSetHashMap<usize, isize>| s.increment(&5, -1),
-            ));
+            let mut s = ZSetHashMap::new();
+            let source1 = circuit.add_source(Generator::new(move || {
+                let res = s.clone();
+                s.increment(&5, 1);
+                res
+            }));
+            let mut s = ZSetHashMap::new();
+            let source2 = circuit.add_source(Generator::new(move || {
+                let res = s.clone();
+                s.increment(&5, -1);
+                res
+            }));
             source1
                 .plus(&source2)
                 .inspect(|s| assert_eq!(s, &ZSetHashMap::new()));

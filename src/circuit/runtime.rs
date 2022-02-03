@@ -280,10 +280,8 @@ mod tests {
             let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                 let rtclone = runtime.clone();
                 // Generator that produces values using `sequence_next`.
-                let source = circuit.add_source(Generator::new(
-                    rtclone.sequence_next(index),
-                    move |n: &mut usize| *n = rtclone.sequence_next(index),
-                ));
+                let source =
+                    circuit.add_source(Generator::new(move || rtclone.sequence_next(index)));
                 circuit.add_sink(
                     Inspect::new(move |n: &usize| data_clone.borrow_mut().push(*n)),
                     &source,
@@ -321,7 +319,11 @@ mod tests {
             let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                 circuit
                     .iterate_with_scheduler::<_, _, _, S>(|child| {
-                        let source = child.add_source(Generator::new(0, |n: &mut usize| *n += 1));
+                        let mut n: usize = 0;
+                        let source = child.add_source(Generator::new(move || {
+                            n = n + 1;
+                            n
+                        }));
                         child.add_sink(Inspect::new(|_: &usize| {}), &source);
                         Ok((|| false, ()))
                     })
