@@ -116,7 +116,7 @@ mod tests {
         let root = Root::build(|circuit| {
             circuit
                 .add_source(make_tuple_generator())
-                .filter_keys(|tt: &TestTuple| tt.left % 2 == 0)
+                .filter_keys::<_,_,ZSetHashMap<_,_>,_>(|tt: &TestTuple| tt.left % 2 == 0)
                 .apply(ToString::to_string)
                 .inspect(move |s: &String| actual_data.borrow_mut().push(s.clone()));
         })

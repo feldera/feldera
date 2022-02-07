@@ -18,7 +18,6 @@ pub mod operator;
 pub mod operator_traits;
 pub mod schedule;
 pub mod trace;
-pub mod zsetoperator;
 
 pub use circuit_builder::{
     Circuit, FeedbackConnector, GlobalNodeId, NodeId, OwnershipPreference, Root, Stream,
