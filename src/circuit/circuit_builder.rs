@@ -1009,12 +1009,18 @@ where
 
     /// Add a binary operator that consumes both inputs by reference.
     /// See [`BinaryOperator`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if `input_stream1` and `input_stream2` are the
+    /// same stream, in which case the caller should use a proper unary
+    /// operator instead.
     pub fn add_binary_operator<I1, I2, O, Op>(
         &self,
         operator: Op,
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
-    ) -> Stream<Self, O>
+    ) -> Option<Stream<Self, O>>
     where
         I1: Data,
         I2: Data,
@@ -1040,14 +1046,17 @@ where
         input_stream2: &Stream<Self, I2>,
         input_preference1: OwnershipPreference,
         input_preference2: OwnershipPreference,
-    ) -> Stream<Self, O>
+    ) -> Option<Stream<Self, O>>
     where
         I1: Data,
         I2: Data,
         O: Data,
         Op: BinaryOperator<I1, I2, O>,
     {
-        self.add_node(|id| {
+        if input_stream1.origin_node_id() == input_stream2.origin_node_id() {
+            return None;
+        }
+        Some(self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
                 operator.name(),
@@ -1064,7 +1073,7 @@ where
             self.connect_stream(input_stream1, id, input_preference1);
             self.connect_stream(input_stream2, id, input_preference2);
             (node, output_stream)
-        })
+        }))
     }
 
     /// Add a feedback loop to the circuit.
@@ -1107,7 +1116,7 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit.add_binary_operator(Apply2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output);
+    /// let plus = circuit.add_binary_operator(Apply2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output).unwrap();
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -1230,7 +1239,7 @@ where
     ///             Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
     ///             &countdown,
     ///             &z1_output,
-    ///         );
+    ///         ).unwrap();
     ///         z1_feedback.connect(&mul);
     ///         Ok((move || *counter.borrow() <= 1, mul.leave()))
     ///     }).unwrap();
@@ -1963,11 +1972,13 @@ mod tests {
                 result
             }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-            let plus = circuit.add_binary_operator(
-                Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
-                &source,
-                &z1_output,
-            );
+            let plus = circuit
+                .add_binary_operator(
+                    Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
+                    &source,
+                    &z1_output,
+                )
+                .unwrap();
             circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &plus,
@@ -2032,11 +2043,13 @@ mod tests {
                             *counter_clone.borrow_mut() = *n;
                         }));
                     let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
-                    let mul = child.add_binary_operator(
-                        Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-                        &countdown,
-                        &z1_output,
-                    );
+                    let mul = child
+                        .add_binary_operator(
+                            Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
+                            &countdown,
+                            &z1_output,
+                        )
+                        .unwrap();
                     z1_feedback.connect(&mul);
                     Ok((move || *counter.borrow() <= 1, mul.leave()))
                 })
