@@ -12,6 +12,7 @@ where
     P: Clone + 'static,
     T1: Clone + 'static,
 {
+    /// Apply  the `Apply` operator to `self`.
     pub fn apply<F, T2>(&self, func: F) -> Stream<Circuit<P>, T2>
     where
         F: Fn(&T1) -> T2 + 'static,

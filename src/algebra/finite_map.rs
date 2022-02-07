@@ -14,6 +14,7 @@ use std::{
     fmt::{Display, Formatter, Result},
     hash::Hash,
     iter::{repeat, FromIterator},
+    mem::swap,
 };
 
 /// These are the properties we expect for a FiniteMap key.
@@ -465,9 +466,28 @@ where
     fn neg_by_ref(&self) -> Self {
         let mut result = self.clone();
         for val in result.value.values_mut() {
-            *val = val.clone().neg_by_ref();
+            let mut tmp = ValueType::zero();
+            swap(val, &mut tmp);
+            *val = tmp.neg();
         }
         result
+    }
+}
+
+impl<KeyType, ValueType> Neg for FiniteHashMap<KeyType, ValueType>
+where
+    KeyType: KeyProperties,
+    ValueType: GroupValue,
+{
+    type Output = Self;
+
+    fn neg(mut self) -> Self {
+        for val in self.value.values_mut() {
+            let mut tmp = ValueType::zero();
+            swap(val, &mut tmp);
+            *val = tmp.neg();
+        }
+        self
     }
 }
 
@@ -551,6 +571,11 @@ fn hashmap_tests() {
     assert_eq!("{-1=>1,0=>1,1=>-1}", z.to_string());
 
     let d = z.neg_by_ref();
+    assert_eq!(3, d.support_size());
+    assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
+    assert_ne!(d, z);
+
+    let d = z.clone().neg();
     assert_eq!(3, d.support_size());
     assert_eq!("{-1=>-1,0=>-1,1=>1}", d.to_string());
     assert_ne!(d, z);

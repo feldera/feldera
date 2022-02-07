@@ -9,7 +9,6 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 
 #[cfg(test)]
 mod tests {
-    use crate::circuit::operator::{NestedSource, Z1};
     use crate::{
         algebra::{
             finite_map::{FiniteHashMap, FiniteMap},
@@ -17,7 +16,7 @@ mod tests {
             AddByRef, HasZero,
         },
         circuit::{
-            operator::{Apply2, Generator},
+            operator::{Apply2, Generator, NestedSource, Z1},
             operator_traits::SourceOperator,
             *,
         },
@@ -116,7 +115,7 @@ mod tests {
         let root = Root::build(|circuit| {
             circuit
                 .add_source(make_tuple_generator())
-                .filter_keys::<_,_,ZSetHashMap<_,_>,_>(|tt: &TestTuple| tt.left % 2 == 0)
+                .filter_keys::<_, _, ZSetHashMap<_, _>, _>(|tt: &TestTuple| tt.left % 2 == 0)
                 .apply(ToString::to_string)
                 .inspect(move |s: &String| actual_data.borrow_mut().push(s.clone()));
         })

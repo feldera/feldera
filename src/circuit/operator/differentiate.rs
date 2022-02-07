@@ -1,23 +1,28 @@
-//! Differentiator operator: direct implementation, without an explicit z
+//! Differentiator operator.
 
-use crate::algebra::GroupValue;
-use crate::circuit::{
-    operator_traits::{Operator, UnaryOperator},
-    Circuit, Stream,
+use crate::{
+    algebra::GroupValue,
+    circuit::{
+        operator_traits::{Operator, UnaryOperator},
+        Circuit, Stream,
+    },
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, mem::swap};
 
 impl<P, V> Stream<Circuit<P>, V>
 where
     P: Clone + 'static,
     V: GroupValue,
 {
+    /// Apply the `Differentiate` operator to `self`.
     pub fn differentiate(&self) -> Stream<Circuit<P>, V> {
         self.circuit()
             .add_unary_operator(Differentiate::new(), self)
     }
 }
 
+/// The differentiation operator computes the difference between the current and
+/// the previous values of the stream.
 pub struct Differentiate<V>
 where
     V: GroupValue,
@@ -50,7 +55,7 @@ where
     V: GroupValue,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Differentiator")
+        Cow::from("Differentiate")
     }
     fn clock_start(&mut self) {}
     fn clock_end(&mut self) {
@@ -68,9 +73,10 @@ where
         result
     }
 
-    fn eval_owned(&mut self, i: V) -> V {
-        let result = i.add_by_ref(&self.previous.neg_by_ref());
-        self.previous = i;
-        result
+    fn eval_owned(&mut self, mut i: V) -> V {
+        swap(&mut self.previous, &mut i);
+        i = i.neg();
+        i.add_assign_by_ref(&self.previous);
+        i
     }
 }

@@ -211,11 +211,15 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::algebra::finite_map::FiniteMap;
-    use crate::algebra::zset::{ZSet, ZSetHashMap};
-    use crate::algebra::{AddAssignByRef, AddByRef, CheckedI64, HasZero, NegByRef};
-    use std::cmp::Ordering;
-    use std::fmt::{Display, Error, Formatter};
+    use crate::algebra::{
+        finite_map::FiniteMap,
+        zset::{ZSet, ZSetHashMap},
+        AddAssignByRef, AddByRef, CheckedI64, HasZero, NegByRef,
+    };
+    use std::{
+        cmp::Ordering,
+        fmt::{Display, Error, Formatter},
+    };
 
     #[test]
     fn zset_integer_tests() {
