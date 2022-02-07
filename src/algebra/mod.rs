@@ -11,7 +11,7 @@ Copyright (c) 2021 VMware, Inc
 pub mod finite_map;
 pub mod zset;
 
-use num::{CheckedAdd, CheckedMul, CheckedSub};
+use num::{traits::CheckedNeg, CheckedAdd, CheckedMul, CheckedSub};
 use std::{
     fmt::{Display, Error, Formatter},
     ops::{Add, AddAssign, Mul, Neg},
@@ -131,11 +131,20 @@ impl<T> MonoidValue for T where
 
 /// A Group is a Monoid with a with negation operation.
 /// We expect all our groups to be commutative.
-pub trait GroupValue: MonoidValue + NegByRef {}
+pub trait GroupValue: MonoidValue + Neg<Output = Self> + NegByRef {}
 
 /// Default implementation of GroupValue for all types that have the required traits.
 impl<T> GroupValue for T where
-    T: Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef + NegByRef
+    T: Clone
+        + Eq
+        + 'static
+        + HasZero
+        + Add
+        + AddByRef
+        + AddAssign
+        + AddAssignByRef
+        + Neg<Output = Self>
+        + NegByRef
 {
 }
 
@@ -152,6 +161,7 @@ impl<T> RingValue for T where
         + AddByRef
         + AddAssign
         + AddAssignByRef
+        + Neg<Output = Self>
         + NegByRef
         + MulByRef
         + HasOne
@@ -175,6 +185,7 @@ where
         + AddByRef
         + AddAssign
         + AddAssignByRef
+        + Neg<Output = Self>
         + NegByRef
         + MulByRef
         + HasOne
@@ -285,12 +296,26 @@ where
 
 impl<T> NegByRef for CheckedInt<T>
 where
-    T: CheckedSub + ::num::traits::Zero,
+    T: CheckedNeg,
 {
     fn neg_by_ref(&self) -> Self {
         Self {
             // intentional panic on overflow
-            value: T::zero().checked_sub(&self.value).expect("overflow"),
+            value: self.value.checked_neg().expect("overflow"),
+        }
+    }
+}
+
+impl<T> Neg for CheckedInt<T>
+where
+    T: CheckedNeg,
+{
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self {
+            // intentional panic on overflow
+            value: self.value.checked_neg().expect("overflow"),
         }
     }
 }
@@ -324,6 +349,7 @@ where
         + CheckedAdd
         + CheckedMul
         + CheckedSub
+        + CheckedNeg
         + Clone
         + 'static,
 {

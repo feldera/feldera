@@ -2,8 +2,7 @@
 //! seed value.
 
 use crate::circuit::operator_traits::{Data, Operator, SourceOperator};
-use std::borrow::Cow;
-use std::marker::PhantomData;
+use std::{borrow::Cow, marker::PhantomData};
 
 /// A source operator that yields an infinite output stream
 /// from a generator function.
