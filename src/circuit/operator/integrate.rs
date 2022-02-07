@@ -70,13 +70,16 @@ where
         //           └───┘
         // ```
         let (z, feedback) = self.circuit().add_feedback(Z1::new(D::zero()));
-        let adder = self.circuit().add_binary_operator_with_preference(
-            Plus::new(),
-            &z,
-            self,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
+        let adder = self
+            .circuit()
+            .add_binary_operator_with_preference(
+                Plus::new(),
+                &z,
+                self,
+                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                OwnershipPreference::PREFER_OWNED,
+            )
+            .unwrap();
         feedback.connect_with_preference(&adder, OwnershipPreference::STRONGLY_PREFER_OWNED);
         (adder, z)
     }

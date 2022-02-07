@@ -136,6 +136,7 @@ mod tests {
         let actual_data_clone = actual_data.clone();
         let root = Root::build(|circuit| {
             let source0 = circuit.add_source(make_tuple_generator());
+            let source1 = circuit.add_source(make_tuple_generator());
             let join = |z0: &ZSetHashMap<TestTuple, i64>, z1: &ZSetHashMap<TestTuple, i64>| {
                 z0.join(z1, &|l| l.left, &|r| r.left + 1, |l, r| {
                     TestTuple::new(l.left, r.left)
@@ -146,7 +147,8 @@ mod tests {
                       right: &FiniteHashMap<TestTuple, i64>| join(left, right),
             );
             circuit
-                .add_binary_operator(join_op, &source0, &source0)
+                .add_binary_operator(join_op, &source0, &source1)
+                .unwrap()
                 .apply(ToString::to_string)
                 .inspect(move |s: &String| actual_data.borrow_mut().push(s.clone()));
         })
@@ -204,7 +206,9 @@ mod tests {
                             join_func(left, right)
                         },
                     );
-                    let join_output = child.add_binary_operator(join_op, &add_output, &i_output);
+                    let join_output = child
+                        .add_binary_operator(join_op, &add_output, &i_output)
+                        .unwrap();
                     let distinct_output = join_output.plus(&i_output).apply(ZSet::distinct);
                     z1_feedback.connect(&distinct_output);
                     let differentiator_output = distinct_output.differentiate();
