@@ -12,14 +12,8 @@ pub use apply2::Apply2;
 mod plus;
 pub use plus::Plus;
 
-mod repeat;
-pub use repeat::Repeat;
-
 mod z1;
 pub use z1::Z1;
-
-mod nested_source;
-pub use nested_source::NestedSource;
 
 mod generator;
 pub use generator::Generator;
@@ -33,3 +27,9 @@ pub use differentiate::Differentiate;
 
 mod filter;
 pub use filter::FilterKeys;
+
+mod delta0;
+pub use delta0::Delta0;
+
+mod condition;
+pub use condition::Condition;

@@ -1,6 +1,9 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
-use crate::circuit::operator_traits::{BinaryOperator, Operator};
+use crate::circuit::{
+    operator_traits::{BinaryOperator, Operator},
+    Scope,
+};
 use std::borrow::Cow;
 
 /// Applies a user-provided binary function to its inputs at each timestamp.
@@ -25,8 +28,8 @@ where
         Cow::from("Apply2")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 }
 
 impl<T1, T2, T3, F> BinaryOperator<T1, T2, T3> for Apply2<F>

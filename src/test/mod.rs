@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddByRef, FiniteHashMap, FiniteMap, HasZero, ZSet, ZSetHashMap},
     circuit::{operator_traits::SourceOperator, Root},
     finite_map,
-    operator::{Apply2, Generator, NestedSource, Z1},
+    operator::{Apply2, Generator, Z1},
 };
 use std::{cell::RefCell, ops::Deref, rc::Rc};
 
@@ -166,18 +166,12 @@ fn transitive_closure() {
 
         let source0 = circuit.add_source(gen);
         let circuit_output = circuit
-            .iterate(|child| {
-                let ns = NestedSource::new(
-                    source0,
-                    child,
-                    move |z: &mut ZSetHashMap<(i64, i64), i64>| *z = z.clone(),
-                );
-
-                let i_output = child.add_source(ns).integrate();
+            .iterate_with_condition(|child| {
+                let i_output = source0.delta0(child).integrate();
                 let (z1_output, z1_feedback) =
-                    child.add_feedback(Z1::new(ZSetHashMap::<(i64, i64), i64>::new()));
+                    child.add_feedback_with_export(Z1::new(ZSetHashMap::<(i64, i64), i64>::new()));
 
-                let add_output = i_output.plus(&z1_output);
+                let add_output = i_output.plus(&z1_output.local);
                 let join_func =
                     |z0: &ZSetHashMap<(i64, i64), i64>, z1: &ZSetHashMap<(i64, i64), i64>| {
                         z0.join(
@@ -201,14 +195,9 @@ fn transitive_closure() {
 
                 let distinct_output = join_output.plus(&i_output).apply(ZSet::distinct);
                 z1_feedback.connect(&distinct_output);
-
                 let differentiator_output = distinct_output.differentiate();
-                let termination_test = move || {
-                    // TODO: safe termination protocol
-                    unsafe { differentiator_output.take() }.is_zero()
-                };
-
-                Ok((termination_test, distinct_output.leave()))
+                let condition = differentiator_output.condition(HasZero::is_zero);
+                Ok((condition, z1_output.export))
             })
             .unwrap();
 

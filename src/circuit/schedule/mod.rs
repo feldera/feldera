@@ -103,7 +103,7 @@ where
 {
     fn run(&self, circuit: &Circuit<P>) -> Result<(), Error> {
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
-        circuit.clock_start();
+        circuit.clock_start(0);
 
         loop {
             self.scheduler.step(circuit)?;
@@ -113,7 +113,7 @@ where
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
-        unsafe { circuit.clock_end() };
+        unsafe { circuit.clock_end(0) };
         Ok(())
     }
 }
@@ -165,9 +165,7 @@ mod util {
         }
 
         for edge in circuit.edges().deref().iter() {
-            if let Some(from) = edge.from {
-                g.add_edge(from, edge.to, ());
-            }
+            g.add_edge(edge.from, edge.to, ());
         }
 
         g

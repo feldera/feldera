@@ -20,6 +20,6 @@ pub mod schedule;
 pub mod trace;
 
 pub use circuit_builder::{
-    Circuit, FeedbackConnector, GlobalNodeId, NodeId, OwnershipPreference, Root, Stream,
+    Circuit, FeedbackConnector, GlobalNodeId, NodeId, OwnershipPreference, Root, Scope, Stream,
 };
 pub use runtime::{LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};

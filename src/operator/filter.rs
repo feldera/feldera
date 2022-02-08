@@ -2,7 +2,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, UnaryOperator},
-    Circuit, Stream,
+    Circuit, Scope, Stream,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -70,8 +70,8 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("FilterKeys")
     }
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 }
 
 impl<K, V, CI, CO, F> UnaryOperator<CI, CO> for FilterKeys<K, V, CI, CO, F>

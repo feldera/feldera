@@ -243,17 +243,15 @@ impl Inner {
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
 
         for edge in circuit.edges().iter() {
-            if let Some(from) = edge.from {
-                successors
-                    .entry(from)
-                    .or_insert_with(Vec::new)
-                    .push(edge.to);
+            successors
+                .entry(edge.from)
+                .or_insert_with(Vec::new)
+                .push(edge.to);
 
-                predecessors
-                    .entry(edge.to)
-                    .or_insert_with(Vec::new)
-                    .push(from);
-            }
+            predecessors
+                .entry(edge.to)
+                .or_insert_with(Vec::new)
+                .push(edge.from);
         }
 
         // Add ownership constraints to the graph.

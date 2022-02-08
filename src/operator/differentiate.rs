@@ -4,7 +4,7 @@ use crate::{
     algebra::GroupValue,
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Stream,
+        Circuit, Scope, Stream,
     },
 };
 use std::{borrow::Cow, mem::swap};
@@ -57,8 +57,8 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Differentiate")
     }
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {
         self.previous = V::zero();
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, OwnershipPreference, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Add};
@@ -80,8 +80,8 @@ where
         Cow::from("Plus")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 }
 
 impl<D> BinaryOperator<D, D, D> for Plus<D>
@@ -138,8 +138,8 @@ where
         Cow::from("2x")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 }
 
 impl<D> UnaryOperator<D, D> for Times2<D>

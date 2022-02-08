@@ -2,7 +2,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-    OwnershipPreference,
+    OwnershipPreference, Scope,
 };
 use std::{borrow::Cow, mem::swap};
 
@@ -54,8 +54,8 @@ where
         Cow::from("Z^-1")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {
         self.reset();
     }
 }
@@ -116,39 +116,39 @@ fn sum_circuit() {
 
     // Test `UnaryOperator` API.
     let mut res = Vec::new();
-    z1.clock_start();
+    z1.clock_start(0);
     res.push(z1.eval(&1));
     res.push(z1.eval(&2));
     res.push(z1.eval(&3));
-    z1.clock_end();
+    z1.clock_end(0);
 
-    z1.clock_start();
+    z1.clock_start(0);
     res.push(z1.eval_owned(4));
     res.push(z1.eval_owned(5));
     res.push(z1.eval_owned(6));
-    z1.clock_end();
+    z1.clock_end(0);
 
     assert_eq!(res, expected_result);
 
     // Test `StrictUnaryOperator` API.
     let mut res = Vec::new();
-    z1.clock_start();
+    z1.clock_start(0);
     res.push(z1.get_output());
     z1.eval_strict(&1);
     res.push(z1.get_output());
     z1.eval_strict(&2);
     res.push(z1.get_output());
     z1.eval_strict(&3);
-    z1.clock_end();
+    z1.clock_end(0);
 
-    z1.clock_start();
+    z1.clock_start(0);
     res.push(z1.get_output());
     z1.eval_strict_owned(4);
     res.push(z1.get_output());
     z1.eval_strict_owned(5);
     res.push(z1.get_output());
     z1.eval_strict_owned(6);
-    z1.clock_end();
+    z1.clock_end(0);
 
     assert_eq!(res, expected_result);
 }
