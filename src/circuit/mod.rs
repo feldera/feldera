@@ -11,10 +11,9 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! At every clock cycle, each operator in the circuit is triggered, consuming a single value from
 //! each of its input streams and emitting a single value to the output stream.
 
-mod circuit_builder;
+pub mod circuit_builder;
 mod runtime;
 
-pub mod operator;
 pub mod operator_traits;
 pub mod schedule;
 pub mod trace;

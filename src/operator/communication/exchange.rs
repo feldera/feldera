@@ -335,12 +335,12 @@ where
 /// The following example instantiates the circuit in the diagram above.
 ///
 /// ```
-/// use dbsp::circuit::{
+/// use dbsp::{
+///     circuit::{Root, Runtime},
 ///     operator::{
 ///         communication::new_exchange_operators,
 ///         Generator, Inspect,
 ///     },
-///     Root, Runtime,
 /// };
 /// use std::iter::repeat;
 ///
@@ -579,10 +579,12 @@ where
 mod tests {
 
     use super::Exchange;
-    use crate::circuit::{
+    use crate::{
+        circuit::{
+            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            Root, Runtime,
+        },
         operator::{communication::new_exchange_operators, Generator, Inspect},
-        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-        Root, Runtime,
     };
     use std::{iter::repeat, thread::yield_now};
 

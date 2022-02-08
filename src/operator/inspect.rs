@@ -17,9 +17,9 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use dbsp::circuit::{
+    /// # use dbsp::{
+    /// #     circuit::Root,
     /// #     operator::Generator,
-    /// #     Root,
     /// # };
     /// let root = Root::build(move |circuit| {
     ///     let mut n = 1;

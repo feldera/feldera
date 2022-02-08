@@ -201,7 +201,7 @@ pub trait StrictOperator<O>: Operator {
     /// previous timestamps.  This method is invoked **before** `eval_strict()` has been invoked
     /// for the current timestamp.  It can be invoked **at most once** for each timestamp,
     /// as the implementation may mutate or destroy the operator's internal state
-    /// (for example [Z1](`crate::circuit::operator::Z1`) returns its inner value, leaving
+    /// (for example [Z1](`crate::operator::Z1`) returns its inner value, leaving
     /// the operator empty).
     fn get_output(&mut self) -> O;
 }

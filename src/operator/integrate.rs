@@ -1,9 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
-    circuit::{
-        operator::{Plus, Z1},
-        Circuit, OwnershipPreference, Stream,
-    },
+    circuit::{Circuit, OwnershipPreference, Stream},
+    operator::{Plus, Z1},
 };
 use std::ops::Add;
 
@@ -25,9 +23,9 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use dbsp::circuit::{
+    /// # use dbsp::{
+    /// #     circuit::Root,
     /// #     operator::Generator,
-    /// #     Root,
     /// # };
     /// let root = Root::build(move |circuit| {
     ///     // Generate a stream of 1's.
@@ -118,7 +116,8 @@ where
 mod test {
     use crate::{
         algebra::{finite_map::FiniteMap, zset::ZSetHashMap},
-        circuit::{operator::Generator, Root},
+        circuit::Root,
+        operator::Generator,
     };
 
     #[test]
