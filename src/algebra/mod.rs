@@ -133,7 +133,8 @@ impl<T> MonoidValue for T where
 /// We expect all our groups to be commutative.
 pub trait GroupValue: MonoidValue + Neg<Output = Self> + NegByRef {}
 
-/// Default implementation of GroupValue for all types that have the required traits.
+/// Default implementation of GroupValue for all types that have the required
+/// traits.
 impl<T> GroupValue for T where
     T: Clone
         + Eq
@@ -151,7 +152,8 @@ impl<T> GroupValue for T where
 /// A Group with a multiplication operation is a Ring.
 pub trait RingValue: GroupValue + MulByRef + HasOne {}
 
-/// Default implementation of RingValue for all types that have the required traits.
+/// Default implementation of RingValue for all types that have the required
+/// traits.
 impl<T> RingValue for T where
     T: Clone
         + Eq
@@ -174,7 +176,8 @@ pub trait ZRingValue: RingValue {
     fn ge0(&self) -> bool;
 }
 
-/// Default implementation of ZRingValue for all types that have the required traits.
+/// Default implementation of ZRingValue for all types that have the required
+/// traits.
 impl<T> ZRingValue for T
 where
     T: Clone

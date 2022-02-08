@@ -1,4 +1,5 @@
-//! A multithreaded runtime for evaluating DBSP circuits in a data-parallel fashion.
+//! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
+//! fashion.
 
 use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
@@ -42,17 +43,18 @@ impl RuntimeInner {
     }
 }
 
-/// A multithreaded runtime that hosts `N` circuits running in parallel worker threads.
-/// Typically, all `N` circuits are identical, but this is not required or enforced.
+/// A multithreaded runtime that hosts `N` circuits running in parallel worker
+/// threads. Typically, all `N` circuits are identical, but this is not required
+/// or enforced.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct Runtime(Arc<RuntimeInner>);
 
 impl Runtime {
-    /// Create a new runtime with `nworkers` worker threads and run a user-provided
-    /// closure in each thread.  The closure takes a reference to the `Runtime`
-    /// as an argument, so that workers can access shared services provided by the
-    /// runtime.
+    /// Create a new runtime with `nworkers` worker threads and run a
+    /// user-provided closure in each thread.  The closure takes a reference
+    /// to the `Runtime` as an argument, so that workers can access shared
+    /// services provided by the runtime.
     ///
     /// Returns a handle through which the caller can interact with the runtime.
     ///
@@ -61,13 +63,13 @@ impl Runtime {
     /// * `nworkers` - the number of worker threads to spawn.
     ///
     /// * `f` - closure that will be invoked in each worker thread.  Normally,
-    ///     this closure builds and runs a circuit.  The first argument of the
-    ///     closure is a reference to the `Runtime`, the second argument is the
-    ///     index of the worker thread within the runtime.
+    ///   this closure builds and runs a circuit.  The first argument of the
+    ///   closure is a reference to the `Runtime`, the second argument is the
+    ///   index of the worker thread within the runtime.
     ///
     /// # Examples
     /// ```
-    /// use dbsp::circuit::{Root, Runtime,};
+    /// use dbsp::circuit::{Root, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
     /// let hruntime = Runtime::run(4, |runtime, index| {
@@ -130,23 +132,24 @@ impl Runtime {
         self.inner().nworkers
     }
 
-    /// Returns reference to the data store shared by all workers within the runtime.
+    /// Returns reference to the data store shared by all workers within the
+    /// runtime.
     ///
     /// This low-level mechanism can be used by various services that
     /// require common state shared across all workers.
     ///
-    /// The [`LocalStore`] type is an alias to [`typedmap::TypedDashMap`], a concurrent
-    /// map type that can store key/value pairs of different types.  See `typedmap`
-    /// crate documentation for details.
+    /// The [`LocalStore`] type is an alias to [`typedmap::TypedDashMap`], a
+    /// concurrent map type that can store key/value pairs of different
+    /// types.  See `typedmap` crate documentation for details.
     pub fn local_store(&self) -> &LocalStore {
         &self.inner().store
     }
 
     /// A per-worker sequential counter.
     ///
-    /// This method can be used to generate unique identifiers that will be the same
-    /// across all worker threads.  Repeated calls to this function with the same
-    /// worker index generate numbers 0, 1, 2, ...
+    /// This method can be used to generate unique identifiers that will be the
+    /// same across all worker threads.  Repeated calls to this function
+    /// with the same worker index generate numbers 0, 1, 2, ...
     pub fn sequence_next(&self, worker_index: usize) -> usize {
         debug_assert!(worker_index < self.inner().nworkers);
         let mut entry = self

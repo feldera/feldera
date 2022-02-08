@@ -2,8 +2,8 @@
 //! each participant sends exactly one value to and receives exactly one
 //! value from each peer at every clock cycle.
 
-// TODO: We may want to generalize these operators to implement N-to-M communication,
-// including 1-to-N and N-to-1.
+// TODO: We may want to generalize these operators to implement N-to-M
+// communication, including 1-to-N and N-to-1.
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator, SourceOperator},
@@ -73,26 +73,27 @@ where
 /// multiple concurrent threads.
 ///
 /// An instance of `Exchange` can be shared by multiple threads that communicate
-/// in rounds.  In each round each peer _first_ sends exactly one data value to every
-/// other peer (and itself) and then receives one value from each peer.  The send
-/// operation can only proceed when all peers have retrieved data produced at the previous
-/// round.  Likewise, the receive operation can proceed once all incoming values
-/// are ready for the current round.
+/// in rounds.  In each round each peer _first_ sends exactly one data value to
+/// every other peer (and itself) and then receives one value from each peer.
+/// The send operation can only proceed when all peers have retrieved data
+/// produced at the previous round.  Likewise, the receive operation can proceed
+/// once all incoming values are ready for the current round.
 struct Exchange<T> {
     /// The number of communicating peers.
     npeers: usize,
-    /// `npeers^2` mailboxes, one for each sender/receiver pair.  Note that each mailbox
-    /// is accessed by exactly two threads, so contention is low.
+    /// `npeers^2` mailboxes, one for each sender/receiver pair.  Note that each
+    /// mailbox is accessed by exactly two threads, so contention is low.
     mailboxes: Vec<Mutex<T>>,
-    /// Counts the number of messages received in the current round of communication
-    /// per receiver.  The receiver must wait until it has all `npeers` messages
-    /// before reading all of them from mailboxes in one pass.
+    /// Counts the number of messages received in the current round of
+    /// communication per receiver.  The receiver must wait until it has all
+    /// `npeers` messages before reading all of them from mailboxes in one
+    /// pass.
     receiver_counters: Vec<CachePadded<AtomicUsize>>,
     /// Callback invoked when all `npeers` messages are ready for a receiver.
     receiver_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
-    /// Counts the number of empty mailboxes ready to accept new data per sender.
-    /// The sender waits until it has `npeers` available mailboxes before writing all
-    /// of them in one pass.
+    /// Counts the number of empty mailboxes ready to accept new data per
+    /// sender. The sender waits until it has `npeers` available mailboxes
+    /// before writing all of them in one pass.
     sender_counters: Vec<CachePadded<AtomicUsize>>,
     /// Callback invoked when all `npeers` mailboxes are available.
     sender_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
@@ -139,7 +140,8 @@ where
         &self.mailboxes[sender * self.npeers + receiver]
     }
 
-    /// True if all `sender`'s outgoing mailboxes are free and ready to accept data.
+    /// True if all `sender`'s outgoing mailboxes are free and ready to accept
+    /// data.
     ///
     /// Once this function returns true, a subsequent `try_send_all` operation
     /// is guaranteed to succeed for `sender`.
@@ -184,8 +186,8 @@ where
 
     /// True if all `receiver`'s incoming mailboxes contain data.
     ///
-    /// Once this function returns true, a subsequent `try_receive_all` operation
-    /// is guaranteed for `receiver`.
+    /// Once this function returns true, a subsequent `try_receive_all`
+    /// operation is guaranteed for `receiver`.
     fn ready_to_receive(&self, receiver: usize) -> bool {
         debug_assert!(receiver < self.npeers);
         self.receiver_counters[receiver].load(Ordering::SeqCst) == self.npeers
@@ -217,11 +219,11 @@ where
             if old_counter >= self.npeers - 1 {
                 // This can be a spurious callback if the following thread interleaving occurs:
                 // 1. Another receiver increments the sender's counter to `npeers`.
-                // 2. The sender starts transmitting messages, writing `receiver`'s mailbox first
-                //    (counter drops to `npeers-1`)
+                // 2. The sender starts transmitting messages, writing `receiver`'s mailbox
+                // first    (counter drops to `npeers-1`)
                 // 3. `receiver` is unblocked and retrieves its message, bumping the counter
-                //    back to `npeers` and generating a spurious sender callback in the following
-                //    line.
+                //    back to `npeers` and generating a spurious sender callback in the
+                // following    line.
                 if let Some(cb) = self.sender_callbacks[sender].get() {
                     cb()
                 }
@@ -231,17 +233,19 @@ where
         true
     }
 
-    /// Register callback to be invoked whenever the `ready_to_send` condition becomes true.
+    /// Register callback to be invoked whenever the `ready_to_send` condition
+    /// becomes true.
     ///
-    /// The callback can be setup at most once (e.g., when a scheduler attaches to the circuit)
-    /// and cannot be unregistered.  Notifications delivered before the callback is registered
-    /// are lost.  The client should call `ready_to_send` after installing the callback to check
-    /// the status.
+    /// The callback can be setup at most once (e.g., when a scheduler attaches
+    /// to the circuit) and cannot be unregistered.  Notifications delivered
+    /// before the callback is registered are lost.  The client should call
+    /// `ready_to_send` after installing the callback to check the status.
     ///
-    /// After the callback has been registered, notifications are delivered with at-least-once
-    /// semantics: a notification is generated whenever the status changes from not ready to
-    /// ready, but spurious notifications can occur occasionally.  Therefore, the user must
-    /// check the status explicitly by calling `ready_to_send` or be prepared that `try_send_all`
+    /// After the callback has been registered, notifications are delivered with
+    /// at-least-once semantics: a notification is generated whenever the
+    /// status changes from not ready to ready, but spurious notifications
+    /// can occur occasionally.  Therefore, the user must check the status
+    /// explicitly by calling `ready_to_send` or be prepared that `try_send_all`
     /// can fail.
     fn register_sender_callback<F>(&self, sender: usize, cb: F)
     where
@@ -253,17 +257,20 @@ where
         debug_assert!(_res.is_ok());
     }
 
-    /// Register callback to be invoked whenever the `ready_to_receive` condition becomes true.
+    /// Register callback to be invoked whenever the `ready_to_receive`
+    /// condition becomes true.
     ///
-    /// The callback can be setup at most once (e.g., when a scheduler attaches to the circuit)
-    /// and cannot be unregistered.  Notifications delivered before the callback is registered
-    /// are lost.  The client should call `ready_to_receive` after installing the callback to check
+    /// The callback can be setup at most once (e.g., when a scheduler attaches
+    /// to the circuit) and cannot be unregistered.  Notifications delivered
+    /// before the callback is registered are lost.  The client should call
+    /// `ready_to_receive` after installing the callback to check
     /// the status.
     ///
-    /// After the callback has been registered, notifications are delivered with at-least-once
-    /// semantics: a notification is generated whenever the status changes from not ready to
-    /// ready, but spurious notifications can occur occasionally.  The user must check the
-    /// status explicitly by calling `ready_to_receive` or be prepared that `try_receive_all`
+    /// After the callback has been registered, notifications are delivered with
+    /// at-least-once semantics: a notification is generated whenever the
+    /// status changes from not ready to ready, but spurious notifications
+    /// can occur occasionally.  The user must check the status explicitly
+    /// by calling `ready_to_receive` or be prepared that `try_receive_all`
     /// can fail.
     fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
     where
@@ -279,16 +286,16 @@ where
 
 /// Operator that partitions incoming data across all workers.
 ///
-/// This operator works in tandem with [`ExchangeReceiver`], which reassembles the data
-/// on the receiving side.  Together they implement an all-to-all comunication mechanism,
-/// where at every clock cycle each worker partitions its incoming data into `N` values,
-/// one for each worker, using a user-provided closure.  It then reads values sent to
-/// it by all peers and reassembles them into a single value using another user-provided
-/// closure.
+/// This operator works in tandem with [`ExchangeReceiver`], which reassembles
+/// the data on the receiving side.  Together they implement an all-to-all
+/// comunication mechanism, where at every clock cycle each worker partitions
+/// its incoming data into `N` values, one for each worker, using a
+/// user-provided closure.  It then reads values sent to it by all peers and
+/// reassembles them into a single value using another user-provided closure.
 ///
-/// The exchange mechanism is split into two operators, so that after sending the data
-/// the circuit does not need to block waiting for its peers to finish sending and can
-/// instead schedule other operators.
+/// The exchange mechanism is split into two operators, so that after sending
+/// the data the circuit does not need to block waiting for its peers to finish
+/// sending and can instead schedule other operators.
 ///
 /// ```text
 ///                    ExchangeSender  ExchangeReceiver
@@ -315,20 +322,22 @@ where
 ///                    ExchangeSender  ExchangeReceiver
 /// ```
 ///
-/// `ExchangeSender` is an asynchronous operator., i.e., [`ExchangeSender::is_async`]
-/// returns `true`.  It becomes schedulable ([`ExchangeSender::ready`] returns `true`)
-/// once all peers have retrieved values written by the operator in the previous clock
-/// cycle.  The scheduler should use [`ExchangeSender::register_ready_callback`]
-/// to get notified when the operator becomes schedulable.
+/// `ExchangeSender` is an asynchronous operator., i.e.,
+/// [`ExchangeSender::is_async`] returns `true`.  It becomes schedulable
+/// ([`ExchangeSender::ready`] returns `true`) once all peers have retrieved
+/// values written by the operator in the previous clock cycle.  The scheduler
+/// should use [`ExchangeSender::register_ready_callback`] to get notified when
+/// the operator becomes schedulable.
 ///
-/// `ExchangeSender` doesn't have a public constructor and must be instantiated using
-/// the [`new_exchange_operators`] function, which creates an [`ExchangeSender`]/[`ExchangeReceiver`]
-/// pair of operators and connects them to their counterparts in other workers as
-/// in the diagram above.
+/// `ExchangeSender` doesn't have a public constructor and must be instantiated
+/// using the [`new_exchange_operators`] function, which creates an
+/// [`ExchangeSender`]/[`ExchangeReceiver`] pair of operators and connects them
+/// to their counterparts in other workers as in the diagram above.
 ///
-/// An [`ExchangeSender`]/[`ExchangeReceiver`] pair is added to a circuit using the
-/// [`Circuit::add_exchange`](`crate::circuit::Circuit::add_exchange`) method, which registers
-/// a dependency between them, making sure that `ExchangeSender` is evaluated before `ExchangeReceiver`.
+/// An [`ExchangeSender`]/[`ExchangeReceiver`] pair is added to a circuit using
+/// the [`Circuit::add_exchange`](`crate::circuit::Circuit::add_exchange`)
+/// method, which registers a dependency between them, making sure that
+/// `ExchangeSender` is evaluated before `ExchangeReceiver`.
 ///
 /// # Examples
 ///
@@ -337,10 +346,7 @@ where
 /// ```
 /// use dbsp::{
 ///     circuit::{Root, Runtime},
-///     operator::{
-///         communication::new_exchange_operators,
-///         Generator, Inspect,
-///     },
+///     operator::{communication::new_exchange_operators, Generator, Inspect},
 /// };
 /// use std::iter::repeat;
 ///
@@ -351,7 +357,11 @@ where
 ///     let root = Root::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
 ///         let mut n: usize = 0;
-///         let source = circuit.add_source(Generator::new(move || { let result = n; n += 1; result }));
+///         let source = circuit.add_source(Generator::new(move || {
+///             let result = n;
+///             n += 1;
+///             result
+///         }));
 ///
 ///         // Create an `ExchangeSender`/`ExchangeReceiver pair`.
 ///         let (sender, receiver) = new_exchange_operators(
@@ -372,13 +382,17 @@ where
 ///         // [1,1,1,...]
 ///         // [2,2,2,...]
 ///         // ...
-///         circuit.add_sink(Inspect::new(move |v| {
-///             assert_eq!(&vec![round; WORKERS], v);
-///             round += 1;
-///         }), &combined)
-///     }).unwrap();
+///         circuit.add_sink(
+///             Inspect::new(move |v| {
+///                 assert_eq!(&vec![round; WORKERS], v);
+///                 round += 1;
+///             }),
+///             &combined,
+///         )
+///     })
+///     .unwrap();
 ///
-///     for _ in 1 .. ROUNDS {
+///     for _ in 1..ROUNDS {
 ///         root.step();
 ///     }
 /// });
@@ -458,16 +472,17 @@ where
     }
 }
 
-/// Operator that receives values sent by the `ExchangeSender` operator and assembles them into a
-/// single output value.
+/// Operator that receives values sent by the `ExchangeSender` operator and
+/// assembles them into a single output value.
 ///
 /// See [`ExchangeSender`] documentation for details.
 ///
-/// `ExchangeReceiver` is an asynchronous operator., i.e., [`ExchangeReceiver::is_async`]
-/// returns `true`.  It becomes schedulable ([`ExchangeReceiver::ready`] returns `true`)
-/// once all peers have sent values for this worker in the current clock
-/// cycle.  The scheduler should use [`ExchangeReceiver::register_ready_callback`]
-/// to get notified when the operator becomes schedulable.
+/// `ExchangeReceiver` is an asynchronous operator., i.e.,
+/// [`ExchangeReceiver::is_async`] returns `true`.  It becomes schedulable
+/// ([`ExchangeReceiver::ready`] returns `true`) once all peers have sent values
+/// for this worker in the current clock cycle.  The scheduler should use
+/// [`ExchangeReceiver::register_ready_callback`] to get notified when the
+/// operator becomes schedulable.
 pub struct ExchangeReceiver<T, L> {
     worker_index: usize,
     combine: L,
@@ -540,22 +555,23 @@ where
 ///
 /// # Arguments
 ///
-/// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators are created.
+/// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators
+///   are created.
 /// * `worker_index` - index of the current worker.
-/// * `partition` - partitioning logic that, for each element of the input stream, returns
-///     an iterator with exactly `runtime.num_workers()` values.
-/// * `combine` - re-assemble logic that combines values received from all peers into a single
-///     output value.
+/// * `partition` - partitioning logic that, for each element of the input
+///   stream, returns an iterator with exactly `runtime.num_workers()` values.
+/// * `combine` - re-assemble logic that combines values received from all peers
+///   into a single output value.
 ///
 /// # Type arguments
 /// * `TI` - Type of values in the input stream consumed by `ExchangeSender`.
 /// * `TO` - Type of values in the output stream produced by `ExchangeReceiver`.
 /// * `TE` - Type of values sent across workers.
-/// * `PL` - Type of closure that splits a value of type `TI` into `runtime.num_workers()`
-///    values of type `TE`.
+/// * `PL` - Type of closure that splits a value of type `TI` into
+///   `runtime.num_workers()` values of type `TE`.
 /// * `I` - Iterator returned by `PL`.
-/// * `CL` - Type of closure that folds `num_workers` values of type `TE` into
-///   a value of type `TO`.
+/// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
+///   value of type `TO`.
 pub fn new_exchange_operators<TI, TO, TE, PL, I, CL>(
     runtime: &Runtime,
     worker_index: usize,
@@ -589,10 +605,10 @@ mod tests {
     use std::{iter::repeat, thread::yield_now};
 
     // Create an exchange object with `WORKERS` concurrent senders/receivers.
-    // Iterate for `ROUNDS` rounds with each sender sending value `N` to each receiver
-    // in round number `N`.  Both senders and receivers may retry sending/receiving
-    // multiple times, but in the end each receiver should get all values in correct
-    // order.
+    // Iterate for `ROUNDS` rounds with each sender sending value `N` to each
+    // receiver in round number `N`.  Both senders and receivers may retry
+    // sending/receiving multiple times, but in the end each receiver should get
+    // all values in correct order.
     #[test]
     fn test_exchange() {
         const WORKERS: usize = 16;
@@ -633,8 +649,8 @@ mod tests {
         test_exchange_operators::<DynamicScheduler>();
     }
 
-    // Create a circuit with `WORKERS` concurrent workers with the following structure:
-    // `Generator - ExchangeSender -> ExchangeReceiver -> Inspect`.
+    // Create a circuit with `WORKERS` concurrent workers with the following
+    // structure: `Generator - ExchangeSender -> ExchangeReceiver -> Inspect`.
     // `Generator` - yields sequential numbers 0, 1, 2, ...
     // `ExchangeSender` - sends each number to all peers.
     // `ExchangeReceiver` - combines all received numbers in a vector.

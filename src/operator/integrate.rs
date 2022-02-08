@@ -14,11 +14,12 @@ where
     ///
     /// Computes the sum of values in the input stream.
     /// The first stream in the return tuple contains the value of the integral
-    /// after the current clock cycle.  The second stream contains the value of the
-    /// integral at the previous clock cycle, i.e., the sum of all inputs except
-    /// the last one.  The latter can equivalently be obtained by applying the delay
-    /// operator [`Z1`] to the integral, but this function avoids the extra storage
-    /// overhead and is the preferred way to perform delayed integration.
+    /// after the current clock cycle.  The second stream contains the value of
+    /// the integral at the previous clock cycle, i.e., the sum of all
+    /// inputs except the last one.  The latter can equivalently be obtained
+    /// by applying the delay operator [`Z1`] to the integral, but this
+    /// function avoids the extra storage overhead and is the preferred way
+    /// to perform delayed integration.
     ///
     /// # Examples
     ///

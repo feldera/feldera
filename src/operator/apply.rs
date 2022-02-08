@@ -22,7 +22,8 @@ where
     }
 }
 
-/// Operator that applies a user provided function to its input at each timestamp.
+/// Operator that applies a user provided function to its input at each
+/// timestamp.
 pub struct Apply<F> {
     func: F,
 }

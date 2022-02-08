@@ -28,7 +28,7 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //!     // Add a sink operator and wire the source directly to it.
 //!     circuit.add_sink(
 //!         Inspect::new(|n| println!("New output: {}", n)),
-//!         &source_stream
+//!         &source_stream,
 //!     );
 //! });
 //! ```
@@ -54,25 +54,27 @@ use super::{
     trace::{CircuitEvent, SchedulerEvent},
 };
 
-/// A stream stores the output of an operator.  Circuits are synchronous, meaning
-/// that each value is produced and consumed in the same clock cycle, so there can
-/// be at most one value in the stream at any time.
+/// A stream stores the output of an operator.  Circuits are synchronous,
+/// meaning that each value is produced and consumed in the same clock cycle, so
+/// there can be at most one value in the stream at any time.
 pub struct Stream<C, D> {
     /// Id of the operator within the local circuit that writes to the stream.
-    /// `None` if this is a stream introduced to the child circuit from its parent
-    /// circuit using `enter`, in which case the stream does not have a local source.
+    /// `None` if this is a stream introduced to the child circuit from its
+    /// parent circuit using `enter`, in which case the stream does not have
+    /// a local source.
     local_node_id: Option<NodeId>,
     /// Global id of the node that writes to this stream.
     origin_node_id: GlobalNodeId,
     /// Circuit that this stream belongs to.
     circuit: C,
     /// The value (there can be at most one since our circuits are synchronous).
-    /// The second component of the tuple tracks the number of consumers who retrieved
-    /// the value in the current clock cycle.  The last consumer to read from the
-    /// stream will obtain an owned value rather than a borrow.  See description of
-    /// [ownership-aware scheduling](`OwnershipPreference`) for details.
-    /// We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership tests.
-    /// We enforce unique ownership by making sure that at most one operator can
+    /// The second component of the tuple tracks the number of consumers who
+    /// retrieved the value in the current clock cycle.  The last consumer
+    /// to read from the stream will obtain an owned value rather than a
+    /// borrow.  See description of [ownership-aware
+    /// scheduling](`OwnershipPreference`) for details. We use `UnsafeCell`
+    /// instead of `RefCell` to avoid runtime ownership tests. We enforce
+    /// unique ownership by making sure that at most one operator can
     /// run (and access the stream) at any time.
     val: Rc<UnsafeCell<(Option<D>, usize)>>,
 }
@@ -145,7 +147,8 @@ where
 
 // Internal streams API only used inside this module.
 impl<P, D> Stream<Circuit<P>, D> {
-    // Create a new stream within the given circuit, connected to the specified node id.
+    // Create a new stream within the given circuit, connected to the specified node
+    // id.
     fn new(circuit: Circuit<P>, node_id: NodeId) -> Self {
         Self {
             local_node_id: Some(node_id),
@@ -221,16 +224,17 @@ pub(crate) trait Node {
     /// Node id unique within its parent circuit.
     fn id(&self) -> NodeId;
 
-    /// `true` if the node encapsulates an asynchronous operator (see [`Operator::is_async()`]).
-    /// `false` for synchronous operators and subcircuits.
+    /// `true` if the node encapsulates an asynchronous operator (see
+    /// [`Operator::is_async()`]). `false` for synchronous operators and
+    /// subcircuits.
     fn is_async(&self) -> bool;
 
     /// `true` if the node is ready to execute (see [`Operator::ready()`]).
     /// Always returns `true` for synchronous operators and subcircuits.
     fn ready(&self) -> bool;
 
-    /// Register callback to be invoked when an asynchronous operator becomes ready
-    /// (see [`Operator::register_ready_callback`]).
+    /// Register callback to be invoked when an asynchronous operator becomes
+    /// ready (see [`Operator::register_ready_callback`]).
     fn register_ready_callback(&mut self, _cb: Box<dyn Fn() + Send + Sync>) {}
 
     /// Evaluate the operator.  Reads one value from each input stream
@@ -353,34 +357,40 @@ type SchedulerEventHandlers = Rc<RefCell<HashMap<String, SchedulerEventHandler>>
 ///
 /// # Background
 ///
-/// A stream in a circuit can be connected to multiple consumers.  It is therefore generally
-/// impossible to provide each consumer with an owned copy of the data without cloning it.  At the
-/// same time, many operators can be more efficient when working with owned inputs.  For instance,
-/// when computing a sum of two z-sets, if one of the input z-sets is owned we can just add values
-/// from the other z-set to it without cloning the first z-set.  If both inputs are owned then we
-/// additionally do not need to clone key/value pairs when inserting them.  Furthermore, the
-/// implementation can choose to add the contents of the smaller z-set to the larger one.
+/// A stream in a circuit can be connected to multiple consumers.  It is
+/// therefore generally impossible to provide each consumer with an owned copy
+/// of the data without cloning it.  At the same time, many operators can be
+/// more efficient when working with owned inputs.  For instance, when computing
+/// a sum of two z-sets, if one of the input z-sets is owned we can just add
+/// values from the other z-set to it without cloning the first z-set.  If both
+/// inputs are owned then we additionally do not need to clone key/value pairs
+/// when inserting them.  Furthermore, the implementation can choose to add the
+/// contents of the smaller z-set to the larger one.
 ///
 /// # Ownership-aware scheduling
 ///
-/// To leverage such optimizations, we adopt the best-effort approach: operators consume streaming
-/// data by-value when possible while falling back to pass-by-reference otherwise.  In a
-/// synchronous circuit, each operator reads its input stream precisely once in each clock cycle.
-/// It is therefore possible to determine the last consumer at each clock cycle and give it the
-/// owned value from the channel.  It is furthermore possible for the scheduler to schedule
-/// operators that strongly prefer owned values last.
+/// To leverage such optimizations, we adopt the best-effort approach: operators
+/// consume streaming data by-value when possible while falling back to
+/// pass-by-reference otherwise.  In a synchronous circuit, each operator reads
+/// its input stream precisely once in each clock cycle. It is therefore
+/// possible to determine the last consumer at each clock cycle and give it the
+/// owned value from the channel.  It is furthermore possible for the scheduler
+/// to schedule operators that strongly prefer owned values last.
 ///
-/// We capture ownership preferences at two levels.  First, each individual operator that consumes
-/// one or more streams exposes its preferences on a per-stream basis via an API method
-/// (e.g., `[UnaryOperator::input_preference]`).  The [`Circuit`] API allows the circuit builder
-/// to override these preferences when instantiating an operator, taking into account circuit topology
-/// and workload.  We express preference as a numeric value.
+/// We capture ownership preferences at two levels.  First, each individual
+/// operator that consumes one or more streams exposes its preferences on a
+/// per-stream basis via an API method (e.g., `[UnaryOperator::
+/// input_preference]`).  The [`Circuit`] API allows the circuit builder
+/// to override these preferences when instantiating an operator, taking into
+/// account circuit topology and workload.  We express preference as a numeric
+/// value.
 ///
-/// These preferences are associated with each edge in the circuit graph.  The schedulers we have
-/// built so far implement a limited form of ownership-aware scheduling.  They only consider strong
-/// preferences (`OwnershipPreference::require_owned` and stronger) and model them internally as hard
-/// constraints that must be satisfied for the circuit to be schedulable.  Weaker preferences are
-/// ignored.
+/// These preferences are associated with each edge in the circuit graph.  The
+/// schedulers we have built so far implement a limited form of ownership-aware
+/// scheduling.  They only consider strong preferences
+/// (`OwnershipPreference::require_owned` and stronger) and model them
+/// internally as hard constraints that must be satisfied for the circuit to be
+/// schedulable.  Weaker preferences are ignored.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
 pub struct OwnershipPreference(usize);
@@ -397,8 +407,9 @@ impl OwnershipPreference {
 
     /// The operator is likely to run faster provided an owned input.
     ///
-    /// Preference levels above `prefer_owned` should not be used by operators and
-    /// are reserved for use by circuit builders through the `Circuit` API.
+    /// Preference levels above `prefer_owned` should not be used by operators
+    /// and are reserved for use by circuit builders through the `Circuit`
+    /// API.
     pub const PREFER_OWNED: Self = Self::new(50);
 
     /// The circuit will suffer a significant performance hit if the operator
@@ -561,7 +572,8 @@ impl<P> Clone for Circuit<P> {
 }
 
 impl Circuit<()> {
-    // Create new top-level circuit.  Clients invoke this via the [`Root::build`] API.
+    // Create new top-level circuit.  Clients invoke this via the [`Root::build`]
+    // API.
     fn new() -> Self {
         Self(Rc::new(RefCell::new(CircuitInner::new(
             (),
@@ -574,17 +586,19 @@ impl Circuit<()> {
 }
 
 impl Circuit<()> {
-    /// Attach a circuit event handler to the top-level circuit (see [`super::trace::CircuitEvent`] for
-    /// a description of circuit events).
+    /// Attach a circuit event handler to the top-level circuit (see
+    /// [`super::trace::CircuitEvent`] for a description of circuit events).
     ///
-    /// This method should normally be called inside the closure passed to [`Root::build`] before
-    /// adding any operators to the circuit, so that the handler gets to observe all nodes, edges,
-    /// and subcircuits added to the circuit.
+    /// This method should normally be called inside the closure passed to
+    /// [`Root::build`] before adding any operators to the circuit, so that
+    /// the handler gets to observe all nodes, edges, and subcircuits added
+    /// to the circuit.
     ///
-    /// `name` - user-readable name assigned to the handler.  If a handler with the same name
-    /// exists, it will be replaced by the new handler.
+    /// `name` - user-readable name assigned to the handler.  If a handler with
+    /// the same name exists, it will be replaced by the new handler.
     ///
-    /// `handler` - user callback invoked on each circuit event (see [`super::trace::CircuitEvent`]).
+    /// `handler` - user callback invoked on each circuit event (see
+    /// [`super::trace::CircuitEvent`]).
     ///
     /// # Examples
     ///
@@ -599,21 +613,24 @@ impl Circuit<()> {
             .register_circuit_event_handler(name, handler);
     }
 
-    /// Remove a circuit event handler.  Returns `true` if a handler with the specified name had
-    /// previously been registered and `false` otherwise.
+    /// Remove a circuit event handler.  Returns `true` if a handler with the
+    /// specified name had previously been registered and `false` otherwise.
     pub fn unregister_circuit_event_handler(&self, name: &str) -> bool {
         self.inner_mut().unregister_circuit_event_handler(name)
     }
 
-    /// Attach a scheduler event handler to the top-level circuit (see [`super::trace::SchedulerEvent`] for
-    /// a description of scheduler events).
+    /// Attach a scheduler event handler to the top-level circuit (see
+    /// [`super::trace::SchedulerEvent`] for a description of scheduler
+    /// events).
     ///
-    /// This method can be used during circuit construction, inside the closure provided to
-    /// [`Root::build`].  Use [`Root::register_scheduler_event_handler`],
-    /// [`Root::unregister_scheduler_event_handler`] to manipulate scheduler callbacks at runtime.
+    /// This method can be used during circuit construction, inside the closure
+    /// provided to [`Root::build`].  Use
+    /// [`Root::register_scheduler_event_handler`],
+    /// [`Root::unregister_scheduler_event_handler`] to manipulate scheduler
+    /// callbacks at runtime.
     ///
-    /// `name` - user-readable name assigned to the handler.  If a handler with the same name
-    /// exists, it will be replaced by the new handler.
+    /// `name` - user-readable name assigned to the handler.  If a handler with
+    /// the same name exists, it will be replaced by the new handler.
     ///
     /// `handler` - user callback invoked on each scheduler event.
     pub fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
@@ -624,8 +641,8 @@ impl Circuit<()> {
             .register_scheduler_event_handler(name, handler);
     }
 
-    /// Remove a scheduler event handler.  Returns `true` if a handler with the specified name had
-    /// previously been registered and `false` otherwise.
+    /// Remove a scheduler event handler.  Returns `true` if a handler with the
+    /// specified name had previously been registered and `false` otherwise.
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.inner_mut().unregister_scheduler_event_handler(name)
     }
@@ -692,9 +709,10 @@ impl<P> Circuit<P> {
         });
     }
 
-    /// Register a dependency between `from` and `to` nodes.  A dependency tells the
-    /// scheduler that `from` must be evaluated before `to` in each clock cycle even
-    /// though there may not be an edge or a path connecting them.
+    /// Register a dependency between `from` and `to` nodes.  A dependency tells
+    /// the scheduler that `from` must be evaluated before `to` in each
+    /// clock cycle even though there may not be an edge or a path
+    /// connecting them.
     fn add_dependency(&self, from: NodeId, to: NodeId) {
         self.log_circuit_event(&CircuitEvent::dependency(
             GlobalNodeId::child_of(self, from),
@@ -712,8 +730,9 @@ impl<P> Circuit<P> {
 
     /// Add a node to the circuit.
     ///
-    /// Allocates a new node id and invokes a user callback to create a new node instance.
-    /// The callback may use the node id, e.g., to add an edge to this node.
+    /// Allocates a new node id and invokes a user callback to create a new node
+    /// instance. The callback may use the node id, e.g., to add an edge to
+    /// this node.
     fn add_node<F, N, T>(&self, f: F) -> T
     where
         F: FnOnce(NodeId) -> (N, T),
@@ -776,12 +795,14 @@ impl<P> Circuit<P> {
         self.inner_mut().clear();
     }
 
-    /// Send the specified `CircuitEvent` to all handlers attached to the circuit.
+    /// Send the specified `CircuitEvent` to all handlers attached to the
+    /// circuit.
     fn log_circuit_event(&self, event: &CircuitEvent) {
         self.inner().log_circuit_event(event);
     }
 
-    /// Send the specified `SchedulerEvent` to all handlers attached to the circuit.
+    /// Send the specified `SchedulerEvent` to all handlers attached to the
+    /// circuit.
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent) {
         self.inner().log_scheduler_event(event);
     }
@@ -853,26 +874,29 @@ where
 
     /// Add a pair of operators that implement cross-worker communication.
     ///
-    /// Operators that exchange data across workers are split into two operators:
-    /// the **sender** responsible for partitioning values read from the input stream
-    /// and distributing them across workers and the **receiver**, which receives and
-    /// reassembles data received from its peers.  Splitting communication into two
-    /// halves allows the scheduler to schedule useful work in between them instead of
-    /// blocking to wait for the receiver.
+    /// Operators that exchange data across workers are split into two
+    /// operators: the **sender** responsible for partitioning values read
+    /// from the input stream and distributing them across workers and the
+    /// **receiver**, which receives and reassembles data received from its
+    /// peers.  Splitting communication into two halves allows the scheduler
+    /// to schedule useful work in between them instead of blocking to wait
+    /// for the receiver.
     ///
-    /// Exchange operators use some form of IPC or shared memory instead of streams to
-    /// communicate.  Therefore, the sender must implement trait [`SinkOperator`], while
-    /// the receiver implements [`SourceOperator`].
+    /// Exchange operators use some form of IPC or shared memory instead of
+    /// streams to communicate.  Therefore, the sender must implement trait
+    /// [`SinkOperator`], while the receiver implements [`SourceOperator`].
     ///
-    /// This function adds both operators to the circuit and registers a dependency
-    /// between them, making sure that the scheduler will evaluate the sender before
-    /// the receiver even though there is no explicit stream connecting them.
+    /// This function adds both operators to the circuit and registers a
+    /// dependency between them, making sure that the scheduler will
+    /// evaluate the sender before the receiver even though there is no
+    /// explicit stream connecting them.
     ///
     /// Returns the output stream produced by the receiver operator.
     ///
     /// # Arguments
     ///
-    /// * `sender` - the sender half of the pair.  The sender must be a sink operator
+    /// * `sender` - the sender half of the pair.  The sender must be a sink
+    ///   operator
     /// * `receiver` - the receiver half of the pair.  Must be a source
     /// * `input_stream` - stream to connect as input to the `sender`.
     pub fn add_exchange<I, SndOp, O, RcvOp>(
@@ -941,8 +965,8 @@ where
         self.add_sink_with_preference(operator, input_stream, preference)
     }
 
-    /// Like [`Self::add_sink`], but overrides the ownership preference on the input
-    /// stream with `input_preference`.
+    /// Like [`Self::add_sink`], but overrides the ownership preference on the
+    /// input stream with `input_preference`.
     pub fn add_sink_with_preference<I, Op>(
         &self,
         operator: Op,
@@ -984,8 +1008,8 @@ where
         self.add_unary_operator_with_preference(operator, input_stream, preference)
     }
 
-    /// Like [`Self::add_unary_operator`], but overrides the ownership preference on the input
-    /// stream with `input_preference`.
+    /// Like [`Self::add_unary_operator`], but overrides the ownership
+    /// preference on the input stream with `input_preference`.
     pub fn add_unary_operator_with_preference<I, O, Op>(
         &self,
         operator: Op,
@@ -1040,8 +1064,9 @@ where
         )
     }
 
-    /// Like [`Self::add_binary_operator`], but overrides the ownership preference on both
-    /// input streams with `input_preference1` and `input_preference2` respectively.
+    /// Like [`Self::add_binary_operator`], but overrides the ownership
+    /// preference on both input streams with `input_preference1` and
+    /// `input_preference2` respectively.
     pub fn add_binary_operator_with_preference<I1, I2, O, Op>(
         &self,
         operator: Op,
@@ -1081,20 +1106,23 @@ where
 
     /// Add a feedback loop to the circuit.
     ///
-    /// Other methods in this API only support the construction of acyclic graphs, as they require
-    /// the input stream to exist before nodes that consumes it are created.  This method
-    /// instantiates an operator whose input stream can be connected later, and thus may depend on
-    /// the operator's output.  This enables the construction of feedback loops.  Since all loops
-    /// in a well-formed circuit must include a [strict
-    /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator` must be strict.
+    /// Other methods in this API only support the construction of acyclic
+    /// graphs, as they require the input stream to exist before nodes that
+    /// consumes it are created.  This method instantiates an operator whose
+    /// input stream can be connected later, and thus may depend on
+    /// the operator's output.  This enables the construction of feedback loops.
+    /// Since all loops in a well-formed circuit must include a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator`
+    /// must be strict.
     ///
-    /// Returns the output stream of the operator and an object that can be used to later
-    /// connect its input.
+    /// Returns the output stream of the operator and an object that can be used
+    /// to later connect its input.
     ///
     /// # Examples
-    /// We build the following circuit to compute the sum of input values received from `source`.
-    /// `z1` stores the sum accumulated during previous timestamps.  At every timestamp,
-    /// the (`+`) operator computes the sum of the new value received from source and the value
+    /// We build the following circuit to compute the sum of input values
+    /// received from `source`. `z1` stores the sum accumulated during
+    /// previous timestamps.  At every timestamp, the (`+`) operator
+    /// computes the sum of the new value received from source and the value
     /// stored in `z1`.
     ///
     /// ```text
@@ -1119,7 +1147,13 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit.add_binary_operator(Apply2::new(|n1: &usize, n2: &usize| n1 + n2), &source, &z1_output).unwrap();
+    /// let plus = circuit
+    ///     .add_binary_operator(
+    ///         Apply2::new(|n1: &usize, n2: &usize| n1 + n2),
+    ///         &source,
+    ///         &z1_output,
+    ///     )
+    ///     .unwrap();
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -1173,14 +1207,15 @@ where
 
     /// Add a child circuit.
     ///
-    /// Creates an empty circuit with `self` as parent and invokes `child_constructor` to populate
-    /// the circuit.  `child_constructor` typically captures some of the streams in `self` and
-    /// connects them to source nodes of the child circuit.  It is also responsible for attaching
-    /// an executor to the child circuit.  The return type `T` will typically contain output
-    /// streams of the child.
+    /// Creates an empty circuit with `self` as parent and invokes
+    /// `child_constructor` to populate the circuit.  `child_constructor`
+    /// typically captures some of the streams in `self` and connects them
+    /// to source nodes of the child circuit.  It is also responsible for
+    /// attaching an executor to the child circuit.  The return type `T`
+    /// will typically contain output streams of the child.
     ///
-    /// Most users should invoke higher-level APIs like [`iterate`] instead of using this method
-    /// directly.
+    /// Most users should invoke higher-level APIs like [`iterate`] instead of
+    /// using this method directly.
     pub(crate) fn subcircuit<F, T, E>(
         &self,
         iterative: bool,
@@ -1204,19 +1239,23 @@ where
 
     /// Add an iteratively scheduled child circuit.
     ///
-    /// Add a child circuit with a nested clock.  The child will execute multiple times for each
-    /// parent timestamp, until its termination condition is satisfied.  Every time the child
-    /// circuit is activated by the parent (once per parent timestamp), the executor calls
-    /// [`clock_start`](`crate::circuit::operator_traits::Operator::clock_start`) on
-    /// each child operator.  It then calls `eval` on all child operators in a causal order and
-    /// checks if the termination condition is satisfied by reading from a user-specified
-    /// "termination" stream.  If the value in the stream is `false`, the executor `eval`s all
-    /// operators again.  Once the termination condition is `true`, the executor calls
-    /// `clock_end` on all child operators and returns control back to the parent scheduler.
+    /// Add a child circuit with a nested clock.  The child will execute
+    /// multiple times for each parent timestamp, until its termination
+    /// condition is satisfied.  Every time the child circuit is activated
+    /// by the parent (once per parent timestamp), the executor calls
+    /// [`clock_start`](`super::operator_traits::Operator::clock_start`)
+    /// on each child operator.  It then calls `eval` on all
+    /// child operators in a causal order and checks if the termination
+    /// condition is satisfied by reading from a user-specified
+    /// "termination" stream.  If the value in the stream is `false`, the
+    /// executor `eval`s all operators again.  Once the termination
+    /// condition is `true`, the executor calls `clock_end` on all child
+    /// operators and returns control back to the parent scheduler.
     ///
-    /// The `constructor` closure populates the child circuit and returns the termination stream
-    /// used by the executor to check termination condition on each iteration and an arbitrary
-    /// user-defined return value that typically contains output streams of the child.
+    /// The `constructor` closure populates the child circuit and returns the
+    /// termination stream used by the executor to check termination
+    /// condition on each iteration and an arbitrary user-defined return
+    /// value that typically contains output streams of the child.
     ///
     /// # Examples
     ///
@@ -1224,32 +1263,38 @@ where
     /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::{
     ///     circuit::Root,
-    ///     operator::{Generator, Inspect, Apply2, NestedSource, Z1},
+    ///     operator::{Apply2, Generator, Inspect, NestedSource, Z1},
     /// };
     ///
     /// let root = Root::build(|circuit| {
     ///     let mut n: usize = 0;
-    ///     let source = circuit.add_source(Generator::new(move || { let result = n; n = n + 1; result}));
-    ///     let fact = circuit.iterate(|child| {
-    ///         let counter = Rc::new(RefCell::new(0));
-    ///         let counter_clone = counter.clone();
-    ///         let countdown = child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
-    ///             *n = *n - 1;
-    ///             *counter_clone.borrow_mut() = *n;
-    ///         }));
-    ///         let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
-    ///         let mul = child.add_binary_operator(
-    ///             Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-    ///             &countdown,
-    ///             &z1_output,
-    ///         ).unwrap();
-    ///         z1_feedback.connect(&mul);
-    ///         Ok((move || *counter.borrow() <= 1, mul.leave()))
-    ///     }).unwrap();
-    ///     circuit.add_sink(
-    ///         Inspect::new(move |n| eprintln!("Output: {}", n)),
-    ///         &fact,
-    ///     );
+    ///     let source = circuit.add_source(Generator::new(move || {
+    ///         let result = n;
+    ///         n = n + 1;
+    ///         result
+    ///     }));
+    ///     let fact = circuit
+    ///         .iterate(|child| {
+    ///             let counter = Rc::new(RefCell::new(0));
+    ///             let counter_clone = counter.clone();
+    ///             let countdown =
+    ///                 child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
+    ///                     *n = *n - 1;
+    ///                     *counter_clone.borrow_mut() = *n;
+    ///                 }));
+    ///             let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
+    ///             let mul = child
+    ///                 .add_binary_operator(
+    ///                     Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
+    ///                     &countdown,
+    ///                     &z1_output,
+    ///                 )
+    ///                 .unwrap();
+    ///             z1_feedback.connect(&mul);
+    ///             Ok((move || *counter.borrow() <= 1, mul.leave()))
+    ///         })
+    ///         .unwrap();
+    ///     circuit.add_sink(Inspect::new(move |n| eprintln!("Output: {}", n)), &fact);
     /// });
     /// ```
     pub fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
@@ -1262,8 +1307,8 @@ where
 
     /// Add an iteratively scheduled child circuit.
     ///
-    /// Similar to [`iterate`](`Self::iterate`), but with a user-specified [`Scheduler`]
-    /// implementation.
+    /// Similar to [`iterate`](`Self::iterate`), but with a user-specified
+    /// [`Scheduler`] implementation.
     pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
@@ -1542,11 +1587,11 @@ where
     }
 }
 
-// The output half of a feedback node.  We implement a feedback node using a pair of nodes:
-// `FeedbackOutputNode` is connected to the circuit as a source node (i.e., it does not have
-// an input stream) and thus gets evaluated first in each time stamp.  `FeedbackInputNode`
-// is a sink node.  This way the circuit graph remains acyclic and can be scheduled in a
-// topological order.
+// The output half of a feedback node.  We implement a feedback node using a
+// pair of nodes: `FeedbackOutputNode` is connected to the circuit as a source
+// node (i.e., it does not have an input stream) and thus gets evaluated first
+// in each time stamp.  `FeedbackInputNode` is a sink node.  This way the
+// circuit graph remains acyclic and can be scheduled in a topological order.
 struct FeedbackOutputNode<C, I, O, Op> {
     id: NodeId,
     operator: Rc<UnsafeCell<Op>>,
@@ -1664,7 +1709,8 @@ where
         Ok(())
     }
 
-    // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode` will do that.
+    // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode`
+    // will do that.
     fn clock_start(&mut self) {}
 
     unsafe fn clock_end(&mut self) {}
@@ -1672,11 +1718,11 @@ where
 
 /// Input connector of a feedback operator.
 ///
-/// This struct is part of the mechanism for constructing a feedback loop in a circuit.
-/// It is returned by [`Circuit::add_feedback`] and represents the input port of an operator
-/// whose input stream does not exist yet.  Once the input stream has been created, it
-/// can be connected to the operator using [`FeedbackConnector::connect`].
-/// See [`Circuit::add_feedback`] for details.
+/// This struct is part of the mechanism for constructing a feedback loop in a
+/// circuit. It is returned by [`Circuit::add_feedback`] and represents the
+/// input port of an operator whose input stream does not exist yet.  Once the
+/// input stream has been created, it can be connected to the operator using
+/// [`FeedbackConnector::connect`]. See [`Circuit::add_feedback`] for details.
 pub struct FeedbackConnector<C, I, O, Op> {
     output_node_id: NodeId,
     circuit: C,
@@ -1823,8 +1869,8 @@ impl Root {
 
     /// Create a circuit and prepate it for execution.
     ///
-    /// Similar to [`build`](`Self::build`), but with a user-specified [`Scheduler`]
-    /// implementation.
+    /// Similar to [`build`](`Self::build`), but with a user-specified
+    /// [`Scheduler`] implementation.
     pub fn build_with_scheduler<F, S>(constructor: F) -> Result<Self, SchedulerError>
     where
         F: FnOnce(&mut Circuit<()>),
@@ -1834,9 +1880,9 @@ impl Root {
         constructor(&mut circuit);
         let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
 
-        // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so that the
-        // user can reset the circuit at runtime and start evaluation from clean state without
-        // having to rebuild it from scratch.
+        // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so
+        // that the user can reset the circuit at runtime and start evaluation
+        // from clean state without having to rebuild it from scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start();
         Ok(Self { circuit, executor })
@@ -1844,24 +1890,27 @@ impl Root {
 
     /// Function that drives the execution of the circuit.
     ///
-    /// Every call to `step()` corresponds to one tick of the global logical clock and causes
-    /// each operator in the circuit to get evaluated once, consuming one value from each of
-    /// its input streams.
+    /// Every call to `step()` corresponds to one tick of the global logical
+    /// clock and causes each operator in the circuit to get evaluated once,
+    /// consuming one value from each of its input streams.
     pub fn step(&self) -> Result<(), SchedulerError> {
-        // TODO: Add a runtime check to prevent re-entering this method from an operator.
+        // TODO: Add a runtime check to prevent re-entering this method from an
+        // operator.
 
-        // TODO: We need a protocol to make sure that all sources have data available before
-        // running the circuit and to either block or fail if they don't.
+        // TODO: We need a protocol to make sure that all sources have data available
+        // before running the circuit and to either block or fail if they don't.
         self.executor.run(&self.circuit)
     }
 
     /// Attach a scheduler event handler to the circuit.
     ///
-    /// This method is identical to [`Circuit::register_scheduler_event_handler`], but it can be used at runtime,
-    /// after the circuit has been fully constructed.
+    /// This method is identical to
+    /// [`Circuit::register_scheduler_event_handler`], but it can be used at
+    /// runtime, after the circuit has been fully constructed.
     ///
-    /// Use [`Circuit::register_scheduler_event_handler`], [`Circuit::unregister_scheduler_event_handler`],
-    /// to manipulate handlers during circuit construction.
+    /// Use [`Circuit::register_scheduler_event_handler`],
+    /// [`Circuit::unregister_scheduler_event_handler`], to manipulate
+    /// handlers during circuit construction.
     pub fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
     where
         F: Fn(&SchedulerEvent) + 'static,
@@ -1871,8 +1920,9 @@ impl Root {
 
     /// Remove a scheduler event handler.
     ///
-    /// This method is identical to [`Circuit::unregister_scheduler_event_handler`], but it can be used at runtime,
-    /// after the circuit has been fully constructed.
+    /// This method is identical to
+    /// [`Circuit::unregister_scheduler_event_handler`], but it can be used at
+    /// runtime, after the circuit has been fully constructed.
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.circuit.unregister_scheduler_event_handler(name)
     }
@@ -2015,10 +2065,11 @@ mod tests {
         factorial::<DynamicScheduler>();
     }
 
-    // Nested circuit.  The root circuit contains a source node that counts up from 1.  For
-    // each `n` output by the source node, the nested circuit computes factorial(n) using a
-    // `NestedSource` operator that counts from n down to `1` and a multiplier that multiplies
-    // the next count by the product computed so far (stored in z-1).
+    // Nested circuit.  The root circuit contains a source node that counts up from
+    // 1.  For each `n` output by the source node, the nested circuit computes
+    // factorial(n) using a `NestedSource` operator that counts from n down to
+    // `1` and a multiplier that multiplies the next count by the product
+    // computed so far (stored in z-1).
     fn factorial<S>()
     where
         S: Scheduler + 'static,

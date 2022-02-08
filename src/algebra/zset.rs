@@ -35,8 +35,8 @@ where
     /// this trait multiplies `other`.
     fn add_assign_weighted(&mut self, weight: &WeightType, other: &Self);
 
-    /// Returns a Z-set that contains all elements with positive weights from `self`
-    /// with weights set to 1.
+    /// Returns a Z-set that contains all elements with positive weights from
+    /// `self` with weights set to 1.
     fn distinct(&self) -> Self;
 
     /// Given a Z-set 'set' partition it using a 'partitioner'
@@ -52,8 +52,8 @@ where
 
     /// Cartesian product between this zset and `other`.
     /// Every data value in this set paired with every
-    /// data value in `other` and the merger is applied.  The result has a weight
-    /// equal to the product of the data weights, and everything
+    /// data value in `other` and the merger is applied.  The result has a
+    /// weight equal to the product of the data weights, and everything
     /// is summed into a ZSetHashMap.
     //  TODO: this should return a trait, and not an implementation.
     fn cartesian<DataType2, ZS2, DataType3, F>(
@@ -70,8 +70,9 @@ where
 
     /// Join two sets.  `K` is the type of keys used to perform the join.
     /// `left_key` is the function that computes the key for each tuple of self.
-    /// `right_key` is the function that computes the key for each tuple of `other`.
-    /// `merger` is the function that merges elements that have the same key.
+    /// `right_key` is the function that computes the key for each tuple of
+    /// `other`. `merger` is the function that merges elements that have the
+    /// same key.
     fn join<K, KF, KF2, DataType2, ZS2, DataType3, F>(
         &self,
         other: &ZS2,

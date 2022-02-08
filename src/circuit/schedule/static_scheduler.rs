@@ -21,7 +21,8 @@ pub struct StaticScheduler {
 impl Scheduler for StaticScheduler {
     // Compute a schedule that respects the dependency graph by arranging
     // nodes in a topological order.
-    // TODO: compute a schedule that takes into account operators that consume inputs by-value.
+    // TODO: compute a schedule that takes into account operators that consume
+    // inputs by-value.
     fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
     where
         P: Clone + 'static,

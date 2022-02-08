@@ -26,10 +26,18 @@ where
     /// let root = Root::build(move |circuit| {
     ///     // Stream of non-negative values: 0, 1, 2, ...
     ///     let mut n = 0;
-    ///     let source1 = circuit.add_source(Generator::new(move || {let res = n; n += 1; res}));
+    ///     let source1 = circuit.add_source(Generator::new(move || {
+    ///         let res = n;
+    ///         n += 1;
+    ///         res
+    ///     }));
     ///     // Stream of non-positive values: 0, -1, -2, ...
     ///     let mut n = 0;
-    ///     let source2 = circuit.add_source(Generator::new(move || {let res = n; n -= 1; res}));
+    ///     let source2 = circuit.add_source(Generator::new(move || {
+    ///         let res = n;
+    ///         n -= 1;
+    ///         res
+    ///     }));
     ///     // Compute pairwise sums of values in the stream; the output stream will contain zeros.
     ///     source1.plus(&source2).inspect(|n| assert_eq!(*n, 0));
     /// })
@@ -50,7 +58,8 @@ where
     }
 }
 
-/// Operator that computes the sum of values in its two input streams at each timestamp.
+/// Operator that computes the sum of values in its two input streams at each
+/// timestamp.
 pub struct Plus<D> {
     phantom: PhantomData<D>,
 }

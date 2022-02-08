@@ -31,13 +31,13 @@
 //! ## Notification processing
 //!
 //! The scheduler relies on notifications to determine when an async operator
-//! becomes ready.  In order to minimize expensive synchronization when processing
-//! notifications, we adopt an approach inspired by RCU locks.  The event notifier
-//! simply records each notification in a set and unparks the scheduler thread.
-//! Whenever the runnable queue becomes empty, the scheduler scans the ready set
-//! marking operators ready and moving them to the runnable queue when necessary.
-//! If the runnable queue is still empty, the scheduler thread parks itself waiting
-//! for the next ready notification.
+//! becomes ready.  In order to minimize expensive synchronization when
+//! processing notifications, we adopt an approach inspired by RCU locks.  The
+//! event notifier simply records each notification in a set and unparks the
+//! scheduler thread. Whenever the runnable queue becomes empty, the scheduler
+//! scans the ready set marking operators ready and moving them to the runnable
+//! queue when necessary. If the runnable queue is still empty, the scheduler
+//! thread parks itself waiting for the next ready notification.
 
 use std::{
     cell::{RefCell, RefMut},
@@ -89,7 +89,8 @@ struct Task {
     /// `true` for non-async nodes.
     is_ready: bool,
 
-    /// Task has been scheduled (put on the run queue) in the current clock cycle.
+    /// Task has been scheduled (put on the run queue) in the current clock
+    /// cycle.
     scheduled: bool,
 }
 
