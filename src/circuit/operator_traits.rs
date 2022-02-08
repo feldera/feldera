@@ -3,7 +3,7 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
-use crate::circuit::OwnershipPreference;
+use crate::circuit::{OwnershipPreference, Scope};
 use std::borrow::Cow;
 
 /// Minimal requirements for values exchanged by operators.
@@ -11,62 +11,76 @@ pub trait Data: Clone + 'static {}
 
 impl<T: Clone + 'static> Data for T {}
 
-/// Trait that must be implemented by all operators regardless of their arity.
-/// Methods in this trait are necessary to support operators over nested
-/// streams. A nested stream is a stream whose elements are streams.  Since
-/// streams are generated one value at a time, we need a separate operator
-/// invocation for each element of the inner-most stream.  The `clock_start` and
-/// `clock_end` methods signals respectively the start and completion of a
-/// nested stream.
-///
-/// For example, feeding the following matrix, where rows represent nested
-/// streams
-///
-/// ```text
-/// ┌       ┐
-/// │1 2    │
-/// │3 4 5 6│
-/// │7 8 9  |
-/// └       ┘
-/// ```
-///
-/// to an operator requires the following sequence of invocations
-///
-/// ```text
-/// clock_start() // Start outer stream.
-/// clock_start() // Start nested stream (first row of the matrix).
-/// eval(1)
-/// eval(2)
-/// clock_end()   // End nested stream.
-/// clock_start() // Start nested stream (second row).
-/// eval(3)
-/// eval(4)
-/// eval(5)
-/// eval(6)
-/// clock_end()   // End nested stream.
-/// clock_start() // Start nested strea (second row).
-/// eval(7)
-/// eval(8)
-/// eval(9)
-/// clock_end()   // End nested stream.
-/// clock_end()   // End outer stream.
-/// ```
-///
-/// Note that the input and output of an operator always belong to the same
-/// clock domain, i.e., an operator cannot consume a single value and produce a
-/// stream, or the other way around.  Nested clock domains are implemented by
-/// special operators that wrap a nested circuit and, for each input value, run
-/// the nested circuit to a fixed point (or some other termination condition).
-///
-/// An operator can have multiple input streams, all of which also belong to the
-/// same clock domain and therefore start and end at the same time.  Hence
-/// `start_stream` and `end_stream` apply to all input and output streams of the
-/// operator.
+/// Trait that must be implemented by all operators.
 pub trait Operator: 'static {
+    /// Human-readable operator name for debugging purposes.
     fn name(&self) -> Cow<'static, str>;
 
-    fn clock_start(&mut self);
-    fn clock_end(&mut self);
+    /// Notify the operator about the start of a new clock epoch.
+    ///
+    /// `clock_start` and `clock_end` methods support the nested circuit
+    /// architecture.  A nested circuit (or subcircuit) is a node in
+    /// the parent circuit that contains another circuit.  The nested circuit
+    /// has its own clock.  Each parent clock tick starts a new child clock
+    /// epoch.  Each operator gets notified about start and end of a clock
+    /// epoch in its local circuit and all of its ancestors.
+    ///
+    /// Formally, operators in a nested circuit operate over nested streams,
+    /// or streams of streams, with each nested clock epoch starting a new
+    /// stream.  Thus the `clock_start` and `clock_end` methods signal
+    /// respectively the start and completion of a nested stream.
+    ///
+    /// # Examples
+    ///
+    /// For example, feeding the following matrix, where rows represent nested
+    /// streams,
+    ///
+    /// ```text
+    /// ┌       ┐
+    /// │1 2    │
+    /// │3 4 5 6│
+    /// │7 8 9  |
+    /// └       ┘
+    /// ```
+    ///
+    /// to an operator requires the following sequence of invocations
+    ///
+    /// ```text
+    /// clock_start(1) // Start outer clock.
+    /// clock_start(0) // Start nested clock (first row of the matrix).
+    /// eval(1)
+    /// eval(2)
+    /// clock_end(0)   // End nested clock.
+    /// clock_start(0) // Start nested clock (second row).
+    /// eval(3)
+    /// eval(4)
+    /// eval(5)
+    /// eval(6)
+    /// clock_end(0)   // End nested clock.
+    /// clock_start(0) // Start nested clock (third row).
+    /// eval(7)
+    /// eval(8)
+    /// eval(9)
+    /// clock_end(0)   // End nested clock.
+    /// clock_end(1)   // End outer clock.
+    /// ```
+    ///
+    /// Note that the input and output of most operators belong to the same
+    /// clock domain, i.e., an operator cannot consume a single value and
+    /// produce a stream, or the other way around.  The only exception are
+    /// [`ImportOperator`]s that make the contents of a stream in the parent
+    /// circuit available inside a subcircuit.
+    ///
+    /// An operator can have multiple input streams, all of which belong to the
+    /// same clock domain and therefore start and end at the same time.  Hence
+    /// `clock_start` and `clock_end` apply to all input and output streams of
+    /// the operator.
+    ///
+    /// # Arguments
+    ///
+    /// * `scope` - the scope whose clock is restarting.
+    fn clock_start(&mut self, scope: Scope);
+    fn clock_end(&mut self, scope: Scope);
 
     /// Returns `true` if `self` is an asynchronous operator.
     ///
@@ -228,6 +242,38 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     fn eval_strict_owned(&mut self, input: I) {
         self.eval_strict(&input);
     }
+
+    /// Ownership preference on the operator's input stream
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::INDIFFERENT
+    }
+}
+
+/// An import operator makes a stream from the parent circuit
+/// available inside a subcircuit.
+///
+/// Import operators are the only kind of operator that span
+/// two clock domains: an import operator reads a single
+/// value from the parent stream per parent clock tick and produces
+/// a stream of outputs in the nested circuit, one for each nested
+/// clock tick.
+///
+/// See [`Delta0`](`crate::operator::Delta0`) for a concrete example
+/// of an import operator.
+pub trait ImportOperator<I, O>: Operator {
+    /// Consumes a value from the parent stream by reference.
+    ///
+    /// Either `import` or [`Self::import_owned`] is invoked once per
+    /// nested clock epoch, right after `clock_start(0)`.
+    fn import(&mut self, val: &I);
+
+    /// Consumes a value from the parent stream by value.
+    fn import_owned(&mut self, val: I);
+
+    /// Invoked once per nested clock cycle to write a value to
+    /// the output stream.
+    fn eval(&mut self) -> O;
 
     /// Ownership preference on the operator's input stream
     /// (see [`OwnershipPreference`]).

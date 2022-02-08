@@ -3,7 +3,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator},
-    Circuit, Stream,
+    Circuit, Scope, Stream,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -71,8 +71,8 @@ where
         Cow::from("Inspect")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 }
 
 impl<T, F> SinkOperator<T> for Inspect<T, F>

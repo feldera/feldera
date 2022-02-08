@@ -7,7 +7,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator, SourceOperator},
-    LocalStoreMarker, OwnershipPreference, Runtime,
+    LocalStoreMarker, OwnershipPreference, Runtime, Scope,
 };
 use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
@@ -428,8 +428,8 @@ where
         Cow::from("ExchangeSender")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 
     fn is_async(&self) -> bool {
         true
@@ -512,8 +512,8 @@ where
         Cow::from("ExchangeReceiver")
     }
 
-    fn clock_start(&mut self) {}
-    fn clock_end(&mut self) {}
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 
     fn is_async(&self) -> bool {
         true
