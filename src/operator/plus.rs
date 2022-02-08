@@ -19,9 +19,9 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use dbsp::circuit::{
-    /// #     operator::Generator,
-    /// #     Root,
+    /// # use dbsp::{
+    /// #   circuit::Root,
+    /// #   operator::Generator,
     /// # };
     /// let root = Root::build(move |circuit| {
     ///     // Stream of non-negative values: 0, 1, 2, ...
@@ -154,10 +154,8 @@ where
 mod test {
     use crate::{
         algebra::{finite_map::FiniteMap, zset::ZSetHashMap},
-        circuit::{
-            operator::{Generator, Inspect},
-            Circuit, OwnershipPreference, Root,
-        },
+        circuit::{Circuit, OwnershipPreference, Root},
+        operator::{Generator, Inspect},
     };
 
     #[test]

@@ -16,7 +16,10 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! # Examples
 //!
 //! ```
-//! use dbsp::circuit::{operator::{Inspect, Repeat}, Root};
+//! use dbsp::{
+//!     circuit::Root,
+//!     operator::{Inspect, Repeat},
+//! };
 //!
 //! let root = Root::build(|circuit| {
 //!     // Add a source operator.
@@ -1105,9 +1108,9 @@ where
     /// ```
     ///
     /// ```
-    /// # use dbsp::circuit::{
-    /// #   operator::{Z1, Apply2, Repeat},
-    /// #   Root,
+    /// # use dbsp::{
+    /// #     circuit::Root,
+    /// #     operator::{Z1, Apply2, Repeat},
     /// # };
     /// # let root = Root::build(|circuit| {
     /// // Create a data source.
@@ -1219,8 +1222,8 @@ where
     ///
     /// ```
     /// # use std::{cell::RefCell, rc::Rc};
-    /// use dbsp::circuit::{
-    ///     Root,
+    /// use dbsp::{
+    ///     circuit::Root,
     ///     operator::{Generator, Inspect, Apply2, NestedSource, Z1},
     /// };
     ///
@@ -1878,10 +1881,12 @@ impl Root {
 #[cfg(test)]
 mod tests {
     use super::Root;
-    use crate::circuit::{
+    use crate::{
+        circuit::{
+            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            trace::TraceMonitor,
+        },
         operator::{Apply2, Generator, Inspect, NestedSource, Z1},
-        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-        trace::TraceMonitor,
     };
     use std::{
         cell::RefCell,

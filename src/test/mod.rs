@@ -15,11 +15,8 @@ mod tests {
             zset::{tests::TestTuple, ZSet, ZSetHashMap},
             AddByRef, HasZero,
         },
-        circuit::{
-            operator::{Apply2, Generator, NestedSource, Z1},
-            operator_traits::SourceOperator,
-            *,
-        },
+        circuit::{operator_traits::SourceOperator, Root},
+        operator::{Apply2, Generator, NestedSource, Z1},
     };
     use std::{cell::RefCell, ops::Deref, rc::Rc};
 

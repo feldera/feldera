@@ -252,10 +252,12 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 mod tests {
 
     use super::Runtime;
-    use crate::circuit::{
+    use crate::{
+        circuit::{
+            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            Root,
+        },
         operator::{Generator, Inspect},
-        schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-        Root,
     };
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
