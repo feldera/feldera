@@ -23,10 +23,11 @@ pub use trace_monitor::TraceMonitor;
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum EdgeKind {
-    /// A stream edge indicates that there is a stream that connects two operators.
+    /// A stream edge indicates that there is a stream that connects two
+    /// operators.
     Stream(OwnershipPreference),
-    /// A dependency edge indicates that the source operator must be evaluated before
-    /// the destination.
+    /// A dependency edge indicates that the source operator must be evaluated
+    /// before the destination.
     Dependency,
 }
 
@@ -42,40 +43,46 @@ pub enum CircuitEvent {
         /// Operator name.
         name: Cow<'static, str>,
     },
-    /// The output half of a [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`).
-    /// A strict operator is activated twice in each clock cycle: first, its output computed based
-    /// on previous inputs is read; second, a new input for the current cycle is pushed to the
-    /// operator.  These activations are modeled as separate circuit nodes.  The
-    /// `StrictOperatorOutput` event is emitted first, when the output node is created.
+    /// The output half of a
+    /// [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`).
+    /// A strict operator is activated twice in each clock cycle: first, its
+    /// output computed based on previous inputs is read; second, a new
+    /// input for the current cycle is pushed to the operator.  These
+    /// activations are modeled as separate circuit nodes.  The
+    /// `StrictOperatorOutput` event is emitted first, when the output node is
+    /// created.
     StrictOperatorOutput {
         node_id: GlobalNodeId,
         /// Operator name.
         name: Cow<'static, str>,
     },
-    /// The input half of a strict operator is added to the circuit.  This event is triggered when
-    /// the circuit builder connects an input stream to the strict operator.  The output node
-    /// already exists at this point.
+    /// The input half of a strict operator is added to the circuit.  This event
+    /// is triggered when the circuit builder connects an input stream to
+    /// the strict operator.  The output node already exists at this point.
     StrictOperatorInput {
         /// Node id of the input half.
         node_id: GlobalNodeId,
-        /// Node id of the associated output node, that already exists in the circuit.
+        /// Node id of the associated output node, that already exists in the
+        /// circuit.
         output_node_id: NodeId,
     },
     /// A new nested circuit is added to the circuit.
     Subcircuit {
         /// Global id of the nested circuit.
         node_id: GlobalNodeId,
-        /// `true` is the subcircuit has its own clock and can iterate multiple times for
-        /// each parent clock tick.
+        /// `true` is the subcircuit has its own clock and can iterate multiple
+        /// times for each parent clock tick.
         iterative: bool,
     },
-    /// A new edge between nodes connected as producer and consumer to the same stream.
-    /// Producer and consumer nodes can be located in different subcircuits.
+    /// A new edge between nodes connected as producer and consumer to the same
+    /// stream. Producer and consumer nodes can be located in different
+    /// subcircuits.
     Edge {
         kind: EdgeKind,
         /// Global id of the producer operator that writes to the stream.
         from: GlobalNodeId,
-        /// Global id of an operator or subcircuit that reads values from the stream.
+        /// Global id of an operator or subcircuit that reads values from the
+        /// stream.
         to: GlobalNodeId,
     },
 }
@@ -185,7 +192,8 @@ impl CircuitEvent {
         matches!(self, Self::Subcircuit { .. })
     }
 
-    /// `true` if `self` is a [`CircuitEvent::Subcircuit`] and `self.iterative` is `true`.
+    /// `true` if `self` is a [`CircuitEvent::Subcircuit`] and `self.iterative`
+    /// is `true`.
     pub fn is_iterative_subcircuit_event(&self) -> bool {
         matches!(
             self,
@@ -225,7 +233,8 @@ impl CircuitEvent {
         }
     }
 
-    /// If `self` is a [`CircuitEvent::Operator`] or [`CircuitEvent::StrictOperatorOutput`], returns `self.name`.
+    /// If `self` is a [`CircuitEvent::Operator`] or
+    /// [`CircuitEvent::StrictOperatorOutput`], returns `self.name`.
     pub fn node_name(&self) -> Option<&str> {
         match self {
             Self::Operator { name, .. } | Self::StrictOperatorOutput { name, .. } => Some(name),
@@ -233,7 +242,8 @@ impl CircuitEvent {
         }
     }
 
-    /// If `self` is a `CircuitEvent::StrictOperatorInput`, returns `self.output_node_id`.
+    /// If `self` is a `CircuitEvent::StrictOperatorInput`, returns
+    /// `self.output_node_id`.
     pub fn output_node_id(&self) -> Option<NodeId> {
         if let Self::StrictOperatorInput { output_node_id, .. } = self {
             Some(*output_node_id)
@@ -288,25 +298,30 @@ impl CircuitEvent {
 ///                ClockEnd               StepEnd       EvalEnd(id)
 /// ```
 ///
-/// The root circuit automaton is instantiated by the [`super::Root::build`] function.  A
-/// subcircuit automaton is instantiated when its parent scheduler evaluates the node that contains
-/// this subcircuit (see below).
+/// The root circuit automaton is instantiated by the [`super::Root::build`]
+/// function.  A subcircuit automaton is instantiated when its parent scheduler
+/// evaluates the node that contains this subcircuit (see below).
 ///
-/// In the initial state, the circuit issues a [`ClockStart`](`SchedulerEvent::ClockStart`) event
-/// to reset its clock and transitions to the `running` state.  In this state, the circuit performs
-/// multiple **steps**.  A single step evaluates the circuit for one clock cycle.  The circuit
-/// signals the start of a new clock cycle by the [`StepStart`](`SchedulerEvent::StepStart`) event.
-/// In the `step` state the circuit evaluates each operator exactly once in an order determined by
+/// In the initial state, the circuit issues a
+/// [`ClockStart`](`SchedulerEvent::ClockStart`) event to reset its clock and
+/// transitions to the `running` state.  In this state, the circuit performs
+/// multiple **steps**.  A single step evaluates the circuit for one clock
+/// cycle.  The circuit signals the start of a new clock cycle by the
+/// [`StepStart`](`SchedulerEvent::StepStart`) event. In the `step` state the
+/// circuit evaluates each operator exactly once in an order determined by
 /// the circuit's dataflow graph.  In the process it issues one
-/// [`EvalStart`](`SchedulerEvent::EvalStart`)/[`EvalEnd`](`SchedulerEvent::EvalEnd`) event pair
-/// for each of its child nodes before emitting the [`StepEnd`](`SchedulerEvent::StepEnd`) event.
+/// [`EvalStart`](`SchedulerEvent::EvalStart`)/
+/// [`EvalEnd`](`SchedulerEvent::EvalEnd`) event pair for each of its child
+/// nodes before emitting the [`StepEnd`](`SchedulerEvent::StepEnd`) event.
 ///
-/// Evaluating a child that contains another circuit pushes the entire automaton on the stack,
-/// instantiates a fresh circuit automaton, and runs it to completion.
+/// Evaluating a child that contains another circuit pushes the entire automaton
+/// on the stack, instantiates a fresh circuit automaton, and runs it to
+/// completion.
 ///
-/// An automaton for a subcircuit without a separate clock is simpler as it doesn't have
-/// [`ClockStart`](`SchedulerEvent::ClockStart`)/[`ClockEnd`](`SchedulerEvent::ClockEnd`) events
-/// and performs exactly one step on each activation:
+/// An automaton for a subcircuit without a separate clock is simpler as it
+/// doesn't have [`ClockStart`](`SchedulerEvent::ClockStart`)/
+/// [`ClockEnd`](`SchedulerEvent::ClockEnd`) events and performs exactly one
+/// step on each activation:
 ///
 /// ```text
 ///              StepStart    EvalStart(id)
@@ -317,8 +332,6 @@ impl CircuitEvent {
 ///         ◄───────────────┘ └───────────┘
 ///               StepEnd      EvalEnd(id)
 /// ```
-///
-///
 pub enum SchedulerEvent {
     EvalStart { node_id: NodeId },
     EvalEnd { node_id: NodeId },
@@ -451,7 +464,8 @@ mod trace_monitor {
             matches!(self.kind, NodeKind::Circuit { .. })
         }
 
-        /// `true` if `self` is an iterative circuit (including the root circuit).
+        /// `true` if `self` is an iterative circuit (including the root
+        /// circuit).
         fn is_iterative(&self) -> bool {
             matches!(
                 self.kind,
@@ -489,8 +503,8 @@ mod trace_monitor {
     struct CircuitGraph {
         /// Tree of nodes.
         nodes: Node,
-        /// Matches a node to the vector of nodes that read from its output stream
-        /// or have a dependency on it.
+        /// Matches a node to the vector of nodes that read from its output
+        /// stream or have a dependency on it.
         /// A node can occur in this vector multiple times.
         edges: HashMap<GlobalNodeId, Vec<(GlobalNodeId, EdgeKind)>>,
     }
@@ -531,14 +545,16 @@ mod trace_monitor {
         }
     }
 
-    /// State of a circuit automaton (see [`SchedulerEvent`](`super::SchedulerEvent`) documentation).
+    /// State of a circuit automaton (see
+    /// [`SchedulerEvent`](`super::SchedulerEvent`) documentation).
     enum CircuitState {
         Idle,
         Running,
-        /// We track the set of nodes evaluated at the current step in the `Step` state.
+        /// We track the set of nodes evaluated at the current step in the
+        /// `Step` state.
         Step(HashSet<NodeId>),
-        /// In the `Eval` state, we track the set of previously evaluated nodes and the node
-        /// being evaluated now.
+        /// In the `Eval` state, we track the set of previously evaluated nodes
+        /// and the node being evaluated now.
         Eval(HashSet<NodeId>, NodeId),
     }
 
@@ -592,28 +608,34 @@ mod trace_monitor {
         }
     }
 
-    /// `TraceMonitor` listens to and validates event traces emitted by a circuit.
+    /// `TraceMonitor` listens to and validates event traces emitted by a
+    /// circuit.
     ///
-    /// The monitor uses [`CircuitEvent`](`super::CircuitEvent`)s, to build up a model
-    /// of the circuit graph and check that nodes aren't added twice, the parent circuit
-    /// exists when a node is added, edges connect existing nodes, etc.
+    /// The monitor uses [`CircuitEvent`](`super::CircuitEvent`)s, to build up a
+    /// model of the circuit graph and check that nodes aren't added twice,
+    /// the parent circuit exists when a node is added, edges connect
+    /// existing nodes, etc.
     ///
-    /// During circuit evaluation, the monitor uses [`SchedulerEvent`](`super::SchedulerEvent`)s,
-    /// to track the state of the circuit automaton (see [`SchedulerEvent`](`super::SchedulerEvent`)
-    /// and detect invalid event sequences.  It uses the circuit graph constructed from
-    /// `CircuitEvent`s to check that events relate to existing nodes and match the type
-    /// of each node (e.g., the [`ClockStart`](`super::SchedulerEvent::ClockStart`) event
+    /// During circuit evaluation, the monitor uses
+    /// [`SchedulerEvent`](`super::SchedulerEvent`)s, to track the state of
+    /// the circuit automaton (see [`SchedulerEvent`](`super::SchedulerEvent`)
+    /// and detect invalid event sequences.  It uses the circuit graph
+    /// constructed from `CircuitEvent`s to check that events relate to
+    /// existing nodes and match the type of each node (e.g., the
+    /// [`ClockStart`](`super::SchedulerEvent::ClockStart`) event
     /// can only be emitted by an iterative circuit).
     ///
-    /// The monitor is initialized with a pair of callbacks to invoke when an invalid
-    /// `CircuitEvent` or `SchedulerEvent` is observed.  These callbacks can simply panic
-    /// when using the trace monitor in `cargo test`.
+    /// The monitor is initialized with a pair of callbacks to invoke when an
+    /// invalid `CircuitEvent` or `SchedulerEvent` is observed.  These
+    /// callbacks can simply panic when using the trace monitor in `cargo
+    /// test`.
     pub struct TraceMonitor {
         /// Circuit graph constructed based on `CircuitEvent`s.
         circuit: CircuitGraph,
-        /// The stack of circuit automata states.  We start with a single element for
-        /// the root circuit.  Evaluating a nested circuit pushes a new state on the stack.
-        /// The stack becomes empty when the root automaton terminates, at which point
+        /// The stack of circuit automata states.  We start with a single
+        /// element for the root circuit.  Evaluating a nested circuit
+        /// pushes a new state on the stack. The stack becomes empty
+        /// when the root automaton terminates, at which point
         /// no further `SchedulerEvent`'s are allowed.
         state: Vec<CircuitState>,
         /// Callback to invoke on each invalid `CircuitEvent`.

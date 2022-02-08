@@ -19,9 +19,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    
+
     - name: cargo fmt
-      run: cargo fmt -- --check --verbose
+      run: cargo fmt -- --check --verbose --config format_code_in_doc_comments=true --config wrap_comments=true
     - name: Clippy
       run: cargo clippy -- -D warnings
     - name: cargo doc
