@@ -66,7 +66,7 @@ where
         //      │    ┌───┐    │
         //      │    │   │    │
         //      └────┤z-1├────┘
-        //           │   │
+        //           │   ├─────►
         //           └───┘
         // ```
         let (z, feedback) = self.circuit().add_feedback(Z1::new(D::zero()));
