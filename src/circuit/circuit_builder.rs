@@ -1973,7 +1973,7 @@ mod tests {
             let mut n: isize = 0;
             let source = circuit.add_source(Generator::new(move || {
                 let result = n;
-                n = n + 1;
+                n += 1;
                 result
             }));
             let integrator = source.integrate();
@@ -2023,7 +2023,7 @@ mod tests {
             let mut n: usize = 0;
             let source = circuit.add_source(Generator::new(move || {
                 let result = n;
-                n = n + 1;
+                n += 1;
                 result
             }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
@@ -2086,7 +2086,7 @@ mod tests {
 
             let mut n: usize = 0;
             let source = circuit.add_source(Generator::new(move || {
-                n = n + 1;
+                n += 1;
                 n
             }));
             let fact = circuit
@@ -2095,7 +2095,7 @@ mod tests {
                     let counter_clone = counter.clone();
                     let countdown =
                         child.add_source(NestedSource::new(source, child, move |n: &mut usize| {
-                            *n = *n - 1;
+                            *n -= 1;
                             *counter_clone.borrow_mut() = *n;
                         }));
                     let (z1_output, z1_feedback) = child.add_feedback(Z1::new(1));
