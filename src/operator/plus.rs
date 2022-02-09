@@ -162,7 +162,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{finite_map::FiniteMap, zset::ZSetHashMap},
+        algebra::{FiniteMap, ZSetHashMap},
         circuit::{Circuit, OwnershipPreference, Root},
         operator::{Generator, Inspect},
     };

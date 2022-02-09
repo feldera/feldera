@@ -1,9 +1,3 @@
-//! This module implements ZSets.
-//! A ZSet maps arbitrary keys (which only need to support equality and hashing)
-//! to weights. The weights must implement the ZRingValue trait.
-
-#[macro_use]
-mod zset_macro;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -39,10 +33,10 @@ where
     /// Given a Z-set 'set' partition it using a 'partitioner'
     /// function which is applied independently to each tuple.
     /// This consumes the Z-set.
-    fn partition<Key, F>(self, partitioner: &F) -> IndexedZSetMap<Key, Data, Weight>
+    fn partition<Key, F>(self, partitioner: F) -> IndexedZSetMap<Key, Data, Weight>
     where
         Key: KeyProperties,
-        F: Fn(&Data) -> Key;
+        F: FnMut(&Data) -> Key;
 
     /// Cartesian product between this zset and `other`.
     /// Every data value in this set paired with every
@@ -50,15 +44,11 @@ where
     /// The result has a weight equal to the product of the
     /// data weights, and everything is summed into a [`ZSetHashMap`].
     // TODO: this should return a trait, and not an implementation.
-    fn cartesian<Data2, ZS2, Data3, F>(
-        &self,
-        other: &ZS2,
-        merger: &F,
-    ) -> ZSetHashMap<Data3, Weight>
+    fn cartesian<Data2, ZS2, Data3, F>(&self, other: &ZS2, merger: F) -> ZSetHashMap<Data3, Weight>
     where
         Data2: KeyProperties,
         Data3: KeyProperties,
-        F: Fn(&Data, &Data2) -> Data3,
+        F: FnMut(&Data, &Data2) -> Data3,
         ZS2: ZSet<Data2, Weight>,
         for<'a> &'a ZS2: IntoIterator<Item = (&'a Data2, &'a Weight)>;
 
@@ -70,17 +60,17 @@ where
     fn join<K, KF, KF2, Data2, ZS2, Data3, F>(
         &self,
         other: &ZS2,
-        left_key: &KF,
-        right_key: &KF2,
+        left_key: KF,
+        right_key: KF2,
         merger: F,
     ) -> ZSetHashMap<Data3, Weight>
     where
         K: KeyProperties,
         Data2: KeyProperties,
         Data3: KeyProperties,
-        KF: Fn(&Data) -> K,
-        KF2: Fn(&Data2) -> K,
-        F: Fn(&Data, &Data2) -> Data3,
+        KF: FnMut(&Data) -> K,
+        KF2: FnMut(&Data2) -> K,
+        F: FnMut(&Data, &Data2) -> Data3,
         ZS2: ZSet<Data2, Weight>,
         for<'a> &'a ZS2: IntoIterator<Item = (&'a Data2, &'a Weight)>;
 }
@@ -115,10 +105,10 @@ where
         result
     }
 
-    fn partition<KeyType, F>(self, partitioner: &F) -> IndexedZSetMap<KeyType, Data, Weight>
+    fn partition<KeyType, F>(self, mut partitioner: F) -> IndexedZSetMap<KeyType, Data, Weight>
     where
         KeyType: KeyProperties,
-        F: Fn(&Data) -> KeyType,
+        F: FnMut(&Data) -> KeyType,
     {
         let mut result = FiniteHashMap::new();
         for (t, w) in self {
@@ -130,11 +120,15 @@ where
         result
     }
 
-    fn cartesian<Data2, ZS2, Data3, F>(&self, other: &ZS2, merger: &F) -> ZSetHashMap<Data3, Weight>
+    fn cartesian<Data2, ZS2, Data3, F>(
+        &self,
+        other: &ZS2,
+        mut merger: F,
+    ) -> ZSetHashMap<Data3, Weight>
     where
         Data2: KeyProperties,
         Data3: KeyProperties,
-        F: Fn(&Data, &Data2) -> Data3,
+        F: FnMut(&Data, &Data2) -> Data3,
         ZS2: ZSet<Data2, Weight>,
         for<'a> &'a ZS2: IntoIterator<Item = (&'a Data2, &'a Weight)>,
     {
@@ -153,23 +147,22 @@ where
     fn join<K, KF, KF2, Data2, ZS2, Data3, F>(
         &self,
         other: &ZS2,
-        left_key: &KF,
-        right_key: &KF2,
-        merger: F,
+        left_key: KF,
+        right_key: KF2,
+        mut merger: F,
     ) -> ZSetHashMap<Data3, Weight>
     where
         K: KeyProperties,
         Data2: KeyProperties,
         Data3: KeyProperties,
-        KF: Fn(&Data) -> K,
-        KF2: Fn(&Data2) -> K,
-        F: Fn(&Data, &Data2) -> Data3,
+        KF: FnMut(&Data) -> K,
+        KF2: FnMut(&Data2) -> K,
+        F: FnMut(&Data, &Data2) -> Data3,
         ZS2: ZSet<Data2, Weight>,
         for<'a> &'a ZS2: IntoIterator<Item = (&'a Data2, &'a Weight)>,
     {
-        let combiner = move |left: &ZSetHashMap<Data, Weight>,
-                             right: &ZSetHashMap<Data2, Weight>| {
-            left.cartesian::<Data2, ZSetHashMap<Data2, Weight>, Data3, _>(right, &merger)
+        let combiner = |left: &ZSetHashMap<Data, Weight>, right: &ZSetHashMap<Data2, Weight>| {
+            left.cartesian::<Data2, ZSetHashMap<Data2, Weight>, Data3, _>(right, &mut merger)
         };
 
         let left = self.clone().partition(left_key);
@@ -180,7 +173,7 @@ where
             ZSetHashMap<Data3, Weight>,
             IndexedZSetMap<K, Data2,Weight>,
             _,
-        >(&right, &combiner)
+        >(&right, combiner)
         .sum()
     }
 }
