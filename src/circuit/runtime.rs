@@ -326,7 +326,7 @@ mod tests {
                     .iterate_with_scheduler::<_, _, _, S>(|child| {
                         let mut n: usize = 0;
                         let source = child.add_source(Generator::new(move || {
-                            n = n + 1;
+                            n += 1;
                             n
                         }));
                         child.add_sink(Inspect::new(|_: &usize| {}), &source);

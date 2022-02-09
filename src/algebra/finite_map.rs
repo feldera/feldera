@@ -559,7 +559,7 @@ fn hashmap_tests() {
     assert_eq!(1, z.lookup(&0));
     assert_eq!(0, z.lookup(&1));
     assert_ne!(z, FiniteHashMap::<i64, i64>::zero());
-    assert_eq!(false, z.is_zero());
+    assert!(!z.is_zero());
 
     z.increment(&2, 0);
     assert_eq!(1, z.support_size());
@@ -617,7 +617,7 @@ fn hashmap_tests() {
         if *x > 0 {
             (0..*x).into_iter().collect::<Vec<i64>>().into_iter()
         } else {
-            std::iter::once(x.clone()).collect::<Vec<i64>>().into_iter()
+            std::iter::once(*x).collect::<Vec<i64>>().into_iter()
         }
     });
     assert_eq!("{-1=>3,0=>3,4=>2}", z2.to_string());
