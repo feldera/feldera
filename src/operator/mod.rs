@@ -33,3 +33,6 @@ pub use delta0::Delta0;
 
 mod condition;
 pub use condition::Condition;
+
+mod index;
+pub use index::Index;

@@ -2,7 +2,7 @@
 //! monoids, groups, rings, etc.
 
 #[macro_use]
-mod finite_map;
+pub mod finite_map;
 mod checked_int;
 mod zset;
 
