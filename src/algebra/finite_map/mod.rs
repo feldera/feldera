@@ -6,8 +6,11 @@ mod tests;
 use crate::algebra::{
     Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef,
 };
+use hashbrown::{
+    hash_map,
+    hash_map::{Entry, HashMap, RawEntryMut},
+};
 use std::{
-    collections::{hash_map, hash_map::Entry, HashMap},
     fmt::{Debug, Formatter, Result},
     hash::Hash,
     iter::{repeat, FromIterator},
@@ -39,6 +42,16 @@ where
     /// Find the value associated to the specified key
     fn lookup(&self, key: &Key) -> Value;
 
+    /// Modify the value associated with `key`.
+    fn update<F>(&mut self, key: &Key, f: F)
+    where
+        F: FnOnce(&mut Value);
+
+    /// Modify the value associated with `key`.
+    fn update_owned<F>(&mut self, key: Key, f: F)
+    where
+        F: FnOnce(&mut Value);
+
     /// Return the set of values that are mapped to non-zero values.
     fn support(&self) -> SupportIter<'_, Key, Value>;
 
@@ -46,8 +59,11 @@ where
     /// return zero.
     fn support_size(&self) -> usize;
 
-    /// Increase the value associated to `key` by the specified `value`
+    /// Increase the value associated with `key` by the specified `value`.
     fn increment(&mut self, key: &Key, value: Value);
+
+    /// Increase the value associated with `key` by the specified `value`.
+    fn increment_owned(&mut self, key: Key, value: Value);
 
     /// Create a map containing a singleton value.
     fn singleton(key: Key, value: Value) -> Self;
@@ -178,6 +194,46 @@ where
         self.value.get(key).cloned().unwrap_or_else(Value::zero)
     }
 
+    fn update<F>(&mut self, key: &Key, f: F)
+    where
+        F: FnOnce(&mut Value),
+    {
+        match self.value.raw_entry_mut().from_key(key) {
+            RawEntryMut::Occupied(mut oe) => {
+                let val = oe.get_mut();
+                f(val);
+                if val.is_zero() {
+                    oe.remove();
+                }
+            }
+            RawEntryMut::Vacant(ve) => {
+                let mut val = Value::zero();
+                f(&mut val);
+                ve.insert(key.clone(), val);
+            }
+        }
+    }
+
+    fn update_owned<F>(&mut self, key: Key, f: F)
+    where
+        F: FnOnce(&mut Value),
+    {
+        match self.value.entry(key) {
+            Entry::Occupied(mut oe) => {
+                let val = oe.get_mut();
+                f(val);
+                if val.is_zero() {
+                    oe.remove();
+                }
+            }
+            Entry::Vacant(ve) => {
+                let mut val = Value::zero();
+                f(&mut val);
+                ve.insert(val);
+            }
+        }
+    }
+
     fn support<'a>(&self) -> SupportIter<'_, Key, Value> {
         self.value.keys()
     }
@@ -191,10 +247,29 @@ where
             return;
         }
 
+        match self.value.raw_entry_mut().from_key(key) {
+            RawEntryMut::Vacant(vacant) => {
+                vacant.insert(key.clone(), value);
+            }
+
+            RawEntryMut::Occupied(mut occupied) => {
+                occupied.get_mut().add_assign(value);
+                if occupied.get().is_zero() {
+                    occupied.remove_entry();
+                }
+            }
+        }
+    }
+
+    fn increment_owned(&mut self, key: Key, value: Value) {
+        if value.is_zero() {
+            return;
+        }
+
         // TODO: the HashMap API does not support avoiding this clone.
         // This has been a known issue since 2015: https://github.com/rust-lang/rust/issues/56167
         // We should use a different implementation or API if one becomes available.
-        match self.value.entry(key.clone()) {
+        match self.value.entry(key) {
             Entry::Vacant(vacant) => {
                 vacant.insert(value);
             }

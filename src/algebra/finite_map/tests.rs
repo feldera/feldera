@@ -29,7 +29,7 @@ fn hashmap_tests() {
     assert_ne!(z, Map::zero());
     assert!(!z.is_zero());
 
-    z.increment(&2, 0);
+    z.increment_owned(2, 0);
     assert_eq!(1, z.support_size());
     assert_eq!(finite_map! { 0 => 1 }, z);
 
@@ -37,7 +37,7 @@ fn hashmap_tests() {
     assert_eq!(2, z.support_size());
     assert_eq!(finite_map! { 0 => 1, 1 => -1 }, z);
 
-    z.increment(&-1, 1);
+    z.increment_owned(-1, 1);
     assert_eq!(3, z.support_size());
     assert_eq!(finite_map! { -1 => 1, 0 => 1, 1 => -1 }, z);
 
@@ -78,7 +78,7 @@ fn hashmap_tests() {
     assert_eq!(1, z4.support_size());
     assert_eq!(finite_map! { 0 => 3 }, z4);
 
-    z2.increment(&4, 2);
+    z2.increment_owned(4, 2);
     let z5 = z2.flat_map(|x| iter::once(*x));
     assert_eq!(&z5, &z2);
     let z5 = z2.flat_map(|x| {
