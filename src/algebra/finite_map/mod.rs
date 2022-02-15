@@ -22,8 +22,18 @@ pub trait KeyProperties: 'static + Clone + Eq + Hash {}
 
 impl<T> KeyProperties for T where T: 'static + Clone + Eq + Hash {}
 
-// FIXME: this is not abstract enough.
-type SupportIter<'a, KeyType, ValueType> = hash_map::Keys<'a, KeyType, ValueType>;
+/// A trait to iterate over keys in the support of a finite map.
+///
+/// We make this a separate trait, so as not to pollute
+/// `trait FiniteMap` with the lifetime parameter.
+pub trait WithSupport<'a, KeyType>
+where
+    KeyType: 'a,
+{
+    type SupportIterator: Iterator<Item = &'a KeyType>;
+
+    fn support(self) -> Self::SupportIterator;
+}
 
 /// Finite map trait.
 ///
@@ -56,9 +66,6 @@ where
     fn update_owned<F>(&mut self, key: Key, f: F)
     where
         F: FnOnce(&mut Value);
-
-    /// Return the set of values that are mapped to non-zero values.
-    fn support(&self) -> SupportIter<'_, Key, Value>;
 
     /// The size of the support: number of elements for which the map does not
     /// return zero.
@@ -243,10 +250,6 @@ where
         }
     }
 
-    fn support<'a>(&self) -> SupportIter<'_, Key, Value> {
-        self.value.keys()
-    }
-
     fn support_size(&self) -> usize {
         self.value.len()
     }
@@ -376,6 +379,14 @@ where
         }
 
         result
+    }
+}
+
+impl<'a, Key, Value> WithSupport<'a, Key> for &'a FiniteHashMap<Key, Value> {
+    type SupportIterator = hash_map::Keys<'a, Key, Value>;
+
+    fn support(self) -> Self::SupportIterator {
+        self.value.keys()
     }
 }
 
