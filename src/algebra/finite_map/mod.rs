@@ -153,11 +153,7 @@ impl<Key, Value> FiniteHashMap<Key, Value> {
     }
 }
 
-impl<Key, Value> IntoIterator for FiniteHashMap<Key, Value>
-where
-    Key: KeyProperties,
-    Value: GroupValue,
-{
+impl<Key, Value> IntoIterator for FiniteHashMap<Key, Value> {
     type Item = (Key, Value);
     type IntoIter = hash_map::IntoIter<Key, Value>;
 
@@ -166,11 +162,7 @@ where
     }
 }
 
-impl<'a, Key, Value> IntoIterator for &'a FiniteHashMap<Key, Value>
-where
-    Key: KeyProperties,
-    Value: GroupValue,
-{
+impl<'a, Key, Value> IntoIterator for &'a FiniteHashMap<Key, Value> {
     type Item = (&'a Key, &'a Value);
     type IntoIter = hash_map::Iter<'a, Key, Value>;
 
