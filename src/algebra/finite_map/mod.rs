@@ -217,7 +217,9 @@ where
             RawEntryMut::Vacant(ve) => {
                 let mut val = Value::zero();
                 f(&mut val);
-                ve.insert(key.clone(), val);
+                if !val.is_zero() {
+                    ve.insert(key.clone(), val);
+                }
             }
         }
     }
@@ -288,9 +290,13 @@ where
     }
 
     fn singleton(key: Key, value: Value) -> Self {
-        let mut result = Self::with_capacity(1);
-        result.value.insert(key, value);
-        result
+        if !value.is_zero() {
+            let mut result = Self::with_capacity(1);
+            result.value.insert(key, value);
+            result
+        } else {
+            Self::new()
+        }
     }
 
     fn map<F, NewKey>(&self, mapper: &F) -> FiniteHashMap<NewKey, Value>
