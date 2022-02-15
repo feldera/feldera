@@ -12,6 +12,7 @@ fn hashmap_tests() {
     assert_eq!(0, z.support_size());
     assert_eq!(finite_map! {}, z);
     assert_eq!(0, z.lookup(&0)); // not present -> 0
+    assert_eq!(None, z.get_in_support(&0)); // not present -> 0
     assert_eq!(z, Map::zero());
     assert!(z.is_zero());
 
@@ -21,11 +22,17 @@ fn hashmap_tests() {
     let z3 = Map::singleton(3, 4);
     assert_eq!(finite_map! { 3 => 4 }, z3);
 
+    let zempty = Map::singleton(3, 0);
+    assert_eq!(finite_map! {}, zempty);
+
     z.increment(&0, 1);
     assert_eq!(1, z.support_size());
     assert_eq!(finite_map! { 0 => 1 }, z);
     assert_eq!(1, z.lookup(&0));
     assert_eq!(0, z.lookup(&1));
+    assert_eq!(Some(1), z.get_in_support(&0).cloned());
+    assert_eq!(None, z.get_in_support(&1));
+
     assert_ne!(z, Map::zero());
     assert!(!z.is_zero());
 

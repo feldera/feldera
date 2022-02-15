@@ -42,6 +42,11 @@ where
     /// Find the value associated to the specified key
     fn lookup(&self, key: &Key) -> Value;
 
+    /// Find the value associated to the specified key.
+    ///
+    /// Returns `None` when `key` is not in the support of `self`.
+    fn get_in_support(&self, key: &Key) -> Option<&Value>;
+
     /// Modify the value associated with `key`.
     fn update<F>(&mut self, key: &Key, f: F)
     where
@@ -194,6 +199,10 @@ where
         self.value.get(key).cloned().unwrap_or_else(Value::zero)
     }
 
+    fn get_in_support(&self, key: &Key) -> Option<&Value> {
+        self.value.get(key)
+    }
+
     fn update<F>(&mut self, key: &Key, f: F)
     where
         F: FnOnce(&mut Value),
@@ -344,23 +353,25 @@ where
         // iterate on the smaller set
         if self.support_size() < other.support_size() {
             for (k, v) in self {
-                let v2 = other.lookup(k);
-                if v2.is_zero() {
-                    continue;
-                }
+                if let Some(v2) = other.get_in_support(k) {
+                    if v2.is_zero() {
+                        continue;
+                    }
 
-                let merged = merger(v, &v2);
-                result.increment(k, merged)
+                    let merged = merger(v, v2);
+                    result.increment(k, merged)
+                }
             }
         } else {
             for (k, v2) in other {
-                let v = self.lookup(k);
-                if v.is_zero() {
-                    continue;
-                }
+                if let Some(v) = self.get_in_support(k) {
+                    if v.is_zero() {
+                        continue;
+                    }
 
-                let merged = merger(&v, v2);
-                result.increment(k, merged)
+                    let merged = merger(v, v2);
+                    result.increment(k, merged)
+                }
             }
         }
 
