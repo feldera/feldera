@@ -1,5 +1,5 @@
 use crate::algebra::{
-    finite_map::FiniteMap,
+    finite_map::{FiniteMap, MapBuilder},
     zset::{ZSet, ZSetHashMap},
     AddAssignByRef, AddByRef, CheckedInt, HasZero, NegByRef,
 };

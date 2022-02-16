@@ -12,7 +12,7 @@ macro_rules! finite_map {
             $crate::count_elements!($($key),+),
         );
 
-        $( $crate::algebra::FiniteHashMap::increment(&mut map, &$key, $value); )+
+        $( <$crate::algebra::FiniteHashMap<_,_> as $crate::algebra::MapBuilder<_,_>>::increment(&mut map, &$key, $value); )+
 
         map
     }};

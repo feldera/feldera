@@ -2,7 +2,7 @@
 pub(crate) mod tests;
 
 use crate::algebra::{
-    finite_map::{FiniteHashMap, FiniteMap, KeyProperties},
+    finite_map::{FiniteHashMap, FiniteMap, KeyProperties, MapBuilder},
     AddAssignByRef, ZRingValue,
 };
 
