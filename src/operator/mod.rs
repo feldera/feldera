@@ -36,3 +36,6 @@ pub use condition::Condition;
 
 mod index;
 pub use index::Index;
+
+mod join;
+pub use join::Join;
