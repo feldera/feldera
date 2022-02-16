@@ -132,12 +132,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        algebra::{FiniteHashMap, FiniteMap},
-        circuit::Root,
-        finite_map,
-        operator::Generator,
-    };
+    use crate::{algebra::FiniteHashMap, circuit::Root, finite_map, operator::Generator};
 
     #[test]
     fn index_sequence() {

@@ -1,5 +1,5 @@
 use crate::algebra::{
-    AddAssignByRef, AddByRef, FiniteHashMap, FiniteMap, HasZero, NegByRef, WithSupport,
+    AddAssignByRef, AddByRef, FiniteHashMap, FiniteMap, HasZero, MapBuilder, NegByRef, WithSupport,
 };
 use std::{
     iter,

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{
-    algebra::{AddByRef, FiniteHashMap, FiniteMap, HasZero, ZSet, ZSetHashMap},
+    algebra::{AddByRef, FiniteHashMap, HasZero, MapBuilder, ZSet, ZSetHashMap},
     circuit::{operator_traits::SourceOperator, Root},
     finite_map,
     operator::{Apply2, Generator, Z1},
