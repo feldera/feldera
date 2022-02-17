@@ -93,7 +93,6 @@ pub trait FiniteMap<Key, Value>:
     GroupValue + IntoIterator<Item = (Key, Value)> + FromIterator<(Key, Value)> + MapBuilder<Key, Value>
 where
     Key: KeyProperties,
-    Value: GroupValue,
 {
     /// Find the value associated to the specified key
     fn lookup(&self, key: &Key) -> Value;
