@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{finite_map::KeyProperties, FiniteMap, ZRingValue, ZSet},
+    algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue},
     circuit::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream,
@@ -35,7 +35,7 @@ where
     P: Clone + 'static,
 {
     /// Apply [`Index`] operator to `self`.
-    pub fn index<K, V, W, CO, Z>(&self) -> Stream<Circuit<P>, CO>
+    pub fn index<K, V, W, CO>(&self) -> Stream<Circuit<P>, CO>
     where
         K: KeyProperties,
         V: KeyProperties,
@@ -43,8 +43,7 @@ where
         CI: IntoIterator<Item = ((K, V), W)> + 'static,
         for<'a> &'a CI: IntoIterator,
         for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, (K, V), W>,
-        CO: FiniteMap<K, Z> + Default,
-        Z: ZSet<V, W>,
+        CO: IndexedZSet<K, V, W>,
     {
         self.circuit().add_unary_operator(Index::new(), self)
     }
@@ -68,31 +67,29 @@ where
 /// * `CI` - input collection type.
 /// * `CO` - output collection type, a finite map from keys to a Z-set of
 ///   values.
-/// * `Z` - Z-set type used to store values of the `CO` collection.
-pub struct Index<K, V, W, CI, CO, Z> {
-    _type: PhantomData<(K, V, W, CI, CO, Z)>,
+pub struct Index<K, V, W, CI, CO> {
+    _type: PhantomData<(K, V, W, CI, CO)>,
 }
 
-impl<K, V, W, CI, CO, Z> Index<K, V, W, CI, CO, Z> {
+impl<K, V, W, CI, CO> Index<K, V, W, CI, CO> {
     pub fn new() -> Self {
         Self { _type: PhantomData }
     }
 }
 
-impl<K, V, W, CI, CO, Z> Default for Index<K, V, W, CI, CO, Z> {
+impl<K, V, W, CI, CO> Default for Index<K, V, W, CI, CO> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K, V, W, CI, CO, Z> Operator for Index<K, V, W, CI, CO, Z>
+impl<K, V, W, CI, CO> Operator for Index<K, V, W, CI, CO>
 where
     K: 'static,
     V: 'static,
     W: 'static,
     CI: 'static,
     CO: 'static,
-    Z: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Index")
@@ -101,7 +98,7 @@ where
     fn clock_end(&mut self, _scope: Scope) {}
 }
 
-impl<K, V, W, CI, CO, Z> UnaryOperator<CI, CO> for Index<K, V, W, CI, CO, Z>
+impl<K, V, W, CI, CO> UnaryOperator<CI, CO> for Index<K, V, W, CI, CO>
 where
     K: KeyProperties,
     V: KeyProperties,
@@ -109,11 +106,10 @@ where
     CI: IntoIterator<Item = ((K, V), W)> + 'static,
     for<'a> &'a CI: IntoIterator,
     for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, (K, V), W>,
-    CO: FiniteMap<K, Z> + Default,
-    Z: ZSet<V, W>,
+    CO: IndexedZSet<K, V, W>,
 {
     fn eval(&mut self, i: &CI) -> CO {
-        let mut res = CO::default();
+        let mut res = CO::empty();
         for pair in i.into_iter() {
             let ((k, v), w) = pair.into_refs();
             res.update(k, |val| val.increment(v, w.clone()));
@@ -122,7 +118,7 @@ where
     }
 
     fn eval_owned(&mut self, i: CI) -> CO {
-        let mut res = CO::default();
+        let mut res = CO::empty();
         for ((k, v), w) in i.into_iter() {
             res.update_owned(k, |val| val.increment_owned(v, w.clone()));
         }

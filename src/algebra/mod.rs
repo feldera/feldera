@@ -8,7 +8,7 @@ mod zset;
 
 pub use checked_int::CheckedInt;
 pub use finite_map::{FiniteHashMap, FiniteMap, MapBuilder, WithSupport};
-pub use zset::{ZSet, ZSetHashMap};
+pub use zset::{IndexedZSet, IndexedZSetHashMap, ZSet, ZSetHashMap};
 
 use std::ops::{Add, AddAssign, Mul, Neg};
 
