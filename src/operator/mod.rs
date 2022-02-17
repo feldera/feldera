@@ -19,6 +19,7 @@ mod generator;
 pub use generator::Generator;
 
 mod integrate;
+pub use integrate::StreamIntegral;
 
 pub mod communication;
 

@@ -154,6 +154,7 @@ mod test {
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
                    .index()
                    .integrate()
+                   .current
                    .inspect(move |fm: &FiniteHashMap<_, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })
         .unwrap();
@@ -189,6 +190,7 @@ mod test {
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
                    .index()
                    .integrate()
+                   .current
                    .inspect(move |fm: &FiniteHashMap<_, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })
         .unwrap();

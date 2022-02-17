@@ -181,9 +181,9 @@ mod test {
             let init2 = circuit.add_source(Generator::new(|| finite_map! { 4 => 1 }));
 
             let (reachable1, reachable2) = circuit.iterate_with_conditions_and_scheduler::<_, _, S>(|child| {
-                let edges = edges.delta0(child).integrate();
-                let init1 = init1.delta0(child).integrate();
-                let init2 = init2.delta0(child).integrate();
+                let edges = edges.delta0(child).integrate().current;
+                let init1 = init1.delta0(child).integrate().current;
+                let init2 = init2.delta0(child).integrate().current;
 
                 // Builds a subcircuit that computes nodes reachable from `init`:
                 //
