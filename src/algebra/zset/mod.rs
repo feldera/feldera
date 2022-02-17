@@ -33,10 +33,11 @@ where
     /// Given a Z-set 'set' partition it using a 'partitioner'
     /// function which is applied independently to each tuple.
     /// This consumes the Z-set.
-    fn partition<Key, F>(self, partitioner: F) -> IndexedZSetMap<Key, Data, Weight>
+    fn partition<Key, F, I>(self, partitioner: F) -> I
     where
         Key: KeyProperties,
-        F: FnMut(&Data) -> Key;
+        F: FnMut(&Data) -> Key,
+        I: IndexedZSet<Key, Data, Weight>;
 
     /// Cartesian product between this zset and `other`.
     /// Every data value in this set paired with every
@@ -105,16 +106,16 @@ where
         result
     }
 
-    fn partition<KeyType, F>(self, mut partitioner: F) -> IndexedZSetMap<KeyType, Data, Weight>
+    fn partition<KeyType, F, I>(self, mut partitioner: F) -> I
     where
         KeyType: KeyProperties,
         F: FnMut(&Data) -> KeyType,
+        I: IndexedZSet<KeyType, Data, Weight>,
     {
-        let mut result = FiniteHashMap::new();
+        let mut result = I::empty();
         for (t, w) in self {
             let k = partitioner(&t);
-            let zs = ZSetHashMap::singleton(t, w);
-            result.increment(&k, zs);
+            result.update(&k, |zs| zs.increment_owned(t, w));
         }
 
         result
@@ -165,35 +166,48 @@ where
             left.cartesian::<Data2, ZSetHashMap<Data2, Weight>, Data3, _>(right, &mut merger)
         };
 
-        let left = self.clone().partition(left_key);
-        let right = other.clone().partition(right_key);
+        let left: IndexedZSetHashMap<_, _, _> = self.clone().partition(left_key);
+        let right: IndexedZSetHashMap<_, _, _> = other.clone().partition(right_key);
 
         left.match_keys::<
             ZSetHashMap<Data2, Weight>,
             ZSetHashMap<Data3, Weight>,
-            IndexedZSetMap<K, Data2,Weight>,
+            IndexedZSetHashMap<K, Data2,Weight>,
             _,
         >(&right, combiner)
         .sum()
     }
 }
 
-type IndexedZSetMap<Key, Data, Weight> = FiniteHashMap<Key, ZSetHashMap<Data, Weight>>;
-
-/// An indexed Z-set is a structure that maps arbitrary keys to Z-set values
-impl<Key, Data, Weight> IndexedZSetMap<Key, Data, Weight>
+/// An indexed Z-set maps arbitrary keys to Z-set values.
+pub trait IndexedZSet<Key, Value, Weight>: FiniteMap<Key, Self::ZSet>
 where
-    Data: KeyProperties,
     Key: KeyProperties,
+    Value: KeyProperties,
     Weight: ZRingValue,
-    for<'a> &'a Self: IntoIterator<Item = (&'a Key, &'a ZSetHashMap<Data, Weight>)>,
 {
+    type ZSet: ZSet<Value, Weight>;
+
     /// Add all the data in all partitions into a single zset.
-    pub fn sum(&self) -> ZSetHashMap<Data, Weight> {
+    fn sum(&self) -> Self::ZSet
+    where
+        for<'a> &'a Self: IntoIterator<Item = (&'a Key, &'a Self::ZSet)>,
+    {
         self.into_iter()
-            .fold(ZSetHashMap::new(), |mut set, (_, values)| {
+            .fold(Self::ZSet::empty(), |mut set, (_, values)| {
                 set.add_assign_by_ref(values);
                 set
             })
     }
+}
+
+pub type IndexedZSetHashMap<Key, Value, Weight> = FiniteHashMap<Key, ZSetHashMap<Value, Weight>>;
+
+impl<Key, Value, Weight> IndexedZSet<Key, Value, Weight> for IndexedZSetHashMap<Key, Value, Weight>
+where
+    Key: KeyProperties,
+    Value: KeyProperties,
+    Weight: ZRingValue,
+{
+    type ZSet = ZSetHashMap<Value, Weight>;
 }

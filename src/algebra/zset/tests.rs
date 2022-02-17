@@ -1,6 +1,6 @@
 use crate::algebra::{
     finite_map::{FiniteMap, MapBuilder},
-    zset::{ZSet, ZSetHashMap},
+    zset::{IndexedZSet, ZSet, ZSetHashMap},
     AddAssignByRef, AddByRef, CheckedInt, HasZero, NegByRef,
 };
 
