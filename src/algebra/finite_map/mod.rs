@@ -268,7 +268,6 @@ where
             return;
         }
 
-        // TODO: the HashMap API does not support avoiding this clone.
         // This has been a known issue since 2015: https://github.com/rust-lang/rust/issues/56167
         // We should use a different implementation or API if one becomes available.
         match self.value.entry(key) {
@@ -499,14 +498,12 @@ where
             Value: GroupValue,
         {
             for (key, value) in &other.value {
-                // TODO: unfortunately there is no way to avoid this k.clone() currently.
-                // See also note on 'insert' below.
-                match this.value.entry(key.clone()) {
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(value.clone());
+                match this.value.raw_entry_mut().from_key(key) {
+                    RawEntryMut::Vacant(vacant) => {
+                        vacant.insert(key.clone(), value.clone());
                     }
 
-                    Entry::Occupied(mut occupied) => {
+                    RawEntryMut::Occupied(mut occupied) => {
                         occupied.get_mut().add_assign_by_ref(value);
                         if occupied.get().is_zero() {
                             occupied.remove_entry();
@@ -556,13 +553,12 @@ where
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         for (key, value) in &other.value {
-            // TODO: unfortunately there is no way to avoid this clone.
-            match self.value.entry(key.clone()) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(value.clone());
+            match self.value.raw_entry_mut().from_key(key) {
+                RawEntryMut::Vacant(vacant) => {
+                    vacant.insert(key.clone(), value.clone());
                 }
 
-                Entry::Occupied(mut occupied) => {
+                RawEntryMut::Occupied(mut occupied) => {
                     occupied.get_mut().add_assign_by_ref(value);
                     if occupied.get().is_zero() {
                         occupied.remove_entry();
