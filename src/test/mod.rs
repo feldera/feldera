@@ -167,7 +167,7 @@ fn transitive_closure() {
         let source0 = circuit.add_source(gen);
         let circuit_output = circuit
             .iterate_with_condition(|child| {
-                let i_output = source0.delta0(child).integrate();
+                let i_output = source0.delta0(child).integrate().current;
                 let (z1_output, z1_feedback) =
                     child.add_feedback_with_export(Z1::new(ZSetHashMap::<(i64, i64), i64>::new()));
 

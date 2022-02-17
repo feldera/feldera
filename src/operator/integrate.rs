@@ -5,6 +5,46 @@ use crate::{
 };
 use std::ops::Add;
 
+/// Struct returned by the [`Stream::integrate`] operation.
+///
+/// This struct bundles the four output streams produced by the `integrate`
+/// method:
+///
+/// * `current` - the current value of the integral, i.e., the sum of all values
+///   in the stream since the last `clock_start` including the current clock
+///   cycle.
+/// * `delayed` - the previous value of the integral, i.e., the sum of all
+///   values in the stream since the last `clock_start` up to the previous clock
+///   cycle.
+/// * `export` - stream exported to the parent circuit that contains the final
+///   value of the integral at the end of the nested clock epoch.
+/// * `input` - value added to the integral at the last clock cycle.  This is
+///   just a reference to the input stream (the stream being integrated).  We
+///   bundle it here as it is often used together with other outputs, e.g., by
+///   the incremental join operator.
+pub struct StreamIntegral<P, I> {
+    pub current: Stream<Circuit<P>, I>,
+    pub delayed: Stream<Circuit<P>, I>,
+    pub export: Stream<P, I>,
+    pub input: Stream<Circuit<P>, I>,
+}
+
+impl<P, I> StreamIntegral<P, I> {
+    fn new(
+        current: Stream<Circuit<P>, I>,
+        delayed: Stream<Circuit<P>, I>,
+        export: Stream<P, I>,
+        input: Stream<Circuit<P>, I>,
+    ) -> Self {
+        Self {
+            current,
+            delayed,
+            export,
+            input,
+        }
+    }
+}
+
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
@@ -32,11 +72,11 @@ where
     ///     // Generate a stream of 1's.
     ///     let stream = circuit.add_source(Generator::new(|| 1));
     ///     // Integrate the stream.
-    ///     let (sum, delayed_sum) = stream.integrate_core();
+    ///     let integral = stream.integrate();
     /// #   let mut counter1 = 0;
-    /// #   sum.inspect(move |n| { counter1 += 1; assert_eq!(*n, counter1) });
+    /// #   integral.current.inspect(move |n| { counter1 += 1; assert_eq!(*n, counter1) });
     /// #   let mut counter2 = 0;
-    /// #   delayed_sum.inspect(move |n| { assert_eq!(*n, counter2); counter2 += 1; });
+    /// #   integral.delayed.inspect(move |n| { assert_eq!(*n, counter2); counter2 += 1; });
     /// })
     /// .unwrap();
     ///
@@ -48,68 +88,43 @@ where
     /// Streams in the above example will contain the following values:
     ///
     /// ```text
-    /// stream:      1, 1, 1, 1, 1, ...
-    /// sum:         1, 2, 3, 4, 5, ...
-    /// delayed_sum: 0, 1, 2, 3, 4, ...
+    /// input:   1, 1, 1, 1, 1, ...
+    /// current: 1, 2, 3, 4, 5, ...
+    /// delayed: 0, 1, 2, 3, 4, ...
     /// ```
-    pub fn integrate_core(&self) -> (Stream<Circuit<P>, D>, Stream<Circuit<P>, D>) {
+    pub fn integrate(&self) -> StreamIntegral<P, D> {
         // Integration circuit:
-        //
         // ```
-        //           ┌───┐
-        //    ──────►│   ├─────►
-        //           │ + │
-        //      ┌───►│   ├────┐
-        //      │    └───┘    │
-        //      │             │
-        //      │    ┌───┐    │
-        //      │    │   │    │
-        //      └────┤z-1├────┘
-        //           │   ├─────►
-        //           └───┘
+        //              input
+        //   ┌─────────────────►
+        //   │
+        //   │    ┌───┐ current
+        // ──┴───►│   ├────────►
+        //        │ + │
+        //   ┌───►│   ├────┐
+        //   │    └───┘    │
+        //   │             │
+        //   │    ┌───┐    │
+        //   │    │   │    │
+        //   └────┤z-1├────┘
+        //        │   │
+        //        └───┴────────►
+        //              delayed
+        //              export
         // ```
-        let (z, feedback) = self.circuit().add_feedback(Z1::new(D::zero()));
+        let (z, feedback) = self.circuit().add_feedback_with_export(Z1::new(D::zero()));
         let adder = self
             .circuit()
             .add_binary_operator_with_preference(
                 Plus::new(),
-                &z,
+                &z.local,
                 self,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
                 OwnershipPreference::PREFER_OWNED,
             )
             .unwrap();
         feedback.connect_with_preference(&adder, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        (adder, z)
-    }
-
-    /// Integrate the input stream.
-    ///
-    /// The output stream contains the sum of all values in the input stream.
-    ///
-    /// # Examples
-    ///
-    /// ```text
-    /// input stream: 1, 1, 1, 1, ...
-    /// outpus stream 0, 1, 2, 3, ...
-    /// ```
-    pub fn integrate(&self) -> Stream<Circuit<P>, D> {
-        self.integrate_core().0
-    }
-
-    /// Delayed integration.
-    ///
-    /// The output stream contains the sum of all values in the input stream
-    /// excluding the last clock cycle.
-    ///
-    /// # Examples
-    ///
-    /// ```text
-    /// input stream: 1, 1, 1, 1, ...
-    /// outpus stream 0, 1, 2, 3, ...
-    /// ```
-    pub fn integrate_delayed(&self) -> Stream<Circuit<P>, D> {
-        self.integrate_core().1
+        StreamIntegral::new(adder, z.local, z.export, self.clone())
     }
 }
 
@@ -126,7 +141,7 @@ mod test {
         let root = Root::build(move |circuit| {
             let source = circuit.add_source(Generator::new(|| 1));
             let mut counter = 0;
-            source.integrate().inspect(move |n| {
+            source.integrate().current.inspect(move |n| {
                 counter += 1;
                 assert_eq!(*n, counter);
             });
@@ -150,9 +165,9 @@ mod test {
                 res
             }));
 
-            let (integral, integral_delayed) = source.integrate_core();
+            let integral = source.integrate();
             let mut counter2 = 0;
-            integral.inspect(move |s| {
+            integral.current.inspect(move |s| {
                 for i in 0..counter2 {
                     assert_eq!(s.lookup(&i), (counter2 - i) as isize);
                 }
@@ -160,7 +175,7 @@ mod test {
                 assert_eq!(s.lookup(&counter2), 0);
             });
             let mut counter3 = 0;
-            integral_delayed.inspect(move |s| {
+            integral.delayed.inspect(move |s| {
                 for i in 1..counter3 {
                     assert_eq!(s.lookup(&(i - 1)), (counter3 - i) as isize);
                 }

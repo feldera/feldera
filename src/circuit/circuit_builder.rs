@@ -187,9 +187,17 @@ where
     }
 }
 
-pub struct ExportStream<C, D> {
-    pub local: Stream<Circuit<C>, D>,
-    pub export: Stream<C, D>,
+/// Stream whose final value is exported to the parent circuit.
+///
+/// The struct bundles a pair of streams emitted by a
+/// [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`):
+/// a `local` stream inside operator's local circuit and an
+/// export stream available to the parent of the local circuit.
+/// The export stream contains the final value computed by the
+/// operator before `clock_end`.
+pub struct ExportStream<P, D> {
+    pub local: Stream<Circuit<P>, D>,
+    pub export: Stream<P, D>,
 }
 
 /// Relative location of a circuit in the hierarchy of nested circuits.
@@ -2140,8 +2148,10 @@ mod tests {
                 result
             }));
             let integrator = source.integrate();
-            integrator.inspect(|n| println!("{}", n));
-            integrator.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
+            integrator.current.inspect(|n| println!("{}", n));
+            integrator
+                .current
+                .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
         .unwrap();
 
