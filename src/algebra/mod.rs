@@ -123,13 +123,13 @@ where
 /// We trust the implementation to have an associative addition.
 /// (this cannot be checked statically).
 pub trait MonoidValue:
-    Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef
+    Clone + Eq + 'static + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef
 {
 }
 
 /// Default implementation for all types that have an addition and a zero.
 impl<T> MonoidValue for T where
-    T: Clone + Eq + 'static + HasZero + Add + AddByRef + AddAssign + AddAssignByRef
+    T: Clone + Eq + 'static + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef
 {
 }
 
@@ -144,7 +144,7 @@ impl<T> GroupValue for T where
         + Eq
         + 'static
         + HasZero
-        + Add
+        + Add<Output = Self>
         + AddByRef
         + AddAssign
         + AddAssignByRef
@@ -163,7 +163,7 @@ impl<T> RingValue for T where
         + Eq
         + 'static
         + HasZero
-        + Add
+        + Add<Output = Self>
         + AddByRef
         + AddAssign
         + AddAssignByRef
@@ -188,7 +188,7 @@ where
         + Eq
         + 'static
         + HasZero
-        + Add
+        + Add<Output = Self>
         + AddByRef
         + AddAssign
         + AddAssignByRef
