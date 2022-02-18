@@ -7,7 +7,13 @@ use crate::{
         Circuit, OwnershipPreference, Scope, Stream,
     },
 };
-use std::{borrow::Cow, iter::once, mem::transmute, ops::Add};
+use std::{
+    borrow::Cow,
+    cmp::Reverse,
+    iter::once,
+    mem::{take, ManuallyDrop},
+    ops::Add,
+};
 
 impl<P, D> Stream<Circuit<P>, D>
 where
@@ -73,18 +79,20 @@ where
     where
         Iter: Iterator<Item = Cow<'a, D>>,
     {
-        let input_vec = unsafe {
-            transmute::<&mut Vec<Cow<'static, D>>, &mut Vec<Cow<'a, D>>>(&mut self.inputs)
+        let mut input_vec: Vec<Cow<'a, _>> = unsafe {
+            let mut buffer = ManuallyDrop::new(take(&mut self.inputs));
+            let (ptr, len, cap) = (buffer.as_mut_ptr(), buffer.len(), buffer.capacity());
+            Vec::from_raw_parts(ptr, len, cap)
         };
-        input_vec.clear();
+
+        assert!(input_vec.is_empty());
+
         for input in inputs {
             input_vec.push(input);
         }
-        input_vec.sort_by(|x, y| y.size().cmp(&x.size()));
 
-        if input_vec.is_empty() {
-            return D::zero();
-        }
+        input_vec.sort_by_key(|x| Reverse(x.num_entries()));
+
         let mut res = D::zero();
         for input in input_vec.drain(..) {
             if res.is_zero() {
@@ -101,6 +109,12 @@ where
                 }
             }
         }
+
+        self.inputs = unsafe {
+            let mut buffer = ManuallyDrop::new(take(&mut input_vec));
+            let (ptr, len, cap) = (buffer.as_mut_ptr(), buffer.len(), buffer.capacity());
+            Vec::from_raw_parts(ptr as usize as *mut Cow<'static, D>, len, cap)
+        };
 
         res
     }
