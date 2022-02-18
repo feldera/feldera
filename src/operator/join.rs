@@ -1,9 +1,10 @@
 use crate::{
-    algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue},
+    algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
+    operator::StreamIntegral,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -36,6 +37,56 @@ where
     {
         self.circuit()
             .add_binary_operator(Join::new(f), self, other)
+    }
+}
+
+impl<P, I1> StreamIntegral<P, I1>
+where
+    P: Clone + 'static,
+{
+    /// Incremental join of two streams.
+    ///
+    /// Given streams `a` and `b` of changes to relations `A` and `B`
+    /// respectively, computes a stream of changes to `A <> B` (where `<>`
+    /// is the join operator):
+    ///
+    /// ```text
+    /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
+    /// ```
+    ///
+    /// More precisely, inputs of this function are the results of integrating
+    /// the input streams, e.g., `&self` is the integral of `a`, computed by
+    /// `a.integrate()`, which bundles together `a`, `A`, ans `z^-1(A)`.
+    pub fn join_incremental<K, V1, V2, V, W, F, I2, Z>(
+        &self,
+        other: &StreamIntegral<P, I2>,
+        join_func: F,
+    ) -> Stream<Circuit<P>, Z>
+    where
+        K: KeyProperties,
+        V1: KeyProperties,
+        V2: KeyProperties,
+        W: ZRingValue,
+        I1: IndexedZSet<K, V1, W>,
+        for<'a> &'a I1: IntoIterator<Item = (&'a K, &'a I1::ZSet)>,
+        for<'a> &'a I1::ZSet: IntoIterator<Item = (&'a V1, &'a W)>,
+        I2: IndexedZSet<K, V2, W>,
+        for<'a> &'a I2: IntoIterator<Item = (&'a K, &'a I2::ZSet)>,
+        for<'a> &'a I2::ZSet: IntoIterator<Item = (&'a V2, &'a W)>,
+        F: Clone + Fn(&K, &V1, &V2) -> V + 'static,
+        V: KeyProperties + 'static,
+        Z: ZSet<V, W>,
+    {
+        self.delayed
+            .join(&other.input, join_func.clone())
+            .unwrap()
+            .sum(
+                [
+                    self.input.join(&other.delayed, join_func.clone()).unwrap(),
+                    self.input.join(&other.input, join_func).unwrap(),
+                ]
+                .iter(),
+            )
     }
 }
 
