@@ -1,7 +1,7 @@
 //! N-ary plus operator.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, WithSize},
+    algebra::{AddAssignByRef, AddByRef, HasZero, WithNumEntries},
     circuit::{
         operator_traits::{NaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
@@ -18,7 +18,7 @@ use std::{
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + WithSize + 'static,
+    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + WithNumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
     pub fn sum<'a, I>(&'a self, streams: I) -> Stream<Circuit<P>, D>
@@ -73,7 +73,7 @@ where
 
 impl<D> NaryOperator<D, D> for Sum<D>
 where
-    D: Add<Output = D> + AddAssignByRef + Clone + HasZero + WithSize + 'static,
+    D: Add<Output = D> + AddAssignByRef + Clone + HasZero + WithNumEntries + 'static,
 {
     fn eval<'a, Iter>(&mut self, inputs: Iter) -> D
     where
