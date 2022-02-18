@@ -50,6 +50,15 @@ where
     }
 }
 
+/// A trait for objects with size.
+pub trait WithNumEntries {
+    /// Returns the number of entries in `self`.
+    ///
+    /// Container types have a well-defined notion of size
+    /// (the number of entries in the container).  Scalars have size 1.
+    fn num_entries(&self) -> usize;
+}
+
 /// Like the Add trait, but with arguments by reference.
 pub trait AddByRef {
     fn add_by_ref(&self, other: &Self) -> Self;
