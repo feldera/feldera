@@ -4,7 +4,7 @@ mod map_macro;
 mod tests;
 
 use crate::algebra::{
-    Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef,
+    Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef, WithNumEntries,
 };
 use hashbrown::{
     hash_map,
@@ -90,7 +90,11 @@ where
 /// `KeyType` - Type of values stored in finite map.
 /// `ValueType` - Type of results.
 pub trait FiniteMap<Key, Value>:
-    GroupValue + IntoIterator<Item = (Key, Value)> + FromIterator<(Key, Value)> + MapBuilder<Key, Value>
+    GroupValue
+    + IntoIterator<Item = (Key, Value)>
+    + FromIterator<(Key, Value)>
+    + MapBuilder<Key, Value>
+    + WithNumEntries
 where
     Key: KeyProperties,
 {
@@ -222,6 +226,12 @@ where
         }
 
         result
+    }
+}
+
+impl<Key, Value> WithNumEntries for FiniteHashMap<Key, Value> {
+    fn num_entries(&self) -> usize {
+        self.value.len()
     }
 }
 
