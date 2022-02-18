@@ -113,16 +113,13 @@ where
         //              export
         // ```
         let (z, feedback) = self.circuit().add_feedback_with_export(Z1::new(D::zero()));
-        let adder = self
-            .circuit()
-            .add_binary_operator_with_preference(
-                Plus::new(),
-                &z.local,
-                self,
-                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                OwnershipPreference::PREFER_OWNED,
-            )
-            .unwrap();
+        let adder = self.circuit().add_binary_operator_with_preference(
+            Plus::new(),
+            &z.local,
+            self,
+            OwnershipPreference::STRONGLY_PREFER_OWNED,
+            OwnershipPreference::PREFER_OWNED,
+        );
         feedback.connect_with_preference(&adder, OwnershipPreference::STRONGLY_PREFER_OWNED);
         StreamIntegral::new(adder, z.local, z.export, self.clone())
     }
