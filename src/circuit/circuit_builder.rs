@@ -45,8 +45,8 @@ use std::{
 
 use crate::circuit::{
     operator_traits::{
-        BinaryOperator, Data, ImportOperator, SinkOperator, SourceOperator, StrictUnaryOperator,
-        UnaryOperator,
+        BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
+        StrictUnaryOperator, UnaryOperator,
     },
     schedule::{
         DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -962,8 +962,7 @@ where
         output_stream
     }
 
-    /// Add a sink operator that consumes input values by reference.
-    /// See [`SinkOperator`].
+    /// Add a sink operator (see [`SinkOperator`]).
     pub fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
     where
         I: Data,
@@ -1000,8 +999,7 @@ where
         });
     }
 
-    /// Add a unary operator that consumes input values by reference.
-    /// See [`UnaryOperator`].
+    /// Add a unary operator (see [`UnaryOperator`]).
     pub fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
@@ -1042,8 +1040,7 @@ where
         })
     }
 
-    /// Add a binary operator that consumes both inputs by reference.
-    /// See [`BinaryOperator`].
+    /// Add a binary operator (see [`BinaryOperator`]).
     ///
     /// # Errors
     ///
@@ -1110,6 +1107,58 @@ where
             self.connect_stream(input_stream2, id, input_preference2);
             (node, output_stream)
         }))
+    }
+
+    /// Add a N-ary operator (see [`NaryOperator`]).
+    pub fn add_nary_operator<'a, I, O, Op, Iter>(
+        &'a self,
+        operator: Op,
+        input_streams: Iter,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: NaryOperator<I, O>,
+        Iter: IntoIterator<Item = &'a Stream<Self, I>>,
+    {
+        let pref = operator.input_preference();
+        self.add_nary_operator_with_preference(operator, input_streams, pref)
+    }
+
+    /// Like [`Self::add_nary_operator`], but overrides the ownership
+    /// preference with `input_preference`.
+    pub fn add_nary_operator_with_preference<'a, I, O, Op, Iter>(
+        &'a self,
+        operator: Op,
+        input_streams: Iter,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: NaryOperator<I, O>,
+        Iter: IntoIterator<Item = &'a Stream<Self, I>>,
+    {
+        let input_streams: Vec<Stream<_, _>> = input_streams.into_iter().cloned().collect();
+        // TODO: handle the case where some of the streams are aliases.
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+            ));
+
+            let node = NaryNode::new(
+                operator,
+                input_streams.clone().into_iter(),
+                self.clone(),
+                id,
+            );
+            let output_stream = node.output_stream();
+            for stream in input_streams.iter() {
+                self.connect_stream(stream, id, input_preference);
+            }
+            (node, output_stream)
+        })
     }
 
     /// Add a feedback loop to the circuit.
@@ -1737,6 +1786,79 @@ where
                 (Cow::Borrowed(v1), Cow::Owned(v2)) => self.operator.eval_ref_and_owned(v1, v2),
                 (Cow::Borrowed(v1), Cow::Borrowed(v2)) => self.operator.eval(v1, v2),
             },
+        );
+        Ok(())
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    unsafe fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+}
+
+struct NaryNode<C, I, O, Op>
+where
+    I: Clone + 'static,
+{
+    id: NodeId,
+    operator: Op,
+    input_streams: Vec<Stream<C, I>>,
+    output_stream: Stream<C, O>,
+}
+
+impl<P, I, O, Op> NaryNode<Circuit<P>, I, O, Op>
+where
+    I: Clone + 'static,
+    Op: NaryOperator<I, O>,
+    P: Clone,
+{
+    fn new<Iter>(operator: Op, input_streams: Iter, circuit: Circuit<P>, id: NodeId) -> Self
+    where
+        Iter: Iterator<Item = Stream<Circuit<P>, I>>,
+    {
+        let input_streams: Vec<_> = input_streams.collect();
+        Self {
+            id,
+            operator,
+            input_streams,
+            output_stream: Stream::new(circuit, id),
+        }
+    }
+
+    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+        self.output_stream.clone()
+    }
+}
+
+impl<C, I, O, Op> Node for NaryNode<C, I, O, Op>
+where
+    I: Clone,
+    O: Clone,
+    Op: NaryOperator<I, O>,
+{
+    fn id(&self) -> NodeId {
+        self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
+        self.output_stream.put(
+            self.operator
+                .eval(self.input_streams.iter().map(|stream| stream.take())),
         );
         Ok(())
     }

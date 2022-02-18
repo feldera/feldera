@@ -211,6 +211,27 @@ pub trait BinaryOperator<I1, I2, O>: Operator {
     }
 }
 
+/// An operator that consumes any number of streams carrying values
+/// of type `I` and produces a stream of outputs of type `O`.
+pub trait NaryOperator<I, O>: Operator
+where
+    I: Clone + 'static,
+{
+    /// Consume inputs.
+    ///
+    /// The operator must be prepated to handle any combination of
+    /// owned and borrowed inputs.
+    fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> O
+    where
+        Iter: Iterator<Item = Cow<'a, I>>;
+
+    /// Ownership preference on the operator's input streams
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::INDIFFERENT
+    }
+}
+
 /// The output of a strict operator only depends on inputs from previous
 /// timestamps and hence can be produced before consuming new inputs.  This way
 /// a strict operator can be used as part of a feedback loop where its output is
