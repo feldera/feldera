@@ -114,6 +114,10 @@ impl<C, D> Stream<C, D> {
     pub fn circuit(&self) -> &C {
         &self.circuit
     }
+
+    pub fn ptr_eq<D2>(&self, other: &Stream<C, D2>) -> bool {
+        self.origin_node_id() == other.origin_node_id()
+    }
 }
 
 // Internal streams API only used inside this module.
@@ -1146,7 +1150,6 @@ where
         Iter: IntoIterator<Item = &'a Stream<Self, I>>,
     {
         let input_streams: Vec<Stream<_, _>> = input_streams.into_iter().cloned().collect();
-        // TODO: handle the case where some of the streams are aliases.
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
@@ -1745,7 +1748,7 @@ where
         circuit: Circuit<P>,
         id: NodeId,
     ) -> Self {
-        let is_alias = input_stream1.origin_node_id() == input_stream2.origin_node_id();
+        let is_alias = input_stream1.ptr_eq(&input_stream2);
         Self {
             id,
             operator,
@@ -1827,7 +1830,11 @@ where
 {
     id: NodeId,
     operator: Op,
-    input_streams: Vec<Stream<C, I>>,
+    // The second field of the tuple indicates if the stream is an
+    // alias to an earlier stream.
+    input_streams: Vec<(Stream<C, I>, bool)>,
+    // Streams that are aliases.
+    aliases: Vec<usize>,
     output_stream: Stream<C, O>,
 }
 
@@ -1839,13 +1846,29 @@ where
 {
     fn new<Iter>(operator: Op, input_streams: Iter, circuit: Circuit<P>, id: NodeId) -> Self
     where
-        Iter: Iterator<Item = Stream<Circuit<P>, I>>,
+        Iter: IntoIterator<Item = Stream<Circuit<P>, I>>,
     {
-        let input_streams: Vec<_> = input_streams.collect();
+        let mut input_streams: Vec<_> = input_streams
+            .into_iter()
+            .map(|stream| (stream, false))
+            .collect();
+        let mut aliases = Vec::new();
+        for i in 0..input_streams.len() {
+            for j in 0..i {
+                if input_streams[i].0.ptr_eq(&input_streams[j].0) {
+                    input_streams[i].1 = true;
+                    aliases.push(i);
+                    break;
+                }
+            }
+        }
+        aliases.shrink_to_fit();
+        input_streams.shrink_to_fit();
         Self {
             id,
             operator,
             input_streams,
+            aliases,
             output_stream: Stream::new(circuit, id),
         }
     }
@@ -1878,10 +1901,22 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(
-            self.operator
-                .eval(self.input_streams.iter().map(|stream| stream.take())),
-        );
+        self.output_stream
+            .put(
+                self.operator
+                    .eval(self.input_streams.iter().map(|(stream, alias)| {
+                        // Don't take owned value via an alias.
+                        if *alias {
+                            Cow::Borrowed(stream.peek())
+                        } else {
+                            stream.take()
+                        }
+                    })),
+            );
+
+        for i in self.aliases.iter() {
+            let _ = self.input_streams[*i].0.take();
+        }
         Ok(())
     }
 
