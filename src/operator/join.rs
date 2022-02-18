@@ -19,7 +19,7 @@ where
         &self,
         other: &Stream<Circuit<P>, I2>,
         f: F,
-    ) -> Option<Stream<Circuit<P>, Z>>
+    ) -> Stream<Circuit<P>, Z>
     where
         K: KeyProperties,
         V1: KeyProperties,
@@ -77,16 +77,13 @@ where
         V: KeyProperties + 'static,
         Z: ZSet<V, W>,
     {
-        self.delayed
-            .join(&other.input, join_func.clone())
-            .unwrap()
-            .sum(
-                [
-                    self.input.join(&other.delayed, join_func.clone()).unwrap(),
-                    self.input.join(&other.input, join_func).unwrap(),
-                ]
-                .iter(),
-            )
+        self.delayed.join(&other.input, join_func.clone()).sum(
+            [
+                self.input.join(&other.delayed, join_func.clone()),
+                self.input.join(&other.input, join_func),
+            ]
+            .iter(),
+        )
     }
 }
 
@@ -254,7 +251,6 @@ mod test {
                 .join(&index2, |k: &usize, s1, s2| {
                     (k.clone(), format!("{} {}", s1, s2))
                 })
-                .unwrap()
                 .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {
                     assert_eq!(fm, &outputs.next().unwrap())
                 });

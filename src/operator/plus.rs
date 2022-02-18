@@ -3,7 +3,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef},
     circuit::{
-        operator_traits::{BinaryOperator, Operator, UnaryOperator},
+        operator_traits::{BinaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
 };
@@ -48,13 +48,7 @@ where
     /// # }
     /// ```
     pub fn plus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
-        if self.origin_node_id() == other.origin_node_id() {
-            self.circuit().add_unary_operator(Times2::new(), self)
-        } else {
-            self.circuit()
-                .add_binary_operator(Plus::new(), self, other)
-                .unwrap()
-        }
+        self.circuit().add_binary_operator(Plus::new(), self, other)
     }
 }
 
@@ -114,51 +108,6 @@ where
     }
 }
 
-/// Operator that computes the sum of each value in the stream with itself.
-// TODO: A more efficient implementation would rely on a specialized trait.
-// E.g., doubling weights in a z-set can be done more efficiently than adddin
-// it to itself.
-pub struct Times2<D> {
-    phantom: PhantomData<D>,
-}
-
-impl<D> Times2<D> {
-    pub const fn new() -> Self {
-        Self {
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<D> Operator for Times2<D>
-where
-    D: 'static,
-{
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("2x")
-    }
-
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
-}
-
-impl<D> UnaryOperator<D, D> for Times2<D>
-where
-    D: AddByRef + Clone + 'static,
-{
-    fn eval(&mut self, i: &D) -> D {
-        i.add_by_ref(i)
-    }
-
-    fn eval_owned(&mut self, i: D) -> D {
-        i.add_by_ref(&i)
-    }
-
-    fn input_preference(&self) -> OwnershipPreference {
-        OwnershipPreference::INDIFFERENT
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
@@ -183,28 +132,6 @@ mod test {
                 res
             }));
             source1.plus(&source2).inspect(|n| assert_eq!(*n, 100));
-        })
-        .unwrap();
-
-        for _ in 0..100 {
-            root.step().unwrap();
-        }
-    }
-
-    #[test]
-    fn times2() {
-        let root = Root::build(move |circuit| {
-            let mut n = 0;
-            let source = circuit.add_source(Generator::new(move || {
-                let res = n;
-                n += 1;
-                res
-            }));
-            let mut step = 0;
-            source.plus(&source).inspect(move |n| {
-                assert_eq!(*n, step * 2);
-                step += 1;
-            });
         })
         .unwrap();
 

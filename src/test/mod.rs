@@ -127,7 +127,6 @@ fn join_test() {
 
         circuit
             .add_binary_operator(join_op, &source0, &source1)
-            .unwrap()
             .inspect(move |map| actual_data.borrow_mut().push(map.clone()));
     })
     .unwrap();
@@ -189,9 +188,7 @@ fn transitive_closure() {
                     },
                 );
 
-                let join_output = child
-                    .add_binary_operator(join_op, &add_output, &i_output)
-                    .unwrap();
+                let join_output = child.add_binary_operator(join_op, &add_output, &i_output);
 
                 let distinct_output = join_output.plus(&i_output).apply(ZSet::distinct);
                 z1_feedback.connect(&distinct_output);

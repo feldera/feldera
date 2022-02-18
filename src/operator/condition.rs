@@ -212,8 +212,7 @@ mod test {
                             Apply2::new(successor_set.clone()),
                             &prev_reachable.local,
                             &edges,
-                        )
-                        .unwrap();
+                        );
 
                     let reachable = init.plus(&suc).apply(ZSet::distinct);
                     feedback.connect(&reachable);

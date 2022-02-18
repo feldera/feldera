@@ -166,6 +166,15 @@ where
         }
     }
 
+    /// Get a reference to the content of the stream without
+    /// decrementing the refcount.
+    pub(crate) unsafe fn peek(&self) -> &D {
+        let (val, refs) = &*self.val.get();
+        debug_assert_ne!(*refs, 0);
+
+        val.as_ref().unwrap()
+    }
+
     /// Puts a value in the stream, overwriting the previous value if any.
     ///
     /// #Safety
@@ -1052,7 +1061,7 @@ where
         operator: Op,
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
-    ) -> Option<Stream<Self, O>>
+    ) -> Stream<Self, O>
     where
         I1: Data,
         I2: Data,
@@ -1079,17 +1088,14 @@ where
         input_stream2: &Stream<Self, I2>,
         input_preference1: OwnershipPreference,
         input_preference2: OwnershipPreference,
-    ) -> Option<Stream<Self, O>>
+    ) -> Stream<Self, O>
     where
         I1: Data,
         I2: Data,
         O: Data,
         Op: BinaryOperator<I1, I2, O>,
     {
-        if input_stream1.origin_node_id() == input_stream2.origin_node_id() {
-            return None;
-        }
-        Some(self.add_node(|id| {
+        self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
                 operator.name(),
@@ -1106,7 +1112,7 @@ where
             self.connect_stream(input_stream1, id, input_preference1);
             self.connect_stream(input_stream2, id, input_preference2);
             (node, output_stream)
-        }))
+        })
     }
 
     /// Add a N-ary operator (see [`NaryOperator`]).
@@ -1204,13 +1210,11 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit
-    ///     .add_binary_operator(
-    ///         Apply2::new(|n1: &usize, n2: &usize| n1 + n2),
-    ///         &source,
-    ///         &z1_output,
-    ///     )
-    ///     .unwrap();
+    /// let plus = circuit.add_binary_operator(
+    ///     Apply2::new(|n1: &usize, n2: &usize| n1 + n2),
+    ///     &source,
+    ///     &z1_output,
+    /// );
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -1370,13 +1374,11 @@ where
     ///                 res
     ///             });
     ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
-    ///             let mul = child
-    ///                 .add_binary_operator(
-    ///                     Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-    ///                     &countdown,
-    ///                     &z1_output.local,
-    ///                 )
-    ///                 .unwrap();
+    ///             let mul = child.add_binary_operator(
+    ///                 Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
+    ///                 &countdown,
+    ///                 &z1_output.local,
+    ///             );
     ///             z1_feedback.connect(&mul);
     ///             Ok((move || *counter.borrow() <= 1, z1_output.export))
     ///         })
@@ -1727,6 +1729,8 @@ struct BinaryNode<C, I1, I2, O, Op> {
     input_stream1: Stream<C, I1>,
     input_stream2: Stream<C, I2>,
     output_stream: Stream<C, O>,
+    // `true` if both input streams are aliases of the same stream.
+    is_alias: bool,
 }
 
 impl<P, I1, I2, O, Op> BinaryNode<Circuit<P>, I1, I2, O, Op>
@@ -1741,11 +1745,13 @@ where
         circuit: Circuit<P>,
         id: NodeId,
     ) -> Self {
+        let is_alias = input_stream1.origin_node_id() == input_stream2.origin_node_id();
         Self {
             id,
             operator,
             input_stream1,
             input_stream2,
+            is_alias,
             output_stream: Stream::new(circuit, id),
         }
     }
@@ -1779,14 +1785,30 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(
-            match (self.input_stream1.take(), self.input_stream2.take()) {
-                (Cow::Owned(v1), Cow::Owned(v2)) => self.operator.eval_owned(v1, v2),
-                (Cow::Owned(v1), Cow::Borrowed(v2)) => self.operator.eval_owned_and_ref(v1, v2),
-                (Cow::Borrowed(v1), Cow::Owned(v2)) => self.operator.eval_ref_and_owned(v1, v2),
-                (Cow::Borrowed(v1), Cow::Borrowed(v2)) => self.operator.eval(v1, v2),
-            },
-        );
+        // If the two input streams are aliases, we cannot remove the owned
+        // value from `input_stream2`, as this will invalidate the borrow
+        // from `input_stream1`.  Instead use `peek` to obtain the value by
+        // reference.
+        if self.is_alias {
+            self.output_stream.put(
+                match (self.input_stream1.take(), self.input_stream2.peek()) {
+                    (Cow::Borrowed(v1), v2) => self.operator.eval(v1, v2),
+                    _ => unreachable!(),
+                },
+            );
+            // It is now safe to call `take`, and we must do so to decrement
+            // the ref counter.
+            let _ = self.input_stream2.take();
+        } else {
+            self.output_stream.put(
+                match (self.input_stream1.take(), self.input_stream2.take()) {
+                    (Cow::Owned(v1), Cow::Owned(v2)) => self.operator.eval_owned(v1, v2),
+                    (Cow::Owned(v1), Cow::Borrowed(v2)) => self.operator.eval_owned_and_ref(v1, v2),
+                    (Cow::Borrowed(v1), Cow::Owned(v2)) => self.operator.eval_ref_and_owned(v1, v2),
+                    (Cow::Borrowed(v1), Cow::Borrowed(v2)) => self.operator.eval(v1, v2),
+                },
+            );
+        }
         Ok(())
     }
 
@@ -2322,13 +2344,11 @@ mod tests {
                 result
             }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-            let plus = circuit
-                .add_binary_operator(
-                    Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
-                    &source,
-                    &z1_output,
-                )
-                .unwrap();
+            let plus = circuit.add_binary_operator(
+                Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
+                &source,
+                &z1_output,
+            );
             circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &plus,
@@ -2396,13 +2416,11 @@ mod tests {
                         res
                     });
                     let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
-                    let mul = child
-                        .add_binary_operator(
-                            Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-                            &countdown,
-                            &z1_output.local,
-                        )
-                        .unwrap();
+                    let mul = child.add_binary_operator(
+                        Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
+                        &countdown,
+                        &z1_output.local,
+                    );
                     z1_feedback.connect(&mul);
                     Ok((countdown.condition(|n| *n <= 1), z1_output.export))
                 })
