@@ -210,35 +210,82 @@ mod test {
     #[test]
     fn join_test() {
         let root = Root::build(move |circuit| {
-            let mut input1 = vec![vec![
-                ((1, "a"), 1),
-                ((1, "b"), 2),
-                ((2, "c"), 3),
-                ((2, "d"), 4),
-                ((3, "e"), 5),
-                ((3, "f"), -2),
-            ]]
+            let mut input1 = vec![
+                vec![
+                    ((1, "a"), 1),
+                    ((1, "b"), 2),
+                    ((2, "c"), 3),
+                    ((2, "d"), 4),
+                    ((3, "e"), 5),
+                    ((3, "f"), -2),
+                ],
+                vec![((1, "a"), 1)],
+                vec![((1, "a"), 1)],
+                vec![((4, "n"), 2)],
+                vec![((1, "a"), 0)],
+            ]
             .into_iter();
-            let mut input2 = vec![vec![
-                ((2, "g"), 3),
-                ((2, "h"), 4),
-                ((3, "i"), 5),
-                ((3, "j"), -2),
-                ((4, "k"), 5),
-                ((4, "l"), -2),
-            ]]
+            let mut input2 = vec![
+                vec![
+                    ((2, "g"), 3),
+                    ((2, "h"), 4),
+                    ((3, "i"), 5),
+                    ((3, "j"), -2),
+                    ((4, "k"), 5),
+                    ((4, "l"), -2),
+                ],
+                vec![((1, "b"), 1)],
+                vec![((4, "m"), 1)],
+                vec![],
+                vec![],
+            ]
             .into_iter();
-            let mut outputs = vec![finite_map! {
-                (2, "c g".to_string()) => 9,
-                (2, "c h".to_string()) => 12,
-                (2, "d g".to_string()) => 12,
-                (2, "d h".to_string()) => 16,
-                (3, "e i".to_string()) => 25,
-                (3, "e j".to_string()) => -10,
-                (3, "f i".to_string()) => -10,
-                (3, "f j".to_string()) => 4
-            }]
+            let mut outputs = vec![
+                finite_map! {
+                    (2, "c g".to_string()) => 9,
+                    (2, "c h".to_string()) => 12,
+                    (2, "d g".to_string()) => 12,
+                    (2, "d h".to_string()) => 16,
+                    (3, "e i".to_string()) => 25,
+                    (3, "e j".to_string()) => -10,
+                    (3, "f i".to_string()) => -10,
+                    (3, "f j".to_string()) => 4
+                },
+                finite_map! {
+                    (1, "a b".to_string()) => 1,
+                },
+                finite_map! {},
+                finite_map! {},
+                finite_map! {},
+            ]
             .into_iter();
+            let mut inc_outputs = vec![
+                finite_map! {
+                    (2, "c g".to_string()) => 9,
+                    (2, "c h".to_string()) => 12,
+                    (2, "d g".to_string()) => 12,
+                    (2, "d h".to_string()) => 16,
+                    (3, "e i".to_string()) => 25,
+                    (3, "e j".to_string()) => -10,
+                    (3, "f i".to_string()) => -10,
+                    (3, "f j".to_string()) => 4
+                },
+                finite_map! {
+                    (1, "a b".to_string()) => 2,
+                    (1, "b b".to_string()) => 2,
+                },
+                finite_map! {
+                    (1, "a b".to_string()) => 1,
+                },
+                finite_map! {
+                    (4, "n k".to_string()) => 10,
+                    (4, "n l".to_string()) => -4,
+                    (4, "n m".to_string()) => 2,
+                },
+                finite_map! {},
+            ]
+            .into_iter();
+
             let index1: Stream<_, FiniteHashMap<usize, FiniteHashMap<&'static str, isize>>> =
                 circuit
                     .add_source(Generator::new(move || input1.next().unwrap()))
@@ -254,10 +301,18 @@ mod test {
                 .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {
                     assert_eq!(fm, &outputs.next().unwrap())
                 });
+            index1
+                .integrate()
+                .join_incremental(&index2.integrate(), |k: &usize, s1, s2| {
+                    (k.clone(), format!("{} {}", s1, s2))
+                })
+                .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {
+                    assert_eq!(fm, &inc_outputs.next().unwrap())
+                });
         })
         .unwrap();
 
-        for _ in 0..1 {
+        for _ in 0..5 {
             root.step().unwrap();
         }
     }
