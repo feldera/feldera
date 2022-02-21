@@ -103,17 +103,16 @@ where
             } else {
                 match input {
                     Cow::Borrowed(v) => res.add_assign_by_ref(v),
-                    Cow::Owned(v) => {
-                        res = res + v;
-                    }
+                    Cow::Owned(v) => res = res + v,
                 }
             }
         }
 
         self.inputs = unsafe {
-            let mut buffer = ManuallyDrop::new(take(&mut input_vec));
+            assert!(input_vec.is_empty());
+            let mut buffer = ManuallyDrop::new(input_vec);
             let (ptr, len, cap) = (buffer.as_mut_ptr(), buffer.len(), buffer.capacity());
-            Vec::from_raw_parts(ptr as usize as *mut Cow<'static, D>, len, cap)
+            Vec::from_raw_parts(ptr.cast(), len, cap)
         };
 
         res
