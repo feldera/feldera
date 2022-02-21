@@ -77,13 +77,9 @@ where
         V: KeyProperties + 'static,
         Z: ZSet<V, W>,
     {
-        self.delayed.join(&other.input, join_func.clone()).sum(
-            [
-                self.input.join(&other.delayed, join_func.clone()),
-                self.input.join(&other.input, join_func),
-            ]
-            .iter(),
-        )
+        self.delayed
+            .join(&other.input, join_func.clone())
+            .plus(&self.input.join(&other.current, join_func))
     }
 }
 

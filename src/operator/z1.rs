@@ -6,11 +6,13 @@ use crate::circuit::{
 };
 use std::{borrow::Cow, mem::swap};
 
-/// z^-1 operator delays its input by one timestamp.  It outputs a user-defined
-/// "zero" value in the first timestamp after [clock_start](`Z1::clock_start`).
-/// For all subsequent timestamps, it outputs the value received as input at the
-/// previous timestamp.  The zero value is typically the neutral element of
-/// a monoid (e.g., 0 for addition or 1 for multiplication).
+/// z^-1 operator delays its input by one timestamp.
+///
+/// The operator outputs a user-defined "zero" value in the first timestamp
+/// after [clock_start](`Z1::clock_start`).  For all subsequent timestamps, it
+/// outputs the value received as input at the previous timestamp.  The zero
+/// value is typically the neutral element of a monoid (e.g., 0 for addition
+/// or 1 for multiplication).
 ///
 /// # Examples
 ///
