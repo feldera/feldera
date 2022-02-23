@@ -1,5 +1,8 @@
 //! Some basic operators.
 
+pub mod adapter;
+pub use adapter::{BinaryOperatorAdapter, UnaryOperatorAdapter};
+
 pub(crate) mod inspect;
 pub use inspect::Inspect;
 
@@ -13,7 +16,7 @@ mod plus;
 pub use plus::Plus;
 
 mod z1;
-pub use z1::Z1;
+pub use z1::{Z1Nested, Z1};
 
 mod generator;
 pub use generator::Generator;
