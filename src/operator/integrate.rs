@@ -1,9 +1,9 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
     circuit::{Circuit, OwnershipPreference, Stream},
-    operator::{Plus, Z1},
+    operator::{BinaryOperatorAdapter, Plus, Z1Nested, Z1},
 };
-use std::ops::Add;
+use std::{ops::Add, rc::Rc};
 
 /// Struct returned by the [`Stream::integrate`] operation.
 ///
@@ -34,6 +34,43 @@ impl<P, I> StreamIntegral<P, I> {
         current: Stream<Circuit<P>, I>,
         delayed: Stream<Circuit<P>, I>,
         export: Stream<P, I>,
+        input: Stream<Circuit<P>, I>,
+    ) -> Self {
+        Self {
+            current,
+            delayed,
+            export,
+            input,
+        }
+    }
+}
+
+/// Struct returned by the [`Stream::integrate_nested`] operation.
+///
+/// This struct bundles the four output streams produced by the
+/// `integrate_nested` method. Below, we denote `stream[i,j]` the value of
+/// `stream` at time `[i,j]`, where `i` is the parent timestamp, and `j` is the
+/// child timestamp.
+///
+/// * `current` - the current value of the integral: `current[i,j] =
+///   sum(input[k,j]), k<=i`.
+/// * `delayed` - the previous value of the integral: `delayed[i,j] =
+///   sum(input[k,j]), k<i`.
+/// * `export` - stream exported to the parent circuit that contains the final
+///   value of the integral at the end of the nested clock epoch.
+/// * `input` - reference to the input stream.
+pub struct NestedStreamIntegral<P, I> {
+    pub current: Stream<Circuit<P>, Rc<I>>,
+    pub delayed: Stream<Circuit<P>, Rc<I>>,
+    pub export: Stream<P, Rc<I>>,
+    pub input: Stream<Circuit<P>, I>,
+}
+
+impl<P, I> NestedStreamIntegral<P, I> {
+    fn new(
+        current: Stream<Circuit<P>, Rc<I>>,
+        delayed: Stream<Circuit<P>, Rc<I>>,
+        export: Stream<P, Rc<I>>,
         input: Stream<Circuit<P>, I>,
     ) -> Self {
         Self {
@@ -123,15 +160,62 @@ where
         feedback.connect_with_preference(&adder, OwnershipPreference::STRONGLY_PREFER_OWNED);
         StreamIntegral::new(adder, z.local, z.export, self.clone())
     }
+
+    /// Integrate stream of streams.
+    ///
+    /// Computes the sum of nested streams, i.e., rather than integrating values
+    /// in each nested stream, this function sums up entire input streams
+    /// across all parent timestamps, where the sum of streams is defined as
+    /// a stream of point-wise sums of their elements: `integral[i,j] =
+    /// sum(input[k,j]), k<=i`, where `stream[i,j]` is the value of `stream`
+    /// at time `[i,j]`, `i` is the parent timestamp, and `j` is the child
+    /// timestamp.
+    ///
+    /// Yields the sum element-by-element as the input stream is fed to the
+    /// integral.
+    ///
+    /// # Examples
+    ///
+    /// Input stream (one row per parent timestamps):
+    ///
+    /// ```text
+    /// 1 2 3 4
+    /// 1 1 1 1 1
+    /// 2 2 2 0 0
+    /// ```
+    ///
+    /// Integral:
+    ///
+    /// ```text
+    /// 1 2 3 4
+    /// 2 3 4 5 1
+    /// 4 5 6 5 1
+    /// ```
+    pub fn integrate_nested(&self) -> NestedStreamIntegral<P, D> {
+        let (z, feedback) = self
+            .circuit()
+            .add_feedback_with_export(Z1Nested::new(Rc::new(D::zero())));
+        let adder = self.circuit().add_binary_operator_with_preference(
+            <BinaryOperatorAdapter<D, D, D, _>>::new(Plus::new()),
+            &z.local,
+            self,
+            OwnershipPreference::STRONGLY_PREFER_OWNED,
+            OwnershipPreference::PREFER_OWNED,
+        );
+        feedback.connect_with_preference(&adder, OwnershipPreference::STRONGLY_PREFER_OWNED);
+        NestedStreamIntegral::new(adder, z.local, z.export, self.clone())
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
         algebra::{FiniteMap, MapBuilder, ZSetHashMap},
-        circuit::Root,
-        operator::Generator,
+        circuit::{trace::TraceMonitor, Root},
+        operator::{Generator, Z1},
     };
+
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn scalar_integrate() {
@@ -183,6 +267,66 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
+            root.step().unwrap();
+        }
+    }
+
+    /// ```text
+    ///            ┌───────────────────────────────────────────────────────────────────────────────────┐
+    ///            │                                                                                   │
+    ///            │                           3,2,1,0,0,0                     3,2,1,0,                │
+    ///            │                           4,3,2,1,0,0                     7,5,3,1,0,              │
+    ///            │                    ┌───┐  2,1,0,0,0,0                     9,6,3,1,0,              │
+    ///  3,4,2,5   │                    │   │  5,4,3,2,1,0                     14,10,6,3,1,0           │ 6,16,19,34
+    /// ───────────┼──►delta0──────────►│ + ├──────────┬─────►integrate_nested───────────────integrate─┼─────────────►
+    ///            │          3,0,0,0,0 │   │          │                                               │
+    ///            │          4,0,0,0,0 └───┘          ▼                                               │
+    ///            │          2,0,0,0,0   ▲    ┌──┐   ┌───┐                                            │
+    ///            │          5,0,0,0,0   └────┤-1│◄──|z-1|                                            │
+    ///            │                           └──┘   └───┘                                            │
+    ///            │                                                                                   │
+    ///            └───────────────────────────────────────────────────────────────────────────────────┘
+    /// ```
+    #[test]
+    fn scalar_integrate_nested() {
+        let root = Root::build(move |circuit| {
+            TraceMonitor::attach(
+                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
+                circuit,
+                "monitor",
+            );
+
+            let mut input = vec![3, 4, 2, 5].into_iter();
+
+            let mut expected_counters =
+                vec![3, 2, 1, 0, 4, 3, 2, 1, 0, 2, 1, 0, 0, 0, 5, 4, 3, 2, 1, 0].into_iter();
+            let mut expected_integrals =
+                vec![3, 2, 1, 0, 7, 5, 3, 1, 0, 9, 6, 3, 1, 0, 14, 10, 6, 3, 1, 0].into_iter();
+            let mut expected_outer_integrals = vec![6, 16, 19, 34].into_iter();
+
+            let source = circuit.add_source(Generator::new(move || input.next().unwrap()));
+            let integral = circuit
+                .iterate_with_condition(|child| {
+                    let source = source.delta0(&child);
+                    let (z, feedback) = child.add_feedback(Z1::new(0));
+                    let plus = source.plus(&z.apply(|n| if *n > 0 { *n - 1 } else { *n }));
+                    plus.inspect(move |n| assert_eq!(*n, expected_counters.next().unwrap()));
+                    feedback.connect(&plus);
+                    let integral = plus.integrate_nested();
+                    integral
+                        .current
+                        .inspect(move |n| assert_eq!(**n, expected_integrals.next().unwrap()));
+                    Ok((
+                        integral.current.condition(|n| **n == 0),
+                        integral.current.apply(|rc| **rc).integrate().export,
+                    ))
+                })
+                .unwrap();
+            integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()))
+        })
+        .unwrap();
+
+        for _ in 0..4 {
             root.step().unwrap();
         }
     }
