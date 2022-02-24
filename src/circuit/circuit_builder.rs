@@ -55,6 +55,33 @@ use crate::circuit::{
     trace::{CircuitEvent, SchedulerEvent},
 };
 
+/// Value stored in the stream.
+struct StreamValue<D> {
+    /// Value written to the stream at the current clock cycle;
+    /// `None` after the last consumer has retrieved the value from the stream.
+    val: Option<D>,
+    /// The number of consumers connected to the stream.  Each consumer
+    /// reads from the stream exactly once at every clock cycle.
+    consumers: usize,
+    /// The number of remaining consumers still expected to read from the stream
+    /// at the current clock cycle.  This value is reset to `consumers` when
+    /// a new value is written to the stream.  It is decremented on each access.
+    /// The last consumer to read from the stream (`tokens` drops to 0) obtains
+    /// an owned value rather than a borrow.  See description of
+    /// [ownership-aware scheduling](`OwnershipPreference`) for details.
+    tokens: usize,
+}
+
+impl<D> StreamValue<D> {
+    const fn empty() -> Self {
+        Self {
+            val: None,
+            consumers: 0,
+            tokens: 0,
+        }
+    }
+}
+
 /// A stream stores the output of an operator.  Circuits are synchronous,
 /// meaning that each value is produced and consumed in the same clock cycle, so
 /// there can be at most one value in the stream at any time.
@@ -65,16 +92,12 @@ pub struct Stream<C, D> {
     origin_node_id: GlobalNodeId,
     /// Circuit that this stream belongs to.
     circuit: C,
-    /// The value (there can be at most one since our circuits are synchronous).
-    /// The second component of the tuple tracks the number of consumers who
-    /// retrieved the value in the current clock cycle.  The last consumer
-    /// to read from the stream will obtain an owned value rather than a
-    /// borrow.  See description of [ownership-aware
-    /// scheduling](`OwnershipPreference`) for details. We use `UnsafeCell`
-    /// instead of `RefCell` to avoid runtime ownership tests. We enforce
-    /// unique ownership by making sure that at most one operator can
-    /// run (and access the stream) at any time.
-    val: Rc<UnsafeCell<(Option<D>, usize)>>,
+    /// Value stored in the stream (there can be at most one since our
+    /// circuits are synchronous).
+    /// We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership
+    /// tests. We enforce unique ownership by making sure that at most one
+    /// operator can run (and access the stream) at any time.
+    val: Rc<UnsafeCell<StreamValue<D>>>,
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -129,7 +152,7 @@ impl<P, D> Stream<Circuit<P>, D> {
             local_node_id: node_id,
             origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
             circuit,
-            val: Rc::new(UnsafeCell::new((None, 0))),
+            val: Rc::new(UnsafeCell::new(StreamValue::empty())),
         }
     }
 }
@@ -141,7 +164,7 @@ impl<C, D> Stream<C, D> {
             local_node_id: node_id,
             origin_node_id,
             circuit,
-            val: Rc::new(UnsafeCell::new((None, 0))),
+            val: Rc::new(UnsafeCell::new(StreamValue::empty())),
         }
     }
 }
@@ -160,23 +183,23 @@ where
     ///
     /// The caller must have exclusive access to the current stream.
     pub(crate) unsafe fn take(&'_ self) -> Cow<'_, D> {
-        let (val, refs) = &mut *self.val.get();
-        debug_assert!(*refs > 0);
-        *refs -= 1;
-        if *refs == 0 {
-            Cow::Owned(val.take().unwrap())
+        let val = &mut *self.val.get();
+        debug_assert_ne!(val.tokens, 0);
+        val.tokens -= 1;
+        if val.tokens == 0 {
+            Cow::Owned(val.val.take().unwrap())
         } else {
-            Cow::Borrowed(val.as_ref().unwrap())
+            Cow::Borrowed(val.val.as_ref().unwrap())
         }
     }
 
     /// Get a reference to the content of the stream without
     /// decrementing the refcount.
     pub(crate) unsafe fn peek(&self) -> &D {
-        let (val, refs) = &*self.val.get();
-        debug_assert_ne!(*refs, 0);
+        let val = &*self.val.get();
+        debug_assert_ne!(val.tokens, 0);
 
-        val.as_ref().unwrap()
+        val.val.as_ref().unwrap()
     }
 
     /// Puts a value in the stream, overwriting the previous value if any.
@@ -184,19 +207,14 @@ where
     /// #Safety
     ///
     /// The caller must have exclusive access to the current stream.
-    unsafe fn put(&self, val: D) {
-        // We assume that the only references to the stream are held by
-        // the producer and consumer nodes, so we can calculate the number
-        // of consumers as total number of references - 1.  If this is
-        // no longer true, an additional explicit reference count will
-        // be needed.
-        let consumer_count = Rc::strong_count(&self.val) - 1;
-
+    unsafe fn put(&self, d: D) {
+        let val = &mut *self.val.get();
         // If the stream is not connected to any consumers, drop the output
         // on the floor.
-        if consumer_count > 0 {
-            *self.val.get() = (Some(val), consumer_count);
-        };
+        if val.consumers > 0 {
+            val.tokens = val.consumers;
+            val.val = Some(d);
+        }
     }
 }
 
@@ -715,6 +733,9 @@ impl<P> Circuit<P> {
             GlobalNodeId::child_of(self, to),
             ownership_preference,
         ));
+
+        // Safe because the circuit isn't running yet.
+        unsafe { (*stream.val.get()).consumers += 1 };
 
         debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
         self.inner_mut().add_edge(Edge {
