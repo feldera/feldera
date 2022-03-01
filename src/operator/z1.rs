@@ -1,10 +1,159 @@
 //! z^-1 operator delays its input by one timestamp.
 
-use crate::circuit::{
-    operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-    OwnershipPreference, Scope,
+use crate::{
+    algebra::HasZero,
+    circuit::{
+        operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
+        Circuit, ExportId, ExportStream, FeedbackConnector, NodeId, OwnershipPreference, Scope,
+        Stream,
+    },
+    circuit_cache_key,
 };
-use std::{borrow::Cow, mem::swap};
+use std::{borrow::Cow, mem::replace};
+
+circuit_cache_key!(DelayedId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(NestedDelayedId<C, D>(NodeId => Stream<C, D>));
+
+/// Like [`FeedbackConnector`] but specialized for [`Z1`] feedback operator.
+///
+/// Use this API instead of the low-level [`Circuit::add_feedback`] API to
+/// create feedback loops with `Z1` operator.  In addition to being more
+/// concise, this API takes advantage of [caching](`crate::circuit::cache`).
+pub struct DelayedFeedback<P, D> {
+    feedback: FeedbackConnector<Circuit<P>, D, D, Z1<D>>,
+    output: Stream<Circuit<P>, D>,
+    export: Stream<P, D>,
+}
+
+impl<P, D> DelayedFeedback<P, D>
+where
+    P: Clone + 'static,
+    D: Clone + HasZero + 'static,
+{
+    /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
+    /// close the loop.
+    pub fn new(circuit: &Circuit<P>) -> Self {
+        let (ExportStream { local, export }, feedback) =
+            circuit.add_feedback_with_export(Z1::new(D::zero()));
+
+        Self {
+            feedback,
+            output: local,
+            export,
+        }
+    }
+
+    /// Output stream of the `Z1` operator.
+    pub fn stream(&self) -> &Stream<Circuit<P>, D> {
+        &self.output
+    }
+
+    /// Connect `input` stream to the input of the `Z1` operator.
+    pub fn connect(self, input: &Stream<Circuit<P>, D>) {
+        let Self {
+            feedback,
+            output,
+            export,
+        } = self;
+        let circuit = output.circuit().clone();
+
+        feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
+        circuit
+            .cache()
+            .insert(DelayedId::new(input.local_node_id()), output);
+        circuit
+            .cache()
+            .insert(ExportId::new(input.local_node_id()), export);
+    }
+}
+
+/// Like [`FeedbackConnector`] but specialized for [`Z1Nested`] feedback
+/// operator.
+///
+/// Use this API instead of the low-level [`circuit::add_feedback`] API to
+/// create feedback loops with `Z1Nested` operator.  In addition to being more
+/// concise, this API takes advantage of [caching](`crate::circuit::cache`).
+pub struct DelayedNestedFeedback<P, D> {
+    feedback: FeedbackConnector<Circuit<P>, D, D, Z1Nested<D>>,
+    output: Stream<Circuit<P>, D>,
+}
+
+impl<P, D> DelayedNestedFeedback<P, D>
+where
+    P: Clone + 'static,
+    D: Clone + 'static,
+{
+    /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
+    /// close the loop.
+    pub fn new(circuit: &Circuit<P>, zero: D) -> Self {
+        let (output, feedback) = circuit.add_feedback(Z1Nested::new(zero));
+        Self { feedback, output }
+    }
+
+    /// Output stream of the `Z1Nested` operator.
+    pub fn stream(&self) -> &Stream<Circuit<P>, D> {
+        &self.output
+    }
+
+    /// Connect `input` stream to the input of the `Z1Nested` operator.
+    pub fn connect(self, input: &Stream<Circuit<P>, D>) {
+        let Self { feedback, output } = self;
+        let circuit = output.circuit().clone();
+
+        feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
+        circuit
+            .cache()
+            .insert(NestedDelayedId::new(input.local_node_id()), output);
+    }
+}
+
+impl<P, D> Stream<Circuit<P>, D> {
+    /// Applies [`Z1`] operator to `self`.
+    pub fn delay(&self) -> Stream<Circuit<P>, D>
+    where
+        P: Clone + 'static,
+        D: Clone + HasZero + 'static,
+    {
+        if let Some(delayed) = self
+            .circuit()
+            .cache()
+            .get(&DelayedId::new(self.local_node_id()))
+        {
+            return delayed.clone();
+        }
+
+        let delayed = self.circuit().add_unary_operator(Z1::new(D::zero()), self);
+        self.circuit()
+            .cache()
+            .insert(DelayedId::new(self.local_node_id()), delayed.clone());
+
+        delayed
+    }
+
+    /// Applies [`Z1Nested`] operator to `self`.
+    pub fn nested_delay(&self) -> Stream<Circuit<P>, D>
+    where
+        P: Clone + 'static,
+        D: Clone + HasZero + 'static,
+    {
+        if let Some(delayed) = self
+            .circuit()
+            .cache()
+            .get(&NestedDelayedId::new(self.local_node_id()))
+        {
+            return delayed.clone();
+        }
+
+        let delayed = self
+            .circuit()
+            .add_unary_operator(Z1Nested::new(D::zero()), self);
+        self.circuit()
+            .cache()
+            .insert(NestedDelayedId::new(self.local_node_id()), delayed.clone());
+
+        delayed
+    }
+}
 
 /// z^-1 operator delays its input by one timestamp.
 ///
@@ -67,14 +216,11 @@ where
     T: Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
-        let mut res = i.clone();
-        swap(&mut self.val, &mut res);
-        res
+        replace(&mut self.val, i.clone())
     }
 
-    fn eval_owned(&mut self, mut i: T) -> T {
-        swap(&mut self.val, &mut i);
-        i
+    fn eval_owned(&mut self, i: T) -> T {
+        replace(&mut self.val, i)
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -87,9 +233,7 @@ where
     T: Clone + 'static,
 {
     fn get_output(&mut self) -> T {
-        let mut old_val = self.zero.clone();
-        swap(&mut self.val, &mut old_val);
-        old_val
+        replace(&mut self.val, self.zero.clone())
     }
 }
 
@@ -141,11 +285,8 @@ pub struct Z1Nested<T> {
     val: Vec<T>,
 }
 
-impl<T> Z1Nested<T>
-where
-    T: Clone,
-{
-    pub fn new(zero: T) -> Self {
+impl<T> Z1Nested<T> {
+    const fn new(zero: T) -> Self {
         Self {
             zero,
             timestamp: 0,
@@ -181,6 +322,41 @@ where
     }
 }
 
+impl<T> UnaryOperator<T, T> for Z1Nested<T>
+where
+    T: Clone + 'static,
+{
+    fn eval(&mut self, i: &T) -> T {
+        debug_assert!(self.timestamp <= self.val.len());
+
+        if self.timestamp == self.val.len() {
+            self.val.push(self.zero.clone())
+        }
+
+        let result = replace(&mut self.val[self.timestamp], i.clone());
+
+        self.timestamp += 1;
+        result
+    }
+
+    fn eval_owned(&mut self, i: T) -> T {
+        debug_assert!(self.timestamp <= self.val.len());
+
+        if self.timestamp == self.val.len() {
+            self.val.push(self.zero.clone())
+        }
+
+        let result = replace(&mut self.val[self.timestamp], i);
+        self.timestamp += 1;
+
+        result
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
+    }
+}
+
 impl<T> StrictOperator<T> for Z1Nested<T>
 where
     T: Clone + 'static,
@@ -191,13 +367,11 @@ where
             self.val.push(self.zero.clone());
         }
 
-        let mut zero = self.zero.clone();
-        swap(
+        replace(
             // Safe due to the check above.
             unsafe { self.val.get_unchecked_mut(self.timestamp) },
-            &mut zero,
-        );
-        zero
+            self.zero.clone(),
+        )
     }
 }
 
@@ -206,14 +380,14 @@ where
     T: Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
-        assert!(self.timestamp < self.val.len());
+        debug_assert!(self.timestamp < self.val.len());
 
         self.val[self.timestamp] = i.clone();
         self.timestamp += 1;
     }
 
     fn eval_strict_owned(&mut self, i: T) {
-        assert!(self.timestamp < self.val.len());
+        debug_assert!(self.timestamp < self.val.len());
 
         self.val[self.timestamp] = i;
         self.timestamp += 1;
@@ -280,7 +454,39 @@ mod test {
     fn z1_nested_test() {
         let mut z1 = Z1Nested::new(0);
 
+        // Test `UnaryOperator` API.
+
+        z1.clock_start(1);
+
+        let mut res = Vec::new();
+        z1.clock_start(0);
+        res.push(z1.eval_owned(1));
+        res.push(z1.eval(&2));
+        res.push(z1.eval(&3));
+        z1.clock_end(0);
+        assert_eq!(res.as_slice(), &[0, 0, 0]);
+
+        let mut res = Vec::new();
+        z1.clock_start(0);
+        res.push(z1.eval_owned(4));
+        res.push(z1.eval_owned(5));
+        z1.clock_end(0);
+        assert_eq!(res.as_slice(), &[1, 2]);
+
+        let mut res = Vec::new();
+        z1.clock_start(0);
+        res.push(z1.eval_owned(6));
+        res.push(z1.eval_owned(7));
+        res.push(z1.eval(&8));
+        res.push(z1.eval(&9));
+        z1.clock_end(0);
+        assert_eq!(res.as_slice(), &[4, 5, 0, 0]);
+
+        z1.clock_end(1);
+
         // Test `StrictUnaryOperator` API.
+        z1.clock_start(1);
+
         let mut res = Vec::new();
         z1.clock_start(0);
         res.push(z1.get_output());
@@ -317,5 +523,7 @@ mod test {
         z1.clock_end(0);
 
         assert_eq!(res.as_slice(), &[4, 5, 0, 0]);
+
+        z1.clock_end(1);
     }
 }

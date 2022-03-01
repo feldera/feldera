@@ -43,17 +43,22 @@ use std::{
     rc::Rc,
 };
 
-use crate::circuit::{
-    operator_traits::{
-        BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
-        StrictUnaryOperator, UnaryOperator,
+use crate::{
+    circuit::{
+        cache::CircuitCache,
+        operator_traits::{
+            BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
+            StrictUnaryOperator, UnaryOperator,
+        },
+        schedule::{
+            DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
+            Scheduler,
+        },
+        trace::{CircuitEvent, SchedulerEvent},
     },
-    schedule::{
-        DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
-        Scheduler,
-    },
-    trace::{CircuitEvent, SchedulerEvent},
+    circuit_cache_key,
 };
+use typedmap::TypedMap;
 
 /// Value stored in the stream.
 struct StreamValue<D> {
@@ -154,6 +159,29 @@ impl<P, D> Stream<Circuit<P>, D> {
             circuit,
             val: Rc::new(UnsafeCell::new(StreamValue::empty())),
         }
+    }
+
+    /// Export stream to the parent circuit.
+    ///
+    /// Creates a stream in the parent circuit that contains the last value in
+    /// `self` when the child circuit terminates.
+    ///
+    /// This method currently only works for streams connected to a feedback
+    /// `Z1` operator and will panic for other streams.
+    pub fn export(&self) -> Stream<P, D>
+    where
+        P: Clone + 'static,
+        D: 'static,
+    {
+        if let Some(export) = self
+            .circuit()
+            .cache()
+            .get(&ExportId::new(self.local_node_id()))
+        {
+            return export.clone();
+        }
+
+        unimplemented!();
     }
 }
 
@@ -494,6 +522,8 @@ impl Edge {
     }
 }
 
+circuit_cache_key!(ExportId<C, D>(NodeId => Stream<C, D>));
+
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1
 /// is connected to an input of node2.
@@ -506,6 +536,7 @@ struct CircuitInner<P> {
     edges: Vec<Edge>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
+    store: CircuitCache,
 }
 
 impl<P> CircuitInner<P> {
@@ -524,6 +555,7 @@ impl<P> CircuitInner<P> {
             edges: Vec::new(),
             circuit_event_handlers,
             scheduler_event_handlers,
+            store: TypedMap::new(),
         }
     }
 
@@ -541,6 +573,7 @@ impl<P> CircuitInner<P> {
     fn clear(&mut self) {
         self.nodes.clear();
         self.edges.clear();
+        self.store.clear();
     }
 
     fn register_circuit_event_handler<F>(&mut self, name: &str, handler: F)
@@ -857,6 +890,15 @@ where
     /// Returns the parent circuit of `self`.
     pub fn parent(&self) -> P {
         self.inner().parent.clone()
+    }
+
+    /// Returns a reference to the cache associated with the circuit.
+    ///
+    /// See [`cache`] module documentation for details.
+    pub(crate) fn cache(&self) -> RefMut<'_, CircuitCache> {
+        let circuit = self.inner_mut();
+
+        RefMut::map(circuit, |c| &mut c.store)
     }
 
     pub(crate) fn ready(&self, id: NodeId) -> bool {
@@ -2348,10 +2390,8 @@ mod tests {
                 result
             }));
             let integrator = source.integrate();
-            integrator.current.inspect(|n| println!("{}", n));
-            integrator
-                .current
-                .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
+            integrator.inspect(|n| println!("{}", n));
+            integrator.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
         .unwrap();
 

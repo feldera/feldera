@@ -12,8 +12,6 @@ use std::{
 };
 use typedmap::{TypedDashMap, TypedMapKey};
 
-pub struct LocalStoreMarker;
-
 // Thread-local variables used by the termination protocol.
 thread_local! {
     // Parker that must be used by all schedulers within the worker
@@ -25,6 +23,8 @@ thread_local! {
     // and exit immediately returning `SchedulerError::Killed`.
     static KILL_SIGNAL: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
+
+pub struct LocalStoreMarker;
 
 /// Local data store shared by all workers in a runtime.
 pub type LocalStore = TypedDashMap<LocalStoreMarker>;
