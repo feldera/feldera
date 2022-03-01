@@ -4,7 +4,6 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
-    operator::StreamIntegral,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -40,7 +39,7 @@ where
     }
 }
 
-impl<P, I1> StreamIntegral<P, I1>
+impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
 {
@@ -59,7 +58,7 @@ where
     /// `a.integrate()`, which bundles together `a`, `A`, ans `z^-1(A)`.
     pub fn join_incremental<K, V1, V2, V, W, F, I2, Z>(
         &self,
-        other: &StreamIntegral<P, I2>,
+        other: &Stream<Circuit<P>, I2>,
         join_func: F,
     ) -> Stream<Circuit<P>, Z>
     where
@@ -77,9 +76,10 @@ where
         V: KeyProperties + 'static,
         Z: ZSet<V, W>,
     {
-        self.delayed
-            .join(&other.input, join_func.clone())
-            .plus(&self.input.join(&other.current, join_func))
+        self.integrate()
+            .delay()
+            .join(other, join_func.clone())
+            .plus(&self.join(&other.integrate(), join_func))
     }
 }
 
@@ -298,8 +298,7 @@ mod test {
                     assert_eq!(fm, &outputs.next().unwrap())
                 });
             index1
-                .integrate()
-                .join_incremental(&index2.integrate(), |k: &usize, s1, s2| {
+                .join_incremental(&index2, |k: &usize, s1, s2| {
                     (k.clone(), format!("{} {}", s1, s2))
                 })
                 .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {

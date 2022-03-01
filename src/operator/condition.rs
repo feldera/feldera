@@ -138,7 +138,7 @@ mod test {
             Circuit, Root, Stream,
         },
         finite_map,
-        operator::{Apply2, Generator, Z1},
+        operator::{Apply2, DelayedFeedback, Generator},
     };
     use std::sync::{Arc, Mutex};
 
@@ -181,9 +181,9 @@ mod test {
             let init2 = circuit.add_source(Generator::new(|| finite_map! { 4 => 1 }));
 
             let (reachable1, reachable2) = circuit.iterate_with_conditions_and_scheduler::<_, _, S>(|child| {
-                let edges = edges.delta0(child).integrate().current;
-                let init1 = init1.delta0(child).integrate().current;
-                let init2 = init2.delta0(child).integrate().current;
+                let edges = edges.delta0(child).integrate();
+                let init1 = init1.delta0(child).integrate();
+                let init2 = init2.delta0(child).integrate();
 
                 // Builds a subcircuit that computes nodes reachable from `init`:
                 //
@@ -201,7 +201,7 @@ mod test {
                 //
                 // where suc computes the set of successor nodes.
                 let reachable_circuit = |init: Stream<Circuit<Circuit<()>>, ZSetHashMap<usize, isize>>| {
-                    let (prev_reachable, feedback) = child.add_feedback_with_export(Z1::new(ZSetHashMap::new()));
+                    let feedback = DelayedFeedback::new(child);
 
                     // Computes all successors of `nodes`.
                     let successor_set = |nodes: &ZSetHashMap<usize, isize>, edges: &ZSetHashMap<(usize, usize), isize>| {
@@ -210,14 +210,14 @@ mod test {
                     let suc = child
                         .add_binary_operator(
                             Apply2::new(successor_set.clone()),
-                            &prev_reachable.local,
+                            &feedback.stream(),
                             &edges,
                         );
 
                     let reachable = init.plus(&suc).apply(ZSet::distinct);
                     feedback.connect(&reachable);
                     let condition = reachable.differentiate().condition(|z| z.support_size() == 0);
-                    (condition, prev_reachable.export)
+                    (condition, reachable.export())
                 };
 
                 let (condition1, export1) = reachable_circuit(init1);

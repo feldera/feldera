@@ -16,13 +16,12 @@ mod plus;
 pub use plus::Plus;
 
 mod z1;
-pub use z1::{Z1Nested, Z1};
+pub use z1::{DelayedFeedback, Z1Nested, Z1};
 
 mod generator;
 pub use generator::Generator;
 
 mod integrate;
-pub use integrate::StreamIntegral;
 
 pub mod communication;
 
