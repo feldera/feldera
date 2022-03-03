@@ -6,6 +6,7 @@ use crate::{
         z1::{DelayedFeedback, DelayedNestedFeedback},
         BinaryOperatorAdapter, Plus,
     },
+    SharedRef,
 };
 use std::{ops::Add, rc::Rc};
 
@@ -125,7 +126,10 @@ where
     /// 2 3 4 5 1
     /// 4 5 6 5 1
     /// ```
-    pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D>> {
+    pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D>>
+    where
+        D: SharedRef<Target = D>,
+    {
         if let Some(integral) = self
             .circuit()
             .cache()
@@ -136,7 +140,7 @@ where
 
         let feedback = DelayedNestedFeedback::new(self.circuit(), Rc::new(D::zero()));
         let integral = self.circuit().add_binary_operator_with_preference(
-            <BinaryOperatorAdapter<D, D, D, _>>::new(Plus::new()),
+            <BinaryOperatorAdapter<D, _>>::new(Plus::new()),
             feedback.stream(),
             self,
             OwnershipPreference::STRONGLY_PREFER_OWNED,

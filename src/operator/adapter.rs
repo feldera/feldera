@@ -28,15 +28,14 @@ use crate::{
 /// Unary operator adapter unwraps input values of type
 /// `I` wrapped in a shared reference.  See
 /// [module-level documentation](`crate::operator::adapter`) for details.
-pub struct UnaryOperatorAdapter<I, O, Op> {
+pub struct UnaryOperatorAdapter<O, Op> {
     op: Op,
-    _types: PhantomData<(I, O)>,
+    _types: PhantomData<O>,
 }
 
-impl<I, O, Op> Operator for UnaryOperatorAdapter<I, O, Op>
+impl<O, Op> Operator for UnaryOperatorAdapter<O, Op>
 where
     Op: Operator,
-    I: 'static,
     O: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -62,11 +61,10 @@ where
     }
 }
 
-impl<RI, I, RO, O, Op> UnaryOperator<RI, RO> for UnaryOperatorAdapter<I, O, Op>
+impl<RI, RO, O, Op> UnaryOperator<RI, RO> for UnaryOperatorAdapter<O, Op>
 where
-    Op: UnaryOperator<I, O>,
-    RI: SharedRef<I>,
-    I: 'static,
+    RI: SharedRef,
+    Op: UnaryOperator<<RI as SharedRef>::Target, O>,
     RO: From<O>,
     O: 'static,
 {
@@ -90,12 +88,12 @@ where
 /// Binary operator adapter unwraps input values of types
 /// `I1` and `I2` wrapped in shared references.  See
 /// [module-level documentation](`crate::operator::adapter`) for details.
-pub struct BinaryOperatorAdapter<I1, I2, O, Op> {
+pub struct BinaryOperatorAdapter<O, Op> {
     op: Op,
-    _types: PhantomData<(I1, I2, O)>,
+    _types: PhantomData<O>,
 }
 
-impl<I1, I2, O, Op> BinaryOperatorAdapter<I1, I2, O, Op> {
+impl<O, Op> BinaryOperatorAdapter<O, Op> {
     pub fn new(op: Op) -> Self {
         Self {
             op,
@@ -104,11 +102,9 @@ impl<I1, I2, O, Op> BinaryOperatorAdapter<I1, I2, O, Op> {
     }
 }
 
-impl<I1, I2, O, Op> Operator for BinaryOperatorAdapter<I1, I2, O, Op>
+impl<O, Op> Operator for BinaryOperatorAdapter<O, Op>
 where
     Op: Operator,
-    I1: 'static,
-    I2: 'static,
     O: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -134,14 +130,11 @@ where
     }
 }
 
-impl<RI1, I1, RI2, I2, RO, O, Op> BinaryOperator<RI1, RI2, RO>
-    for BinaryOperatorAdapter<I1, I2, O, Op>
+impl<RI1, RI2, RO, O, Op> BinaryOperator<RI1, RI2, RO> for BinaryOperatorAdapter<O, Op>
 where
-    Op: BinaryOperator<I1, I2, O>,
-    RI1: SharedRef<I1>,
-    RI2: SharedRef<I2>,
-    I1: 'static,
-    I2: 'static,
+    RI1: SharedRef,
+    RI2: SharedRef,
+    Op: BinaryOperator<<RI1 as SharedRef>::Target, <RI2 as SharedRef>::Target, O>,
     RO: From<O>,
     O: 'static,
 {
