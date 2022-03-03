@@ -3,8 +3,12 @@ mod map_macro;
 #[cfg(test)]
 mod tests;
 
-use crate::algebra::{
-    Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef, WithNumEntries,
+use crate::{
+    algebra::{
+        Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef,
+        WithNumEntries,
+    },
+    shared_ref_self_generic,
 };
 use hashbrown::{
     hash_map,
@@ -175,6 +179,8 @@ pub struct FiniteHashMap<Key, Value> {
     // that have non-zero values are in this map.
     pub(super) value: HashMap<Key, Value>,
 }
+
+shared_ref_self_generic!(<Key, Value>, FiniteHashMap<Key, Value>);
 
 impl<Key, Value> FiniteHashMap<Key, Value> {
     /// Create a new map

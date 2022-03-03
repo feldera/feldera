@@ -70,7 +70,7 @@ where
 /// Like [`FeedbackConnector`] but specialized for [`Z1Nested`] feedback
 /// operator.
 ///
-/// Use this API instead of the low-level [`circuit::add_feedback`] API to
+/// Use this API instead of the low-level [`Circuit::add_feedback`] API to
 /// create feedback loops with `Z1Nested` operator.  In addition to being more
 /// concise, this API takes advantage of [caching](`crate::circuit::cache`).
 pub struct DelayedNestedFeedback<P, D> {
@@ -85,8 +85,11 @@ where
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
-    pub fn new(circuit: &Circuit<P>, zero: D) -> Self {
-        let (output, feedback) = circuit.add_feedback(Z1Nested::new(zero));
+    pub fn new(circuit: &Circuit<P>) -> Self
+    where
+        D: HasZero,
+    {
+        let (output, feedback) = circuit.add_feedback(Z1Nested::new(D::zero()));
         Self { feedback, output }
     }
 
@@ -131,7 +134,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     }
 
     /// Applies [`Z1Nested`] operator to `self`.
-    pub fn nested_delay(&self) -> Stream<Circuit<P>, D>
+    pub fn delay_nested(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
         D: Clone + HasZero + 'static,
@@ -257,8 +260,17 @@ where
 /// z^-1 operator over streams of streams.
 ///
 /// The operator stores a complete nested stream consumed at the last iteration
-/// of the parent clock and outputs it at the next parent clock cycle
+/// of the parent clock and outputs it at the next parent clock cycle.
 /// It outputs a stream of zeros value in the first parent clock tick.
+///
+/// One important subtlety is that mathematically speaking nested streams are
+/// infinite, but we can only compute and store finite prefixes of such
+/// streams.  When asked to produce output beyond the stored prefix, the z^-1
+/// operator repeats the last value in the stored prefix.  The assumption
+/// here is that the circuit was evaluated to a fixed point at the previous
+/// parent timestamp, and hence the rest of the stream will contain the same
+/// fixed point value.  This is not generally true for all circuits, and
+/// users should keep this in mind when instantiating the operator.
 ///
 /// It is a strict operator.
 ///
@@ -276,7 +288,7 @@ where
 ///
 /// ```text
 /// 0 0 0 0
-/// 1 2 3 4 0
+/// 1 2 3 4 4
 /// 1 1 1 1 1
 /// ```
 pub struct Z1Nested<T> {
@@ -330,7 +342,9 @@ where
         debug_assert!(self.timestamp <= self.val.len());
 
         if self.timestamp == self.val.len() {
-            self.val.push(self.zero.clone())
+            self.val.push(self.zero.clone());
+        } else if self.timestamp == self.val.len() - 1 {
+            self.val.push(self.val.last().unwrap().clone());
         }
 
         let result = replace(&mut self.val[self.timestamp], i.clone());
@@ -343,7 +357,9 @@ where
         debug_assert!(self.timestamp <= self.val.len());
 
         if self.timestamp == self.val.len() {
-            self.val.push(self.zero.clone())
+            self.val.push(self.zero.clone());
+        } else if self.timestamp == self.val.len() - 1 {
+            self.val.push(self.val.last().unwrap().clone());
         }
 
         let result = replace(&mut self.val[self.timestamp], i);
@@ -365,6 +381,8 @@ where
         if self.timestamp >= self.val.len() {
             assert_eq!(self.timestamp, self.val.len());
             self.val.push(self.zero.clone());
+        } else if self.timestamp == self.val.len() - 1 {
+            self.val.push(self.val.last().unwrap().clone())
         }
 
         replace(
@@ -480,7 +498,7 @@ mod test {
         res.push(z1.eval(&8));
         res.push(z1.eval(&9));
         z1.clock_end(0);
-        assert_eq!(res.as_slice(), &[4, 5, 0, 0]);
+        assert_eq!(res.as_slice(), &[4, 5, 5, 5]);
 
         z1.clock_end(1);
 
@@ -522,7 +540,7 @@ mod test {
         z1.eval_strict_owned(9);
         z1.clock_end(0);
 
-        assert_eq!(res.as_slice(), &[4, 5, 0, 0]);
+        assert_eq!(res.as_slice(), &[4, 5, 5, 5]);
 
         z1.clock_end(1);
     }

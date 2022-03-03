@@ -2,81 +2,63 @@
 
 use crate::{
     algebra::GroupValue,
-    circuit::{
-        operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream,
-    },
+    circuit::{Circuit, NodeId, Stream},
+    circuit_cache_key,
+    operator::Minus,
 };
-use std::{borrow::Cow, mem::swap};
 
-impl<P, V> Stream<Circuit<P>, V>
+circuit_cache_key!(DifferentiateId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(NestedDifferentiateId<C, D>(NodeId => Stream<C, D>));
+
+impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    V: GroupValue,
+    D: GroupValue,
 {
-    /// Apply the `Differentiate` operator to `self`.
-    pub fn differentiate(&self) -> Stream<Circuit<P>, V> {
-        self.circuit()
-            .add_unary_operator(Differentiate::new(), self)
-    }
-}
-
-/// The differentiation operator computes the difference between the current and
-/// the previous values of the stream.
-pub struct Differentiate<V>
-where
-    V: GroupValue,
-{
-    previous: V,
-}
-
-impl<V> Differentiate<V>
-where
-    V: GroupValue,
-{
-    pub fn new() -> Self {
-        Self {
-            previous: V::zero(),
+    /// Stream differentiation.
+    ///
+    /// Computes the difference between current and previous value
+    /// of `self`: `differentiate(a) = a - z^-1(a)`.
+    pub fn differentiate(&self) -> Stream<Circuit<P>, D> {
+        if let Some(differential) = self
+            .circuit()
+            .cache()
+            .get(&DifferentiateId::new(self.local_node_id()))
+        {
+            return differential.clone();
         }
-    }
-}
 
-impl<V> Default for Differentiate<V>
-where
-    V: GroupValue,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
+        let differential = self
+            .circuit()
+            .add_binary_operator(Minus::new(), self, &self.delay());
 
-impl<V> Operator for Differentiate<V>
-where
-    V: GroupValue,
-{
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("Differentiate")
-    }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {
-        self.previous = V::zero();
-    }
-}
+        self.circuit().cache().insert(
+            DifferentiateId::new(self.local_node_id()),
+            differential.clone(),
+        );
 
-impl<V> UnaryOperator<V, V> for Differentiate<V>
-where
-    V: GroupValue,
-{
-    fn eval(&mut self, i: &V) -> V {
-        let result = i.add_by_ref(&self.previous.neg_by_ref());
-        self.previous = i.clone();
-        result
+        differential
     }
 
-    fn eval_owned(&mut self, mut i: V) -> V {
-        swap(&mut self.previous, &mut i);
-        i = i.neg();
-        i.add_assign_by_ref(&self.previous);
-        i
+    /// Nested stream differentiation.
+    pub fn differentiate_nested(&self) -> Stream<Circuit<P>, D> {
+        if let Some(differential) = self
+            .circuit()
+            .cache()
+            .get(&NestedDifferentiateId::new(self.local_node_id()))
+        {
+            return differential.clone();
+        }
+
+        let differential =
+            self.circuit()
+                .add_binary_operator(Minus::new(), self, &self.delay_nested());
+
+        self.circuit().cache().insert(
+            NestedDifferentiateId::new(self.local_node_id()),
+            differential.clone(),
+        );
+
+        differential
     }
 }
