@@ -10,7 +10,11 @@ pub use checked_int::CheckedInt;
 pub use finite_map::{FiniteHashMap, FiniteMap, MapBuilder, WithSupport};
 pub use zset::{IndexedZSet, IndexedZSetHashMap, ZSet, ZSetHashMap};
 
-use std::ops::{Add, AddAssign, Mul, Neg};
+use std::{
+    num::Wrapping,
+    ops::{Add, AddAssign, Mul, Neg},
+    rc::Rc,
+};
 
 /// A trait for types that have a zero value.
 /// This is simlar to the standard Zero trait, but that
@@ -20,16 +24,55 @@ pub trait HasZero {
     fn zero() -> Self;
 }
 
-/// Implementation of HasZero for types that already implement Zero
-impl<T> HasZero for T
+/// Implement `HasZero` for types that already implement `Zero`.
+macro_rules! impl_has_zero {
+    ($type:ty) => {
+        impl $crate::algebra::HasZero for $type {
+            fn is_zero(&self) -> bool {
+                <Self as num::traits::Zero>::is_zero(self)
+            }
+            fn zero() -> Self {
+                <Self as num::traits::Zero>::zero()
+            }
+        }
+    };
+}
+
+impl_has_zero!(u8);
+impl_has_zero!(u16);
+impl_has_zero!(u32);
+impl_has_zero!(u64);
+impl_has_zero!(u128);
+impl_has_zero!(usize);
+
+impl_has_zero!(i8);
+impl_has_zero!(i16);
+impl_has_zero!(i32);
+impl_has_zero!(i64);
+impl_has_zero!(isize);
+
+// TODO: Implement for `std::num::Saturating` once stable
+impl<T> HasZero for Wrapping<T>
 where
-    T: num::traits::Zero,
+    T: HasZero,
 {
     fn is_zero(&self) -> bool {
-        T::is_zero(self)
+        self.0.is_zero()
     }
     fn zero() -> Self {
-        T::zero()
+        Self(T::zero())
+    }
+}
+
+impl<T> HasZero for Rc<T>
+where
+    T: HasZero,
+{
+    fn is_zero(&self) -> bool {
+        T::is_zero(self.as_ref())
+    }
+    fn zero() -> Self {
+        Rc::new(T::zero())
     }
 }
 
@@ -40,13 +83,36 @@ pub trait HasOne {
     fn one() -> Self;
 }
 
-/// Implementation of HasOne for types that already implement One
-impl<T> HasOne for T
+/// Implement `HasOne` for types that already implement `One`.
+macro_rules! impl_has_one {
+    ($type:ty) => {
+        impl $crate::algebra::HasOne for $type {
+            fn one() -> Self {
+                <Self as num::traits::One>::one()
+            }
+        }
+    };
+}
+
+impl_has_one!(u8);
+impl_has_one!(u16);
+impl_has_one!(u32);
+impl_has_one!(u64);
+impl_has_one!(u128);
+impl_has_one!(usize);
+
+impl_has_one!(i8);
+impl_has_one!(i16);
+impl_has_one!(i32);
+impl_has_one!(i64);
+impl_has_one!(isize);
+
+impl<T> HasOne for Rc<T>
 where
-    T: num::traits::One,
+    T: HasOne,
 {
     fn one() -> Self {
-        T::one()
+        Rc::new(<T as HasOne>::one())
     }
 }
 

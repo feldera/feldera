@@ -4,19 +4,21 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
+    operator::BinaryOperatorAdapter,
+    SharedRef,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
-impl<P, I1> Stream<Circuit<P>, I1>
+impl<P, SR1> Stream<Circuit<P>, SR1>
 where
     P: Clone + 'static,
 {
     /// Apply [`Join`] operator to `self` and `other`.
     ///
     /// See [`Join`] operator for more info.
-    pub fn join<K, V1, V2, V, W, F, I2, Z>(
+    pub fn join<K, V1, V2, V, W, F, SR2, Z>(
         &self,
-        other: &Stream<Circuit<P>, I2>,
+        other: &Stream<Circuit<P>, SR2>,
         f: F,
     ) -> Stream<Circuit<P>, Z>
     where
@@ -24,18 +26,35 @@ where
         V1: KeyProperties,
         V2: KeyProperties,
         W: ZRingValue,
-        I1: IndexedZSet<K, V1, W>,
-        for<'a> &'a I1: IntoIterator<Item = (&'a K, &'a I1::ZSet)>,
-        for<'a> &'a I1::ZSet: IntoIterator<Item = (&'a V1, &'a W)>,
-        I2: IndexedZSet<K, V2, W>,
-        for<'a> &'a I2: IntoIterator<Item = (&'a K, &'a I2::ZSet)>,
-        for<'a> &'a I2::ZSet: IntoIterator<Item = (&'a V2, &'a W)>,
+        SR1: SharedRef + 'static,
+        <SR1 as SharedRef>::Target: IndexedZSet<K, V1, W>,
+        for<'a> &'a <SR1 as SharedRef>::Target: IntoIterator<
+            Item = (
+                &'a K,
+                &'a <<SR1 as SharedRef>::Target as IndexedZSet<K, V1, W>>::ZSet,
+            ),
+        >,
+        for<'a> &'a <<SR1 as SharedRef>::Target as IndexedZSet<K, V1, W>>::ZSet:
+            IntoIterator<Item = (&'a V1, &'a W)>,
+        SR2: SharedRef + 'static,
+        <SR2 as SharedRef>::Target: IndexedZSet<K, V2, W>,
+        for<'a> &'a <SR2 as SharedRef>::Target: IntoIterator<
+            Item = (
+                &'a K,
+                &'a <<SR2 as SharedRef>::Target as IndexedZSet<K, V2, W>>::ZSet,
+            ),
+        >,
+        for<'a> &'a <<SR2 as SharedRef>::Target as IndexedZSet<K, V2, W>>::ZSet:
+            IntoIterator<Item = (&'a V2, &'a W)>,
         F: Fn(&K, &V1, &V2) -> V + 'static,
         V: 'static,
         Z: Clone + MapBuilder<V, W> + 'static,
     {
-        self.circuit()
-            .add_binary_operator(Join::new(f), self, other)
+        self.circuit().add_binary_operator(
+            <BinaryOperatorAdapter<Z, _>>::new(Join::new(f)),
+            self,
+            other,
+        )
     }
 }
 
@@ -52,10 +71,6 @@ where
     /// ```text
     /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
     /// ```
-    ///
-    /// More precisely, inputs of this function are the results of integrating
-    /// the input streams, e.g., `&self` is the integral of `a`, computed by
-    /// `a.integrate()`, which bundles together `a`, `A`, ans `z^-1(A)`.
     pub fn join_incremental<K, V1, V2, V, W, F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
@@ -66,10 +81,10 @@ where
         V1: KeyProperties,
         V2: KeyProperties,
         W: ZRingValue,
-        I1: IndexedZSet<K, V1, W>,
+        I1: IndexedZSet<K, V1, W> + SharedRef<Target = I1>,
         for<'a> &'a I1: IntoIterator<Item = (&'a K, &'a I1::ZSet)>,
         for<'a> &'a I1::ZSet: IntoIterator<Item = (&'a V1, &'a W)>,
-        I2: IndexedZSet<K, V2, W>,
+        I2: IndexedZSet<K, V2, W> + SharedRef<Target = I2>,
         for<'a> &'a I2: IntoIterator<Item = (&'a K, &'a I2::ZSet)>,
         for<'a> &'a I2::ZSet: IntoIterator<Item = (&'a V2, &'a W)>,
         F: Clone + Fn(&K, &V1, &V2) -> V + 'static,
@@ -80,6 +95,56 @@ where
             .delay()
             .join(other, join_func.clone())
             .plus(&self.join(&other.integrate(), join_func))
+    }
+
+    /// Incremental join of two nested streams.
+    ///
+    /// Given nested streams `a` and `b` of changes to relations `A` and `B`,
+    /// computes `(↑((↑(a <> b))∆))∆` using the following formula:
+    ///
+    /// ```text
+    /// (↑((↑(a <> b))∆))∆ =
+    ///     I(↑I(a)) <> b            +
+    ///     ↑I(a) <> I(z^-1(b))      +
+    ///     a <> I(↑I(↑z^-1(b)))     +
+    ///     I(z^-1(a)) <> ↑I(↑z^-1(b)).
+    /// ```
+    pub fn join_incremental_nested<K, V1, V2, V, W, F, I2, Z>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        join_func: F,
+    ) -> Stream<Circuit<P>, Z>
+    where
+        K: KeyProperties,
+        V1: KeyProperties,
+        V2: KeyProperties,
+        W: ZRingValue,
+        I1: IndexedZSet<K, V1, W> + SharedRef<Target = I1> + std::fmt::Debug,
+        for<'a> &'a I1: IntoIterator<Item = (&'a K, &'a I1::ZSet)>,
+        for<'a> &'a I1::ZSet: IntoIterator<Item = (&'a V1, &'a W)>,
+        I2: IndexedZSet<K, V2, W> + SharedRef<Target = I2> + std::fmt::Debug,
+        for<'a> &'a I2: IntoIterator<Item = (&'a K, &'a I2::ZSet)>,
+        for<'a> &'a I2::ZSet: IntoIterator<Item = (&'a V2, &'a W)>,
+        F: Clone + Fn(&K, &V1, &V2) -> V + 'static,
+        V: KeyProperties + 'static,
+        Z: ZSet<V, W>,
+    {
+        let join1: Stream<_, Z> = self
+            .integrate()
+            .integrate_nested()
+            .join(other, join_func.clone());
+        let join2 = self
+            .integrate()
+            .join(&other.integrate_nested().delay_nested(), join_func.clone());
+        let join3 = self.join(
+            &other.integrate().integrate_nested().delay(),
+            join_func.clone(),
+        );
+        let join4 = self
+            .integrate_nested()
+            .delay_nested()
+            .join(&other.integrate().delay(), join_func);
+        join1.sum(&[join2, join3, join4])
     }
 }
 
@@ -197,11 +262,12 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::FiniteHashMap,
+        algebra::{FiniteHashMap, FiniteMap, ZSet},
         circuit::{Root, Stream},
         finite_map,
-        operator::Generator,
+        operator::{DelayedFeedback, Generator},
     };
+    use std::vec;
 
     #[test]
     fn join_test() {
@@ -308,6 +374,101 @@ mod test {
         .unwrap();
 
         for _ in 0..5 {
+            root.step().unwrap();
+        }
+    }
+
+    // Nested incremental reachability algorithm.
+    #[test]
+    fn join_incremental_nested_test() {
+        let root = Root::build(move |circuit| {
+            // Changes to the edges relation.
+            let mut edges: vec::IntoIter<FiniteHashMap<(usize, usize), isize>> = vec![
+                finite_map! { (1, 2) => 1 },
+                finite_map! { (2, 3) => 1},
+                finite_map! { (1, 3) => 1},
+                finite_map! { (3, 1) => 1},
+                finite_map! { (3, 1) => -1},
+                finite_map! { (1, 2) => -1},
+                finite_map! { (2, 4) => 1, (4, 1) => 1 },
+                finite_map! { (2, 3) => -1, (3, 2) => 1 },
+            ]
+            .into_iter();
+
+            // Expected content of the reachability relation.
+            let mut outputs: vec::IntoIter<FiniteHashMap<(usize, usize), isize>> = vec![
+                finite_map! { (1, 2) => 1 },
+                finite_map! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
+                finite_map! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
+                finite_map! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (1, 2) => 1, (1, 3) => 1, (2, 3) => 1, (2, 1) => 1, (3, 1) => 1, (3, 2) => 1},
+                finite_map! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
+                finite_map! { (2, 3) => 1, (1, 3) => 1 },
+                finite_map! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
+                finite_map! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
+                              (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
+                              (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
+                              (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
+                              (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
+            ]
+            .into_iter();
+
+            let edges: Stream<_, FiniteHashMap<(usize, usize), isize>> =
+                circuit
+                    .add_source(Generator::new(move || edges.next().unwrap()));
+
+            let paths = circuit.iterate_with_conditions(|child| {
+                // ```text
+                //                      distinct_incremental_nested
+                //               ┌───┐          ┌───┐
+                // edges         │   │          │   │  paths
+                // ────┬────────►│ + ├──────────┤   ├────────┬───►
+                //     │         │   │          │   │        │
+                //     │         └───┘          └───┘        │
+                //     │           ▲                         │
+                //     │           │                         │
+                //     │         ┌─┴─┐                       │
+                //     │         │   │                       │
+                //     └────────►│ X │ ◄─────────────────────┘
+                //               │   │
+                //               └───┘
+                //      join_incremental_nested
+                // ```
+                let edges = edges.delta0(child);
+                let paths_delayed = DelayedFeedback::new(child);
+
+                let paths_inverted: Stream<_, FiniteHashMap<(usize, usize), isize>> = paths_delayed
+                    .stream()
+                    .apply(|paths: &FiniteHashMap<(usize, usize), isize>| paths.into_iter().map(|((x,y), w)| ((*y, *x), *w)).collect());
+
+                let paths_inverted_indexed: Stream<_, FiniteHashMap<usize, FiniteHashMap<usize, isize>>> = paths_inverted.index();
+                let edges_indexed: Stream<_, FiniteHashMap<usize, FiniteHashMap<usize, isize>>> = edges.index();
+
+                let paths = edges.plus(&paths_inverted_indexed.join_incremental_nested(&edges_indexed, |_via, from, to| (*from, *to)))
+                    // Non-incremental implementation of distinct_nested_incremental.
+                    .integrate()
+                    .integrate_nested()
+                    .apply(|i| i.distinct())
+                    .differentiate()
+                    .differentiate_nested();
+                paths_delayed.connect(&paths);
+                let output = paths.integrate();
+                Ok((
+                    vec![
+                        paths.condition(|delta| delta.support_size() == 0),
+                        paths.integrate_nested().condition(|delta| delta.support_size() == 0)
+                    ],
+                    output.export(),
+                ))
+            })
+            .unwrap();
+
+            paths.integrate().apply(ZSet::distinct).inspect(move |ps| {
+                assert_eq!(*ps, outputs.next().unwrap());
+            })
+        })
+        .unwrap();
+
+        for _ in 0..8 {
             root.step().unwrap();
         }
     }

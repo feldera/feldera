@@ -2,10 +2,13 @@ use crate::{
     algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue},
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream,
+        Circuit, NodeId, Scope, Stream,
     },
+    circuit_cache_key,
 };
 use std::{borrow::Cow, marker::PhantomData};
+
+circuit_cache_key!(IndexId<C, D>(NodeId => Stream<C, D>));
 
 /// Trait for types that can be converted into a pair of references
 ///
@@ -45,7 +48,21 @@ where
         for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, (K, V), W>,
         CO: IndexedZSet<K, V, W>,
     {
-        self.circuit().add_unary_operator(Index::new(), self)
+        if let Some(index) = self
+            .circuit()
+            .cache()
+            .get(&IndexId::new(self.local_node_id()))
+        {
+            return index.clone();
+        }
+
+        let index = self.circuit().add_unary_operator(Index::new(), self);
+
+        self.circuit()
+            .cache()
+            .insert(IndexId::new(self.local_node_id()), index.clone());
+
+        index
     }
 }
 

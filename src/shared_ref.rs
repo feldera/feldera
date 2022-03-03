@@ -17,37 +17,31 @@ pub trait SharedRef: Borrow<Self::Target> + Clone + Sized {
     fn try_into_owned(self) -> Result<Self::Target, Self>;
 }
 
+/// Implement `SharedRef<Target=Self>` for a type.
+#[macro_export]
 macro_rules! shared_ref_self {
     ($type:ty) => {
-        impl SharedRef for $type
-        {
+        impl $crate::SharedRef for $type {
             type Target = Self;
 
-            fn try_into_owned(self) -> Result<Self::Target, Self> {
-                Ok(self)
-            }
-        }
-    };
-
-    ($($typearg:ident),*>, $type:ty) => {
-        impl<$($typearg),*> SharedRef for $type<$($typearg),*>
-        {
-            fn try_into_owned(self) -> Result<Self::Target, Self> {
+            fn try_into_owned(self) -> std::result::Result<Self::Target, Self> {
                 Ok(self)
             }
         }
     };
 }
 
+/// Implement `SharedRef<Target=Self>` for a type.
+#[macro_export]
 macro_rules! shared_ref_self_generic {
     (<$($typearg:ident),*>, $type:ty) => {
-        impl<$($typearg),*> SharedRef for $type
+        impl<$($typearg),*> $crate::SharedRef for $type
         where
             $($typearg: Clone),*
         {
             type Target = Self;
 
-            fn try_into_owned(self) -> Result<Self::Target, Self> {
+            fn try_into_owned(self) -> std::result::Result<Self::Target, Self> {
                 Ok(self)
             }
         }

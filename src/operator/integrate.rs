@@ -138,7 +138,7 @@ where
             return integral.clone();
         }
 
-        let feedback = DelayedNestedFeedback::new(self.circuit(), Rc::new(D::zero()));
+        let feedback = DelayedNestedFeedback::new(self.circuit());
         let integral = self.circuit().add_binary_operator_with_preference(
             <BinaryOperatorAdapter<D, _>>::new(Plus::new()),
             feedback.stream(),
