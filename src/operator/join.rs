@@ -1,3 +1,5 @@
+//! Relational join operator.
+
 use crate::{
     algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue, ZSet},
     circuit::{

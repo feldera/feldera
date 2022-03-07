@@ -1,3 +1,5 @@
+//! Integration operators.
+
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
     circuit::{Circuit, NodeId, OwnershipPreference, Stream},
@@ -53,47 +55,39 @@ where
     /// output: 1, 2, 3, 4, 5, ...
     /// ```
     pub fn integrate(&self) -> Stream<Circuit<P>, D> {
-        if let Some(integral) = self
-            .circuit()
-            .cache()
-            .get(&IntegralId::new(self.local_node_id()))
-        {
-            return integral.clone();
-        }
-
-        // Integration circuit:
-        // ```
-        //              input
-        //   ┌─────────────────►
-        //   │
-        //   │    ┌───┐ current
-        // ──┴───►│   ├────────►
-        //        │ + │
-        //   ┌───►│   ├────┐
-        //   │    └───┘    │
-        //   │             │
-        //   │    ┌───┐    │
-        //   │    │   │    │
-        //   └────┤z-1├────┘
-        //        │   │
-        //        └───┴────────►
-        //              delayed
-        //              export
-        // ```
-        let feedback = DelayedFeedback::new(self.circuit());
-        let integral = self.circuit().add_binary_operator_with_preference(
-            Plus::new(),
-            feedback.stream(),
-            self,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
-        feedback.connect(&integral);
-
         self.circuit()
-            .cache()
-            .insert(IntegralId::new(self.local_node_id()), integral.clone());
-        integral
+            .cache_get_or_insert_with(IntegralId::new(self.local_node_id()), || {
+                // Integration circuit:
+                // ```
+                //              input
+                //   ┌─────────────────►
+                //   │
+                //   │    ┌───┐ current
+                // ──┴───►│   ├────────►
+                //        │ + │
+                //   ┌───►│   ├────┐
+                //   │    └───┘    │
+                //   │             │
+                //   │    ┌───┐    │
+                //   │    │   │    │
+                //   └────┤z-1├────┘
+                //        │   │
+                //        └───┴────────►
+                //              delayed
+                //              export
+                // ```
+                let feedback = DelayedFeedback::new(self.circuit());
+                let integral = self.circuit().add_binary_operator_with_preference(
+                    Plus::new(),
+                    feedback.stream(),
+                    self,
+                    OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    OwnershipPreference::PREFER_OWNED,
+                );
+                feedback.connect(&integral);
+                integral
+            })
+            .clone()
     }
 
     /// Integrate stream of streams.
@@ -130,30 +124,20 @@ where
     where
         D: SharedRef<Target = D>,
     {
-        if let Some(integral) = self
-            .circuit()
-            .cache()
-            .get(&NestedIntegralId::new(self.local_node_id()))
-        {
-            return integral.clone();
-        }
-
-        let feedback = DelayedNestedFeedback::new(self.circuit());
-        let integral = self.circuit().add_binary_operator_with_preference(
-            <BinaryOperatorAdapter<D, _>>::new(Plus::new()),
-            feedback.stream(),
-            self,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
-        feedback.connect(&integral);
-
-        self.circuit().cache().insert(
-            NestedIntegralId::new(self.local_node_id()),
-            integral.clone(),
-        );
-
-        integral
+        self.circuit()
+            .cache_get_or_insert_with(NestedIntegralId::new(self.local_node_id()), || {
+                let feedback = DelayedNestedFeedback::new(self.circuit());
+                let integral = self.circuit().add_binary_operator_with_preference(
+                    <BinaryOperatorAdapter<D, _>>::new(Plus::new()),
+                    feedback.stream(),
+                    self,
+                    OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    OwnershipPreference::PREFER_OWNED,
+                );
+                feedback.connect(&integral);
+                integral
+            })
+            .clone()
     }
 }
 

@@ -45,7 +45,7 @@ use std::{
 
 use crate::{
     circuit::{
-        cache::CircuitCache,
+        cache::{CircuitCache, CircuitStoreMarker},
         operator_traits::{
             BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
             StrictUnaryOperator, UnaryOperator,
@@ -58,7 +58,7 @@ use crate::{
     },
     circuit_cache_key,
 };
-use typedmap::TypedMap;
+use typedmap::{TypedMap, TypedMapKey};
 
 /// Value stored in the stream.
 struct StreamValue<D> {
@@ -173,15 +173,9 @@ impl<P, D> Stream<Circuit<P>, D> {
         P: Clone + 'static,
         D: 'static,
     {
-        if let Some(export) = self
-            .circuit()
-            .cache()
-            .get(&ExportId::new(self.local_node_id()))
-        {
-            return export.clone();
-        }
-
-        unimplemented!();
+        self.circuit()
+            .cache_get_or_insert_with(ExportId::new(self.local_node_id()), || unimplemented!())
+            .clone()
     }
 }
 
@@ -892,17 +886,40 @@ where
         self.inner().parent.clone()
     }
 
-    /// Returns a reference to the cache associated with the circuit.
+    /// Lookup a value in the circuit cache or create and insert a new value
+    /// if it does not exist.
     ///
     /// See [`cache`] module documentation for details.
-    pub(crate) fn cache(&self) -> RefMut<'_, CircuitCache> {
-        let circuit = self.inner_mut();
+    pub(crate) fn cache_get_or_insert_with<K, F>(&self, key: K, mut f: F) -> RefMut<'_, K::Value>
+    where
+        K: 'static + TypedMapKey<CircuitStoreMarker>,
+        F: FnMut() -> K::Value,
+    {
+        // Don't use `store.entry()`, since `f` may need to perform
+        // its own cache lookup.
+        if self.inner().store.contains_key(&key) {
+            return RefMut::map(self.inner_mut(), |c| c.store.get_mut(&key).unwrap());
+        }
 
-        RefMut::map(circuit, |c| &mut c.store)
+        let new = f();
+
+        // TODO: Use `RefMut::filter_map()` to only perform one lookup in the happy path
+        //       https://github.com/rust-lang/rust/issues/81061
+        RefMut::map(self.inner_mut(), |c| c.store.entry(key).or_insert(new))
     }
 
     pub(crate) fn ready(&self, id: NodeId) -> bool {
         self.inner().nodes[id.0].ready()
+    }
+
+    /// Insert a value to the circuit cache, overwriting any existing value.
+    ///
+    /// See [`cache`] module documentation for details.
+    pub(crate) fn cache_insert<K>(&self, key: K, val: K::Value)
+    where
+        K: 'static + TypedMapKey<CircuitStoreMarker>,
+    {
+        self.inner_mut().store.insert(key, val);
     }
 
     pub(crate) fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {

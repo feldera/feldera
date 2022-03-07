@@ -1,3 +1,5 @@
+//! Index operator.
+
 use crate::{
     algebra::{finite_map::KeyProperties, IndexedZSet, MapBuilder, ZRingValue},
     circuit::{
@@ -48,21 +50,11 @@ where
         for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, (K, V), W>,
         CO: IndexedZSet<K, V, W>,
     {
-        if let Some(index) = self
-            .circuit()
-            .cache()
-            .get(&IndexId::new(self.local_node_id()))
-        {
-            return index.clone();
-        }
-
-        let index = self.circuit().add_unary_operator(Index::new(), self);
-
         self.circuit()
-            .cache()
-            .insert(IndexId::new(self.local_node_id()), index.clone());
-
-        index
+            .cache_get_or_insert_with(IndexId::new(self.local_node_id()), || {
+                self.circuit().add_unary_operator(Index::new(), self)
+            })
+            .clone()
     }
 }
 

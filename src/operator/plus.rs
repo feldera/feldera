@@ -1,4 +1,4 @@
-//! Binary plus operator.
+//! Binary plus and minus operators.
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
