@@ -58,12 +58,8 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit
-            .cache()
-            .insert(DelayedId::new(input.local_node_id()), output);
-        circuit
-            .cache()
-            .insert(ExportId::new(input.local_node_id()), export);
+        circuit.cache_insert(DelayedId::new(input.local_node_id()), output);
+        circuit.cache_insert(ExportId::new(input.local_node_id()), export);
     }
 }
 
@@ -104,9 +100,7 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit
-            .cache()
-            .insert(NestedDelayedId::new(input.local_node_id()), output);
+        circuit.cache_insert(NestedDelayedId::new(input.local_node_id()), output);
     }
 }
 
@@ -117,20 +111,11 @@ impl<P, D> Stream<Circuit<P>, D> {
         P: Clone + 'static,
         D: Clone + HasZero + 'static,
     {
-        if let Some(delayed) = self
-            .circuit()
-            .cache()
-            .get(&DelayedId::new(self.local_node_id()))
-        {
-            return delayed.clone();
-        }
-
-        let delayed = self.circuit().add_unary_operator(Z1::new(D::zero()), self);
         self.circuit()
-            .cache()
-            .insert(DelayedId::new(self.local_node_id()), delayed.clone());
-
-        delayed
+            .cache_get_or_insert_with(DelayedId::new(self.local_node_id()), || {
+                self.circuit().add_unary_operator(Z1::new(D::zero()), self)
+            })
+            .clone()
     }
 
     /// Applies [`Z1Nested`] operator to `self`.
@@ -139,22 +124,12 @@ impl<P, D> Stream<Circuit<P>, D> {
         P: Clone + 'static,
         D: Clone + HasZero + 'static,
     {
-        if let Some(delayed) = self
-            .circuit()
-            .cache()
-            .get(&NestedDelayedId::new(self.local_node_id()))
-        {
-            return delayed.clone();
-        }
-
-        let delayed = self
-            .circuit()
-            .add_unary_operator(Z1Nested::new(D::zero()), self);
         self.circuit()
-            .cache()
-            .insert(NestedDelayedId::new(self.local_node_id()), delayed.clone());
-
-        delayed
+            .cache_get_or_insert_with(NestedDelayedId::new(self.local_node_id()), || {
+                self.circuit()
+                    .add_unary_operator(Z1Nested::new(D::zero()), self)
+            })
+            .clone()
     }
 }
 
