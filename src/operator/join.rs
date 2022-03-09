@@ -264,7 +264,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{FiniteHashMap, FiniteMap, ZSet},
+        algebra::{FiniteHashMap, FiniteMap},
         circuit::{Root, Stream},
         finite_map,
         operator::{DelayedFeedback, Generator},
@@ -446,12 +446,7 @@ mod test {
                 let edges_indexed: Stream<_, FiniteHashMap<usize, FiniteHashMap<usize, isize>>> = edges.index();
 
                 let paths = edges.plus(&paths_inverted_indexed.join_incremental_nested(&edges_indexed, |_via, from, to| (*from, *to)))
-                    // Non-incremental implementation of distinct_nested_incremental.
-                    .integrate()
-                    .integrate_nested()
-                    .apply(|i| i.distinct())
-                    .differentiate()
-                    .differentiate_nested();
+                    .distinct_incremental_nested();
                 paths_delayed.connect(&paths);
                 let output = paths.integrate();
                 Ok((
@@ -464,7 +459,7 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().apply(ZSet::distinct).inspect(move |ps| {
+            paths.integrate().distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             })
         })

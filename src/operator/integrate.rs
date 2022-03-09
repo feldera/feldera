@@ -18,7 +18,14 @@ circuit_cache_key!(NestedIntegralId<C, D>(NodeId => Stream<C, Rc<D>>));
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + 'static,
+    D: SharedRef + 'static,
+    <D as SharedRef>::Target: Add<Output = D::Target>
+        + AddByRef
+        + AddAssignByRef
+        + Clone
+        + HasZero
+        + SharedRef<Target = D::Target>
+        + 'static,
 {
     /// Integrate the input stream.
     ///
@@ -54,7 +61,7 @@ where
     /// input:  1, 1, 1, 1, 1, ...
     /// output: 1, 2, 3, 4, 5, ...
     /// ```
-    pub fn integrate(&self) -> Stream<Circuit<P>, D> {
+    pub fn integrate(&self) -> Stream<Circuit<P>, <D as SharedRef>::Target> {
         self.circuit()
             .cache_get_or_insert_with(IntegralId::new(self.local_node_id()), || {
                 // Integration circuit:
@@ -78,7 +85,7 @@ where
                 // ```
                 let feedback = DelayedFeedback::new(self.circuit());
                 let integral = self.circuit().add_binary_operator_with_preference(
-                    Plus::new(),
+                    <BinaryOperatorAdapter<D::Target, _>>::new(<Plus<D::Target>>::new()),
                     feedback.stream(),
                     self,
                     OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -120,15 +127,12 @@ where
     /// 2 3 4 5 1
     /// 4 5 6 5 1
     /// ```
-    pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D>>
-    where
-        D: SharedRef<Target = D>,
-    {
+    pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D::Target>> {
         self.circuit()
             .cache_get_or_insert_with(NestedIntegralId::new(self.local_node_id()), || {
                 let feedback = DelayedNestedFeedback::new(self.circuit());
                 let integral = self.circuit().add_binary_operator_with_preference(
-                    <BinaryOperatorAdapter<D, _>>::new(Plus::new()),
+                    <BinaryOperatorAdapter<D::Target, _>>::new(Plus::new()),
                     feedback.stream(),
                     self,
                     OwnershipPreference::STRONGLY_PREFER_OWNED,

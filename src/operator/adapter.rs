@@ -33,6 +33,15 @@ pub struct UnaryOperatorAdapter<O, Op> {
     _types: PhantomData<O>,
 }
 
+impl<O, Op> UnaryOperatorAdapter<O, Op> {
+    pub fn new(op: Op) -> Self {
+        Self {
+            op,
+            _types: PhantomData,
+        }
+    }
+}
+
 impl<O, Op> Operator for UnaryOperatorAdapter<O, Op>
 where
     Op: Operator,

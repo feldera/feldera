@@ -242,8 +242,11 @@ impl<T> RingValue for T where
 
 /// A ring where elements can be compared with zero
 pub trait ZRingValue: RingValue {
-    /// True if value is greater or equal to zero
+    /// True if value is greater or equal to zero.
     fn ge0(&self) -> bool;
+
+    /// True if value is less than or equal to zero.
+    fn le0(&self) -> bool;
 }
 
 /// Default implementation of ZRingValue for all types that have the required
@@ -266,6 +269,10 @@ where
 {
     fn ge0(&self) -> bool {
         *self >= Self::zero()
+    }
+
+    fn le0(&self) -> bool {
+        *self <= Self::zero()
     }
 }
 

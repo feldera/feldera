@@ -214,7 +214,7 @@ mod test {
                             &edges,
                         );
 
-                    let reachable = init.plus(&suc).apply(ZSet::distinct);
+                    let reachable = init.plus(&suc).distinct();
                     feedback.connect(&reachable);
                     let condition = reachable.differentiate().condition(|z| z.support_size() == 0);
                     (condition, reachable.export())
