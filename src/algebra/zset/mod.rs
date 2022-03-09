@@ -30,6 +30,9 @@ where
     /// `self` with weights set to 1.
     fn distinct(&self) -> Self;
 
+    /// Like `distinct` but optimized to operate on an owned value.
+    fn distinct_owned(self) -> Self;
+
     /// Given a Z-set 'set' partition it using a 'partitioner'
     /// function which is applied independently to each tuple.
     /// This consumes the Z-set.
@@ -97,9 +100,22 @@ where
 
     fn distinct(&self) -> Self {
         let mut result = Self::new();
+
         for (key, value) in &self.value {
             if value.ge0() {
                 result.increment(key, Weight::one());
+            }
+        }
+
+        result
+    }
+
+    fn distinct_owned(self) -> Self {
+        let mut result = Self::new();
+
+        for (key, value) in self.value.into_iter() {
+            if value.ge0() {
+                result.increment_owned(key, Weight::one());
             }
         }
 

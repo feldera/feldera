@@ -189,7 +189,7 @@ fn transitive_closure() {
 
                 let join_output = child.add_binary_operator(join_op, &add_output, &i_output);
 
-                let distinct_output = join_output.plus(&i_output).apply(ZSet::distinct);
+                let distinct_output = join_output.plus(&i_output).distinct();
                 z1_feedback.connect(&distinct_output);
                 let differentiator_output = distinct_output.differentiate();
                 let condition = differentiator_output.condition(HasZero::is_zero);

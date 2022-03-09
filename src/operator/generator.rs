@@ -48,3 +48,49 @@ where
         (self.generator)()
     }
 }
+
+/// Generator operator for nested circuits.
+///
+/// At each parent clock tick, invokes a user-provided reset closure, which
+/// returns a generator closure, that yields a nested stream.
+pub struct GeneratorNested<T> {
+    reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>,
+    generator: Option<Box<dyn FnMut() -> T>>,
+}
+
+impl<T> GeneratorNested<T>
+where
+    T: Clone,
+{
+    /// Creates a nested generator with specified `reset` closure.
+    pub fn new(reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>) -> Self {
+        Self {
+            reset,
+            generator: None,
+        }
+    }
+}
+
+impl<T> Operator for GeneratorNested<T>
+where
+    T: Data,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("GeneratorNested")
+    }
+    fn clock_start(&mut self, scope: Scope) {
+        if scope == 0 {
+            self.generator = Some((self.reset)());
+        }
+    }
+    fn clock_end(&mut self, _scope: Scope) {}
+}
+
+impl<T> SourceOperator<T> for GeneratorNested<T>
+where
+    T: Data,
+{
+    fn eval(&mut self) -> T {
+        (self.generator.as_mut().unwrap())()
+    }
+}

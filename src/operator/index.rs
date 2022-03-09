@@ -161,7 +161,7 @@ mod test {
                 finite_map!{ 1 => finite_map!{"a" => 3, "d" => 1, "e" => 1}, 2 => finite_map!{"c" => 1}, 3 => finite_map!{"a" => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
-                   .index()
+                   .index::<_,_,_,FiniteHashMap<_,_>>()
                    .integrate()
                    .inspect(move |fm: &FiniteHashMap<_, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })
@@ -196,7 +196,7 @@ mod test {
                 finite_map!{ 1 => finite_map!{"a" => 3, "d" => 1, "e" => 1}, 2 => finite_map!{"c" => 1}, 3 => finite_map!{"a" => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
-                   .index()
+                   .index::<_, _, _, FiniteHashMap<_, _>>()
                    .integrate()
                    .inspect(move |fm: &FiniteHashMap<_, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })

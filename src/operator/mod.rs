@@ -19,7 +19,7 @@ mod z1;
 pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1Nested, Z1};
 
 mod generator;
-pub use generator::Generator;
+pub use generator::{Generator, GeneratorNested};
 
 mod integrate;
 
@@ -44,3 +44,6 @@ pub use join::Join;
 
 mod sum;
 pub use sum::Sum;
+
+mod distinct;
+pub use distinct::Distinct;
