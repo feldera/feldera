@@ -264,7 +264,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{FiniteHashMap, FiniteMap},
+        algebra::{FiniteHashMap, HasZero},
         circuit::{Root, Stream},
         finite_map,
         operator::{DelayedFeedback, Generator},
@@ -451,8 +451,8 @@ mod test {
                 let output = paths.integrate();
                 Ok((
                     vec![
-                        paths.condition(|delta| delta.support_size() == 0),
-                        paths.integrate_nested().condition(|delta| delta.support_size() == 0)
+                        paths.condition(HasZero::is_zero),
+                        paths.integrate_nested().condition(HasZero::is_zero)
                     ],
                     output.export(),
                 ))
