@@ -9,6 +9,10 @@ extern crate num;
 
 mod shared_ref;
 pub use shared_ref::SharedRef;
+
+mod ref_pair;
+pub use ref_pair::RefPair;
+
 pub mod algebra;
 pub mod circuit;
 pub mod operator;

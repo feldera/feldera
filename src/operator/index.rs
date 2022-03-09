@@ -6,33 +6,11 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, NodeId, Scope, Stream,
     },
-    circuit_cache_key,
+    circuit_cache_key, RefPair,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
 circuit_cache_key!(IndexId<C, D>(NodeId => Stream<C, D>));
-
-/// Trait for types that can be converted into a pair of references
-///
-/// This trait unifies `(&K, &V)` and `&(K, V)` types, so that the
-/// [`Index`] operator can work over types that can iterate over either,
-/// such as vectors (which iterate over `&(K,V)`) and maps (which iterate
-/// over `(&K, &V)`)
-pub trait RefPair<'a, K, V> {
-    fn into_refs(self) -> (&'a K, &'a V);
-}
-
-impl<'a, K, V> RefPair<'a, K, V> for &'a (K, V) {
-    fn into_refs(self) -> (&'a K, &'a V) {
-        (&self.0, &self.1)
-    }
-}
-
-impl<'a, K, V> RefPair<'a, K, V> for (&'a K, &'a V) {
-    fn into_refs(self) -> (&'a K, &'a V) {
-        (self.0, self.1)
-    }
-}
 
 impl<P, CI> Stream<Circuit<P>, CI>
 where
