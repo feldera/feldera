@@ -436,11 +436,11 @@ mod test {
                 //      join_incremental_nested
                 // ```
                 let edges = edges.delta0(child);
-                let paths_delayed = DelayedFeedback::new(child);
+                let paths_delayed = <DelayedFeedback<_, FiniteHashMap<_, _>>>::new(child);
 
                 let paths_inverted: Stream<_, FiniteHashMap<(usize, usize), isize>> = paths_delayed
                     .stream()
-                    .apply(|paths: &FiniteHashMap<(usize, usize), isize>| paths.into_iter().map(|((x,y), w)| ((*y, *x), *w)).collect());
+                    .map_keys(|&(x, y)| (y, x));
 
                 let paths_inverted_indexed: Stream<_, FiniteHashMap<usize, FiniteHashMap<usize, isize>>> = paths_inverted.index();
                 let edges_indexed: Stream<_, FiniteHashMap<usize, FiniteHashMap<usize, isize>>> = edges.index();

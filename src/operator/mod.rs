@@ -47,3 +47,9 @@ pub use sum::Sum;
 
 mod distinct;
 pub use distinct::Distinct;
+
+mod map;
+pub use map::MapKeys;
+
+mod filter_map;
+pub use filter_map::FilterMapKeys;
