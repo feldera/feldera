@@ -25,9 +25,8 @@ use crate::{
     SharedRef,
 };
 
-/// Unary operator adapter unwraps input values of type
-/// `I` wrapped in a shared reference.  See
-/// [module-level documentation](`crate::operator::adapter`) for details.
+/// Unary operator adapter unwraps input values wrapped in a shared reference.
+/// See [module-level documentation](`crate::operator::adapter`) for details.
 pub struct UnaryOperatorAdapter<O, Op> {
     op: Op,
     _types: PhantomData<O>,
