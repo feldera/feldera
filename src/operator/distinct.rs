@@ -222,7 +222,6 @@ mod test {
     #[test]
     fn distinct_incremental_nested_test() {
         let root = Root::build(move |circuit| {
-            // Changes to the edges relation.
             let mut inputs = vec![
                 vec![
                     finite_map! { 1 => 1, 2 => 1 },

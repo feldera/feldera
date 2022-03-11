@@ -53,3 +53,6 @@ pub use map::MapKeys;
 
 mod filter_map;
 pub use filter_map::FilterMapKeys;
+
+mod aggregate;
+pub use aggregate::Aggregate;
