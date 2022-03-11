@@ -54,6 +54,9 @@ pub trait MapBuilder<Key, Value> {
     /// Create an empty map.
     fn empty() -> Self;
 
+    /// Create an empty map with specified capacity.
+    fn with_capacity(capacity: usize) -> Self;
+
     /// Create a map containing a singleton value.
     fn singleton(key: Key, value: Value) -> Self;
 
@@ -70,6 +73,10 @@ where
 {
     fn empty() -> Self {
         vec![]
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Vec::with_capacity(capacity)
     }
 
     fn singleton(key: Key, value: Value) -> Self {
@@ -248,6 +255,10 @@ where
 {
     fn empty() -> Self {
         Self::new()
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacity(capacity)
     }
 
     fn singleton(key: Key, value: Value) -> Self {
