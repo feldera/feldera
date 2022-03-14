@@ -6,7 +6,7 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, NodeId, Scope, Stream,
     },
-    circuit_cache_key, RefPair,
+    circuit_cache_key, RefPair, SharedRef,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -33,6 +33,22 @@ where
                 self.circuit().add_unary_operator(Index::new(), self)
             })
             .clone()
+    }
+
+    pub fn index_with<V1, K, V2, W, CO, F>(&self, f: F) -> Stream<Circuit<P>, CO>
+    where
+        V1: KeyProperties,
+        K: KeyProperties,
+        V2: KeyProperties,
+        W: ZRingValue,
+        CI: SharedRef + 'static,
+        CI::Target: IntoIterator<Item = (V1, W)>,
+        for<'a> &'a CI::Target: IntoIterator,
+        for<'a> <&'a CI::Target as IntoIterator>::Item: RefPair<'a, V1, W>,
+        F: Fn(&V1) -> (K, V2) + Clone + 'static,
+        CO: IndexedZSet<K, V2, W>,
+    {
+        self.map_keys::<_, _, _, Vec<_>, _>(f).index()
     }
 }
 
