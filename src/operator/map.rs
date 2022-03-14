@@ -5,13 +5,14 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream,
     },
-    RefPair,
+    operator::UnaryOperatorAdapter,
+    RefPair, SharedRef,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
-impl<P, CI> Stream<Circuit<P>, CI>
+impl<P, SR> Stream<Circuit<P>, SR>
 where
-    CI: Clone,
+    SR: Clone,
     P: Clone + 'static,
 {
     /// Apply [`MapKeys`] operator to `self`.
@@ -22,14 +23,17 @@ where
         K1: Clone + 'static,
         K2: Clone + 'static,
         V: Clone + 'static,
-        CI: IntoIterator<Item = (K1, V)> + 'static,
-        for<'a> &'a CI: IntoIterator,
-        for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, K1, V>,
+        SR: SharedRef + 'static,
+        SR::Target: IntoIterator<Item = (K1, V)> + 'static,
+        for<'a> &'a SR::Target: IntoIterator,
+        for<'a> <&'a SR::Target as IntoIterator>::Item: RefPair<'a, K1, V>,
         CO: FromIterator<(K2, V)> + Clone + 'static,
         F: Fn(&K1) -> K2 + Clone + 'static,
     {
-        self.circuit()
-            .add_unary_operator(MapKeys::new(map.clone(), move |x| (map)(&x)), self)
+        self.circuit().add_unary_operator(
+            UnaryOperatorAdapter::new(MapKeys::new(map.clone(), move |x| (map)(&x))),
+            self,
+        )
     }
 
     /// Apply [`MapKeys`] operator to `self`.
@@ -40,17 +44,35 @@ where
         K1: Clone + 'static,
         K2: Clone + 'static,
         V: Clone + 'static,
-        CI: IntoIterator<Item = (K1, V)> + 'static,
-        for<'a> &'a CI: IntoIterator,
-        for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, K1, V>,
+        SR: SharedRef + 'static,
+        SR::Target: IntoIterator<Item = (K1, V)> + 'static,
+        for<'a> &'a SR::Target: IntoIterator,
+        for<'a> <&'a SR::Target as IntoIterator>::Item: RefPair<'a, K1, V>,
         CO: FromIterator<(K2, V)> + Clone + 'static,
         F: Fn(K1) -> K2 + Clone + 'static,
     {
         let func_clone = map.clone();
         self.circuit().add_unary_operator(
-            MapKeys::new(move |x: &K1| (map)(x.clone()), func_clone),
+            UnaryOperatorAdapter::new(MapKeys::new(move |x: &K1| (map)(x.clone()), func_clone)),
             self,
         )
+    }
+
+    /// Apply [`MapValues`] operator to `self`.
+    pub fn map_values<K, V1, V2, CO, F>(&self, map: F) -> Stream<Circuit<P>, CO>
+    where
+        K: Clone + 'static,
+        V1: Clone + 'static,
+        V2: Clone + 'static,
+        SR: SharedRef + 'static,
+        SR::Target: IntoIterator<Item = (K, V1)> + 'static,
+        for<'a> &'a SR::Target: IntoIterator,
+        for<'a> <&'a SR::Target as IntoIterator>::Item: RefPair<'a, K, V1>,
+        CO: FromIterator<(K, V2)> + Clone + 'static,
+        F: Fn(&K, &V1) -> V2 + 'static,
+    {
+        self.circuit()
+            .add_unary_operator(UnaryOperatorAdapter::new(MapValues::new(map)), self)
     }
 }
 
@@ -131,6 +153,84 @@ where
     fn eval_owned(&mut self, i: CI) -> CO {
         i.into_iter()
             .map(|(k, v)| ((self.map_owned)(k), v))
+            .collect()
+    }
+}
+
+/// Operator that applies a user-defined function to each value in a collection
+/// of key/value pairs.
+///
+/// # Type arguments
+///
+/// * `K` - key type in the input collection.
+/// * `V1` - value type in the input collection.
+/// * `V2` - value type in the output collection (the key type in the output
+///   collection is the same as in the input collection).
+/// * `CI` - input collection type.
+/// * `CO` - output collection type.
+/// * `F` - function that maps input key-value pairs into output values.
+pub struct MapValues<K, V1, V2, CI, CO, F>
+where
+    F: 'static,
+{
+    map: F,
+    _type: PhantomData<(K, V1, V2, CI, CO)>,
+}
+
+impl<K, V1, V2, CI, CO, F> MapValues<K, V1, V2, CI, CO, F>
+where
+    F: 'static,
+{
+    pub fn new(map: F) -> Self {
+        Self {
+            map,
+            _type: PhantomData,
+        }
+    }
+}
+
+impl<K, V1, V2, CI, CO, F> Operator for MapValues<K, V1, V2, CI, CO, F>
+where
+    K: 'static,
+    V1: 'static,
+    V2: 'static,
+    CI: 'static,
+    CO: 'static,
+    F: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("MapValues")
+    }
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
+}
+
+impl<K, V1, V2, CI, CO, F> UnaryOperator<CI, CO> for MapValues<K, V1, V2, CI, CO, F>
+where
+    K: Clone + 'static,
+    V1: Clone + 'static,
+    V2: Clone + 'static,
+    CI: IntoIterator<Item = (K, V1)> + 'static,
+    for<'a> &'a CI: IntoIterator,
+    for<'a> <&'a CI as IntoIterator>::Item: RefPair<'a, K, V1>,
+    CO: FromIterator<(K, V2)> + 'static,
+    F: Fn(&K, &V1) -> V2 + 'static,
+{
+    fn eval(&mut self, i: &CI) -> CO {
+        i.into_iter()
+            .map(|pair| {
+                let (k, v) = pair.into_refs();
+                (k.clone(), (self.map)(k, v))
+            })
+            .collect()
+    }
+
+    fn eval_owned(&mut self, i: CI) -> CO {
+        i.into_iter()
+            .map(|(k, v)| {
+                let output_v = (self.map)(&k, &v);
+                (k, output_v)
+            })
             .collect()
     }
 }

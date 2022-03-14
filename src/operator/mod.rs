@@ -49,7 +49,7 @@ mod distinct;
 pub use distinct::Distinct;
 
 mod map;
-pub use map::MapKeys;
+pub use map::{MapKeys, MapValues};
 
 mod filter_map;
 pub use filter_map::FilterMapKeys;
