@@ -3,7 +3,9 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
-    algebra::{finite_map::KeyProperties, FiniteMap, GroupValue, MapBuilder, ZRingValue},
+    algebra::{
+        finite_map::KeyProperties, FiniteHashMap, FiniteMap, GroupValue, MapBuilder, ZRingValue,
+    },
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, Scope, Stream,
@@ -57,6 +59,38 @@ where
         )
     }
 
+    /// A version of [`Self::aggregate_incremental`] optimized for linear
+    /// aggregation functions.
+    ///
+    /// This method only works for linear aggregation functions `f`, i.e.,
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
+    /// incorrect results if `f` is not linear.
+    ///
+    /// Note that this method adds the value of the key from the input indexed
+    /// Z-set to the output Z-set, i.e., given an input key-value pair `(k,
+    /// v)`, the output Z-set contains value `(k, f(k, v))`.  In contrast,
+    /// [`Self::aggregate_incremental`] does not automatically include key
+    /// in the output, since a user-defined aggregation function can be
+    /// designed to return the key if necessar.  However,
+    /// such an aggregation function can be non-linear (in fact, the plus
+    /// operation may not even be defined for its output type).
+    pub fn aggregate_linear_incremental<K, VI, VO, W, F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    where
+        K: KeyProperties,
+        VI: GroupValue,
+        SR: SharedRef + 'static,
+        <SR as SharedRef>::Target: FiniteMap<K, VI>,
+        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
+        F: Fn(&K, &VI) -> VO + 'static,
+        VO: GroupValue,
+        W: ZRingValue,
+        O: Clone + MapBuilder<(K, VO), W> + 'static,
+    {
+        let agg_delta: Stream<_, FiniteHashMap<K, VO>> = self.map_values(f);
+        agg_delta.aggregate_incremental(|key, agg_val| (key.clone(), agg_val.clone()))
+    }
+
     /// Incremental nested version of the [`Aggregate`] operator.
     ///
     /// This is equivalent to
@@ -77,6 +111,33 @@ where
     {
         self.integrate_nested()
             .aggregate_incremental(f)
+            .differentiate_nested()
+    }
+
+    /// A version of [`Self::aggregate_incremental_nested`] optimized for linear
+    /// aggregation functions.
+    ///
+    /// This method only works for linear aggregation functions `f`, i.e.,
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
+    /// incorrect results if `f` is not linear.
+    pub fn aggregate_linear_incremental_nested<K, VI, VO, W, F, O>(
+        &self,
+        f: F,
+    ) -> Stream<Circuit<P>, O>
+    where
+        K: KeyProperties,
+        VI: GroupValue,
+        SR: SharedRef + 'static,
+        <SR as SharedRef>::Target: FiniteMap<K, VI>,
+        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
+        F: Fn(&K, &VI) -> VO + 'static,
+        VO: GroupValue,
+        W: ZRingValue,
+        O: Clone + MapBuilder<(K, VO), W> + GroupValue,
+    {
+        self.integrate_nested()
+            .aggregate_linear_incremental(f)
             .differentiate_nested()
     }
 }
@@ -204,7 +265,7 @@ where
 
         for (k, v) in delta.into_iter() {
             if let Some(old_val) = delayed_integral.get_in_support(k) {
-                // Retract the old value of the aggregate
+                // Retract the old value of the aggregate.
                 result.increment_owned((self.agg_func)(k, old_val), W::one().neg());
 
                 // Insert updated aggregate.
@@ -262,7 +323,7 @@ mod test {
                         })))
                         .index();
 
-                    // Weighted sum aggregate.
+                    // Weighted sum aggregate.  Returns `(key, weighted_sum)`.
                     let sum = |key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, isize) {
                         let mut result: isize = 0;
                         for (v, w) in zset.into_iter() {
@@ -272,7 +333,19 @@ mod test {
                         (key.clone(), result)
                     };
 
+                    // Weighted sum aggregate that returns only the weighted sum
+                    // value and is therefore linear.
+                    let sum_linear = |_key: &usize, zset: &ZSetHashMap<usize, isize>| -> isize {
+                        let mut result: isize = 0;
+                        for (v, w) in zset.into_iter() {
+                            result += (*v as isize) * w;
+                        }
+
+                        result
+                    };
+
                     let sum_inc = input.aggregate_incremental_nested(sum.clone());
+                    let sum_inc_linear = input.aggregate_linear_incremental_nested(sum_linear);
                     let sum_noninc = input
                         .integrate_nested()
                         .integrate()
@@ -280,7 +353,7 @@ mod test {
                         .differentiate()
                         .differentiate_nested();
 
-                    // Compare outputs of incremental and non-incremental implementations.
+                    // Compare outputs of all three implementations.
                     child
                         .add_binary_operator(
                             Apply2::new(
@@ -298,7 +371,22 @@ mod test {
                             assert_eq!(d1, d2);
                         });
 
-                    // Min aggregate.
+                    child
+                        .add_binary_operator(
+                            Apply2::new(
+                                |d1: &FiniteHashMap<(usize, isize), isize>,
+                                 d2: &FiniteHashMap<(usize, isize), isize>| {
+                                    (d1.clone(), d2.clone())
+                                },
+                            ),
+                            &sum_inc,
+                            &sum_inc_linear,
+                        )
+                        .inspect(|(d1, d2)| {
+                            assert_eq!(d1, d2);
+                        });
+
+                    // Min aggregate (non-linear).
                     let min = |key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, usize) {
                         let mut result: usize = *zset.into_iter().next().unwrap().0;
                         for (&v, _) in zset.into_iter() {
