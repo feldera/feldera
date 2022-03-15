@@ -132,14 +132,14 @@ where
         Z: ZSet<V, W>,
     {
         let join1: Stream<_, Z> = self
-            .integrate()
             .integrate_nested()
+            .integrate()
             .join(other, join_func.clone());
         let join2 = self
             .integrate()
             .join(&other.integrate_nested().delay_nested(), join_func.clone());
         let join3 = self.join(
-            &other.integrate().integrate_nested().delay(),
+            &other.integrate_nested().integrate().delay(),
             join_func.clone(),
         );
         let join4 = self
