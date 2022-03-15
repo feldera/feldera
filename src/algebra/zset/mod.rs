@@ -82,6 +82,20 @@ where
 /// An implementation of ZSets using [`FiniteHashMap`]s
 pub type ZSetHashMap<Data, Weight> = FiniteHashMap<Data, Weight>;
 
+/// Build a Z-set from an iterator, giving each item a weight of 1.
+impl<Data, Weight> FromIterator<Data> for ZSetHashMap<Data, Weight>
+where
+    Data: KeyProperties,
+    Weight: ZRingValue,
+{
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Data>,
+    {
+        Self::from_iter(iter.into_iter().map(|d| (d, Weight::one())))
+    }
+}
+
 impl<Data, Weight> ZSet<Data, Weight> for ZSetHashMap<Data, Weight>
 where
     Data: KeyProperties,
