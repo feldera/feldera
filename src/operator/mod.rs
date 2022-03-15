@@ -56,3 +56,6 @@ pub use filter_map::FilterMapKeys;
 
 mod aggregate;
 pub use aggregate::Aggregate;
+
+mod csv;
+pub use self::csv::CsvSource;
