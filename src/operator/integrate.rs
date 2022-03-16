@@ -149,7 +149,8 @@ where
 mod test {
     use crate::{
         algebra::{FiniteMap, MapBuilder, ZSetHashMap},
-        circuit::{trace::TraceMonitor, Root},
+        circuit::Root,
+        monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
     };
 

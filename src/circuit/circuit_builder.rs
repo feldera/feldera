@@ -2363,10 +2363,8 @@ impl Root {
 mod tests {
     use super::Root;
     use crate::{
-        circuit::{
-            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-            trace::TraceMonitor,
-        },
+        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+        monitor::TraceMonitor,
         operator::{Apply2, Generator, Inspect, Z1},
     };
     use std::{
