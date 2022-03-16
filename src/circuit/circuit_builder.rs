@@ -343,6 +343,7 @@ impl Display for NodeId {
 }
 
 /// Globally unique id of a node (operator or subcircuit).
+///
 /// The identifier consists of a path from the top-level circuit to the node.
 /// The top-level circuit has global id `[]`, an operator in the top-level
 /// circuit or a sub-circuit nested inside the top-level circuit will have a
