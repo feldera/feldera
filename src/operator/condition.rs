@@ -134,10 +134,10 @@ mod test {
         algebra::{FiniteMap, ZSet, ZSetHashMap},
         circuit::{
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-            trace::TraceMonitor,
             Circuit, Root, Stream,
         },
         finite_map,
+        monitor::TraceMonitor,
         operator::{Apply2, DelayedFeedback, Generator},
     };
     use std::sync::{Arc, Mutex};

@@ -15,5 +15,6 @@ pub use ref_pair::RefPair;
 
 pub mod algebra;
 pub mod circuit;
+pub mod monitor;
 pub mod operator;
 mod test;
