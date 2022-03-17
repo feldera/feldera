@@ -64,6 +64,11 @@ pub enum TraceError {
     NodeExists(GlobalNodeId),
     /// Attempt to add a node to a parent that is not a circuit node.
     NotACircuit(GlobalNodeId),
+    /// Node created outside of the current circuit.
+    NodeOutsideCurrentScope(GlobalNodeId, GlobalNodeId),
+    /// Event contains node id that is not valid for the given
+    /// event type in the current state.
+    UnexpectedNodeId,
     /// Invalid event in the current state of the circuit automaton.
     InvalidEvent(Cow<'static, str>),
 }
@@ -75,6 +80,14 @@ impl Display for TraceError {
             Self::UnknownNode(node) => write!(f, "unknown node {}", node),
             Self::NodeExists(node) => write!(f, "node already exists: {}", node),
             Self::NotACircuit(node) => write!(f, "not a circuit node {}", node),
+            Self::NodeOutsideCurrentScope(node, scope) => write!(
+                f,
+                "node id {} does not belong to the current scope {}",
+                node, scope
+            ),
+            Self::UnexpectedNodeId => {
+                f.write_str("node id is not valid for this event type in the current state")
+            }
             Self::InvalidEvent(descr) => f.write_str(descr),
         }
     }
@@ -105,6 +118,8 @@ impl Display for TraceError {
 pub struct TraceMonitor {
     /// Circuit graph constructed based on `CircuitEvent`s.
     circuit: CircuitGraph,
+    /// Subcircuit that is currently being populated.
+    current_scope: GlobalNodeId,
     /// The stack of circuit automata states.  We start with a single
     /// element for the root circuit.  Evaluating a nested circuit
     /// pushes a new state on the stack. The stack becomes empty
@@ -149,6 +164,7 @@ impl TraceMonitor {
     {
         Self {
             circuit: CircuitGraph::new(),
+            current_scope: GlobalNodeId::from_path(&[]),
             state: vec![CircuitState::new()],
             circuit_error_handler: Box::new(circuit_error_handler),
             scheduler_error_handler: Box::new(scheduler_error_handler),
@@ -164,43 +180,63 @@ impl TraceMonitor {
     }
 
     fn circuit_event(&mut self, event: &CircuitEvent) -> Result<(), TraceError> {
+        println!("event: {}", event);
         if event.is_node_event() {
-            let path = event.node_id().unwrap().path();
-            let local_node_id = *path.last().ok_or(TraceError::EmptyPath)?;
-            let parent_id = GlobalNodeId::from_path(path.split_last().unwrap().1);
+            let node_id = event.node_id().unwrap();
+            let local_node_id = node_id.local_node_id().ok_or(TraceError::EmptyPath)?;
+            let parent_id = node_id.parent_id().unwrap();
             let parent_node = self
                 .circuit
                 .node_mut(&parent_id)
                 .ok_or_else(|| TraceError::UnknownNode(parent_id.clone()))?;
-            match &mut parent_node.kind {
-                NodeKind::Circuit { children, .. } => {
-                    if children.get(&local_node_id).is_some() {
-                        return Err(TraceError::NodeExists(event.node_id().unwrap().clone()));
-                    };
-                    let new_node = if event.is_operator_event() || event.is_strict_output_event() {
-                        Node::new(event.node_name().unwrap(), NodeKind::Operator)
-                    } else if event.is_strict_input_event() {
-                        let output = event.output_node_id().unwrap();
-                        if children.get(&output).is_none() {
-                            return Err(TraceError::UnknownNode(GlobalNodeId::child(
-                                &parent_id, output,
-                            )));
-                        };
 
-                        Node::new("", NodeKind::StrictInput { output })
-                    } else {
-                        Node::new(
-                            "",
-                            NodeKind::Circuit {
-                                iterative: event.is_iterative_subcircuit_event(),
-                                children: HashMap::new(),
-                            },
-                        )
-                    };
-                    children.insert(local_node_id, new_node);
-                    Ok(())
+            if event.is_new_node_event() {
+                if parent_id != self.current_scope {
+                    return Err(TraceError::NodeOutsideCurrentScope(
+                        node_id.clone(),
+                        self.current_scope.clone(),
+                    ));
                 }
-                _ => Err(TraceError::NotACircuit(parent_id)),
+
+                match &mut parent_node.kind {
+                    NodeKind::Circuit { children, .. } => {
+                        if children.get(&local_node_id).is_some() {
+                            return Err(TraceError::NodeExists(node_id.clone()));
+                        }
+                        let new_node =
+                            if event.is_operator_event() || event.is_strict_output_event() {
+                                Node::new(event.node_name().unwrap(), NodeKind::Operator)
+                            } else if event.is_strict_input_event() {
+                                let output = event.output_node_id().unwrap();
+                                if children.get(&output).is_none() {
+                                    return Err(TraceError::UnknownNode(GlobalNodeId::child(
+                                        &parent_id, output,
+                                    )));
+                                }
+
+                                Node::new("", NodeKind::StrictInput { output })
+                            } else {
+                                self.current_scope = node_id.clone();
+                                Node::new(
+                                    "",
+                                    NodeKind::Circuit {
+                                        iterative: event.is_iterative_subcircuit_event(),
+                                        children: HashMap::new(),
+                                    },
+                                )
+                            };
+
+                        children.insert(local_node_id, new_node);
+                        Ok(())
+                    }
+                    _ => Err(TraceError::NotACircuit(parent_id)),
+                }
+            } else {
+                if node_id != &self.current_scope {
+                    return Err(TraceError::UnexpectedNodeId);
+                }
+                self.current_scope = parent_id;
+                Ok(())
             }
         } else if event.is_edge_event() {
             let from = event.from().unwrap();

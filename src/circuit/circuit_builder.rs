@@ -395,6 +395,18 @@ impl GlobalNodeId {
         Self(ids)
     }
 
+    /// Returns local node id of `self` or `None` if `self` is the root node.
+    pub fn local_node_id(&self) -> Option<NodeId> {
+        self.0.last().cloned()
+    }
+
+    /// Returns parent id of `self` or `None` if `self` is the rooot node.
+    pub fn parent_id(&self) -> Option<Self> {
+        self.0
+            .split_last()
+            .map(|(_, prefix)| GlobalNodeId::from_path(prefix))
+    }
+
     /// Get the path from global.
     pub fn path(&self) -> &[NodeId] {
         &self.0
@@ -1397,13 +1409,12 @@ where
         E: Executor<Self>,
     {
         self.try_add_node(|id| {
-            self.log_circuit_event(&CircuitEvent::subcircuit(
-                GlobalNodeId::child_of(self, id),
-                iterative,
-            ));
+            let global_id = GlobalNodeId::child_of(self, id);
+            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), iterative));
             let mut child_circuit = Circuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
             let child = <ChildNode<Self>>::new::<E>(child_circuit, executor, id);
+            self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
             Ok((child, res))
         })
     }
