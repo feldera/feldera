@@ -83,16 +83,18 @@ where
                 //              delayed
                 //              export
                 // ```
-                let feedback = DelayedFeedback::new(self.circuit());
-                let integral = self.circuit().add_binary_operator_with_preference(
-                    <BinaryOperatorAdapter<D::Target, _>>::new(<Plus<D::Target>>::new()),
-                    feedback.stream(),
-                    self,
-                    OwnershipPreference::STRONGLY_PREFER_OWNED,
-                    OwnershipPreference::PREFER_OWNED,
-                );
-                feedback.connect(&integral);
-                integral
+                self.circuit().region("integrate", || {
+                    let feedback = DelayedFeedback::new(self.circuit());
+                    let integral = self.circuit().add_binary_operator_with_preference(
+                        <BinaryOperatorAdapter<D::Target, _>>::new(<Plus<D::Target>>::new()),
+                        feedback.stream(),
+                        self,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                        OwnershipPreference::PREFER_OWNED,
+                    );
+                    feedback.connect(&integral);
+                    integral
+                })
             })
             .clone()
     }
@@ -130,16 +132,18 @@ where
     pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D::Target>> {
         self.circuit()
             .cache_get_or_insert_with(NestedIntegralId::new(self.local_node_id()), || {
-                let feedback = DelayedNestedFeedback::new(self.circuit());
-                let integral = self.circuit().add_binary_operator_with_preference(
-                    <BinaryOperatorAdapter<D::Target, _>>::new(Plus::new()),
-                    feedback.stream(),
-                    self,
-                    OwnershipPreference::STRONGLY_PREFER_OWNED,
-                    OwnershipPreference::PREFER_OWNED,
-                );
-                feedback.connect(&integral);
-                integral
+                self.circuit().region("integrate_nested", || {
+                    let feedback = DelayedNestedFeedback::new(self.circuit());
+                    let integral = self.circuit().add_binary_operator_with_preference(
+                        <BinaryOperatorAdapter<D::Target, _>>::new(Plus::new()),
+                        feedback.stream(),
+                        self,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                        OwnershipPreference::PREFER_OWNED,
+                    );
+                    feedback.connect(&integral);
+                    integral
+                })
             })
             .clone()
     }
@@ -153,8 +157,6 @@ mod test {
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
     };
-
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn scalar_integrate() {
@@ -229,11 +231,7 @@ mod test {
     #[test]
     fn scalar_integrate_nested() {
         let root = Root::build(move |circuit| {
-            TraceMonitor::attach(
-                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
-                circuit,
-                "monitor",
-            );
+            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut input = vec![3, 4, 2, 5].into_iter();
 

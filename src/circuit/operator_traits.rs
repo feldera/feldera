@@ -133,6 +133,10 @@ pub trait Operator: 'static {
         F: Fn() + Send + Sync + 'static,
     {
     }
+
+    fn summary(&self, output: &mut String) {
+        output.clear();
+    }
 }
 
 /// A source operator that injects data from the outside world or from the
