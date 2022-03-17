@@ -73,6 +73,11 @@ pub enum CircuitEvent {
         /// times for each parent clock tick.
         iterative: bool,
     },
+    /// Nested circuit has been fully populated.
+    SubcircuitComplete {
+        /// Global id of the nested circuit.
+        node_id: GlobalNodeId,
+    },
     /// A new edge between nodes connected as producer and consumer to the same
     /// stream. Producer and consumer nodes can be located in different
     /// subcircuits.
@@ -108,6 +113,9 @@ impl Display for CircuitEvent {
                     if *iterative { "Iterative" } else { "" },
                     node_id,
                 )
+            }
+            Self::SubcircuitComplete { node_id } => {
+                write!(f, "SubcircuitComplete({})", node_id,)
             }
             Self::Edge {
                 kind: EdgeKind::Stream(preference),
@@ -147,6 +155,11 @@ impl CircuitEvent {
     /// Create a [`CircuitEvent::Subcircuit`] event instance.
     pub fn subcircuit(node_id: GlobalNodeId, iterative: bool) -> Self {
         Self::Subcircuit { node_id, iterative }
+    }
+
+    /// Create a [`CircuitEvent::SubcircuitComplete`] event instance.
+    pub fn subcircuit_complete(node_id: GlobalNodeId) -> Self {
+        Self::SubcircuitComplete { node_id }
     }
 
     /// Create a [`CircuitEvent::Edge`] event instance.
@@ -208,10 +221,25 @@ impl CircuitEvent {
         matches!(self, Self::Edge { .. })
     }
 
+    /// `true` if `self` is one of events related to nodes:
+    /// [`CircuitEvent::Operator`], [`CircuitEvent::StrictOperatorOutput`],
+    /// [`CircuitEvent::StrictOperatorInput`], [`CircuitEvent::Subcircuit`],
+    /// or [`CircuitEvent::SubcircuitComplete`].
+    pub fn is_node_event(&self) -> bool {
+        matches!(
+            self,
+            Self::Operator { .. }
+                | Self::StrictOperatorOutput { .. }
+                | Self::StrictOperatorInput { .. }
+                | Self::Subcircuit { .. }
+                | Self::SubcircuitComplete { .. }
+        )
+    }
+
     /// `true` if `self` is one of the node creation events:
     /// [`CircuitEvent::Operator`], [`CircuitEvent::StrictOperatorOutput`],
     /// [`CircuitEvent::StrictOperatorInput`], or [`CircuitEvent::Subcircuit`].
-    pub fn is_node_event(&self) -> bool {
+    pub fn is_new_node_event(&self) -> bool {
         matches!(
             self,
             Self::Operator { .. }
@@ -228,6 +256,7 @@ impl CircuitEvent {
             | Self::StrictOperatorOutput { node_id, .. }
             | Self::StrictOperatorInput { node_id, .. }
             | Self::Subcircuit { node_id, .. } => Some(node_id),
+            Self::SubcircuitComplete { node_id } => Some(node_id),
             _ => None,
         }
     }
