@@ -140,7 +140,6 @@ mod test {
         monitor::TraceMonitor,
         operator::{Apply2, DelayedFeedback, Generator},
     };
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn iterate_with_conditions_static() {
@@ -157,11 +156,8 @@ mod test {
         S: Scheduler + 'static,
     {
         let root = Root::build_with_scheduler::<_, S>(|circuit| {
-            TraceMonitor::attach(
-                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
-                circuit,
-                "monitor",
-            );
+            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
+
             // Graph edges
             let edges = circuit.add_source(Generator::new(move || finite_map! {
                 (0, 3) => 1,

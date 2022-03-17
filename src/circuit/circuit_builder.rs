@@ -262,21 +262,26 @@ pub type Scope = u16;
 
 /// Node in a circuit.  A node wraps an operator with strongly typed
 /// input and output streams.
-pub(crate) trait Node {
+pub trait Node {
     /// Node id unique within its parent circuit.
-    fn id(&self) -> NodeId;
+    fn local_id(&self) -> NodeId;
+
+    /// Global node id.
+    fn global_id(&self) -> &GlobalNodeId;
 
     /// `true` if the node encapsulates an asynchronous operator (see
-    /// [`Operator::is_async()`]). `false` for synchronous operators and
-    /// subcircuits.
+    /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
+    /// `false` for synchronous operators and subcircuits.
     fn is_async(&self) -> bool;
 
-    /// `true` if the node is ready to execute (see [`Operator::ready()`]).
+    /// `true` if the node is ready to execute (see
+    /// [`Operator::ready()`](super::operator_traits::Operator::ready)).
     /// Always returns `true` for synchronous operators and subcircuits.
     fn ready(&self) -> bool;
 
     /// Register callback to be invoked when an asynchronous operator becomes
-    /// ready (see [`Operator::register_ready_callback`]).
+    /// ready (see
+    /// [`super::operator_traits::Operator::register_ready_callback`]).
     fn register_ready_callback(&mut self, _cb: Box<dyn Fn() + Send + Sync>) {}
 
     /// Evaluate the operator.  Reads one value from each input stream
@@ -313,6 +318,8 @@ pub(crate) trait Node {
     /// Only one node may be scheduled at any given time (a node cannot invoke
     /// another node).
     unsafe fn clock_end(&mut self, scope: Scope);
+
+    fn summary(&self, output: &mut String);
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -378,6 +385,10 @@ impl GlobalNodeId {
         Self(path)
     }
 
+    pub fn root() -> Self {
+        Self(Vec::new())
+    }
+
     /// Generate global node id by appending `child_id` to `self`.
     pub fn child(&self, child_id: NodeId) -> Self {
         let mut path = Vec::with_capacity(self.path().len() + 1);
@@ -414,7 +425,7 @@ impl GlobalNodeId {
 }
 
 type CircuitEventHandler = Box<dyn Fn(&CircuitEvent)>;
-type SchedulerEventHandler = Box<dyn Fn(&SchedulerEvent)>;
+type SchedulerEventHandler = Box<dyn FnMut(&SchedulerEvent<'_>)>;
 type CircuitEventHandlers = Rc<RefCell<HashMap<String, CircuitEventHandler>>>;
 type SchedulerEventHandlers = Rc<RefCell<HashMap<String, SchedulerEventHandler>>>;
 
@@ -602,11 +613,11 @@ impl<P> CircuitInner<P> {
 
     fn register_scheduler_event_handler<F>(&mut self, name: &str, handler: F)
     where
-        F: Fn(&SchedulerEvent) + 'static,
+        F: FnMut(&SchedulerEvent<'_>) + 'static,
     {
         self.scheduler_event_handlers.borrow_mut().insert(
             name.to_string(),
-            Box::new(handler) as Box<dyn Fn(&SchedulerEvent)>,
+            Box::new(handler) as Box<dyn FnMut(&SchedulerEvent<'_>)>,
         );
     }
 
@@ -623,8 +634,8 @@ impl<P> CircuitInner<P> {
         }
     }
 
-    fn log_scheduler_event(&self, event: &SchedulerEvent) {
-        for (_, handler) in self.scheduler_event_handlers.borrow().iter() {
+    fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
+        for (_, handler) in self.scheduler_event_handlers.borrow_mut().iter_mut() {
             handler(event)
         }
     }
@@ -647,7 +658,7 @@ impl Circuit<()> {
         Self(Rc::new(RefCell::new(CircuitInner::new(
             (),
             NodeId::root(),
-            GlobalNodeId::from_path(&[]),
+            GlobalNodeId::root(),
             Rc::new(RefCell::new(HashMap::new())),
             Rc::new(RefCell::new(HashMap::new())),
         ))))
@@ -704,7 +715,7 @@ impl Circuit<()> {
     /// `handler` - user callback invoked on each scheduler event.
     pub fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
     where
-        F: Fn(&SchedulerEvent) + 'static,
+        F: FnMut(&SchedulerEvent<'_>) + 'static,
     {
         self.inner_mut()
             .register_scheduler_event_handler(name, handler);
@@ -851,7 +862,7 @@ impl<P> Circuit<P> {
 
     /// Returns vector of local node ids in the circuit.
     pub(super) fn node_ids(&self) -> Vec<NodeId> {
-        self.inner().nodes.iter().map(|node| node.id()).collect()
+        self.inner().nodes.iter().map(|node| node.local_id()).collect()
     }
 
     /// Deliver `clock_start` notification to all nodes in the circuit.
@@ -880,7 +891,7 @@ impl<P> Circuit<P> {
 
     /// Send the specified `SchedulerEvent` to all handlers attached to the
     /// circuit.
-    pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent) {
+    pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
     }
 
@@ -954,7 +965,7 @@ where
         // We normally avoid this, since a nested call from event handler
         // will panic in `self.inner()`, but we do it here as an
         // optimization.
-        circuit.log_scheduler_event(&SchedulerEvent::eval_start(id));
+        circuit.log_scheduler_event(&SchedulerEvent::eval_start(circuit.nodes[id.0].as_ref()));
 
         // Safety: `eval` cannot invoke the
         // `eval` method of another node.  To circumvent
@@ -964,9 +975,26 @@ where
         // streams.
         unsafe { circuit.nodes[id.0].eval()? };
 
-        circuit.log_scheduler_event(&SchedulerEvent::eval_end(id));
+        circuit.log_scheduler_event(&SchedulerEvent::eval_end(circuit.nodes[id.0].as_ref()));
 
         Ok(())
+    }
+
+    /// Evaluate closure `f` inside a new circuit region.
+    ///
+    /// A region is a logical grouping of circuit nodes.  Regions are used
+    /// exclusively for debugging and do not affect scheduling or evaluation
+    /// of the circuit.  This function creates a new region and executes
+    /// closure `f` inside it.  Any operators or subcircuits created by
+    /// `f` will belong to the new region.
+    pub fn region<F, T>(&self, name: &str, f: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        self.log_circuit_event(&CircuitEvent::push_region(name));
+        let res = f();
+        self.log_circuit_event(&CircuitEvent::pop_region());
+        res
     }
 
     /// Add a source operator to the circuit.  See [`SourceOperator`].
@@ -1413,7 +1441,7 @@ where
             self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), iterative));
             let mut child_circuit = Circuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
-            let child = <ChildNode<Self>>::new::<E>(child_circuit, executor, id);
+            let child = <ChildNode<Self>>::new::<E>(child_circuit, executor);
             self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
             Ok((child, res))
         })
@@ -1559,7 +1587,7 @@ where
 }
 
 struct ImportNode<P, I, O, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     parent_stream: Stream<Circuit<P>, I>,
     output_stream: Stream<Circuit<Circuit<P>>, O>,
@@ -1578,7 +1606,7 @@ where
         assert!(Circuit::ptr_eq(&circuit.parent(), parent_stream.circuit()));
 
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             parent_stream,
             output_stream: Stream::new(circuit, id),
@@ -1596,8 +1624,12 @@ where
     O: Clone,
     Op: ImportOperator<I, O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -1630,10 +1662,14 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 struct SourceNode<C, O, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     output_stream: Stream<C, O>,
 }
@@ -1645,7 +1681,7 @@ where
 {
     fn new(operator: Op, circuit: Circuit<P>, id: NodeId) -> Self {
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             output_stream: Stream::new(circuit, id),
         }
@@ -1661,8 +1697,12 @@ where
     O: Clone,
     Op: SourceOperator<O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -1689,10 +1729,14 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 struct UnaryNode<C, I, O, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
@@ -1710,7 +1754,7 @@ where
         id: NodeId,
     ) -> Self {
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             input_stream,
             output_stream: Stream::new(circuit, id),
@@ -1728,8 +1772,12 @@ where
     O: Clone,
     Op: UnaryOperator<I, O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -1759,21 +1807,25 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 struct SinkNode<C, I, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     input_stream: Stream<C, I>,
 }
 
-impl<C, I, Op> SinkNode<C, I, Op>
+impl<P, I, Op> SinkNode<Circuit<P>, I, Op>
 where
     Op: SinkOperator<I>,
 {
-    fn new(operator: Op, input_stream: Stream<C, I>, _circuit: C, id: NodeId) -> Self {
+    fn new(operator: Op, input_stream: Stream<Circuit<P>, I>, circuit: Circuit<P>, id: NodeId) -> Self {
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             input_stream,
         }
@@ -1785,8 +1837,12 @@ where
     I: Clone,
     Op: SinkOperator<I>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -1816,10 +1872,14 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 struct BinaryNode<C, I1, I2, O, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     input_stream1: Stream<C, I1>,
     input_stream2: Stream<C, I2>,
@@ -1842,7 +1902,7 @@ where
     ) -> Self {
         let is_alias = input_stream1.ptr_eq(&input_stream2);
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             input_stream1,
             input_stream2,
@@ -1863,8 +1923,12 @@ where
     O: Clone,
     Op: BinaryOperator<I1, I2, O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -1914,13 +1978,17 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 struct NaryNode<C, I, O, Op>
 where
     I: Clone + 'static,
 {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Op,
     // The second field of the tuple indicates if the stream is an
     // alias to an earlier stream.
@@ -1957,7 +2025,7 @@ where
         aliases.shrink_to_fit();
         input_streams.shrink_to_fit();
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             input_streams,
             aliases,
@@ -1976,8 +2044,12 @@ where
     O: Clone,
     Op: NaryOperator<I, O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -2019,6 +2091,10 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
 }
 
 // The output half of a feedback node.  We implement a feedback node using a
@@ -2027,7 +2103,7 @@ where
 // in each time stamp.  `FeedbackInputNode` is a sink node.  This way the
 // circuit graph remains acyclic and can be scheduled in a topological order.
 struct FeedbackOutputNode<P, I, O, Op> {
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Rc<UnsafeCell<Op>>,
     output_stream: Stream<Circuit<P>, O>,
     export_stream: Stream<P, O>,
@@ -2041,7 +2117,7 @@ where
 {
     fn new(operator: Rc<UnsafeCell<Op>>, circuit: Circuit<P>, id: NodeId) -> Self {
         Self {
-            id,
+            id: circuit.global_node_id().child(id),
             operator,
             output_stream: Stream::new(circuit.clone(), id),
             export_stream: Stream::with_origin(
@@ -2064,8 +2140,12 @@ where
     O: Clone,
     Op: StrictUnaryOperator<I, O>,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -2099,24 +2179,30 @@ where
         }
         (&mut *self.operator.get()).clock_end(scope);
     }
+
+    fn summary(&self, output: &mut String) {
+        unsafe {
+            (&*self.operator.get()).summary(output);
+        }
+    }
 }
 
 /// The input half of a feedback node
 struct FeedbackInputNode<C, I, O, Op> {
     // Id of this node (the input half).
-    id: NodeId,
+    id: GlobalNodeId,
     operator: Rc<UnsafeCell<Op>>,
     input_stream: Stream<C, I>,
     phantom_output: PhantomData<O>,
 }
 
-impl<C, I, O, Op> FeedbackInputNode<C, I, O, Op>
+impl<P, I, O, Op> FeedbackInputNode<Circuit<P>, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
 {
-    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<C, I>, id: NodeId) -> Self {
+    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<Circuit<P>, I>, id: NodeId) -> Self {
         Self {
-            id,
+            id: input_stream.circuit().global_node_id().child(id),
             operator,
             input_stream,
             phantom_output: PhantomData,
@@ -2129,8 +2215,12 @@ where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -2158,6 +2248,12 @@ where
     fn clock_start(&mut self, _scope: Scope) {}
 
     unsafe fn clock_end(&mut self, _scope: Scope) {}
+
+    fn summary(&self, output: &mut String) {
+        unsafe {
+            (&*self.operator.get()).summary(output);
+        }
+    }
 }
 
 /// Input connector of a feedback operator.
@@ -2221,7 +2317,7 @@ where
 
 // A nested circuit instantiated as a node in a parent circuit.
 struct ChildNode<P> {
-    id: NodeId,
+    id: GlobalNodeId,
     circuit: Circuit<P>,
     executor: Box<dyn Executor<P>>,
 }
@@ -2235,12 +2331,12 @@ impl<P> Drop for ChildNode<P> {
 }
 
 impl<P> ChildNode<P> {
-    fn new<E>(circuit: Circuit<P>, executor: E, id: NodeId) -> Self
+    fn new<E>(circuit: Circuit<P>, executor: E) -> Self
     where
         E: Executor<P>,
     {
         Self {
-            id,
+            id: circuit.global_node_id(),
             circuit,
             executor: Box::new(executor) as Box<dyn Executor<P>>,
         }
@@ -2251,8 +2347,12 @@ impl<P> Node for ChildNode<P>
 where
     P: 'static,
 {
-    fn id(&self) -> NodeId {
-        self.id
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
     }
 
     fn is_async(&self) -> bool {
@@ -2273,6 +2373,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.circuit.clock_end(scope + 1);
+    }
+
+    fn summary(&self, output: &mut String) {
+        output.clear();
     }
 }
 
@@ -2355,7 +2459,7 @@ impl Root {
     /// handlers during circuit construction.
     pub fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
     where
-        F: Fn(&SchedulerEvent) + 'static,
+        F: FnMut(&SchedulerEvent<'_>) + 'static,
     {
         self.circuit.register_scheduler_event_handler(name, handler);
     }
@@ -2378,13 +2482,7 @@ mod tests {
         monitor::TraceMonitor,
         operator::{Apply2, Generator, Inspect, Z1},
     };
-    use std::{
-        cell::RefCell,
-        ops::Deref,
-        rc::Rc,
-        sync::{Arc, Mutex},
-        vec::Vec,
-    };
+    use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
     // Compute the sum of numbers from 0 to 99.
     #[test]
@@ -2405,11 +2503,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<isize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
         let root = Root::build_with_scheduler::<_, S>(|circuit| {
-            TraceMonitor::attach(
-                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
-                circuit,
-                "monitor",
-            );
+            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
             let mut n: isize = 0;
             let source = circuit.add_source(Generator::new(move || {
                 let result = n;
@@ -2454,11 +2548,7 @@ mod tests {
         let actual_output_clone = actual_output.clone();
 
         let root = Root::build_with_scheduler::<_, S>(|circuit| {
-            TraceMonitor::attach(
-                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
-                circuit,
-                "monitor",
-            );
+            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
             let source = circuit.add_source(Generator::new(move || {
@@ -2516,11 +2606,7 @@ mod tests {
         let actual_output_clone = actual_output.clone();
 
         let root = Root::build_with_scheduler::<_, S>(|circuit| {
-            TraceMonitor::attach(
-                Arc::new(Mutex::new(TraceMonitor::new_panic_on_error())),
-                circuit,
-                "monitor",
-            );
+            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
             let source = circuit.add_source(Generator::new(move || {

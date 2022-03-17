@@ -17,7 +17,7 @@
 
 use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
-use super::{GlobalNodeId, NodeId, OwnershipPreference};
+use super::{circuit_builder::Node, GlobalNodeId, NodeId, OwnershipPreference};
 
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -30,11 +30,24 @@ pub enum EdgeKind {
     Dependency,
 }
 
+impl EdgeKind {
+    pub fn is_stream(&self) -> bool {
+        matches!(self, Self::Stream(..))
+    }
+}
+
 /// Events related to circuit construction.  A handler listening to these
 /// events should be able to reconstruct complete circuit topology,
 /// including operators, nested circuits, and streams connecting them.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum CircuitEvent {
+    /// Create a sub-region.
+    PushRegion {
+        /// Sub-region name.
+        name: Cow<'static, str>,
+    },
+    /// Subregion complete.
+    PopRegion,
     /// A new regular (non-strict) operator is added to the circuit.
     Operator {
         /// Global id of the new operator.
@@ -94,6 +107,10 @@ pub enum CircuitEvent {
 impl Display for CircuitEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PushRegion { name } => {
+                write!(f, "PushRegion(\"{}\")", name)
+            }
+            Self::PopRegion => f.write_str("PopRegion"),
             Self::Operator { node_id, name } => {
                 write!(f, "Operator(\"{}\", {})", name, node_id)
             }
@@ -136,6 +153,25 @@ impl Display for CircuitEvent {
 }
 
 impl CircuitEvent {
+    /// Create a [`CircuitEvent::PushRegion`] event instance.
+    pub fn push_region_static(name: &'static str) -> Self {
+        Self::PushRegion {
+            name: Cow::Borrowed(name),
+        }
+    }
+
+    /// Create a [`CircuitEvent::PushRegion`] event instance.
+    pub fn push_region(name: &str) -> Self {
+        Self::PushRegion {
+            name: Cow::Owned(name.to_string()),
+        }
+    }
+
+    /// Create a [`CircuitEvent::PopRegion`] event.
+    pub fn pop_region() -> Self {
+        Self::PopRegion
+    }
+
     /// Create a [`CircuitEvent::Operator`] event instance.
     pub fn operator(node_id: GlobalNodeId, name: Cow<'static, str>) -> Self {
         Self::Operator { node_id, name }
@@ -360,23 +396,23 @@ impl CircuitEvent {
 ///         ◄───────────────┘ └───────────┘
 ///               StepEnd      EvalEnd(id)
 /// ```
-pub enum SchedulerEvent {
-    EvalStart { node_id: NodeId },
-    EvalEnd { node_id: NodeId },
+pub enum SchedulerEvent<'a> {
+    EvalStart { node: &'a dyn Node },
+    EvalEnd { node: &'a dyn Node },
     StepStart,
     StepEnd,
     ClockStart,
     ClockEnd,
 }
 
-impl Display for SchedulerEvent {
+impl<'a> Display for SchedulerEvent<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EvalStart { node_id } => {
-                write!(f, "EvalStart({})", node_id)
+            Self::EvalStart { node } => {
+                write!(f, "EvalStart({})", node.global_id())
             }
-            Self::EvalEnd { node_id } => {
-                write!(f, "EvalEnd({})", node_id)
+            Self::EvalEnd { node } => {
+                write!(f, "EvalEnd({})", node.global_id())
             }
             Self::StepStart => f.write_str("StepStart"),
             Self::StepEnd => f.write_str("StepEnd"),
@@ -386,15 +422,15 @@ impl Display for SchedulerEvent {
     }
 }
 
-impl SchedulerEvent {
+impl<'a> SchedulerEvent<'a> {
     /// Create a [`SchedulerEvent::EvalStart`] event instance.
-    pub fn eval_start(node_id: NodeId) -> Self {
-        Self::EvalStart { node_id }
+    pub fn eval_start(node: &'a dyn Node) -> Self {
+        Self::EvalStart { node }
     }
 
     /// Create a [`SchedulerEvent::EvalEnd`] event instance.
-    pub fn eval_end(node_id: NodeId) -> Self {
-        Self::EvalEnd { node_id }
+    pub fn eval_end(node: &'a dyn Node) -> Self {
+        Self::EvalEnd { node }
     }
 
     /// Create a [`SchedulerEvent::StepStart`] event instance.

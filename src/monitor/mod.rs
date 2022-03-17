@@ -15,7 +15,10 @@ use crate::circuit::{
 };
 
 mod circuit_graph;
-use circuit_graph::{CircuitGraph, Node, NodeKind};
+use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
+
+pub mod visual_graph;
+use visual_graph::Graph as VisGraph;
 
 /// State of a circuit automaton (see
 /// [`SchedulerEvent`](`super::SchedulerEvent`) documentation).
@@ -69,6 +72,8 @@ pub enum TraceError {
     /// Event contains node id that is not valid for the given
     /// event type in the current state.
     UnexpectedNodeId,
+    /// PopRegion event without matching PushRegion.
+    NoRegion,
     /// Invalid event in the current state of the circuit automaton.
     InvalidEvent(Cow<'static, str>),
 }
@@ -88,6 +93,7 @@ impl Display for TraceError {
             Self::UnexpectedNodeId => {
                 f.write_str("node id is not valid for this event type in the current state")
             }
+            Self::NoRegion => f.write_str("PopRegion event without matching PushRegion"),
             Self::InvalidEvent(descr) => f.write_str(descr),
         }
     }
@@ -115,11 +121,53 @@ impl Display for TraceError {
 /// invalid `CircuitEvent` or `SchedulerEvent` is observed.  These
 /// callbacks can simply panic when using the trace monitor in `cargo
 /// test`.
-pub struct TraceMonitor {
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct TraceMonitor(Arc<Mutex<TraceMonitorInternal>>);
+
+impl TraceMonitor {
+    /// Attach trace monitor to a circuit.  The monitor will register for
+    /// both `CircuitEvent`s and `SchedulerEvent`s.
+    pub fn attach(&self, circuit: &Circuit<()>, handler_name: &str) {
+        TraceMonitorInternal::attach(self.0.clone(), circuit, handler_name);
+    }
+
+    pub fn new<CE, SE>(circuit_error_handler: CE, scheduler_error_handler: SE) -> Self
+    where
+        CE: Fn(&CircuitEvent, &TraceError) + 'static,
+        SE: Fn(&SchedulerEvent, &TraceError) + 'static,
+    {
+        Self(Arc::new(Mutex::new(TraceMonitorInternal::new(
+            circuit_error_handler,
+            scheduler_error_handler,
+        ))))
+    }
+
+    pub fn new_panic_on_error() -> Self {
+        Self(Arc::new(Mutex::new(
+            TraceMonitorInternal::new_panic_on_error(),
+        )))
+    }
+
+    pub fn visualize_circuit(&self) -> VisGraph {
+        self.visualize_circuit_annotate(&|_| "".to_string())
+    }
+
+    pub fn visualize_circuit_annotate<F>(&self, f: &F) -> VisGraph
+    where
+        F: Fn(&GlobalNodeId) -> String
+    {
+        self.0.lock().unwrap().circuit.visualize(f)
+    }
+
+}
+
+pub struct TraceMonitorInternal {
     /// Circuit graph constructed based on `CircuitEvent`s.
     circuit: CircuitGraph,
     /// Subcircuit that is currently being populated.
     current_scope: GlobalNodeId,
+    region_stack: Vec<RegionId>,
     /// The stack of circuit automata states.  We start with a single
     /// element for the root circuit.  Evaluating a nested circuit
     /// pushes a new state on the stack. The stack becomes empty
@@ -132,10 +180,8 @@ pub struct TraceMonitor {
     scheduler_error_handler: Box<dyn Fn(&SchedulerEvent, &TraceError)>,
 }
 
-impl TraceMonitor {
-    /// Attach trace monitor to a circuit.  The monitor will register for
-    /// both `CircuitEvent`s and `SchedulerEvent`s.
-    pub fn attach(this: Arc<Mutex<Self>>, circuit: &Circuit<()>, handler_name: &str) {
+impl TraceMonitorInternal {
+    fn attach(this: Arc<Mutex<Self>>, circuit: &Circuit<()>, handler_name: &str) {
         let this_clone = this.clone();
 
         circuit.register_circuit_event_handler(handler_name, move |event| {
@@ -157,7 +203,7 @@ impl TraceMonitor {
     }
 
     /// Create a new trace monitor with user-provided event handlers.
-    pub fn new<CE, SE>(circuit_error_handler: CE, scheduler_error_handler: SE) -> Self
+    fn new<CE, SE>(circuit_error_handler: CE, scheduler_error_handler: SE) -> Self
     where
         CE: Fn(&CircuitEvent, &TraceError) + 'static,
         SE: Fn(&SchedulerEvent, &TraceError) + 'static,
@@ -165,6 +211,7 @@ impl TraceMonitor {
         Self {
             circuit: CircuitGraph::new(),
             current_scope: GlobalNodeId::from_path(&[]),
+            region_stack: vec![RegionId::root()],
             state: vec![CircuitState::new()],
             circuit_error_handler: Box::new(circuit_error_handler),
             scheduler_error_handler: Box::new(scheduler_error_handler),
@@ -172,19 +219,49 @@ impl TraceMonitor {
     }
 
     /// Create a trace monitor whose error handlers will panic on error.
-    pub fn new_panic_on_error() -> Self {
+    fn new_panic_on_error() -> Self {
         Self::new(
             |event, err| panic!("invalid circuit event {}: {}", event, err),
             |event, err| panic!("invalid scheduler event {}: {}", event, err),
         )
     }
 
+    fn push_region(&mut self, name: Cow<'static, str>) {
+        let mut current_region = self.current_region();
+        let circuit_node = self.circuit.node_mut(&self.current_scope).unwrap();
+        current_region = circuit_node
+            .region_mut()
+            .unwrap()
+            .add_region(&current_region, name);
+        self.set_current_region(current_region);
+    }
+
+    fn pop_region(&mut self) -> Result<(), TraceError> {
+        let mut current_region = self.current_region();
+        if current_region == RegionId::root() {
+            Err(TraceError::NoRegion)
+        } else {
+            current_region.pop();
+            self.set_current_region(current_region);
+            Ok(())
+        }
+    }
+
+    fn current_region(&mut self) -> RegionId {
+        self.region_stack.last().unwrap().clone()
+    }
+
+    fn set_current_region(&mut self, region: RegionId) {
+        *self.region_stack.last_mut().unwrap() = region;
+    }
+
     fn circuit_event(&mut self, event: &CircuitEvent) -> Result<(), TraceError> {
-        println!("event: {}", event);
+        //println!("event: {}", event);
         if event.is_node_event() {
             let node_id = event.node_id().unwrap();
             let local_node_id = node_id.local_node_id().ok_or(TraceError::EmptyPath)?;
             let parent_id = node_id.parent_id().unwrap();
+            let current_region = self.current_region();
             let parent_node = self
                 .circuit
                 .node_mut(&parent_id)
@@ -199,13 +276,20 @@ impl TraceMonitor {
                 }
 
                 match &mut parent_node.kind {
-                    NodeKind::Circuit { children, .. } => {
+                    NodeKind::Circuit {
+                        children, region, ..
+                    } => {
                         if children.get(&local_node_id).is_some() {
                             return Err(TraceError::NodeExists(node_id.clone()));
                         }
                         let new_node =
                             if event.is_operator_event() || event.is_strict_output_event() {
-                                Node::new(event.node_name().unwrap(), NodeKind::Operator)
+                                Node::new(
+                                    node_id.clone(),
+                                    event.node_name().unwrap(),
+                                    current_region.clone(),
+                                    NodeKind::Operator,
+                                )
                             } else if event.is_strict_input_event() {
                                 let output = event.output_node_id().unwrap();
                                 if children.get(&output).is_none() {
@@ -214,19 +298,29 @@ impl TraceMonitor {
                                     )));
                                 }
 
-                                Node::new("", NodeKind::StrictInput { output })
+                                Node::new(
+                                    node_id.clone(),
+                                    "",
+                                    current_region.clone(),
+                                    NodeKind::StrictInput { output },
+                                )
                             } else {
                                 self.current_scope = node_id.clone();
+                                self.region_stack.push(RegionId::root());
                                 Node::new(
+                                    node_id.clone(),
                                     "",
+                                    current_region.clone(),
                                     NodeKind::Circuit {
                                         iterative: event.is_iterative_subcircuit_event(),
                                         children: HashMap::new(),
+                                        region: Region::new(RegionId::root(), Cow::Borrowed("")),
                                     },
                                 )
                             };
 
                         children.insert(local_node_id, new_node);
+                        region.get_region(&current_region).nodes.push(local_node_id);
                         Ok(())
                     }
                     _ => Err(TraceError::NotACircuit(parent_id)),
@@ -236,6 +330,7 @@ impl TraceMonitor {
                     return Err(TraceError::UnexpectedNodeId);
                 }
                 self.current_scope = parent_id;
+                self.region_stack.pop();
                 Ok(())
             }
         } else if event.is_edge_event() {
@@ -251,12 +346,19 @@ impl TraceMonitor {
             self.circuit.add_edge(from, to, kind);
             Ok(())
         } else {
-            panic!("unknown event")
+            match event {
+                CircuitEvent::PushRegion { name } => {
+                    self.push_region(name.clone());
+                    Ok(())
+                }
+                CircuitEvent::PopRegion => self.pop_region(),
+                _ => panic!("unknown event"),
+            }
         }
     }
 
     fn scheduler_event(&mut self, event: &SchedulerEvent) -> Result<(), TraceError> {
-        //eprintln!("scheduler event: {}", event);
+        eprintln!("scheduler event: {}", event);
         if !self.running() {
             return Err(TraceError::InvalidEvent(Cow::from(
                 "scheduler event received after circuit execution has terminated",
@@ -360,36 +462,37 @@ impl TraceMonitor {
                 }
                 Ok(())
             }
-            SchedulerEvent::EvalStart { node_id } => {
+            SchedulerEvent::EvalStart { node } => {
                 let state = self.pop_state();
+                let local_node_id = node.local_id();
                 match state {
                     CircuitState::Step(visited_nodes) => {
-                        if visited_nodes.contains(node_id) {
+                        if visited_nodes.contains(&local_node_id) {
                             return Err(TraceError::InvalidEvent(Cow::from(format!(
                                 "node id {} evaluated twice in one clock cycle",
-                                node_id
+                                local_node_id
                             ))));
                         }
-                        let global_id = current_node_id.child(*node_id);
-                        let node = match self.circuit.node_ref(&global_id) {
+                        let global_id = node.global_id();
+                        let cnode = match self.circuit.node_ref(global_id) {
                             None => {
-                                return Err(TraceError::UnknownNode(global_id));
+                                return Err(TraceError::UnknownNode(global_id.clone()));
                             }
-                            Some(node) => node,
+                            Some(cnode) => cnode,
                         };
 
-                        if node.is_strict_input() {
-                            let output_id = node.output_id().unwrap();
+                        if cnode.is_strict_input() {
+                            let output_id = cnode.output_id().unwrap();
                             if !visited_nodes.contains(&output_id) {
-                                return Err(TraceError::InvalidEvent(Cow::from(format!("input node {} of a strict operator is evaluated before the output node {}", node_id, output_id))));
+                                return Err(TraceError::InvalidEvent(Cow::from(format!("input node {} of a strict operator is evaluated before the output node {}", local_node_id, output_id))));
                             }
                         };
 
-                        if node.is_circuit() {
-                            self.push_state(CircuitState::Eval(visited_nodes, *node_id));
+                        if cnode.is_circuit() {
+                            self.push_state(CircuitState::Eval(visited_nodes, local_node_id));
                             self.push_state(CircuitState::new());
                         } else {
-                            self.push_state(CircuitState::Eval(visited_nodes, *node_id));
+                            self.push_state(CircuitState::Eval(visited_nodes, local_node_id));
                         };
 
                         Ok(())
@@ -405,12 +508,13 @@ impl TraceMonitor {
                     }
                 }
             }
-            SchedulerEvent::EvalEnd { node_id } => match self.current_state() {
+            SchedulerEvent::EvalEnd { node } => match self.current_state() {
                 CircuitState::Eval(visited_nodes, eval_node_id) => {
-                    if eval_node_id != node_id {
+                    if eval_node_id != &node.local_id() {
                         return Err(TraceError::InvalidEvent(Cow::from(format!(
                             "received 'EvalEnd' event for node id {} while evaluating node {}",
-                            node_id, eval_node_id
+                            node.local_id(),
+                            eval_node_id
                         ))));
                     }
                     let mut visited_nodes = visited_nodes.clone();
