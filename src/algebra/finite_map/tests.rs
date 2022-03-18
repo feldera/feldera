@@ -49,14 +49,14 @@ fn hashmap_tests() {
     assert_eq!(2, z.support_size());
     assert_eq!(finite_map! { 0 => 1, 1 => -1 }, z);
     let mut support = z.support().cloned().collect::<Vec<i64>>();
-    support.sort();
+    support.sort_unstable();
     assert_eq!(support, vec![0, 1]);
 
     z.increment_owned(-1, 1);
     assert_eq!(3, z.support_size());
     assert_eq!(finite_map! { -1 => 1, 0 => 1, 1 => -1 }, z);
     let mut support = z.support().cloned().collect::<Vec<i64>>();
-    support.sort();
+    support.sort_unstable();
     assert_eq!(support, vec![-1, 0, 1]);
 
     let d = z.neg_by_ref();
@@ -64,7 +64,7 @@ fn hashmap_tests() {
     assert_eq!(finite_map! { -1 => -1, 0 => -1, 1 => 1 }, d);
     assert_ne!(d, z);
     let mut support = z.support().cloned().collect::<Vec<i64>>();
-    support.sort();
+    support.sort_unstable();
     assert_eq!(support, vec![-1, 0, 1]);
 
     let d = z.clone().neg();
@@ -100,19 +100,19 @@ fn hashmap_tests() {
     assert_eq!(finite_map! { 0 => 3 }, z4);
 
     z2.increment_owned(4, 2);
-    let z5 = z2.flat_map(|x| iter::once(*x));
+    let z5 = z2.flat_map(|&x| iter::once(x));
     assert_eq!(&z5, &z2);
-    let z5 = z2.flat_map(|x| {
-        if *x > 0 {
-            (0..*x).into_iter().collect::<Vec<i64>>().into_iter()
+    let z5 = z2.flat_map(|&x| {
+        if x > 0 {
+            (0..x).collect::<Vec<i64>>().into_iter()
         } else {
-            iter::once(*x).collect::<Vec<i64>>().into_iter()
+            vec![x].into_iter()
         }
     });
     assert_eq!(finite_map! { -1 => 3, 0 => 3, 4 => 2 }, z2);
     assert_eq!(finite_map! { -1 => 3, 0 => 5, 1 => 2, 2 => 2, 3 => 2 }, z5);
     let mut support = z5.support().cloned().collect::<Vec<i64>>();
-    support.sort();
+    support.sort_unstable();
     assert_eq!(support, vec![-1, 0, 1, 2, 3]);
 
     let z6 = z2.match_keys(&z5, |w, w2| w + w2);

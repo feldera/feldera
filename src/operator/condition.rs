@@ -209,8 +209,8 @@ mod test {
                     };
                     let suc = child
                         .add_binary_operator(
-                            Apply2::new(successor_set.clone()),
-                            &feedback.stream(),
+                            Apply2::new(successor_set),
+                            feedback.stream(),
                             &edges,
                         );
 
