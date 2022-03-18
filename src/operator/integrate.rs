@@ -245,7 +245,7 @@ mod test {
             let source = circuit.add_source(Generator::new(move || input.next().unwrap()));
             let integral = circuit
                 .iterate_with_condition(|child| {
-                    let source = source.delta0(&child);
+                    let source = source.delta0(child);
                     let feedback = DelayedFeedback::new(child);
                     let plus =
                         source.plus(&feedback.stream().apply(|&n| if n > 0 { n - 1 } else { n }));

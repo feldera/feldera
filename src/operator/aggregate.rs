@@ -317,20 +317,19 @@ mod test {
                     let input: Stream<_, FiniteHashMap<usize, ZSetHashMap<usize, isize>>> = child
                         .add_source(GeneratorNested::new(Box::new(move || {
                             *counter_clone.borrow_mut() = 0;
-                            let mut deltas =
-                                inputs.next().unwrap_or_else(|| Vec::new()).into_iter();
+                            let mut deltas = inputs.next().unwrap_or_else(Vec::new).into_iter();
                             Box::new(move || deltas.next().unwrap_or_else(|| finite_map! {}))
                         })))
                         .index();
 
                     // Weighted sum aggregate.  Returns `(key, weighted_sum)`.
-                    let sum = |key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, isize) {
+                    let sum = |&key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, isize) {
                         let mut result: isize = 0;
-                        for (v, w) in zset.into_iter() {
-                            result += (*v as isize) * w;
+                        for (&v, &w) in zset.into_iter() {
+                            result += (v as isize) * w;
                         }
 
-                        (key.clone(), result)
+                        (key, result)
                     };
 
                     // Weighted sum aggregate that returns only the weighted sum
@@ -344,7 +343,7 @@ mod test {
                         result
                     };
 
-                    let sum_inc = input.aggregate_incremental_nested(sum.clone());
+                    let sum_inc = input.aggregate_incremental_nested(sum);
                     let sum_inc_linear = input.aggregate_linear_incremental_nested(sum_linear);
                     let sum_noninc = input
                         .integrate_nested()
@@ -387,7 +386,7 @@ mod test {
                         });
 
                     // Min aggregate (non-linear).
-                    let min = |key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, usize) {
+                    let min = |&key: &usize, zset: &ZSetHashMap<usize, isize>| -> (usize, usize) {
                         let mut result: usize = *zset.into_iter().next().unwrap().0;
                         for (&v, _) in zset.into_iter() {
                             if v < result {
@@ -395,10 +394,10 @@ mod test {
                             }
                         }
 
-                        (key.clone(), result)
+                        (key, result)
                     };
 
-                    let min_inc = input.aggregate_incremental_nested(min.clone());
+                    let min_inc = input.aggregate_incremental_nested(min);
                     let min_noninc = input
                         .integrate_nested()
                         .integrate()

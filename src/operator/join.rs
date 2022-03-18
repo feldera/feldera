@@ -146,7 +146,10 @@ where
             .integrate_nested()
             .delay_nested()
             .join(&other.integrate().delay(), join_func);
-        join1.sum(&[join2, join3, join4])
+
+        // Note: I would use `join.sum(...)` but for some reason
+        //       Rust Analyzer tries to resolve it to `Iterator::sum()`
+        Stream::sum(&join1, &[join2, join3, join4])
     }
 }
 
@@ -359,16 +362,12 @@ mod test {
                     .add_source(Generator::new(move || input2.next().unwrap()))
                     .index();
             index1
-                .join(&index2, |k: &usize, s1, s2| {
-                    (k.clone(), format!("{} {}", s1, s2))
-                })
+                .join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
                 .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {
                     assert_eq!(fm, &outputs.next().unwrap())
                 });
             index1
-                .join_incremental(&index2, |k: &usize, s1, s2| {
-                    (k.clone(), format!("{} {}", s1, s2))
-                })
+                .join_incremental(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
                 .inspect(move |fm: &FiniteHashMap<(usize, String), _>| {
                     assert_eq!(fm, &inc_outputs.next().unwrap())
                 });
