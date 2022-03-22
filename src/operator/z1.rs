@@ -7,9 +7,9 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, NodeId, OwnershipPreference, Scope,
         Stream,
     },
-    circuit_cache_key,
+    circuit_cache_key, NumEntries,
 };
-use std::{borrow::Cow, mem::replace};
+use std::{borrow::Cow, fmt::Write, mem::replace};
 
 circuit_cache_key!(DelayedId<C, D>(NodeId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(NodeId => Stream<C, D>));
@@ -28,7 +28,7 @@ pub struct DelayedFeedback<P, D> {
 impl<P, D> DelayedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: Clone + HasZero + 'static,
+    D: NumEntries + Clone + HasZero + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -77,7 +77,7 @@ pub struct DelayedNestedFeedback<P, D> {
 impl<P, D> DelayedNestedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: Clone + 'static,
+    D: NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -109,7 +109,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: Clone + HasZero + 'static,
+        D: NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.local_node_id()), || {
@@ -122,7 +122,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay_nested(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: Clone + HasZero + 'static,
+        D: Clone + HasZero + NumEntries + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(NestedDelayedId::new(self.local_node_id()), || {
@@ -177,7 +177,7 @@ where
 
 impl<T> Operator for Z1<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -187,11 +187,16 @@ where
     fn clock_end(&mut self, _scope: Scope) {
         self.reset();
     }
+
+    fn summary(&self, summary: &mut String) {
+        summary.clear();
+        write!(summary, "size: {}", self.val.num_entries()).unwrap();
+    }
 }
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         replace(&mut self.val, i.clone())
@@ -208,7 +213,7 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         replace(&mut self.val, self.zero.clone())
@@ -217,7 +222,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         self.val = i.clone();
@@ -289,7 +294,7 @@ impl<T> Z1Nested<T> {
 
 impl<T> Operator for Z1Nested<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1 (nested)")
@@ -307,11 +312,28 @@ where
             self.reset();
         }
     }
+
+    fn summary(&self, summary: &mut String) {
+        summary.clear();
+        let mut total = 0;
+        write!(summary, "sizes: [").unwrap();
+        for (i, v) in self.val.iter().enumerate() {
+            let nentries = v.num_entries();
+            total += nentries;
+            if i == self.val.len() - 1 {
+                write!(summary, "{}", nentries).unwrap();
+            } else {
+                write!(summary, "{},", nentries).unwrap();
+            }
+        }
+        writeln!(summary, "]").unwrap();
+        write!(summary, "total: {}", total).unwrap();
+    }
 }
 
 impl<T> UnaryOperator<T, T> for Z1Nested<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         debug_assert!(self.timestamp <= self.val.len());
@@ -350,7 +372,7 @@ where
 
 impl<T> StrictOperator<T> for Z1Nested<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         if self.timestamp >= self.val.len() {
@@ -370,7 +392,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
 where
-    T: Clone + 'static,
+    T: NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         debug_assert!(self.timestamp < self.val.len());

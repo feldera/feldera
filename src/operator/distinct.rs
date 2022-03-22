@@ -10,7 +10,7 @@ use crate::{
     },
     circuit_cache_key,
     operator::{BinaryOperatorAdapter, UnaryOperatorAdapter},
-    SharedRef,
+    NumEntries, SharedRef,
 };
 
 circuit_cache_key!(DistinctId<C, D>(NodeId => Stream<C, D>));
@@ -45,7 +45,7 @@ where
         V: KeyProperties,
         W: ZRingValue,
         Z: SharedRef + 'static,
-        <Z as SharedRef>::Target: ZSet<V, W> + SharedRef<Target = Z::Target>,
+        <Z as SharedRef>::Target: NumEntries + ZSet<V, W> + SharedRef<Target = Z::Target>,
         for<'a> &'a <Z as SharedRef>::Target: IntoIterator<Item = (&'a V, &'a W)>,
     {
         self.circuit()
@@ -65,7 +65,7 @@ where
         V: KeyProperties,
         W: ZRingValue,
         Z: SharedRef + 'static,
-        <Z as SharedRef>::Target: ZSet<V, W> + SharedRef<Target = Z::Target>,
+        <Z as SharedRef>::Target: NumEntries + ZSet<V, W> + SharedRef<Target = Z::Target>,
         for<'a> &'a <Z as SharedRef>::Target: IntoIterator<Item = (&'a V, &'a W)>,
     {
         self.integrate_nested()

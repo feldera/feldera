@@ -862,7 +862,11 @@ impl<P> Circuit<P> {
 
     /// Returns vector of local node ids in the circuit.
     pub(super) fn node_ids(&self) -> Vec<NodeId> {
-        self.inner().nodes.iter().map(|node| node.local_id()).collect()
+        self.inner()
+            .nodes
+            .iter()
+            .map(|node| node.local_id())
+            .collect()
     }
 
     /// Deliver `clock_start` notification to all nodes in the circuit.
@@ -1823,7 +1827,12 @@ impl<P, I, Op> SinkNode<Circuit<P>, I, Op>
 where
     Op: SinkOperator<I>,
 {
-    fn new(operator: Op, input_stream: Stream<Circuit<P>, I>, circuit: Circuit<P>, id: NodeId) -> Self {
+    fn new(
+        operator: Op,
+        input_stream: Stream<Circuit<P>, I>,
+        circuit: Circuit<P>,
+        id: NodeId,
+    ) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,

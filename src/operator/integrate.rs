@@ -8,7 +8,7 @@ use crate::{
         z1::{DelayedFeedback, DelayedNestedFeedback},
         BinaryOperatorAdapter, Plus,
     },
-    SharedRef,
+    NumEntries, SharedRef,
 };
 use std::{ops::Add, rc::Rc};
 
@@ -25,6 +25,7 @@ where
         + Clone
         + HasZero
         + SharedRef<Target = D::Target>
+        + NumEntries
         + 'static,
 {
     /// Integrate the input stream.

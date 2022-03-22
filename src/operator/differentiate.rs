@@ -5,6 +5,7 @@ use crate::{
     circuit::{Circuit, NodeId, Stream},
     circuit_cache_key,
     operator::Minus,
+    NumEntries,
 };
 
 circuit_cache_key!(DifferentiateId<C, D>(NodeId => Stream<C, D>));
@@ -13,7 +14,7 @@ circuit_cache_key!(NestedDifferentiateId<C, D>(NodeId => Stream<C, D>));
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: GroupValue,
+    D: NumEntries + GroupValue,
 {
     /// Stream differentiation.
     ///

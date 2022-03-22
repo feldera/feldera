@@ -11,7 +11,7 @@ use crate::{
         Circuit, Scope, Stream,
     },
     operator::{BinaryOperatorAdapter, UnaryOperatorAdapter},
-    SharedRef,
+    NumEntries, SharedRef,
 };
 
 impl<P, SR> Stream<Circuit<P>, SR>
@@ -45,7 +45,7 @@ where
         VI: GroupValue,
         SR: SharedRef + 'static,
         <SR as SharedRef>::Target: FiniteMap<K, VI>,
-        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        <SR as SharedRef>::Target: NumEntries + SharedRef<Target = SR::Target>,
         for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
         F: Fn(&K, &VI) -> VO + 'static,
         VO: 'static,
@@ -80,10 +80,10 @@ where
         VI: GroupValue,
         SR: SharedRef + 'static,
         <SR as SharedRef>::Target: FiniteMap<K, VI>,
-        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        <SR as SharedRef>::Target: NumEntries + SharedRef<Target = SR::Target>,
         for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
         F: Fn(&K, &VI) -> VO + 'static,
-        VO: GroupValue,
+        VO: GroupValue + NumEntries,
         W: ZRingValue,
         O: Clone + MapBuilder<(K, VO), W> + 'static,
     {
@@ -102,12 +102,12 @@ where
         VI: GroupValue,
         SR: SharedRef + 'static,
         <SR as SharedRef>::Target: FiniteMap<K, VI>,
-        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        <SR as SharedRef>::Target: NumEntries + SharedRef<Target = SR::Target>,
         for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
         F: Fn(&K, &VI) -> VO + 'static,
         VO: 'static,
         W: ZRingValue,
-        O: MapBuilder<VO, W> + GroupValue,
+        O: NumEntries + MapBuilder<VO, W> + GroupValue,
     {
         self.integrate_nested()
             .aggregate_incremental(f)
@@ -129,12 +129,12 @@ where
         VI: GroupValue,
         SR: SharedRef + 'static,
         <SR as SharedRef>::Target: FiniteMap<K, VI>,
-        <SR as SharedRef>::Target: SharedRef<Target = SR::Target>,
+        <SR as SharedRef>::Target: NumEntries + SharedRef<Target = SR::Target>,
         for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
         F: Fn(&K, &VI) -> VO + 'static,
-        VO: GroupValue,
+        VO: NumEntries + GroupValue,
         W: ZRingValue,
-        O: Clone + MapBuilder<(K, VO), W> + GroupValue,
+        O: Clone + MapBuilder<(K, VO), W> + NumEntries + GroupValue,
     {
         self.integrate_nested()
             .aggregate_linear_incremental(f)
