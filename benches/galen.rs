@@ -61,20 +61,21 @@ fn main() {
             let monitor_clone = monitor.clone();
             circuit.register_scheduler_event_handler("metadata", move |event: &SchedulerEvent| {
                 match event {
-                    SchedulerEvent::EvalEnd{ node } => {
+                    SchedulerEvent::EvalEnd { node } => {
                         let metadata_string = metadata
                             .entry(node.global_id().clone())
                             .or_insert_with(|| String::new());
+                        metadata_string.clear();
                         node.summary(metadata_string);
-                    }
-                    SchedulerEvent::StepEnd => {
+                        //}
+                        //SchedulerEvent::StepEnd => {
                         let graph = monitor_clone.visualize_circuit_annotate(&|node_id| {
-                            metadata.get(node_id).map(ToString::to_string).unwrap_or_else(|| "".to_string())
+                            metadata
+                                .get(node_id)
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| "".to_string())
                         });
-                        fs::write(
-                            format!("galen.{}.dot", nsteps),
-                            graph.to_dot()
-                        ).unwrap();
+                        fs::write(format!("galen.{}.dot", nsteps), graph.to_dot()).unwrap();
                         nsteps += 1;
                     }
                     _ => {}

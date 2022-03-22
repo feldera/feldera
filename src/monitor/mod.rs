@@ -155,11 +155,10 @@ impl TraceMonitor {
 
     pub fn visualize_circuit_annotate<F>(&self, f: &F) -> VisGraph
     where
-        F: Fn(&GlobalNodeId) -> String
+        F: Fn(&GlobalNodeId) -> String,
     {
         self.0.lock().unwrap().circuit.visualize(f)
     }
-
 }
 
 pub struct TraceMonitorInternal {
@@ -358,7 +357,7 @@ impl TraceMonitorInternal {
     }
 
     fn scheduler_event(&mut self, event: &SchedulerEvent) -> Result<(), TraceError> {
-        eprintln!("scheduler event: {}", event);
+        // eprintln!("scheduler event: {}", event);
         if !self.running() {
             return Err(TraceError::InvalidEvent(Cow::from(
                 "scheduler event received after circuit execution has terminated",

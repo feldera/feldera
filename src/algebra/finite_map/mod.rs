@@ -8,7 +8,7 @@ use crate::{
         Add, AddAssign, AddAssignByRef, AddByRef, GroupValue, HasZero, Neg, NegByRef,
         WithNumEntries,
     },
-    shared_ref_self_generic,
+    shared_ref_self_generic, NumEntries,
 };
 use hashbrown::{
     hash_map,
@@ -189,6 +189,28 @@ pub struct FiniteHashMap<Key, Value> {
 
 shared_ref_self_generic!(<Key, Value>, FiniteHashMap<Key, Value>);
 
+impl<Key, Value> NumEntries for FiniteHashMap<Key, Value>
+where
+    Key: KeyProperties,
+    Value: GroupValue + NumEntries,
+{
+    fn num_entries(&self) -> usize {
+        match Value::const_num_entries() {
+            None => {
+                let mut res = 0;
+                for (_, v) in self.into_iter() {
+                    res += v.num_entries();
+                }
+                res
+            }
+            Some(n) => n * self.support_size(),
+        }
+    }
+    fn const_num_entries() -> Option<usize> {
+        None
+    }
+}
+
 impl<Key, Value> FiniteHashMap<Key, Value> {
     /// Create a new map
     pub fn new() -> Self {
@@ -197,8 +219,8 @@ impl<Key, Value> FiniteHashMap<Key, Value> {
         }
     }
 
-    /// Create an empty [`FiniteHashMap`] that with the capacity to hold `size`
-    /// elements without reallocating
+    /// Create an empty [`FiniteHashMap`] with the capacity to hold `size`
+    /// elements without reallocating.
     pub fn with_capacity(size: usize) -> Self {
         Self {
             value: HashMap::with_capacity(size),
