@@ -25,3 +25,7 @@ impl-trait-for-tuples = "0.2"
 name = "galen"
 harness = false
 required-features = ["with-csv"]
+
+[[bench]]
+name = "path"
+harness = false
