@@ -19,12 +19,6 @@ fn hashmap_tests() {
     let z2 = Map::new();
     assert_eq!(z, z2);
 
-    let z3 = Map::singleton(3, 4);
-    assert_eq!(finite_map! { 3 => 4 }, z3);
-
-    let zempty = Map::singleton(3, 0);
-    assert_eq!(finite_map! {}, zempty);
-
     z.increment(&0, 1);
     assert_eq!(1, z.support_size());
     assert_eq!(finite_map! { 0 => 1 }, z);
@@ -87,14 +81,6 @@ fn hashmap_tests() {
     z2.add_assign_by_ref(&z);
     assert_eq!(2, z2.support_size());
     assert_eq!(finite_map! { -1 => 3, 0 => 3 }, z2);
-
-    let z3 = z2.map(&|_x| 0);
-    assert_eq!(1, z3.support_size());
-    assert_eq!(finite_map! { 0 => 6 }, z3);
-
-    let z4 = z2.filter(|&x| x >= 0);
-    assert_eq!(1, z4.support_size());
-    assert_eq!(finite_map! { 0 => 3 }, z4);
 
     z2.increment_owned(4, 2);
     assert_eq!(finite_map! { -1 => 3, 0 => 3, 4 => 2 }, z2);

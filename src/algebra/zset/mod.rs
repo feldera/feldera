@@ -20,27 +20,12 @@ where
 {
     // type KeyIterator: Iterator<Ite m= Data>;
 
-    /// Multiply each value in the other Z-set by `weight`
-    /// and add it to this set.  This is similar to `mul_add_assign`, but
-    /// not the same, since `mul_add_assign` multiplies `self`, whereas
-    /// this trait multiplies `other`.
-    fn add_assign_weighted(&mut self, weight: &Weight, other: &Self);
-
-    /// Returns a Z-set that contains all elements with positive weights from
-    /// `self` with weights set to 1.
+    /// Returns a Z-set that contains all elements with positive weights from `self` with weights
+    /// set to 1.
     fn distinct(&self) -> Self;
 
     /// Like `distinct` but optimized to operate on an owned value.
     fn distinct_owned(self) -> Self;
-
-    /// Given a Z-set 'set' partition it using a 'partitioner'
-    /// function which is applied independently to each tuple.
-    /// This consumes the Z-set.
-    fn partition<Key, F, I>(self, partitioner: F) -> I
-    where
-        Key: KeyProperties,
-        F: FnMut(&Data) -> Key,
-        I: IndexedZSet<Key, Data, Weight>;
 }
 
 /// An implementation of ZSets using [`FiniteHashMap`]s
@@ -65,17 +50,6 @@ where
     Data: KeyProperties,
     Weight: ZRingValue,
 {
-    fn add_assign_weighted(&mut self, weight: &Weight, other: &Self) {
-        if weight.is_zero() {
-            return;
-        }
-
-        for (key, value) in &other.value {
-            let new_weight = value.mul_by_ref(weight);
-            self.increment(key, new_weight);
-        }
-    }
-
     fn distinct(&self) -> Self {
         let mut result = Self::new();
 
@@ -99,21 +73,6 @@ where
 
         result
     }
-
-    fn partition<KeyType, F, I>(self, mut partitioner: F) -> I
-    where
-        KeyType: KeyProperties,
-        F: FnMut(&Data) -> KeyType,
-        I: IndexedZSet<KeyType, Data, Weight>,
-    {
-        let mut result = I::empty();
-        for (t, w) in self {
-            let k = partitioner(&t);
-            result.update(&k, |zs| zs.increment_owned(t, w));
-        }
-
-        result
-    }
 }
 
 /// An indexed Z-set maps arbitrary keys to Z-set values.
@@ -124,18 +83,6 @@ where
     Weight: ZRingValue,
 {
     type ZSet: ZSet<Value, Weight>;
-
-    /// Add all the data in all partitions into a single zset.
-    fn sum(&self) -> Self::ZSet
-    where
-        for<'a> &'a Self: IntoIterator<Item = (&'a Key, &'a Self::ZSet)>,
-    {
-        self.into_iter()
-            .fold(Self::ZSet::empty(), |mut set, (_, values)| {
-                set.add_assign_by_ref(values);
-                set
-            })
-    }
 }
 
 pub type IndexedZSetHashMap<Key, Value, Weight> = FiniteHashMap<Key, ZSetHashMap<Value, Weight>>;
