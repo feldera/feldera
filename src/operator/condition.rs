@@ -131,14 +131,14 @@ impl<C> Condition<C> {
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{FiniteMap, ZSet, ZSetHashMap},
+        algebra::{FiniteHashMap, FiniteMap, ZSetHashMap},
         circuit::{
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Circuit, Root, Stream,
         },
         finite_map,
         monitor::TraceMonitor,
-        operator::{Apply2, DelayedFeedback, Generator},
+        operator::{DelayedFeedback, Generator},
     };
 
     #[test]
@@ -159,72 +159,87 @@ mod test {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             // Graph edges
-            let edges = circuit.add_source(Generator::new(move || finite_map! {
-                (0, 3) => 1,
-                (1, 2) => 1,
-                (2, 1) => 1,
-                (3, 1) => 1,
-                (3, 4) => 1,
-                (4, 5) => 1,
-                (4, 6) => 1,
-                (5, 6) => 1,
-                (5, 1) => 1,
+            let edges = circuit.add_source(Generator::new(move || {
+                finite_map! {
+                    (0, 3) => 1,
+                    (1, 2) => 1,
+                    (2, 1) => 1,
+                    (3, 1) => 1,
+                    (3, 4) => 1,
+                    (4, 5) => 1,
+                    (4, 6) => 1,
+                    (5, 6) => 1,
+                    (5, 1) => 1,
+                }
             }));
 
-            // Two sets of initial states.  The inner circuit computes sets of nodes reachable
-            // from each of these initial sets.
-            let init1 = circuit.add_source(Generator::new(|| finite_map! { 1 => 1, 2 => 1, 3 => 1 }));
+            // Two sets of initial states.  The inner circuit computes sets of nodes
+            // reachable from each of these initial sets.
+            let init1 =
+                circuit.add_source(Generator::new(|| finite_map! { 1 => 1, 2 => 1, 3 => 1 }));
             let init2 = circuit.add_source(Generator::new(|| finite_map! { 4 => 1 }));
 
-            let (reachable1, reachable2) = circuit.iterate_with_conditions_and_scheduler::<_, _, S>(|child| {
-                let edges = edges.delta0(child).integrate();
-                let init1 = init1.delta0(child).integrate();
-                let init2 = init2.delta0(child).integrate();
+            let (reachable1, reachable2) = circuit
+                .iterate_with_conditions_and_scheduler::<_, _, S>(|child| {
+                    let edges = edges.delta0(child).integrate();
+                    let init1 = init1.delta0(child).integrate();
+                    let init2 = init2.delta0(child).integrate();
 
-                // Builds a subcircuit that computes nodes reachable from `init`:
-                //
-                // ```
-                //  init
-                // ────────────► + ─────┐
-                //               ▲      │
-                //               │      │
-                //         ┌─────┘    distinct
-                //         │            │
-                //        suc ◄─── z ◄──┘
-                //                 │
-                //                 └───────────►
-                // ```
-                //
-                // where suc computes the set of successor nodes.
-                let reachable_circuit = |init: Stream<Circuit<Circuit<()>>, ZSetHashMap<usize, isize>>| {
-                    let feedback = DelayedFeedback::new(child);
+                    let edges_indexed: Stream<_, FiniteHashMap<usize, ZSetHashMap<usize, isize>>> =
+                        edges.index();
 
-                    // Computes all successors of `nodes`.
-                    let successor_set = |nodes: &ZSetHashMap<usize, isize>, edges: &ZSetHashMap<(usize, usize), isize>| {
-                        nodes.join(edges, |node| *node, |(from, _to)| *from, |_node, (_from, to)| *to)
-                    };
-                    let suc = child
-                        .add_binary_operator(
-                            Apply2::new(successor_set),
-                            feedback.stream(),
-                            &edges,
-                        );
+                    // Builds a subcircuit that computes nodes reachable from `init`:
+                    //
+                    // ```
+                    //  init
+                    // ────────────► + ─────┐
+                    //               ▲      │
+                    //               │      │
+                    //         ┌─────┘    distinct
+                    //         │            │
+                    //        suc ◄─── z ◄──┘
+                    //                 │
+                    //                 └───────────►
+                    // ```
+                    //
+                    // where suc computes the set of successor nodes.
+                    let reachable_circuit =
+                        |init: Stream<Circuit<Circuit<()>>, ZSetHashMap<usize, isize>>| {
+                            let feedback =
+                                <DelayedFeedback<_, ZSetHashMap<usize, isize>>>::new(child);
 
-                    let reachable = init.plus(&suc).distinct();
-                    feedback.connect(&reachable);
-                    let condition = reachable.differentiate().condition(|z| z.support_size() == 0);
-                    (condition, reachable.export())
-                };
+                            let feedback_pairs: Stream<_, ZSetHashMap<(usize, ()), isize>> =
+                                feedback.stream().map_keys(|&node| (node, ()));
+                            let feedback_indexed: Stream<
+                                _,
+                                FiniteHashMap<usize, ZSetHashMap<(), isize>>,
+                            > = feedback_pairs.index();
 
-                let (condition1, export1) = reachable_circuit(init1);
-                let (condition2, export2) = reachable_circuit(init2);
+                            let suc = feedback_indexed.join(&edges_indexed, |_node, &(), &to| to);
 
-                Ok((vec![condition1, condition2], (export1, export2)))
-            })
-            .unwrap();
+                            let reachable = init.plus(&suc).distinct();
+                            feedback.connect(&reachable);
+                            let condition = reachable
+                                .differentiate()
+                                .condition(|z| z.support_size() == 0);
+                            (condition, reachable.export())
+                        };
 
-            reachable1.inspect(|r| assert_eq!(r, &finite_map! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1}));
-            reachable2.inspect(|r| assert_eq!(r, &finite_map! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
+                    let (condition1, export1) = reachable_circuit(init1);
+                    let (condition2, export2) = reachable_circuit(init2);
+
+                    Ok((vec![condition1, condition2], (export1, export2)))
+                })
+                .unwrap();
+
+            reachable1.inspect(|r| {
+                assert_eq!(
+                    r,
+                    &finite_map! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1}
+                )
+            });
+            reachable2
+                .inspect(|r| assert_eq!(r, &finite_map! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
         })
         .unwrap();
 

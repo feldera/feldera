@@ -1,10 +1,7 @@
 use crate::algebra::{
     AddAssignByRef, AddByRef, FiniteHashMap, FiniteMap, HasZero, MapBuilder, NegByRef, WithSupport,
 };
-use std::{
-    iter,
-    ops::{Add, Neg},
-};
+use std::ops::{Add, Neg};
 
 type Map = FiniteHashMap<i64, i64>;
 
@@ -100,21 +97,5 @@ fn hashmap_tests() {
     assert_eq!(finite_map! { 0 => 3 }, z4);
 
     z2.increment_owned(4, 2);
-    let z5 = z2.flat_map(|&x| iter::once(x));
-    assert_eq!(&z5, &z2);
-    let z5 = z2.flat_map(|&x| {
-        if x > 0 {
-            (0..x).collect::<Vec<i64>>().into_iter()
-        } else {
-            vec![x].into_iter()
-        }
-    });
     assert_eq!(finite_map! { -1 => 3, 0 => 3, 4 => 2 }, z2);
-    assert_eq!(finite_map! { -1 => 3, 0 => 5, 1 => 2, 2 => 2, 3 => 2 }, z5);
-    let mut support = z5.support().cloned().collect::<Vec<i64>>();
-    support.sort_unstable();
-    assert_eq!(support, vec![-1, 0, 1, 2, 3]);
-
-    let z6 = z2.match_keys(&z5, |w, w2| w + w2);
-    assert_eq!(finite_map! { -1 => 6, 0 => 8 }, z6);
 }
