@@ -1,6 +1,6 @@
 use crate::algebra::{
     finite_map::{FiniteMap, MapBuilder},
-    zset::{IndexedZSet, ZSet, ZSetHashMap},
+    zset::{ZSet, ZSetHashMap},
     AddAssignByRef, AddByRef, CheckedInt, HasZero, NegByRef,
 };
 
@@ -254,44 +254,4 @@ fn zset_tuple_tests() {
         },
         z2
     );
-}
-
-#[test]
-pub fn indexed_zset_tests() {
-    let mut set = ZSetHashMap::<(i64, i64), CheckedI64>::with_capacity(5);
-    assert_eq!(0, set.support_size());
-    set.increment(&(0, 0), CheckedI64::new(1));
-    set.increment_owned((2, 0), CheckedI64::new(2));
-    set.increment(&(1, 0), CheckedI64::new(-1));
-    set.increment_owned((-1, 0), CheckedI64::new(1));
-
-    let mut partitioned = set.clone().partition(|(left, _)| left.abs() % 2);
-    assert_eq!(
-        finite_map! {
-            0 => finite_map! {
-                (0, 0) => CheckedI64::new(1),
-                (2, 0) => CheckedI64::new(2),
-            },
-            1 => finite_map! {
-                (-1, 0) => CheckedI64::new(1),
-                (1, 0) => CheckedI64::new(-1),
-            },
-        },
-        partitioned,
-    );
-
-    let z2 = partitioned.sum();
-    assert_eq!(set, z2);
-
-    set.increment(&(0, 0), CheckedI64::new(-1));
-    partitioned.update_owned(0, |z| z.increment_owned((0, 0), CheckedI64::new(-1)));
-
-    set.increment(&(2, 0), CheckedI64::new(-1));
-    partitioned.update_owned(1, |z| z.increment_owned((2, 0), CheckedI64::new(-1)));
-
-    set.increment(&(8, 0), CheckedI64::new(1));
-    partitioned.update_owned(4, |z| z.increment_owned((8, 0), CheckedI64::new(1)));
-
-    let z3 = partitioned.sum();
-    assert_eq!(set, z3);
 }
