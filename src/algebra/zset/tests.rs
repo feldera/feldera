@@ -254,25 +254,6 @@ fn zset_tuple_tests() {
         },
         z2
     );
-
-    let prod = z2.cartesian(&z2, |(t1, t2), (t3, t4)| (t1 + t3, t2 - t4));
-    assert_eq!(
-        finite_map! {
-            (-2, 0) => CheckedI64::new(9),
-            (-1, 0) => CheckedI64::new(18),
-            (0, 0) => CheckedI64::new(9),
-        },
-        prod,
-    );
-
-    let j = z2.join(&z2, |&(left, _)| left, |&(left, _)| left, |a, _| *a);
-    assert_eq!(
-        finite_map! {
-            (-1, 0) => CheckedI64::new(9),
-            (0, 0) => CheckedI64::new(9),
-        },
-        j,
-    );
 }
 
 #[test]
