@@ -7,8 +7,9 @@ use dbsp::{
     circuit::{trace::SchedulerEvent, GlobalNodeId, Root, Runtime, Stream},
     monitor::TraceMonitor,
     operator::{CsvSource, DelayedFeedback},
+    profile::CPUProfiler,
 };
-use std::{collections::HashMap, fs, fs::File, path::PathBuf};
+use std::{collections::HashMap, fmt::Write, fs, fs::File, path::PathBuf};
 
 /*
 .decl p(X: Number, Z: Number)
@@ -55,7 +56,11 @@ fn main() {
         let monitor = TraceMonitor::new_panic_on_error();
 
         let root = Root::build(|circuit| {
+            let cpu_profiler = CPUProfiler::new();
+            cpu_profiler.attach(circuit, "cpu profiler");
+
             monitor.attach(circuit, "monitor");
+
             let mut metadata = <HashMap<GlobalNodeId, String>>::new();
             let mut nsteps = 0;
             let monitor_clone = monitor.clone();
@@ -70,10 +75,21 @@ fn main() {
                         //}
                         //SchedulerEvent::StepEnd => {
                         let graph = monitor_clone.visualize_circuit_annotate(&|node_id| {
-                            metadata
+                            let mut metadata_string = metadata
                                 .get(node_id)
                                 .map(ToString::to_string)
-                                .unwrap_or_else(|| "".to_string())
+                                .unwrap_or_else(|| "".to_string());
+                            if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
+                                writeln!(
+                                    metadata_string,
+                                    "invocations: {}",
+                                    cpu_profile.invocations()
+                                )
+                                .unwrap();
+                                writeln!(metadata_string, "time: {:?}", cpu_profile.total_time())
+                                    .unwrap();
+                            };
+                            metadata_string
                         });
                         fs::write(format!("galen.{}.dot", nsteps), graph.to_dot()).unwrap();
                         nsteps += 1;

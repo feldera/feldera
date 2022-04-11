@@ -3,7 +3,7 @@ pub(crate) mod tests;
 
 use crate::algebra::{
     finite_map::{FiniteHashMap, FiniteMap, KeyProperties, MapBuilder},
-    AddAssignByRef, ZRingValue,
+    ZRingValue,
 };
 
 /// The Z-set trait.
@@ -20,8 +20,8 @@ where
 {
     // type KeyIterator: Iterator<Ite m= Data>;
 
-    /// Returns a Z-set that contains all elements with positive weights from `self` with weights
-    /// set to 1.
+    /// Returns a Z-set that contains all elements with positive weights from
+    /// `self` with weights set to 1.
     fn distinct(&self) -> Self;
 
     /// Like `distinct` but optimized to operate on an owned value.

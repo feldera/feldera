@@ -190,7 +190,7 @@ where
 
     fn summary(&self, summary: &mut String) {
         summary.clear();
-        write!(summary, "size: {}", self.val.num_entries()).unwrap();
+        writeln!(summary, "size: {}", self.val.num_entries()).unwrap();
     }
 }
 
@@ -327,7 +327,7 @@ where
             }
         }
         writeln!(summary, "]").unwrap();
-        write!(summary, "total: {}", total).unwrap();
+        writeln!(summary, "total: {}", total).unwrap();
     }
 }
 
