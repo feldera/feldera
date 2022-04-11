@@ -20,4 +20,5 @@ pub mod algebra;
 pub mod circuit;
 pub mod monitor;
 pub mod operator;
+pub mod profile;
 mod test;
