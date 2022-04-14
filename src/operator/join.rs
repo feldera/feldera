@@ -106,8 +106,8 @@ where
     ///
     /// ```text
     /// (↑((↑(a <> b))∆))∆ =
-    ///     I(↑I(a)) <> b            +
-    ///     ↑I(a) <> I(z^-1(b))      +
+    ///     ↑I(z^-1(I(a))) <> b      +
+    ///     ↑I(a) <> I(b)            +
     ///     a <> I(↑I(↑z^-1(b)))     +
     ///     I(z^-1(a)) <> ↑I(↑z^-1(b)).
     /// ```
@@ -133,11 +133,12 @@ where
     {
         let join1: Stream<_, Z> = self
             .integrate_nested()
+            .delay_nested()
             .integrate()
             .join(other, join_func.clone());
         let join2 = self
             .integrate()
-            .join(&other.integrate_nested().delay_nested(), join_func.clone());
+            .join(&other.integrate_nested(), join_func.clone());
         let join3 = self.join(
             &other.integrate_nested().integrate().delay(),
             join_func.clone(),
