@@ -7,10 +7,7 @@ echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tool
 
 set -ex
 
-if [ $# -gt 0 ]; then
-    cargo fmt -- --config imports_granularity=Crate
-else
-    cargo fmt -- --check --config format_code_in_doc_comments=true --config wrap_comments=true
-    cargo clippy -- -D warnings
-fi
+cargo fmt -- --check --config format_code_in_doc_comments=true --config wrap_comments=true
+cargo clippy -- -D warnings
+
 RUSTDOCFLAGS="-Dwarnings" cargo doc
