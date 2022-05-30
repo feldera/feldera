@@ -6,25 +6,26 @@ use crate::{
     circuit_cache_key,
     operator::{
         z1::{DelayedFeedback, DelayedNestedFeedback},
-        BinaryOperatorAdapter, Plus,
+        Plus,
     },
-    NumEntries, SharedRef,
+    NumEntries,
 };
-use std::{ops::Add, rc::Rc};
+use deepsize::DeepSizeOf;
+use std::ops::Add;
 
 circuit_cache_key!(IntegralId<C, D>(NodeId => Stream<C, D>));
-circuit_cache_key!(NestedIntegralId<C, D>(NodeId => Stream<C, Rc<D>>));
+circuit_cache_key!(NestedIntegralId<C, D>(NodeId => Stream<C, D>));
 
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: SharedRef + 'static,
-    <D as SharedRef>::Target: Add<Output = D::Target>
+    D: Add<Output = D>
         + AddByRef
         + AddAssignByRef
         + Clone
+        + Eq
         + HasZero
-        + SharedRef<Target = D::Target>
+        + DeepSizeOf
         + NumEntries
         + 'static,
 {
@@ -62,7 +63,7 @@ where
     /// input:  1, 1, 1, 1, 1, ...
     /// output: 1, 2, 3, 4, 5, ...
     /// ```
-    pub fn integrate(&self) -> Stream<Circuit<P>, <D as SharedRef>::Target> {
+    pub fn integrate(&self) -> Stream<Circuit<P>, D> {
         self.circuit()
             .cache_get_or_insert_with(IntegralId::new(self.local_node_id()), || {
                 // Integration circuit:
@@ -87,7 +88,7 @@ where
                 self.circuit().region("integrate", || {
                     let feedback = DelayedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(
-                        <BinaryOperatorAdapter<D::Target, _>>::new(<Plus<D::Target>>::new()),
+                        <Plus<D>>::new(),
                         feedback.stream(),
                         self,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -130,13 +131,13 @@ where
     /// 2 3 4 5 1
     /// 4 5 6 5 1
     /// ```
-    pub fn integrate_nested(&self) -> Stream<Circuit<P>, Rc<D::Target>> {
+    pub fn integrate_nested(&self) -> Stream<Circuit<P>, D> {
         self.circuit()
             .cache_get_or_insert_with(NestedIntegralId::new(self.local_node_id()), || {
                 self.circuit().region("integrate_nested", || {
                     let feedback = DelayedNestedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(
-                        <BinaryOperatorAdapter<D::Target, _>>::new(Plus::new()),
+                        Plus::new(),
                         feedback.stream(),
                         self,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -153,9 +154,12 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        algebra::HasZero,
         circuit::Root,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
+        trace::{ord::OrdZSet, Batch},
+        zset,
     };
 
     #[test]
@@ -175,15 +179,14 @@ mod test {
         }
     }
 
-    /*
     #[test]
     fn zset_integrate() {
         let root = Root::build(move |circuit| {
             let mut counter1 = 0;
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<usize, isize>>::zero();
             let source = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
-                s.increment(&counter1, 1);
+                s = s.merge(&zset! { counter1 => 1});
                 counter1 += 1;
                 res
             }));
@@ -191,19 +194,21 @@ mod test {
             let integral = source.integrate();
             let mut counter2 = 0;
             integral.inspect(move |s| {
+                let mut batch = Vec::with_capacity(counter2);
                 for i in 0..counter2 {
-                    assert_eq!(s.lookup(&i), (counter2 - i) as isize);
+                    batch.push(((i, ()), (counter2 - i) as isize));
                 }
+                assert_eq!(s, &<OrdZSet<_, _>>::from_tuples((), batch));
                 counter2 += 1;
-                assert_eq!(s.lookup(&counter2), 0);
             });
             let mut counter3 = 0;
             integral.delay().inspect(move |s| {
+                let mut batch = Vec::with_capacity(counter2);
                 for i in 1..counter3 {
-                    assert_eq!(s.lookup(&(i - 1)), (counter3 - i) as isize);
+                    batch.push((((i - 1), ()), (counter3 - i) as isize));
                 }
+                assert_eq!(s, &<OrdZSet<_, _>>::from_tuples((), batch));
                 counter3 += 1;
-                assert_eq!(s.lookup(&(counter3 - 1)), 0);
             });
         })
         .unwrap();
@@ -212,7 +217,6 @@ mod test {
             root.step().unwrap();
         }
     }
-    */
 
     /// ```text
     ///            ┌───────────────────────────────────────────────────────────────────────────────────┐
@@ -253,10 +257,10 @@ mod test {
                     plus.inspect(move |n| assert_eq!(*n, expected_counters.next().unwrap()));
                     feedback.connect(&plus);
                     let integral = plus.integrate_nested();
-                    integral.inspect(move |n| assert_eq!(**n, expected_integrals.next().unwrap()));
+                    integral.inspect(move |n| assert_eq!(*n, expected_integrals.next().unwrap()));
                     Ok((
-                        integral.condition(|n| **n == 0),
-                        integral.apply(|rc| **rc).integrate().export(),
+                        integral.condition(|n| *n == 0),
+                        integral.apply(|rc| *rc).integrate().export(),
                     ))
                 })
                 .unwrap();
