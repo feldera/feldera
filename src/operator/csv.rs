@@ -8,9 +8,12 @@
 // - Async implementation (wait for data to become available in the reader)
 // - Sharded implementation.
 
-use crate::circuit::{
-    operator_traits::{Data, Operator, SourceOperator},
-    Scope,
+use crate::{
+    algebra::{ZRingValue, ZSet},
+    circuit::{
+        operator_traits::{Data, Operator, SourceOperator},
+        Scope,
+    },
 };
 use csv::{Reader as CsvReader, Result as CsvResult};
 use serde::Deserialize;
@@ -19,13 +22,14 @@ use std::{borrow::Cow, io::Read, marker::PhantomData};
 /// A source operator that reads records of type `T` from a CSV file.
 ///
 /// The operator reads the entire file and yields its contents
-/// in the first clock cycle.
-pub struct CsvSource<R, C, T> {
+/// in the first clock cycle as a Z-set with unit weights.
+pub struct CsvSource<R, T, W, C> {
     reader: CsvReader<R>,
-    _t: PhantomData<(C, T)>,
+    time: usize,
+    _t: PhantomData<(C, T, W)>,
 }
 
-impl<R, C, T> CsvSource<R, C, T>
+impl<R, T, W, C> CsvSource<R, T, W, C>
 where
     C: Clone,
     R: Read,
@@ -40,52 +44,74 @@ where
     pub fn from_csv_reader(reader: CsvReader<R>) -> Self {
         Self {
             reader,
+            time: 0,
             _t: PhantomData,
         }
     }
 }
 
-impl<R, C, T> Operator for CsvSource<R, C, T>
+impl<R, T, W, C> Operator for CsvSource<R, T, W, C>
 where
     C: Data,
     R: 'static,
     T: 'static,
+    W: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("CsvSource")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_start(&mut self, _scope: Scope) {
+        self.time = 0;
+    }
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        self.time >= 2
+    }
 }
 
-impl<R, C, T> SourceOperator<C> for CsvSource<R, C, T>
+impl<R, T, W, C> SourceOperator<C> for CsvSource<R, T, W, C>
 where
     T: for<'de> Deserialize<'de> + 'static,
+    W: ZRingValue + 'static,
     R: Read + 'static,
-    C: Data + FromIterator<T>,
+    C: Data + ZSet<Key = T, R = W>,
 {
     fn eval(&mut self) -> C {
-        self.reader.deserialize().map(CsvResult::unwrap).collect()
+        if self.time == 0 {
+            let input_iter = self.reader.deserialize().map(CsvResult::unwrap).into_iter();
+
+            let mut data = Vec::with_capacity(input_iter.size_hint().0);
+
+            for x in input_iter {
+                data.push(((x, ()), W::one()));
+            }
+
+            self.time += 1;
+            C::from_tuples((), data)
+        } else {
+            self.time += 1;
+            C::zero()
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{circuit::Root, operator::CsvSource};
+    use crate::{algebra::OrdZSet, circuit::Root, finite_map, operator::CsvSource};
     use csv::ReaderBuilder;
 
     #[test]
     fn test_csv_reader() {
         let root = Root::build(move |circuit| {
-            let expected = vec![
-                (18, 3, 237641),
-                (237641, 4, 18),
-                (18, 5, 21),
-                (18, 5, 22),
-                (18, 5, 23),
-                (18, 5, 24),
-                (18, 5, 25),
-            ];
+            let expected = finite_map! {
+                (18, 3, 237641) => 1,
+                (237641, 4, 18) => 1,
+                (18, 5, 21) => 1,
+                (18, 5, 22) => 1,
+                (18, 5, 23) => 1,
+                (18, 5, 24) => 1,
+                (18, 5, 25) => 1,
+            };
             let csv_data = "\
 18,3,237641
 237641,4,18
@@ -101,7 +127,9 @@ mod test {
                 .from_reader(csv_data.as_bytes());
             circuit
                 .add_source(CsvSource::from_csv_reader(reader))
-                .inspect(move |data: &Vec<(usize, usize, usize)>| assert_eq!(data, &expected));
+                .inspect(move |data: &OrdZSet<(usize, usize, usize), isize>| {
+                    assert_eq!(data, &expected)
+                });
         })
         .unwrap();
 
