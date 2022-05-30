@@ -1,11 +1,7 @@
-/*
-MIT License
-SPDX-License-Identifier: MIT
-
-Copyright (c) 2021 VMware, Inc
-*/
-
 extern crate num;
+
+pub mod time;
+pub use time::Timestamp;
 
 mod shared_ref;
 pub use shared_ref::SharedRef;
@@ -21,4 +17,5 @@ pub mod circuit;
 pub mod monitor;
 pub mod operator;
 pub mod profile;
+pub mod lattice;
 //mod test;
