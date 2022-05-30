@@ -1,9 +1,6 @@
 use crate::{circuit::Scope, lattice::Lattice};
 use deepsize_derive::DeepSizeOf;
-use timely::{
-    progress::PathSummary,
-    PartialOrder,
-};
+use timely::{progress::PathSummary, PartialOrder};
 
 /// Logical timestamp.
 ///
@@ -62,7 +59,6 @@ use timely::{
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp: PartialOrder + Clone + Ord + PartialEq + Eq + 'static {
-
     fn minimum() -> Self;
 
     /// Advance the timestamp by one clock tick.

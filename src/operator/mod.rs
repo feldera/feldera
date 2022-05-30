@@ -21,9 +21,9 @@ pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1Nested, Z1};
 mod generator;
 pub use generator::{Generator, GeneratorNested};
 
+mod consolidate;
 mod integrate;
 mod trace;
-mod consolidate;
 
 pub mod communication;
 
