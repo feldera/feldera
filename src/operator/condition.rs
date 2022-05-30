@@ -128,16 +128,18 @@ impl<C> Condition<C> {
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{FiniteHashMap, FiniteMap, ZSetHashMap},
+        trace::{
+            ord::{OrdIndexedZSet, OrdZSet},
+            BatchReader,
+        },
         circuit::{
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Circuit, Root, Stream,
         },
-        finite_map,
+        zset,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
     };
@@ -161,7 +163,7 @@ mod test {
 
             // Graph edges
             let edges = circuit.add_source(Generator::new(move || {
-                finite_map! {
+                zset! {
                     (0, 3) => 1,
                     (1, 2) => 1,
                     (2, 1) => 1,
@@ -177,8 +179,8 @@ mod test {
             // Two sets of initial states.  The inner circuit computes sets of nodes
             // reachable from each of these initial sets.
             let init1 =
-                circuit.add_source(Generator::new(|| finite_map! { 1 => 1, 2 => 1, 3 => 1 }));
-            let init2 = circuit.add_source(Generator::new(|| finite_map! { 4 => 1 }));
+                circuit.add_source(Generator::new(|| zset! { 1 => 1, 2 => 1, 3 => 1 }));
+            let init2 = circuit.add_source(Generator::new(|| zset! { 4 => 1 }));
 
             let (reachable1, reachable2) = circuit
                 .iterate_with_conditions_and_scheduler::<_, _, S>(|child| {
@@ -186,7 +188,7 @@ mod test {
                     let init1 = init1.delta0(child).integrate();
                     let init2 = init2.delta0(child).integrate();
 
-                    let edges_indexed: Stream<_, FiniteHashMap<usize, ZSetHashMap<usize, isize>>> =
+                    let edges_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> =
                         edges.index();
 
                     // Builds a subcircuit that computes nodes reachable from `init`:
@@ -205,24 +207,19 @@ mod test {
                     //
                     // where suc computes the set of successor nodes.
                     let reachable_circuit =
-                        |init: Stream<Circuit<Circuit<()>>, ZSetHashMap<usize, isize>>| {
-                            let feedback =
-                                <DelayedFeedback<_, ZSetHashMap<usize, isize>>>::new(child);
+                        |init: Stream<Circuit<Circuit<()>>, OrdZSet<usize, isize>>| {
+                            let feedback = <DelayedFeedback<_, OrdZSet<usize, isize>>>::new(child);
 
-                            let feedback_pairs: Stream<_, ZSetHashMap<(usize, ()), isize>> =
+                            let feedback_pairs: Stream<_, OrdZSet<(usize, ()), isize>> =
                                 feedback.stream().map_keys(|&node| (node, ()));
-                            let feedback_indexed: Stream<
-                                _,
-                                FiniteHashMap<usize, ZSetHashMap<(), isize>>,
-                            > = feedback_pairs.index();
+                            let feedback_indexed: Stream<_, OrdIndexedZSet<usize, (), isize>> =
+                                feedback_pairs.index();
 
                             let suc = feedback_indexed.join(&edges_indexed, |_node, &(), &to| to);
 
                             let reachable = init.plus(&suc).distinct();
                             feedback.connect(&reachable);
-                            let condition = reachable
-                                .differentiate()
-                                .condition(|z| z.support_size() == 0);
+                            let condition = reachable.differentiate().condition(|z| z.len() == 0);
                             (condition, reachable.export())
                         };
 
@@ -236,11 +233,11 @@ mod test {
             reachable1.inspect(|r| {
                 assert_eq!(
                     r,
-                    &finite_map! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1}
+                    &zset! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1}
                 )
             });
             reachable2
-                .inspect(|r| assert_eq!(r, &finite_map! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
+                .inspect(|r| assert_eq!(r, &zset! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
         })
         .unwrap();
 
@@ -249,4 +246,3 @@ mod test {
         }
     }
 }
-*/
