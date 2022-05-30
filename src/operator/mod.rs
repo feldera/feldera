@@ -22,6 +22,7 @@ mod generator;
 pub use generator::{Generator, GeneratorNested};
 
 mod integrate;
+mod trace;
 
 pub mod communication;
 
