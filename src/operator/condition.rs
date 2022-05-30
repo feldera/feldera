@@ -128,6 +128,7 @@ impl<C> Condition<C> {
     }
 }
 
+/*
 #[cfg(test)]
 mod test {
     use crate::{
@@ -248,3 +249,4 @@ mod test {
         }
     }
 }
+*/

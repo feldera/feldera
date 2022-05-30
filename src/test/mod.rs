@@ -86,6 +86,7 @@ fn tuple_relation_test() {
 }
 
 // Test a filter on a relation containing tuples
+/*
 #[test]
 fn tuple_filter_test() {
     let actual_data = Rc::new(RefCell::new(Vec::new()));
@@ -105,3 +106,4 @@ fn tuple_filter_test() {
     let expected = vec![finite_map! {}, finite_map! {}, finite_map! { (2, 3) => 1 }];
     assert_eq!(&expected, actual_data_clone.borrow().deref());
 }
+*/

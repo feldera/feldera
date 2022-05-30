@@ -1,14 +1,9 @@
 //! This module contains declarations of abstract algebraic concepts:
 //! monoids, groups, rings, etc.
 
-#[macro_use]
-pub mod finite_map;
 mod checked_int;
-mod zset;
 
 pub use checked_int::CheckedInt;
-pub use finite_map::{FiniteHashMap, FiniteMap, MapBuilder, WithSupport};
-pub use zset::{IndexedZSet, IndexedZSetHashMap, ZSet, ZSetHashMap};
 
 use std::{
     num::Wrapping,
