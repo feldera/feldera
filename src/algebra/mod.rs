@@ -1,17 +1,21 @@
 //! This module contains declarations of abstract algebraic concepts:
 //! monoids, groups, rings, etc.
 
-mod checked_int;
-
-pub use checked_int::CheckedInt;
-
 use std::{
     num::Wrapping,
     ops::{Add, AddAssign, Mul, Neg},
     rc::Rc,
 };
 
+#[macro_use]
+mod checked_int;
+mod zset;
+
+pub use checked_int::CheckedInt;
+pub use zset::{IndexedZSet, ZSet};
+
 /// A trait for types that have a zero value.
+///
 /// This is simlar to the standard Zero trait, but that
 /// trait depends on Add and HasZero doesn't.
 pub trait HasZero {
@@ -206,7 +210,7 @@ impl<T> GroupValue for T where
 }
 
 /// A Group with a multiplication operation is a Ring.
-pub trait RingValue: GroupValue + MulByRef + HasOne {}
+pub trait RingValue: GroupValue + Mul<Output = Self> + MulByRef + HasOne {}
 
 /// Default implementation of RingValue for all types that have the required
 /// traits.
@@ -221,6 +225,7 @@ impl<T> RingValue for T where
         + AddAssignByRef
         + Neg<Output = Self>
         + NegByRef
+        + Mul<Output = Self>
         + MulByRef
         + HasOne
 {
@@ -235,7 +240,7 @@ pub trait ZRingValue: RingValue {
     fn le0(&self) -> bool;
 }
 
-/// Default implementation of ZRingValue for all types that have the required
+/// Default implementation of `ZRingValue` for all types that have the required
 /// traits.
 impl<T> ZRingValue for T
 where
@@ -249,6 +254,7 @@ where
         + AddAssignByRef
         + Neg<Output = Self>
         + NegByRef
+        + Mul<Output = Self>
         + MulByRef
         + HasOne
         + Ord,
