@@ -9,6 +9,7 @@ use crate::{
     },
     circuit_cache_key, NumEntries,
 };
+use deepsize::DeepSizeOf;
 use std::{borrow::Cow, fmt::Write, mem::replace};
 
 circuit_cache_key!(DelayedId<C, D>(NodeId => Stream<C, D>));
@@ -28,7 +29,7 @@ pub struct DelayedFeedback<P, D> {
 impl<P, D> DelayedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: NumEntries + Clone + HasZero + 'static,
+    D: Eq + DeepSizeOf + NumEntries + Clone + HasZero + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -77,7 +78,7 @@ pub struct DelayedNestedFeedback<P, D> {
 impl<P, D> DelayedNestedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: NumEntries + Clone + 'static,
+    D: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -109,7 +110,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: NumEntries + Clone + HasZero + 'static,
+        D: Eq + DeepSizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.local_node_id()), || {
@@ -122,7 +123,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay_nested(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: Clone + HasZero + NumEntries + 'static,
+        D: Eq + Clone + HasZero + DeepSizeOf + NumEntries + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(NestedDelayedId::new(self.local_node_id()), || {
@@ -156,6 +157,7 @@ impl<P, D> Stream<Circuit<P>, D> {
 /// ```
 pub struct Z1<T> {
     zero: T,
+    empty_output: bool,
     val: T,
 }
 
@@ -166,18 +168,15 @@ where
     pub fn new(zero: T) -> Self {
         Self {
             zero: zero.clone(),
+            empty_output: false,
             val: zero,
         }
-    }
-
-    fn reset(&mut self) {
-        self.val = self.zero.clone();
     }
 }
 
 impl<T> Operator for Z1<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -185,18 +184,29 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {
-        self.reset();
+        self.empty_output = false;
+        self.val = self.zero.clone();
     }
 
     fn summary(&self, summary: &mut String) {
-        summary.clear();
         writeln!(summary, "size: {}", self.val.num_entries_deep()).unwrap();
+
+        let bytes = self.val.deep_size_of();
+        writeln!(summary, "bytes: {}", bytes).unwrap();
+        //println!("zbytes:{}", bytes);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        (self.val.num_entries_shallow() == 0) && self.empty_output
+        /*if res == false {
+            eprintln!("num_entries_shallow: {}", self.val.num_entries_shallow());
+        }*/
     }
 }
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         replace(&mut self.val, i.clone())
@@ -213,16 +223,21 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
+        self.empty_output = self.val.num_entries_shallow() == 0;
         replace(&mut self.val, self.zero.clone())
+    }
+
+    fn get_final_output(&mut self) -> T {
+        self.get_output()
     }
 }
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         self.val = i.clone();
@@ -241,7 +256,7 @@ where
 ///
 /// The operator stores a complete nested stream consumed at the last iteration
 /// of the parent clock and outputs it at the next parent clock cycle.
-/// It outputs a stream of zeros value in the first parent clock tick.
+/// It outputs a stream of zeros in the first parent clock tick.
 ///
 /// One important subtlety is that mathematically speaking nested streams are
 /// infinite, but we can only compute and store finite prefixes of such
@@ -294,7 +309,7 @@ impl<T> Z1Nested<T> {
 
 impl<T> Operator for Z1Nested<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1 (nested)")
@@ -314,7 +329,6 @@ where
     }
 
     fn summary(&self, summary: &mut String) {
-        summary.clear();
         let mut total = 0;
         write!(summary, "sizes: [").unwrap();
         for (i, v) in self.val.iter().enumerate() {
@@ -328,12 +342,34 @@ where
         }
         writeln!(summary, "]").unwrap();
         writeln!(summary, "total: {}", total).unwrap();
+
+        let mut total_bytes = 0;
+        write!(summary, "byte sizes: [").unwrap();
+        for (i, v) in self.val.iter().enumerate() {
+            let bytes = v.deep_size_of();
+            total_bytes += bytes;
+            if i == self.val.len() - 1 {
+                write!(summary, "{}", bytes).unwrap();
+            } else {
+                write!(summary, "{},", bytes).unwrap();
+            }
+        }
+        writeln!(summary, "]").unwrap();
+        writeln!(summary, "total bytes: {}", total_bytes).unwrap();
+        //println!("bytes: {}", total_bytes);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.val
+            .iter()
+            .skip(self.timestamp - 1)
+            .all(|v| *v == self.zero)
     }
 }
 
 impl<T> UnaryOperator<T, T> for Z1Nested<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         debug_assert!(self.timestamp <= self.val.len());
@@ -372,7 +408,7 @@ where
 
 impl<T> StrictOperator<T> for Z1Nested<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         if self.timestamp >= self.val.len() {
@@ -388,11 +424,15 @@ where
             self.zero.clone(),
         )
     }
+
+    fn get_final_output(&mut self) -> T {
+        self.get_output()
+    }
 }
 
 impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
 where
-    T: NumEntries + Clone + 'static,
+    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         debug_assert!(self.timestamp < self.val.len());

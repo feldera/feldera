@@ -63,11 +63,15 @@ where
 /// ```
 pub struct Delta0<D> {
     val: Option<D>,
+    fixedpoint: bool,
 }
 
 impl<D> Delta0<D> {
     pub fn new() -> Self {
-        Self { val: None }
+        Self {
+            val: None,
+            fixedpoint: false,
+        }
     }
 }
 
@@ -86,6 +90,9 @@ where
     }
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        self.fixedpoint
+    }
 }
 
 impl<D> ImportOperator<D, D> for Delta0<D>
@@ -94,12 +101,17 @@ where
 {
     fn import(&mut self, val: &D) {
         self.val = Some(val.clone());
+        self.fixedpoint = false;
     }
     fn import_owned(&mut self, val: D) {
         self.val = Some(val);
+        self.fixedpoint = false;
     }
 
     fn eval(&mut self) -> D {
+        if self.val.is_none() {
+            self.fixedpoint = true;
+        }
         self.val.take().unwrap_or_else(D::zero)
     }
 

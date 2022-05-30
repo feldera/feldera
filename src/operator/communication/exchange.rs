@@ -446,6 +446,11 @@ where
     fn ready(&self) -> bool {
         self.exchange.ready_to_send(self.worker_index)
     }
+
+    fn fixedpoint(&self) -> bool {
+        // TODO: Add a mechanism to communicate fixed point status among peers.
+        unimplemented!()
+    }
 }
 
 impl<D, T, L, I> SinkOperator<D> for ExchangeSender<T, L>
@@ -529,6 +534,11 @@ where
 
     fn ready(&self) -> bool {
         self.exchange.ready_to_receive(self.worker_index)
+    }
+
+    fn fixedpoint(&self) -> bool {
+        // TODO: Add a mechanism to communicate fixed point status among peers.
+        unimplemented!()
     }
 }
 

@@ -1,10 +1,3 @@
-/*
-MIT License
-SPDX-License-Identifier: MIT
-
-Copyright (c) $CURRENT_YEAR VMware, Inc
-*/
-
 //! API to construct circuits.
 //!
 //! The API exposes two abstractions [`Circuit`]s and [`Stream`]s.
@@ -269,6 +262,8 @@ pub trait Node {
     /// Global node id.
     fn global_id(&self) -> &GlobalNodeId;
 
+    fn name(&self) -> Cow<'static, str>;
+
     /// `true` if the node encapsulates an asynchronous operator (see
     /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
     /// `false` for synchronous operators and subcircuits.
@@ -320,6 +315,8 @@ pub trait Node {
     unsafe fn clock_end(&mut self, scope: Scope);
 
     fn summary(&self, output: &mut String);
+
+    fn fixedpoint(&self) -> bool;
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -638,6 +635,15 @@ impl<P> CircuitInner<P> {
         for (_, handler) in self.scheduler_event_handlers.borrow_mut().iter_mut() {
             handler(event)
         }
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.nodes.iter().all(|node| {
+            node.fixedpoint()
+            /*if !res {
+                eprintln!("node {} ({})", node.global_id(), node.name());
+            }*/
+        })
     }
 }
 
@@ -1537,6 +1543,60 @@ where
             Ok((res, executor))
         })
     }
+
+    /// Add a child circuit that will iterate to a fixed point.
+    ///
+    /// For each parent clock cycle, the child circuit will iterate until
+    /// reaching a fixed point, i.e., a state where the outputs of all
+    /// operators are guaranteed to remain the same, should the nested clock
+    /// continue ticking.
+    ///
+    /// The fixed point check is implemented by checking the following
+    /// condition:
+    ///
+    /// * All operators in the circuit are in such a state that, if their inputs
+    ///   remain constant (i.e., all future inputs are identical to the last
+    ///   input), then their outputs remain constant too.
+    ///
+    /// This is a necessary and sufficient condition that is also easy to check
+    /// by asking each operator if it is in a stable state (via the
+    /// [`Operator::fixedpoint`](`super::operator_traits::Operator::fixedpoint`)
+    /// API.  However, the cost of checking this condition
+    /// precisely can be high for some operators.  For instance, delay
+    /// operators ([`Z1`](`crate::operator::Z1`) and
+    /// [`Z1Nested`](`crate::operator::Z1Nested`)) require storing the last
+    /// two versions of the state instead of one and comparing them at each
+    /// cycle.  Such operators instead implement imprecise conservative checks,
+    /// e.g., check for a _specific_ fixed point, e.g., a fixed point where both
+    /// input and output of the operator is zero (or empty).  As a result, the
+    /// circuit may fail to detect other fixed point and will iterate forever.
+    /// The goal is to evolve the design so that circuits created using the
+    /// high-level API (`Stream::xxx` methods) implement accurate fixed
+    /// point checks.
+    pub fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
+    {
+        self.fixedpoint_with_scheduler::<F, T, DynamicScheduler>(constructor)
+    }
+
+    /// Add a child circuit that will iterate to a fixed point.
+    ///
+    /// Similar to [`iterate`](`Self::fixedpoint`), but with a user-specified
+    /// [`Scheduler`] implementation.
+    pub fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
+        S: Scheduler + 'static,
+    {
+        self.subcircuit(true, |child| {
+            let res = constructor(child)?;
+            let child_clone = child.clone();
+            let termination_check = move || child_clone.inner().fixedpoint();
+            let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+            Ok((res, executor))
+        })
+    }
 }
 
 impl<P> Circuit<Circuit<P>>
@@ -1628,6 +1688,10 @@ where
     O: Clone,
     Op: ImportOperator<I, O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -1670,6 +1734,10 @@ where
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
     }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
+    }
 }
 
 struct SourceNode<C, O, Op> {
@@ -1701,6 +1769,10 @@ where
     O: Clone,
     Op: SourceOperator<O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -1736,6 +1808,10 @@ where
 
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
     }
 }
 
@@ -1776,6 +1852,10 @@ where
     O: Clone,
     Op: UnaryOperator<I, O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -1815,6 +1895,10 @@ where
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
     }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
+    }
 }
 
 struct SinkNode<C, I, Op> {
@@ -1846,6 +1930,10 @@ where
     I: Clone,
     Op: SinkOperator<I>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -1884,6 +1972,10 @@ where
 
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
     }
 }
 
@@ -1932,6 +2024,10 @@ where
     O: Clone,
     Op: BinaryOperator<I1, I2, O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -1990,6 +2086,10 @@ where
 
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
     }
 }
 
@@ -2053,6 +2153,10 @@ where
     O: Clone,
     Op: NaryOperator<I, O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -2104,6 +2208,10 @@ where
     fn summary(&self, output: &mut String) {
         self.operator.summary(output);
     }
+
+    fn fixedpoint(&self) -> bool {
+        self.operator.fixedpoint()
+    }
 }
 
 // The output half of a feedback node.  We implement a feedback node using a
@@ -2149,6 +2257,10 @@ where
     O: Clone,
     Op: StrictUnaryOperator<I, O>,
 {
+    fn name(&self) -> Cow<'static, str> {
+        unsafe { &*self.operator.get() }.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -2184,7 +2296,7 @@ where
     unsafe fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
             self.export_stream
-                .put((&mut *self.operator.get()).get_output())
+                .put((&mut *self.operator.get()).get_final_output())
         }
         (&mut *self.operator.get()).clock_end(scope);
     }
@@ -2193,6 +2305,10 @@ where
         unsafe {
             (&*self.operator.get()).summary(output);
         }
+    }
+
+    fn fixedpoint(&self) -> bool {
+        unsafe { (&*self.operator.get()).fixedpoint() }
     }
 }
 
@@ -2224,6 +2340,10 @@ where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
 {
+    fn name(&self) -> Cow<'static, str> {
+        unsafe { &*self.operator.get() }.name()
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -2262,6 +2382,10 @@ where
         unsafe {
             (&*self.operator.get()).summary(output);
         }
+    }
+
+    fn fixedpoint(&self) -> bool {
+        unsafe { (&*self.operator.get()).fixedpoint() }
     }
 }
 
@@ -2356,6 +2480,10 @@ impl<P> Node for ChildNode<P>
 where
     P: 'static,
 {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Subcircuit")
+    }
+
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
@@ -2386,6 +2514,10 @@ where
 
     fn summary(&self, output: &mut String) {
         output.clear();
+    }
+
+    fn fixedpoint(&self) -> bool {
+        unimplemented!()
     }
 }
 

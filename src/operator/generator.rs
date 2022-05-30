@@ -37,6 +37,9 @@ where
     }
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        false
+    }
 }
 
 impl<T, F> SourceOperator<T> for Generator<T, F>
@@ -84,6 +87,12 @@ where
         }
     }
     fn clock_end(&mut self, _scope: Scope) {}
+
+    fn fixedpoint(&self) -> bool {
+        // TODO: do we want a version of `GeneratorNested` that
+        // can inform the circuit that it's reached a fixedpoint?
+        false
+    }
 }
 
 impl<T> SourceOperator<T> for GeneratorNested<T>
