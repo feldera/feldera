@@ -131,17 +131,17 @@ impl<C> Condition<C> {
 #[cfg(test)]
 mod test {
     use crate::{
-        trace::{
-            ord::{OrdIndexedZSet, OrdZSet},
-            BatchReader,
-        },
         circuit::{
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Circuit, Root, Stream,
         },
-        zset,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
+        trace::{
+            ord::{OrdIndexedZSet, OrdZSet},
+            BatchReader,
+        },
+        zset,
     };
 
     #[test]
@@ -178,8 +178,7 @@ mod test {
 
             // Two sets of initial states.  The inner circuit computes sets of nodes
             // reachable from each of these initial sets.
-            let init1 =
-                circuit.add_source(Generator::new(|| zset! { 1 => 1, 2 => 1, 3 => 1 }));
+            let init1 = circuit.add_source(Generator::new(|| zset! { 1 => 1, 2 => 1, 3 => 1 }));
             let init2 = circuit.add_source(Generator::new(|| zset! { 4 => 1 }));
 
             let (reachable1, reachable2) = circuit
@@ -231,13 +230,9 @@ mod test {
                 .unwrap();
 
             reachable1.inspect(|r| {
-                assert_eq!(
-                    r,
-                    &zset! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1}
-                )
+                assert_eq!(r, &zset! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1})
             });
-            reachable2
-                .inspect(|r| assert_eq!(r, &zset! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
+            reachable2.inspect(|r| assert_eq!(r, &zset! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
         })
         .unwrap();
 

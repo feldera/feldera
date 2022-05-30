@@ -14,9 +14,9 @@ pub use num_entries::NumEntries;
 
 pub mod algebra;
 pub mod circuit;
+pub mod lattice;
 pub mod monitor;
 pub mod operator;
 pub mod profile;
-pub mod lattice;
 pub mod trace;
 //mod test;
