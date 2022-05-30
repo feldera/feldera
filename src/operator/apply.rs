@@ -47,6 +47,11 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        // TODO: either change `F` type to `Fn` from `FnMut` or
+        // parameterize the operator with custom fixed point check.
+        unimplemented!();
+    }
 }
 
 impl<T1, T2, F> UnaryOperator<T1, T2> for Apply<F>

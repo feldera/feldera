@@ -16,7 +16,7 @@ use std::{
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
+    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + 'static,
 {
     /// Apply the [`Plus`] operator to `self` and `other`.
     ///
@@ -54,7 +54,13 @@ where
     pub fn plus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
         self.circuit().add_binary_operator(Plus::new(), self, other)
     }
+}
 
+impl<P, D> Stream<Circuit<P>, D>
+where
+    P: Clone + 'static,
+    D: Add<Output = D> + AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
+{
     /// Apply the [`Minus`] operator to `self` and `other`.
     pub fn minus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
         self.circuit()
@@ -86,6 +92,9 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        true
+    }
 }
 
 impl<D> BinaryOperator<D, D, D> for Plus<D>
@@ -142,6 +151,9 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        true
+    }
 }
 
 // TODO: Add `subtract` operation to `GroupValue`, which
@@ -176,13 +188,14 @@ where
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{MapBuilder, ZSetHashMap},
+        algebra::HasZero,
         circuit::{Circuit, OwnershipPreference, Root},
         operator::{Generator, Inspect},
+        trace::{ord::OrdZSet, Batch},
+        zset,
     };
 
     #[test]
@@ -212,40 +225,40 @@ mod test {
     #[test]
     fn zset_plus() {
         let build_plus_circuit = |circuit: &Circuit<()>| {
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _>>::zero();
+            let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
-                let res = s.clone();
-                s.increment(&5, 1);
-                res
+                s = s.merge(&delta);
+                s.clone()
             }));
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _>>::zero();
+            let delta = zset! { 5 => -1};
             let source2 = circuit.add_source(Generator::new(move || {
-                let res = s.clone();
-                s.increment(&5, -1);
-                res
+                s = s.merge(&delta);
+                s.clone()
             }));
             source1
                 .plus(&source2)
-                .inspect(|s| assert_eq!(s, &ZSetHashMap::new()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<usize, isize>>::zero()));
             (source1, source2)
         };
 
         let build_minus_circuit = |circuit: &Circuit<()>| {
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _>>::zero();
+            let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
-                let res = s.clone();
-                s.increment(&5, 1);
-                res
+                s = s.merge(&delta);
+                s.clone()
             }));
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _>>::zero();
+            let delta = zset! { 5 => 1};
             let source2 = circuit.add_source(Generator::new(move || {
-                let res = s.clone();
-                s.increment(&5, 1);
-                res
+                s = s.merge(&delta);
+                s.clone()
             }));
             source1
                 .minus(&source2)
-                .inspect(|s| assert_eq!(s, &ZSetHashMap::new()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<_, _>>::zero()));
             (source1, source2)
         };
         // Allow `Plus` to consume both streams by value.
@@ -335,4 +348,3 @@ mod test {
         }
     }
 }
-*/

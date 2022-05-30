@@ -73,6 +73,10 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+
+    fn fixedpoint(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SinkOperator<T> for Inspect<T, F>

@@ -67,6 +67,10 @@ where
     {
         self.op.register_ready_callback(cb);
     }
+
+    fn fixedpoint(&self) -> bool {
+        self.op.fixedpoint()
+    }
 }
 
 impl<RI, RO, O, Op> UnaryOperator<RI, RO> for UnaryOperatorAdapter<O, Op>
@@ -135,6 +139,10 @@ where
         F: Fn() + Send + Sync + 'static,
     {
         self.op.register_ready_callback(cb);
+    }
+
+    fn fixedpoint(&self) -> bool {
+        self.op.fixedpoint()
     }
 }
 

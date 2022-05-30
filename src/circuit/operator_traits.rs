@@ -134,6 +134,41 @@ pub trait Operator: 'static {
     {
     }
 
+    /// Check if the operator is in a stable state.
+    ///
+    /// This method is invoked as part of checking if the circuit has reached a
+    /// fixed point state, i.e., a state where the outputs of all operators will
+    /// remain constant forever
+    /// (see [`Circuit::fixedpoint`](`crate::circuit::Circuit::fixedpoint`)).
+    ///
+    /// The method is invoked at the end of a clock cycle, after
+    /// the operator has been evaluated.  It returns `true` if the operator's
+    /// output is guaranteed to remain constant (i.e., all future outputs
+    /// will be equal to the last output) as long as its inputs remain
+    /// constant.
+    ///
+    /// The check must be precise. False positives (returning `true` when the
+    /// output may change in the future) may lead to early termination before
+    /// the circuit has reached a fixed point (and hence incorrect output).
+    /// False negatives (returning `false` in a stable state) is only acceptable
+    /// for a finite number of clock cycles and will otherwise prevent the
+    /// fixedpoint computation from converging.
+    ///
+    /// # Warning
+    ///
+    /// Two operators currently violate this requirement:
+    /// [`Z1`](`crate::operator::Z1`) and
+    /// [`Z1Nested`](`crate::operator::Z1Nested`). The latter will get phased
+    /// out soon.  The former is work-in-progress. It can be safely used inside
+    /// nested circuits when carrying changes to collections across iterations
+    /// of the fixed point computation, but not as part of an integrator circuit
+    /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
+    fn fixedpoint(&self) -> bool;
+
+    /// Returns printable operator metadata, e.g., number of entries, heap
+    /// usage, etc.
+    // TODO: metadata is operator-specific, so we cannot use a pre-defined structure
+    // here.  A dynamic representation (e.g., JSON) may be the sweet spot.
     fn summary(&self, output: &mut String) {
         output.clear();
     }
@@ -249,6 +284,8 @@ pub trait StrictOperator<O>: Operator {
     /// state (for example [Z1](`crate::operator::Z1`) returns its inner
     /// value, leaving the operator empty).
     fn get_output(&mut self) -> O;
+
+    fn get_final_output(&mut self) -> O;
 }
 
 /// A strict unary operator that consumes a stream of inputs of type `I`

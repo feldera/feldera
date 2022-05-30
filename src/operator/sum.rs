@@ -6,7 +6,7 @@ use crate::{
         operator_traits::{NaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    NumEntries
+    NumEntries,
 };
 use std::{
     borrow::Cow,
@@ -70,6 +70,9 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {}
+    fn fixedpoint(&self) -> bool {
+        true
+    }
 }
 
 impl<D> NaryOperator<D, D> for Sum<D>
@@ -124,42 +127,42 @@ where
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::{MapBuilder, ZSetHashMap},
+        algebra::HasZero,
         circuit::{Circuit, OwnershipPreference, Root},
         operator::{Generator, Inspect},
+        trace::{ord::OrdZSet, Batch},
+        zset,
     };
 
     #[test]
     fn zset_sum() {
         let build_circuit = |circuit: &Circuit<()>| {
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _> as HasZero>::zero();
             let source1 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
-                s.increment(&5, 1);
-                s.increment(&6, 2);
+                s = s.merge(&zset! { 5 => 1, 6 => 2 });
                 res
             }));
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _> as HasZero>::zero();
             let source2 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
-                s.increment(&5, -1);
+                s = s.merge(&zset! { 5 => -1 });
                 res
             }));
-            let mut s = ZSetHashMap::new();
+            let mut s = <OrdZSet<_, _> as HasZero>::zero();
             let source3 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
-                s.increment(&6, -1);
+                s = s.merge(&zset! { 6 => -1 });
                 res
             }));
 
             // Supply `source3` twice to test the handling of aliases.
             source3
                 .sum(&[source2.clone(), source1.clone(), source3.clone()])
-                .inspect(|s| assert_eq!(s, &ZSetHashMap::new()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<_, _> as HasZero>::zero()));
             (source1, source2, source3)
         };
 
@@ -214,4 +217,3 @@ mod test {
         }
     }
 }
-*/
