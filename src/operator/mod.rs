@@ -23,6 +23,7 @@ pub use generator::{Generator, GeneratorNested};
 
 mod integrate;
 mod trace;
+mod consolidate;
 
 pub mod communication;
 
