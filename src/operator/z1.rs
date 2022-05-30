@@ -190,7 +190,7 @@ where
 
     fn summary(&self, summary: &mut String) {
         summary.clear();
-        writeln!(summary, "size: {}", self.val.num_entries()).unwrap();
+        writeln!(summary, "size: {}", self.val.num_entries_deep()).unwrap();
     }
 }
 
@@ -318,7 +318,7 @@ where
         let mut total = 0;
         write!(summary, "sizes: [").unwrap();
         for (i, v) in self.val.iter().enumerate() {
-            let nentries = v.num_entries();
+            let nentries = v.num_entries_deep();
             total += nentries;
             if i == self.val.len() - 1 {
                 write!(summary, "{}", nentries).unwrap();

@@ -1,11 +1,12 @@
 //! N-ary plus operator.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, WithNumEntries},
+    algebra::{AddAssignByRef, AddByRef, HasZero},
     circuit::{
         operator_traits::{NaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
+    NumEntries
 };
 use std::{
     borrow::Cow,
@@ -18,7 +19,7 @@ use std::{
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + WithNumEntries + 'static,
+    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
     pub fn sum<'a, I>(&'a self, streams: I) -> Stream<Circuit<P>, D>
@@ -73,7 +74,7 @@ where
 
 impl<D> NaryOperator<D, D> for Sum<D>
 where
-    D: Add<Output = D> + AddAssignByRef + Clone + HasZero + WithNumEntries + 'static,
+    D: Add<Output = D> + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
 {
     fn eval<'a, Iter>(&mut self, inputs: Iter) -> D
     where
@@ -91,7 +92,7 @@ where
             input_vec.push(input);
         }
 
-        input_vec.sort_by_key(|x| Reverse(x.num_entries()));
+        input_vec.sort_by_key(|x| Reverse(x.num_entries_shallow()));
 
         let mut res = D::zero();
         for input in input_vec.drain(..) {
