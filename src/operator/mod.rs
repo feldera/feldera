@@ -41,8 +41,8 @@ pub use condition::Condition;
 mod index;
 pub use index::Index;
 
-//mod join;
-//pub use join::Join;
+mod join;
+pub use join::Join;
 
 mod sum;
 pub use sum::Sum;
