@@ -46,8 +46,8 @@ pub use index::Index;
 mod sum;
 pub use sum::Sum;
 
-//mod distinct;
-//pub use distinct::Distinct;
+mod distinct;
+pub use distinct::Distinct;
 
 mod map;
 pub use map::{MapKeys, MapValues};
