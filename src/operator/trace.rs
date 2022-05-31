@@ -5,7 +5,7 @@ use crate::{
     },
     circuit_cache_key,
     time::NestedTimestamp32,
-    trace::{cursor::Cursor, Batch, BatchReader, Builder, Trace, TraceReader},
+    trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
     NumEntries, Timestamp,
 };
 use deepsize::DeepSizeOf;
@@ -14,7 +14,6 @@ use std::{borrow::Cow, fmt::Write, marker::PhantomData, rc::Rc};
 circuit_cache_key!(TraceId<B, D>(NodeId => Stream<B, D>));
 circuit_cache_key!(DelayedTraceId<B, D>(NodeId => Stream<B, D>));
 circuit_cache_key!(IntegrateTraceId<B, D>(NodeId => Stream<B, D>));
-circuit_cache_key!(DelayedIntegrateTraceId<B, D>(NodeId => Stream<B, D>));
 
 // TODO: add infrastructure to compact the trace during slack time.
 
@@ -104,11 +103,11 @@ where
     }
 
     // TODO: this method should replace `Stream::integrate()`.
-    pub fn integrate_trace<T>(&self) -> Stream<Circuit<P>, T>
+    pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<Rc<B>>>
     where
-        B: Batch,
-        T: NumEntries + DeepSizeOf + Trace<Batch = Rc<B>> + Clone + 'static,
-        T::Time: Timestamp,
+        B: Batch + DeepSizeOf,
+        B::Key: Ord,
+        B::Val: Ord,
     {
         self.circuit()
             .cache_get_or_insert_with(IntegrateTraceId::new(self.local_node_id()), || {
@@ -116,7 +115,7 @@ where
                     let (ExportStream { local, export }, z1feedback) =
                         self.circuit().add_feedback_with_export(Z1Trace::new(true));
                     let trace = self.circuit().add_binary_operator_with_preference(
-                        <UntimedTraceAppend<T, B>>::new(),
+                        <UntimedTraceAppend<Spine<Rc<B>>, B>>::new(),
                         &local,
                         self,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -127,7 +126,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
                     self.circuit()
-                        .cache_insert(DelayedIntegrateTraceId::new(trace.local_node_id()), local);
+                        .cache_insert(DelayedTraceId::new(trace.local_node_id()), local);
                     self.circuit()
                         .cache_insert(ExportId::new(trace.local_node_id()), export);
                     trace

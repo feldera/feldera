@@ -29,8 +29,8 @@ where
     /// See [`Join`] operator for more info.
     pub fn join<F, IZ2, Z>(&self, other: &Stream<Circuit<P>, IZ2>, f: F) -> Stream<Circuit<P>, Z>
     where
-        IZ1: IndexedZSet<R = Z::R>,
-        IZ2: IndexedZSet<Key = <IZ1::Target as BatchReader>::Key, R = Z::R>,
+        IZ1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
+        IZ2: BatchReader<Key = IZ1::Key, Time = (), R = Z::R> + Clone + 'static,
         IZ1::Key: Ord,
         Z: Clone + ZSet + 'static,
         Z::R: MulByRef,
@@ -61,17 +61,19 @@ where
     ) -> Stream<Circuit<P>, Z>
     where
         I1: IndexedZSet + DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf,
         I1::Key: Ord + DeepSizeOf,
+        I1::Val: Ord,
         I1::R: DeepSizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf,
+        I2::Val: Ord,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
         Z::R: MulByRef,
     {
-        self.integrate()
-            .delay()
+        self.integrate_trace()
+            .delay_trace()
             .join(other, join_func.clone())
-            .plus(&self.join(&other.integrate(), join_func))
+            .plus(&self.join(&other.integrate_trace(), join_func))
     }
 
     /*
@@ -350,9 +352,9 @@ where
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<F, I1, I2, Z>
 where
-    I1: IndexedZSet<R = Z::R>,
+    I1: BatchReader<Time = (), R = Z::R> + 'static,
     I1::Key: Ord,
-    I2: IndexedZSet<Key = I1::Key, R = Z::R>,
+    I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
     Z::R: MulByRef,
@@ -617,7 +619,7 @@ mod test {
     use crate::{
         circuit::{Root, Stream},
         operator::{DelayedFeedback, Generator},
-        trace::ord::{OrdIndexedZSet, OrdZSet, OrdZSetSpine},
+        trace::ord::{OrdIndexedZSet, OrdZSet},
         zset,
     };
     use std::vec;
@@ -884,7 +886,7 @@ mod test {
                 let paths = edges.plus(&paths_inverted_indexed.join_trace(&edges_indexed, |_via, from, to| (*from, *to)))
                     .distinct_trace();
                 paths_delayed.connect(&paths);
-                let output = paths.integrate_trace::<OrdZSetSpine<_, _>>();
+                let output = paths.integrate_trace();
                 Ok(output.export())
             })
             .unwrap();

@@ -4,7 +4,7 @@ use dbsp::{
     operator::{DelayedFeedback, Generator},
     profile::CPUProfiler,
     trace::{
-        ord::{OrdIndexedZSet, OrdZSet, OrdZSetSpine},
+        ord::{OrdIndexedZSet, OrdZSet},
         Batch,
     },
 };
@@ -109,7 +109,7 @@ fn main() {
                     .distinct_trace();
                 paths_delayed.connect(&paths);
 
-                Ok(paths.integrate_trace::<OrdZSetSpine<_, _>>().export())
+                Ok(paths.integrate_trace().export())
             })
             .unwrap();
     })
