@@ -9,7 +9,7 @@ use dbsp::{
     operator::{CsvSource, DelayedFeedback},
     profile::CPUProfiler,
     trace::{
-        ord::{OrdIndexedZSet, OrdZSet, OrdZSetSpine},
+        ord::{OrdIndexedZSet, OrdZSet},
         BatchReader,
     },
 };
@@ -227,10 +227,7 @@ fn main() {
                     pvar.connect(&p);
                     qvar.connect(&q);
 
-                    Ok((
-                        p.integrate_trace::<OrdZSetSpine<_, _>>().export(),
-                        q.integrate_trace::<OrdZSetSpine<_, _>>().export(),
-                    ))
+                    Ok((p.integrate_trace().export(), q.integrate_trace().export()))
                 })
                 .unwrap();
             outp.consolidate::<OrdZSet<_, _>>()
