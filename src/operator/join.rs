@@ -555,18 +555,15 @@ where
         output_batches.resize_with((new_len - self.time) as usize, Vec::new);
 
         let mut index_cursor = index.cursor();
-        let (mut trace_cursor, trace_storage) = trace.cursor();
+        let mut trace_cursor = trace.cursor();
 
-        while index_cursor.key_valid(index) && trace_cursor.key_valid(&trace_storage) {
-            match index_cursor
-                .key(index)
-                .cmp(trace_cursor.key(&trace_storage))
-            {
+        while index_cursor.key_valid(index) && trace_cursor.key_valid(trace) {
+            match index_cursor.key(index).cmp(trace_cursor.key(trace)) {
                 Ordering::Less => {
-                    index_cursor.seek_key(index, trace_cursor.key(&trace_storage));
+                    index_cursor.seek_key(index, trace_cursor.key(trace));
                 }
                 Ordering::Greater => {
-                    trace_cursor.seek_key(&trace_storage, index_cursor.key(index));
+                    trace_cursor.seek_key(trace, index_cursor.key(index));
                 }
                 Ordering::Equal => {
                     //println!("key: {}", index_cursor.key(index));
@@ -576,26 +573,26 @@ where
                         let w1 = index_cursor.weight(index);
                         //println!("v1: {}, w1: {}", v1, w1);
 
-                        while trace_cursor.val_valid(&trace_storage) {
+                        while trace_cursor.val_valid(trace) {
                             let output = (self.join_func)(
                                 index_cursor.key(index),
                                 v1,
-                                trace_cursor.val(&trace_storage),
+                                trace_cursor.val(trace),
                             );
-                            trace_cursor.map_times(&trace_storage, |ts, w2| {
+                            trace_cursor.map_times(trace, |ts, w2| {
                                 let off = (max(ts.inner(), self.time) - self.time) as usize;
                                 //println!("  tuple@{}: ({:?}, {})", off, output, w1.clone() *
                                 // w2.clone());
                                 output_batches[off].push(((output.clone(), ()), w1.mul_by_ref(w2)));
                             });
-                            trace_cursor.step_val(&trace_storage);
+                            trace_cursor.step_val(trace);
                         }
-                        trace_cursor.rewind_vals(&trace_storage);
+                        trace_cursor.rewind_vals(trace);
                         index_cursor.step_val(index);
                     }
 
                     index_cursor.step_key(index);
-                    trace_cursor.step_key(&trace_storage);
+                    trace_cursor.step_key(trace);
                 }
             }
         }

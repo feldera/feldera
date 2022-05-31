@@ -10,7 +10,6 @@ use crate::{
     algebra::MonoidValue,
     lattice::Lattice,
     trace::{
-        description::Description,
         layers::{
             ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
@@ -37,8 +36,8 @@ where
 {
     /// Where all the dataz is.
     pub layer: OrderedLayer<K, OrderedLeaf<T, R>, O>,
-    /// Description of the update times this layer represents.
-    pub desc: Description<T>,
+    pub lower: Antichain<T>,
+    pub upper: Antichain<T>,
 }
 
 impl<K, T, R, O> DeepSizeOf for OrdKeyBatch<K, T, R, O>
@@ -80,8 +79,11 @@ where
     fn len(&self) -> usize {
         <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::tuples(&self.layer)
     }
-    fn description(&self) -> &Description<T> {
-        &self.desc
+    fn lower(&self) -> &Antichain<T> {
+        &self.lower
+    }
+    fn upper(&self) -> &Antichain<T> {
+        &self.upper
     }
 }
 
@@ -195,7 +197,8 @@ where
     upper2: usize,
     // result that we are currently assembling.
     result: <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::MergeBuilder,
-    description: Description<T>,
+    lower: Antichain<T>,
+    upper: Antichain<T>,
 }
 
 impl<K, T, R, O> Merger<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyMerger<K, T, R, O>
@@ -211,19 +214,14 @@ where
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert!(batch1.upper() == batch2.lower());
 
-        // Leonid: we do not require batch bounds to grow monotonically.
-        let description = Description::new(
-            batch1.lower().meet(batch2.lower()),
-            batch2.upper().join(batch2.upper()),
-        );
-
         OrdKeyMerger {
             lower1: 0,
             upper1: batch1.layer.keys(),
             lower2: 0,
             upper2: batch2.layer.keys(),
             result: <<OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
-            description,
+            lower: batch1.lower().meet(batch2.lower()),
+            upper: batch2.upper().join(batch2.upper()),
         }
     }
     fn done(self) -> OrdKeyBatch<K, T, R, O> {
@@ -232,7 +230,8 @@ where
 
         OrdKeyBatch {
             layer: self.result.done(),
-            desc: self.description,
+            lower: self.lower,
+            upper: self.upper,
         }
     }
     fn work(
@@ -424,7 +423,8 @@ where
         };
         OrdKeyBatch {
             layer: self.builder.done(),
-            desc: Description::new(Antichain::from_elem(self.time), upper),
+            lower: Antichain::from_elem(self.time),
+            upper,
         }
     }
 }

@@ -329,20 +329,20 @@ where
     fn eval_value(
         &mut self,
         trace_cursor: &mut T::Cursor,
-        trace_storage: &<T::Cursor as TraceCursor<T::Key, (), T::Time, T::R>>::Storage,
+        trace: &T,
         value: &Z::Key,
         weight: &Z::R,
         output: &mut Vec<((Z::Key, ()), Z::R)>,
     ) {
         //eprintln!("value: {:?}, weight: {:?}", value, weight);
-        trace_cursor.seek_key(trace_storage, value);
+        trace_cursor.seek_key(trace, value);
 
-        if trace_cursor.key_valid(trace_storage) && trace_cursor.key(trace_storage) == value {
+        if trace_cursor.key_valid(trace) && trace_cursor.key(trace) == value {
             let mut w1: Z::R = HasZero::zero();
             let mut w2: Z::R = HasZero::zero();
             let mut w3: Z::R = HasZero::zero();
             let mut next_ts: Option<T::Time> = None;
-            trace_cursor.map_times(trace_storage, |t, w| {
+            trace_cursor.map_times(trace, |t, w| {
                 if !t.epoch() {
                     if t.inner() < self.time {
                         w1.add_assign_by_ref(w);
@@ -489,7 +489,7 @@ where
 
         let mut batch = Vec::with_capacity(delta.len());
 
-        let (mut trace_cursor, trace_storage) = trace.cursor();
+        let mut trace_cursor = trace.cursor();
 
         // For all keys in delta, for all keys in future_updates[time].
         let mut delta_cursor = delta.cursor();
@@ -507,14 +507,14 @@ where
             match k.cmp(cand_val) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    self.eval_value(&mut trace_cursor, &trace_storage, k, w, &mut batch);
+                    self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
                     delta_cursor.step_key(delta);
                 }
                 // Key only appears in `future_updates`.
                 Ordering::Greater => {
                     self.eval_value(
                         &mut trace_cursor,
-                        &trace_storage,
+                        trace,
                         cand_val,
                         &HasZero::zero(),
                         &mut batch,
@@ -523,7 +523,7 @@ where
                 }
                 // Key appears in both `delta` and `future_updates`.
                 Ordering::Equal => {
-                    self.eval_value(&mut trace_cursor, &trace_storage, k, w, &mut batch);
+                    self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
                     delta_cursor.step_key(delta);
                     candidate = cand_iterator.next();
                 }
@@ -537,13 +537,13 @@ where
             let k = delta_cursor.key(delta);
             let w = delta_cursor.weight(delta);
 
-            self.eval_value(&mut trace_cursor, &trace_storage, k, w, &mut batch);
+            self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
             delta_cursor.step_key(delta);
         }
         while candidate.is_some() {
             self.eval_value(
                 &mut trace_cursor,
-                &trace_storage,
+                trace,
                 candidate.unwrap(),
                 &HasZero::zero(),
                 &mut batch,

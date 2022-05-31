@@ -80,14 +80,20 @@
 //! layers by continuing to provide fuel as updates arrive.
 
 use std::{
+    cell::RefCell,
     fmt::{Display, Formatter},
     mem::replace,
 };
 
-use crate::trace::cursor::{Cursor, CursorList};
-use crate::trace::Merger;
-use crate::trace::{Batch, Trace, TraceReader};
-use crate::NumEntries;
+use crate::{
+    lattice::Lattice,
+    time::Timestamp,
+    trace::{
+        cursor::{Cursor, CursorList},
+        Antichain, Batch, BatchReader, Merger, Trace, TraceReader,
+    },
+    NumEntries,
+};
 use deepsize::DeepSizeOf;
 use textwrap::indent;
 
@@ -102,6 +108,12 @@ where
     B: Batch,
 {
     merging: Vec<MergeState<B>>,
+    lower: Antichain<B::Time>,
+    upper: Antichain<B::Time>,
+    // Batches from `merging` stored in a flat array, for use by `SpineCursor`.
+    // Any operation that modifies spine invalidates this vector (and the associated
+    // cursor, if any).
+    cursor_storage: RefCell<Vec<B>>,
     effort: usize,
     activator: Option<timely::scheduling::activate::Activator>,
     dirty: bool,
@@ -168,7 +180,7 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
-impl<B> TraceReader for Spine<B>
+impl<B> BatchReader for Spine<B>
 where
     B: Batch + Clone + 'static,
     B::Key: Ord,
@@ -179,15 +191,23 @@ where
     type Time = B::Time;
     type R = B::R;
 
-    type Batch = B;
-    type Cursor = CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor>;
+    type Cursor = SpineCursor<B>;
 
-    fn cursor(
-        &self,
-    ) -> (
-        Self::Cursor,
-        <Self::Cursor as Cursor<B::Key, B::Val, B::Time, B::R>>::Storage,
-    ) {
+    fn len(&self) -> usize {
+        let mut result = 0;
+        self.map_batches(|b| result += b.len());
+        result
+    }
+
+    fn lower(&self) -> &Antichain<Self::Time> {
+        &self.lower
+    }
+
+    fn upper(&self) -> &Antichain<Self::Time> {
+        &self.upper
+    }
+
+    fn cursor(&self) -> Self::Cursor {
         let mut cursors = Vec::new();
         let mut storage = Vec::new();
 
@@ -223,8 +243,18 @@ where
             }
         }
 
-        (CursorList::new(cursors, &storage), storage)
+        *self.cursor_storage.borrow_mut() = storage;
+        SpineCursor::new(cursors, self)
     }
+}
+
+impl<B> TraceReader for Spine<B>
+where
+    B: Batch + Clone + 'static,
+    B::Key: Ord,
+    B::Val: Ord,
+{
+    type Batch = B;
 
     fn map_batches<F: FnMut(&Self::Batch)>(&self, mut f: F) {
         for batch in self.merging.iter().rev() {
@@ -241,6 +271,100 @@ where
     }
 }
 
+impl<B: Batch> Spine<B> {
+    fn cursor_storage_unchecked(&self) -> &Vec<B> {
+        // Safety: references returned by this method should never escape this module
+        // and should only ne used in non-reentrant code.
+        unsafe { &*self.cursor_storage.as_ptr() }
+    }
+}
+
+pub struct SpineCursor<B: Batch> {
+    #[allow(clippy::type_complexity)]
+    cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor>,
+}
+
+impl<B: Batch> SpineCursor<B>
+where
+    B::Key: Ord,
+    B::Val: Ord,
+{
+    fn new(cursors: Vec<B::Cursor>, spine: &Spine<B>) -> Self {
+        Self {
+            cursor: CursorList::new(cursors, spine.cursor_storage_unchecked()),
+        }
+    }
+}
+
+impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B>
+where
+    B::Key: Ord,
+    B::Val: Ord,
+{
+    type Storage = Spine<B>;
+
+    #[inline]
+    fn key_valid(&self, spine: &Self::Storage) -> bool {
+        self.cursor.key_valid(spine.cursor_storage_unchecked())
+    }
+    #[inline]
+    fn val_valid(&self, spine: &Self::Storage) -> bool {
+        self.cursor.val_valid(spine.cursor_storage_unchecked())
+    }
+
+    #[inline]
+    fn key<'a>(&self, spine: &'a Self::Storage) -> &'a B::Key {
+        self.cursor.key(spine.cursor_storage_unchecked())
+    }
+    #[inline]
+    fn val<'a>(&self, spine: &'a Self::Storage) -> &'a B::Val {
+        self.cursor.val(spine.cursor_storage_unchecked())
+    }
+    #[inline]
+    fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, spine: &Self::Storage, logic: L) {
+        self.cursor
+            .map_times(spine.cursor_storage_unchecked(), logic);
+    }
+
+    #[inline]
+    fn weight<'a>(&self, spine: &'a Self::Storage) -> &'a B::R
+    where
+        B::Time: PartialEq<()>,
+    {
+        self.cursor.weight(spine.cursor_storage_unchecked())
+    }
+
+    #[inline]
+    fn step_key(&mut self, spine: &Self::Storage) {
+        self.cursor.step_key(spine.cursor_storage_unchecked());
+    }
+
+    #[inline]
+    fn seek_key(&mut self, spine: &Self::Storage, key: &B::Key) {
+        self.cursor.seek_key(spine.cursor_storage_unchecked(), key);
+    }
+
+    #[inline]
+    fn step_val(&mut self, spine: &Self::Storage) {
+        self.cursor.step_val(spine.cursor_storage_unchecked());
+    }
+
+    #[inline]
+    fn seek_val(&mut self, spine: &Self::Storage, val: &B::Val) {
+        self.cursor.seek_val(spine.cursor_storage_unchecked(), val);
+    }
+
+    #[inline]
+    fn rewind_keys(&mut self, spine: &Self::Storage) {
+        self.cursor.rewind_keys(spine.cursor_storage_unchecked());
+    }
+
+    #[inline]
+    fn rewind_vals(&mut self, spine: &Self::Storage) {
+        self.cursor.rewind_vals(spine.cursor_storage_unchecked());
+    }
+}
+
 impl<B> Trace for Spine<B>
 where
     B: Batch + Clone + 'static,
@@ -252,6 +376,8 @@ where
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
+        self.cursor_storage.borrow_mut().clear();
+
         // Complete all in-progress merges, as we don't have an easy way to update
         // timestamps in an ongoing merge.
         self.complete_merges();
@@ -265,6 +391,8 @@ where
     /// thought of as analogous to inserting as many empty updates,
     /// where the trace is permitted to perform proportionate work.
     fn exert(&mut self, effort: &mut isize) {
+        self.cursor_storage.borrow_mut().clear();
+
         // If there is work to be done, ...
         self.tidy_layers();
         if !self.reduced() {
@@ -286,6 +414,8 @@ where
     }
 
     fn consolidate(mut self) -> Option<Self::Batch> {
+        self.cursor_storage.borrow_mut().clear();
+
         // Merge batches until there is nothing left to merge.
         let mut fuel = isize::max_value();
         while !self.reduced() {
@@ -310,6 +440,8 @@ where
     fn insert(&mut self, batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
 
+        self.cursor_storage.borrow_mut().clear();
+
         // Ignore empty batches.
         // Note: we may want to use empty batches to artificially force compaction.
         if batch.is_empty() {
@@ -317,6 +449,8 @@ where
         }
 
         self.dirty = true;
+        self.lower = self.lower.meet(batch.lower());
+        self.upper = self.upper.join(batch.upper());
 
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert_eq!(batch.lower(), &self.upper);
@@ -399,6 +533,9 @@ where
         }
 
         Spine {
+            cursor_storage: RefCell::new(Vec::new()),
+            lower: Antichain::from_elem(B::Time::minimum()),
+            upper: Antichain::new(),
             merging: Vec::new(),
             effort,
             activator,

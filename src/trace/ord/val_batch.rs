@@ -9,7 +9,6 @@ use crate::{
     algebra::{AddAssignByRef, HasZero, MonoidValue},
     lattice::Lattice,
     trace::{
-        description::Description,
         layers::{
             ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
@@ -37,8 +36,8 @@ where
 {
     /// Where all the dataz is.
     pub layer: OrdValBatchLayer<K, V, T, R, O>,
-    /// Description of the update times this layer represents.
-    pub desc: Description<T>,
+    pub lower: Antichain<T>,
+    pub upper: Antichain<T>,
 }
 
 pub type OrdValBatchLayer<K, V, T, R, O> =
@@ -57,8 +56,9 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         writeln!(
             f,
-            "description: {:?}\nlayer:\n{}",
-            self.desc,
+            "lower: {:?}, upper: {:?}\nlayer:\n{}",
+            self.lower,
+            self.upper,
             textwrap::indent(&self.layer.to_string(), "    ")
         )
     }
@@ -103,8 +103,11 @@ where
     fn len(&self) -> usize {
         <OrdValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
-    fn description(&self) -> &Description<T> {
-        &self.desc
+    fn lower(&self) -> &Antichain<T> {
+        &self.lower
+    }
+    fn upper(&self) -> &Antichain<T> {
+        &self.upper
     }
 }
 
@@ -249,7 +252,8 @@ where
     upper2: usize,
     // result that we are currently assembling.
     result: <OrdValBatchLayer<K, V, T, R, O> as Trie>::MergeBuilder,
-    description: Description<T>,
+    lower: Antichain<T>,
+    upper: Antichain<T>,
 }
 
 impl<K, V, T, R, O> Merger<K, V, T, R, OrdValBatch<K, V, T, R, O>> for OrdValMerger<K, V, T, R, O>
@@ -266,19 +270,14 @@ where
         // Leonid: we do not require batch bounds to grow monotonically.
         // assert!(batch1.upper() == batch2.lower());
 
-        // Leonid: we do not require batch bounds to grow monotonically.
-        let description = Description::new(
-            batch1.lower().meet(batch2.lower()),
-            batch1.upper().join(batch2.upper()),
-        );
-
         OrdValMerger {
             lower1: 0,
             upper1: batch1.layer.keys(),
             lower2: 0,
             upper2: batch2.layer.keys(),
             result: <<OrdValBatchLayer<K, V, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
-            description,
+            lower: batch1.lower().meet(batch2.lower()),
+            upper: batch1.upper().join(batch2.upper()),
         }
     }
     fn done(self) -> OrdValBatch<K, V, T, R, O> {
@@ -287,7 +286,8 @@ where
 
         OrdValBatch {
             layer: self.result.done(),
-            desc: self.description,
+            lower: self.lower,
+            upper: self.upper,
         }
     }
     fn work(
@@ -481,7 +481,8 @@ where
         };
         OrdValBatch {
             layer: self.builder.done(),
-            desc: Description::new(Antichain::from_elem(self.time), upper),
+            lower: Antichain::from_elem(self.time),
+            upper,
         }
     }
 }
