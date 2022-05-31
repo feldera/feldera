@@ -12,7 +12,6 @@
 
 pub mod consolidation;
 pub mod cursor;
-pub mod description;
 pub mod layers;
 pub mod ord;
 pub mod spine_fueled;
@@ -21,7 +20,6 @@ use crate::{algebra::MonoidValue, lattice::Lattice, time::Timestamp};
 use timely::progress::Antichain;
 
 pub use cursor::Cursor;
-pub use description::Description;
 
 /// A trace whose contents may be read.
 ///
@@ -30,32 +28,11 @@ pub use description::Description;
 /// These methods are used to examine the contents, and to update the reader's
 /// capabilities (which may release restrictions on the mutations to the
 /// underlying trace and cause work to happen).
-pub trait TraceReader {
-    /// Key by which updates are indexed.
-    type Key;
-    /// Values associated with keys.
-    type Val;
-    /// Timestamps associated with updates
-    type Time: Timestamp + Lattice;
-    /// Associated update.
-    type R;
-
+pub trait TraceReader: BatchReader {
     /// The type of an immutable collection of updates.
     type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>
         + Clone
         + 'static;
-
-    /// The type used to enumerate the collections contents.
-    type Cursor: Cursor<Self::Key, Self::Val, Self::Time, Self::R>;
-
-    /// Provides a cursor over updates contained in the trace.
-    #[allow(clippy::type_complexity)]
-    fn cursor(
-        &self,
-    ) -> (
-        Self::Cursor,
-        <Self::Cursor as Cursor<Self::Key, Self::Val, Self::Time, Self::R>>::Storage,
-    );
 
     // TODO: Do we want a version of `cursor` with an upper bound on time?  E.g., it
     // could help in `distinct` to avoid iterating into the future (and then
@@ -155,33 +132,33 @@ pub trait BatchReader
 where
     Self: Sized,
 {
+    /// Key by which updates are indexed.
     type Key;
+    /// Values associated with keys.
     type Val;
+    /// Timestamps associated with updates
     type Time: Timestamp + Lattice;
+    /// Associated update.
     type R: MonoidValue;
 
     /// The type used to enumerate the batch's contents.
     type Cursor: Cursor<Self::Key, Self::Val, Self::Time, Self::R, Storage = Self>;
+
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor;
+
     /// The number of updates in the batch.
     fn len(&self) -> usize;
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    /// Describes the times of the updates in the batch.
-    fn description(&self) -> &Description<Self::Time>;
 
     /// All times in the batch are greater or equal to an element of `lower`.
-    fn lower(&self) -> &Antichain<Self::Time> {
-        self.description().lower()
-    }
+    fn lower(&self) -> &Antichain<Self::Time>;
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
-    fn upper(&self) -> &Antichain<Self::Time> {
-        self.description().upper()
-    }
+    fn upper(&self) -> &Antichain<Self::Time>;
 }
 
 /// An immutable collection of updates.
@@ -291,7 +268,8 @@ pub mod rc_blanket_impls {
 
     use std::{marker::PhantomData, rc::Rc};
 
-    use super::{Batch, BatchReader, Batcher, Builder, Cursor, Description, Merger};
+    use super::{Batch, BatchReader, Batcher, Builder, Cursor, Merger};
+    use timely::progress::Antichain;
 
     impl<B: BatchReader> BatchReader for Rc<B> {
         type Key = B::Key;
@@ -310,9 +288,11 @@ pub mod rc_blanket_impls {
         fn len(&self) -> usize {
             (&**self).len()
         }
-        /// Describes the times of the updates in the batch.
-        fn description(&self) -> &Description<B::Time> {
-            (&**self).description()
+        fn lower(&self) -> &Antichain<Self::Time> {
+            (&**self).lower()
+        }
+        fn upper(&self) -> &Antichain<Self::Time> {
+            (&**self).upper()
         }
     }
 

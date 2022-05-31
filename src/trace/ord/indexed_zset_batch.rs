@@ -13,7 +13,6 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
     lattice::Lattice,
     trace::{
-        description::Description,
         layers::{
             ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
@@ -40,7 +39,8 @@ where
 {
     /// Where all the dataz is.
     pub layer: OrderedLayer<K, OrderedLeaf<V, R>, O>,
-    pub desc: Description<()>,
+    pub lower: Antichain<()>,
+    pub upper: Antichain<()>,
 }
 
 impl<K, V, R, O> HasZero for OrdIndexedZSet<K, V, R, O>
@@ -89,7 +89,8 @@ where
     fn from(layer: OrderedLayer<K, OrderedLeaf<V, R>, O>) -> Self {
         Self {
             layer,
-            desc: Description::new(Antichain::from_elem(()), Antichain::new()),
+            lower: Antichain::from_elem(()),
+            upper: Antichain::new(),
         }
     }
 }
@@ -171,7 +172,8 @@ where
     fn neg_by_ref(&self) -> Self {
         Self {
             layer: self.layer.neg_by_ref(),
-            desc: self.desc.clone(),
+            lower: self.lower.clone(),
+            upper: self.upper.clone(),
         }
     }
 }
@@ -190,7 +192,8 @@ where
     fn neg(self) -> Self {
         Self {
             layer: self.layer.neg(),
-            desc: self.desc,
+            lower: self.lower,
+            upper: self.upper,
         }
     }
 }
@@ -208,14 +211,13 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let desc = Description::new(
-            self.lower().meet(rhs.lower()),
-            self.upper().join(rhs.upper()),
-        );
+        let lower = self.lower().meet(rhs.lower());
+        let upper = self.upper().join(rhs.upper());
 
         Self {
             layer: self.layer.add(rhs.layer),
-            desc,
+            lower,
+            upper,
         }
     }
 }
@@ -230,10 +232,8 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     fn add_assign(&mut self, rhs: Self) {
-        self.desc = Description::new(
-            self.lower().meet(rhs.lower()),
-            self.upper().join(rhs.upper()),
-        );
+        self.lower = self.lower().meet(rhs.lower());
+        self.upper = self.upper().join(rhs.upper());
         self.layer.add_assign(rhs.layer);
     }
 }
@@ -249,10 +249,8 @@ where
 {
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         self.layer.add_assign_by_ref(&rhs.layer);
-        self.desc = Description::new(
-            self.lower().meet(rhs.lower()),
-            self.upper().join(rhs.upper()),
-        );
+        self.lower = self.lower().meet(rhs.lower());
+        self.upper = self.upper().join(rhs.upper());
     }
 }
 
@@ -268,10 +266,8 @@ where
     fn add_by_ref(&self, rhs: &Self) -> Self {
         Self {
             layer: self.layer.add_by_ref(&rhs.layer),
-            desc: Description::new(
-                self.lower().meet(rhs.lower()),
-                self.upper().join(rhs.upper()),
-            ),
+            lower: self.lower().meet(rhs.lower()),
+            upper: self.upper().join(rhs.upper()),
         }
     }
 }
@@ -300,8 +296,11 @@ where
     fn len(&self) -> usize {
         <OrderedLayer<K, OrderedLeaf<V, R>, O> as Trie>::tuples(&self.layer)
     }
-    fn description(&self) -> &Description<()> {
-        &self.desc
+    fn lower(&self) -> &Antichain<()> {
+        &self.lower
+    }
+    fn upper(&self) -> &Antichain<()> {
+        &self.upper
     }
 }
 
@@ -357,7 +356,8 @@ where
     fn done(self) -> OrdIndexedZSet<K, V, R, O> {
         OrdIndexedZSet {
             layer: self.result.done(),
-            desc: Description::new(Antichain::from_elem(()), Antichain::new()),
+            lower: Antichain::from_elem(()),
+            upper: Antichain::new(),
         }
     }
     fn work(
@@ -484,7 +484,8 @@ where
     fn done(self) -> OrdIndexedZSet<K, V, R, O> {
         OrdIndexedZSet {
             layer: self.builder.done(),
-            desc: Description::new(Antichain::from_elem(()), Antichain::new()),
+            lower: Antichain::from_elem(()),
+            upper: Antichain::new(),
         }
     }
 }
