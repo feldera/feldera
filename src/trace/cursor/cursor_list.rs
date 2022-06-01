@@ -1,10 +1,10 @@
 //! A generic cursor implementation merging multiple cursors.
 
-use std::marker::PhantomData;
 use crate::{
     algebra::{HasZero, MonoidValue},
     trace::cursor::Cursor,
 };
+use std::marker::PhantomData;
 
 /// Provides a cursor interface over a list of cursors.
 ///
