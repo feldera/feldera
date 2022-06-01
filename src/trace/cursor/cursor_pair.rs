@@ -2,7 +2,10 @@
 
 use std::cmp::Ordering;
 
-use super::Cursor;
+use crate::{
+    algebra::{HasZero, MonoidValue},
+    trace::cursor::Cursor,
+};
 
 /// A cursor over the combined updates of two different cursors.
 ///
@@ -23,6 +26,7 @@ where
     V: Ord,
     C1: Cursor<K, V, T, R>,
     C2: Cursor<K, V, T, R>,
+    R: MonoidValue,
 {
     type Storage = (C1::Storage, C2::Storage);
 
@@ -73,18 +77,14 @@ where
         }
     }
 
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R
+    fn weight(&mut self, storage: &Self::Storage) -> R
     where
         T: PartialEq<()>,
     {
         debug_assert!(self.val_valid(storage));
-        if self.key_order == Ordering::Less
-            || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
-        {
-            self.cursor1.weight(&storage.0)
-        } else {
-            self.cursor2.weight(&storage.1)
-        }
+        let mut res: R = HasZero::zero();
+        self.map_times(storage, |_, w| res.add_assign_by_ref(w));
+        res
     }
 
     // key methods

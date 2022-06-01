@@ -327,7 +327,7 @@ where
     }
 
     #[inline]
-    fn weight<'a>(&self, spine: &'a Self::Storage) -> &'a B::R
+    fn weight(&mut self, spine: &Self::Storage) -> B::R
     where
         B::Time: PartialEq<()>,
     {

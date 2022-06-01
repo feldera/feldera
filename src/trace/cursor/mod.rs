@@ -62,7 +62,7 @@ pub trait Cursor<K, V, T, R> {
     /// # Panics
     ///
     /// Panics if not `self.key_valid() && self.val_valid()`.
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R
+    fn weight(&mut self, storage: &Self::Storage) -> R
     where
         T: PartialEq<()>;
 

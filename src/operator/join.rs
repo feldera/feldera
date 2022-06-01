@@ -380,7 +380,7 @@ where
 
                             batch.push((
                                 ((self.join_func)(cursor1.key(i1), v1, v2), ()),
-                                w1.mul_by_ref(w2),
+                                w1.mul_by_ref(&w2),
                             ));
                             cursor2.step_val(i2);
                         }

@@ -393,12 +393,17 @@ where
             self.cursor.child.child.step(&storage.layer.vals.vals);
         }
     }
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R
+    fn weight(&mut self, storage: &Self::Storage) -> R
     where
         T: PartialEq<()>,
     {
         debug_assert!(self.cursor.child.child.valid(&storage.layer.vals.vals));
-        &self.cursor.child.child.key(&storage.layer.vals.vals).1
+        self.cursor
+            .child
+            .child
+            .key(&storage.layer.vals.vals)
+            .1
+            .clone()
     }
 
     fn key_valid(&self, storage: &Self::Storage) -> bool {
