@@ -7,7 +7,7 @@ use std::{
     fmt::Write,
     marker::PhantomData,
     mem::take,
-    ops::Neg,
+    ops::{Add, Neg},
 };
 
 use crate::{
@@ -17,7 +17,6 @@ use crate::{
         Circuit, NodeId, Scope, Stream,
     },
     circuit_cache_key,
-    operator::{BinaryOperatorAdapter, UnaryOperatorAdapter},
     time::NestedTimestamp32,
     trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace, TraceReader},
     NumEntries, Timestamp,
@@ -39,8 +38,7 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctId::new(self.local_node_id()), || {
-                self.circuit()
-                    .add_unary_operator(UnaryOperatorAdapter::new(Distinct::new()), self)
+                self.circuit().add_unary_operator(Distinct::new(), self)
             })
             .clone()
     }
@@ -52,15 +50,15 @@ where
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
     where
         Z: DeepSizeOf + NumEntries + ZSet,
-        Z::Key: Clone + PartialEq,
+        Z::Key: Clone + PartialEq + Ord,
         Z::R: ZRingValue,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctIncrementalId::new(self.local_node_id()), || {
                 self.circuit().add_binary_operator(
-                    BinaryOperatorAdapter::new(DistinctIncremental::new()),
+                    DistinctIncremental::new(),
                     self,
-                    &self.integrate().delay(),
+                    &self.integrate_trace().delay_trace(),
                 )
             })
             .clone()
@@ -71,7 +69,7 @@ where
     pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
     where
         Z: DeepSizeOf + NumEntries + ZSet,
-        Z::Key: Clone + PartialEq,
+        Z::Key: Clone + PartialEq + Ord,
         Z::R: ZRingValue,
     {
         self.integrate_nested()
@@ -160,25 +158,26 @@ where
 /// value of `A`: `z^-1(A) = a.integrate().delay()` and computes
 /// `distinct(A) - distinct(z^-1(A))` incrementally, by only considering
 /// values in the support of `a`.
-struct DistinctIncremental<Z> {
-    _type: PhantomData<Z>,
+struct DistinctIncremental<Z, I> {
+    _type: PhantomData<(Z, I)>,
 }
 
-impl<Z> DistinctIncremental<Z> {
+impl<Z, I> DistinctIncremental<Z, I> {
     pub fn new() -> Self {
         Self { _type: PhantomData }
     }
 }
 
-impl<Z> Default for DistinctIncremental<Z> {
+impl<Z, I> Default for DistinctIncremental<Z, I> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<Z> Operator for DistinctIncremental<Z>
+impl<Z, I> Operator for DistinctIncremental<Z, I>
 where
     Z: 'static,
+    I: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("DistinctIncremental")
@@ -188,13 +187,14 @@ where
     }
 }
 
-impl<Z> BinaryOperator<Z, Z, Z> for DistinctIncremental<Z>
+impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncremental<Z, I>
 where
     Z: ZSet,
     Z::Key: Clone + PartialEq,
     Z::R: ZRingValue,
+    I: BatchReader<Key = Z::Key, Val = (), Time = (), R = Z::R> + 'static,
 {
-    fn eval(&mut self, delta: &Z, delayed_integral: &Z) -> Z {
+    fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         let mut builder = Z::Builder::with_capacity((), delta.len());
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = delayed_integral.cursor();
@@ -211,7 +211,7 @@ where
                 HasZero::zero()
             };
 
-            let new_weight = old_weight.add_by_ref(w);
+            let new_weight = old_weight.add_by_ref(&w);
 
             if old_weight.le0() {
                 // Weight changes from non-positive to positive.
@@ -229,11 +229,11 @@ where
     }
 
     // TODO: owned implementation.
-    fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &Z) -> Z {
+    fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &I) -> Z {
         self.eval(&delta, delayed_integral)
     }
 
-    fn eval_owned(&mut self, delta: Z, delayed_integral: Z) -> Z {
+    fn eval_owned(&mut self, delta: Z, delayed_integral: I) -> Z {
         self.eval_owned_and_ref(delta, &delayed_integral)
     }
 }
@@ -331,7 +331,7 @@ where
         trace_cursor: &mut T::Cursor,
         trace: &T,
         value: &Z::Key,
-        weight: &Z::R,
+        weight: Z::R,
         output: &mut Vec<((Z::Key, ()), Z::R)>,
     ) {
         //eprintln!("value: {:?}, weight: {:?}", value, weight);
@@ -362,7 +362,7 @@ where
             // w1 + w3
             let w13 = w1.add_by_ref(&w3);
             // w1 + w2 + w3 + w4
-            let w1234 = w12.add_by_ref(&w3).add_by_ref(weight);
+            let w1234 = w12.add_by_ref(&w3).add(weight);
 
             let delta_old = if w1.le0() && w12.ge0() && !w12.is_zero() {
                 HasOne::one()
@@ -516,7 +516,7 @@ where
                         &mut trace_cursor,
                         trace,
                         cand_val,
-                        &HasZero::zero(),
+                        HasZero::zero(),
                         &mut batch,
                     );
                     candidate = cand_iterator.next();
@@ -545,7 +545,7 @@ where
                 &mut trace_cursor,
                 trace,
                 candidate.unwrap(),
-                &HasZero::zero(),
+                HasZero::zero(),
                 &mut batch,
             );
             candidate = cand_iterator.next();
