@@ -3,7 +3,7 @@
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 use crate::{
-    algebra::{GroupValue, HasOne, ZRingValue, ZSet},
+    algebra::{HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, Stream,
@@ -13,10 +13,10 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 
-impl<P, I> Stream<Circuit<P>, I>
+impl<P, Z> Stream<Circuit<P>, Z>
 where
     P: Clone + 'static,
-    I: Clone + 'static,
+    Z: Clone + 'static,
 {
     // TODO: Consider changing the signature of aggregation function to take a slice
     // of values instead of iterator.  This is easier to understand and use, and
@@ -25,21 +25,22 @@ where
     // such a slice efficiently.
     /// Aggregate each indexed Z-set in the input stream.
     ///
-    /// Values in the input stream are [indexed
-    /// Z-sets](`crate::algebra::IndexedZSet`). The aggregation function
-    /// `agg_func` takes a single key and the set of (value, weight)
-    /// tuples associated with this key and transforms them into a single
-    /// aggregate value.  The output of the operator is a Z-set computed as
-    /// a sum of aggregates across all keys with weight `+1` each.
+    /// Values in the input stream are
+    /// [indexed Z-sets](`crate::algebra::IndexedZSet`). The aggregation
+    /// function `agg_func` takes a single key and a sorted array of (value,
+    /// weight) tuples associated with this key and transforms them into a
+    /// single aggregate value.  The output of the operator is a Z-set
+    /// computed as a sum of aggregates across all keys with weight `+1`
+    /// each.
     ///
     /// # Type arguments
     ///
-    /// * `I` - input indexed Z-set type.
+    /// * `Z` - input indexed Z-set type.
     /// * `O` - output Z-set type.
     pub fn aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        I: BatchReader<R = O::R> + 'static,
-        F: Fn(&I, &mut I::Cursor) -> O::Key + 'static,
+        Z: IndexedZSet<R = O::R> + 'static,
+        F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
         O: Clone + ZSet + 'static,
         O::R: ZRingValue,
     {
@@ -52,22 +53,25 @@ where
     /// but is more efficient.
     pub fn aggregate_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        I: BatchReader<R = O::R> + DeepSizeOf + NumEntries + GroupValue + 'static,
-        I::Key: PartialEq,
-        F: Fn(&I, &mut I::Cursor) -> O::Key + Clone + 'static,
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries,
+        Z::Key: PartialEq + Ord,
+        Z::Val: Ord,
+        F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
         O: Clone + ZSet + 'static,
         O::R: ZRingValue,
     {
+        // Retract old values of the aggregate for affected keys.
         let retract_old = self.circuit().add_binary_operator(
             AggregateIncremental::new(false, f.clone()),
             self,
-            &self.integrate().delay(),
+            &self.integrate_trace().delay_trace(),
         );
 
+        // Insert new aggregates.
         let insert_new = self.circuit().add_binary_operator(
             AggregateIncremental::new(true, f),
             self,
-            &self.integrate(),
+            &self.integrate_trace(),
         );
 
         retract_old.plus(&insert_new)
@@ -80,9 +84,10 @@ where
     /// differentiate()`, but is more efficient.
     pub fn aggregate_incremental_nested<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        I: BatchReader<R = O::R> + DeepSizeOf + NumEntries + GroupValue + 'static,
-        I::Key: PartialEq,
-        F: Fn(&I, &mut I::Cursor) -> O::Key + Clone + 'static,
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries,
+        Z::Key: PartialEq + Ord,
+        Z::Val: Ord,
+        F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
         O: Clone + ZSet + DeepSizeOf + 'static,
         O::R: ZRingValue,
     {
@@ -150,12 +155,12 @@ where
     */
 }
 
-pub struct Aggregate<I, F, O> {
+pub struct Aggregate<Z, F, O> {
     agg_func: F,
-    _type: PhantomData<(I, O)>,
+    _type: PhantomData<(Z, O)>,
 }
 
-impl<I, F, O> Aggregate<I, F, O> {
+impl<Z, F, O> Aggregate<Z, F, O> {
     pub fn new(agg_func: F) -> Self {
         Self {
             agg_func,
@@ -164,9 +169,9 @@ impl<I, F, O> Aggregate<I, F, O> {
     }
 }
 
-impl<I, F, O> Operator for Aggregate<I, F, O>
+impl<Z, F, O> Operator for Aggregate<Z, F, O>
 where
-    I: 'static,
+    Z: 'static,
     F: 'static,
     O: 'static,
 {
@@ -178,19 +183,32 @@ where
     }
 }
 
-impl<I, F, O> UnaryOperator<I, O> for Aggregate<I, F, O>
+impl<Z, F, O> UnaryOperator<Z, O> for Aggregate<Z, F, O>
 where
-    I: BatchReader<R = O::R> + 'static,
-    F: Fn(&I, &mut I::Cursor) -> O::Key + 'static,
+    Z: IndexedZSet<R = O::R> + 'static,
+    F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
     O: Clone + ZSet + 'static,
     O::R: ZRingValue,
 {
-    fn eval(&mut self, i: &I) -> O {
+    fn eval(&mut self, i: &Z) -> O {
         let mut elements = Vec::with_capacity(i.len());
         let mut cursor = i.cursor();
+        let mut vals: Vec<(&Z::Val, Z::R)> = Vec::with_capacity(i.len());
 
         while cursor.key_valid(i) {
-            elements.push((((self.agg_func)(i, &mut cursor), ()), I::R::one()));
+            while cursor.val_valid(i) {
+                let w = cursor.weight(i);
+                // Skip values with weight zero.
+                if !w.is_zero() {
+                    vals.push((cursor.val(i), w));
+                }
+                cursor.step_val(i);
+            }
+            // Skip keys that only contain values with weight zero.
+            if !vals.is_empty() {
+                elements.push((((self.agg_func)(cursor.key(i), &mut vals), ()), Z::R::one()));
+            }
+            vals.clear();
             cursor.step_key(i);
         }
         O::from_tuples((), elements)
@@ -203,13 +221,13 @@ where
 /// value of `A`: `z^-1(A) = a.integrate().delay()` and computes
 /// `integrate(A) - integrate(z^-1(A))` incrementally, by only considering
 /// values in the support of `a`.
-pub struct AggregateIncremental<I, F, O> {
+pub struct AggregateIncremental<Z, I, F, O> {
     polarity: bool,
     agg_func: F,
-    _type: PhantomData<(I, O)>,
+    _type: PhantomData<(Z, I, O)>,
 }
 
-impl<I, F, O> AggregateIncremental<I, F, O> {
+impl<Z, I, F, O> AggregateIncremental<Z, I, F, O> {
     pub fn new(polarity: bool, agg_func: F) -> Self {
         Self {
             polarity,
@@ -219,8 +237,9 @@ impl<I, F, O> AggregateIncremental<I, F, O> {
     }
 }
 
-impl<I, F, O> Operator for AggregateIncremental<I, F, O>
+impl<Z, I, F, O> Operator for AggregateIncremental<Z, I, F, O>
 where
+    Z: 'static,
     I: 'static,
     F: 'static,
     O: 'static,
@@ -233,15 +252,16 @@ where
     }
 }
 
-impl<I, F, O> BinaryOperator<I, I, O> for AggregateIncremental<I, F, O>
+impl<Z, I, F, O> BinaryOperator<Z, I, O> for AggregateIncremental<Z, I, F, O>
 where
-    I: BatchReader<R = O::R> + 'static,
-    I::Key: PartialEq,
-    F: Fn(&I, &mut I::Cursor) -> O::Key + 'static,
+    Z: IndexedZSet<R = O::R> + 'static,
+    Z::Key: PartialEq,
+    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = O::R> + 'static,
+    F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
     O: Clone + ZSet + 'static,
     O::R: ZRingValue,
 {
-    fn eval(&mut self, delta: &I, integral: &I) -> O {
+    fn eval(&mut self, delta: &Z, integral: &I) -> O {
         let mut result = Vec::with_capacity(delta.len());
 
         let mut delta_cursor = delta.cursor();
@@ -252,17 +272,28 @@ where
             I::R::one().neg()
         };
 
+        // This could be an overkill.
+        let mut vals: Vec<(&Z::Val, Z::R)> = Vec::with_capacity(delta.len());
+
         while delta_cursor.key_valid(delta) {
             let key = delta_cursor.key(delta);
 
             integral_cursor.seek_key(integral, key);
 
             if integral_cursor.key_valid(integral) && integral_cursor.key(integral) == key {
-                // Retract the old value of the aggregate.
-                result.push((
-                    ((self.agg_func)(integral, &mut integral_cursor), ()),
-                    weight.clone(),
-                ));
+                while integral_cursor.val_valid(integral) {
+                    let w = integral_cursor.weight(integral);
+                    // Skip values with weight zero (can happen if `I` is a trace).
+                    if !w.is_zero() {
+                        vals.push((integral_cursor.val(integral), w));
+                    }
+                    integral_cursor.step_val(integral);
+                }
+                // Skip keys that only contain values with weight 0.
+                if !vals.is_empty() {
+                    result.push((((self.agg_func)(key, &mut vals), ()), weight.clone()));
+                }
+                vals.clear();
             }
             delta_cursor.step_key(delta);
         }
@@ -277,10 +308,7 @@ mod test {
     use crate::{
         circuit::{Root, Stream},
         operator::{Apply2, GeneratorNested},
-        trace::{
-            ord::{OrdIndexedZSet, OrdZSet},
-            BatchReader, Cursor,
-        },
+        trace::ord::{OrdIndexedZSet, OrdZSet},
         zset,
     };
 
@@ -314,18 +342,9 @@ mod test {
                         .index();
 
                     // Weighted sum aggregate.  Returns `(key, weighted_sum)`.
-                    let sum = |storage: &OrdIndexedZSet<usize, usize, isize>,
-                               cursor: &mut <OrdIndexedZSet<_, _, _> as BatchReader>::Cursor|
-                     -> (usize, isize) {
-                        let mut result: isize = 0;
-
-                        while cursor.val_valid(storage) {
-                            let v = cursor.val(storage);
-                            let w = cursor.weight(storage);
-                            result += (*v as isize) * w;
-                            cursor.step_val(storage);
-                        }
-                        (cursor.key(storage).clone(), result)
+                    let sum = |key: &usize, vals: &mut Vec<(&usize, isize)>| -> (usize, isize) {
+                        let result: isize = vals.drain(..).map(|(v, w)| (*v as isize) * w).sum();
+                        (*key, result)
                     };
 
                     // Weighted sum aggregate that returns only the weighted sum
@@ -382,20 +401,16 @@ mod test {
                     });*/
 
                     // Min aggregate (non-linear).
-                    let min = |storage: &OrdIndexedZSet<usize, usize, isize>,
-                               cursor: &mut <OrdIndexedZSet<_, _, _> as BatchReader>::Cursor|
-                     -> (usize, usize) {
+                    let min = |key: &usize, vals: &mut Vec<(&usize, isize)>| -> (usize, usize) {
                         let mut result = usize::MAX;
 
-                        while cursor.val_valid(storage) {
-                            let v = cursor.key(storage);
-                            if v < &result {
+                        for (v, _) in vals.drain(..) {
+                            if *v < result {
                                 result = v.clone();
                             }
-                            cursor.step_val(storage);
                         }
 
-                        (cursor.key(storage).clone(), result)
+                        (*key, result)
                     };
 
                     let min_inc = input.aggregate_incremental_nested(min);
