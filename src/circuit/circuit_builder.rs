@@ -1561,18 +1561,24 @@ where
     /// This is a necessary and sufficient condition that is also easy to check
     /// by asking each operator if it is in a stable state (via the
     /// [`Operator::fixedpoint`](`super::operator_traits::Operator::fixedpoint`)
-    /// API.  However, the cost of checking this condition
-    /// precisely can be high for some operators.  For instance, delay
-    /// operators ([`Z1`](`crate::operator::Z1`) and
+    /// API.  
+    ///
+    /// # Warning
+    ///
+    /// The cost of checking this condition precisely can be high for some
+    /// operators, which implement approximate checks instead.  For instance,
+    /// delay operators ([`Z1`](`crate::operator::Z1`) and
     /// [`Z1Nested`](`crate::operator::Z1Nested`)) require storing the last
     /// two versions of the state instead of one and comparing them at each
-    /// cycle.  Such operators instead implement imprecise conservative checks,
-    /// e.g., check for a _specific_ fixed point, e.g., a fixed point where both
-    /// input and output of the operator is zero (or empty).  As a result, the
-    /// circuit may fail to detect other fixed point and will iterate forever.
+    /// cycle.  Instead, they conservatively check for _specific_ fixed points,
+    /// namely fixed points where both input and output of the operator are zero
+    /// As a result, the circuit may fail to detect other fixed points and may
+    /// iterate forever.
+    ///
     /// The goal is to evolve the design so that circuits created using the
-    /// high-level API (`Stream::xxx` methods) implement accurate fixed
-    /// point checks.
+    /// high-level API (`Stream::xxx` methods) implement accurate fixed point
+    /// checks, but there are currently no guardrails in the system against
+    /// constructing non-compliant circuits.
     pub fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
@@ -1582,7 +1588,7 @@ where
 
     /// Add a child circuit that will iterate to a fixed point.
     ///
-    /// Similar to [`iterate`](`Self::fixedpoint`), but with a user-specified
+    /// Similar to [`fixedpoint`](`Self::fixedpoint`), but with a user-specified
     /// [`Scheduler`] implementation.
     pub fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where

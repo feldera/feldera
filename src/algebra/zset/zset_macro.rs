@@ -1,5 +1,8 @@
-/// Allows easily creating
-/// [`OrdIndexedZSet`](crate::trace::ord::OrdIndexedZSet)s
+/// Create an indexed Z-set with specified elements.
+///
+/// This macro is used in unit tests to create reference inputs and outputs.
+/// It generates an indexed Z-set of type
+/// [`OrdIndexedZSet`](crate::trace::ord::OrdIndexedZSet)s.
 #[macro_export]
 macro_rules! indexed_zset {
     ( $($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
@@ -10,7 +13,10 @@ macro_rules! indexed_zset {
     }};
 }
 
-/// Allows easily creating [`OrdZSet`](crate::trace::ord::OrdZSet)s
+/// Create a Z-set with specified elements.
+///
+/// This macro is used in unit tests to create reference inputs and outputs.
+/// It generates a Z-set of type [`OrdZSet`](crate::trace::ord::OrdZSet)s.
 #[macro_export]
 macro_rules! zset {
     ( $( $key:expr => $weight:expr ),* $(,)?) => {{

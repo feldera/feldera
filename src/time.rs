@@ -106,22 +106,6 @@ pub trait Timestamp: PartialOrder + Clone + Ord + PartialEq + Eq + 'static {
     fn recede(&self, scope: Scope) -> Self;
 }
 
-/*
-macro_rules! declare_timestamp {
-    ($type:ty) => {
-        impl Timestamp for $type {
-            fn advance(&self) -> Self {
-                self.checked_add(1).unwrap()
-            }
-        }
-    };
-}
-
-declare_timestamp!(u16);
-declare_timestamp!(u32);
-declare_timestamp!(u64);
-*/
-
 fn bool_followed_by(this: bool, other: bool) -> Option<bool> {
     if this && other {
         None
