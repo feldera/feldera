@@ -87,6 +87,12 @@ where
 
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
+
+        // This will create waste if most tuples get filtered out, since
+        // the buffers allocated here can make it all the way to the output batch.
+        // This is probably ok, because the batch will either get freed at the end
+        // of the current clock tick or get added to the trace, where it will likely
+        // get merged with other batches soon, at which point the waste is gone.
         let mut builder = CO::Builder::with_capacity((), i.len());
 
         while cursor.key_valid(i) {
