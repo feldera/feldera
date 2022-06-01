@@ -338,7 +338,7 @@ pub mod rc_blanket_impls {
         }
 
         #[inline]
-        fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a B::R
+        fn weight(&mut self, storage: &Self::Storage) -> B::R
         where
             B::Time: PartialEq<()>,
         {

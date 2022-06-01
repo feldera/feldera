@@ -1,7 +1,7 @@
 use std::{
     cmp::max,
     convert::TryFrom,
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{Add, AddAssign, Neg},
     rc::Rc,
 };
@@ -34,6 +34,20 @@ where
     pub layer: OrderedLeaf<K, R>,
     pub lower: Antichain<()>,
     pub upper: Antichain<()>,
+}
+
+impl<K, R> Display for OrdZSet<K, R>
+where
+    K: Ord + Clone + Display,
+    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        writeln!(
+            f,
+            "layer:\n{}",
+            textwrap::indent(&self.layer.to_string(), "    ")
+        )
+    }
 }
 
 impl<K, R> From<OrderedLeaf<K, R>> for OrdZSet<K, R>
@@ -319,9 +333,9 @@ where
             logic(&(), &self.cursor.key(&storage.layer).1);
         }
     }
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R {
+    fn weight(&mut self, storage: &Self::Storage) -> R {
         debug_assert!(&self.cursor.valid(&storage.layer));
-        &self.cursor.key(&storage.layer).1
+        self.cursor.key(&storage.layer).1.clone()
     }
     fn key_valid(&self, storage: &Self::Storage) -> bool {
         self.cursor.valid(&storage.layer)

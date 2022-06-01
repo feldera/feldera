@@ -1,7 +1,10 @@
 //! A generic cursor implementation merging multiple cursors.
 
-use crate::trace::cursor::Cursor;
 use std::marker::PhantomData;
+use crate::{
+    algebra::{HasZero, MonoidValue},
+    trace::cursor::Cursor,
+};
 
 /// Provides a cursor interface over a list of cursors.
 ///
@@ -95,6 +98,7 @@ impl<K, V, T, R, C: Cursor<K, V, T, R>> Cursor<K, V, T, R> for CursorList<K, V, 
 where
     K: Ord,
     V: Ord,
+    R: MonoidValue,
 {
     type Storage = Vec<C::Storage>;
 
@@ -130,14 +134,16 @@ where
     }
 
     #[inline]
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R
+    fn weight(&mut self, storage: &Self::Storage) -> R
     where
         T: PartialEq<()>,
     {
         debug_assert!(self.key_valid(storage));
         debug_assert!(self.val_valid(storage));
         debug_assert!(self.cursors[self.min_val[0]].val_valid(&storage[self.min_val[0]]));
-        self.cursors[self.min_val[0]].weight(&storage[self.min_val[0]])
+        let mut res: R = HasZero::zero();
+        self.map_times(storage, |_, w| res.add_assign_by_ref(w));
+        res
     }
 
     // key methods

@@ -408,9 +408,9 @@ where
             logic(&(), &self.cursor.child.key(&storage.layer.vals).1);
         }
     }
-    fn weight<'a>(&self, storage: &'a Self::Storage) -> &'a R {
+    fn weight(&mut self, storage: &Self::Storage) -> R {
         debug_assert!(self.cursor.child.valid(&storage.layer.vals));
-        &self.cursor.child.key(&storage.layer.vals).1
+        self.cursor.child.key(&storage.layer.vals).1.clone()
     }
 
     fn key_valid(&self, storage: &Self::Storage) -> bool {
