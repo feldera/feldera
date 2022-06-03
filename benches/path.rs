@@ -1,14 +1,22 @@
 use dbsp::{
-    algebra::{FiniteHashMap, HasZero, MapBuilder},
     circuit::{trace::SchedulerEvent, GlobalNodeId, Root, Stream},
     monitor::TraceMonitor,
     operator::{DelayedFeedback, Generator},
+    profile::CPUProfiler,
+    trace::{
+        ord::{OrdIndexedZSet, OrdZSet, OrdZSetSpine},
+        Batch,
+    },
 };
-use std::{collections::HashMap, fs, vec};
+
+use std::{collections::HashMap, fmt::Write, fs};
 
 fn main() {
     let monitor = TraceMonitor::new_panic_on_error();
     let root = Root::build(|circuit| {
+        let cpu_profiler = CPUProfiler::new();
+        cpu_profiler.attach(circuit, "cpu profiler");
+
         monitor.attach(circuit, "monitor");
         let mut metadata = <HashMap<GlobalNodeId, String>>::new();
         let mut nsteps = 0;
@@ -24,11 +32,24 @@ fn main() {
                 }
                 SchedulerEvent::StepEnd => {
                     let graph = monitor_clone.visualize_circuit_annotate(&|node_id| {
-                        metadata
+                        let mut metadata_string = metadata
                             .get(node_id)
                             .map(ToString::to_string)
-                            .unwrap_or_else(|| "".to_string())
+                            .unwrap_or_else(|| "".to_string());
+
+                        if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
+                            writeln!(
+                                metadata_string,
+                                "invocations: {}",
+                                cpu_profile.invocations()
+                            )
+                            .unwrap();
+                            writeln!(metadata_string, "time: {:?}", cpu_profile.total_time())
+                                .unwrap();
+                        };
+                        metadata_string
                     });
+
                     fs::write(format!("path.{}.dot", nsteps), graph.to_dot()).unwrap();
                     nsteps += 1;
                 }
@@ -38,22 +59,24 @@ fn main() {
 
         const LAYER: u32 = 200;
 
-        let mut edges: FiniteHashMap<(u32, u32), i32> = FiniteHashMap::new();
+        let mut tuples = Vec::new();
         for layer in 0..5 {
             for from in 0..LAYER {
                 for to in 0..LAYER {
-                    edges.increment(&(from + (LAYER * layer), to + LAYER * (layer + 1)), 1);
+                    tuples.push((((from + (LAYER * layer), to + LAYER * (layer + 1)), ()), 1));
                 }
             }
         }
 
-        let edges: Stream<_, FiniteHashMap<(u32, u32), i32>> =
+        let edges = <OrdZSet<(u32, u32), i32>>::from_tuples((), tuples);
+
+        let edges: Stream<_, OrdZSet<(u32, u32), i32>> =
             circuit.add_source(Generator::new(move || edges.clone()));
 
         let _paths = circuit
-            .iterate_with_conditions(|child| {
+            .fixedpoint(|child| {
                 // ```text
-                //                      distinct_incremental_nested
+                //                      distinct_trace
                 //               ┌───┐          ┌───┐
                 // edges         │   │          │   │  paths
                 // ────┬────────►│ + ├──────────┤   ├────────┬───►
@@ -66,34 +89,27 @@ fn main() {
                 //     └────────►│ X │ ◄─────────────────────┘
                 //               │   │
                 //               └───┘
-                //      join_incremental_nested
+                //            join_trace
                 // ```
                 let edges = edges.delta0(child);
-                let paths_delayed = <DelayedFeedback<_, FiniteHashMap<_, _>>>::new(child);
+                let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
 
-                let paths_inverted: Stream<_, FiniteHashMap<(u32, u32), i32>> =
+                let paths_inverted: Stream<_, OrdZSet<(u32, u32), i32>> =
                     paths_delayed.stream().map_keys(|&(x, y)| (y, x));
 
-                let paths_inverted_indexed: Stream<_, FiniteHashMap<u32, FiniteHashMap<u32, i32>>> =
+                let paths_inverted_indexed: Stream<_, OrdIndexedZSet<u32, u32, i32>> =
                     paths_inverted.index();
-                let edges_indexed: Stream<_, FiniteHashMap<u32, FiniteHashMap<u32, i32>>> =
-                    edges.index();
+                let edges_indexed: Stream<_, OrdIndexedZSet<u32, u32, i32>> = edges.index();
 
                 let paths = edges
                     .plus(
                         &paths_inverted_indexed
-                            .join_incremental_nested(&edges_indexed, |_via, from, to| (*from, *to)),
+                            .join_trace(&edges_indexed, |_via, from, to| (*from, *to)),
                     )
-                    .distinct_incremental_nested();
+                    .distinct_trace();
                 paths_delayed.connect(&paths);
-                let output = paths.integrate();
-                Ok((
-                    vec![
-                        paths.condition(HasZero::is_zero),
-                        paths.integrate_nested().condition(HasZero::is_zero),
-                    ],
-                    output.export(),
-                ))
+
+                Ok(paths.integrate_trace::<OrdZSetSpine<_, _>>().export())
             })
             .unwrap();
     })
