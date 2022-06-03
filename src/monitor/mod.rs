@@ -281,42 +281,51 @@ impl TraceMonitorInternal {
                         if children.get(&local_node_id).is_some() {
                             return Err(TraceError::NodeExists(node_id.clone()));
                         }
-                        let new_node =
-                            if event.is_operator_event() || event.is_strict_output_event() {
-                                Node::new(
-                                    node_id.clone(),
-                                    event.node_name().unwrap(),
-                                    current_region.clone(),
-                                    NodeKind::Operator,
-                                )
-                            } else if event.is_strict_input_event() {
-                                let output = event.output_node_id().unwrap();
-                                if children.get(&output).is_none() {
+                        let new_node = if event.is_operator_event() {
+                            Node::new(
+                                node_id.clone(),
+                                event.node_name().unwrap(),
+                                current_region.clone(),
+                                NodeKind::Operator,
+                            )
+                        } else if event.is_strict_output_event() {
+                            Node::new(
+                                node_id.clone(),
+                                event.node_name().unwrap(),
+                                current_region.clone(),
+                                NodeKind::StrictOutput,
+                            )
+                        } else if event.is_strict_input_event() {
+                            let output = event.output_node_id().unwrap();
+                            let output_node = match children.get(&output) {
+                                None => {
                                     return Err(TraceError::UnknownNode(GlobalNodeId::child(
                                         &parent_id, output,
                                     )));
                                 }
-
-                                Node::new(
-                                    node_id.clone(),
-                                    "",
-                                    current_region.clone(),
-                                    NodeKind::StrictInput { output },
-                                )
-                            } else {
-                                self.current_scope = node_id.clone();
-                                self.region_stack.push(RegionId::root());
-                                Node::new(
-                                    node_id.clone(),
-                                    "",
-                                    current_region.clone(),
-                                    NodeKind::Circuit {
-                                        iterative: event.is_iterative_subcircuit_event(),
-                                        children: HashMap::new(),
-                                        region: Region::new(RegionId::root(), Cow::Borrowed("")),
-                                    },
-                                )
+                                Some(node) => node,
                             };
+
+                            Node::new(
+                                node_id.clone(),
+                                &output_node.name,
+                                current_region.clone(),
+                                NodeKind::StrictInput { output },
+                            )
+                        } else {
+                            self.current_scope = node_id.clone();
+                            self.region_stack.push(RegionId::root());
+                            Node::new(
+                                node_id.clone(),
+                                "",
+                                current_region.clone(),
+                                NodeKind::Circuit {
+                                    iterative: event.is_iterative_subcircuit_event(),
+                                    children: HashMap::new(),
+                                    region: Region::new(RegionId::root(), Cow::Borrowed("")),
+                                },
+                            )
+                        };
 
                         children.insert(local_node_id, new_node);
                         region.get_region(&current_region).nodes.push(local_node_id);

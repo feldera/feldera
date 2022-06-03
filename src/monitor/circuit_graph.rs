@@ -151,6 +151,8 @@ pub(super) enum NodeKind {
     },
     /// The input half of a strict operator.
     StrictInput { output: NodeId },
+    /// The output half of a strict operator.
+    StrictOutput,
 }
 
 /// A node in a circuit graph represents an operator or a circuit.
@@ -289,7 +291,19 @@ impl Node {
             NodeKind::Circuit { region, .. } => {
                 Some(VisNode::Cluster(region.visualize(self, annotate)))
             }
-            NodeKind::StrictInput { .. } => None,
+            NodeKind::StrictInput { output } => {
+                let annotation = annotate(&self.id);
+                Some(VisNode::Simple(SimpleNode::new(
+                    Self::node_identifier(&self.id.parent_id().unwrap().child(*output)),
+                    format!(
+                        "{}{}{}",
+                        self.name,
+                        if annotation.is_empty() { "" } else { "\\l" },
+                        annotation
+                    ),
+                )))
+            }
+            NodeKind::StrictOutput => None,
         }
     }
 }
