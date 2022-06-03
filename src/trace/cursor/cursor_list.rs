@@ -1,6 +1,7 @@
 //! A generic cursor implementation merging multiple cursors.
 
-use super::Cursor;
+use crate::trace::cursor::Cursor;
+use std::marker::PhantomData;
 
 /// Provides a cursor interface over a list of cursors.
 ///
@@ -9,7 +10,7 @@ use super::Cursor;
 /// no clever management of these sets otherwise.
 #[derive(Debug)]
 pub struct CursorList<K, V, T, R, C: Cursor<K, V, T, R>> {
-    _phantom: ::std::marker::PhantomData<(K, V, T, R)>,
+    _phantom: PhantomData<(K, V, T, R)>,
     cursors: Vec<C>,
     min_key: Vec<usize>,
     min_val: Vec<usize>,
@@ -23,7 +24,7 @@ where
     /// Creates a new cursor list from pre-existing cursors.
     pub fn new(cursors: Vec<C>, storage: &[C::Storage]) -> Self {
         let mut result = CursorList {
-            _phantom: ::std::marker::PhantomData,
+            _phantom: PhantomData,
             cursors,
             min_key: Vec::new(),
             min_val: Vec::new(),

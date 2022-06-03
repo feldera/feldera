@@ -3,7 +3,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator},
-    Circuit, Scope, Stream,
+    Circuit, Stream,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -70,9 +70,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Inspect")
     }
-
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
 
     fn fixedpoint(&self) -> bool {
         true

@@ -15,7 +15,7 @@ use crate::{
         Scope,
     },
 };
-use csv::{Reader as CsvReader, Result as CsvResult};
+use csv::Reader as CsvReader;
 use serde::Deserialize;
 use std::{borrow::Cow, io::Read, marker::PhantomData};
 
@@ -63,7 +63,6 @@ where
     fn clock_start(&mut self, _scope: Scope) {
         self.time = 0;
     }
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         self.time >= 2
     }
@@ -77,21 +76,20 @@ where
     C: Data + ZSet<Key = T, R = W>,
 {
     fn eval(&mut self) -> C {
-        if self.time == 0 {
-            let input_iter = self.reader.deserialize().map(CsvResult::unwrap).into_iter();
+        let source = if self.time == 0 {
+            let data: Vec<_> = self
+                .reader
+                .deserialize()
+                .map(|x| ((x.unwrap(), ()), W::one()))
+                .collect();
 
-            let mut data = Vec::with_capacity(input_iter.size_hint().0);
-
-            for x in input_iter {
-                data.push(((x, ()), W::one()));
-            }
-
-            self.time += 1;
             C::from_tuples((), data)
         } else {
-            self.time += 1;
             C::zero()
-        }
+        };
+        self.time += 1;
+
+        source
     }
 }
 

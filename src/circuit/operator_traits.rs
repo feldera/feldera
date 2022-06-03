@@ -79,8 +79,8 @@ pub trait Operator: 'static {
     /// # Arguments
     ///
     /// * `scope` - the scope whose clock is restarting.
-    fn clock_start(&mut self, scope: Scope);
-    fn clock_end(&mut self, scope: Scope);
+    fn clock_start(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 
     /// Returns `true` if `self` is an asynchronous operator.
     ///

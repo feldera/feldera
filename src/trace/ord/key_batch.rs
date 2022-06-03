@@ -72,7 +72,6 @@ where
 
     fn cursor(&self) -> Self::Cursor {
         OrdKeyCursor {
-            empty: (),
             valid: true,
             cursor: self.layer.cursor(),
             phantom: PhantomData,
@@ -307,7 +306,6 @@ where
 #[derive(Debug)]
 pub struct OrdKeyCursor<T: Lattice + Ord + Clone, R: MonoidValue, O = usize> {
     valid: bool,
-    empty: (),
     cursor: OrderedCursor<OrderedLeaf<T, R>>,
     phantom: PhantomData<O>,
 }
@@ -327,7 +325,7 @@ where
         self.cursor.key(&storage.layer)
     }
     fn val<'a>(&self, _storage: &'a Self::Storage) -> &'a () {
-        unsafe { ::std::mem::transmute(&self.empty) }
+        &()
     }
     fn map_times<L: FnMut(&T, &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
         self.cursor.child.rewind(&storage.layer.vals);

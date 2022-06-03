@@ -1,12 +1,21 @@
 #[macro_use]
 mod zset_macro;
 
-use crate::{algebra::GroupValue, trace::Batch, NumEntries, SharedRef};
+use crate::{
+    algebra::{GroupValue, HasOne, ZRingValue},
+    trace::{cursor::Cursor, Batch, Builder},
+    NumEntries, SharedRef,
+};
 
 // TODO: allow arbitrary `Time` types?
 /// An indexed Z-set maps arbitrary keys to Z-set values.
 pub trait IndexedZSet:
     Batch<Time = ()> + GroupValue + NumEntries + SharedRef<Target = Self>
+{
+}
+
+impl<Z> IndexedZSet for Z where
+    Z: Batch<Time = ()> + GroupValue + NumEntries + SharedRef<Target = Self>
 {
 }
 
@@ -21,4 +30,32 @@ pub trait ZSet: IndexedZSet<Val = ()> {
 
     /// Like `distinct` but optimized to operate on an owned value.
     fn distinct_owned(self) -> Self;
+}
+
+impl<Z> ZSet for Z
+where
+    Z: IndexedZSet<Val = ()>,
+    Z::Key: Clone,
+    Z::R: ZRingValue,
+{
+    fn distinct(&self) -> Self {
+        let mut builder = Self::Builder::with_capacity((), self.len());
+        let mut cursor = self.cursor();
+
+        while cursor.key_valid(self) {
+            let key = cursor.key(self);
+            let w = cursor.weight(self);
+            if w.ge0() {
+                builder.push((key.clone(), (), HasOne::one()));
+            }
+            cursor.step_key(self);
+        }
+
+        builder.done()
+    }
+
+    // TODO: optimized implementation for owned values
+    fn distinct_owned(self) -> Self {
+        self.distinct()
+    }
 }

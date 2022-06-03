@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
-        Circuit, OwnershipPreference, Scope, Stream,
+        Circuit, OwnershipPreference, Stream,
     },
 };
 use std::{
@@ -90,8 +90,6 @@ where
         Cow::from("Plus")
     }
 
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }
@@ -149,8 +147,6 @@ where
         Cow::from("Minus")
     }
 
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

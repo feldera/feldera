@@ -6,10 +6,13 @@ use crate::{
     NumEntries, SharedRef,
 };
 use deepsize::DeepSizeOf;
-use std::convert::{TryFrom, TryInto};
-use std::fmt::{Debug, Display, Formatter};
-use std::marker::PhantomData;
-use std::ops::{Add, AddAssign, Neg, Sub};
+use std::{
+    cmp::{min, Ordering},
+    convert::{TryFrom, TryInto},
+    fmt::{Debug, Display, Formatter},
+    marker::PhantomData,
+    ops::{Add, AddAssign, Neg, Sub},
+};
 use textwrap::indent;
 
 /// Trait for types used as offsets into an ordered layer.
@@ -127,9 +130,7 @@ where
         self.tuples()
     }
 
-    fn const_num_entries() -> Option<usize> {
-        None
-    }
+    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<K, L, O> NegByRef for OrderedLayer<K, L, O>
@@ -184,9 +185,9 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        if self.keys() == 0 {
+        if self.is_empty() {
             rhs
-        } else if rhs.keys() == 0 {
+        } else if rhs.is_empty() {
             self
         } else {
             self.merge(&rhs)
@@ -203,9 +204,9 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     fn add_assign(&mut self, rhs: Self) {
-        if self.keys() == 0 {
+        if self.is_empty() {
             *self = rhs;
-        } else if rhs.keys() != 0 {
+        } else if !rhs.is_empty() {
             *self = self.merge(&rhs);
         }
     }
@@ -220,7 +221,7 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
-        if other.keys() != 0 {
+        if !other.is_empty() {
             *self = self.merge(other);
         }
     }
@@ -419,16 +420,16 @@ where
         let (trie2, lower2, upper2) = other2;
 
         match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
-            ::std::cmp::Ordering::Less => {
+            Ordering::Less => {
                 // determine how far we can advance lower1 until we reach/pass lower2
                 let step = 1 + advance(&trie1.keys[(1 + *lower1)..upper1], |x| {
                     x < &trie2.keys[*lower2]
                 });
-                let step = std::cmp::min(step, 1_000);
+                let step = min(step, 1_000);
                 self.copy_range(trie1, *lower1, *lower1 + step);
                 *lower1 += step;
             }
-            ::std::cmp::Ordering::Equal => {
+            Ordering::Equal => {
                 let lower = self.vals.boundary();
                 // record vals_length so we can tell if anything was pushed.
                 let upper = self.vals.push_merge(
@@ -455,12 +456,12 @@ where
                 *lower1 += 1;
                 *lower2 += 1;
             }
-            ::std::cmp::Ordering::Greater => {
+            Ordering::Greater => {
                 // determine how far we can advance lower2 until we reach/pass lower1
                 let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
                     x < &trie1.keys[*lower1]
                 });
-                let step = std::cmp::min(step, 1_000);
+                let step = min(step, 1_000);
                 self.copy_range(trie2, *lower2, *lower2 + step);
                 *lower2 += step;
             }

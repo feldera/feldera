@@ -10,6 +10,7 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 use std::{
+    cmp::{min, Ordering},
     fmt::{Display, Formatter},
     ops::{Add, AddAssign, Neg},
 };
@@ -78,9 +79,9 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        if self.keys() == 0 {
+        if self.is_empty() {
             rhs
-        } else if rhs.keys() == 0 {
+        } else if rhs.is_empty() {
             self
         } else {
             self.merge(&rhs)
@@ -94,7 +95,7 @@ where
     R: Eq + HasZero + AddAssignByRef + Clone,
 {
     fn add_assign(&mut self, rhs: Self) {
-        if rhs.keys() != 0 {
+        if !rhs.is_empty() {
             *self = self.merge(&rhs);
         }
     }
@@ -106,7 +107,7 @@ where
     R: Eq + HasZero + AddAssignByRef + Clone,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
-        if other.keys() != 0 {
+        if !other.is_empty() {
             *self = self.merge(other);
         }
     }
@@ -165,9 +166,7 @@ where
         self.keys()
     }
 
-    fn const_num_entries() -> Option<usize> {
-        None
-    }
+    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<K, R> SharedRef for OrderedLeaf<K, R>
@@ -237,12 +236,12 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
             match trie1.vals[lower1].0.cmp(&trie2.vals[lower2].0) {
-                ::std::cmp::Ordering::Less => {
+                Ordering::Less => {
                     // determine how far we can advance lower1 until we reach/pass lower2
                     let step = 1 + advance(&trie1.vals[(1 + lower1)..upper1], |x| {
                         x.0 < trie2.vals[lower2].0
                     });
-                    let step = std::cmp::min(step, 1000);
+                    let step = min(step, 1000);
                     <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range(
                         self,
                         trie1,
@@ -251,7 +250,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
                     );
                     lower1 += step;
                 }
-                ::std::cmp::Ordering::Equal => {
+                Ordering::Equal => {
                     let mut sum = trie1.vals[lower1].1.clone();
                     sum.add_assign_by_ref(&trie2.vals[lower2].1);
                     if !sum.is_zero() {
@@ -261,12 +260,12 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
                     lower1 += 1;
                     lower2 += 1;
                 }
-                ::std::cmp::Ordering::Greater => {
+                Ordering::Greater => {
                     // determine how far we can advance lower2 until we reach/pass lower1
                     let step = 1 + advance(&trie2.vals[(1 + lower2)..upper2], |x| {
                         x.0 < trie1.vals[lower1].0
                     });
-                    let step = std::cmp::min(step, 1000);
+                    let step = min(step, 1000);
                     <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range(
                         self,
                         trie2,

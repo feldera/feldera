@@ -132,26 +132,35 @@ fn main() {
                     let qvar: DelayedFeedback<_, OrdZSet<(Number, Number, Number), Weight>> =
                         DelayedFeedback::new(child);
 
-                    let p_by_1: Stream<_, OrdIndexedZSet<_, _, _>> = pvar.stream().index();
-                    let p_by_2: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        pvar.stream().index_with(|&(x, y)| (y, x));
-                    let p_by_12: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        pvar.stream().index_with(|&(x, y)| ((x, y), ()));
-                    let u_by_1: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        u.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
-                    let q_by_1: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        qvar.stream().index_with(|&(x, y, z)| (x, (y, z)));
-                    let q_by_2: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        qvar.stream().index_with(|&(x, y, z)| (y, (x, z)));
-                    let q_by_12: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        qvar.stream().index_with(|&(x, y, z)| ((x, y), z));
-                    let q_by_23: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        qvar.stream().index_with(|&(x, y, z)| ((y, z), x));
-                    let c_by_2: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        c.delta0(child).index_with(|&(x, y, z)| (y, (x, z)));
-                    let r_by_1: Stream<_, OrdIndexedZSet<_, _, _>> =
-                        r.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
-                    let s_by_1: Stream<_, OrdIndexedZSet<_, _, _>> = s.delta0(child).index();
+                    let p_by_1 = pvar.stream().index::<OrdIndexedZSet<_, _, _>>();
+                    let p_by_2 = pvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y)| (y, x));
+                    let p_by_12 = pvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y)| ((x, y), ()));
+                    let u_by_1 = u
+                        .delta0(child)
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
+                    let q_by_1 = qvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
+                    let q_by_2 = qvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (y, (x, z)));
+                    let q_by_12 = qvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| ((x, y), z));
+                    let q_by_23 = qvar
+                        .stream()
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| ((y, z), x));
+                    let c_by_2 = c
+                        .delta0(child)
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (y, (x, z)));
+                    let r_by_1 = r
+                        .delta0(child)
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
+                    let s_by_1 = s.delta0(child).index::<OrdIndexedZSet<_, _, _>>();
 
                     // IR1: p(x,z) :- p(x,y), p(y,z).
                     let ir1 =
