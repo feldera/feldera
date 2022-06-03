@@ -6,7 +6,8 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
-    time::NestedTimestamp32,
+    lattice::Lattice,
+    time::{NestedTimestamp32, Timestamp},
     trace::{
         cursor::Cursor as TraceCursor, ord::OrdValSpine, BatchReader, Batcher, Trace, TraceReader,
     },
@@ -14,11 +15,13 @@ use crate::{
 use deepsize::DeepSizeOf;
 use std::{
     borrow::Cow,
-    cmp::{max, min, Ordering},
+    cmp::{min, Ordering},
+    collections::HashMap,
     fmt::Write,
     marker::PhantomData,
-    mem::swap,
+    mem::take,
 };
+use timely::PartialOrder;
 
 impl<P, IZ1> Stream<Circuit<P>, IZ1>
 where
@@ -149,8 +152,8 @@ where
         I2: IndexedZSet<Key = I1::Key, R = I1::R>,
         Z: ZSet<R = I1::R>,
         Z::Batcher: DeepSizeOf,
-        Z::Key: Clone,
-        Z::R: MulByRef,
+        Z::Key: Clone + Default,
+        Z::R: MulByRef + Default,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
     {
         // Writing out the definition of the operator and applying distributivity,
@@ -442,10 +445,10 @@ where
 {
     join_func: F,
     // TODO: not needed once timekeeping is handled by the circuit.
-    time: u32,
+    time: T::Time,
     // Future update batches computed ahead of time, indexed by time
     // when each batch should be output.
-    output_batchers: Vec<Z::Batcher>,
+    output_batchers: HashMap<T::Time, Z::Batcher>,
     // True if empty input batch was received at the current clock cycle.
     empty_input: bool,
     // True if empty output was produced at the current clock cycle.
@@ -455,14 +458,14 @@ where
 
 impl<F, I, T, Z> JoinTrace<F, I, T, Z>
 where
-    T: TraceReader<Time = NestedTimestamp32>,
+    T: TraceReader,
     Z: ZSet,
 {
     pub fn new(join_func: F) -> Self {
         Self {
             join_func,
-            time: 0,
-            output_batchers: Vec::new(),
+            time: T::Time::minimum(),
+            output_batchers: HashMap::new(),
             empty_input: false,
             empty_output: false,
             _types: PhantomData,
@@ -474,7 +477,7 @@ impl<F, I, T, Z> Operator for JoinTrace<F, I, T, Z>
 where
     F: 'static,
     I: 'static,
-    T: TraceReader<Time = NestedTimestamp32> + 'static,
+    T: TraceReader + 'static,
     Z: ZSet,
     Z::Batcher: DeepSizeOf,
 {
@@ -482,45 +485,45 @@ where
         Cow::from("JoinTrace")
     }
     fn clock_start(&mut self, scope: Scope) {
+        self.time = self.time.advance(scope + 1);
         if scope == 0 {
-            self.time = 0;
             self.empty_input = false;
             self.empty_output = false;
         }
     }
-    fn clock_end(&mut self, scope: Scope) {
-        if scope == 0 {
-            self.output_batchers.clear();
-        }
+    fn clock_end(&mut self, _scope: Scope) {
+        debug_assert!(self.output_batchers.iter().all(|(time, _)| !time.less_equal(&self.time)));
     }
 
     fn summary(&self, summary: &mut String) {
-        let num_entries: usize = self
+        let sizes: Vec<usize> = self
             .output_batchers
             .iter()
-            .map(|batcher| batcher.tuples())
-            .sum();
-        writeln!(summary, "size: {}", num_entries).unwrap();
+            .map(|(_, batcher)| batcher.tuples())
+            .collect();
+        writeln!(summary, "sizes: {:?}", sizes).unwrap();
+        writeln!(summary, "total size: {}", sizes.iter().sum::<usize>()).unwrap();
 
-        let bytes: usize = self
+        let bytes: Vec<usize> = self
             .output_batchers
             .iter()
-            .map(DeepSizeOf::deep_size_of)
-            .sum();
-        writeln!(summary, "bytes: {}", bytes).unwrap();
+            .map(|(_, batcher)| batcher.deep_size_of())
+            .collect();
+        writeln!(summary, "bytes: {:?}", bytes).unwrap();
+        writeln!(summary, "total bytes: {}", bytes.iter().sum::<usize>()).unwrap();
         //println!("zbytes:{}", bytes);
     }
 
     fn fixedpoint(&self) -> bool {
         // We're in a stable state if input and output at the current clock cycle are
         // both empty, and all future precomputed outputs are empty.
+        // TODO: generalize to arbitrary nesting.
         self.empty_input
             && self.empty_output
             && self
-                .output_batchers
-                .iter()
-                .skip(self.time as usize)
-                .all(|batcher| batcher.tuples() == 0)
+                .output_batchers.is_empty()
+                /*.iter()
+                .all(|(time, batcher)| batcher.is_empty() || !time.less_equal(self.time.epoch_end(scope)))*/
     }
 }
 
@@ -528,12 +531,12 @@ impl<F, I, T, Z> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z>
 where
     I: IndexedZSet,
     I::Key: Ord + Clone,
-    T: Trace<Key = I::Key, Time = NestedTimestamp32, R = I::R> + 'static,
+    T: Trace<Key = I::Key, R = I::R> + 'static,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> Z::Key + 'static,
     Z: ZSet<R = I::R>,
-    Z::Key: Clone,
+    Z::Key: Clone + Default,
     Z::Batcher: DeepSizeOf,
-    Z::R: MulByRef,
+    Z::R: MulByRef + Default,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
         /*println!("JoinTrace::eval@{}:\n  index:\n{}\n  trace:\n{}",
@@ -543,20 +546,11 @@ where
 
         self.empty_input = index.is_empty();
 
-        let mut new_len: u32 = self.time + 1;
-        trace.map_batches(|batch| {
-            for ts in batch.upper().elements().iter() {
-                new_len = max(new_len, ts.inner());
-            }
-        });
-
-        //println!("new_len: {}", new_len);
-        self.output_batchers
-            .resize_with(new_len as usize, || Z::Batcher::new(()));
-        // TODO: keep output batches in `self` for allocation reuse across iterations
-        // (but potentially using more memory)..
-        let mut output_batches = Vec::new();
-        output_batches.resize_with((new_len - self.time) as usize, Vec::new);
+        // Buffer to collect output tuples.
+        // One allocation per clock tick is acceptable; however the actual output can be larger
+        // than `index.len()`.  If re-allocations become a problem, we may need to do something
+        // smarter, like a chain of buffers.
+        let mut output_tuples: Vec<(T::Time, ((Z::Key, ()), Z::R))> = Vec::with_capacity(index.len());
 
         let mut index_cursor = index.cursor();
         let mut trace_cursor = trace.cursor();
@@ -584,10 +578,8 @@ where
                                 trace_cursor.val(trace),
                             );
                             trace_cursor.map_times(trace, |ts, w2| {
-                                let off = (max(ts.inner(), self.time) - self.time) as usize;
-                                //println!("  tuple@{}: ({:?}, {})", off, output, w1.clone() *
-                                // w2.clone());
-                                output_batches[off].push(((output.clone(), ()), w1.mul_by_ref(w2)));
+                                output_tuples.push((ts.join(&self.time), ((output.clone(), ()), w1.mul_by_ref(w2))));
+                                //println!("  tuple@{}: ({:?}, {})", off, output, w1.clone() * w2.clone());
                             });
                             trace_cursor.step_val(trace);
                         }
@@ -601,15 +593,18 @@ where
             }
         }
 
-        for (i, batch) in output_batches.iter_mut().enumerate() {
-            if !batch.is_empty() {
-                self.output_batchers[i + self.time as usize].push_batch(batch);
-            }
+        output_tuples.sort_by(|(t1, _), (t2, _)| t1.cmp(t2));
+        let mut start = 0;
+        while start < output_tuples.len() {
+            let end = start + output_tuples[start..].partition_point(|(t, _)| *t == output_tuples[start].0);
+            let mut batch = output_tuples[start..end].iter_mut().map(|(_, tuple)| take(tuple)).collect();
+            self.output_batchers.entry(output_tuples[start].0.clone()).or_insert_with(|| Z::Batcher::new(()))
+                .push_batch(&mut batch);
+            start = end;
         }
 
-        let mut batcher = Z::Batcher::new(());
-        swap(&mut self.output_batchers[self.time as usize], &mut batcher);
-        self.time += 1;
+        let batcher = self.output_batchers.remove(&self.time).unwrap_or_else(|| Z::Batcher::new(()));
+        self.time = self.time.advance(0);
         let result = batcher.seal();
         self.empty_output = result.is_empty();
         result
