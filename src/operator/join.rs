@@ -343,8 +343,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Join")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

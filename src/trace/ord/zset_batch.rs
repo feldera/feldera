@@ -9,10 +9,7 @@ use std::{
 use timely::progress::Antichain;
 
 use crate::{
-    algebra::{
-        AddAssignByRef, AddByRef, HasOne, HasZero, IndexedZSet, MonoidValue, NegByRef, ZRingValue,
-        ZSet,
-    },
+    algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
     lattice::Lattice,
     trace::{
         description::Description,
@@ -94,9 +91,7 @@ where
         self.layer.num_entries_deep()
     }
 
-    fn const_num_entries() -> Option<usize> {
-        <OrderedLeaf<K, R>>::const_num_entries()
-    }
+    const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
 }
 
 impl<K, R> HasZero for OrdZSet<K, R>
@@ -392,39 +387,5 @@ where
             layer: self.builder.done(),
             desc: Description::new(Antichain::from_elem(()), Antichain::new()),
         }
-    }
-}
-
-impl<K, W> IndexedZSet for OrdZSet<K, W>
-where
-    K: Clone + Ord + 'static,
-    W: ZRingValue,
-{
-}
-
-impl<K, W> ZSet for OrdZSet<K, W>
-where
-    K: Ord + Clone + 'static,
-    W: ZRingValue,
-{
-    fn distinct(&self) -> Self {
-        let mut builder = Self::Builder::with_capacity((), self.len());
-        let mut cursor = self.cursor();
-
-        while cursor.key_valid(self) {
-            let key = cursor.key(self);
-            let w = cursor.weight(self);
-            if w.ge0() {
-                builder.push((key.clone(), (), HasOne::one()));
-            }
-            cursor.step_key(self);
-        }
-
-        builder.done()
-    }
-
-    // TODO: optimized implementation for owned values
-    fn distinct_owned(self) -> Self {
-        self.distinct()
     }
 }

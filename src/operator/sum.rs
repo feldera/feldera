@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
     circuit::{
         operator_traits::{NaryOperator, Operator},
-        Circuit, OwnershipPreference, Scope, Stream,
+        Circuit, OwnershipPreference, Stream,
     },
     NumEntries,
 };
@@ -68,8 +68,6 @@ where
         Cow::from("Sum")
     }
 
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

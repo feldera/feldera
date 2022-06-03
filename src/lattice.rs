@@ -164,6 +164,7 @@ impl<T1: Lattice, T2: Lattice> Lattice for Product<T1, T2> {
             inner: self.inner.join(&other.inner),
         }
     }
+
     #[inline]
     fn meet(&self, other: &Product<T1, T2>) -> Product<T1, T2> {
         Product {
@@ -180,6 +181,7 @@ macro_rules! implement_lattice {
             fn join(&self, other: &Self) -> Self {
                 ::std::cmp::max(*self, *other)
             }
+
             #[inline]
             fn meet(&self, other: &Self) -> Self {
                 ::std::cmp::min(*self, *other)
@@ -215,6 +217,7 @@ impl<T: Lattice + Clone> Lattice for Antichain<T> {
         }
         upper
     }
+
     fn meet(&self, other: &Self) -> Self {
         let mut upper = Antichain::new();
         for time1 in self.elements().iter() {

@@ -1,5 +1,3 @@
-extern crate num;
-
 pub mod time;
 pub use time::Timestamp;
 

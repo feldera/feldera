@@ -153,7 +153,7 @@ pub trait Trace: TraceReader {
 /// filtered views, or views with extended time coordinates).
 pub trait BatchReader
 where
-    Self: ::std::marker::Sized,
+    Self: Sized,
 {
     type Key;
     type Val;
@@ -187,7 +187,7 @@ where
 /// An immutable collection of updates.
 pub trait Batch: BatchReader
 where
-    Self: ::std::marker::Sized,
+    Self: Sized,
 {
     /// A type used to assemble batches from disordered updates.
     type Batcher: Batcher<Self::Key, Self::Val, Self::Time, Self::R, Self>;
@@ -289,7 +289,7 @@ pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
 /// Blanket implementations for reference counted batches.
 pub mod rc_blanket_impls {
 
-    use std::rc::Rc;
+    use std::{marker::PhantomData, rc::Rc};
 
     use super::{Batch, BatchReader, Batcher, Builder, Cursor, Description, Merger};
 
@@ -318,7 +318,7 @@ pub mod rc_blanket_impls {
 
     /// Wrapper to provide cursor to nested scope.
     pub struct RcBatchCursor<B: BatchReader> {
-        phantom: ::std::marker::PhantomData<B>,
+        phantom: PhantomData<B>,
         cursor: B::Cursor,
     }
 
@@ -326,7 +326,7 @@ pub mod rc_blanket_impls {
         fn new(cursor: B::Cursor) -> Self {
             RcBatchCursor {
                 cursor,
-                phantom: ::std::marker::PhantomData,
+                phantom: PhantomData,
             }
         }
     }

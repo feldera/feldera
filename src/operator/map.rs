@@ -3,7 +3,7 @@
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream,
+        Circuit, Stream,
     },
     trace::{cursor::Cursor, Batch, BatchReader},
 };
@@ -104,8 +104,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("MapKeys")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }
@@ -183,8 +181,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("MapValues")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

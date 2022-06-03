@@ -79,7 +79,10 @@
 //! they have completed, at least until they have paid back any "debt" to higher
 //! layers by continuing to provide fuel as updates arrive.
 
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    mem::replace,
+};
 
 use crate::trace::cursor::{Cursor, CursorList};
 use crate::trace::Merger;
@@ -162,9 +165,7 @@ where
         self.num_entries_shallow()
     }
 
-    fn const_num_entries() -> Option<usize> {
-        None
-    }
+    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<B> TraceReader for Spine<B>
@@ -293,7 +294,7 @@ where
         // Return the sole remaining batch (if one exists).
         for merging in self.merging.into_iter() {
             if let MergeState::Single(Some(batch)) = merging {
-                if batch.len() > 0 {
+                if !batch.is_empty() {
                     return Some(batch);
                 }
             }
@@ -734,7 +735,7 @@ impl<B: Batch> MergeState<B> {
     ///
     /// There is the addional option of input batches.
     fn complete(&mut self) -> Option<B> {
-        match std::mem::replace(self, MergeState::Vacant) {
+        match replace(self, MergeState::Vacant) {
             MergeState::Vacant => None,
             MergeState::Single(batch) => batch,
             MergeState::Double(variant) => variant.complete(),
@@ -748,7 +749,7 @@ impl<B: Batch> MergeState<B> {
 
     /// True iff the layer is an in-progress merge.
     fn is_inprogress(&self) -> bool {
-        matches!(self, MergeState::Double(MergeVariant::InProgress(_, _, _)))
+        matches!(self, MergeState::Double(MergeVariant::InProgress(..)))
     }
 
     /// Performs a bounded amount of work towards a merge.
@@ -765,7 +766,7 @@ impl<B: Batch> MergeState<B> {
 
     /// Extract the merge state, typically temporarily.
     fn take(&mut self) -> Self {
-        std::mem::replace(self, MergeState::Vacant)
+        replace(self, MergeState::Vacant)
     }
 
     /// Initiates the merge of an "old" batch with a "new" batch.
@@ -825,7 +826,7 @@ impl<B: Batch> MergeVariant<B> {
     /// In case the work completes, the source batches are returned.
     /// This allows the caller to manage the released resources.
     fn work(&mut self, fuel: &mut isize) {
-        let variant = std::mem::replace(self, MergeVariant::Complete(None));
+        let variant = replace(self, MergeVariant::Complete(None));
         if let MergeVariant::InProgress(b1, b2, mut merge) = variant {
             merge.work(&b1, &b2, fuel);
             if *fuel > 0 {

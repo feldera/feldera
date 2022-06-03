@@ -7,6 +7,11 @@ use crate::{
     Timestamp,
 };
 use deepsize::DeepSizeOf;
+use std::{
+    marker::PhantomData,
+    mem::{replace, size_of, swap, take},
+    slice::from_raw_parts,
+};
 
 /// Creates batches from unordered tuples.
 pub struct MergeBatcher<
@@ -18,7 +23,7 @@ pub struct MergeBatcher<
 > {
     sorter: MergeSorter<(K, V), R>,
     time: T,
-    phantom: ::std::marker::PhantomData<B>,
+    phantom: PhantomData<B>,
 }
 
 impl<K, V, T, R, B> DeepSizeOf for MergeBatcher<K, V, T, R, B>
@@ -46,7 +51,7 @@ where
         MergeBatcher {
             sorter: MergeSorter::new(),
             time,
-            phantom: ::std::marker::PhantomData,
+            phantom: PhantomData,
         }
     }
 
@@ -81,8 +86,6 @@ where
         builder.done()
     }
 }
-
-use std::slice::from_raw_parts;
 
 pub struct VecQueue<T> {
     list: Vec<T>,
@@ -148,7 +151,7 @@ impl<T> VecQueue<T> {
 unsafe fn push_unchecked<T>(vec: &mut Vec<T>, element: T) {
     debug_assert!(vec.len() < vec.capacity());
     let len = vec.len();
-    ::std::ptr::write(vec.get_unchecked_mut(len), element);
+    vec.spare_capacity_mut().get_unchecked_mut(0).write(element);
     vec.set_len(len + 1);
 }
 
@@ -171,7 +174,7 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
     const BUFFER_SIZE_BYTES: usize = 1 << 13;
 
     fn buffer_size() -> usize {
-        let size = ::std::mem::size_of::<(D, R)>();
+        let size = size_of::<(D, R)>();
         if size == 0 {
             Self::BUFFER_SIZE_BYTES
         } else if size <= Self::BUFFER_SIZE_BYTES {
@@ -210,9 +213,9 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         // them? TODO: Reason about mis-sized vectors, from deserialized data;
         // should probably drop.
         let mut batch = if self.stash.len() > 2 {
-            ::std::mem::replace(batch, self.stash.pop().unwrap())
+            replace(batch, self.stash.pop().unwrap())
         } else {
-            ::std::mem::take(batch)
+            take(batch)
         };
 
         if !batch.is_empty() {
@@ -240,7 +243,7 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         }
 
         if let Some(mut last) = self.queue.pop() {
-            ::std::mem::swap(&mut last, target);
+            swap(&mut last, target);
         }
     }
 

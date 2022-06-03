@@ -10,7 +10,7 @@ use std::{
 use timely::progress::Antichain;
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, IndexedZSet, MonoidValue, NegByRef, ZRingValue},
+    algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
     lattice::Lattice,
     trace::{
         description::Description,
@@ -155,9 +155,8 @@ where
         self.layer.num_entries_deep()
     }
 
-    fn const_num_entries() -> Option<usize> {
-        <OrderedLayer<K, OrderedLeaf<V, R>, O>>::const_num_entries()
-    }
+    const CONST_NUM_ENTRIES: Option<usize> =
+        <OrderedLayer<K, OrderedLeaf<V, R>, O>>::CONST_NUM_ENTRIES;
 }
 
 impl<K, V, R, O> NegByRef for OrdIndexedZSet<K, V, R, O>
@@ -488,13 +487,4 @@ where
             desc: Description::new(Antichain::from_elem(()), Antichain::new()),
         }
     }
-}
-
-impl<K, V, W> IndexedZSet for OrdIndexedZSet<K, V, W>
-where
-    K: Clone + Ord + 'static,
-    V: Clone + Ord + 'static,
-    // TODO: unify algebraic abstractions between DD and DBSP.
-    W: ZRingValue,
-{
 }

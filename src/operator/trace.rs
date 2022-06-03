@@ -43,9 +43,9 @@ where
     let mut builder = BO::Builder::with_capacity(timestamp.clone(), batch.len());
     let mut cursor = batch.cursor();
     while cursor.key_valid(batch) {
+        let key = cursor.key(batch);
         while cursor.val_valid(batch) {
             let val = cursor.val(batch);
-            let key = cursor.key(batch);
             let w = cursor.weight(batch);
             builder.push((key.clone(), val.clone(), w.clone()));
             cursor.step_val(batch);
@@ -187,8 +187,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }
@@ -269,7 +267,6 @@ where
     fn clock_start(&mut self, scope: Scope) {
         self.time = self.time.advance(scope + 1);
     }
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

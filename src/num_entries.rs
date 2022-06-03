@@ -18,7 +18,7 @@ pub trait NumEntries {
     fn num_entries_deep(&self) -> usize;
 
     /// Returns `Some(n)` if `Self` has constant size or `None` otherwise.
-    fn const_num_entries() -> Option<usize>;
+    const CONST_NUM_ENTRIES: Option<usize>;
 }
 
 /// Macro to implement [`NumEntries`] for a scalar type whose size is 1.
@@ -26,15 +26,17 @@ pub trait NumEntries {
 macro_rules! num_entries_scalar {
     ($type:ty) => {
         impl $crate::NumEntries for $type {
+            #[inline]
             fn num_entries_shallow(&self) -> usize {
                 1
             }
+
+            #[inline]
             fn num_entries_deep(&self) -> usize {
                 1
             }
-            fn const_num_entries() -> Option<usize> {
-                Some(1)
-            }
+
+            const CONST_NUM_ENTRIES: Option<usize> = Some(1);
         }
     };
 }
@@ -64,9 +66,8 @@ impl NumEntries for Tuple {
     fn num_entries_deep(&self) -> usize {
         1
     }
-    fn const_num_entries() -> Option<usize> {
-        Some(1)
-    }
+
+    const CONST_NUM_ENTRIES: Option<usize> = Some(1);
 }
 
 impl<T> NumEntries for Vec<T>
@@ -77,20 +78,13 @@ where
         self.len()
     }
     fn num_entries_deep(&self) -> usize {
-        match T::const_num_entries() {
-            None => {
-                let mut res = 0;
-                for x in self.iter() {
-                    res += x.num_entries_deep();
-                }
-                res
-            }
+        match T::CONST_NUM_ENTRIES {
+            None => self.iter().map(T::num_entries_deep).sum(),
             Some(n) => n * self.len(),
         }
     }
-    fn const_num_entries() -> Option<usize> {
-        None
-    }
+
+    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<T> NumEntries for Rc<T>
@@ -103,7 +97,6 @@ where
     fn num_entries_deep(&self) -> usize {
         self.as_ref().num_entries_deep()
     }
-    fn const_num_entries() -> Option<usize> {
-        T::const_num_entries()
-    }
+
+    const CONST_NUM_ENTRIES: Option<usize> = T::CONST_NUM_ENTRIES;
 }

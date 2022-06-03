@@ -6,7 +6,7 @@ use crate::{
     algebra::{GroupValue, HasOne, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, Scope, Stream,
+        Circuit, Stream,
     },
     trace::{cursor::Cursor, BatchReader},
     NumEntries,
@@ -173,8 +173,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Aggregate")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }
@@ -230,8 +228,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("AggregateIncremental")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

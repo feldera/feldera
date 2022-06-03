@@ -5,7 +5,7 @@ use std::{borrow::Cow, convert::TryFrom, marker::PhantomData};
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, NodeId, OwnershipPreference, Scope, Stream,
+        Circuit, NodeId, OwnershipPreference, Stream,
     },
     circuit_cache_key,
     trace::{Batch, Trace},
@@ -70,8 +70,6 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Consolidate")
     }
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
     fn fixedpoint(&self) -> bool {
         true
     }

@@ -18,7 +18,7 @@ pub mod ordered_leaf;
 /// data, mostly that the items have some `(key, val)` structure. Perhaps we
 /// will nail these down better in the future and get a better name for the
 /// trait.
-pub trait Trie: ::std::marker::Sized {
+pub trait Trie: Sized {
     /// The type of item from which the type is constructed.
     type Item;
     /// The type of cursor used to navigate the type.
@@ -31,6 +31,12 @@ pub trait Trie: ::std::marker::Sized {
     /// The number of distinct keys, as distinct from the total number of
     /// tuples.
     fn keys(&self) -> usize;
+
+    /// True if `self.keys()` is zero.
+    fn is_empty(&self) -> bool {
+        self.keys() == 0
+    }
+
     /// The total number of tuples in the collection.
     fn tuples(&self) -> usize;
     /// Returns a cursor capable of navigating the collection.
