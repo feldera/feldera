@@ -36,3 +36,6 @@ required-features = ["with-csv"]
 [[bench]]
 name = "path"
 harness = false
+
+[profile.bench]
+debug = true
