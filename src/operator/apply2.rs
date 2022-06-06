@@ -1,6 +1,9 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
-use crate::circuit::operator_traits::{BinaryOperator, Operator};
+use crate::circuit::{
+    operator_traits::{BinaryOperator, Operator},
+    Scope,
+};
 use std::borrow::Cow;
 
 /// Applies a user-provided binary function to its inputs at each timestamp.
@@ -25,7 +28,7 @@ where
         Cow::from("Apply2")
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         // TODO: either change `F` type to `Fn` from `FnMut` or
         // parameterize the operator with custom fixed point check.
         unimplemented!();

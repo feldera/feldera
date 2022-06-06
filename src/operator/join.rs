@@ -350,7 +350,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Join")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
@@ -492,7 +492,10 @@ where
         }
     }
     fn clock_end(&mut self, _scope: Scope) {
-        debug_assert!(self.output_batchers.iter().all(|(time, _)| !time.less_equal(&self.time)));
+        debug_assert!(self
+            .output_batchers
+            .iter()
+            .all(|(time, _)| !time.less_equal(&self.time)));
     }
 
     fn summary(&self, summary: &mut String) {
@@ -514,16 +517,17 @@ where
         //println!("zbytes:{}", bytes);
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        let epoch_end = self.time.epoch_end(scope);
         // We're in a stable state if input and output at the current clock cycle are
-        // both empty, and all future precomputed outputs are empty.
-        // TODO: generalize to arbitrary nesting.
+        // both empty, and there are no precomputed outputs before the end of the
+        // clock epoch.
         self.empty_input
             && self.empty_output
             && self
-                .output_batchers.is_empty()
-                /*.iter()
-                .all(|(time, batcher)| batcher.is_empty() || !time.less_equal(self.time.epoch_end(scope)))*/
+                .output_batchers
+                .iter()
+                .all(|(time, _)| !time.less_equal(&epoch_end))
     }
 }
 
@@ -547,10 +551,10 @@ where
         self.empty_input = index.is_empty();
 
         // Buffer to collect output tuples.
-        // One allocation per clock tick is acceptable; however the actual output can be larger
-        // than `index.len()`.  If re-allocations become a problem, we may need to do something
-        // smarter, like a chain of buffers.
-        let mut output_tuples: Vec<(T::Time, ((Z::Key, ()), Z::R))> = Vec::with_capacity(index.len());
+        // One allocation per clock tick is acceptable; however the actual output can be
+        // larger than `index.len()`.  If re-allocations becomes a problem, we
+        // may need to do something smarter, like a chain of buffers.
+        let mut output_tuples = Vec::with_capacity(index.len());
 
         let mut index_cursor = index.cursor();
         let mut trace_cursor = trace.cursor();
@@ -578,8 +582,15 @@ where
                                 trace_cursor.val(trace),
                             );
                             trace_cursor.map_times(trace, |ts, w2| {
-                                output_tuples.push((ts.join(&self.time), ((output.clone(), ()), w1.mul_by_ref(w2))));
-                                //println!("  tuple@{}: ({:?}, {})", off, output, w1.clone() * w2.clone());
+                                // TODO: I think this is correct, but we should write a proper proof
+                                // that this formula implements an arbitrarily nested incremental
+                                // join operator.
+                                output_tuples.push((
+                                    ts.join(&self.time),
+                                    ((output.clone(), ()), w1.mul_by_ref(w2)),
+                                ));
+                                //println!("  tuple@{}: ({:?}, {})", off,
+                                // output, w1.clone() * w2.clone());
                             });
                             trace_cursor.step_val(trace);
                         }
@@ -593,17 +604,29 @@ where
             }
         }
 
+        // Sort `output_tuples` by timestamp and push all tuples for each unique
+        // timestamp to the appropriate batcher.
         output_tuples.sort_by(|(t1, _), (t2, _)| t1.cmp(t2));
         let mut start = 0;
         while start < output_tuples.len() {
-            let end = start + output_tuples[start..].partition_point(|(t, _)| *t == output_tuples[start].0);
-            let mut batch = output_tuples[start..end].iter_mut().map(|(_, tuple)| take(tuple)).collect();
-            self.output_batchers.entry(output_tuples[start].0.clone()).or_insert_with(|| Z::Batcher::new(()))
+            let end = start
+                + output_tuples[start..].partition_point(|(t, _)| *t == output_tuples[start].0);
+            let mut batch = output_tuples[start..end]
+                .iter_mut()
+                .map(|(_, tuple)| take(tuple))
+                .collect();
+            self.output_batchers
+                .entry(output_tuples[start].0.clone())
+                .or_insert_with(|| Z::Batcher::new(()))
                 .push_batch(&mut batch);
             start = end;
         }
 
-        let batcher = self.output_batchers.remove(&self.time).unwrap_or_else(|| Z::Batcher::new(()));
+        // Finalize the batch for the current timestamp (`self.time`) and return it.
+        let batcher = self
+            .output_batchers
+            .remove(&self.time)
+            .unwrap_or_else(|| Z::Batcher::new(()));
         self.time = self.time.advance(0);
         let result = batcher.seal();
         self.empty_output = result.is_empty();

@@ -447,7 +447,7 @@ where
         self.exchange.ready_to_send(self.worker_index)
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         // TODO: Add a mechanism to communicate fixed point status among peers.
         unimplemented!()
     }
@@ -536,7 +536,7 @@ where
         self.exchange.ready_to_receive(self.worker_index)
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         // TODO: Add a mechanism to communicate fixed point status among peers.
         unimplemented!()
     }

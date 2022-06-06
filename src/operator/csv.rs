@@ -63,7 +63,7 @@ where
     fn clock_start(&mut self, _scope: Scope) {
         self.time = 0;
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         self.time >= 2
     }
 }

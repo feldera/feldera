@@ -4,7 +4,6 @@ use crate::{
         Circuit, ExportId, ExportStream, NodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
-    time::NestedTimestamp32,
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
     NumEntries, Timestamp,
 };
@@ -70,17 +69,14 @@ where
         B: BatchReader<Time = ()>,
         B::Key: Clone,
         B::Val: Clone,
-        T: NumEntries
-            + DeepSizeOf
-            + Trace<Key = B::Key, Val = B::Val, Time = NestedTimestamp32, R = B::R>
-            + Clone
-            + 'static,
+        T: NumEntries + DeepSizeOf + Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.local_node_id()), || {
                 self.circuit().region("trace", || {
-                    let (ExportStream { local, export }, z1feedback) =
-                        self.circuit().add_feedback_with_export(Z1Trace::new(false));
+                    let (ExportStream { local, export }, z1feedback) = self
+                        .circuit()
+                        .add_feedback_with_export(Z1Trace::new(false, self.circuit().root_scope()));
                     let trace = self.circuit().add_binary_operator_with_preference(
                         <TraceAppend<T, B>>::new(),
                         &local,
@@ -112,8 +108,9 @@ where
         self.circuit()
             .cache_get_or_insert_with(IntegrateTraceId::new(self.local_node_id()), || {
                 self.circuit().region("integrate_trace", || {
-                    let (ExportStream { local, export }, z1feedback) =
-                        self.circuit().add_feedback_with_export(Z1Trace::new(true));
+                    let (ExportStream { local, export }, z1feedback) = self
+                        .circuit()
+                        .add_feedback_with_export(Z1Trace::new(true, self.circuit().root_scope()));
                     let trace = self.circuit().add_binary_operator_with_preference(
                         <UntimedTraceAppend<Spine<Rc<B>>, B>>::new(),
                         &local,
@@ -186,7 +183,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
@@ -266,7 +263,7 @@ where
     fn clock_start(&mut self, scope: Scope) {
         self.time = self.time.advance(scope + 1);
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
@@ -315,6 +312,10 @@ where
 pub struct Z1Trace<T: TraceReader> {
     time: T::Time,
     trace: Option<T>,
+    // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
+    // since the previous clock cycle at level `scope`.
+    dirty: Vec<bool>,
+    root_scope: Scope,
     reset_on_clock_start: bool,
 }
 
@@ -322,10 +323,12 @@ impl<T> Z1Trace<T>
 where
     T: Trace,
 {
-    pub fn new(reset_on_clock_start: bool) -> Self {
+    pub fn new(reset_on_clock_start: bool, root_scope: Scope) -> Self {
         Self {
             time: T::Time::minimum(),
             trace: None,
+            dirty: vec![false; root_scope as usize + 1],
+            root_scope,
             reset_on_clock_start,
         }
     }
@@ -341,6 +344,8 @@ where
     }
 
     fn clock_start(&mut self, scope: Scope) {
+        self.dirty[scope as usize] = false;
+
         self.time.advance(scope + 1);
         if scope == 0 && self.trace.is_none() {
             // TODO: use T::with_effort with configurable effort?
@@ -348,9 +353,9 @@ where
         }
     }
     fn clock_end(&mut self, scope: Scope) {
-        if scope == 0 {
+        if scope + 1 == self.root_scope && !self.reset_on_clock_start {
             if let Some(tr) = self.trace.as_mut() {
-                tr.recede_to(&self.time.recede(1));
+                tr.recede_to(&self.time.recede(self.root_scope));
             }
         }
     }
@@ -375,11 +380,8 @@ where
         //println!("zbytes:{}", bytes);
     }
 
-    fn fixedpoint(&self) -> bool {
-        match &self.trace {
-            None => false,
-            Some(trace) => !trace.dirty(),
-        }
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        !self.dirty[scope as usize]
     }
 }
 
@@ -414,7 +416,14 @@ where
 
     fn eval_strict_owned(&mut self, i: T) {
         self.time = self.time.advance(0);
+
+        let dirty = i.dirty();
         self.trace = Some(i);
+
+        self.dirty[0] = dirty;
+        for d in self.dirty[1..].iter_mut() {
+            *d = *d || dirty;
+        }
     }
 
     fn input_preference(&self) -> OwnershipPreference {

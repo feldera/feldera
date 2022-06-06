@@ -1,7 +1,7 @@
 use crate::{circuit::Scope, lattice::Lattice};
 use deepsize_derive::DeepSizeOf;
-use timely::{progress::PathSummary, PartialOrder};
 use std::hash::Hash;
+use timely::{progress::PathSummary, PartialOrder};
 
 /// Logical timestamp.
 ///
@@ -105,6 +105,12 @@ pub trait Timestamp: PartialOrder + Clone + Ord + PartialEq + Eq + Hash + 'stati
     /// assert_eq!((2, 3).recede(1), (1, 3));
     /// ```
     fn recede(&self, scope: Scope) -> Self;
+
+    /// Advance `self` to the end of the current clock epoch in `scope`.
+    fn epoch_start(&self, scope: Scope) -> Self;
+
+    /// Returns the first time stamp of the current clock epoch in `scope`.
+    fn epoch_end(&self, scope: Scope) -> Self;
 }
 
 fn bool_followed_by(this: bool, other: bool) -> Option<bool> {
@@ -200,6 +206,26 @@ impl Timestamp for NestedTimestamp32 {
             self.clone()
         }
     }
+
+    fn epoch_start(&self, scope: Scope) -> Self {
+        if scope == 0 {
+            Self::new(self.epoch(), 0x0)
+        } else if scope == 1 {
+            Self::new(false, 0x0)
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn epoch_end(&self, scope: Scope) -> Self {
+        if scope == 0 {
+            Self::new(self.epoch(), 0x7fffffff)
+        } else if scope == 1 {
+            Self::new(true, 0x7fffffff)
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 impl Lattice for NestedTimestamp32 {
@@ -223,4 +249,6 @@ impl Timestamp for () {
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
     fn recede(&self, _scope: Scope) -> Self {}
+    fn epoch_start(&self, _scope: Scope) -> Self {}
+    fn epoch_end(&self, _scope: Scope) -> Self {}
 }

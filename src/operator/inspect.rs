@@ -3,7 +3,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, SinkOperator},
-    Circuit, Stream,
+    Circuit, Scope, Stream,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -71,7 +71,7 @@ where
         Cow::from("Inspect")
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
