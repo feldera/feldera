@@ -196,11 +196,15 @@ where
         //println!("zbytes:{}", bytes);
     }
 
-    fn fixedpoint(&self) -> bool {
-        (self.val.num_entries_shallow() == 0) && self.empty_output
-        /*if res == false {
-            eprintln!("num_entries_shallow: {}", self.val.num_entries_shallow());
-        }*/
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        if scope == 0 {
+            (self.val.num_entries_shallow() == 0) && self.empty_output
+            /*if res == false {
+                eprintln!("num_entries_shallow: {}", self.val.num_entries_shallow());
+            }*/
+        } else {
+            true
+        }
     }
 }
 
@@ -359,11 +363,15 @@ where
         //println!("bytes: {}", total_bytes);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.val
-            .iter()
-            .skip(self.timestamp - 1)
-            .all(|v| *v == self.zero)
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        if scope == 0 {
+            self.val
+                .iter()
+                .skip(self.timestamp - 1)
+                .all(|v| *v == self.zero)
+        } else {
+            false
+        }
     }
 }
 

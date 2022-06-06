@@ -35,7 +35,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Generator")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
 }
@@ -85,7 +85,7 @@ where
         }
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         // TODO: do we want a version of `GeneratorNested` that
         // can inform the circuit that it's reached a fixedpoint?
         false

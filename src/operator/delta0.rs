@@ -4,7 +4,7 @@ use crate::{
     algebra::HasZero,
     circuit::{
         operator_traits::{Data, ImportOperator, Operator},
-        Circuit, OwnershipPreference, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
 };
 use std::borrow::Cow;
@@ -88,8 +88,14 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("delta0")
     }
-    fn fixedpoint(&self) -> bool {
-        self.fixedpoint
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        if scope == 0 {
+            // Output becomes stable (all zeros) after the first clock cycle.
+            self.fixedpoint
+        } else {
+            // Delta0 does not maintain any state across epochs.
+            true
+        }
     }
 }
 

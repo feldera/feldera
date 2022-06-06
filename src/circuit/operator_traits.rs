@@ -138,14 +138,33 @@ pub trait Operator: 'static {
     ///
     /// This method is invoked as part of checking if the circuit has reached a
     /// fixed point state, i.e., a state where the outputs of all operators will
-    /// remain constant forever
+    /// remain constant until the end of the current clock epoch
     /// (see [`Circuit::fixedpoint`](`crate::circuit::Circuit::fixedpoint`)).
     ///
-    /// The method is invoked at the end of a clock cycle, after
-    /// the operator has been evaluated.  It returns `true` if the operator's
-    /// output is guaranteed to remain constant (i.e., all future outputs
-    /// will be equal to the last output) as long as its inputs remain
-    /// constant.
+    /// It returns `true` if the operator's output is guaranteed to remain
+    /// constant (i.e., all future outputs will be equal to the last output) as
+    /// long as its inputs remain constant.
+    ///
+    /// The exact semantics depends on the value of the `scope` argument, which
+    /// identifies the circuit whose fixed point state is being checked.
+    /// Scope 0 is the local circuit.  The method is invoked with `scope=0`
+    /// at the end of a clock cycle, and should return `true` if, assuming that
+    /// it will see inputs identical to the last input during all future clock
+    /// cycles in the current clock epoch, it will keep producing the same
+    /// outputs.
+    ///
+    /// Scope 1 represents the parent of the local circuit.  The method is
+    /// invoked with `scope=1` at the end of a clock _epoch_, and should
+    /// return `true` if, assuming that it will see a sequence of inputs
+    /// (aka the input stream) identical to the last epoch during all future
+    /// epochs, it will keep producing the same output streams.
+    ///
+    /// Scope 2 represents the grandparent of the local circuit.  The method is
+    /// invoked with `scope=2` at the end of the parent clock _epoch_, and
+    /// checks that the operator's output will remain stable wrt to the
+    /// nested input stream (i.e., stream of streams).
+    ///
+    /// And so on.
     ///
     /// The check must be precise. False positives (returning `true` when the
     /// output may change in the future) may lead to early termination before
@@ -163,7 +182,7 @@ pub trait Operator: 'static {
     /// nested circuits when carrying changes to collections across iterations
     /// of the fixed point computation, but not as part of an integrator circuit
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
-    fn fixedpoint(&self) -> bool;
+    fn fixedpoint(&self, scope: Scope) -> bool;
 
     /// Returns printable operator metadata, e.g., number of entries, heap
     /// usage, etc.

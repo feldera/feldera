@@ -4,7 +4,7 @@ use crate::{
     algebra::{IndexedZSet, ZRingValue, ZSet},
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, NodeId, Stream,
+        Circuit, NodeId, Scope, Stream,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, ord::OrdZSet, Batch, Builder},
@@ -82,7 +82,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Index")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }

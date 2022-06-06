@@ -68,8 +68,8 @@ where
         self.op.register_ready_callback(cb);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.op.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.op.fixedpoint(scope)
     }
 }
 
@@ -141,8 +141,8 @@ where
         self.op.register_ready_callback(cb);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.op.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.op.fixedpoint(scope)
     }
 }
 

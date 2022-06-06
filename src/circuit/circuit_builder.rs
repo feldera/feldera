@@ -316,7 +316,7 @@ pub trait Node {
 
     fn summary(&self, output: &mut String);
 
-    fn fixedpoint(&self) -> bool;
+    fn fixedpoint(&self, scope: Scope) -> bool;
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -544,6 +544,7 @@ circuit_cache_key!(ExportId<C, D>(NodeId => Stream<C, D>));
 /// is connected to an input of node2.
 struct CircuitInner<P> {
     parent: P,
+    root_scope: Scope,
     // Circuit's node id within the parent circuit.
     node_id: NodeId,
     global_node_id: GlobalNodeId,
@@ -557,15 +558,17 @@ struct CircuitInner<P> {
 impl<P> CircuitInner<P> {
     fn new(
         parent: P,
+        root_scope: Scope,
         node_id: NodeId,
         global_node_id: GlobalNodeId,
         circuit_event_handlers: CircuitEventHandlers,
         scheduler_event_handlers: SchedulerEventHandlers,
     ) -> Self {
         Self {
+            parent,
+            root_scope,
             node_id,
             global_node_id,
-            parent,
             nodes: Vec::new(),
             edges: Vec::new(),
             circuit_event_handlers,
@@ -637,9 +640,9 @@ impl<P> CircuitInner<P> {
         }
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.iter().all(|node| {
-            node.fixedpoint()
+            node.fixedpoint(scope)
             /*if !res {
                 eprintln!("node {} ({})", node.global_id(), node.name());
             }*/
@@ -663,6 +666,7 @@ impl Circuit<()> {
     fn new() -> Self {
         Self(Rc::new(RefCell::new(CircuitInner::new(
             (),
+            0,
             NodeId::root(),
             GlobalNodeId::root(),
             Rc::new(RefCell::new(HashMap::new())),
@@ -734,15 +738,20 @@ impl Circuit<()> {
     }
 }
 
-impl<P> Circuit<Circuit<P>> {
+impl<P> Circuit<Circuit<P>>
+where
+    P: Clone + 'static,
+{
     /// Create an empty nested circuit of `parent`.
     fn with_parent(parent: Circuit<P>, id: NodeId) -> Self {
         let global_node_id = GlobalNodeId::child_of(&parent, id);
         let circuit_handlers = parent.inner().circuit_event_handlers.clone();
         let sched_handlers = parent.inner().scheduler_event_handlers.clone();
+        let root_scope = parent.root_scope() + 1;
 
         Circuit(Rc::new(RefCell::new(CircuitInner::new(
             parent,
+            root_scope,
             id,
             global_node_id,
             circuit_handlers,
@@ -918,6 +927,14 @@ where
     /// Returns the parent circuit of `self`.
     pub fn parent(&self) -> P {
         self.inner().parent.clone()
+    }
+
+    /// Relative depth of `self` from the root circuit.
+    ///
+    /// Returns 0 if `self` is the root circuit, 1 if `self` is an immediate
+    /// child of the root circuit, etc.
+    pub fn root_scope(&self) -> Scope {
+        self.inner().root_scope
     }
 
     /// Lookup a value in the circuit cache or create and insert a new value
@@ -1598,7 +1615,7 @@ where
         self.subcircuit(true, |child| {
             let res = constructor(child)?;
             let child_clone = child.clone();
-            let termination_check = move || child_clone.inner().fixedpoint();
+            let termination_check = move || child_clone.inner().fixedpoint(0);
             let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
             Ok((res, executor))
         })
@@ -1741,8 +1758,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -1816,8 +1833,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -1902,8 +1919,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -1980,8 +1997,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -2094,8 +2111,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -2215,8 +2232,8 @@ where
         self.operator.summary(output);
     }
 
-    fn fixedpoint(&self) -> bool {
-        self.operator.fixedpoint()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
     }
 }
 
@@ -2313,8 +2330,8 @@ where
         }
     }
 
-    fn fixedpoint(&self) -> bool {
-        unsafe { (&*self.operator.get()).fixedpoint() }
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        unsafe { (&*self.operator.get()).fixedpoint(scope) }
     }
 }
 
@@ -2390,8 +2407,8 @@ where
         }
     }
 
-    fn fixedpoint(&self) -> bool {
-        unsafe { (&*self.operator.get()).fixedpoint() }
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        unsafe { (&*self.operator.get()).fixedpoint(scope) }
     }
 }
 
@@ -2522,8 +2539,8 @@ where
         output.clear();
     }
 
-    fn fixedpoint(&self) -> bool {
-        unimplemented!()
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.circuit.inner().fixedpoint(scope + 1)
     }
 }
 

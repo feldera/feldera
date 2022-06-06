@@ -2,7 +2,7 @@
 
 use crate::circuit::{
     operator_traits::{Operator, UnaryOperator},
-    Circuit, Stream,
+    Circuit, Scope, Stream,
 };
 
 use std::borrow::Cow;
@@ -45,7 +45,7 @@ where
         Cow::from("Apply")
     }
 
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         // TODO: either change `F` type to `Fn` from `FnMut` or
         // parameterize the operator with custom fixed point check.
         unimplemented!();

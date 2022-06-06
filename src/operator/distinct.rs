@@ -134,7 +134,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Distinct")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
@@ -182,7 +182,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("DistinctIncremental")
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
@@ -417,7 +417,9 @@ where
             self.empty_output = false;
         }
     }
-    fn fixedpoint(&self) -> bool {
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        // TODO: generalize `DistinctTrace` to support arbitrarily nested scopes.
+        assert_eq!(scope, 0);
         self.empty_input
             && self.empty_output
             && self
