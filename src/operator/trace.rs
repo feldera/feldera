@@ -199,7 +199,7 @@ where
     fn eval(&mut self, _trace: &T, _batch: &B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
-        unimplemented!()
+        panic!("UntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
@@ -210,7 +210,7 @@ where
     fn eval_ref_and_owned(&mut self, _trace: &T, _batch: B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
-        unimplemented!()
+        panic!("UntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference")
     }
 
     fn eval_owned(&mut self, mut trace: T, batch: B) -> T {

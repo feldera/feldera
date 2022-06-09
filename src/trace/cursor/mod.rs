@@ -1,9 +1,15 @@
-//! Traits and types for navigating order sequences of update tuples.
+//! Traits and types for navigating order sequences of
+//! `(key, val, time, diff)` tuples.
 //!
 //! The `Cursor` trait contains several methods for efficiently navigating
-//! ordered collections of tuples of the form `(key, val, time, diff)`. The
-//! cursor is different from an iterator both because it allows navigation on
-//! multiple levels (key and val), but also because it supports efficient
+//! ordered collections of tuples of the form `(key, val, time, diff)`.  The
+//! tuples are ordered by key, then by value within each key.  Ordering by time
+//! is not guaranteed, in particular [`CursorList`](`cursor_list::CursorList`)
+//! and [`CursorPair`](`cursor_pair::CursorPair`) cursors can contain
+//! out-of-order and duplicate timestamps.
+//!
+//! The cursor is different from an iterator both because it allows navigation
+//! on multiple levels (key and val), but also because it supports efficient
 //! seeking (via the `seek_key` and `seek_val` methods).
 
 pub mod cursor_list;
@@ -11,7 +17,7 @@ pub mod cursor_pair;
 
 pub use self::cursor_list::CursorList;
 
-/// A cursor for navigating ordered `(key, val, time, diff)` updates.
+/// A cursor for navigating ordered `(key, val, time, diff)` tuples.
 pub trait Cursor<K, V, T, R> {
     /// Type the cursor addresses data in.
     type Storage;
@@ -26,9 +32,9 @@ pub trait Cursor<K, V, T, R> {
     /// for this key.
     fn val_valid(&self, storage: &Self::Storage) -> bool;
 
-    /// A reference to the current key. Asserts if invalid.
+    /// A reference to the current key. Panics if invalid.
     fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K;
-    /// A reference to the current value. Asserts if invalid.
+    /// A reference to the current value. Panics if invalid.
     fn val<'a>(&self, storage: &'a Self::Storage) -> &'a V;
 
     /// Returns a reference to the current key, if valid.

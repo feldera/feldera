@@ -220,7 +220,9 @@ where
             self.circuit()
                 .add_binary_operator(JoinTrace::new(join_func), self, &other_trace);
 
-        fn flip_args<F, K, V1, V2, V>(f: F) -> F
+        // This function does not do anything, it's only needed to tell the compiler
+        // about the type of `f`.
+        fn assert_type<F, K, V1, V2, V>(f: F) -> F
         where
             F: Fn(&K, &V1, &V2) -> V,
         {
@@ -244,7 +246,7 @@ where
         // │                 │ │    │xxxxxxxxxxxxxxxxx│ │
         // └─────────────────┴─┘    └─────────────────┴─┘
         let right = self.circuit().add_binary_operator(
-            JoinTrace::new(flip_args(move |k, v2, v1| join_func_clone(k, v1, v2))),
+            JoinTrace::new(assert_type(move |k, v2, v1| join_func_clone(k, v1, v2))),
             other,
             &self_trace.delay_trace(),
         );
@@ -819,6 +821,8 @@ mod test {
     }
     */
 
+    // Compute pairwise reachability relation between graph nodes as the
+    // transitive closure of the edge relation.
     #[test]
     fn join_trace_test() {
         let root = Root::build(move |circuit| {
@@ -858,7 +862,7 @@ mod test {
 
             let paths = circuit.fixedpoint(|child| {
                 // ```text
-                //                      distinct_incremental_nested
+                //                          distinct_trace
                 //               ┌───┐          ┌───┐
                 // edges         │   │          │   │  paths
                 // ────┬────────►│ + ├──────────┤   ├────────┬───►
@@ -871,7 +875,7 @@ mod test {
                 //     └────────►│ X │ ◄─────────────────────┘
                 //               │   │
                 //               └───┘
-                //      join_incremental_nested
+                //             join_trace
                 // ```
                 let edges = edges.delta0(child);
                 let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
