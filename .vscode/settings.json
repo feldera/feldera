@@ -7,5 +7,6 @@
     "powerHeader.template": "file://$WORKSPACE_FOLDER/LICENSE_TEMPLATE",
     "testExplorer.addToEditorContextMenu": true,
     "testExplorer.showOnRun": true,
-    "testExplorer.useNativeTesting": true
+    "testExplorer.useNativeTesting": true,
+    "rust-analyzer.cargo.features": "all",
 }

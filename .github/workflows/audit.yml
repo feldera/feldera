@@ -1,0 +1,29 @@
+name: Dependency Audit
+
+on:
+  # Automatically run the dependency audit every monday
+  schedule:
+    - cron: "0 0 * * 1"
+
+  # Re-run the dependency audit whenever our Cargo.toml or
+  # Cargo.lock changes
+  push:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+
+  # Run a dependency audit on all PRs
+  pull_request:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Run audit
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

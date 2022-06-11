@@ -197,7 +197,12 @@ impl Inner {
     where
         P: Clone + 'static,
     {
-        for id in self.notifications.nodes.lock().unwrap().drain() {
+        let mut nodes = self.notifications.nodes.lock().unwrap();
+
+        // False positive via rust-clippy/#8963
+        #[allow(unknown_lints)]
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        for id in nodes.drain() {
             let task = &mut self.tasks[id.id()];
             debug_assert!(task.is_async);
 

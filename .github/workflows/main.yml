@@ -1,0 +1,247 @@
+name: Rust
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  tests:
+    name: Tests
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # We test the following targets:
+        # - 64bit Linux stable
+        # - 64bit Linux beta
+        # - 64bit Linux nightly
+        # - 64bit MacOS stable
+        # - 64bit Windows stable
+        # - 32bit Windows stable
+        include:
+          - {
+              rust: stable,
+              target: x86_64-unknown-linux-gnu,
+              os: ubuntu-latest,
+            }
+          - { rust: stable, target: x86_64-apple-darwin, os: macos-latest }
+          - { rust: stable, target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
+          - { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - {
+              rust: nightly,
+              target: x86_64-unknown-linux-gnu,
+              os: ubuntu-latest,
+            }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          profile: minimal
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      # We split building the tests into a separate step
+      # so that we can easily distinguish between build
+      # errors and failing tests
+      - name: Build tests with all features
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-run --all-features  --target ${{ matrix.target }}
+
+      - name: Build tests with no features
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-run --no-default-features  --target ${{ matrix.target }}
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features --target ${{ matrix.target }}
+
+  miri:
+    name: Miri
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          components: miri, rust-src
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Run miri
+        uses: actions-rs/cargo@v1
+        env:
+          OS: ${{ matrix.os }}
+          MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation"
+        with:
+          command: miri
+          args: test --all-features
+
+  test-sanitizers:
+    name: Sanitizer Tests
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+
+      # Note: We use this really sketchy matrix because msan doesn't work on macos,
+      # I would much rather use `matrix.exclude` for this but for some reason
+      # github actions in its ever-inspired wisdom decided that `include`
+      # should calculate its combinations *after* `exclude`` is applied
+      # and since no one could *ever* want to exclude things added by an
+      # `include` and in their infinite brilliance they saw fit not to have
+      # any way of excluding things added by an include. In an ideal world I'd
+      # just write this since it's what makes sense
+      # ```
+      # matrix:
+      #   sanitizer: [address, thread, memory, leak]
+      #   include:
+      #     - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+      #     - { target: x86_64-apple-darwin, os: macos-latest }
+      #   exclude:
+      #     - target: x86_64-apple-darwin
+      #       sanitizer: memory
+      # ```
+      # but no, instead we have to do whatever the hell this is
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        sanitizer: [address, thread, memory, leak]
+        target: [x86_64-unknown-linux-gnu, x86_64-apple-darwin]
+        exclude:
+          # Exclude ubuntu runs with darwin targets
+          - { os: ubuntu-latest, target: x86_64-apple-darwin }
+          # Exclude macos runs with linux targets
+          - { os: macos-latest, target: x86_64-unknown-linux-gnu }
+          # Exclude darwin runs with memory sanitizers since
+          # it doesn't support msan
+          - { target: x86_64-apple-darwin, sanitizer: memory }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          target: ${{ matrix.target }}
+          components: rust-src
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Run tests under ${{ matrix.sanitizer }} sanitizer
+        uses: actions-rs/cargo@v1
+        env:
+          RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+          RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+          ASAN_OPTIONS: detect_stack_use_after_return=1,detect_leaks=1
+          # Backtraces sometimes mess with sanitizers
+          RUST_BACKTRACE: 0
+        with:
+          command: test
+          args: --all-features --target ${{ matrix.target }} -Z build-std
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: clippy
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Run clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features --all -- -D warnings
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+          default: true
+
+      - name: Run rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  links:
+    name: Check Doc Links
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Check links
+        uses: actions-rs/cargo@v1
+        with:
+          command: rustdoc
+          args: --all-features -- -D warnings

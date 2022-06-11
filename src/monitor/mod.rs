@@ -150,14 +150,14 @@ impl TraceMonitor {
     }
 
     pub fn visualize_circuit(&self) -> VisGraph {
-        self.visualize_circuit_annotate(&|_| "".to_string())
+        self.visualize_circuit_annotate(|_| "".to_string())
     }
 
-    pub fn visualize_circuit_annotate<F>(&self, f: &F) -> VisGraph
+    pub fn visualize_circuit_annotate<F>(&self, annotate: F) -> VisGraph
     where
         F: Fn(&GlobalNodeId) -> String,
     {
-        self.0.lock().unwrap().circuit.visualize(f)
+        self.0.lock().unwrap().circuit.visualize(&annotate)
     }
 }
 
@@ -530,12 +530,10 @@ impl TraceMonitorInternal {
                     self.set_current_state(CircuitState::Step(visited_nodes));
                     Ok(())
                 }
-                state => {
-                    return Err(TraceError::InvalidEvent(Cow::from(format!(
-                        "received 'EvalEnd' event in state {}",
-                        state.name()
-                    ))));
-                }
+                state => Err(TraceError::InvalidEvent(Cow::from(format!(
+                    "received 'EvalEnd' event in state {}",
+                    state.name()
+                )))),
             },
         }
     }

@@ -219,8 +219,9 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         };
 
         if !batch.is_empty() {
-            crate::trace::consolidation::consolidate_updates(&mut batch);
+            crate::trace::consolidation::consolidate(&mut batch);
             self.queue.push(vec![batch]);
+
             while self.queue.len() > 1
                 && (self.queue[self.queue.len() - 1].len()
                     >= self.queue[self.queue.len() - 2].len() / 2)

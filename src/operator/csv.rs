@@ -95,13 +95,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{algebra::OrdZSet, circuit::Root, finite_map, operator::CsvSource};
+    use crate::{circuit::Root, operator::CsvSource, trace::ord::OrdZSet, zset};
     use csv::ReaderBuilder;
 
     #[test]
     fn test_csv_reader() {
         let root = Root::build(move |circuit| {
-            let expected = finite_map! {
+            let expected = zset! {
                 (18, 3, 237641) => 1,
                 (237641, 4, 18) => 1,
                 (18, 5, 21) => 1,

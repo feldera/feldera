@@ -593,7 +593,7 @@ mod test {
 
                     let input = child.add_source(GeneratorNested::new(Box::new(move || {
                         *counter_clone.borrow_mut() = 0;
-                        let mut deltas = inputs.next().unwrap_or_else(Vec::new).into_iter();
+                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
                         Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
                     })));
 
@@ -656,7 +656,7 @@ mod test {
 
                     let input = child.add_source(GeneratorNested::new(Box::new(move || {
                         *counter_clone.borrow_mut() = 0;
-                        let mut deltas = inputs.next().unwrap_or_else(Vec::new).into_iter();
+                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
                         Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
                     })));
 

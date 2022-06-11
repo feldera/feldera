@@ -1,20 +1,24 @@
 //! Galen benchmark from
 //! `https://github.com/frankmcsherry/dynamic-datalog/tree/master/problems/galen`
 
-use csv::{Reader as CsvReader, ReaderBuilder};
+use anyhow::{Context, Result};
+use csv::ReaderBuilder;
 use dbsp::{
-    algebra::HasZero,
-    circuit::{trace::SchedulerEvent, GlobalNodeId, Root, Runtime, Stream},
+    circuit::{Root, Runtime, Stream},
     monitor::TraceMonitor,
     operator::{CsvSource, DelayedFeedback},
-    profile::CPUProfiler,
     time::NestedTimestamp32,
     trace::{
         ord::{OrdIndexedZSet, OrdZSet},
         BatchReader,
     },
 };
-use std::{collections::HashMap, fmt::Write, fs, fs::File, path::PathBuf};
+use std::{
+    fs::{self, File},
+    io::BufReader,
+    path::Path,
+};
+use zip::ZipArchive;
 
 /*
 .decl p(X: Number, Z: Number)
@@ -42,21 +46,35 @@ q(?x,?e,?o) :- q(?x,?y,?z),r(?y,?u,?e),q(?z,?u,?o).
 type Number = u32;
 type Weight = isize;
 
-fn csv_source<T>(file: &str) -> CsvSource<File, T, Weight, OrdZSet<T, Weight>>
+const GALEN_DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data");
+const GALEN_ARCHIVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data.zip");
+const GALEN_GRAPH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data/galen.dot");
+
+fn csv_source<T>(file: &str) -> CsvSource<BufReader<File>, T, Weight, OrdZSet<T, Weight>>
 where
     T: Clone + Ord,
 {
-    let path: PathBuf = ["benches", "galen_data", file].iter().collect();
+    let path = Path::new(GALEN_DATA).join(file);
+    let file = BufReader::new(File::open(&path).unwrap_or_else(|error| {
+        panic!(
+            "failed to open benchmark file '{}': {}",
+            path.display(),
+            error,
+        )
+    }));
 
-    let reader: CsvReader<File> = ReaderBuilder::new()
+    let reader = ReaderBuilder::new()
         .delimiter(b',')
         .has_headers(false)
-        .from_path(path)
-        .unwrap();
+        .from_reader(file);
     CsvSource::from_csv_reader(reader)
 }
 
-fn main() {
+// Disable the benchmark while under miri
+#[cfg(not(all(windows, miri)))]
+fn main() -> Result<()> {
+    unpack_galen_data()?;
+
     let hruntime = Runtime::run(1, |_runtime, _index| {
         let monitor = TraceMonitor::new_panic_on_error();
 
@@ -259,10 +277,55 @@ fn main() {
         .unwrap();
 
         let graph = monitor.visualize_circuit();
-        fs::write("galen.dot", graph.to_dot()).unwrap();
+        fs::write(GALEN_GRAPH, graph.to_dot()).unwrap();
 
         root.step().unwrap();
     });
 
-    hruntime.join().unwrap();
+    hruntime.join().map_err(|error| {
+        if let Some(message) = error.downcast_ref::<&'static str>() {
+            anyhow::anyhow!("failed to join runtime with main thread: {message}")
+        } else if let Some(message) = error.downcast_ref::<String>() {
+            anyhow::anyhow!("failed to join runtime with main thread: {message}")
+        } else {
+            anyhow::anyhow!("failed to join runtime with main thread")
+        }
+    })
+}
+
+#[cfg(all(windows, miri))]
+fn main() {}
+
+/// Unzips data for the galen benchmark if it doesn't already exist
+fn unpack_galen_data() -> Result<()> {
+    let galen_data = Path::new(GALEN_DATA);
+    if !galen_data.exists() {
+        fs::create_dir(&galen_data).with_context(|| {
+            format!(
+                "failed to create directory '{}' for galen data",
+                galen_data.display(),
+            )
+        })?;
+
+        let archive_file = Path::new(GALEN_ARCHIVE);
+        let mut archive = ZipArchive::new(BufReader::new(File::open(&archive_file).with_context(
+            || {
+                format!(
+                    "failed to open galen archive file '{}'",
+                    archive_file.display(),
+                )
+            },
+        )?))
+        .with_context(|| format!("failed to read galen archive '{}'", archive_file.display()))?;
+
+        archive.extract(&galen_data).with_context(|| {
+            format!(
+                "failed to unzip '{}' into '{}'",
+                archive_file.display(),
+                galen_data.display(),
+            )
+        })?;
+    }
+
+    Ok(())
 }

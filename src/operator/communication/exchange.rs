@@ -344,6 +344,11 @@ where
 /// The following example instantiates the circuit in the diagram above.
 ///
 /// ```
+/// # #[cfg(miri)]
+/// # fn main() {}
+///
+/// # #[cfg(not(miri))]
+/// # fn main() {
 /// use dbsp::{
 ///     circuit::{Root, Runtime},
 ///     operator::{communication::new_exchange_operators, Generator, Inspect},
@@ -398,6 +403,7 @@ where
 /// });
 ///
 /// hruntime.join().unwrap();
+/// # }
 /// ```
 pub struct ExchangeSender<T, L> {
     worker_index: usize,
@@ -603,7 +609,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::Exchange;
     use crate::{
         circuit::{
@@ -614,17 +619,23 @@ mod tests {
     };
     use std::{iter::repeat, thread::yield_now};
 
+    // We decrease the number of rounds we do when we're running under miri,
+    // otherwise it'll run forever
+    const ROUNDS: usize = if cfg!(miri) { 128 } else { 2048 };
+
     // Create an exchange object with `WORKERS` concurrent senders/receivers.
     // Iterate for `ROUNDS` rounds with each sender sending value `N` to each
     // receiver in round number `N`.  Both senders and receivers may retry
     // sending/receiving multiple times, but in the end each receiver should get
     // all values in correct order.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_exchange() {
         const WORKERS: usize = 16;
-        const ROUNDS: usize = 2048;
+
         let hruntime = Runtime::run(WORKERS, |runtime, index| {
             let exchange = Exchange::with_runtime(runtime, 0);
+
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
                 let mut output_iter = output_data.clone().into_iter();
@@ -632,13 +643,16 @@ mod tests {
                     if exchange.try_send_all(index, &mut output_iter) {
                         break;
                     }
+
                     yield_now();
                 }
+
                 let mut input_data = Vec::with_capacity(WORKERS);
                 loop {
                     if exchange.try_receive_all(index, |x| input_data.push(x)) {
                         break;
                     }
+
                     yield_now();
                 }
 
@@ -650,11 +664,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_exchange_operators_static() {
         test_exchange_operators::<StaticScheduler>();
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_exchange_operators_dynamic() {
         test_exchange_operators::<DynamicScheduler>();
     }
@@ -669,8 +685,6 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        const ROUNDS: usize = 2048;
-
         fn do_test<S>(workers: usize)
         where
             S: Scheduler + 'static,
@@ -683,12 +697,14 @@ mod tests {
                         n += 1;
                         result
                     }));
+
                     let (sender, receiver) = new_exchange_operators(
                         runtime,
                         index,
                         move |n| repeat(n).take(workers),
                         |v: &mut Vec<usize>, n| v.push(n),
                     );
+
                     let combined = circuit.add_exchange(sender, receiver, &source);
                     let mut round = 0;
                     circuit.add_sink(

@@ -74,10 +74,7 @@ impl Region {
     }
 
     /// Output region as a cluster in a visual graph.
-    fn visualize<F>(&self, scope: &Node, annotate: &F) -> ClusterNode
-    where
-        F: Fn(&GlobalNodeId) -> String,
-    {
+    fn visualize(&self, scope: &Node, annotate: &dyn Fn(&GlobalNodeId) -> String) -> ClusterNode {
         let mut nodes = Vec::new();
         for nodeid in self.nodes.iter() {
             if let Some(vnode) = scope
@@ -90,9 +87,11 @@ impl Region {
                 nodes.push(vnode)
             }
         }
+
         for child in self.children.iter() {
             nodes.push(VisNode::Cluster(child.visualize(scope, annotate)));
         }
+
         ClusterNode::new(
             Self::region_identifier(&scope.id, &self.id),
             self.name.to_string(),
@@ -271,10 +270,7 @@ impl Node {
     }
 
     /// Output circuit node as a node in a visual graph.
-    fn visualize<F>(&self, annotate: &F) -> Option<VisNode>
-    where
-        F: Fn(&GlobalNodeId) -> String,
-    {
+    fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> Option<VisNode> {
         match &self.kind {
             NodeKind::Operator => {
                 let annotation = annotate(&self.id);
@@ -356,10 +352,7 @@ impl CircuitGraph {
     }
 
     /// Output circuit graph as visual graph.
-    pub(super) fn visualize<F>(&self, annotate: &F) -> VisGraph
-    where
-        F: Fn(&GlobalNodeId) -> String,
-    {
+    pub(super) fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> VisGraph {
         let cluster = self
             .nodes
             .region()
