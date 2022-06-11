@@ -336,7 +336,7 @@ mod test {
                     let input: Stream<_, OrdIndexedZSet<usize, usize, isize>> = child
                         .add_source(GeneratorNested::new(Box::new(move || {
                             *counter_clone.borrow_mut() = 0;
-                            let mut deltas = inputs.next().unwrap_or_else(Vec::new).into_iter();
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
                             Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
                         })))
                         .index();
@@ -401,16 +401,14 @@ mod test {
                     });*/
 
                     // Min aggregate (non-linear).
-                    let min = |key: &usize, vals: &mut Vec<(&usize, isize)>| -> (usize, usize) {
-                        let mut result = usize::MAX;
+                    let min = |&key: &usize, vals: &mut Vec<(&usize, isize)>| -> (usize, usize) {
+                        let result = vals
+                            .drain(..)
+                            .map(|(&value, _)| value)
+                            .min()
+                            .unwrap_or(usize::MAX);
 
-                        for (v, _) in vals.drain(..) {
-                            if *v < result {
-                                result = v.clone();
-                            }
-                        }
-
-                        (*key, result)
+                        (key, result)
                     };
 
                     let min_inc = input.aggregate_incremental_nested(min);

@@ -69,6 +69,11 @@ impl Runtime {
     ///
     /// # Examples
     /// ```
+    /// # #[cfg(all(windows, miri))]
+    /// # fn main() {}
+    ///
+    /// # #[cfg(not(all(windows, miri)))]
+    /// # fn main() {
     /// use dbsp::circuit::{Root, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
@@ -88,6 +93,7 @@ impl Runtime {
     ///
     /// // Wait for all worker threads to terminate.
     /// hruntime.join().unwrap();
+    /// # }
     /// ```
     pub fn run<F>(nworkers: usize, f: F) -> RuntimeHandle
     where
@@ -253,7 +259,6 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 
 #[cfg(test)]
 mod tests {
-
     use super::Runtime;
     use crate::{
         circuit::{
@@ -265,11 +270,13 @@ mod tests {
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
     #[test]
+    #[cfg_attr(all(windows, miri), ignore)]
     fn test_runtime_static() {
         test_runtime::<StaticScheduler>();
     }
 
     #[test]
+    #[cfg_attr(all(windows, miri), ignore)]
     fn test_runtime_dynamic() {
         test_runtime::<DynamicScheduler>();
     }
@@ -305,11 +312,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(all(windows, miri), ignore)]
     fn test_kill_static() {
         test_kill::<StaticScheduler>();
     }
 
     #[test]
+    #[cfg_attr(all(windows, miri), ignore)]
     fn test_kill_dynamic() {
         test_kill::<DynamicScheduler>();
     }

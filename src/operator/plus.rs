@@ -219,6 +219,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn zset_plus() {
         let build_plus_circuit = |circuit: &Circuit<()>| {
             let mut s = <OrdZSet<_, _>>::zero();
