@@ -1,7 +1,14 @@
+//! Types that represent logical time in DBSP.
+
+mod nested_ts32;
+mod product;
+
 use crate::{circuit::Scope, lattice::Lattice};
-use deepsize_derive::DeepSizeOf;
-use std::hash::Hash;
-use timely::{progress::PathSummary, PartialOrder};
+use std::{fmt::Debug, hash::Hash};
+use timely::PartialOrder;
+
+pub use nested_ts32::NestedTimestamp32;
+pub use product::Product;
 
 /// Logical timestamp.
 ///
@@ -59,8 +66,20 @@ use timely::{progress::PathSummary, PartialOrder};
 // TODO: Eliminate timely dependency.
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
-pub trait Timestamp: PartialOrder + Clone + Ord + PartialEq + Eq + Hash + 'static {
+pub trait Timestamp:
+    PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + 'static
+{
     fn minimum() -> Self;
+
+    /// The value of the timestamp when the clock starts ticking.
+    ///
+    /// This is typically but not always equal to `Self::minimum`.  For example,
+    /// we use 1-bit timestamp that starts at value 1 (current clock epoch),
+    /// value 0 (previous epochs) can only be obtained by calling
+    /// [`recede`](`Timestamp::recede`).
+    fn clock_start() -> Self {
+        Self::minimum()
+    }
 
     /// Advance the timestamp by one clock tick.
     ///
@@ -106,143 +125,11 @@ pub trait Timestamp: PartialOrder + Clone + Ord + PartialEq + Eq + Hash + 'stati
     /// ```
     fn recede(&self, scope: Scope) -> Self;
 
-    /// Advance `self` to the end of the current clock epoch in `scope`.
+    /// Returns the first time stamp of the current clock epoch in `scope`.
     fn epoch_start(&self, scope: Scope) -> Self;
 
-    /// Returns the first time stamp of the current clock epoch in `scope`.
+    /// Advance `self` to the end of the current clock epoch in `scope`.
     fn epoch_end(&self, scope: Scope) -> Self;
-}
-
-fn bool_followed_by(this: bool, other: bool) -> Option<bool> {
-    if this && other {
-        None
-    } else {
-        Some(this || other)
-    }
-}
-
-/// Nested timestamp that allocates one bit for the parent clock and the
-/// remaining 31 bits for the child clock.
-///
-/// This representation precisely captures the nested clock value, but only
-/// distinguishes the latest parent clock cycle, or "epoch", (higher-order bit
-/// set to `1`) from all previous epochs (higher order bit is `0`).
-#[derive(Clone, DeepSizeOf, Default, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
-pub struct NestedTimestamp32(u32);
-
-impl NestedTimestamp32 {
-    #[inline]
-    pub fn new(epoch: bool, inner: u32) -> Self {
-        debug_assert_eq!(inner >> 31, 0);
-
-        let epoch = if epoch { 0x80000000 } else { 0 };
-        Self(epoch | inner)
-    }
-
-    #[inline]
-    pub fn epoch(&self) -> bool {
-        self.0 >> 31 == 1
-    }
-
-    #[inline]
-    pub fn inner(&self) -> u32 {
-        self.0 & 0x7fffffff
-    }
-}
-
-impl PartialOrder for NestedTimestamp32 {
-    #[inline]
-    fn less_equal(&self, other: &Self) -> bool {
-        self.epoch().le(&other.epoch()) && self.inner().less_equal(&other.inner())
-    }
-}
-
-// TODO: We probably don't need this trait in DBSP.  Drop is as we eliminate
-// the timely dataflow dependency.
-impl PathSummary<NestedTimestamp32> for NestedTimestamp32 {
-    #[inline]
-    fn results_in(&self, src: &Self) -> Option<Self> {
-        bool_followed_by(self.epoch(), src.epoch()).and_then(|epoch| {
-            self.inner()
-                .results_in(&src.inner())
-                .map(|inner| Self::new(epoch, inner))
-        })
-    }
-    #[inline]
-    fn followed_by(&self, other: &Self) -> Option<Self> {
-        bool_followed_by(self.epoch(), other.epoch()).and_then(|epoch| {
-            self.inner()
-                .followed_by(&other.inner())
-                .map(|inner| Self::new(epoch, inner))
-        })
-    }
-}
-
-impl Timestamp for NestedTimestamp32 {
-    fn minimum() -> Self {
-        Self::new(false, 0)
-    }
-
-    fn advance(&self, scope: Scope) -> Self {
-        if scope == 0 {
-            if self.0 & 0x7fffffff == 0x7fffffff {
-                panic!("NestedTimestamp32::advance timestamp overflow");
-            }
-            Self(self.0 + 1)
-        } else {
-            Self::new(true, 0)
-        }
-    }
-
-    fn recede(&self, scope: Scope) -> Self {
-        if scope == 0 {
-            if self.0 & 0x7fffffff == 0 {
-                panic!("NestedTimestamp32::recede timestamp underflow");
-            }
-            Self(self.0 - 1)
-        } else if scope == 1 {
-            Self(self.0 & 0x7fffffff)
-        } else {
-            self.clone()
-        }
-    }
-
-    fn epoch_start(&self, scope: Scope) -> Self {
-        if scope == 0 {
-            Self::new(self.epoch(), 0x0)
-        } else if scope == 1 {
-            Self::new(false, 0x0)
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn epoch_end(&self, scope: Scope) -> Self {
-        if scope == 0 {
-            Self::new(self.epoch(), 0x7fffffff)
-        } else if scope == 1 {
-            Self::new(true, 0x7fffffff)
-        } else {
-            unreachable!()
-        }
-    }
-}
-
-impl Lattice for NestedTimestamp32 {
-    #[inline]
-    fn join(&self, other: &NestedTimestamp32) -> NestedTimestamp32 {
-        Self::new(
-            self.epoch() || other.epoch(),
-            self.inner().join(&other.inner()),
-        )
-    }
-    #[inline]
-    fn meet(&self, other: &NestedTimestamp32) -> NestedTimestamp32 {
-        Self::new(
-            self.epoch() && other.epoch(),
-            self.inner().meet(&other.inner()),
-        )
-    }
 }
 
 impl Timestamp for () {
@@ -251,4 +138,22 @@ impl Timestamp for () {
     fn recede(&self, _scope: Scope) -> Self {}
     fn epoch_start(&self, _scope: Scope) -> Self {}
     fn epoch_end(&self, _scope: Scope) -> Self {}
+}
+
+impl Timestamp for u32 {
+    fn minimum() -> Self {
+        0
+    }
+    fn advance(&self, _scope: Scope) -> Self {
+        self + 1
+    }
+    fn recede(&self, _scope: Scope) -> Self {
+        self - 1
+    }
+    fn epoch_start(&self, _scope: Scope) -> Self {
+        0
+    }
+    fn epoch_end(&self, _scope: Scope) -> Self {
+        Self::MAX
+    }
 }

@@ -15,7 +15,7 @@ pub trait Lattice: PartialOrder {
     ///
     /// ```
     /// # use timely::PartialOrder;
-    /// # use timely::order::Product;
+    /// # use dbsp::time::Product;
     /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
@@ -35,7 +35,7 @@ pub trait Lattice: PartialOrder {
     ///
     /// ```
     /// # use timely::PartialOrder;
-    /// # use timely::order::Product;
+    /// # use dbsp::time::Product;
     /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
@@ -59,7 +59,7 @@ pub trait Lattice: PartialOrder {
     ///
     /// ```
     /// # use timely::PartialOrder;
-    /// # use timely::order::Product;
+    /// # use dbsp::time::Product;
     /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
@@ -79,7 +79,7 @@ pub trait Lattice: PartialOrder {
     ///
     /// ```
     /// # use timely::PartialOrder;
-    /// # use timely::order::Product;
+    /// # use dbsp::time::Product;
     /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
@@ -113,7 +113,7 @@ pub trait Lattice: PartialOrder {
     ///
     /// ```
     /// # use timely::PartialOrder;
-    /// # use timely::order::Product;
+    /// # use dbsp::time::Product;
     /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
@@ -150,26 +150,6 @@ pub trait Lattice: PartialOrder {
                 result.meet_assign(&self.join(f));
             }
             *self = result;
-        }
-    }
-}
-
-use timely::order::Product;
-
-impl<T1: Lattice, T2: Lattice> Lattice for Product<T1, T2> {
-    #[inline]
-    fn join(&self, other: &Product<T1, T2>) -> Product<T1, T2> {
-        Product {
-            outer: self.outer.join(&other.outer),
-            inner: self.inner.join(&other.inner),
-        }
-    }
-
-    #[inline]
-    fn meet(&self, other: &Product<T1, T2>) -> Product<T1, T2> {
-        Product {
-            outer: self.outer.meet(&other.outer),
-            inner: self.inner.meet(&other.inner),
         }
     }
 }
