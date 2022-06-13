@@ -10,7 +10,6 @@ with-csv = ["csv"]
 
 [dependencies]
 num = "0.4.0"
-string-builder = "0.2.0 "
 petgraph = "0.6.0"
 typedmap = { version = "0.2.0", features = ["dashmap"] }
 crossbeam-utils = "0.8.6"

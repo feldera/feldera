@@ -234,6 +234,7 @@ jobs:
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
+          profile: minimal
           toolchain: stable
           default: true
 
@@ -245,3 +246,33 @@ jobs:
         with:
           command: rustdoc
           args: --all-features -- -D warnings
+
+  udeps:
+    name: Unused Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          default: true
+
+      - name: Restore cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Install cargo-udeps
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-udeps --locked
+
+      - name: Check for unused dependencies
+        uses: actions-rs/cargo@v1
+        with:
+          command: udeps
+          args: --all --all-features --all-targets
