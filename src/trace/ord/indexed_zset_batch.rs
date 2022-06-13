@@ -1,7 +1,7 @@
 use std::{
     cmp::max,
     convert::{TryFrom, TryInto},
-    fmt::Debug,
+    fmt::{Debug, Display, Formatter},
     marker::PhantomData,
     ops::{Add, AddAssign, Neg},
     rc::Rc,
@@ -41,6 +41,26 @@ where
     pub layer: OrderedLayer<K, OrderedLeaf<V, R>, O>,
     pub lower: Antichain<()>,
     pub upper: Antichain<()>,
+}
+
+impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
+where
+    K: Ord + Clone + Display,
+    V: Ord + Clone + Display,
+    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        writeln!(
+            f,
+            "lower: {:?}, upper: {:?}\nlayer:\n{}",
+            self.lower,
+            self.upper,
+            textwrap::indent(&self.layer.to_string(), "    ")
+        )
+    }
 }
 
 impl<K, V, R, O> HasZero for OrdIndexedZSet<K, V, R, O>

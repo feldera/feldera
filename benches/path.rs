@@ -3,6 +3,7 @@ use dbsp::{
     monitor::TraceMonitor,
     operator::{DelayedFeedback, Generator},
     profile::CPUProfiler,
+    time::NestedTimestamp32,
     trace::{
         ord::{OrdIndexedZSet, OrdZSet},
         Batch,
@@ -103,8 +104,10 @@ fn main() {
 
                 let paths = edges
                     .plus(
-                        &paths_inverted_indexed
-                            .join_trace(&edges_indexed, |_via, from, to| (*from, *to)),
+                        &paths_inverted_indexed.join_trace::<NestedTimestamp32, _, _, _>(
+                            &edges_indexed,
+                            |_via, from, to| (*from, *to),
+                        ),
                     )
                     .distinct_trace();
                 paths_delayed.connect(&paths);

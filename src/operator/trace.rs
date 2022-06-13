@@ -237,7 +237,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            time: T::Time::minimum(),
+            time: T::Time::clock_start(),
             _phantom: PhantomData,
         }
     }
@@ -260,7 +260,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("TraceAppend")
     }
-    fn clock_start(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.time = self.time.advance(scope + 1);
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -325,7 +325,7 @@ where
 {
     pub fn new(reset_on_clock_start: bool, root_scope: Scope) -> Self {
         Self {
-            time: T::Time::minimum(),
+            time: T::Time::clock_start(),
             trace: None,
             dirty: vec![false; root_scope as usize + 1],
             root_scope,
@@ -346,7 +346,6 @@ where
     fn clock_start(&mut self, scope: Scope) {
         self.dirty[scope as usize] = false;
 
-        self.time.advance(scope + 1);
         if scope == 0 && self.trace.is_none() {
             // TODO: use T::with_effort with configurable effort?
             self.trace = Some(T::new(None));
@@ -355,9 +354,10 @@ where
     fn clock_end(&mut self, scope: Scope) {
         if scope + 1 == self.root_scope && !self.reset_on_clock_start {
             if let Some(tr) = self.trace.as_mut() {
-                tr.recede_to(&self.time.recede(self.root_scope));
+                tr.recede_to(&self.time.epoch_end(self.root_scope).recede(self.root_scope));
             }
         }
+        self.time.advance(scope + 1);
     }
 
     fn summary(&self, summary: &mut String) {

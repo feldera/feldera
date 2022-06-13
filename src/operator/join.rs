@@ -7,7 +7,7 @@ use crate::{
         Circuit, Scope, Stream,
     },
     lattice::Lattice,
-    time::{NestedTimestamp32, Timestamp},
+    time::Timestamp,
     trace::{
         cursor::Cursor as TraceCursor, ord::OrdValSpine, BatchReader, Batcher, Trace, TraceReader,
     },
@@ -48,6 +48,7 @@ impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
 {
+    // TODO: replace with `join_trace`.
     /// Incremental join of two streams.
     ///
     /// Given streams `a` and `b` of changes to relations `A` and `B`
@@ -78,55 +79,6 @@ where
             .join(other, join_func.clone())
             .plus(&self.join(&other.integrate_trace(), join_func))
     }
-
-    /*
-    /// Incremental join of two nested streams.
-    ///
-    /// Given nested streams `a` and `b` of changes to relations `A` and `B`,
-    /// computes `(↑((↑(a <> b))∆))∆` using the following formula:
-    ///
-    /// ```text
-    /// (↑((↑(a <> b))∆))∆ =
-    ///     ↑I(z^-1(I(a))) <> b      +
-    ///     ↑I(a) <> I(b)            +
-    ///     a <> I(↑I(↑z^-1(b)))     +
-    ///     I(z^-1(a)) <> ↑I(↑z^-1(b)).
-    /// ```
-    pub fn join_incremental_nested<F, I2, Z>(
-        &self,
-        other: &Stream<Circuit<P>, I2>,
-        join_func: F,
-    ) -> Stream<Circuit<P>, Z>
-    where
-        I1: IndexedZSet + DeepSizeOf,
-        I1::Key: Ord,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf,
-        F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
-        Z: ZSet<R = I1::R>,
-        Z::R: MulByRef,
-    {
-        let join1: Stream<_, Z> = self
-            .integrate_nested()
-            .delay_nested()
-            .integrate()
-            .join(other, join_func.clone());
-        let join2 = self
-            .integrate()
-            .join(&other.integrate_nested(), join_func.clone());
-        let join3 = self.join(
-            &other.integrate_nested().integrate().delay(),
-            join_func.clone(),
-        );
-        let join4 = self
-            .integrate_nested()
-            .delay_nested()
-            .join(&other.integrate().delay(), join_func);
-
-        // Note: I would use `join.sum(...)` but for some reason
-        //       Rust Analyzer tries to resolve it to `Iterator::sum()`
-        Stream::sum(&join1, &[join2, join3, join4])
-    }
-    */
 }
 
 impl<P, I1> Stream<Circuit<P>, I1>
@@ -134,91 +86,75 @@ where
     P: Clone + 'static,
     I1: IndexedZSet,
 {
+    // TODO: Derive `TS` type from circuit.
     /// Incremental join of two nested streams.
     ///
     /// Given nested streams `self` and `other` of changes to relations `A` and
     /// `B`, computes `(↑((↑(self <> other))∆))∆` by first assembling traces
     /// of both streams:
-    pub fn join_trace<I2, F, Z>(
+    pub fn join_trace<TS, I2, F, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         join_func: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1::Key: DeepSizeOf + Clone + Ord,
-        I1::Val: DeepSizeOf + Clone + Ord,
-        I1::R: DeepSizeOf,
-        I2::Val: DeepSizeOf + Clone + Ord,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R>,
-        Z: ZSet<R = I1::R>,
+        TS: Timestamp + DeepSizeOf, /* + ::std::fmt::Display */
+        //I1: ::std::fmt::Display,
+        I1::Key: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
+        I1::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
+        I1::R: DeepSizeOf,                 /* + ::std::fmt::Display */
+        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
+        I2: IndexedZSet<Key = I1::Key, R = I1::R>, /* + ::std::fmt::Display */
+        Z: ZSet<R = I1::R>,                /* + ::std::fmt::Display */
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
         Z::R: MulByRef + Default,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
     {
-        // Writing out the definition of the operator and applying distributivity,
-        // we end up with the following four terms:
+        // TODO: I think this is correct, but we need a proper proof.
+
+        // We use the following formula for nested incremental join with arbitrary
+        // of nesting depth:
         //
-        //          self                    other
+        // ```
+        // (↑(a <> b))∆))[t] =
+        //      __         __            __
+        //      ╲          ╲             ╲
+        //      ╱          ╱             ╱  {f(k,v1,v2), w1*w2}
+        //      ‾‾         ‾‾            ‾‾
+        //     k∈K  (t1,t2).t1\/t2=t  (k,v1,w1)∈a[t1]
+        //                            (k,v2,w2)∈b[t2]
+        // ```
+        // where `t1\/t2 = t1.join(t2)` is the least upper bound of logical timestamps
+        // t1 and t2, `f` is the join function that combines values from input streams
+        // `a` and `b`.  This sum can be split into two terms `left + right`:
         //
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │ │    │                 │ │
-        // │                 │ │ <> │                 │ │
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │                 │x│    │                 │x│
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │ │    │xxxxxxxxxxxxxxxxx│x│
-        // │                 │ │ <> │xxxxxxxxxxxxxxxxx│x│
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │                 │x│    │xxxxxxxxxxxxxxxxx│ │
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │ │    │                 │x│
-        // │                 │ │ <> │                 │x│
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │xxxxxxxxxxxxxxxxx│ │    │                 │ │
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │xxxxxxxxxxxxxxxxx│x│    │                 │ │
-        // │xxxxxxxxxxxxxxxxx│x│ <> │                 │ │
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │xxxxxxxxxxxxxxxxx│ │    │                 │x│
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │x│    │                 │ │
-        // │                 │x│ <> │                 │ │
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │                 │ │    │xxxxxxxxxxxxxxxxx│ │
-        // └─────────────────┴─┘    └─────────────────┴─┘
+        // ```
+        //           __         __            __
+        //           ╲          ╲             ╲
+        // left=     ╱          ╱             ╱  {f(k,v1,v2), w1*w2}
+        //           ‾‾         ‾‾            ‾‾
+        //          k∈K  (t1,t2).t1\/t2=t  (k,v1,w1)∈a[t1]
+        //                 and t2<t1       (k,v2,w2)∈b[t2]
+        //           __         __            __
+        //           ╲          ╲             ╲
+        // right=    ╱          ╱             ╱  {f(k,v1,v2), w1*w2}
+        //           ‾‾         ‾‾            ‾‾
+        //          k∈K  (t1,t2).t1\/t2=t  (k,v1,w1)∈a[t1]
+        //                 and t2>=t1      (k,v2,w2)∈b[t2]
+        // ```
+        // where `t2<t1` and `t2>=t1` refer to the total order in which timestamps are
+        // observed during the execution of the circuit, not their logical partial
+        // order.  In particular, all iterations of an earlier clock epoch preceed the
+        // first iteration of a newer epoch.
         //
-        // Terms 2 + 3 and 4 + 5 are symmetric and are implemented by the `JoinTrace`
-        // operator. We sneak the first term into one of them, but not the other
-        // by delaying one of the traces.
-        let self_trace = self.trace::<OrdValSpine<I1::Key, I1::Val, NestedTimestamp32, I1::R>>();
-        let other_trace = other.trace::<OrdValSpine<I1::Key, I2::Val, NestedTimestamp32, I1::R>>();
+        // The advantage of this representation is that each term can be computed
+        // as a join of one of the input streams with the trace of the other stream,
+        // implemented by the `JoinTrace` operator.
+        let self_trace = self.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
+        let other_trace = other.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
         let join_func_clone = join_func.clone();
 
-        // Terms 1+2+3:
-        //
-        //        self                        other
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │ │    │xxxxxxxxxxxxxxxxx│x│
-        // │                 │ │ <> │xxxxxxxxxxxxxxxxx│x│
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │                 │x│    │xxxxxxxxxxxxxxxxx│x│
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │ │    │                 │x│
-        // │                 │ │ <> │                 │x│
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │xxxxxxxxxxxxxxxxx│ │    │                 │ │
-        // └─────────────────┴─┘    └─────────────────┴─┘
         let left =
             self.circuit()
                 .add_binary_operator(JoinTrace::new(join_func), self, &other_trace);
@@ -232,22 +168,6 @@ where
             f
         }
 
-        // Terms 4+5:
-        //
-        //        self                        other
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │xxxxxxxxxxxxxxxxx│x│    │                 │ │
-        // │xxxxxxxxxxxxxxxxx│x│ <> │                 │ │
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │xxxxxxxxxxxxxxxxx│ │    │                 │x│
-        // └─────────────────┴─┘    └─────────────────┴─┘
-        //                       +
-        // ┌─────────────────┬─┐    ┌─────────────────┬─┐
-        // │                 │x│    │                 │ │
-        // │                 │x│ <> │                 │ │
-        // ├─────────────────┼─┤    ├─────────────────┼─┤
-        // │                 │ │    │xxxxxxxxxxxxxxxxx│ │
-        // └─────────────────┴─┘    └─────────────────┴─┘
         let right = self.circuit().add_binary_operator(
             JoinTrace::new(assert_type(move |k, v2, v1| join_func_clone(k, v1, v2))),
             other,
@@ -257,57 +177,6 @@ where
         left.plus(&right)
     }
 }
-
-/*
-impl<P, I1> Stream<Circuit<P>, I1>
-where
-    P: Clone + 'static,
-    I1: IndexedZSet,
-{
-    pub fn join_incremental2<I2, T1, T2, F, Z>(
-        &self,
-        other: &Stream<Circuit<P>, I2>,
-        join_func: F,
-    ) -> Stream<Circuit<P>, Z>
-    where
-        I1::Key: DeepSizeOf,
-        I1::Value: DeepSizeOf,
-        I1::Weight: DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, Weight = I1::Weight>,
-        I2::Value: DeepSizeOf,
-        T1::Batch: From<I1>,
-        T2::Batch: From<I2>,
-        Z: ZSet<Weight = I1::Weight>,
-        Z::TupleBuilder: DeepSizeOf,
-        F: Fn(&I1::Key, &I1::Value, &I2::Value) -> Z::Data + Clone + 'static,
-    {
-        let self_trace = self.integrate_trace::<T1>();
-        let other_trace = other.integrate_trace::<T2>();
-        let join_func_clone = join_func.clone();
-
-        let left = self.circuit().add_binary_operator(
-            JoinTrace::new(join_func),
-            self,
-            &other_trace,
-        );
-
-        fn flip_args<F, K, V1, V2, V>(f: F) -> F
-        where
-            F: Fn(&K, &V1, &V2) -> V,
-        {
-            f
-        }
-
-        let right = self.circuit().add_binary_operator(
-            JoinTrace::new(flip_args(move |k, v2, v1| join_func_clone(k, v1, v2))),
-            other,
-            &self_trace.delay_trace(),
-        );
-
-        left.plus(&right)
-    }
-}
-*/
 
 /// Join two indexed Z-sets.
 ///
@@ -404,40 +273,6 @@ where
     }
 }
 
-// Computes one half of nested incremental join:
-//
-//        self                       other
-// ┌─────────────────┬─┐    ┌─────────────────┬─┐
-// │                 │ │    │xxxxxxxxxxxxxxxxx│x│
-// │                 │ │ <> │xxxxxxxxxxxxxxxxx│x│
-// ├─────────────────┼─┤    ├─────────────────┼─┤
-// │                 │x│    │xxxxxxxxxxxxxxxxx│x│
-// └─────────────────┴─┘    └─────────────────┴─┘
-//                       +
-// ┌─────────────────┬─┐    ┌─────────────────┬─┐
-// │                 │ │    │                 │x│
-// │                 │ │ <> │                 │x│
-// ├─────────────────┼─┤    ├─────────────────┼─┤
-// │xxxxxxxxxxxxxxxxx│ │    │                 │ │
-// └─────────────────┴─┘    └─────────────────┴─┘
-//       ^            ^                        ^
-//       |            |                        |
-//       t1           t2                       t2
-//
-// The first term is a standard join between a single batch
-// and a full trace.  The second term joins all updates
-// observed in the current epoch with all updates observed in
-// past epochs at the same clock cycle.  It is bit tricky to
-// compute efficiently, as the trace API does not allow
-// selecting updates for a particular time.  The trick is
-// to compute the second term ahead of time: at time t1,
-// for each key in indexed ZSet `self`, lookup matching key
-// in trace `other` scan the trace and scan associated
-// (time, weight) pairs.  We already perform this scan to
-// compute the first term above, but instead of stopping at
-// time `t1`, we continue scanning and record computed output
-// tuples for time `t2 > t1` inside the operator so that we can
-// output them at time `t2`.
 pub struct JoinTrace<F, I, T, Z>
 where
     T: TraceReader,
@@ -464,7 +299,7 @@ where
     pub fn new(join_func: F) -> Self {
         Self {
             join_func,
-            time: T::Time::minimum(),
+            time: T::Time::clock_start(),
             output_batchers: HashMap::new(),
             empty_input: false,
             empty_output: false,
@@ -485,17 +320,17 @@ where
         Cow::from("JoinTrace")
     }
     fn clock_start(&mut self, scope: Scope) {
-        self.time = self.time.advance(scope + 1);
         if scope == 0 {
             self.empty_input = false;
             self.empty_output = false;
         }
     }
-    fn clock_end(&mut self, _scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self
             .output_batchers
             .iter()
             .all(|(time, _)| !time.less_equal(&self.time)));
+        self.time = self.time.advance(scope + 1);
     }
 
     fn summary(&self, summary: &mut String) {
@@ -533,11 +368,12 @@ where
 
 impl<F, I, T, Z> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z>
 where
-    I: IndexedZSet,
+    I: IndexedZSet, /* + ::std::fmt::Display */
     I::Key: Ord + Clone,
-    T: Trace<Key = I::Key, R = I::R> + 'static,
+    T: Trace<Key = I::Key, R = I::R> + 'static, /* + ::std::fmt::Display */
+    //T::Time: ::std::fmt::Display,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> Z::Key + 'static,
-    Z: ZSet<R = I::R>,
+    Z: ZSet<R = I::R>, /* + ::std::fmt::Display */
     Z::Key: Clone + Default,
     Z::Batcher: DeepSizeOf,
     Z::R: MulByRef + Default,
@@ -582,9 +418,6 @@ where
                                 trace_cursor.val(trace),
                             );
                             trace_cursor.map_times(trace, |ts, w2| {
-                                // TODO: I think this is correct, but we should write a proper proof
-                                // that this formula implements an arbitrarily nested incremental
-                                // join operator.
                                 output_tuples.push((
                                     ts.join(&self.time),
                                     ((output.clone(), ()), w1.mul_by_ref(w2)),
@@ -629,6 +462,8 @@ where
             .unwrap_or_else(|| Z::Batcher::new(()));
         self.time = self.time.advance(0);
         let result = batcher.seal();
+        //println!("JoinTrace output:\n{}", result);
+
         self.empty_output = result.is_empty();
         result
     }
@@ -637,12 +472,17 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::{Root, Stream},
+        circuit::{Circuit, Root, Stream},
         operator::{DelayedFeedback, Generator},
+        time::{NestedTimestamp32, Product, Timestamp},
         trace::ord::{OrdIndexedZSet, OrdZSet},
         zset,
     };
-    use std::vec;
+    use deepsize::DeepSizeOf;
+    use std::{
+        fmt::{Display, Formatter},
+        vec,
+    };
 
     #[test]
     fn join_test() {
@@ -747,98 +587,6 @@ mod test {
         }
     }
 
-    /*
-    // Nested incremental reachability algorithm.
-    #[test]
-    fn join_incremental_nested_test() {
-        let root = Root::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges: vec::IntoIter<OrdZSet<(usize, usize), isize>> = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (2, 3) => 1},
-                zset! { (1, 3) => 1},
-                zset! { (3, 1) => 1},
-                zset! { (3, 1) => -1},
-                zset! { (1, 2) => -1},
-                zset! { (2, 4) => 1, (4, 1) => 1 },
-                zset! { (2, 3) => -1, (3, 2) => 1 },
-            ]
-            .into_iter();
-
-            // Expected content of the reachability relation.
-            let mut outputs: vec::IntoIter<OrdZSet<(usize, usize), isize>> = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (1, 2) => 1, (1, 3) => 1, (2, 3) => 1, (2, 1) => 1, (3, 1) => 1, (3, 2) => 1},
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
-                              (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
-                              (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
-                              (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
-                              (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
-            ]
-            .into_iter();
-
-            let edges: Stream<_, OrdZSet<(usize, usize), isize>> =
-                circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let paths = circuit.iterate_with_conditions(|child| {
-                // ```text
-                //                      distinct_incremental_nested
-                //               ┌───┐          ┌───┐
-                // edges         │   │          │   │  paths
-                // ────┬────────►│ + ├──────────┤   ├────────┬───►
-                //     │         │   │          │   │        │
-                //     │         └───┘          └───┘        │
-                //     │           ▲                         │
-                //     │           │                         │
-                //     │         ┌─┴─┐                       │
-                //     │         │   │                       │
-                //     └────────►│ X │ ◄─────────────────────┘
-                //               │   │
-                //               └───┘
-                //      join_incremental_nested
-                // ```
-                let edges = edges.delta0(child);
-                let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
-
-                let paths_inverted: Stream<_, OrdZSet<(usize, usize), isize>> = paths_delayed
-                    .stream()
-                    .map_keys(|&(x, y)| (y, x));
-
-                let paths_inverted_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = paths_inverted.index();
-                let edges_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = edges.index();
-
-                let paths = edges.plus(&paths_inverted_indexed.join_incremental_nested(&edges_indexed, |_via, from, to| (*from, *to)))
-                    .distinct_incremental_nested();
-                paths_delayed.connect(&paths);
-                let output = paths.integrate();
-                Ok((
-                    vec![
-                        paths.condition(HasZero::is_zero),
-                        paths.integrate_nested().condition(HasZero::is_zero)
-                    ],
-                    output.export(),
-                ))
-            })
-            .unwrap();
-
-            paths.integrate().distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            })
-        })
-        .unwrap();
-
-        for _ in 0..8 {
-            root.step().unwrap();
-        }
-    }
-    */
-
     // Compute pairwise reachability relation between graph nodes as the
     // transitive closure of the edge relation.
     #[test]
@@ -905,7 +653,7 @@ mod test {
                 let paths_inverted_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = paths_inverted.index();
                 let edges_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = edges.index();
 
-                let paths = edges.plus(&paths_inverted_indexed.join_trace(&edges_indexed, |_via, from, to| (*from, *to)))
+                let paths = edges.plus(&paths_inverted_indexed.join_trace::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to)))
                     .distinct_trace();
                 paths_delayed.connect(&paths);
                 let output = paths.integrate_trace();
@@ -916,6 +664,206 @@ mod test {
             paths.consolidate::<OrdZSet<_, _>>().integrate().distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             })
+        })
+        .unwrap();
+
+        for _ in 0..8 {
+            //eprintln!("{}", i);
+            root.step().unwrap();
+        }
+    }
+
+    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, DeepSizeOf)]
+    struct Label(pub usize, pub u16);
+
+    impl Display for Label {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+            write!(f, "L({},{})", self.0, self.1)
+        }
+    }
+
+    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, DeepSizeOf)]
+    struct Edge(pub usize, pub usize);
+
+    impl Display for Edge {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+            write!(f, "E({},{})", self.0, self.1)
+        }
+    }
+    // Recursively propagate node labels in an acyclic graph.
+    // The reason for supporting acyclic graphs only is that we use this to test
+    // the join operator in isolation, so we don't want to use `distinct`.
+    fn propagate<P, TS>(
+        circuit: &Circuit<P>,
+        edges: &Stream<Circuit<P>, OrdZSet<Edge, isize>>,
+        labels: &Stream<Circuit<P>, OrdZSet<Label, isize>>,
+    ) -> Stream<Circuit<P>, OrdZSet<Label, isize>>
+    where
+        P: Clone + 'static,
+        TS: Timestamp + DeepSizeOf + ::std::fmt::Display,
+    {
+        let computed_labels = circuit
+            .fixedpoint(|child| {
+                let edges = edges.delta0(child);
+                let labels = labels.delta0(child);
+
+                let computed_labels = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
+                let result: Stream<_, OrdZSet<Label, isize>> =
+                    labels.plus(computed_labels.stream());
+
+                computed_labels.connect(
+                    &result
+                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|label| (label.0, label.1))
+                        .join_trace::<TS, _, _, _>(
+                            &edges
+                                .index_with::<OrdIndexedZSet<_, _, _>, _>(|edge| (edge.0, edge.1)),
+                            |_from, label, to| Label(*to, *label),
+                        ),
+                );
+
+                Ok(result.integrate_trace().export())
+            })
+            .unwrap();
+
+        computed_labels.consolidate::<OrdZSet<_, _>>()
+    }
+
+    #[test]
+    fn propagate_test() {
+        let root = Root::build(move |circuit| {
+            let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
+                zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
+                zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
+                zset! { Edge(4, 5) => 1, Edge(4, 6) => 1, },
+                zset! { Edge(3, 8) => 1, Edge(8, 9) => 1 },
+                zset! { Edge(2, 4) => -1, Edge(7, 10) => 1 },
+                zset! { Edge(3, 4) => -1 },
+                zset! { Edge(1, 4) => 1 },
+                zset! { Edge(9, 7) => 1 },
+            ]
+            .into_iter();
+
+            let mut labels: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+                zset! { Label(1, 0) => 1 },
+                zset! { Label(4, 1) => 1 },
+                zset! { },
+                zset! { Label(1, 0) => -1, Label(1, 2) => 1 },
+                zset! { },
+                zset! { Label(8, 3) => 1 },
+                zset! { Label(4, 1) => -1 },
+                zset! { },
+            ]
+            .into_iter();
+
+            let mut outputs: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+                zset! { Label(1, 0) => 1, Label(2, 0) => 1, Label(3, 0) => 1, Label(4, 0) => 2 },
+                zset! { Label(4, 1) => 1 },
+                zset! { Label(5, 0) => 2, Label(5, 1) => 1, Label(6, 0) => 2, Label(6, 1) => 1, Label(7, 0) => 4, Label(7, 1) => 2 },
+                zset! { Label(1, 0) => -1, Label(1, 2) => 1, Label(2, 0) => -1, Label(2, 2) => 1, Label(3, 0) => -1, Label(3, 2) => 1, Label(4, 0) => -2, Label(4, 2) => 2, Label(5, 0) => -2, Label(5, 2) => 2, Label(6, 0) => -2, Label(6, 2) => 2, Label(7, 0) => -4, Label(7, 2) => 4, Label(8, 2) => 1, Label(9, 2) => 1 },
+                zset! { Label(4, 2) => -1, Label(5, 2) => -1, Label(6, 2) => -1, Label(7, 2) => -2, Label(10, 1) => 2, Label(10, 2) => 2 },
+                zset! { Label(4, 2) => -1, Label(5, 2) => -1, Label(6, 2) => -1, Label(7, 2) => -2, Label(8, 3) => 1, Label(9, 3) => 1, Label(10, 2) => -2 },
+                zset! { Label(4, 1) => -1, Label(4, 2) => 1, Label(5, 1) => -1, Label(5, 2) => 1, Label(6, 1) => -1, Label(6, 2) => 1, Label(7, 1) => -2, Label(7, 2) => 2, Label(10, 1) => -2, Label(10, 2) => 2 },
+                zset! { Label(7, 2) => 1, Label(7, 3) => 1, Label(10, 2) => 1, Label(10, 3) => 1 },
+            ]
+            .into_iter();
+
+            let edges: Stream<_, OrdZSet<Edge, isize>> =
+                circuit
+                    .add_source(Generator::new(move || edges.next().unwrap()));
+
+            let labels: Stream<_, OrdZSet<Label, isize>> =
+                circuit
+                    .add_source(Generator::new(move || labels.next().unwrap()));
+
+            propagate::<_, NestedTimestamp32>(circuit, &edges, &labels).inspect(move |labeled| {
+                assert_eq!(*labeled, outputs.next().unwrap());
+            });
+        })
+        .unwrap();
+
+        for _ in 0..8 {
+            //eprintln!("{}", i);
+            root.step().unwrap();
+        }
+    }
+
+    #[test]
+    fn propagate_nested_test() {
+        let root = Root::build(move |circuit| {
+            let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
+                zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
+                zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
+                zset! { Edge(4, 5) => 1, Edge(4, 6) => 1 },
+                zset! { Edge(3, 8) => 1, Edge(8, 9) => 1 },
+                zset! { Edge(2, 4) => -1, Edge(7, 10) => 1 },
+                zset! { Edge(3, 4) => -1 },
+                zset! { Edge(1, 4) => 1 },
+                zset! { Edge(9, 7) => 1 },
+            ]
+            .into_iter();
+
+            let mut labels: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+                zset! { Label(1, 0) => 1 },
+                zset! { Label(4, 1) => 1 },
+                zset! { },
+                zset! { Label(1, 0) => -1, Label(1, 2) => 1 },
+                zset! { },
+                zset! { Label(8, 3) => 1 },
+                zset! { Label(4, 1) => -1 },
+                zset! { },
+            ]
+            .into_iter();
+
+            let mut outputs: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+                zset!{ Label(1,0) => 2, Label(2,0) => 3, Label(3,0) => 3, Label(4,0) => 8 },
+                zset!{ Label(4,1) => 2 },
+                zset!{ Label(5,0) => 10, Label(5,1) => 3, Label(6,0) => 10, Label(6,1) => 3, Label(7,0) => 24, Label(7,1) => 8 },
+                zset!{ Label(1,0) => -2, Label(1,2) => 2, Label(2,0) => -3, Label(2,2) => 3, Label(3,0) => -3, Label(3,2) => 3,
+                       Label(4,0) => -8, Label(4,2) => 8, Label(5,0) => -10, Label(5,2) => 10, Label(6,0) => -10, Label(6,2) => 10,
+                       Label(7,0) => -24, Label(7,2) => 24, Label(8,2) => 4, Label(9,2) => 5 },
+                zset!{ Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(10,1) => 10, Label(10,2) => 14 },
+                zset!{ Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(8,3) => 2,
+                       Label(9,3) => 3, Label(10,2) => -14 },
+                zset!{ Label(4,1) => -2, Label(4,2) => 3, Label(5,1) => -3, Label(5,2) => 4, Label(6,1) => -3, Label(6,2) => 4,
+                       Label(7,1) => -8, Label(7,2) => 10, Label(10,1) => -10, Label(10,2) => 12 },
+                zset!{ Label(7,2) => 6, Label(7,3) => 4, Label(10,2) => 7, Label(10,3) => 5 },
+            ].into_iter();
+
+            let edges: Stream<_, OrdZSet<Edge, isize>> =
+                circuit
+                    .add_source(Generator::new(move || edges.next().unwrap()));
+
+            let labels: Stream<_, OrdZSet<Label, isize>> =
+                circuit
+                    .add_source(Generator::new(move || labels.next().unwrap()));
+
+            let result = circuit.iterate(|child| {
+
+                let counter = std::cell::RefCell::new(0);
+                let edges = edges.delta0(child);
+                let labels = labels.delta0(child);
+
+                let computed_labels = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
+                let result = propagate::<_, Product<NestedTimestamp32, u32>>(child, &edges, &labels.plus(computed_labels.stream()));
+                computed_labels.connect(&result);
+
+                //result.inspect(|res: &OrdZSet<Label, isize>| println!("delta: {}", res));
+                Ok((move || {
+                    let mut counter = counter.borrow_mut();
+                    // reset to 0 on each outer loop iteration.
+                    if *counter == 2 {
+                        *counter = 0;
+                    }
+                    *counter += 1;
+                    //println!("counter: {}", *counter);
+                    *counter == 2
+                },
+                result.integrate_trace().export()))
+            }).unwrap();
+
+            result.consolidate().inspect(move |res: &OrdZSet<Label, isize>| {
+                assert_eq!(*res, outputs.next().unwrap());
+            });
         })
         .unwrap();
 
