@@ -16,6 +16,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      max-parallel: 3
+
       matrix:
         # We test the following targets:
         # - 64bit Linux stable
@@ -116,6 +118,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      max-parallel: 3
 
       # Note: We use this really sketchy matrix because msan doesn't work on macos,
       # I would much rather use `matrix.exclude` for this but for some reason
