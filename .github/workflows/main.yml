@@ -104,7 +104,8 @@ jobs:
         uses: actions-rs/cargo@v1
         env:
           OS: ${{ matrix.os }}
-          MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation"
+          # FIXME: `-Zmiri-preemption-rate=0` is a temporary fix for rust/#55005, remove it when possible
+          MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation -Zmiri-preemption-rate=0"
         with:
           command: miri
           args: test --all-features
