@@ -80,6 +80,16 @@ fn main() -> Result<()> {
 
         let root = Root::build(|circuit| {
             /*
+            use dbsp::{
+                circuit::GlobalNodeId,
+                profile::CPUProfiler,
+                circuit::trace::SchedulerEvent,
+            };
+            use std::{
+                collections::HashMap,
+                fmt::Write,
+            };
+
             let cpu_profiler = CPUProfiler::new();
             cpu_profiler.attach(circuit, "cpu profiler");
 
@@ -98,7 +108,7 @@ fn main() -> Result<()> {
                         node.summary(metadata_string);
                     }
                     SchedulerEvent::StepEnd => {
-                        let graph = monitor_clone.visualize_circuit_annotate(&|node_id| {
+                        let graph = monitor_clone.visualize_circuit_annotate(|node_id| {
                             let mut metadata_string = metadata
                                 .get(node_id)
                                 .map(ToString::to_string)

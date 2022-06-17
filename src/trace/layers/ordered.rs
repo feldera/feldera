@@ -32,7 +32,7 @@ impl<O> OrdOffset for O where
 ///
 /// In this representation, the values for `keys[i]` are found at `vals[offs[i]
 /// .. offs[i+1]]`.
-#[derive(Debug, DeepSizeOf, Eq, PartialEq, Clone)]
+#[derive(Debug, DeepSizeOf, PartialEq, Eq, Clone)]
 pub struct OrderedLayer<K, L, O = usize>
 where
     K: Ord,
