@@ -32,12 +32,11 @@ jobs:
           args: --all-features --workspace --lcov --output-path coverage.info
 
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1.0.2
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.info
           fail_ci_if_error: true
-        if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Archive code coverage results
         uses: actions/upload-artifact@v1
