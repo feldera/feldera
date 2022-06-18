@@ -270,13 +270,13 @@ mod tests {
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
     #[test]
-    #[cfg_attr(all(windows, miri), ignore)]
+    #[cfg_attr(miri, ignore)]
     fn test_runtime_static() {
         test_runtime::<StaticScheduler>();
     }
 
     #[test]
-    #[cfg_attr(all(windows, miri), ignore)]
+    #[cfg_attr(miri, ignore)]
     fn test_runtime_dynamic() {
         test_runtime::<DynamicScheduler>();
     }
@@ -312,13 +312,13 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(all(windows, miri), ignore)]
+    #[cfg_attr(miri, ignore)]
     fn test_kill_static() {
         test_kill::<StaticScheduler>();
     }
 
     #[test]
-    #[cfg_attr(all(windows, miri), ignore)]
+    #[cfg_attr(miri, ignore)]
     fn test_kill_dynamic() {
         test_kill::<DynamicScheduler>();
     }
