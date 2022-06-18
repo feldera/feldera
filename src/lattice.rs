@@ -2,6 +2,10 @@
 //!
 //! All logical times in DBSP must implement the `Lattice` trait.
 
+use std::{
+    cmp::{max, min},
+    time::Duration,
+};
 use timely::{
     order::PartialOrder,
     progress::{frontier::AntichainRef, Antichain},
@@ -46,6 +50,7 @@ pub trait Lattice: PartialOrder {
     /// assert_eq!(time1, Product::new(4, 7));
     /// # }
     /// ```
+    #[inline]
     fn join_assign(&mut self, other: &Self)
     where
         Self: Sized,
@@ -90,6 +95,7 @@ pub trait Lattice: PartialOrder {
     /// assert_eq!(time1, Product::new(3, 6));
     /// # }
     /// ```
+    #[inline]
     fn meet_assign(&mut self, other: &Self)
     where
         Self: Sized,
@@ -159,18 +165,16 @@ macro_rules! implement_lattice {
         impl Lattice for $index_type {
             #[inline]
             fn join(&self, other: &Self) -> Self {
-                ::std::cmp::max(*self, *other)
+                max(*self, *other)
             }
 
             #[inline]
             fn meet(&self, other: &Self) -> Self {
-                ::std::cmp::min(*self, *other)
+                min(*self, *other)
             }
         }
     };
 }
-
-use std::time::Duration;
 
 implement_lattice!(Duration, Duration::new(0, 0));
 implement_lattice!(usize, 0);
@@ -187,25 +191,31 @@ implement_lattice!(i16, 0);
 implement_lattice!(i8, 0);
 implement_lattice!((), ());
 
+// TODO: Manually implement `.join_assign()`, `.meet_assign()` and `.advance_by()` to reuse buffers
 impl<T: Lattice + Clone> Lattice for Antichain<T> {
+    #[inline]
     fn join(&self, other: &Self) -> Self {
         let mut upper = Antichain::new();
-        for time1 in self.elements().iter() {
-            for time2 in other.elements().iter() {
+        for time1 in self.elements() {
+            for time2 in other.elements() {
                 upper.insert(time1.join(time2));
             }
         }
+
         upper
     }
 
+    #[inline]
     fn meet(&self, other: &Self) -> Self {
         let mut upper = Antichain::new();
-        for time1 in self.elements().iter() {
+        for time1 in self.elements() {
             upper.insert(time1.clone());
         }
-        for time2 in other.elements().iter() {
+
+        for time2 in other.elements() {
             upper.insert(time2.clone());
         }
+
         upper
     }
 }

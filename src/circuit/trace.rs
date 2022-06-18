@@ -104,54 +104,6 @@ pub enum CircuitEvent {
     },
 }
 
-impl Display for CircuitEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::PushRegion { name } => {
-                write!(f, "PushRegion(\"{}\")", name)
-            }
-            Self::PopRegion => f.write_str("PopRegion"),
-            Self::Operator { node_id, name } => {
-                write!(f, "Operator(\"{}\", {})", name, node_id)
-            }
-            Self::StrictOperatorOutput { node_id, name } => {
-                write!(f, "StrictOperatorOutput(\"{}\", {})", name, node_id)
-            }
-            Self::StrictOperatorInput {
-                node_id,
-                output_node_id,
-            } => {
-                write!(f, "StrictOperatorInput({} -> {})", node_id, output_node_id)
-            }
-            Self::Subcircuit { node_id, iterative } => {
-                write!(
-                    f,
-                    "{}Subcircuit({})",
-                    if *iterative { "Iterative" } else { "" },
-                    node_id,
-                )
-            }
-            Self::SubcircuitComplete { node_id } => {
-                write!(f, "SubcircuitComplete({})", node_id,)
-            }
-            Self::Edge {
-                kind: EdgeKind::Stream(preference),
-                from,
-                to,
-            } => {
-                write!(f, "Stream({} -> [{}]{})", from, preference, to)
-            }
-            Self::Edge {
-                kind: EdgeKind::Dependency,
-                from,
-                to,
-            } => {
-                write!(f, "Dependency({} -> {})", from, to)
-            }
-        }
-    }
-}
-
 impl CircuitEvent {
     /// Create a [`CircuitEvent::PushRegion`] event instance.
     pub fn push_region_static(name: &'static str) -> Self {
@@ -344,6 +296,54 @@ impl CircuitEvent {
     }
 }
 
+impl Display for CircuitEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PushRegion { name } => {
+                write!(f, "PushRegion(\"{}\")", name)
+            }
+            Self::PopRegion => f.write_str("PopRegion"),
+            Self::Operator { node_id, name } => {
+                write!(f, "Operator(\"{}\", {})", name, node_id)
+            }
+            Self::StrictOperatorOutput { node_id, name } => {
+                write!(f, "StrictOperatorOutput(\"{}\", {})", name, node_id)
+            }
+            Self::StrictOperatorInput {
+                node_id,
+                output_node_id,
+            } => {
+                write!(f, "StrictOperatorInput({} -> {})", node_id, output_node_id)
+            }
+            Self::Subcircuit { node_id, iterative } => {
+                write!(
+                    f,
+                    "{}Subcircuit({})",
+                    if *iterative { "Iterative" } else { "" },
+                    node_id,
+                )
+            }
+            Self::SubcircuitComplete { node_id } => {
+                write!(f, "SubcircuitComplete({})", node_id,)
+            }
+            Self::Edge {
+                kind: EdgeKind::Stream(preference),
+                from,
+                to,
+            } => {
+                write!(f, "Stream({} -> [{}]{})", from, preference, to)
+            }
+            Self::Edge {
+                kind: EdgeKind::Dependency,
+                from,
+                to,
+            } => {
+                write!(f, "Dependency({} -> {})", from, to)
+            }
+        }
+    }
+}
+
 /// Scheduler events carry information about circuit evaluation at runtime.
 ///
 /// # Circuit automata
@@ -405,23 +405,6 @@ pub enum SchedulerEvent<'a> {
     ClockEnd,
 }
 
-impl<'a> Display for SchedulerEvent<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EvalStart { node } => {
-                write!(f, "EvalStart({})", node.global_id())
-            }
-            Self::EvalEnd { node } => {
-                write!(f, "EvalEnd({})", node.global_id())
-            }
-            Self::StepStart => f.write_str("StepStart"),
-            Self::StepEnd => f.write_str("StepEnd"),
-            Self::ClockStart => f.write_str("ClockStart"),
-            Self::ClockEnd => f.write_str("ClockEnd"),
-        }
-    }
-}
-
 impl<'a> SchedulerEvent<'a> {
     /// Create a [`SchedulerEvent::EvalStart`] event instance.
     pub fn eval_start(node: &'a dyn Node) -> Self {
@@ -451,5 +434,22 @@ impl<'a> SchedulerEvent<'a> {
     /// Create a [`SchedulerEvent::ClockEnd`] event instance.
     pub fn clock_end() -> Self {
         Self::ClockEnd
+    }
+}
+
+impl<'a> Display for SchedulerEvent<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EvalStart { node } => {
+                write!(f, "EvalStart({})", node.global_id())
+            }
+            Self::EvalEnd { node } => {
+                write!(f, "EvalEnd({})", node.global_id())
+            }
+            Self::StepStart => f.write_str("StepStart"),
+            Self::StepEnd => f.write_str("StepEnd"),
+            Self::ClockStart => f.write_str("ClockStart"),
+            Self::ClockEnd => f.write_str("ClockEnd"),
+        }
     }
 }
