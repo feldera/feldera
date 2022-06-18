@@ -45,7 +45,7 @@ where
     // We could do an insertion-sort like initial scan which builds up sorted,
     // consolidated runs. In a world where there are not many results, we may
     // never even need to call in to merge sort.
-    slice.sort_by(|x, y| x.0.cmp(&y.0));
+    slice.sort_by(|(time1, _), (time2, _)| time1.cmp(time2));
 
     let slice_ptr = slice.as_mut_ptr();
 

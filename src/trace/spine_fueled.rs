@@ -154,9 +154,9 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
+    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
         let mut result = 0;
-        self.map_batches(|batch| result += batch.deep_size_of());
+        self.map_batches(|batch| result += batch.deep_size_of_children(context));
         result
     }
 }
@@ -167,6 +167,8 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
+    const CONST_NUM_ENTRIES: Option<usize> = None;
+
     fn num_entries_shallow(&self) -> usize {
         let mut total = 0;
         self.map_batches(|batch| total += batch.len());
@@ -176,8 +178,6 @@ where
     fn num_entries_deep(&self) -> usize {
         self.num_entries_shallow()
     }
-
-    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<B> BatchReader for Spine<B>
@@ -272,10 +272,11 @@ where
 }
 
 impl<B: Batch> Spine<B> {
-    fn cursor_storage_unchecked(&self) -> &Vec<B> {
+    // FIXME: This is definitely unsound
+    unsafe fn cursor_storage_unchecked(&self) -> &Vec<B> {
         // Safety: references returned by this method should never escape this module
         // and should only ne used in non-reentrant code.
-        unsafe { &*self.cursor_storage.as_ptr() }
+        &*self.cursor_storage.as_ptr()
     }
 }
 
@@ -291,7 +292,7 @@ where
 {
     fn new(cursors: Vec<B::Cursor>, spine: &Spine<B>) -> Self {
         Self {
-            cursor: CursorList::new(cursors, spine.cursor_storage_unchecked()),
+            cursor: CursorList::new(cursors, unsafe { spine.cursor_storage_unchecked() }),
         }
     }
 }
@@ -305,25 +306,27 @@ where
 
     #[inline]
     fn key_valid(&self, spine: &Self::Storage) -> bool {
-        self.cursor.key_valid(spine.cursor_storage_unchecked())
+        self.cursor
+            .key_valid(unsafe { spine.cursor_storage_unchecked() })
     }
     #[inline]
     fn val_valid(&self, spine: &Self::Storage) -> bool {
-        self.cursor.val_valid(spine.cursor_storage_unchecked())
+        self.cursor
+            .val_valid(unsafe { spine.cursor_storage_unchecked() })
     }
 
     #[inline]
     fn key<'a>(&self, spine: &'a Self::Storage) -> &'a B::Key {
-        self.cursor.key(spine.cursor_storage_unchecked())
+        self.cursor.key(unsafe { spine.cursor_storage_unchecked() })
     }
     #[inline]
     fn val<'a>(&self, spine: &'a Self::Storage) -> &'a B::Val {
-        self.cursor.val(spine.cursor_storage_unchecked())
+        self.cursor.val(unsafe { spine.cursor_storage_unchecked() })
     }
     #[inline]
     fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, spine: &Self::Storage, logic: L) {
         self.cursor
-            .map_times(spine.cursor_storage_unchecked(), logic);
+            .map_times(unsafe { spine.cursor_storage_unchecked() }, logic);
     }
 
     #[inline]
@@ -331,37 +334,44 @@ where
     where
         B::Time: PartialEq<()>,
     {
-        self.cursor.weight(spine.cursor_storage_unchecked())
+        self.cursor
+            .weight(unsafe { spine.cursor_storage_unchecked() })
     }
 
     #[inline]
     fn step_key(&mut self, spine: &Self::Storage) {
-        self.cursor.step_key(spine.cursor_storage_unchecked());
+        self.cursor
+            .step_key(unsafe { spine.cursor_storage_unchecked() });
     }
 
     #[inline]
     fn seek_key(&mut self, spine: &Self::Storage, key: &B::Key) {
-        self.cursor.seek_key(spine.cursor_storage_unchecked(), key);
+        self.cursor
+            .seek_key(unsafe { spine.cursor_storage_unchecked() }, key);
     }
 
     #[inline]
     fn step_val(&mut self, spine: &Self::Storage) {
-        self.cursor.step_val(spine.cursor_storage_unchecked());
+        self.cursor
+            .step_val(unsafe { spine.cursor_storage_unchecked() });
     }
 
     #[inline]
     fn seek_val(&mut self, spine: &Self::Storage, val: &B::Val) {
-        self.cursor.seek_val(spine.cursor_storage_unchecked(), val);
+        self.cursor
+            .seek_val(unsafe { spine.cursor_storage_unchecked() }, val);
     }
 
     #[inline]
     fn rewind_keys(&mut self, spine: &Self::Storage) {
-        self.cursor.rewind_keys(spine.cursor_storage_unchecked());
+        self.cursor
+            .rewind_keys(unsafe { spine.cursor_storage_unchecked() });
     }
 
     #[inline]
     fn rewind_vals(&mut self, spine: &Self::Storage) {
-        self.cursor.rewind_vals(spine.cursor_storage_unchecked());
+        self.cursor
+            .rewind_vals(unsafe { spine.cursor_storage_unchecked() });
     }
 }
 
