@@ -21,7 +21,7 @@ pub(crate) trait VecExt<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// let mut vec = Vec::with_capacity(1);
     /// unsafe { vec.push_unchecked("something") };
     ///
@@ -79,7 +79,16 @@ mod tests {
     }
 
     #[test]
-    fn push_unchecked() {
+    fn push_unchecked_1() {
+        let mut vec = Vec::with_capacity(1);
+        unsafe { vec.push_unchecked("something") };
+        assert_eq!(vec.len(), 1);
+        assert_eq!(vec.capacity(), 1);
+        assert_eq!(&vec, &["something"]);
+    }
+
+    #[test]
+    fn push_unchecked_100() {
         let mut vec = Vec::with_capacity(100);
         assert!(vec.is_empty());
 

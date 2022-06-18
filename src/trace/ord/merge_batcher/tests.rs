@@ -48,7 +48,8 @@ fn merge_by() {
     let right = vec![vec![(0, 7), (1, 6), (24, -5), (25, 12), (89, 1)]];
     let merged = merger.merge_by(left, right);
 
-    // TODO: Not entirely sure if this is an optimal result, we always leave one element trailing
+    // TODO: Not entirely sure if this is an optimal result, we always leave one
+    // element trailing
     let expected = vec![vec![(0, 8), (1, 12), (25, 12), (54, -23)], vec![(89, 1)]];
     assert_eq!(merged, expected);
 }

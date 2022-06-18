@@ -102,7 +102,8 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
     const BUFFER_BYTES: usize = 1 << 13;
 
     /// The maximum number of elements we'd like our buffers to contain,
-    /// as calculated by the number of elements we can fit into [`Self::BUFFER_BYTES`]
+    /// as calculated by the number of elements we can fit into
+    /// [`Self::BUFFER_BYTES`]
     ///
     /// Note that this isn't a hard limit or something that can be
     /// depended on for correctness, it's simply a preference
@@ -162,8 +163,8 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
             let mut batch = if self.stash.len() > 2 {
                 replace(batch, self.stash.pop().expect("there's at least 3 stashes"))
 
-            // Otherwise if we don't have at least three stashed buffers we just replace the
-            // buffer we were given with an empty one
+            // Otherwise if we don't have at least three stashed buffers we just
+            // replace the buffer we were given with an empty one
             } else {
                 take(batch)
             };
@@ -231,8 +232,8 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
 
         // while we have valid data in each input, merge.
         while !head1.is_empty() && !head2.is_empty() {
-            // Iterate while the result vec has spare capacity (and therefore can be pushed to)
-            // and both `head1` and `head2` are non-empty
+            // Iterate while the result vec has spare capacity (and therefore can be pushed
+            // to) and both `head1` and `head2` are non-empty
             while result.has_spare_capacity() && !head1.is_empty() && !head2.is_empty() {
                 // Compare the data of each element
                 let cmp = {
