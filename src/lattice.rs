@@ -191,7 +191,8 @@ implement_lattice!(i16, 0);
 implement_lattice!(i8, 0);
 implement_lattice!((), ());
 
-// TODO: Manually implement `.join_assign()`, `.meet_assign()` and `.advance_by()` to reuse buffers
+// TODO: Manually implement `.join_assign()`, `.meet_assign()` and
+// `.advance_by()` to reuse buffers
 impl<T: Lattice + Clone> Lattice for Antichain<T> {
     #[inline]
     fn join(&self, other: &Self) -> Self {
