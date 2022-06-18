@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/vmware/database-stream-processor/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/vmware/database-stream-processor)
+
 # Database Stream Processor
 
 Streaming and Incremental Computation Framework
