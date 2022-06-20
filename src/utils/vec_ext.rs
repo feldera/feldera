@@ -29,7 +29,6 @@ pub(crate) trait VecExt<T> {
     /// assert_eq!(vec.capacity(), 1);
     /// assert_eq!(&vec, &["something"]);
     /// ```
-    ///
     unsafe fn push_unchecked(&mut self, elem: T);
 }
 

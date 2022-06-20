@@ -72,6 +72,19 @@ pub trait Cursor<K, V, T, R> {
     where
         T: PartialEq<()>;
 
+    /// Apply a function to all values associated with the current key.
+    fn map_values<L: FnMut(&V, &R)>(&mut self, storage: &Self::Storage, mut logic: L)
+    where
+        T: PartialEq<()>,
+    {
+        while self.val_valid(storage) {
+            let weight = self.weight(storage);
+            let val = self.val(storage);
+            logic(val, &weight);
+            self.step_val(storage);
+        }
+    }
+
     /// Advances the cursor to the next key.
     fn step_key(&mut self, storage: &Self::Storage);
     /// Advances the cursor to the specified key.
