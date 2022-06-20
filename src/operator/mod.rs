@@ -59,6 +59,8 @@ pub use filter_map::FilterMapKeys;
 mod aggregate;
 pub use aggregate::Aggregate;
 
+mod window;
+
 #[cfg(feature = "with-csv")]
 mod csv;
 #[cfg(feature = "with-csv")]
