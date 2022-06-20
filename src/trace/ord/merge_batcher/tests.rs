@@ -11,9 +11,9 @@ use crate::trace::{
 use std::marker::PhantomData;
 
 fn batch_one() -> Vec<Vec<(usize, isize)>> {
-    (0..14)
+    (0..11)
         .map(|x| {
-            let mut batch = (0..264).map(|y| (x * y, (x ^ y) as isize)).collect();
+            let mut batch = (0..57).map(|y| (x * y, (x ^ y) as isize)).collect();
             consolidation::consolidate(&mut batch);
             batch
         })
