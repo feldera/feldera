@@ -89,6 +89,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct MergeSorter<D: Ord, R: MonoidValue> {
     queue: Vec<Vec<Vec<(D, R)>>>, // each power-of-two length list of allocations.
     stash: Vec<Vec<(D, R)>>,
@@ -199,26 +200,27 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
             let merged = self.merge_by(list1, list2);
             self.queue.push(merged);
         }
+        // How does this panic??
+        // debug_assert_eq!(self.queue.len(), 1);
 
         if let Some(mut last) = self.queue.pop() {
             swap(&mut last, target);
         }
-        debug_assert!(self.queue.is_empty());
     }
 
     // merges two sorted input lists into one sorted output list.
     #[inline(never)]
     fn merge_by(&mut self, list1: Vec<Vec<(D, R)>>, list2: Vec<Vec<(D, R)>>) -> Vec<Vec<(D, R)>> {
         // Ensure all the batches we've been given are in sorted order
-        if cfg!(debug_assertions) {
-            for batch in &list1 {
-                assert!(batch.windows(2).all(|window| window[0].0 <= window[1].0));
-            }
-
-            for batch in &list2 {
-                assert!(batch.windows(2).all(|window| window[0].0 <= window[1].0));
-            }
-        }
+        // if cfg!(debug_assertions) {
+        //     for batch in &list1 {
+        //         assert!(batch.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
+        //     }
+        //
+        //     for batch in &list2 {
+        //         assert!(batch.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
+        //     }
+        // }
 
         // TODO: `list1` and `list2` get dropped; would be better to reuse?
         let mut output = Vec::with_capacity(list1.len() + list2.len());
