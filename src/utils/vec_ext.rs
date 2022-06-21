@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 /// Extension methods for [`Vec`]
 pub(crate) trait VecExt<T> {
     /// Returns the unused capacity of the current [`Vec`],
@@ -30,6 +32,11 @@ pub(crate) trait VecExt<T> {
     /// assert_eq!(&vec, &["something"]);
     /// ```
     unsafe fn push_unchecked(&mut self, elem: T);
+
+    // FIXME: Replace with `slice::is_sorted_by()` via rust/#53485
+    fn is_sorted_by<F>(&self, compare: F) -> bool
+    where
+        F: FnMut(&T, &T) -> Option<Ordering>;
 }
 
 impl<T> VecExt<T> for Vec<T> {
@@ -49,6 +56,26 @@ impl<T> VecExt<T> for Vec<T> {
         let len = self.len();
         self.spare_capacity_mut().get_unchecked_mut(0).write(elem);
         self.set_len(len + 1);
+    }
+
+    fn is_sorted_by<F>(&self, mut compare: F) -> bool
+    where
+        F: FnMut(&T, &T) -> Option<Ordering>,
+    {
+        let mut iter = self.iter();
+        let mut last = match iter.next() {
+            Some(item) => item,
+            None => return true,
+        };
+
+        iter.all(move |current| {
+            if let Some(Ordering::Greater) | None = compare(last, current) {
+                return false;
+            }
+
+            last = current;
+            true
+        })
     }
 }
 

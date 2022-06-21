@@ -45,7 +45,7 @@ where
     // We could do an insertion-sort like initial scan which builds up sorted,
     // consolidated runs. In a world where there are not many results, we may
     // never even need to call in to merge sort.
-    slice.sort_by(|(time1, _), (time2, _)| time1.cmp(time2));
+    slice.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
 
     let slice_ptr = slice.as_mut_ptr();
 
@@ -106,6 +106,60 @@ mod tests {
         for (mut input, output) in test_cases {
             consolidate(&mut input);
             assert_eq!(input, output);
+        }
+    }
+
+    #[cfg_attr(miri, ignore)]
+    mod proptests {
+        use crate::{trace::consolidation::consolidate, utils::VecExt};
+        use proptest::{collection::vec, prelude::*};
+        use std::collections::BTreeMap;
+
+        prop_compose! {
+            /// Create a batch data tuple
+            fn tuple()(key in 0..10_000usize, value in 0..10_000usize, diff in -10_000..=10_000isize) -> ((usize, usize), isize) {
+                ((key, value), diff)
+            }
+        }
+
+        prop_compose! {
+            /// Generate a random batch of data
+            fn batch()
+                (length in 0..50_000)
+                (batch in vec(tuple(), 0..=length as usize))
+            -> Vec<((usize, usize), isize)> {
+                batch
+            }
+        }
+
+        fn batch_data(batch: &[((usize, usize), isize)]) -> BTreeMap<(usize, usize), i64> {
+            let mut values = BTreeMap::new();
+            for &(tuple, diff) in batch {
+                values
+                    .entry(tuple)
+                    .and_modify(|acc| *acc += diff as i64)
+                    .or_insert(diff as i64);
+            }
+
+            // Elements with a value of zero are removed in consolidation
+            values.retain(|_, &mut diff| diff != 0);
+            values
+        }
+
+        proptest! {
+            #[test]
+            fn consolidate_batch(mut batch in batch()) {
+                let input = batch_data(&batch);
+                consolidate(&mut batch);
+                let output = batch_data(&batch);
+
+                // Ensure the batch is sorted
+                prop_assert!(batch.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
+                // Ensure no diff values are zero
+                prop_assert!(batch.iter().all(|&(_, diff)| diff != 0));
+                // Ensure the aggregated data is the same
+                prop_assert_eq!(input, output);
+            }
         }
     }
 }
