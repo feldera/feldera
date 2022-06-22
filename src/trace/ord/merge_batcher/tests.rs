@@ -1,22 +1,24 @@
 #![cfg(test)]
 
-use crate::trace::{
-    consolidation,
-    ord::{
-        merge_batcher::{MergeBatcher, MergeSorter},
-        OrdValBatch,
+use crate::{
+    algebra::MonoidValue,
+    trace::{
+        ord::{
+            merge_batcher::{MergeBatcher, MergeSorter},
+            OrdValBatch,
+        },
+        Batcher,
     },
-    Batcher,
 };
 use std::marker::PhantomData;
 
-fn batch_one() -> Vec<Vec<(usize, isize)>> {
-    (0..11)
-        .map(|x| {
-            let mut batch = (0..57).map(|y| (x * y, (x ^ y) as isize)).collect();
-            consolidation::consolidate(&mut batch);
-            batch
-        })
+fn preallocated_stashes<K, V>(stashes: usize) -> Vec<Vec<(K, V)>>
+where
+    K: Ord,
+    V: MonoidValue,
+{
+    (0..stashes)
+        .map(|_| Vec::with_capacity(<MergeSorter<K, V>>::BUFFER_ELEMENTS))
         .collect()
 }
 
@@ -28,23 +30,11 @@ fn merge_empty_inputs() {
     assert!(merged.is_empty());
 }
 
-// If either of the lists being merged is empty, nothing happens
-#[test]
-fn merge_empty_with_full() {
-    let mut merger: MergeSorter<usize, isize> = MergeSorter::new();
-    let merged = merger.merge_by(Vec::new(), batch_one());
-    assert_eq!(merged, batch_one());
-
-    let mut merger: MergeSorter<usize, isize> = MergeSorter::new();
-    let merged = merger.merge_by(batch_one(), Vec::new());
-    assert_eq!(merged, batch_one());
-}
-
 #[test]
 fn small_push() {
     let mut merger = MergeSorter::<(usize, usize), isize> {
         queue: vec![vec![vec![((45, 0), -1)], vec![((0, 0), 1)]]],
-        stash: vec![],
+        stash: Vec::new(),
     };
 
     let mut batch = vec![((45, 1), 1)];
@@ -55,7 +45,7 @@ fn small_push() {
 
     assert_eq!(
         output,
-        vec![vec![((45, 0), -1), ((0, 0), 1)], vec![((45, 1), 1)]],
+        vec![vec![((45, 0), -1)], vec![((0, 0), 1)], vec![((45, 1), 1)]],
     );
 }
 
@@ -77,7 +67,7 @@ fn merge_by() {
 fn push_with_excess_stashes() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter {
         queue: Vec::new(),
-        stash: vec![Vec::with_capacity(<MergeSorter<usize, isize>>::BUFFER_ELEMENTS); 5],
+        stash: preallocated_stashes(5),
     };
     merger.push(&mut vec![(0, 1), (1, 6), (24, 5), (54, -23)]);
 
@@ -96,7 +86,7 @@ fn force_finish_merge() {
             vec![vec![(0, 8), (1, 12), (25, 12), (54, -23)]],
             vec![vec![(23, 54), (97, -102)]],
         ],
-        stash: vec![Vec::with_capacity(<MergeSorter<usize, isize>>::BUFFER_ELEMENTS); 5],
+        stash: preallocated_stashes(5),
     };
 
     let mut output = Vec::new();
@@ -104,8 +94,8 @@ fn force_finish_merge() {
 
     let expected = vec![
         vec![(0, 9), (1, 18), (23, 54), (24, 5), (25, 12), (54, -46)],
-        vec![(89, 1)],
         vec![(97, -102)],
+        vec![(89, 1)],
     ];
     assert_eq!(output, expected);
 }
@@ -118,17 +108,18 @@ fn force_merge_on_push() {
             vec![vec![(89, 1)]],
             vec![vec![(0, 8), (1, 12), (25, 12), (54, -23)]],
         ],
-        stash: vec![Vec::with_capacity(<MergeSorter<usize, isize>>::BUFFER_ELEMENTS); 5],
+        stash: preallocated_stashes(5),
     };
+
     merger.push(&mut vec![(23, 54), (97, -102)]);
 
     let mut output = Vec::new();
     merger.finish_into(&mut output);
 
     let expected = vec![
-        vec![(0, 9), (1, 18), (23, 54), (24, 5), (25, 12), (54, -46)],
-        vec![(89, 1)],
+        vec![(0, 9), (1, 18), (24, 5), (25, 12), (54, -46)],
         vec![(97, -102)],
+        vec![(23, 54), (89, 1)],
     ];
     assert_eq!(output, expected);
 }
@@ -140,7 +131,7 @@ fn count_tuples() {
 
     let still_empty: MergeSorter<usize, isize> = MergeSorter {
         queue: Vec::new(),
-        stash: vec![Vec::new(); 100],
+        stash: preallocated_stashes(100),
     };
     assert_eq!(still_empty.tuples(), 0);
 
@@ -172,6 +163,7 @@ fn count_tuples() {
 // These tests will utterly destroy miri's performance
 #[cfg_attr(miri, ignore)]
 mod proptests {
+    use super::preallocated_stashes;
     use crate::{
         trace::{consolidation::consolidate, ord::merge_batcher::MergeSorter},
         utils::VecExt,
@@ -183,7 +175,11 @@ mod proptests {
 
     prop_compose! {
         /// Create a batch data tuple
-        fn tuple()(key in 0..10_000usize, value in 0..10_000usize, diff in -10_000..=10_000isize) -> ((usize, usize), isize) {
+        fn tuple()(
+            key in 0..10_000usize,
+            value in 0..10_000usize,
+            diff in -10_000..=10_000isize,
+        ) -> ((usize, usize), isize) {
             ((key, value), diff)
         }
     }
@@ -191,8 +187,8 @@ mod proptests {
     prop_compose! {
         /// Generate a random batch of data
         fn batch()
-            (length in 0..1000)
-            (batch in vec(tuple(), 0..=length as usize))
+            (length in 0..1000usize)
+            (batch in vec(tuple(), 0..=length))
         -> Vec<((usize, usize), isize)> {
             batch
         }
@@ -209,8 +205,8 @@ mod proptests {
     prop_compose! {
         /// Generate multiple random batches of data
         fn batches()
-            (length in 0..500)
-            (batches in vec(batch(), 0..=length as usize))
+            (length in 0..500usize)
+            (batches in vec(batch(), 0..=length))
         -> Vec<Vec<((usize, usize), isize)>> {
             batches
         }
@@ -219,8 +215,8 @@ mod proptests {
     prop_compose! {
         /// Generate multiple random consolidated batches of data
         fn consolidated_batches()
-            (length in 0..500)
-            (batches in vec(consolidated_batch(), 0..=length as usize))
+            (length in 0..500usize)
+            (batches in vec(consolidated_batch(), 0..=length))
         -> Vec<Vec<((usize, usize), isize)>> {
             batches
         }
@@ -229,16 +225,16 @@ mod proptests {
     prop_compose! {
         // Create an initialized merge sorter with some stashes and already queued data
         fn merge_sorter()
-            (queue_len in 0..10)
+            (queue_len in 0..10usize)
             (
-                stashes in 0..10,
+                stashes in 0..10usize,
                 // Each batch within the merge sorter's queue must already be consolidated
-                queue in vec(consolidated_batches(), 0..=queue_len as usize),
+                queue in vec(consolidated_batches(), 0..=queue_len),
             )
         -> MergeSorter<(usize, usize), isize> {
             MergeSorter {
                 queue,
-                stash: vec![Vec::with_capacity(MergeSorter::<(usize, usize), isize>::BUFFER_ELEMENTS); stashes as usize],
+                stash: preallocated_stashes(stashes),
             }
         }
     }
@@ -301,7 +297,10 @@ mod proptests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
         #[test]
+        #[ignore = "Long running test"]
         fn push_batch(mut merger in merge_sorter(), mut batch in batch()) {
             let input = expected_data(&merger, &batch);
 
@@ -314,7 +313,7 @@ mod proptests {
             // Ensure all output batches are sorted
             for batch in &output {
                 prop_assert!(
-                    batch.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)),
+                    batch.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))),
                     "unsorted batch: {batch:?}",
                 );
             }
@@ -325,7 +324,10 @@ mod proptests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
         #[test]
+        #[ignore = "Long running test"]
         fn push_batches_into_empty(batches in batches()) {
             let input = batches_data(&batches);
             let mut merger = empty_merge_sorter();
@@ -338,11 +340,10 @@ mod proptests {
             let mut output = Vec::new();
             merger.finish_into(&mut output);
 
-            // FIXME: Apparently output batches aren't actually sorted??
-            // // Ensure all output batches are sorted
-            // for batch in &output {
-            //     prop_assert!(batch.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
-            // }
+            // Ensure all output batches are sorted
+            for batch in &output {
+                prop_assert!(batch.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))));
+            }
 
             let merged = batches_data(&output);
             prop_assert_eq!(input, merged);
