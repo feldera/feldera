@@ -98,12 +98,12 @@ where
         let mut builder = <CO as Batch>::Builder::with_capacity((), i.len());
 
         let mut cursor = i.cursor();
-        while cursor.key_valid(i) {
-            let (k, v) = cursor.key(i);
+        while cursor.key_valid() {
+            let (k, v) = cursor.key().clone();
             // TODO: pass key (and value?) by reference
-            let w = cursor.weight(i);
-            builder.push((k.clone(), v.clone(), w.clone()));
-            cursor.step_key(i);
+            let w = cursor.weight();
+            builder.push((k, v, w));
+            cursor.step_key();
         }
         builder.done()
     }

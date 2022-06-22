@@ -199,14 +199,12 @@ where
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = delayed_integral.cursor();
 
-        while delta_cursor.key_valid(delta) {
-            let v = delta_cursor.key(delta);
-            let w = delta_cursor.weight(delta);
-            integral_cursor.seek_key(delayed_integral, v);
-            let old_weight = if integral_cursor.key_valid(delayed_integral)
-                && integral_cursor.key(delayed_integral) == v
-            {
-                integral_cursor.weight(delayed_integral).clone()
+        while delta_cursor.key_valid() {
+            let w = delta_cursor.weight();
+            let v = delta_cursor.key();
+            integral_cursor.seek_key(v);
+            let old_weight = if integral_cursor.key_valid() && integral_cursor.key() == v {
+                integral_cursor.weight().clone()
             } else {
                 HasZero::zero()
             };
@@ -222,7 +220,7 @@ where
                 // Weight changes from positive to non-positive.
                 builder.push((v.clone(), (), Z::R::one().neg()));
             }
-            delta_cursor.step_key(delta);
+            delta_cursor.step_key();
         }
 
         builder.done()
@@ -326,23 +324,23 @@ where
     //
     // This is just the definition of `(↑((↑distinct)∆))∆`.
     #[allow(clippy::type_complexity)]
-    fn eval_value(
+    fn eval_value<'s>(
         &mut self,
-        trace_cursor: &mut T::Cursor,
-        trace: &T,
+        trace_cursor: &mut T::Cursor<'s>,
+        _trace: &'s T,
         value: &Z::Key,
         weight: Z::R,
         output: &mut Vec<((Z::Key, ()), Z::R)>,
     ) {
         //eprintln!("value: {:?}, weight: {:?}", value, weight);
-        trace_cursor.seek_key(trace, value);
+        trace_cursor.seek_key(value);
 
-        if trace_cursor.key_valid(trace) && trace_cursor.key(trace) == value {
+        if trace_cursor.key_valid() && trace_cursor.key() == value {
             let mut w1: Z::R = HasZero::zero();
             let mut w2: Z::R = HasZero::zero();
             let mut w3: Z::R = HasZero::zero();
             let mut next_ts: Option<T::Time> = None;
-            trace_cursor.map_times(trace, |t, w| {
+            trace_cursor.map_times(|t, w| {
                 if !t.epoch() {
                     if t.inner() < self.time {
                         w1.add_assign_by_ref(w);
@@ -502,15 +500,15 @@ where
 
         // Iterate over keys that appear in either `future_updates[self.time]` or
         // `delta`.
-        while delta_cursor.key_valid(delta) && candidate.is_some() {
+        while delta_cursor.key_valid() && candidate.is_some() {
             let cand_val = candidate.unwrap();
-            let k = delta_cursor.key(delta);
-            let w = delta_cursor.weight(delta);
+            let w = delta_cursor.weight();
+            let k = delta_cursor.key();
             match k.cmp(cand_val) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
                     self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
-                    delta_cursor.step_key(delta);
+                    delta_cursor.step_key();
                 }
                 // Key only appears in `future_updates`.
                 Ordering::Greater => {
@@ -526,7 +524,7 @@ where
                 // Key appears in both `delta` and `future_updates`.
                 Ordering::Equal => {
                     self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
-                    delta_cursor.step_key(delta);
+                    delta_cursor.step_key();
                     candidate = cand_iterator.next();
                 }
             }
@@ -535,12 +533,12 @@ where
         // One of the cursors is empty; iterate over whatever remains in the other
         // cursor.
 
-        while delta_cursor.key_valid(delta) {
-            let k = delta_cursor.key(delta);
-            let w = delta_cursor.weight(delta);
+        while delta_cursor.key_valid() {
+            let w = delta_cursor.weight();
+            let k = delta_cursor.key();
 
             self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
-            delta_cursor.step_key(delta);
+            delta_cursor.step_key();
         }
         while candidate.is_some() {
             self.eval_value(

@@ -240,31 +240,31 @@ where
         // Choose capacity heuristically.
         let mut batch = Vec::with_capacity(min(i1.len(), i2.len()));
 
-        while cursor1.key_valid(i1) && cursor2.key_valid(i2) {
-            match cursor1.key(i1).cmp(cursor2.key(i2)) {
-                Ordering::Less => cursor1.seek_key(i1, cursor2.key(i2)),
-                Ordering::Greater => cursor2.seek_key(i2, cursor1.key(i1)),
+        while cursor1.key_valid() && cursor2.key_valid() {
+            match cursor1.key().cmp(cursor2.key()) {
+                Ordering::Less => cursor1.seek_key(cursor2.key()),
+                Ordering::Greater => cursor2.seek_key(cursor1.key()),
                 Ordering::Equal => {
-                    while cursor1.val_valid(i1) {
-                        let w1 = cursor1.weight(i1);
-                        let v1 = cursor1.val(i1);
-                        while cursor2.val_valid(i2) {
-                            let v2 = cursor2.val(i2);
-                            let w2 = cursor2.weight(i2);
+                    while cursor1.val_valid() {
+                        let w1 = cursor1.weight();
+                        let v1 = cursor1.val();
+                        while cursor2.val_valid() {
+                            let w2 = cursor2.weight();
+                            let v2 = cursor2.val();
 
                             batch.push((
-                                ((self.join_func)(cursor1.key(i1), v1, v2), ()),
+                                ((self.join_func)(cursor1.key(), v1, v2), ()),
                                 w1.mul_by_ref(&w2),
                             ));
-                            cursor2.step_val(i2);
+                            cursor2.step_val();
                         }
 
-                        cursor2.rewind_vals(i2);
-                        cursor1.step_val(i1);
+                        cursor2.rewind_vals();
+                        cursor1.step_val();
                     }
 
-                    cursor1.step_key(i1);
-                    cursor2.step_key(i2);
+                    cursor1.step_key();
+                    cursor2.step_key();
                 }
             }
         }
@@ -395,29 +395,26 @@ where
         let mut index_cursor = index.cursor();
         let mut trace_cursor = trace.cursor();
 
-        while index_cursor.key_valid(index) && trace_cursor.key_valid(trace) {
-            match index_cursor.key(index).cmp(trace_cursor.key(trace)) {
+        while index_cursor.key_valid() && trace_cursor.key_valid() {
+            match index_cursor.key().cmp(trace_cursor.key()) {
                 Ordering::Less => {
-                    index_cursor.seek_key(index, trace_cursor.key(trace));
+                    index_cursor.seek_key(trace_cursor.key());
                 }
                 Ordering::Greater => {
-                    trace_cursor.seek_key(trace, index_cursor.key(index));
+                    trace_cursor.seek_key(index_cursor.key());
                 }
                 Ordering::Equal => {
                     //println!("key: {}", index_cursor.key(index));
 
-                    while index_cursor.val_valid(index) {
-                        let v1 = index_cursor.val(index);
-                        let w1 = index_cursor.weight(index);
+                    while index_cursor.val_valid() {
+                        let w1 = index_cursor.weight();
+                        let v1 = index_cursor.val();
                         //println!("v1: {}, w1: {}", v1, w1);
 
-                        while trace_cursor.val_valid(trace) {
-                            let output = (self.join_func)(
-                                index_cursor.key(index),
-                                v1,
-                                trace_cursor.val(trace),
-                            );
-                            trace_cursor.map_times(trace, |ts, w2| {
+                        while trace_cursor.val_valid() {
+                            let output =
+                                (self.join_func)(index_cursor.key(), v1, trace_cursor.val());
+                            trace_cursor.map_times(|ts, w2| {
                                 output_tuples.push((
                                     ts.join(&self.time),
                                     ((output.clone(), ()), w1.mul_by_ref(w2)),
@@ -425,14 +422,14 @@ where
                                 //println!("  tuple@{}: ({:?}, {})", off,
                                 // output, w1.clone() * w2.clone());
                             });
-                            trace_cursor.step_val(trace);
+                            trace_cursor.step_val();
                         }
-                        trace_cursor.rewind_vals(trace);
-                        index_cursor.step_val(index);
+                        trace_cursor.rewind_vals();
+                        index_cursor.step_val();
                     }
 
-                    index_cursor.step_key(index);
-                    trace_cursor.step_key(trace);
+                    index_cursor.step_key();
+                    trace_cursor.step_key();
                 }
             }
         }

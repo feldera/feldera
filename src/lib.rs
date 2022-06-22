@@ -1,3 +1,5 @@
+#![feature(generic_associated_types)]
+
 mod num_entries;
 mod ref_pair;
 mod shared_ref;

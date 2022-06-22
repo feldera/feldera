@@ -232,9 +232,9 @@ where
     type Val = ();
     type Time = ();
     type R = R;
-    type Cursor = OrdZSetCursor;
+    type Cursor<'s> = OrdZSetCursor<'s, K, R>;
 
-    fn cursor(&self) -> Self::Cursor {
+    fn cursor(&self) -> Self::Cursor<'_> {
         OrdZSetCursor {
             empty: (),
             valid: true,
@@ -299,67 +299,80 @@ where
         }
     }
     fn work(&mut self, source1: &OrdZSet<K, R>, source2: &OrdZSet<K, R>, fuel: &mut isize) {
-        *fuel -= self.result.push_merge(
-            (&source1.layer, source1.layer.cursor()),
-            (&source2.layer, source2.layer.cursor()),
-        ) as isize;
+        *fuel -= self
+            .result
+            .push_merge(source1.layer.cursor(), source2.layer.cursor()) as isize;
         *fuel = max(*fuel, 1);
     }
 }
 
 /// A cursor for navigating a single layer.
 #[derive(Debug)]
-pub struct OrdZSetCursor {
+pub struct OrdZSetCursor<'s, K, R>
+where
+    K: Ord + Clone,
+    R: MonoidValue,
+{
     valid: bool,
     empty: (),
-    cursor: OrderedLeafCursor,
+    cursor: OrderedLeafCursor<'s, K, R>,
 }
 
-impl<K, R> Cursor<K, (), (), R> for OrdZSetCursor
+impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: MonoidValue,
 {
     type Storage = OrdZSet<K, R>;
 
-    fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K {
-        &self.cursor.key(&storage.layer).0
+    fn key(&self) -> &K {
+        &self.cursor.key().0
     }
-    fn val<'a>(&self, _storage: &'a Self::Storage) -> &'a () {
+    fn val(&self) -> &() {
         unsafe { ::std::mem::transmute(&self.empty) }
     }
-    fn map_times<L: FnMut(&(), &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
-        if self.cursor.valid(&storage.layer) {
-            logic(&(), &self.cursor.key(&storage.layer).1);
+    fn map_times<L: FnMut(&(), &R)>(&mut self, mut logic: L) {
+        if self.cursor.valid() {
+            logic(&(), &self.cursor.key().1);
         }
     }
-    fn weight(&mut self, storage: &Self::Storage) -> R {
-        debug_assert!(&self.cursor.valid(&storage.layer));
-        self.cursor.key(&storage.layer).1.clone()
+    fn weight(&mut self) -> R {
+        debug_assert!(&self.cursor.valid());
+        self.cursor.key().1.clone()
     }
-    fn key_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.valid(&storage.layer)
+    fn key_valid(&self) -> bool {
+        self.cursor.valid()
     }
-    fn val_valid(&self, _storage: &Self::Storage) -> bool {
+    fn val_valid(&self) -> bool {
         self.valid
     }
-    fn step_key(&mut self, storage: &Self::Storage) {
-        self.cursor.step(&storage.layer);
+    fn step_key(&mut self) {
+        self.cursor.step();
         self.valid = true;
     }
-    fn seek_key(&mut self, storage: &Self::Storage, key: &K) {
-        self.cursor.seek_key(&storage.layer, key);
+    fn seek_key(&mut self, key: &K) {
+        self.cursor.seek_key(key);
         self.valid = true;
     }
-    fn step_val(&mut self, _storage: &Self::Storage) {
+    fn step_val(&mut self) {
         self.valid = false;
     }
-    fn seek_val(&mut self, _storage: &Self::Storage, _val: &()) {}
-    fn rewind_keys(&mut self, storage: &Self::Storage) {
-        self.cursor.rewind(&storage.layer);
+    fn seek_val(&mut self, _val: &()) {}
+
+    fn values<'a>(&mut self, _vals: &mut Vec<(&'a (), R)>)
+    where
+        's: 'a,
+    {
+        // It's technically ok to call this on a batch with value type `()`,
+        // but shouldn't happen in practice.
+        unimplemented!();
+    }
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind();
         self.valid = true;
     }
-    fn rewind_vals(&mut self, _storage: &Self::Storage) {
+    fn rewind_vals(&mut self) {
         self.valid = true;
     }
 }

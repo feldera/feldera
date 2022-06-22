@@ -42,13 +42,12 @@ where
         let mut builder = Self::Builder::with_capacity((), self.len());
         let mut cursor = self.cursor();
 
-        while cursor.key_valid(self) {
-            let key = cursor.key(self);
-            let w = cursor.weight(self);
+        while cursor.key_valid() {
+            let w = cursor.weight();
             if w.ge0() {
-                builder.push((key.clone(), (), HasOne::one()));
+                builder.push((cursor.key().clone(), (), HasOne::one()));
             }
-            cursor.step_key(self);
+            cursor.step_key();
         }
 
         builder.done()

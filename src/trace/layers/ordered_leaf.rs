@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::{
         consolidation::consolidate_slice,
-        layers::{advance, Builder, Cursor, MergeBuilder, Trie, TrieSlice, TupleBuilder},
+        layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     },
     NumEntries, SharedRef,
 };
@@ -24,7 +24,7 @@ pub struct OrderedLeaf<K, R> {
 
 impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedLeaf<K, R> {
     type Item = (K, R);
-    type Cursor = OrderedLeafCursor;
+    type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedLeafBuilder<K, R>;
     type TupleBuilder = UnorderedLeafBuilder<K, R>;
     fn keys(&self) -> usize {
@@ -33,8 +33,9 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedL
     fn tuples(&self) -> usize {
         <OrderedLeaf<K, R> as Trie>::keys(self)
     }
-    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor {
+    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         OrderedLeafCursor {
+            storage: self,
             bounds: (lower, upper),
             pos: lower,
         }
@@ -47,26 +48,7 @@ where
     R: Eq + HasZero + AddAssignByRef + Clone + Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        TrieSlice(self, self.cursor()).fmt(f)
-    }
-}
-
-impl<'a, K, R> Display for TrieSlice<'a, OrderedLeaf<K, R>>
-where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let TrieSlice(storage, cursor) = self;
-        let mut cursor: OrderedLeafCursor = cursor.clone();
-
-        while cursor.valid(storage) {
-            let (key, val) = cursor.key(storage);
-            writeln!(f, "{} -> {}", key, val)?;
-            cursor.step(storage);
-        }
-
-        Ok(())
+        self.cursor().fmt(f)
     }
 }
 
@@ -219,13 +201,13 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         self.vals.extend_from_slice(&other.vals[lower..upper]);
     }
-    fn push_merge(
-        &mut self,
-        other1: (&Self::Trie, <Self::Trie as Trie>::Cursor),
-        other2: (&Self::Trie, <Self::Trie as Trie>::Cursor),
+    fn push_merge<'a>(
+        &'a mut self,
+        cursor1: <Self::Trie as Trie>::Cursor<'a>,
+        cursor2: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize {
-        let (trie1, cursor1) = other1;
-        let (trie2, cursor2) = other2;
+        let trie1 = cursor1.storage;
+        let trie2 = cursor2.storage;
         let mut lower1 = cursor1.bounds.0;
         let upper1 = cursor1.bounds.1;
         let mut lower2 = cursor2.bounds.0;
@@ -364,50 +346,77 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
 /// This cursor does not support `seek`, though I'm not certain how to expose
 /// this.
 #[derive(Clone, Debug)]
-pub struct OrderedLeafCursor {
+pub struct OrderedLeafCursor<'s, K, R>
+where
+    K: Eq + Ord + Clone,
+    R: Clone,
+{
     pos: usize,
+    storage: &'s OrderedLeaf<K, R>,
     bounds: (usize, usize),
 }
 
-impl OrderedLeafCursor {
-    pub fn seek_key<K: Eq + Ord + Clone, R: Clone>(
-        &mut self,
-        storage: &OrderedLeaf<K, R>,
-        key: &K,
-    ) {
-        self.pos += advance(&storage.vals[self.pos..self.bounds.1], |(k, _)| k.lt(key));
+impl<'a, K, R> Display for OrderedLeafCursor<'a, K, R>
+where
+    K: Ord + Clone + Display,
+    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut cursor: OrderedLeafCursor<K, R> = self.clone();
+
+        while cursor.valid() {
+            let (key, val) = cursor.key();
+            writeln!(f, "{} -> {}", key, val)?;
+            cursor.step();
+        }
+
+        Ok(())
     }
 }
 
-impl<K: Eq + Ord + Clone, R: Clone> Cursor<OrderedLeaf<K, R>> for OrderedLeafCursor {
+impl<'s, K, R> OrderedLeafCursor<'s, K, R>
+where
+    K: Eq + Ord + Clone,
+    R: Clone,
+{
+    pub fn seek_key(&mut self, key: &K) {
+        self.pos += advance(&self.storage.vals[self.pos..self.bounds.1], |(k, _)| {
+            k.lt(key)
+        });
+    }
+}
+
+impl<'s, K, R> Cursor<'s> for OrderedLeafCursor<'s, K, R>
+where
+    K: Eq + Ord + Clone,
+    R: Clone,
+{
     type Key = (K, R);
     type ValueStorage = ();
 
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
-    fn key<'a>(&self, storage: &'a OrderedLeaf<K, R>) -> &'a Self::Key {
-        &storage.vals[self.pos]
+    fn key(&self) -> &'s Self::Key {
+        &self.storage.vals[self.pos]
     }
-    fn values<'a>(&self, _storage: &'a OrderedLeaf<K, R>) -> (&'a (), ()) {
-        (&(), ())
-    }
-    fn step(&mut self, storage: &OrderedLeaf<K, R>) {
+    fn values(&self) {}
+    fn step(&mut self) {
         self.pos += 1;
-        if !self.valid(storage) {
+        if !self.valid() {
             self.pos = self.bounds.1;
         }
     }
-    fn seek(&mut self, storage: &OrderedLeaf<K, R>, key: &Self::Key) {
-        self.seek_key(storage, &key.0);
+    fn seek(&mut self, key: &Self::Key) {
+        self.seek_key(&key.0);
     }
-    fn valid(&self, _storage: &OrderedLeaf<K, R>) -> bool {
+    fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
-    fn rewind(&mut self, _storage: &OrderedLeaf<K, R>) {
+    fn rewind(&mut self) {
         self.pos = self.bounds.0;
     }
-    fn reposition(&mut self, _storage: &OrderedLeaf<K, R>, lower: usize, upper: usize) {
+    fn reposition(&mut self, lower: usize, upper: usize) {
         self.pos = lower;
         self.bounds = (lower, upper);
     }

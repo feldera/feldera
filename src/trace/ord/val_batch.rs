@@ -94,8 +94,8 @@ where
     type Time = T;
     type R = R;
 
-    type Cursor = OrdValCursor<V, T, R, O>;
-    fn cursor(&self) -> Self::Cursor {
+    type Cursor<'s> = OrdValCursor<'s, K, V, T, R, O> where O: 's;
+    fn cursor(&self) -> Self::Cursor<'_> {
         OrdValCursor {
             cursor: self.layer.cursor(),
         }
@@ -353,8 +353,9 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug)]
-pub struct OrdValCursor<V, T, R, O = usize>
+pub struct OrdValCursor<'s, K, V, T, R, O = usize>
 where
+    K: Ord + Clone,
     V: Ord + Clone,
     T: Lattice + Ord + Clone,
     R: MonoidValue,
@@ -362,10 +363,10 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    cursor: OrderedCursor<OrderedLayer<V, OrderedLeaf<T, R>, O>>,
+    cursor: OrderedCursor<'s, K, O, OrderedLayer<V, OrderedLeaf<T, R>, O>>,
 }
 
-impl<K, V, T, R, O> Cursor<K, V, T, R> for OrdValCursor<V, T, R, O>
+impl<'s, K, V, T, R, O> Cursor<'s, K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
 where
     K: Ord + Clone,
     V: Ord + Clone,
@@ -377,58 +378,64 @@ where
 {
     type Storage = OrdValBatch<K, V, T, R, O>;
 
-    fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K {
-        self.cursor.key(&storage.layer)
+    fn key(&self) -> &K {
+        self.cursor.key()
     }
-    fn val<'a>(&self, storage: &'a Self::Storage) -> &'a V {
-        self.cursor.child.key(&storage.layer.vals)
+    fn val(&self) -> &V {
+        self.cursor.child.key()
     }
-    fn map_times<L: FnMut(&T, &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
-        self.cursor.child.child.rewind(&storage.layer.vals.vals);
-        while self.cursor.child.child.valid(&storage.layer.vals.vals) {
+    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
+        self.cursor.child.child.rewind();
+        while self.cursor.child.child.valid() {
             logic(
-                &self.cursor.child.child.key(&storage.layer.vals.vals).0,
-                &self.cursor.child.child.key(&storage.layer.vals.vals).1,
+                &self.cursor.child.child.key().0,
+                &self.cursor.child.child.key().1,
             );
-            self.cursor.child.child.step(&storage.layer.vals.vals);
+            self.cursor.child.child.step();
         }
     }
-    fn weight(&mut self, storage: &Self::Storage) -> R
+    fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.cursor.child.child.valid(&storage.layer.vals.vals));
-        self.cursor
-            .child
-            .child
-            .key(&storage.layer.vals.vals)
-            .1
-            .clone()
+        debug_assert!(self.cursor.child.child.valid());
+        self.cursor.child.child.key().1.clone()
     }
 
-    fn key_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.valid(&storage.layer)
+    fn key_valid(&self) -> bool {
+        self.cursor.valid()
     }
-    fn val_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.child.valid(&storage.layer.vals)
+    fn val_valid(&self) -> bool {
+        self.cursor.child.valid()
     }
-    fn step_key(&mut self, storage: &Self::Storage) {
-        self.cursor.step(&storage.layer);
+    fn step_key(&mut self) {
+        self.cursor.step();
     }
-    fn seek_key(&mut self, storage: &Self::Storage, key: &K) {
-        self.cursor.seek(&storage.layer, key);
+    fn seek_key(&mut self, key: &K) {
+        self.cursor.seek(key);
     }
-    fn step_val(&mut self, storage: &Self::Storage) {
-        self.cursor.child.step(&storage.layer.vals);
+    fn step_val(&mut self) {
+        self.cursor.child.step();
     }
-    fn seek_val(&mut self, storage: &Self::Storage, val: &V) {
-        self.cursor.child.seek(&storage.layer.vals, val);
+    fn seek_val(&mut self, val: &V) {
+        self.cursor.child.seek(val);
     }
-    fn rewind_keys(&mut self, storage: &Self::Storage) {
-        self.cursor.rewind(&storage.layer);
+
+    fn values<'a>(&mut self, _vals: &mut Vec<(&'a V, R)>)
+    where
+        's: 'a,
+    {
+        // We currently don't use this method on timed batches.
+        // When we do, the API is likely to change, so just
+        // leave it unimplemented for now.
+        unimplemented!()
     }
-    fn rewind_vals(&mut self, storage: &Self::Storage) {
-        self.cursor.child.rewind(&storage.layer.vals);
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind();
+    }
+    fn rewind_vals(&mut self) {
+        self.cursor.child.rewind();
     }
 }
 

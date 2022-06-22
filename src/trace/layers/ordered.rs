@@ -2,7 +2,7 @@
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
-    trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TrieSlice, TupleBuilder},
+    trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     NumEntries, SharedRef,
 };
 use deepsize::DeepSizeOf;
@@ -58,46 +58,13 @@ impl<K, L, O> Display for OrderedLayer<K, L, O>
 where
     K: Ord + Clone + Display,
     L: Trie,
-    <Self as Trie>::Cursor: Clone,
-    L::Cursor: Clone,
-    for<'a> TrieSlice<'a, L>: Display,
+    for<'a> L::Cursor<'a>: Clone + Display,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        TrieSlice(self, self.cursor()).fmt(f)
-    }
-}
-
-impl<'a, K, L, O> Display for TrieSlice<'a, OrderedLayer<K, L, O>>
-where
-    K: Ord + Clone + Display,
-    L: Trie,
-    <OrderedLayer<K, L, O> as Trie>::Cursor: Clone,
-    L::Cursor: Clone,
-    for<'b> TrieSlice<'b, L>: Display,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let TrieSlice(storage, cursor) = self;
-        let mut cursor: OrderedCursor<L> = cursor.clone();
-
-        while cursor.valid(storage) {
-            let key = cursor.key(storage);
-            writeln!(f, "{}:", key)?;
-            let (val_storage, val_cursor) = cursor.values(storage);
-
-            f.write_str(&indent(
-                &TrieSlice(val_storage, val_cursor).to_string(),
-                "    ",
-            ))?;
-            cursor.step(storage);
-        }
-
-        Ok(())
+        self.cursor().fmt(f)
     }
 }
 
@@ -251,7 +218,7 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
-    type Cursor = OrderedCursor<L>;
+    type Cursor<'s> = OrderedCursor<'s, K, O, L> where K: 's, O: 's, L: 's;
     type MergeBuilder = OrderedBuilder<K, L::MergeBuilder, O>;
     type TupleBuilder = UnorderedBuilder<K, L::TupleBuilder, O>;
 
@@ -261,12 +228,14 @@ where
     fn tuples(&self) -> usize {
         self.vals.tuples()
     }
-    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor {
+
+    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         if lower < upper {
             let child_lower = self.offs[lower];
             let child_upper = self.offs[lower + 1];
             OrderedCursor {
                 bounds: (lower, upper),
+                storage: self,
                 child: self.vals.cursor_from(
                     child_lower.try_into().unwrap(),
                     child_upper.try_into().unwrap(),
@@ -276,6 +245,7 @@ where
         } else {
             OrderedCursor {
                 bounds: (0, 0),
+                storage: self,
                 child: self.vals.cursor_from(0, 0),
                 pos: 0,
             }
@@ -373,13 +343,11 @@ where
         );
     }
 
-    fn push_merge(
-        &mut self,
-        other1: (&Self::Trie, <Self::Trie as Trie>::Cursor),
-        other2: (&Self::Trie, <Self::Trie as Trie>::Cursor),
+    fn push_merge<'a>(
+        &'a mut self,
+        cursor1: <Self::Trie as Trie>::Cursor<'a>,
+        cursor2: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize {
-        let (trie1, cursor1) = other1;
-        let (trie2, cursor2) = other2;
         let mut lower1 = cursor1.bounds.0;
         let upper1 = cursor1.bounds.1;
         let mut lower2 = cursor2.bounds.0;
@@ -389,14 +357,17 @@ where
 
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
-            self.merge_step((trie1, &mut lower1, upper1), (trie2, &mut lower2, upper2));
+            self.merge_step(
+                (cursor1.storage, &mut lower1, upper1),
+                (cursor2.storage, &mut lower2, upper2),
+            );
         }
 
         if lower1 < upper1 {
-            self.copy_range(trie1, lower1, upper1);
+            self.copy_range(cursor1.storage, lower1, upper1);
         }
         if lower2 < upper2 {
-            self.copy_range(trie2, lower2, upper2);
+            self.copy_range(cursor2.storage, lower2, upper2);
         }
 
         self.keys.len()
@@ -435,19 +406,13 @@ where
                 let lower = self.vals.boundary();
                 // record vals_length so we can tell if anything was pushed.
                 let upper = self.vals.push_merge(
-                    (
-                        &trie1.vals,
-                        trie1.vals.cursor_from(
-                            trie1.offs[*lower1].try_into().unwrap(),
-                            trie1.offs[*lower1 + 1].try_into().unwrap(),
-                        ),
+                    trie1.vals.cursor_from(
+                        trie1.offs[*lower1].try_into().unwrap(),
+                        trie1.offs[*lower1 + 1].try_into().unwrap(),
                     ),
-                    (
-                        &trie2.vals,
-                        trie2.vals.cursor_from(
-                            trie2.offs[*lower2].try_into().unwrap(),
-                            trie2.offs[*lower2 + 1].try_into().unwrap(),
-                        ),
+                    trie2.vals.cursor_from(
+                        trie2.offs[*lower2].try_into().unwrap(),
+                        trie2.offs[*lower2 + 1].try_into().unwrap(),
                     ),
                 );
                 if upper > lower {
@@ -588,17 +553,69 @@ where
 }
 
 /// A cursor with a child cursor that is updated as we move.
-#[derive(Debug, Clone)]
-pub struct OrderedCursor<L: Trie> {
+#[derive(Debug)]
+pub struct OrderedCursor<'s, K, O, L>
+where
+    K: Ord,
+    L: Trie,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
     // keys: OwningRef<Rc<Erased>, [K]>,
     // offs: OwningRef<Rc<Erased>, [usize]>,
+    storage: &'s OrderedLayer<K, L, O>,
     pos: usize,
     bounds: (usize, usize),
     /// The cursor for the trie layer below this one.
-    pub child: L::Cursor,
+    pub child: L::Cursor<'s>,
 }
 
-impl<K, L, O> Cursor<OrderedLayer<K, L, O>> for OrderedCursor<L>
+impl<'s, K, O, L> Clone for OrderedCursor<'s, K, O, L>
+where
+    K: Ord,
+    L: Trie,
+    O: OrdOffset,
+    L::Cursor<'s>: Clone,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage,
+            pos: self.pos,
+            bounds: self.bounds,
+            child: self.child.clone(),
+        }
+    }
+}
+
+impl<'a, K, L, O> Display for OrderedCursor<'a, K, O, L>
+where
+    K: Ord + Clone + Display,
+    L: Trie,
+    L::Cursor<'a>: Clone + Display,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut cursor: OrderedCursor<'_, K, O, L> = self.clone();
+
+        while cursor.valid() {
+            let key = cursor.key();
+            writeln!(f, "{}:", key)?;
+            let val_str = cursor.values().to_string();
+
+            f.write_str(&indent(&val_str, "    "))?;
+            cursor.step();
+        }
+
+        Ok(())
+    }
+}
+
+impl<'s, K, L, O> Cursor<'s> for OrderedCursor<'s, K, O, L>
 where
     K: Ord,
     L: Trie,
@@ -612,64 +629,60 @@ where
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
-    fn key<'a>(&self, storage: &'a OrderedLayer<K, L, O>) -> &'a Self::Key {
-        &storage.keys[self.pos]
+    fn key(&self) -> &'s Self::Key {
+        &self.storage.keys[self.pos]
     }
-    fn values<'a>(&self, storage: &'a OrderedLayer<K, L, O>) -> (&'a L, L::Cursor) {
-        let child_cursor = if self.valid(storage) {
-            storage.vals.cursor_from(
-                storage.offs[self.pos].try_into().unwrap(),
-                storage.offs[self.pos + 1].try_into().unwrap(),
+    fn values(&self) -> L::Cursor<'s> {
+        let child_cursor = if self.valid() {
+            self.storage.vals.cursor_from(
+                self.storage.offs[self.pos].try_into().unwrap(),
+                self.storage.offs[self.pos + 1].try_into().unwrap(),
             )
         } else {
-            storage.vals.cursor_from(0, 0)
+            self.storage.vals.cursor_from(0, 0)
         };
-        (&storage.vals, child_cursor)
+        child_cursor
     }
-    fn step(&mut self, storage: &OrderedLayer<K, L, O>) {
+    fn step(&mut self) {
         self.pos += 1;
-        if self.valid(storage) {
+        if self.valid() {
             self.child.reposition(
-                &storage.vals,
-                storage.offs[self.pos].try_into().unwrap(),
-                storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].try_into().unwrap(),
+                self.storage.offs[self.pos + 1].try_into().unwrap(),
             );
         } else {
             self.pos = self.bounds.1;
         }
     }
-    fn seek(&mut self, storage: &OrderedLayer<K, L, O>, key: &Self::Key) {
-        self.pos += advance(&storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
-        if self.valid(storage) {
+    fn seek(&mut self, key: &Self::Key) {
+        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
+        if self.valid() {
             self.child.reposition(
-                &storage.vals,
-                storage.offs[self.pos].try_into().unwrap(),
-                storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].try_into().unwrap(),
+                self.storage.offs[self.pos + 1].try_into().unwrap(),
             );
         }
     }
     // fn size(&self) -> usize { self.bounds.1 - self.bounds.0 }
-    fn valid(&self, _storage: &OrderedLayer<K, L, O>) -> bool {
+    fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
-    fn rewind(&mut self, storage: &OrderedLayer<K, L, O>) {
+    fn rewind(&mut self) {
         self.pos = self.bounds.0;
-        if self.valid(storage) {
+        if self.valid() {
             self.child.reposition(
-                &storage.vals,
-                storage.offs[self.pos].try_into().unwrap(),
-                storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].try_into().unwrap(),
+                self.storage.offs[self.pos + 1].try_into().unwrap(),
             );
         }
     }
-    fn reposition(&mut self, storage: &OrderedLayer<K, L, O>, lower: usize, upper: usize) {
+    fn reposition(&mut self, lower: usize, upper: usize) {
         self.pos = lower;
         self.bounds = (lower, upper);
-        if self.valid(storage) {
+        if self.valid() {
             self.child.reposition(
-                &storage.vals,
-                storage.offs[self.pos].try_into().unwrap(),
-                storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].try_into().unwrap(),
+                self.storage.offs[self.pos + 1].try_into().unwrap(),
             );
         }
     }

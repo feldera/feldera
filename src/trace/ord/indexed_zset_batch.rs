@@ -2,7 +2,6 @@ use std::{
     cmp::max,
     convert::{TryFrom, TryInto},
     fmt::{Debug, Display, Formatter},
-    marker::PhantomData,
     ops::{Add, AddAssign, Neg},
     rc::Rc,
 };
@@ -305,12 +304,11 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor = OrdIndexedZSetCursor<K, V, R, O>;
+    type Cursor<'s> = OrdIndexedZSetCursor<'s, K, V, R, O> where V: 's, O: 's;
 
-    fn cursor(&self) -> Self::Cursor {
+    fn cursor(&self) -> Self::Cursor<'_> {
         OrdIndexedZSetCursor {
             cursor: self.layer.cursor(),
-            _phantom: PhantomData,
         }
     }
     fn len(&self) -> usize {
@@ -386,27 +384,28 @@ where
         source2: &OrdIndexedZSet<K, V, R, O>,
         fuel: &mut isize,
     ) {
-        *fuel -= self.result.push_merge(
-            (&source1.layer, source1.layer.cursor()),
-            (&source2.layer, source2.layer.cursor()),
-        ) as isize;
+        *fuel -= self
+            .result
+            .push_merge(source1.layer.cursor(), source2.layer.cursor()) as isize;
         *fuel = max(*fuel, 1);
     }
 }
 
 /// A cursor for navigating a single layer.
 #[derive(Debug)]
-pub struct OrdIndexedZSetCursor<K, V, R, O>
+pub struct OrdIndexedZSetCursor<'s, K, V, R, O>
 where
     K: Ord + Clone,
     V: Ord + Clone,
     R: MonoidValue,
+    O: OrdOffset + PartialEq,
+    <O as TryInto<usize>>::Error: Debug,
+    <O as TryFrom<usize>>::Error: Debug,
 {
-    cursor: OrderedCursor<OrderedLeaf<V, R>>,
-    _phantom: PhantomData<(K, O)>,
+    cursor: OrderedCursor<'s, K, O, OrderedLeaf<V, R>>,
 }
 
-impl<K, V, R, O> Cursor<K, V, (), R> for OrdIndexedZSetCursor<K, V, R, O>
+impl<'s, K, V, R, O> Cursor<'s, K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
 where
     K: Ord + Clone,
     V: Ord + Clone,
@@ -417,45 +416,61 @@ where
 {
     type Storage = OrdIndexedZSet<K, V, R, O>;
 
-    fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K {
-        self.cursor.key(&storage.layer)
+    fn key(&self) -> &K {
+        self.cursor.key()
     }
-    fn val<'a>(&self, storage: &'a Self::Storage) -> &'a V {
-        &self.cursor.child.key(&storage.layer.vals).0
+    fn val(&self) -> &V {
+        &self.cursor.child.key().0
     }
-    fn map_times<L: FnMut(&(), &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
-        if self.cursor.child.valid(&storage.layer.vals) {
-            logic(&(), &self.cursor.child.key(&storage.layer.vals).1);
+    fn map_times<L: FnMut(&(), &R)>(&mut self, mut logic: L) {
+        if self.cursor.child.valid() {
+            logic(&(), &self.cursor.child.key().1);
         }
     }
-    fn weight(&mut self, storage: &Self::Storage) -> R {
-        debug_assert!(self.cursor.child.valid(&storage.layer.vals));
-        self.cursor.child.key(&storage.layer.vals).1.clone()
+    fn weight(&mut self) -> R {
+        debug_assert!(self.cursor.child.valid());
+        self.cursor.child.key().1.clone()
     }
 
-    fn key_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.valid(&storage.layer)
+    fn key_valid(&self) -> bool {
+        self.cursor.valid()
     }
-    fn val_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.child.valid(&storage.layer.vals)
+    fn val_valid(&self) -> bool {
+        self.cursor.child.valid()
     }
-    fn step_key(&mut self, storage: &Self::Storage) {
-        self.cursor.step(&storage.layer);
+    fn step_key(&mut self) {
+        self.cursor.step();
     }
-    fn seek_key(&mut self, storage: &Self::Storage, key: &K) {
-        self.cursor.seek(&storage.layer, key);
+    fn seek_key(&mut self, key: &K) {
+        self.cursor.seek(key);
     }
-    fn step_val(&mut self, storage: &Self::Storage) {
-        self.cursor.child.step(&storage.layer.vals);
+    fn step_val(&mut self) {
+        self.cursor.child.step();
     }
-    fn seek_val(&mut self, storage: &Self::Storage, val: &V) {
-        self.cursor.child.seek_key(&storage.layer.vals, val);
+    fn seek_val(&mut self, val: &V) {
+        self.cursor.child.seek_key(val);
     }
-    fn rewind_keys(&mut self, storage: &Self::Storage) {
-        self.cursor.rewind(&storage.layer);
+
+    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
+    where
+        's: 'a,
+    {
+        debug_assert!(self.cursor.valid());
+
+        let mut val_cursor = self.cursor.values();
+        vals.reserve(val_cursor.keys());
+
+        while val_cursor.valid() {
+            vals.push((&val_cursor.key().0, val_cursor.key().1.clone()));
+            val_cursor.step();
+        }
     }
-    fn rewind_vals(&mut self, storage: &Self::Storage) {
-        self.cursor.child.rewind(&storage.layer.vals);
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind();
+    }
+    fn rewind_vals(&mut self) {
+        self.cursor.child.rewind();
     }
 }
 
