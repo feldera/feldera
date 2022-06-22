@@ -160,46 +160,43 @@ where
 
         if let Some((start0, end0)) = &self.window {
             // Retract tuples in `trace` that slid out of the window (region 1).
-            trace_cursor.seek_key(trace, start0);
-            while trace_cursor.key_valid(trace)
-                && trace_cursor.key(trace) < &start1
-                && trace_cursor.key(trace) < end0
+            trace_cursor.seek_key(start0);
+            while trace_cursor.key_valid()
+                && trace_cursor.key() < &start1
+                && trace_cursor.key() < end0
             {
-                trace_cursor.map_values(trace, |val, weight| {
+                trace_cursor.map_values(|val, weight| {
                     tuples.push(((val.clone(), ()), weight.neg_by_ref()))
                 });
-                trace_cursor.step_key(trace);
+                trace_cursor.step_key();
             }
 
             // If the window shrunk, retract values that dropped off the right end of the
             // window.
             if &end1 < end0 {
-                trace_cursor.seek_key(trace, &end1);
-                while trace_cursor.key_valid(trace) && trace_cursor.key(trace) < end0 {
-                    trace_cursor.map_values(trace, |val, weight| {
+                trace_cursor.seek_key(&end1);
+                while trace_cursor.key_valid() && trace_cursor.key() < end0 {
+                    trace_cursor.map_values(|val, weight| {
                         tuples.push(((val.clone(), ()), weight.neg_by_ref()))
                     });
-                    trace_cursor.step_key(trace);
+                    trace_cursor.step_key();
                 }
             }
 
             // Add tuples in `trace` that slid into the window (region 3).
-            trace_cursor.seek_key(trace, max(end0, &start1));
-            while trace_cursor.key_valid(trace) && trace_cursor.key(trace) < &end1 {
-                trace_cursor.map_values(trace, |val, weight| {
-                    tuples.push(((val.clone(), ()), weight.clone()))
-                });
-                trace_cursor.step_key(trace);
+            trace_cursor.seek_key(max(end0, &start1));
+            while trace_cursor.key_valid() && trace_cursor.key() < &end1 {
+                trace_cursor
+                    .map_values(|val, weight| tuples.push(((val.clone(), ()), weight.clone())));
+                trace_cursor.step_key();
             }
         };
 
         // Insert tuples in `batch` that fall within the new window.
-        batch_cursor.seek_key(batch, &start1);
-        while batch_cursor.key_valid(batch) && batch_cursor.key(batch) < &end1 {
-            batch_cursor.map_values(batch, |val, weight| {
-                tuples.push(((val.clone(), ()), weight.clone()))
-            });
-            batch_cursor.step_key(batch);
+        batch_cursor.seek_key(&start1);
+        while batch_cursor.key_valid() && batch_cursor.key() < &end1 {
+            batch_cursor.map_values(|val, weight| tuples.push(((val.clone(), ()), weight.clone())));
+            batch_cursor.step_key();
         }
 
         self.window = Some((start1, end1));

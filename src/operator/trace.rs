@@ -40,15 +40,14 @@ where
 {
     let mut builder = BO::Builder::with_capacity(timestamp.clone(), batch.len());
     let mut cursor = batch.cursor();
-    while cursor.key_valid(batch) {
-        let key = cursor.key(batch);
-        while cursor.val_valid(batch) {
-            let val = cursor.val(batch);
-            let w = cursor.weight(batch);
-            builder.push((key.clone(), val.clone(), w.clone()));
-            cursor.step_val(batch);
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let val = cursor.val().clone();
+            let w = cursor.weight();
+            builder.push((cursor.key().clone(), val, w.clone()));
+            cursor.step_val();
         }
-        cursor.step_key(batch);
+        cursor.step_key();
     }
     builder.done()
 }

@@ -1,7 +1,6 @@
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
-    marker::PhantomData,
 };
 
 use timely::progress::Antichain;
@@ -67,13 +66,12 @@ where
     type Val = ();
     type Time = T;
     type R = R;
-    type Cursor = OrdKeyCursor<T, R, O>;
+    type Cursor<'s> = OrdKeyCursor<'s, K, T, R, O> where O: 's;
 
-    fn cursor(&self) -> Self::Cursor {
+    fn cursor(&self) -> Self::Cursor<'_> {
         OrdKeyCursor {
             valid: true,
             cursor: self.layer.cursor(),
-            phantom: PhantomData,
         }
     }
     fn len(&self) -> usize {
@@ -303,13 +301,17 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug)]
-pub struct OrdKeyCursor<T: Lattice + Ord + Clone, R: MonoidValue, O = usize> {
+pub struct OrdKeyCursor<'s, K: Ord + Clone, T: Lattice + Ord + Clone, R: MonoidValue, O = usize>
+where
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
     valid: bool,
-    cursor: OrderedCursor<OrderedLeaf<T, R>>,
-    phantom: PhantomData<O>,
+    cursor: OrderedCursor<'s, K, O, OrderedLeaf<T, R>>,
 }
 
-impl<K, T, R, O> Cursor<K, (), T, R> for OrdKeyCursor<T, R, O>
+impl<'s, K, T, R, O> Cursor<'s, K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
 where
     K: Ord + Clone,
     T: Lattice + Ord + Clone,
@@ -320,52 +322,59 @@ where
 {
     type Storage = OrdKeyBatch<K, T, R, O>;
 
-    fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K {
-        self.cursor.key(&storage.layer)
+    fn key(&self) -> &K {
+        self.cursor.key()
     }
-    fn val<'a>(&self, _storage: &'a Self::Storage) -> &'a () {
+    fn val(&self) -> &() {
         &()
     }
-    fn map_times<L: FnMut(&T, &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
-        self.cursor.child.rewind(&storage.layer.vals);
-        while self.cursor.child.valid(&storage.layer.vals) {
-            logic(
-                &self.cursor.child.key(&storage.layer.vals).0,
-                &self.cursor.child.key(&storage.layer.vals).1,
-            );
-            self.cursor.child.step(&storage.layer.vals);
+    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
+        self.cursor.child.rewind();
+        while self.cursor.child.valid() {
+            logic(&self.cursor.child.key().0, &self.cursor.child.key().1);
+            self.cursor.child.step();
         }
     }
-    fn weight(&mut self, storage: &Self::Storage) -> R
+    fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.cursor.child.valid(&storage.layer.vals));
-        self.cursor.child.key(&storage.layer.vals).1.clone()
+        debug_assert!(self.cursor.child.valid());
+        self.cursor.child.key().1.clone()
     }
-    fn key_valid(&self, storage: &Self::Storage) -> bool {
-        self.cursor.valid(&storage.layer)
+    fn key_valid(&self) -> bool {
+        self.cursor.valid()
     }
-    fn val_valid(&self, _storage: &Self::Storage) -> bool {
+    fn val_valid(&self) -> bool {
         self.valid
     }
-    fn step_key(&mut self, storage: &Self::Storage) {
-        self.cursor.step(&storage.layer);
+    fn step_key(&mut self) {
+        self.cursor.step();
         self.valid = true;
     }
-    fn seek_key(&mut self, storage: &Self::Storage, key: &K) {
-        self.cursor.seek(&storage.layer, key);
+    fn seek_key(&mut self, key: &K) {
+        self.cursor.seek(key);
         self.valid = true;
     }
-    fn step_val(&mut self, _storage: &Self::Storage) {
+    fn step_val(&mut self) {
         self.valid = false;
     }
-    fn seek_val(&mut self, _storage: &Self::Storage, _val: &()) {}
-    fn rewind_keys(&mut self, storage: &Self::Storage) {
-        self.cursor.rewind(&storage.layer);
+    fn seek_val(&mut self, _val: &()) {}
+
+    fn values<'a>(&mut self, _vals: &mut Vec<(&'a (), R)>)
+    where
+        's: 'a,
+    {
+        // It's technically ok to call this on a batch with value type `()`,
+        // but shouldn't happen in practice.
+        unimplemented!()
+    }
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind();
         self.valid = true;
     }
-    fn rewind_vals(&mut self, _storage: &Self::Storage) {
+    fn rewind_vals(&mut self) {
         self.valid = true;
     }
 }

@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
-    trace::cursor::Cursor,
+    trace::{consolidation::consolidate_from, cursor::Cursor},
 };
 
 /// A cursor over the combined updates of two different cursors.
@@ -20,170 +20,163 @@ pub struct CursorPair<C1, C2> {
                           * valid. */
 }
 
-impl<K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<C1, C2>
+impl<'s, K, V, T, R, C1, C2> Cursor<'s, K, V, T, R> for CursorPair<C1, C2>
 where
     K: Ord,
     V: Ord,
-    C1: Cursor<K, V, T, R>,
-    C2: Cursor<K, V, T, R>,
+    C1: Cursor<'s, K, V, T, R>,
+    C2: Cursor<'s, K, V, T, R>,
     R: MonoidValue,
 {
     type Storage = (C1::Storage, C2::Storage);
 
     // validation methods
-    fn key_valid(&self, storage: &Self::Storage) -> bool {
+    fn key_valid(&self) -> bool {
         match self.key_order {
-            Ordering::Less => self.cursor1.key_valid(&storage.0),
+            Ordering::Less => self.cursor1.key_valid(),
             Ordering::Equal => true,
-            Ordering::Greater => self.cursor2.key_valid(&storage.1),
+            Ordering::Greater => self.cursor2.key_valid(),
         }
     }
-    fn val_valid(&self, storage: &Self::Storage) -> bool {
+    fn val_valid(&self) -> bool {
         match (self.key_order, self.val_order) {
-            (Ordering::Less, _) => self.cursor1.val_valid(&storage.0),
-            (Ordering::Greater, _) => self.cursor2.val_valid(&storage.1),
-            (Ordering::Equal, Ordering::Less) => self.cursor1.val_valid(&storage.0),
-            (Ordering::Equal, Ordering::Greater) => self.cursor2.val_valid(&storage.1),
+            (Ordering::Less, _) => self.cursor1.val_valid(),
+            (Ordering::Greater, _) => self.cursor2.val_valid(),
+            (Ordering::Equal, Ordering::Less) => self.cursor1.val_valid(),
+            (Ordering::Equal, Ordering::Greater) => self.cursor2.val_valid(),
             (Ordering::Equal, Ordering::Equal) => true,
         }
     }
 
     // accessors
-    fn key<'a>(&self, storage: &'a Self::Storage) -> &'a K {
+    fn key(&self) -> &K {
         match self.key_order {
-            Ordering::Less => self.cursor1.key(&storage.0),
-            _ => self.cursor2.key(&storage.1),
+            Ordering::Less => self.cursor1.key(),
+            _ => self.cursor2.key(),
         }
     }
-    fn val<'a>(&self, storage: &'a Self::Storage) -> &'a V {
+    fn val(&self) -> &V {
         if self.key_order == Ordering::Less
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
         {
-            self.cursor1.val(&storage.0)
+            self.cursor1.val()
         } else {
-            self.cursor2.val(&storage.1)
+            self.cursor2.val()
         }
     }
-    fn map_times<L: FnMut(&T, &R)>(&mut self, storage: &Self::Storage, mut logic: L) {
+    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
         if self.key_order == Ordering::Less
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
         {
-            self.cursor1.map_times(&storage.0, |t, d| logic(t, d));
+            self.cursor1.map_times(|t, d| logic(t, d));
         }
         if self.key_order == Ordering::Greater
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Less)
         {
-            self.cursor2.map_times(&storage.1, |t, d| logic(t, d));
+            self.cursor2.map_times(|t, d| logic(t, d));
         }
     }
 
-    fn weight(&mut self, storage: &Self::Storage) -> R
+    fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.val_valid(storage));
+        debug_assert!(self.val_valid());
         let mut res: R = HasZero::zero();
-        self.map_times(storage, |_, w| res.add_assign_by_ref(w));
+        self.map_times(|_, w| res.add_assign_by_ref(w));
         res
     }
 
     // key methods
-    fn step_key(&mut self, storage: &Self::Storage) {
+    fn step_key(&mut self) {
         if self.key_order != Ordering::Greater {
-            self.cursor1.step_key(&storage.0);
+            self.cursor1.step_key();
         }
         if self.key_order != Ordering::Less {
-            self.cursor2.step_key(&storage.1);
+            self.cursor2.step_key();
         }
 
-        self.key_order = match (
-            self.cursor1.key_valid(&storage.0),
-            self.cursor2.key_valid(&storage.1),
-        ) {
+        self.key_order = match (self.cursor1.key_valid(), self.cursor2.key_valid()) {
             (false, _) => Ordering::Greater,
             (_, false) => Ordering::Less,
-            (true, true) => self
-                .cursor1
-                .key(&storage.0)
-                .cmp(self.cursor2.key(&storage.1)),
+            (true, true) => self.cursor1.key().cmp(self.cursor2.key()),
         };
     }
-    fn seek_key(&mut self, storage: &Self::Storage, key: &K) {
-        self.cursor1.seek_key(&storage.0, key);
-        self.cursor2.seek_key(&storage.1, key);
+    fn seek_key(&mut self, key: &K) {
+        self.cursor1.seek_key(key);
+        self.cursor2.seek_key(key);
 
-        self.key_order = match (
-            self.cursor1.key_valid(&storage.0),
-            self.cursor2.key_valid(&storage.1),
-        ) {
+        self.key_order = match (self.cursor1.key_valid(), self.cursor2.key_valid()) {
             (false, _) => Ordering::Greater,
             (_, false) => Ordering::Less,
-            (true, true) => self
-                .cursor1
-                .key(&storage.0)
-                .cmp(self.cursor2.key(&storage.1)),
+            (true, true) => self.cursor1.key().cmp(self.cursor2.key()),
         };
+    }
+
+    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
+    where
+        's: 'a,
+    {
+        let offset = vals.len();
+
+        match self.key_order {
+            Ordering::Less => self.cursor1.values(vals),
+            Ordering::Greater => self.cursor2.values(vals),
+            Ordering::Equal => {
+                self.cursor1.values(vals);
+                self.cursor2.values(vals);
+                consolidate_from(vals, offset);
+            }
+        }
     }
 
     // value methods
-    fn step_val(&mut self, storage: &Self::Storage) {
+    fn step_val(&mut self) {
         match self.key_order {
-            Ordering::Less => self.cursor1.step_val(&storage.0),
+            Ordering::Less => self.cursor1.step_val(),
             Ordering::Equal => {
                 if self.val_order != Ordering::Greater {
-                    self.cursor1.step_val(&storage.0);
+                    self.cursor1.step_val();
                 }
                 if self.val_order != Ordering::Less {
-                    self.cursor2.step_val(&storage.1);
+                    self.cursor2.step_val();
                 }
-                self.val_order = match (
-                    self.cursor1.val_valid(&storage.0),
-                    self.cursor2.val_valid(&storage.1),
-                ) {
+                self.val_order = match (self.cursor1.val_valid(), self.cursor2.val_valid()) {
                     (false, _) => Ordering::Greater,
                     (_, false) => Ordering::Less,
-                    (true, true) => self
-                        .cursor1
-                        .val(&storage.0)
-                        .cmp(self.cursor2.val(&storage.1)),
+                    (true, true) => self.cursor1.val().cmp(self.cursor2.val()),
                 };
             }
-            Ordering::Greater => self.cursor2.step_val(&storage.1),
+            Ordering::Greater => self.cursor2.step_val(),
         }
     }
-    fn seek_val(&mut self, storage: &Self::Storage, val: &V) {
+    fn seek_val(&mut self, val: &V) {
         match self.key_order {
-            Ordering::Less => self.cursor1.seek_val(&storage.0, val),
+            Ordering::Less => self.cursor1.seek_val(val),
             Ordering::Equal => {
-                self.cursor1.seek_val(&storage.0, val);
-                self.cursor2.seek_val(&storage.1, val);
-                self.val_order = match (
-                    self.cursor1.val_valid(&storage.0),
-                    self.cursor2.val_valid(&storage.1),
-                ) {
+                self.cursor1.seek_val(val);
+                self.cursor2.seek_val(val);
+                self.val_order = match (self.cursor1.val_valid(), self.cursor2.val_valid()) {
                     (false, _) => Ordering::Greater,
                     (_, false) => Ordering::Less,
-                    (true, true) => self
-                        .cursor1
-                        .val(&storage.0)
-                        .cmp(self.cursor2.val(&storage.1)),
+                    (true, true) => self.cursor1.val().cmp(self.cursor2.val()),
                 };
             }
-            Ordering::Greater => self.cursor2.seek_val(&storage.1, val),
+            Ordering::Greater => self.cursor2.seek_val(val),
         }
     }
 
     // rewinding methods
-    fn rewind_keys(&mut self, storage: &Self::Storage) {
-        self.cursor1.rewind_keys(&storage.0);
-        self.cursor2.rewind_keys(&storage.1);
+    fn rewind_keys(&mut self) {
+        self.cursor1.rewind_keys();
+        self.cursor2.rewind_keys();
     }
-    fn rewind_vals(&mut self, storage: &Self::Storage) {
+    fn rewind_vals(&mut self) {
         if self.key_order != Ordering::Greater {
-            self.cursor1.rewind_vals(&storage.0);
+            self.cursor1.rewind_vals();
         }
         if self.key_order != Ordering::Less {
-            self.cursor2.rewind_vals(&storage.1);
+            self.cursor2.rewind_vals();
         }
     }
 }

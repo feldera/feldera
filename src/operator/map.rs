@@ -121,15 +121,15 @@ where
         let mut batch = Vec::with_capacity(i.len());
 
         let mut cursor = i.cursor();
-        while cursor.key_valid(i) {
-            let k = cursor.key(i);
-            while cursor.val_valid(i) {
-                let v = cursor.val(i);
-                let w = cursor.weight(i);
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                let w = cursor.weight();
+                let v = cursor.val();
+                let k = cursor.key();
                 batch.push((((self.map_borrowed)(k), v.clone()), w.clone()));
-                cursor.step_val(i);
+                cursor.step_val();
             }
-            cursor.step_key(i);
+            cursor.step_key();
         }
         CO::from_tuples((), batch)
     }
@@ -197,15 +197,15 @@ where
         let mut batch = Vec::with_capacity(i.len());
 
         let mut cursor = i.cursor();
-        while cursor.key_valid(i) {
-            let k = cursor.key(i);
-            while cursor.val_valid(i) {
-                let v = cursor.val(i);
-                let w = cursor.weight(i);
-                batch.push(((k.clone(), (self.map)(k, v)), w.clone()));
-                cursor.step_val(i);
+        while cursor.key_valid() {
+            let k = cursor.key().clone();
+            while cursor.val_valid() {
+                let w = cursor.weight().clone();
+                let v = cursor.val();
+                batch.push(((k.clone(), (self.map)(&k, v)), w));
+                cursor.step_val();
             }
-            cursor.step_key(i);
+            cursor.step_key();
         }
         CO::from_tuples((), batch)
     }

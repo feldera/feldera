@@ -22,7 +22,9 @@ pub trait Trie: Sized {
     /// The type of item from which the type is constructed.
     type Item;
     /// The type of cursor used to navigate the type.
-    type Cursor: Cursor<Self>;
+    type Cursor<'s>: Cursor<'s>
+    where
+        Self: 's;
     /// The type used to merge instances of the type together.
     type MergeBuilder: MergeBuilder<Trie = Self>;
     /// The type used to assemble instances of the type from its `Item`s.
@@ -40,12 +42,12 @@ pub trait Trie: Sized {
     /// The total number of tuples in the collection.
     fn tuples(&self) -> usize;
     /// Returns a cursor capable of navigating the collection.
-    fn cursor(&self) -> Self::Cursor {
+    fn cursor(&self) -> Self::Cursor<'_> {
         self.cursor_from(0, self.keys())
     }
     /// Returns a cursor over a range of data, commonly used by others to
     /// restrict navigation to sub-collections.
-    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor;
+    fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_>;
 
     /// Merges two collections into a third.
     ///
@@ -56,12 +58,10 @@ pub trait Trie: Sized {
     fn merge(&self, other: &Self) -> Self {
         let mut merger = Self::MergeBuilder::with_capacity(self, other);
         // println!("{:?} and {:?}", self.keys(), other.keys());
-        merger.push_merge((self, self.cursor()), (other, other.cursor()));
+        merger.push_merge(self.cursor(), other.cursor());
         merger.done()
     }
 }
-
-pub struct TrieSlice<'a, T: Trie>(&'a T, T::Cursor);
 
 impl<T: Trie> HasZero for T {
     fn is_zero(&self) -> bool {
@@ -96,10 +96,10 @@ pub trait MergeBuilder: Builder {
     /// Copies sub-collections of `other` into this collection.
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize);
     /// Merges two sub-collections into one sub-collection.
-    fn push_merge(
-        &mut self,
-        other1: (&Self::Trie, <Self::Trie as Trie>::Cursor),
-        other2: (&Self::Trie, <Self::Trie as Trie>::Cursor),
+    fn push_merge<'a>(
+        &'a mut self,
+        other1: <Self::Trie as Trie>::Cursor<'a>,
+        other2: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize;
 }
 
@@ -121,29 +121,28 @@ pub trait TupleBuilder: Builder {
 /// The precise meaning of this navigation is not defined by the trait. It is
 /// likely that having navigated around, the cursor will be different in some
 /// other way, but the `Cursor` trait does not explain how this is so.
-pub trait Cursor<Storage> {
+pub trait Cursor<'s> {
     /// The type revealed by the cursor.
     type Key;
     type ValueStorage: Trie;
 
     fn keys(&self) -> usize;
     /// Reveals the current key.
-    fn key<'a>(&self, storage: &'a Storage) -> &'a Self::Key;
-    fn values<'a>(
-        &self,
-        storage: &'a Storage,
-    ) -> (&'a Self::ValueStorage, <Self::ValueStorage as Trie>::Cursor);
+    fn key(&self) -> &'s Self::Key;
+
+    fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s>;
+
     /// Advances the cursor by one element.
-    fn step(&mut self, storage: &Storage);
+    fn step(&mut self);
     /// Advances the cursor until the location where `key` would be expected.
-    fn seek(&mut self, storage: &Storage, key: &Self::Key);
+    fn seek(&mut self, key: &Self::Key);
     /// Returns `true` if the cursor points at valid data. Returns `false` if
     /// the cursor is exhausted.
-    fn valid(&self, storage: &Storage) -> bool;
+    fn valid(&self) -> bool;
     /// Rewinds the cursor to its initial state.
-    fn rewind(&mut self, storage: &Storage);
+    fn rewind(&mut self);
     /// Repositions the cursor to a different range of values.
-    fn reposition(&mut self, storage: &Storage, lower: usize, upper: usize);
+    fn reposition(&mut self, lower: usize, upper: usize);
 }
 
 /// Reports the number of elements satisfing the predicate.
@@ -188,7 +187,7 @@ pub fn advance<T, F: Fn(&T) -> bool>(slice: &[T], function: F) -> usize {
 
 impl Trie for () {
     type Item = ();
-    type Cursor = ();
+    type Cursor<'s> = ();
     type MergeBuilder = ();
     type TupleBuilder = ();
 
@@ -198,7 +197,7 @@ impl Trie for () {
     fn tuples(&self) -> usize {
         0
     }
-    fn cursor_from(&self, _lower: usize, _upper: usize) -> Self::Cursor {}
+    fn cursor_from(&self, _lower: usize, _upper: usize) -> Self::Cursor<'_> {}
 }
 
 impl Builder for () {
@@ -216,8 +215,8 @@ impl MergeBuilder for () {
     fn copy_range(&mut self, _other: &Self::Trie, _lower: usize, _upper: usize) {}
     fn push_merge(
         &mut self,
-        _other1: (&Self::Trie, <Self::Trie as Trie>::Cursor),
-        _other2: (&Self::Trie, <Self::Trie as Trie>::Cursor),
+        _other1: <Self::Trie as Trie>::Cursor<'static>,
+        _other2: <Self::Trie as Trie>::Cursor<'static>,
     ) -> usize {
         0
     }
@@ -234,24 +233,22 @@ impl TupleBuilder for () {
     }
 }
 
-impl Cursor<()> for () {
+impl<'s> Cursor<'s> for () {
     type Key = ();
     type ValueStorage = ();
 
     fn keys(&self) -> usize {
         0
     }
-    fn key<'a>(&self, _storage: &'a ()) -> &'a Self::Key {
+    fn key(&self) -> &'s Self::Key {
         &()
     }
-    fn values<'a>(&self, _storage: &'a ()) -> (&'a (), ()) {
-        (&(), ())
-    }
-    fn step(&mut self, _storage: &()) {}
-    fn seek(&mut self, _storage: &(), _key: &Self::Key) {}
-    fn valid(&self, _storage: &()) -> bool {
+    fn values(&self) {}
+    fn step(&mut self) {}
+    fn seek(&mut self, _key: &Self::Key) {}
+    fn valid(&self) -> bool {
         false
     }
-    fn rewind(&mut self, _storage: &()) {}
-    fn reposition(&mut self, _storage: &(), _lower: usize, _upper: usize) {}
+    fn rewind(&mut self) {}
+    fn reposition(&mut self, _lower: usize, _upper: usize) {}
 }

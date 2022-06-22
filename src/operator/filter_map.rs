@@ -108,17 +108,17 @@ where
     fn eval(&mut self, i: &CI) -> CO {
         let mut cursor = i.cursor();
         let mut batch = Vec::with_capacity(i.len());
-        while cursor.key_valid(i) {
-            let k = cursor.key(i);
+        while cursor.key_valid() {
+            let k = cursor.key();
             if let Some(k2) = (self.map_borrowed)(k) {
-                while cursor.val_valid(i) {
-                    let v = cursor.val(i);
-                    let w = cursor.weight(i);
+                while cursor.val_valid() {
+                    let w = cursor.weight();
+                    let v = cursor.val();
                     batch.push(((k2.clone(), v.clone()), w.clone()));
-                    cursor.step_val(i);
+                    cursor.step_val();
                 }
             }
-            cursor.step_key(i);
+            cursor.step_key();
         }
 
         CO::from_tuples((), batch)

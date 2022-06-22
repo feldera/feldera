@@ -142,10 +142,12 @@ where
     type R: MonoidValue;
 
     /// The type used to enumerate the batch's contents.
-    type Cursor: Cursor<Self::Key, Self::Val, Self::Time, Self::R, Storage = Self>;
+    type Cursor<'s>: Cursor<'s, Self::Key, Self::Val, Self::Time, Self::R, Storage = Self>
+    where
+        Self: 's;
 
     /// Acquires a cursor to the batch's contents.
-    fn cursor(&self) -> Self::Cursor;
+    fn cursor(&self) -> Self::Cursor<'_>;
 
     /// The number of updates in the batch.
     fn len(&self) -> usize;
@@ -278,9 +280,9 @@ pub mod rc_blanket_impls {
         type R = B::R;
 
         /// The type used to enumerate the batch's contents.
-        type Cursor = RcBatchCursor<B>;
+        type Cursor<'s> = RcBatchCursor<'s, B> where B: 's;
         /// Acquires a cursor to the batch's contents.
-        fn cursor(&self) -> Self::Cursor {
+        fn cursor(&self) -> Self::Cursor<'_> {
             RcBatchCursor::new((&**self).cursor())
         }
 
@@ -297,13 +299,13 @@ pub mod rc_blanket_impls {
     }
 
     /// Wrapper to provide cursor to nested scope.
-    pub struct RcBatchCursor<B: BatchReader> {
+    pub struct RcBatchCursor<'s, B: BatchReader + 's> {
         phantom: PhantomData<B>,
-        cursor: B::Cursor,
+        cursor: B::Cursor<'s>,
     }
 
-    impl<B: BatchReader> RcBatchCursor<B> {
-        fn new(cursor: B::Cursor) -> Self {
+    impl<'s, B: BatchReader> RcBatchCursor<'s, B> {
+        fn new(cursor: B::Cursor<'s>) -> Self {
             RcBatchCursor {
                 cursor,
                 phantom: PhantomData,
@@ -311,65 +313,73 @@ pub mod rc_blanket_impls {
         }
     }
 
-    impl<B: BatchReader> Cursor<B::Key, B::Val, B::Time, B::R> for RcBatchCursor<B> {
+    impl<'s, B: BatchReader> Cursor<'s, B::Key, B::Val, B::Time, B::R> for RcBatchCursor<'s, B> {
         type Storage = Rc<B>;
 
         #[inline]
-        fn key_valid(&self, storage: &Self::Storage) -> bool {
-            self.cursor.key_valid(storage)
+        fn key_valid(&self) -> bool {
+            self.cursor.key_valid()
         }
         #[inline]
-        fn val_valid(&self, storage: &Self::Storage) -> bool {
-            self.cursor.val_valid(storage)
-        }
-
-        #[inline]
-        fn key<'a>(&self, storage: &'a Self::Storage) -> &'a B::Key {
-            self.cursor.key(storage)
-        }
-        #[inline]
-        fn val<'a>(&self, storage: &'a Self::Storage) -> &'a B::Val {
-            self.cursor.val(storage)
+        fn val_valid(&self) -> bool {
+            self.cursor.val_valid()
         }
 
         #[inline]
-        fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, storage: &Self::Storage, logic: L) {
-            self.cursor.map_times(storage, logic)
+        fn key(&self) -> &B::Key {
+            self.cursor.key()
+        }
+        #[inline]
+        fn val(&self) -> &B::Val {
+            self.cursor.val()
         }
 
         #[inline]
-        fn weight(&mut self, storage: &Self::Storage) -> B::R
+        fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L) {
+            self.cursor.map_times(logic)
+        }
+
+        #[inline]
+        fn weight(&mut self) -> B::R
         where
             B::Time: PartialEq<()>,
         {
-            self.cursor.weight(storage)
+            self.cursor.weight()
         }
 
         #[inline]
-        fn step_key(&mut self, storage: &Self::Storage) {
-            self.cursor.step_key(storage)
+        fn step_key(&mut self) {
+            self.cursor.step_key()
         }
         #[inline]
-        fn seek_key(&mut self, storage: &Self::Storage, key: &B::Key) {
-            self.cursor.seek_key(storage, key)
-        }
-
-        #[inline]
-        fn step_val(&mut self, storage: &Self::Storage) {
-            self.cursor.step_val(storage)
-        }
-        #[inline]
-        fn seek_val(&mut self, storage: &Self::Storage, val: &B::Val) {
-            self.cursor.seek_val(storage, val)
+        fn seek_key(&mut self, key: &B::Key) {
+            self.cursor.seek_key(key)
         }
 
         #[inline]
-        fn rewind_keys(&mut self, storage: &Self::Storage) {
-            self.cursor.rewind_keys(storage)
+        fn step_val(&mut self) {
+            self.cursor.step_val()
         }
         #[inline]
-        fn rewind_vals(&mut self, storage: &Self::Storage) {
-            self.cursor.rewind_vals(storage)
+        fn seek_val(&mut self, val: &B::Val) {
+            self.cursor.seek_val(val)
+        }
+
+        #[inline]
+        fn values<'a>(&mut self, vals: &mut Vec<(&'a B::Val, B::R)>)
+        where
+            's: 'a,
+        {
+            self.cursor.values(vals);
+        }
+
+        #[inline]
+        fn rewind_keys(&mut self) {
+            self.cursor.rewind_keys()
+        }
+        #[inline]
+        fn rewind_vals(&mut self) {
+            self.cursor.rewind_vals()
         }
     }
 

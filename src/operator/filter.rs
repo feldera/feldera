@@ -93,17 +93,16 @@ where
         // get merged with other batches soon, at which point the waste is gone.
         let mut builder = CO::Builder::with_capacity((), i.len());
 
-        while cursor.key_valid(i) {
-            let k = cursor.key(i);
-            if (self.filter)(k) {
-                while cursor.val_valid(i) {
-                    let val = cursor.val(i);
-                    let w = cursor.weight(i);
-                    builder.push((k.clone(), val.clone(), w.clone()));
-                    cursor.step_val(i);
+        while cursor.key_valid() {
+            if (self.filter)(cursor.key()) {
+                while cursor.val_valid() {
+                    let val = cursor.val().clone();
+                    let w = cursor.weight();
+                    builder.push((cursor.key().clone(), val, w.clone()));
+                    cursor.step_val();
                 }
             }
-            cursor.step_key(i);
+            cursor.step_key();
         }
         builder.done()
     }

@@ -3,7 +3,7 @@
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 use crate::{
-    algebra::{HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
+    algebra::{HasOne, IndexedZSet, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, Scope, Stream,
@@ -195,21 +195,14 @@ where
         let mut cursor = i.cursor();
         let mut vals: Vec<(&Z::Val, Z::R)> = Vec::with_capacity(i.len());
 
-        while cursor.key_valid(i) {
-            while cursor.val_valid(i) {
-                let w = cursor.weight(i);
-                // Skip values with weight zero.
-                if !w.is_zero() {
-                    vals.push((cursor.val(i), w));
-                }
-                cursor.step_val(i);
-            }
+        while cursor.key_valid() {
+            cursor.values(&mut vals);
             // Skip keys that only contain values with weight zero.
             if !vals.is_empty() {
-                elements.push((((self.agg_func)(cursor.key(i), &mut vals), ()), Z::R::one()));
+                elements.push((((self.agg_func)(cursor.key(), &mut vals), ()), Z::R::one()));
             }
             vals.clear();
-            cursor.step_key(i);
+            cursor.step_key();
         }
         O::from_tuples((), elements)
     }
@@ -275,28 +268,22 @@ where
         // This could be an overkill.
         let mut vals: Vec<(&Z::Val, Z::R)> = Vec::with_capacity(delta.len());
 
-        while delta_cursor.key_valid(delta) {
-            let key = delta_cursor.key(delta);
+        while delta_cursor.key_valid() {
+            let key = delta_cursor.key();
 
-            integral_cursor.seek_key(integral, key);
+            integral_cursor.seek_key(key);
 
-            if integral_cursor.key_valid(integral) && integral_cursor.key(integral) == key {
-                while integral_cursor.val_valid(integral) {
-                    let w = integral_cursor.weight(integral);
-                    // Skip values with weight zero (can happen if `I` is a trace).
-                    if !w.is_zero() {
-                        vals.push((integral_cursor.val(integral), w));
-                    }
-                    integral_cursor.step_val(integral);
-                }
+            if integral_cursor.key_valid() && integral_cursor.key() == key {
+                integral_cursor.values(&mut vals);
                 // Skip keys that only contain values with weight 0.
                 if !vals.is_empty() {
                     result.push((((self.agg_func)(key, &mut vals), ()), weight.clone()));
                 }
                 vals.clear();
             }
-            delta_cursor.step_key(delta);
+            delta_cursor.step_key();
         }
+
         O::from_tuples((), result)
     }
 }

@@ -20,6 +20,12 @@ use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
 pub mod visual_graph;
 use visual_graph::Graph as VisGraph;
 
+/// Callback function type signature for reporting an invalid `CircuitEvent`.
+type CircuitErrorHandler = dyn Fn(&CircuitEvent, &TraceError);
+
+/// Callback function type signature for reporting an invalid `SchedulerEvent`.
+type SchedulerErrorHandler = dyn Fn(&SchedulerEvent, &TraceError);
+
 /// State of a circuit automaton (see
 /// [`SchedulerEvent`](`super::SchedulerEvent`) documentation).
 enum CircuitState {
@@ -174,11 +180,9 @@ pub struct TraceMonitorInternal {
     /// no further `SchedulerEvent`'s are allowed.
     state: Vec<CircuitState>,
     /// Callback to invoke on each invalid `CircuitEvent`.
-    #[allow(clippy::type_complexity)]
-    circuit_error_handler: Box<dyn Fn(&CircuitEvent, &TraceError)>,
+    circuit_error_handler: Box<CircuitErrorHandler>,
     /// Callback to invoke on each invalid `SchedulerEvent`.
-    #[allow(clippy::type_complexity)]
-    scheduler_error_handler: Box<dyn Fn(&SchedulerEvent, &TraceError)>,
+    scheduler_error_handler: Box<SchedulerErrorHandler>,
 }
 
 impl TraceMonitorInternal {
