@@ -174,8 +174,10 @@ pub struct TraceMonitorInternal {
     /// no further `SchedulerEvent`'s are allowed.
     state: Vec<CircuitState>,
     /// Callback to invoke on each invalid `CircuitEvent`.
+    #[allow(clippy::type_complexity)]
     circuit_error_handler: Box<dyn Fn(&CircuitEvent, &TraceError)>,
     /// Callback to invoke on each invalid `SchedulerEvent`.
+    #[allow(clippy::type_complexity)]
     scheduler_error_handler: Box<dyn Fn(&SchedulerEvent, &TraceError)>,
 }
 
