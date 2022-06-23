@@ -41,7 +41,7 @@ use crate::{
         cache::{CircuitCache, CircuitStoreMarker},
         operator_traits::{
             BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
-            StrictUnaryOperator, UnaryOperator,
+            StrictUnaryOperator, TernaryOperator, UnaryOperator,
         },
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -1202,12 +1202,6 @@ where
     }
 
     /// Add a binary operator (see [`BinaryOperator`]).
-    ///
-    /// # Errors
-    ///
-    /// Returns `None` if `input_stream1` and `input_stream2` are the
-    /// same stream, in which case the caller should use a proper unary
-    /// operator instead.
     pub fn add_binary_operator<I1, I2, O, Op>(
         &self,
         operator: Op,
@@ -1263,6 +1257,75 @@ where
             let output_stream = node.output_stream();
             self.connect_stream(input_stream1, id, input_preference1);
             self.connect_stream(input_stream2, id, input_preference2);
+            (node, output_stream)
+        })
+    }
+
+    /// Add a ternary operator (see [`TernaryOperator`]).
+    pub fn add_ternary_operator<I1, I2, I3, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        O: Data,
+        Op: TernaryOperator<I1, I2, I3, O>,
+    {
+        let (pref1, pref2, pref3) = operator.input_preference();
+        self.add_ternary_operator_with_preference(
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            pref1,
+            pref2,
+            pref3,
+        )
+    }
+
+    /// Like [`Self::add_ternary_operator`], but overrides the ownership
+    /// preference on the input streams with specified values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_ternary_operator_with_preference<I1, I2, I3, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+        input_preference1: OwnershipPreference,
+        input_preference2: OwnershipPreference,
+        input_preference3: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        O: Data,
+        Op: TernaryOperator<I1, I2, I3, O>,
+    {
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+            ));
+
+            let node = TernaryNode::new(
+                operator,
+                input_stream1.clone(),
+                input_stream2.clone(),
+                input_stream3.clone(),
+                self.clone(),
+                id,
+            );
+            let output_stream = node.output_stream();
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
+            self.connect_stream(input_stream3, id, input_preference3);
             (node, output_stream)
         })
     }
@@ -2096,6 +2159,124 @@ where
                 },
             );
         }
+        Ok(())
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    unsafe fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+
+    fn summary(&self, output: &mut String) {
+        self.operator.summary(output);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+}
+
+struct TernaryNode<C, I1, I2, I3, O, Op> {
+    id: GlobalNodeId,
+    operator: Op,
+    input_stream1: Stream<C, I1>,
+    input_stream2: Stream<C, I2>,
+    input_stream3: Stream<C, I3>,
+    output_stream: Stream<C, O>,
+    // `true` if `input_stream1` is an alias to `input_stream2` or `input_stream3`.
+    is_alias1: bool,
+    // `true` if `input_stream2` is an alias to `input_stream3`.
+    is_alias2: bool,
+}
+
+impl<P, I1, I2, I3, O, Op> TernaryNode<Circuit<P>, I1, I2, I3, O, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    Op: TernaryOperator<I1, I2, I3, O>,
+    P: Clone,
+{
+    fn new(
+        operator: Op,
+        input_stream1: Stream<Circuit<P>, I1>,
+        input_stream2: Stream<Circuit<P>, I2>,
+        input_stream3: Stream<Circuit<P>, I3>,
+        circuit: Circuit<P>,
+        id: NodeId,
+    ) -> Self {
+        let is_alias1 =
+            input_stream1.ptr_eq(&input_stream2) || input_stream1.ptr_eq(&input_stream3);
+        let is_alias2 = input_stream2.ptr_eq(&input_stream3);
+        Self {
+            id: circuit.global_node_id().child(id),
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            is_alias1,
+            is_alias2,
+            output_stream: Stream::new(circuit, id),
+        }
+    }
+
+    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+        self.output_stream.clone()
+    }
+}
+
+impl<C, I1, I2, I3, O, Op> Node for TernaryNode<C, I1, I2, I3, O, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    O: Clone,
+    Op: TernaryOperator<I1, I2, I3, O>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
+        let input1 = if self.is_alias1 {
+            Cow::Borrowed(self.input_stream1.peek())
+        } else {
+            self.input_stream1.take()
+        };
+
+        let input2 = if self.is_alias2 {
+            Cow::Borrowed(self.input_stream2.peek())
+        } else {
+            self.input_stream2.take()
+        };
+
+        let input3 = self.input_stream3.take();
+
+        self.output_stream
+            .put(self.operator.eval(input1, input2, input3));
         Ok(())
     }
 
