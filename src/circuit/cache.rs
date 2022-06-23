@@ -23,7 +23,7 @@
 //! perform operator-specific caching.  The mechanism consists of a key-value
 //! store associated with each circuit.  We use `TypedMap`, which supports
 //! multiple key and value types, for the store.  An operator registers a new
-//! key type and associated value type using the [`circuit_cache_key`] macro,
+//! key type and associated value type using the `circuit_cache_key` macro,
 //! e.g.,
 //!
 //! ```ignore

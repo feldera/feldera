@@ -269,6 +269,35 @@ pub trait BinaryOperator<I1, I2, O>: Operator {
     }
 }
 
+/// A ternary operator consumes three input streams carrying values
+/// of types `I1`, `I2`, and `I3` and produces a stream of outputs of type `O`.
+pub trait TernaryOperator<I1, I2, I3, O>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+{
+    /// Consume inputs.
+    ///
+    /// The operator must be prepated to handle any combination of
+    /// owned and borrowed inputs.
+    fn eval<'a>(&mut self, i1: Cow<'a, I1>, i2: Cow<'a, I2>, i3: Cow<'a, I3>) -> O;
+
+    fn input_preference(
+        &self,
+    ) -> (
+        OwnershipPreference,
+        OwnershipPreference,
+        OwnershipPreference,
+    ) {
+        (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+        )
+    }
+}
+
 /// An operator that consumes any number of streams carrying values
 /// of type `I` and produces a stream of outputs of type `O`.
 pub trait NaryOperator<I, O>: Operator
