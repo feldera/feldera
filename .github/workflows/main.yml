@@ -78,39 +78,39 @@ jobs:
           command: test
           args: --all-features --target ${{ matrix.target }}
 
-  miri:
-    name: Miri
-
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          profile: minimal
-          components: miri, rust-src
-          default: true
-
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v1
-
-      - name: Run miri
-        uses: actions-rs/cargo@v1
-        env:
-          OS: ${{ matrix.os }}
-          # FIXME: `-Zmiri-preemption-rate=0` is a temporary fix for rust/#55005, remove it when possible
-          MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation -Zmiri-preemption-rate=0"
-        with:
-          command: miri
-          args: test --all-features
+  #   miri:
+  #     name: Miri
+  #
+  #     runs-on: ${{ matrix.os }}
+  #     strategy:
+  #       fail-fast: false
+  #       matrix:
+  #         os: [ubuntu-latest, macos-latest, windows-latest]
+  #
+  #     steps:
+  #       - name: Checkout repository
+  #         uses: actions/checkout@v3
+  #
+  #       - name: Install rust
+  #         uses: actions-rs/toolchain@v1
+  #         with:
+  #           toolchain: nightly
+  #           profile: minimal
+  #           components: miri, rust-src
+  #           default: true
+  #
+  #       - name: Restore cache
+  #         uses: Swatinem/rust-cache@v1
+  #
+  #       - name: Run miri
+  #         uses: actions-rs/cargo@v1
+  #         env:
+  #           OS: ${{ matrix.os }}
+  #           # FIXME: `-Zmiri-preemption-rate=0` is a temporary fix for rust/#55005, remove it when possible
+  #           MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation -Zmiri-preemption-rate=0"
+  #         with:
+  #           command: miri
+  #           args: test --all-features
 
   test-sanitizers:
     name: Sanitizer Tests
