@@ -1,5 +1,5 @@
 use crate::{
-    algebra::MonoidValue,
+    algebra::{AddAssignByRef, HasZero, MonoidValue},
     lattice::Lattice,
     trace::{
         layers::{
@@ -15,7 +15,7 @@ use crate::{
 use deepsize::DeepSizeOf;
 use std::{
     convert::{TryFrom, TryInto},
-    fmt::Debug,
+    fmt::{Debug, Display, Formatter},
 };
 use timely::progress::Antichain;
 
@@ -38,6 +38,27 @@ where
     pub layer: OrdValBatchLayer<K, V, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
+}
+
+impl<K, V, T, R, O> Display for OrdValBatch<K, V, T, R, O>
+where
+    K: Ord + Clone + Display,
+    V: Ord + Clone + Display + 'static,
+    T: Lattice + Clone + Ord + Display + Debug + 'static,
+    R: Eq + HasZero + AddAssignByRef + Clone + Display + 'static,
+    O: OrdOffset + 'static,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        writeln!(
+            f,
+            "lower: {:?}, upper: {:?}\nlayer:\n{}",
+            self.lower,
+            self.upper,
+            textwrap::indent(&self.layer.to_string(), "    ")
+        )
+    }
 }
 
 impl<K, V, T, R, O> DeepSizeOf for OrdValBatch<K, V, T, R, O>
