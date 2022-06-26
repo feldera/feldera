@@ -42,8 +42,8 @@ where
 impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
 where
     K: Ord + Clone + Display,
-    V: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    V: Ord + Clone + Display + 'static,
+    R: Eq + HasZero + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
