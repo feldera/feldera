@@ -1,12 +1,5 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::{Debug, Display, Formatter},
-};
-
-use timely::progress::Antichain;
-
 use crate::{
-    algebra::{AddAssignByRef, HasZero, MonoidValue},
+    algebra::MonoidValue,
     lattice::Lattice,
     trace::{
         layers::{
@@ -19,8 +12,15 @@ use crate::{
     },
     Timestamp,
 };
-
 use deepsize::DeepSizeOf;
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Debug,
+};
+use timely::progress::Antichain;
+
+pub type OrdValBatchLayer<K, V, T, R, O> =
+    OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, O>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
@@ -38,30 +38,6 @@ where
     pub layer: OrdValBatchLayer<K, V, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
-}
-
-pub type OrdValBatchLayer<K, V, T, R, O> =
-    OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, O>, O>;
-
-impl<K, V, T, R, O> Display for OrdValBatch<K, V, T, R, O>
-where
-    K: Ord + Clone + Display,
-    V: Ord + Clone + Display,
-    T: Lattice + Clone + Ord + Display + Debug,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        writeln!(
-            f,
-            "lower: {:?}, upper: {:?}\nlayer:\n{}",
-            self.lower,
-            self.upper,
-            textwrap::indent(&self.layer.to_string(), "    ")
-        )
-    }
 }
 
 impl<K, V, T, R, O> DeepSizeOf for OrdValBatch<K, V, T, R, O>
@@ -238,7 +214,7 @@ pub struct OrdValMerger<K, V, T, R, O = usize>
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Ord + Clone + ::std::fmt::Debug + 'static,
+    T: Lattice + Ord + Clone + Debug + 'static,
     R: MonoidValue,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
@@ -260,7 +236,7 @@ impl<K, V, T, R, O> Merger<K, V, T, R, OrdValBatch<K, V, T, R, O>> for OrdValMer
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + ::std::fmt::Debug + 'static,
+    T: Lattice + Timestamp + Ord + Clone + Debug + 'static,
     R: MonoidValue,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
