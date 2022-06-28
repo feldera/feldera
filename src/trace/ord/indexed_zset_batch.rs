@@ -1,13 +1,3 @@
-use std::{
-    cmp::max,
-    convert::{TryFrom, TryInto},
-    fmt::{Debug, Display, Formatter},
-    ops::{Add, AddAssign, Neg},
-    rc::Rc,
-};
-
-use timely::progress::Antichain;
-
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
     lattice::Lattice,
@@ -22,8 +12,15 @@ use crate::{
     },
     NumEntries, SharedRef,
 };
-
 use deepsize::DeepSizeOf;
+use std::{
+    cmp::max,
+    convert::{TryFrom, TryInto},
+    fmt::{self, Debug, Display},
+    ops::{Add, AddAssign, Neg},
+    rc::Rc,
+};
+use timely::progress::Antichain;
 
 /// An immutable collection of update tuples.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -50,8 +47,9 @@ where
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
+    OrderedLayer<K, OrderedLeaf<V, R>, O>: Display,
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
             "lower: {:?}, upper: {:?}\nlayer:\n{}",
