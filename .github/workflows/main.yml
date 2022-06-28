@@ -33,7 +33,11 @@ jobs:
               os: ubuntu-latest,
             }
           - { rust: nightly, target: x86_64-apple-darwin, os: macos-latest }
-          - { rust: nightly, target: x86_64-pc-windows-msvc, os: windows-latest }
+          - {
+              rust: nightly,
+              target: x86_64-pc-windows-msvc,
+              os: windows-latest,
+            }
           - { rust: nightly, target: i686-pc-windows-msvc, os: windows-latest }
             # TODO: uncomment when we're back to stable Rust.
             #- { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
@@ -116,6 +120,7 @@ jobs:
   test-sanitizers:
     name: Sanitizer Tests
 
+    needs: tests
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
