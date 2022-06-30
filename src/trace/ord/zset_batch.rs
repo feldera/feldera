@@ -123,6 +123,16 @@ where
     }
 }
 
+impl<K, R> Default for OrdZSet<K, R>
+where
+    K: Ord + Clone + 'static,
+    R: MonoidValue,
+{
+    fn default() -> Self {
+        OrdZSet::<K, R>::zero()
+    }
+}
+
 impl<K, R> SharedRef for OrdZSet<K, R>
 where
     K: Ord + Clone,
