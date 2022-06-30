@@ -1,4 +1,0 @@
-[submodule "doc/spec"]
-	path = doc/spec
-	url = https://git.overleaf.com/604c047e921769355e4a1a0f
-        ignore = dirty
