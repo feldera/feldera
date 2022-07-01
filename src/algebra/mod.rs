@@ -9,7 +9,7 @@ use std::{
 
 #[macro_use]
 mod checked_int;
-mod zset;
+pub mod zset;
 
 pub use checked_int::CheckedInt;
 pub use zset::{IndexedZSet, ZSet};
