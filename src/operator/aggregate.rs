@@ -296,7 +296,7 @@ mod test {
         circuit::Root,
         operator::{Apply2, GeneratorNested},
         trace::ord::OrdZSet,
-        zset, zset_set
+        zset, zset_set,
     };
 
     #[test]
