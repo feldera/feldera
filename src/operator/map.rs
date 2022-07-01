@@ -63,9 +63,6 @@ where
 ///
 /// # Type arguments
 ///
-/// * `K1` - input key type.
-/// * `K2` - output key type.
-/// * `V` - value type.
 /// * `CI` - input collection type.
 /// * `CO` - output collection type.
 /// * `FB` - key mapping function type that takes a borrowed key.
@@ -145,10 +142,6 @@ where
 ///
 /// # Type arguments
 ///
-/// * `K` - key type in the input collection.
-/// * `V1` - value type in the input collection.
-/// * `V2` - value type in the output collection (the key type in the output
-///   collection is the same as in the input collection).
 /// * `CI` - input collection type.
 /// * `CO` - output collection type.
 /// * `F` - function that maps input key-value pairs into output values.
