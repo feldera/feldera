@@ -296,7 +296,7 @@ mod test {
         circuit::Root,
         operator::{Apply2, GeneratorNested},
         trace::ord::OrdZSet,
-        zset,
+        zset, zset_set
     };
 
     #[test]
@@ -304,12 +304,12 @@ mod test {
         let root = Root::build(move |circuit| {
             let mut inputs = vec![
                 vec![
-                    zset! { (1, 10) => 1, (1, 20) => 1 },
+                    zset_set! { (1, 10), (1, 20) },
                     zset! { (2, 10) => 1, (1, 10) => -1, (1, 20) => 1, (3, 10) => 1 },
                 ],
                 vec![
                     zset! { (4, 20) => 1, (2, 10) => -1 },
-                    zset! { (5, 10) => 1, (6, 10) => 1 },
+                    zset_set! { (5, 10), (6, 10) },
                 ],
                 vec![],
             ]
