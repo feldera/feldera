@@ -4,10 +4,7 @@ use dbsp::{
     operator::{DelayedFeedback, Generator},
     profile::CPUProfiler,
     time::NestedTimestamp32,
-    trace::{
-        ord::{OrdIndexedZSet, OrdZSet},
-        Batch,
-    },
+    trace::{ord::OrdZSet, Batch},
 };
 use std::{collections::HashMap, fmt::Write, fs};
 
@@ -95,9 +92,8 @@ fn main() {
                 let paths_inverted: Stream<_, OrdZSet<(u32, u32), i32>> =
                     paths_delayed.stream().map_keys(|&(x, y)| (y, x));
 
-                let paths_inverted_indexed: Stream<_, OrdIndexedZSet<u32, u32, i32>> =
-                    paths_inverted.index();
-                let edges_indexed: Stream<_, OrdIndexedZSet<u32, u32, i32>> = edges.index();
+                let paths_inverted_indexed = paths_inverted.index();
+                let edges_indexed = edges.index();
 
                 let paths = edges
                     .plus(

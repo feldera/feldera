@@ -647,8 +647,8 @@ mod test {
                     .stream()
                     .map_keys(|&(x, y)| (y, x));
 
-                let paths_inverted_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = paths_inverted.index();
-                let edges_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> = edges.index();
+                let paths_inverted_indexed = paths_inverted.index();
+                let edges_indexed = edges.index();
 
                 let paths = edges.plus(&paths_inverted_indexed.join_trace::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to)))
                     .distinct_trace();
@@ -710,10 +710,9 @@ mod test {
 
                 computed_labels.connect(
                     &result
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|label| (label.0, label.1))
+                        .index_with(|label| (label.0, label.1))
                         .join_trace::<TS, _, _, _>(
-                            &edges
-                                .index_with::<OrdIndexedZSet<_, _, _>, _>(|edge| (edge.0, edge.1)),
+                            &edges.index_with(|edge| (edge.0, edge.1)),
                             |_from, label, to| Label(*to, *label),
                         ),
                 );

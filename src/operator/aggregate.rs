@@ -293,9 +293,9 @@ mod test {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        circuit::{Root, Stream},
+        circuit::Root,
         operator::{Apply2, GeneratorNested},
-        trace::ord::{OrdIndexedZSet, OrdZSet},
+        trace::ord::OrdZSet,
         zset,
     };
 
@@ -320,7 +320,7 @@ mod test {
                     let counter = Rc::new(RefCell::new(0));
                     let counter_clone = counter.clone();
 
-                    let input: Stream<_, OrdIndexedZSet<usize, usize, isize>> = child
+                    let input = child
                         .add_source(GeneratorNested::new(Box::new(move || {
                             *counter_clone.borrow_mut() = 0;
                             let mut deltas = inputs.next().unwrap_or_default().into_iter();

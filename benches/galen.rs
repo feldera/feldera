@@ -8,10 +8,7 @@ use dbsp::{
     monitor::TraceMonitor,
     operator::{CsvSource, DelayedFeedback},
     time::NestedTimestamp32,
-    trace::{
-        ord::{OrdIndexedZSet, OrdZSet},
-        BatchReader,
-    },
+    trace::{ord::OrdZSet, BatchReader},
 };
 use std::{
     fs::{self, File},
@@ -161,35 +158,17 @@ fn main() -> Result<()> {
                     let qvar: DelayedFeedback<_, OrdZSet<(Number, Number, Number), Weight>> =
                         DelayedFeedback::new(child);
 
-                    let p_by_1 = pvar.stream().index::<OrdIndexedZSet<_, _, _>>();
-                    let p_by_2 = pvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y)| (y, x));
-                    let p_by_12 = pvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y)| ((x, y), ()));
-                    let u_by_1 = u
-                        .delta0(child)
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
-                    let q_by_1 = qvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
-                    let q_by_2 = qvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (y, (x, z)));
-                    let q_by_12 = qvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| ((x, y), z));
-                    let q_by_23 = qvar
-                        .stream()
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| ((y, z), x));
-                    let c_by_2 = c
-                        .delta0(child)
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (y, (x, z)));
-                    let r_by_1 = r
-                        .delta0(child)
-                        .index_with::<OrdIndexedZSet<_, _, _>, _>(|&(x, y, z)| (x, (y, z)));
-                    let s_by_1 = s.delta0(child).index::<OrdIndexedZSet<_, _, _>>();
+                    let p_by_1 = pvar.stream().index();
+                    let p_by_2 = pvar.stream().index_with(|&(x, y)| (y, x));
+                    let p_by_12 = pvar.stream().index_with(|&(x, y)| ((x, y), ()));
+                    let u_by_1 = u.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
+                    let q_by_1 = qvar.stream().index_with(|&(x, y, z)| (x, (y, z)));
+                    let q_by_2 = qvar.stream().index_with(|&(x, y, z)| (y, (x, z)));
+                    let q_by_12 = qvar.stream().index_with(|&(x, y, z)| ((x, y), z));
+                    let q_by_23 = qvar.stream().index_with(|&(x, y, z)| ((y, z), x));
+                    let c_by_2 = c.delta0(child).index_with(|&(x, y, z)| (y, (x, z)));
+                    let r_by_1 = r.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
+                    let s_by_1 = s.delta0(child).index();
 
                     // IR1: p(x,z) :- p(x,y), p(y,z).
                     let ir1 = child.region("IR1", || {
@@ -215,7 +194,7 @@ fn main() -> Result<()> {
                                 &u_by_1,
                                 |&_w, &y, &(r, z)| ((r, y), z),
                             )
-                            .index::<OrdIndexedZSet<_, _, _>>()
+                            .index()
                             .join_trace::<NestedTimestamp32, _, _, _>(
                                 &q_by_23,
                                 |&(_r, _y), &z, &x| (x, z),
@@ -233,12 +212,10 @@ fn main() -> Result<()> {
                     ir4_1.inspect(|zs: &OrdZSet<_, _>| println!("ir4_1: {}", zs.len()));
 
                     let ir4 = child.region("IR4-2", || {
-                        ir4_1
-                            .index::<OrdIndexedZSet<_, _, _>>()
-                            .join_trace::<NestedTimestamp32, _, _, _>(
-                                &p_by_12,
-                                |&(x, _y), &z, &()| (x, z),
-                            )
+                        ir4_1.index().join_trace::<NestedTimestamp32, _, _, _>(
+                            &p_by_12,
+                            |&(x, _y), &z, &()| (x, z),
+                        )
                     });
                     ir4.inspect(|zs: &OrdZSet<_, _>| println!("ir4: {}", zs.len()));
 
@@ -258,7 +235,7 @@ fn main() -> Result<()> {
                                 &r_by_1,
                                 |&_y, &(x, z), &(u, e)| ((z, u), (x, e)),
                             )
-                            .index::<OrdIndexedZSet<_, _, _>>()
+                            .index()
                     });
                     let ir6 = child.region("IR6", || {
                         ir6_1.join_trace::<NestedTimestamp32, _, _, _>(
