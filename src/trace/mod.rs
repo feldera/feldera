@@ -283,18 +283,18 @@ pub mod rc_blanket_impls {
         type Cursor<'s> = RcBatchCursor<'s, B> where B: 's;
         /// Acquires a cursor to the batch's contents.
         fn cursor(&self) -> Self::Cursor<'_> {
-            RcBatchCursor::new((&**self).cursor())
+            RcBatchCursor::new((**self).cursor())
         }
 
         /// The number of updates in the batch.
         fn len(&self) -> usize {
-            (&**self).len()
+            (**self).len()
         }
         fn lower(&self) -> &Antichain<Self::Time> {
-            (&**self).lower()
+            (**self).lower()
         }
         fn upper(&self) -> &Antichain<Self::Time> {
-            (&**self).upper()
+            (**self).upper()
         }
     }
 
