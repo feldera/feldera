@@ -2486,33 +2486,32 @@ where
     }
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream
-            .put((&mut *self.operator.get()).get_output());
+        self.output_stream.put((*self.operator.get()).get_output());
         Ok(())
     }
 
     fn clock_start(&mut self, scope: Scope) {
         unsafe {
-            (&mut *self.operator.get()).clock_start(scope);
+            (*self.operator.get()).clock_start(scope);
         }
     }
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
             self.export_stream
-                .put((&mut *self.operator.get()).get_final_output())
+                .put((*self.operator.get()).get_final_output())
         }
-        (&mut *self.operator.get()).clock_end(scope);
+        (*self.operator.get()).clock_end(scope);
     }
 
     fn summary(&self, output: &mut String) {
         unsafe {
-            (&*self.operator.get()).summary(output);
+            (*self.operator.get()).summary(output);
         }
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        unsafe { (&*self.operator.get()).fixedpoint(scope) }
+        unsafe { (*self.operator.get()).fixedpoint(scope) }
     }
 }
 
@@ -2570,8 +2569,8 @@ where
 
     unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
         match self.input_stream.take() {
-            Cow::Owned(v) => (&mut *self.operator.get()).eval_strict_owned(v),
-            Cow::Borrowed(v) => (&mut *self.operator.get()).eval_strict(v),
+            Cow::Owned(v) => (*self.operator.get()).eval_strict_owned(v),
+            Cow::Borrowed(v) => (*self.operator.get()).eval_strict(v),
         };
         Ok(())
     }
@@ -2584,12 +2583,12 @@ where
 
     fn summary(&self, output: &mut String) {
         unsafe {
-            (&*self.operator.get()).summary(output);
+            (*self.operator.get()).summary(output);
         }
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        unsafe { (&*self.operator.get()).fixedpoint(scope) }
+        unsafe { (*self.operator.get()).fixedpoint(scope) }
     }
 }
 

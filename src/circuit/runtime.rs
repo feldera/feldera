@@ -130,7 +130,7 @@ impl Runtime {
     }
 
     fn inner(&self) -> &RuntimeInner {
-        &*self.0
+        &self.0
     }
 
     /// Returns the number of workers in this runtime.
