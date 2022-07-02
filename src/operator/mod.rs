@@ -63,5 +63,9 @@ mod window;
 
 #[cfg(feature = "with-csv")]
 mod csv;
+
+mod neg;
+pub use neg::UnaryMinus;
+
 #[cfg(feature = "with-csv")]
 pub use self::csv::CsvSource;
