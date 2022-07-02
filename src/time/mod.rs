@@ -53,7 +53,7 @@ pub use product::Product;
 ///
 /// # Example: `NestedTimestamp32`.
 ///
-/// [`join_trace`](`crate::circuit::Stream::join_trace`) and
+/// [`join`](`crate::circuit::Stream::join`) and
 /// [`distinct_trace`](`crate::circuit::Stream::distinct_trace`) methods compute
 /// incremental versions
 /// of `join` and `distinct` operators within nested scopes.  They need to know

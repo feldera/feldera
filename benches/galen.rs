@@ -172,17 +172,15 @@ fn main() -> Result<()> {
 
                     // IR1: p(x,z) :- p(x,y), p(y,z).
                     let ir1 = child.region("IR1", || {
-                        p_by_2
-                            .join_trace::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
+                        p_by_2.join::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
                     });
                     ir1.inspect(|zs: &OrdZSet<_, _>| println!("ir1: {}", zs.len()));
 
                     // IR2: q(x,r,z) := p(x,y), q(y,r,z)
                     let ir2 = child.region("IR2", || {
-                        p_by_2.join_trace::<NestedTimestamp32, _, _, _>(
-                            &q_by_1,
-                            |&_y, &x, &(r, z)| (x, r, z),
-                        )
+                        p_by_2.join::<NestedTimestamp32, _, _, _>(&q_by_1, |&_y, &x, &(r, z)| {
+                            (x, r, z)
+                        })
                     });
 
                     ir2.inspect(|zs: &OrdZSet<_, _>| println!("ir2: {}", zs.len()));
@@ -190,21 +188,20 @@ fn main() -> Result<()> {
                     // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
                     let ir3 = child.region("IR3", || {
                         p_by_2
-                            .join_trace::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                            .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
                                 &u_by_1,
                                 |&_w, &y, &(r, z)| ((r, y), z),
                             )
                             .index()
-                            .join_trace::<NestedTimestamp32, _, _, _>(
-                                &q_by_23,
-                                |&(_r, _y), &z, &x| (x, z),
-                            )
+                            .join::<NestedTimestamp32, _, _, _>(&q_by_23, |&(_r, _y), &z, &x| {
+                                (x, z)
+                            })
                     });
                     ir3.inspect(|zs: &OrdZSet<_, _>| println!("ir3: {}", zs.len()));
 
                     // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
                     let ir4_1 = child.region("IR4-1", || {
-                        c_by_2.join_trace::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                        c_by_2.join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
                             &p_by_2,
                             |&_w, &(y, z), &x| ((x, y), z),
                         )
@@ -212,33 +209,33 @@ fn main() -> Result<()> {
                     ir4_1.inspect(|zs: &OrdZSet<_, _>| println!("ir4_1: {}", zs.len()));
 
                     let ir4 = child.region("IR4-2", || {
-                        ir4_1.index().join_trace::<NestedTimestamp32, _, _, _>(
-                            &p_by_12,
-                            |&(x, _y), &z, &()| (x, z),
-                        )
+                        ir4_1
+                            .index()
+                            .join::<NestedTimestamp32, _, _, _>(&p_by_12, |&(x, _y), &z, &()| {
+                                (x, z)
+                            })
                     });
                     ir4.inspect(|zs: &OrdZSet<_, _>| println!("ir4: {}", zs.len()));
 
                     // IR5: q(x,q,z) := q(x,r,z), s(r,q)
                     let ir5 = child.region("IR5", || {
-                        q_by_2.join_trace::<NestedTimestamp32, _, _, _>(
-                            &s_by_1,
-                            |&_r, &(x, z), &q| (x, q, z),
-                        )
+                        q_by_2.join::<NestedTimestamp32, _, _, _>(&s_by_1, |&_r, &(x, z), &q| {
+                            (x, q, z)
+                        })
                     });
                     ir5.inspect(|zs: &OrdZSet<_, _>| println!("ir5: {}", zs.len()));
 
                     // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
                     let ir6_1 = child.region("IR6_1", || {
                         q_by_2
-                            .join_trace::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                            .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
                                 &r_by_1,
                                 |&_y, &(x, z), &(u, e)| ((z, u), (x, e)),
                             )
                             .index()
                     });
                     let ir6 = child.region("IR6", || {
-                        ir6_1.join_trace::<NestedTimestamp32, _, _, _>(
+                        ir6_1.join::<NestedTimestamp32, _, _, _>(
                             &q_by_12,
                             |&(_z, _u), &(x, e), &o| (x, e, o),
                         )

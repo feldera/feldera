@@ -84,7 +84,7 @@ fn main() {
                 //     └────────►│ X │ ◄─────────────────────┘
                 //               │   │
                 //               └───┘
-                //            join_trace
+                //               join
                 // ```
                 let edges = edges.delta0(child);
                 let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
@@ -95,14 +95,13 @@ fn main() {
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();
 
-                let paths = edges
-                    .plus(
-                        &paths_inverted_indexed.join_trace::<NestedTimestamp32, _, _, _>(
+                let paths =
+                    edges
+                        .plus(&paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(
                             &edges_indexed,
                             |_via, from, to| (*from, *to),
-                        ),
-                    )
-                    .distinct_trace();
+                        ))
+                        .distinct_trace();
                 paths_delayed.connect(&paths);
 
                 Ok(paths.integrate_trace().export())
