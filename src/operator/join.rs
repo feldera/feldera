@@ -23,33 +23,47 @@ use std::{
 };
 use timely::PartialOrder;
 
-impl<P, IZ1> Stream<Circuit<P>, IZ1>
+impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
 {
-    /// Apply [`Join`] operator to `self` and `other`.
+    /// Join two streams of batches.
     ///
-    /// See [`Join`] operator for more info.
-    pub fn join<F, IZ2, Z>(&self, other: &Stream<Circuit<P>, IZ2>, f: F) -> Stream<Circuit<P>, Z>
+    /// The operator takes two streams of batches indexed with the same key type
+    /// (`I1::Key = I2::Key`) and outputs a stream obtained by joining each pair
+    /// of inputs.
+    ///
+    /// Input streams will typically be produced by
+    /// [`index`](`crate::circuit::Stream::index`) or
+    /// [`index_with`](`crate::circuit::Stream::index_with`) operators.
+    ///
+    /// # Type arguments
+    ///
+    /// * `F` - join function type: maps key and a pair of values from input
+    ///   batches to an output value.
+    /// * `I1` - batch type in the first input stream.
+    /// * `I2` - batch type in the second input stream.
+    /// * `Z` - output Z-set type.
+    pub fn stream_join<F, I2, Z>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        f: F,
+    ) -> Stream<Circuit<P>, Z>
     where
-        IZ1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
-        IZ2: BatchReader<Key = IZ1::Key, Time = (), R = Z::R> + Clone + 'static,
-        IZ1::Key: Ord,
+        I1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
+        I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + Clone + 'static,
+        I1::Key: Ord,
         Z: Clone + ZSet + 'static,
         Z::R: MulByRef,
-        F: Fn(&IZ1::Key, &IZ1::Val, &IZ2::Val) -> Z::Key + 'static,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
             .add_binary_operator(Join::new(f), self, other)
     }
 }
 
-impl<P, I1> Stream<Circuit<P>, I1>
-where
-    P: Clone + 'static,
-{
-    // TODO: replace with `join_trace`.
-    /// Incremental join of two streams.
+impl<I1> Stream<Circuit<()>, I1> {
+    /// Incremental join of two streams of batches.
     ///
     /// Given streams `a` and `b` of changes to relations `A` and `B`
     /// respectively, computes a stream of changes to `A <> B` (where `<>`
@@ -58,11 +72,16 @@ where
     /// ```text
     /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
     /// ```
+    ///
+    /// This method only works in the top-level scope.  It is superseded by
+    /// [`join`](`crate::circuit::Stream::join`), which works in arbitrary
+    /// nested scopes.  We keep this implementation for testing and
+    /// benchmarking purposes.
     pub fn join_incremental<F, I2, Z>(
         &self,
-        other: &Stream<Circuit<P>, I2>,
+        other: &Stream<Circuit<()>, I2>,
         join_func: F,
-    ) -> Stream<Circuit<P>, Z>
+    ) -> Stream<Circuit<()>, Z>
     where
         I1: IndexedZSet + DeepSizeOf,
         I1::Key: Ord + DeepSizeOf,
@@ -76,8 +95,8 @@ where
     {
         self.integrate_trace()
             .delay_trace()
-            .join(other, join_func.clone())
-            .plus(&self.join(&other.integrate_trace(), join_func))
+            .stream_join(other, join_func.clone())
+            .plus(&self.stream_join(&other.integrate_trace(), join_func))
     }
 }
 
@@ -87,12 +106,20 @@ where
     I1: IndexedZSet,
 {
     // TODO: Derive `TS` type from circuit.
-    /// Incremental join of two nested streams.
+    /// Incremental join two streams of batches.
     ///
-    /// Given nested streams `self` and `other` of changes to relations `A` and
-    /// `B`, computes `(↑((↑(self <> other))∆))∆` by first assembling traces
-    /// of both streams:
-    pub fn join_trace<TS, I2, F, Z>(
+    /// Given streams `self` and `other` of batches that represent changes to
+    /// relations `A` and `B` respectively, computes a stream of changes to
+    /// `A <> B` (where `<>` is the join operator):
+    ///
+    /// # Type arguments
+    ///
+    /// * `I1` - batch type in the first input stream.
+    /// * `I2` - batch type in the second input stream.
+    /// * `F` - join function type: maps key and a pair of values from input
+    ///   batches to an output value.
+    /// * `Z` - output Z-set type.
+    pub fn join<TS, I2, F, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         join_func: F,
@@ -178,23 +205,9 @@ where
     }
 }
 
-/// Join two indexed Z-sets.
+/// Join two streams of batches.
 ///
-/// The operator takes two streams of indexed Z-sets and outputs
-/// a stream obtained by joining each pair of inputs.
-///
-/// An indexed Z-set is a map from keys to a Z-set of values associated
-/// with each key.  Both input streams must use the same key type `K`.
-/// Indexed Z-sets are produced for example by the
-/// [`Index`](`crate::operator::Index`) operator.
-///
-/// # Type arguments
-///
-/// * `F` - join function type: maps key and a pair of values from input Z-sets
-///   to an output value.
-/// * `I1` - indexed Z-set type in the first input stream.
-/// * `I2` - indexed Z-set type in the second input stream.
-/// * `Z` - output Z-set type.
+/// See [`Stream::join`](`crate::circuit::Stream::join`).
 pub struct Join<F, I1, I2, Z> {
     join_func: F,
     _types: PhantomData<(I1, I2, Z)>,
@@ -533,7 +546,7 @@ mod test {
                 zset! {},
             ]
             .into_iter();
-            let mut inc_outputs = vec![
+            let inc_outputs_vec = vec![
                 zset! {
                     (2, "c g".to_string()) => 9,
                     (2, "c h".to_string()) => 12,
@@ -557,8 +570,10 @@ mod test {
                     (4, "n m".to_string()) => 2,
                 },
                 zset! {},
-            ]
-            .into_iter();
+            ];
+
+            let mut inc_outputs = inc_outputs_vec.clone().into_iter();
+            let mut inc_outputs2 = inc_outputs_vec.into_iter();
 
             let index1: Stream<_, OrdIndexedZSet<usize, &'static str, isize>> = circuit
                 .add_source(Generator::new(move || input1.next().unwrap()))
@@ -567,7 +582,7 @@ mod test {
                 .add_source(Generator::new(move || input2.next().unwrap()))
                 .index();
             index1
-                .join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .stream_join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
                 .inspect(move |fm: &OrdZSet<(usize, String), _>| {
                     assert_eq!(fm, &outputs.next().unwrap())
                 });
@@ -575,6 +590,12 @@ mod test {
                 .join_incremental(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
                 .inspect(move |fm: &OrdZSet<(usize, String), _>| {
                     assert_eq!(fm, &inc_outputs.next().unwrap())
+                });
+
+            index1
+                .join::<(), _, _, _>(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .inspect(move |fm: &OrdZSet<(usize, String), _>| {
+                    assert_eq!(fm, &inc_outputs2.next().unwrap())
                 });
         })
         .unwrap();
@@ -638,7 +659,7 @@ mod test {
                 //     └────────►│ X │ ◄─────────────────────┘
                 //               │   │
                 //               └───┘
-                //             join_trace
+                //               join 
                 // ```
                 let edges = edges.delta0(child);
                 let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
@@ -650,7 +671,7 @@ mod test {
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();
 
-                let paths = edges.plus(&paths_inverted_indexed.join_trace::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to)))
+                let paths = edges.plus(&paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to)))
                     .distinct_trace();
                 paths_delayed.connect(&paths);
                 let output = paths.integrate_trace();
@@ -711,7 +732,7 @@ mod test {
                 computed_labels.connect(
                     &result
                         .index_with(|label| (label.0, label.1))
-                        .join_trace::<TS, _, _, _>(
+                        .join::<TS, _, _, _>(
                             &edges.index_with(|edge| (edge.0, edge.1)),
                             |_from, label, to| Label(*to, *label),
                         ),

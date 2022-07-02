@@ -214,7 +214,8 @@ mod test {
                             let feedback_indexed: Stream<_, OrdIndexedZSet<usize, (), isize>> =
                                 feedback_pairs.index();
 
-                            let suc = feedback_indexed.join(&edges_indexed, |_node, &(), &to| to);
+                            let suc =
+                                feedback_indexed.stream_join(&edges_indexed, |_node, &(), &to| to);
 
                             let reachable = init.plus(&suc).distinct();
                             feedback.connect(&reachable);
