@@ -41,6 +41,12 @@ where
     }
 }
 
+impl<T> Default for UnaryMinus<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> UnaryOperator<T, T> for UnaryMinus<T>
 where
     T: 'static + NegByRef + Neg<Output = T> + Clone,
