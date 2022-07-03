@@ -1,7 +1,7 @@
 use dbsp::{
     circuit::{trace::SchedulerEvent, GlobalNodeId, Root, Stream},
     monitor::TraceMonitor,
-    operator::{DelayedFeedback, Generator},
+    operator::Generator,
     profile::CPUProfiler,
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, Batch},
@@ -69,7 +69,7 @@ fn main() {
             circuit.add_source(Generator::new(move || edges.clone()));
 
         let _paths = circuit
-            .fixedpoint(|child| {
+            .recursive(|child, paths: Stream<_, OrdZSet<(u32, u32), i32>>| {
                 // ```text
                 //                      distinct_trace
                 //               ┌───┐          ┌───┐
@@ -87,24 +87,19 @@ fn main() {
                 //               join
                 // ```
                 let edges = edges.delta0(child);
-                let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
 
                 let paths_inverted: Stream<_, OrdZSet<(u32, u32), i32>> =
-                    paths_delayed.stream().map_keys(|&(x, y)| (y, x));
+                    paths.map_keys(|&(x, y)| (y, x));
 
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();
 
-                let paths =
-                    edges
-                        .plus(&paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(
-                            &edges_indexed,
-                            |_via, from, to| (*from, *to),
-                        ))
-                        .distinct_trace();
-                paths_delayed.connect(&paths);
-
-                Ok(paths.integrate_trace().export())
+                Ok(edges.plus(
+                    &paths_inverted_indexed
+                        .join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| {
+                            (*from, *to)
+                        }),
+                ))
             })
             .unwrap();
     })
