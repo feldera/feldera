@@ -5,39 +5,48 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream,
     },
-    trace::{Batch, BatchReader, Builder, Cursor},
+    trace::{ord::OrdZSet, Batch, BatchReader, Builder, Cursor},
 };
 use std::{borrow::Cow, marker::PhantomData};
 
 impl<P, CI> Stream<Circuit<P>, CI>
 where
-    CI: BatchReader<Time = ()> + Clone + 'static,
+    CI: BatchReader<Time = (), Val = ()> + Clone + 'static,
     CI::Key: Clone,
-    CI::Val: Clone,
     P: Clone + 'static,
 {
-    /// Apply [`FilterKeys`] operator to `self`.
-    pub fn filter_keys<CO, F>(&self, func: F) -> Stream<Circuit<P>, CO>
+    /// Filter input batches using a predicate.
+    ///
+    /// The operator applies `predicate` to each key in the input
+    /// batch and builds an output batch containing only the elements
+    /// that satisfy the predicate.
+    ///
+    /// # Type arguments
+    ///
+    /// * `CI` - input collection type.
+    /// * `F` - predicate function type.
+    pub fn filter<F>(&self, predicate: F) -> Stream<Circuit<P>, OrdZSet<CI::Key, CI::R>>
     where
-        CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + Clone + 'static,
+        CI::Key: Ord,
+        F: Fn(&CI::Key) -> bool + 'static,
+    {
+        self.filter_generic(predicate)
+    }
+
+    /// Like [`filter`](`Self::filter`), but can return any Z-set type, not just
+    /// `OrdZSet`.
+    pub fn filter_generic<CO, F>(&self, predicate: F) -> Stream<Circuit<P>, CO>
+    where
+        CO: Batch<Key = CI::Key, Val = (), Time = (), R = CI::R> + Clone + 'static,
         F: Fn(&CI::Key) -> bool + 'static,
     {
         self.circuit()
-            .add_unary_operator(FilterKeys::new(func), self)
+            .add_unary_operator(FilterKeys::new(predicate), self)
     }
 }
 
-/// Operator that filters a collection of key/value pairs based on keys.
-///
-/// The operator applies a filtering function to each key in the input
-/// batch and builds an output batch containing only the elements
-/// that satisfy the filter condition.
-///
-/// # Type arguments
-///
-/// * `CI` - input collection type.
-/// * `CO` - output collection type.
-/// * `F` - filtering function type.
+/// Internal implementation of the [`filter`](`crate::circuit::Stream::filter`)
+/// operator.
 pub struct FilterKeys<CI, CO, F>
 where
     F: 'static,
@@ -110,5 +119,42 @@ where
     fn eval_owned(&mut self, i: CI) -> CO {
         // TODO: owned implementation
         self.eval(&i)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{circuit::Root, operator::Generator, trace::ord::OrdZSet, zset};
+    use std::vec;
+
+    #[test]
+    fn filter_test() {
+        let root = Root::build(move |circuit| {
+            let mut inputs: vec::IntoIter<OrdZSet<isize, isize>> = vec![
+                zset! { 1 => 1, 2 => 1, 3 => -1 },
+                zset! { -1 => 1, -2 => 1, -3 => -1 },
+                zset! { -1 => 1, 2 => 1, 3 => -1 },
+            ]
+            .into_iter();
+            let mut expected_outputs: vec::IntoIter<OrdZSet<isize, isize>> = vec![
+                zset! { 1 => 1, 2 => 1, 3 => -1 },
+                zset! {},
+                zset! { 2 => 1, 3 => -1 },
+            ]
+            .into_iter();
+
+            let output_stream = circuit
+                .add_source(Generator::new(move || inputs.next().unwrap()))
+                .filter(|x| *x > 0);
+
+            output_stream.inspect(move |zs| {
+                assert_eq!(*zs, expected_outputs.next().unwrap());
+            });
+        })
+        .unwrap();
+
+        for _ in 0..3 {
+            root.step().unwrap();
+        }
     }
 }
