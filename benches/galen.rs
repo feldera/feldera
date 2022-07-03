@@ -6,7 +6,7 @@ use csv::ReaderBuilder;
 use dbsp::{
     circuit::{Root, Runtime, Stream},
     monitor::TraceMonitor,
-    operator::{CsvSource, DelayedFeedback},
+    operator::CsvSource,
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, BatchReader},
 };
@@ -152,111 +152,108 @@ fn main() -> Result<()> {
                 circuit.region("s", || circuit.add_source(s_source));
 
             let (outp, outq) = circuit
-                .fixedpoint(|child| {
-                    let pvar: DelayedFeedback<_, OrdZSet<(Number, Number), Weight>> =
-                        DelayedFeedback::new(child);
-                    let qvar: DelayedFeedback<_, OrdZSet<(Number, Number, Number), Weight>> =
-                        DelayedFeedback::new(child);
+                .recursive(
+                    |child,
+                     (pvar, qvar): (
+                        Stream<_, OrdZSet<(Number, Number), Weight>>,
+                        Stream<_, OrdZSet<(Number, Number, Number), Weight>>,
+                    )| {
+                        let p_by_1 = pvar.index();
+                        let p_by_2 = pvar.index_with(|&(x, y)| (y, x));
+                        let p_by_12 = pvar.index_with(|&(x, y)| ((x, y), ()));
+                        let u_by_1 = u.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
+                        let q_by_1 = qvar.index_with(|&(x, y, z)| (x, (y, z)));
+                        let q_by_2 = qvar.index_with(|&(x, y, z)| (y, (x, z)));
+                        let q_by_12 = qvar.index_with(|&(x, y, z)| ((x, y), z));
+                        let q_by_23 = qvar.index_with(|&(x, y, z)| ((y, z), x));
+                        let c_by_2 = c.delta0(child).index_with(|&(x, y, z)| (y, (x, z)));
+                        let r_by_1 = r.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
+                        let s_by_1 = s.delta0(child).index();
 
-                    let p_by_1 = pvar.stream().index();
-                    let p_by_2 = pvar.stream().index_with(|&(x, y)| (y, x));
-                    let p_by_12 = pvar.stream().index_with(|&(x, y)| ((x, y), ()));
-                    let u_by_1 = u.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
-                    let q_by_1 = qvar.stream().index_with(|&(x, y, z)| (x, (y, z)));
-                    let q_by_2 = qvar.stream().index_with(|&(x, y, z)| (y, (x, z)));
-                    let q_by_12 = qvar.stream().index_with(|&(x, y, z)| ((x, y), z));
-                    let q_by_23 = qvar.stream().index_with(|&(x, y, z)| ((y, z), x));
-                    let c_by_2 = c.delta0(child).index_with(|&(x, y, z)| (y, (x, z)));
-                    let r_by_1 = r.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
-                    let s_by_1 = s.delta0(child).index();
+                        // IR1: p(x,z) :- p(x,y), p(y,z).
+                        let ir1 = child.region("IR1", || {
+                            p_by_2.join::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
+                        });
+                        ir1.inspect(|zs: &OrdZSet<_, _>| println!("ir1: {}", zs.len()));
 
-                    // IR1: p(x,z) :- p(x,y), p(y,z).
-                    let ir1 = child.region("IR1", || {
-                        p_by_2.join::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
-                    });
-                    ir1.inspect(|zs: &OrdZSet<_, _>| println!("ir1: {}", zs.len()));
+                        // IR2: q(x,r,z) := p(x,y), q(y,r,z)
+                        let ir2 = child.region("IR2", || {
+                            p_by_2
+                                .join::<NestedTimestamp32, _, _, _>(&q_by_1, |&_y, &x, &(r, z)| {
+                                    (x, r, z)
+                                })
+                        });
 
-                    // IR2: q(x,r,z) := p(x,y), q(y,r,z)
-                    let ir2 = child.region("IR2", || {
-                        p_by_2.join::<NestedTimestamp32, _, _, _>(&q_by_1, |&_y, &x, &(r, z)| {
-                            (x, r, z)
-                        })
-                    });
+                        ir2.inspect(|zs: &OrdZSet<_, _>| println!("ir2: {}", zs.len()));
 
-                    ir2.inspect(|zs: &OrdZSet<_, _>| println!("ir2: {}", zs.len()));
+                        // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
+                        let ir3 = child.region("IR3", || {
+                            p_by_2
+                                .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                                    &u_by_1,
+                                    |&_w, &y, &(r, z)| ((r, y), z),
+                                )
+                                .index()
+                                .join::<NestedTimestamp32, _, _, _>(
+                                    &q_by_23,
+                                    |&(_r, _y), &z, &x| (x, z),
+                                )
+                        });
+                        ir3.inspect(|zs: &OrdZSet<_, _>| println!("ir3: {}", zs.len()));
 
-                    // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
-                    let ir3 = child.region("IR3", || {
-                        p_by_2
-                            .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
-                                &u_by_1,
-                                |&_w, &y, &(r, z)| ((r, y), z),
+                        // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
+                        let ir4_1 = child.region("IR4-1", || {
+                            c_by_2.join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                                &p_by_2,
+                                |&_w, &(y, z), &x| ((x, y), z),
                             )
-                            .index()
-                            .join::<NestedTimestamp32, _, _, _>(&q_by_23, |&(_r, _y), &z, &x| {
-                                (x, z)
-                            })
-                    });
-                    ir3.inspect(|zs: &OrdZSet<_, _>| println!("ir3: {}", zs.len()));
+                        });
+                        ir4_1.inspect(|zs: &OrdZSet<_, _>| println!("ir4_1: {}", zs.len()));
 
-                    // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
-                    let ir4_1 = child.region("IR4-1", || {
-                        c_by_2.join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
-                            &p_by_2,
-                            |&_w, &(y, z), &x| ((x, y), z),
-                        )
-                    });
-                    ir4_1.inspect(|zs: &OrdZSet<_, _>| println!("ir4_1: {}", zs.len()));
-
-                    let ir4 = child.region("IR4-2", || {
-                        ir4_1
-                            .index()
-                            .join::<NestedTimestamp32, _, _, _>(&p_by_12, |&(x, _y), &z, &()| {
-                                (x, z)
-                            })
-                    });
-                    ir4.inspect(|zs: &OrdZSet<_, _>| println!("ir4: {}", zs.len()));
-
-                    // IR5: q(x,q,z) := q(x,r,z), s(r,q)
-                    let ir5 = child.region("IR5", || {
-                        q_by_2.join::<NestedTimestamp32, _, _, _>(&s_by_1, |&_r, &(x, z), &q| {
-                            (x, q, z)
-                        })
-                    });
-                    ir5.inspect(|zs: &OrdZSet<_, _>| println!("ir5: {}", zs.len()));
-
-                    // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
-                    let ir6_1 = child.region("IR6_1", || {
-                        q_by_2
-                            .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
-                                &r_by_1,
-                                |&_y, &(x, z), &(u, e)| ((z, u), (x, e)),
+                        let ir4 = child.region("IR4-2", || {
+                            ir4_1.index().join::<NestedTimestamp32, _, _, _>(
+                                &p_by_12,
+                                |&(x, _y), &z, &()| (x, z),
                             )
-                            .index()
-                    });
-                    let ir6 = child.region("IR6", || {
-                        ir6_1.join::<NestedTimestamp32, _, _, _>(
-                            &q_by_12,
-                            |&(_z, _u), &(x, e), &o| (x, e, o),
-                        )
-                    });
+                        });
+                        ir4.inspect(|zs: &OrdZSet<_, _>| println!("ir4: {}", zs.len()));
 
-                    ir6.inspect(|zs: &OrdZSet<_, _>| println!("ir6: {}", zs.len()));
+                        // IR5: q(x,q,z) := q(x,r,z), s(r,q)
+                        let ir5 = child.region("IR5", || {
+                            q_by_2
+                                .join::<NestedTimestamp32, _, _, _>(&s_by_1, |&_r, &(x, z), &q| {
+                                    (x, q, z)
+                                })
+                        });
+                        ir5.inspect(|zs: &OrdZSet<_, _>| println!("ir5: {}", zs.len()));
 
-                    let p = p.delta0(child).sum([&ir1, &ir3, &ir4]).distinct_trace();
+                        // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
+                        let ir6_1 = child.region("IR6_1", || {
+                            q_by_2
+                                .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                                    &r_by_1,
+                                    |&_y, &(x, z), &(u, e)| ((z, u), (x, e)),
+                                )
+                                .index()
+                        });
+                        let ir6 = child.region("IR6", || {
+                            ir6_1.join::<NestedTimestamp32, _, _, _>(
+                                &q_by_12,
+                                |&(_z, _u), &(x, e), &o| (x, e, o),
+                            )
+                        });
 
-                    let q = q.delta0(child).sum([&ir2, &ir5, &ir6]).distinct_trace();
+                        ir6.inspect(|zs: &OrdZSet<_, _>| println!("ir6: {}", zs.len()));
 
-                    pvar.connect(&p);
-                    qvar.connect(&q);
+                        let p = p.delta0(child).sum([&ir1, &ir3, &ir4]);
+                        let q = q.delta0(child).sum([&ir2, &ir5, &ir6]);
 
-                    Ok((p.integrate_trace().export(), q.integrate_trace().export()))
-                })
+                        Ok((p, q))
+                    },
+                )
                 .unwrap();
-            outp.consolidate::<OrdZSet<_, _>>()
-                .inspect(|zs: &OrdZSet<_, _>| println!("outp: {}", zs.len()));
-            outq.consolidate::<OrdZSet<_, _>>()
-                .inspect(|zs: &OrdZSet<_, _>| println!("outq: {}", zs.len()));
+            outp.inspect(|zs: &OrdZSet<_, _>| println!("outp: {}", zs.len()));
+            outq.inspect(|zs: &OrdZSet<_, _>| println!("outq: {}", zs.len()));
         })
         .unwrap();
 
