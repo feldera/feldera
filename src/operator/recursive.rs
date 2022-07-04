@@ -356,8 +356,8 @@ mod test {
         }
     }
 
-    // Somewhat lame multiple recursion example to test RecursiveStreams impl for tuples:
-    // compute forward and backward reachability at the same time.
+    // Somewhat lame multiple recursion example to test RecursiveStreams impl for
+    // tuples: compute forward and backward reachability at the same time.
     #[test]
     fn reachability2() {
         let root = Root::build(move |circuit| {

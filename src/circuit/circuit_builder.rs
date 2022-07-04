@@ -167,7 +167,10 @@ impl<P, D> Stream<Circuit<P>, D> {
         D: 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(ExportId::new(self.local_node_id()), || unimplemented!())
+            .cache_get_or_insert_with(
+                ExportId::new(self.origin_node_id().clone()),
+                || unimplemented!(),
+            )
             .clone()
     }
 }
@@ -537,7 +540,7 @@ impl Edge {
     }
 }
 
-circuit_cache_key!(ExportId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(ExportId<C, D>(GlobalNodeId => Stream<C, D>));
 
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1

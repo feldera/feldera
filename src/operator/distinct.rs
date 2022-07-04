@@ -14,7 +14,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, NodeId, Scope, Stream,
+        Circuit, GlobalNodeId, Scope, Stream,
     },
     circuit_cache_key,
     time::NestedTimestamp32,
@@ -23,9 +23,9 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 
-circuit_cache_key!(DistinctId<C, D>(NodeId => Stream<C, D>));
-circuit_cache_key!(DistinctIncrementalId<C, D>(NodeId => Stream<C, D>));
-circuit_cache_key!(DistinctTraceId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(DistinctTraceId<C, D>(GlobalNodeId => Stream<C, D>));
 
 impl<P, Z> Stream<Circuit<P>, Z>
 where
@@ -37,7 +37,7 @@ where
         Z: ZSet,
     {
         self.circuit()
-            .cache_get_or_insert_with(DistinctId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_unary_operator(Distinct::new(), self)
             })
             .clone()
@@ -54,13 +54,16 @@ where
         Z::R: ZRingValue,
     {
         self.circuit()
-            .cache_get_or_insert_with(DistinctIncrementalId::new(self.local_node_id()), || {
-                self.circuit().add_binary_operator(
-                    DistinctIncremental::new(),
-                    self,
-                    &self.integrate_trace().delay_trace(),
-                )
-            })
+            .cache_get_or_insert_with(
+                DistinctIncrementalId::new(self.origin_node_id().clone()),
+                || {
+                    self.circuit().add_binary_operator(
+                        DistinctIncremental::new(),
+                        self,
+                        &self.integrate_trace().delay_trace(),
+                    )
+                },
+            )
             .clone()
     }
 
@@ -97,7 +100,7 @@ where
         Z::R: ZRingValue + DeepSizeOf,
     {
         self.circuit()
-            .cache_get_or_insert_with(DistinctTraceId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_binary_operator(
                     DistinctTrace::new(),
                     self,

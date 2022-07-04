@@ -5,13 +5,13 @@ use std::{borrow::Cow, convert::TryFrom, marker::PhantomData};
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, NodeId, OwnershipPreference, Scope, Stream,
+        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     trace::{Batch, Trace},
 };
 
-circuit_cache_key!(ConsolidateId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(ConsolidateId<C, D>(GlobalNodeId => Stream<C, D>));
 
 impl<P, T> Stream<Circuit<P>, T>
 where
@@ -35,7 +35,7 @@ where
         B: TryFrom<T::Batch> + Clone + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(ConsolidateId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(ConsolidateId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_unary_operator_with_preference(
                     Consolidate::new(),
                     self,
