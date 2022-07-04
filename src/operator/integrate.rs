@@ -2,7 +2,7 @@
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
-    circuit::{Circuit, NodeId, OwnershipPreference, Stream},
+    circuit::{Circuit, GlobalNodeId, OwnershipPreference, Stream},
     circuit_cache_key,
     operator::{
         z1::{DelayedFeedback, DelayedNestedFeedback},
@@ -13,8 +13,8 @@ use crate::{
 use deepsize::DeepSizeOf;
 use std::ops::Add;
 
-circuit_cache_key!(IntegralId<C, D>(NodeId => Stream<C, D>));
-circuit_cache_key!(NestedIntegralId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(IntegralId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(NestedIntegralId<C, D>(GlobalNodeId => Stream<C, D>));
 
 impl<P, D> Stream<Circuit<P>, D>
 where
@@ -65,7 +65,7 @@ where
     /// ```
     pub fn integrate(&self) -> Stream<Circuit<P>, D> {
         self.circuit()
-            .cache_get_or_insert_with(IntegralId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(IntegralId::new(self.origin_node_id().clone()), || {
                 // Integration circuit:
                 // ```
                 //              input
@@ -133,7 +133,7 @@ where
     /// ```
     pub fn integrate_nested(&self) -> Stream<Circuit<P>, D> {
         self.circuit()
-            .cache_get_or_insert_with(NestedIntegralId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(NestedIntegralId::new(self.origin_node_id().clone()), || {
                 self.circuit().region("integrate_nested", || {
                     let feedback = DelayedNestedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(

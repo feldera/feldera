@@ -4,16 +4,16 @@ use crate::{
     algebra::HasZero,
     circuit::{
         operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-        Circuit, ExportId, ExportStream, FeedbackConnector, NodeId, OwnershipPreference, Scope,
-        Stream,
+        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
+        Scope, Stream,
     },
     circuit_cache_key, NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{borrow::Cow, fmt::Write, mem::replace};
 
-circuit_cache_key!(DelayedId<C, D>(NodeId => Stream<C, D>));
-circuit_cache_key!(NestedDelayedId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(NestedDelayedId<C, D>(GlobalNodeId => Stream<C, D>));
 
 /// Like [`FeedbackConnector`] but specialized for [`Z1`] feedback operator.
 ///
@@ -59,8 +59,8 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit.cache_insert(DelayedId::new(input.local_node_id()), output);
-        circuit.cache_insert(ExportId::new(input.local_node_id()), export);
+        circuit.cache_insert(DelayedId::new(input.origin_node_id().clone()), output);
+        circuit.cache_insert(ExportId::new(input.origin_node_id().clone()), export);
     }
 }
 
@@ -101,7 +101,7 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit.cache_insert(NestedDelayedId::new(input.local_node_id()), output);
+        circuit.cache_insert(NestedDelayedId::new(input.origin_node_id().clone()), output);
     }
 }
 
@@ -113,7 +113,7 @@ impl<P, D> Stream<Circuit<P>, D> {
         D: Eq + DeepSizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(DelayedId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_unary_operator(Z1::new(D::zero()), self)
             })
             .clone()
@@ -126,7 +126,7 @@ impl<P, D> Stream<Circuit<P>, D> {
         D: Eq + Clone + HasZero + DeepSizeOf + NumEntries + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(NestedDelayedId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(NestedDelayedId::new(self.origin_node_id().clone()), || {
                 self.circuit()
                     .add_unary_operator(Z1Nested::new(D::zero()), self)
             })

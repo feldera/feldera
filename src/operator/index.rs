@@ -3,14 +3,14 @@
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, NodeId, Scope, Stream,
+        Circuit, GlobalNodeId, Scope, Stream,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, ord::OrdIndexedZSet, Batch, BatchReader, Builder},
 };
 use std::{borrow::Cow, marker::PhantomData};
 
-circuit_cache_key!(IndexId<C, D>(NodeId => Stream<C, D>));
+circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
 
 impl<P, CI> Stream<Circuit<P>, CI>
 where
@@ -42,7 +42,7 @@ where
         CO::Val: Clone,
     {
         self.circuit()
-            .cache_get_or_insert_with(IndexId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(IndexId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_unary_operator(Index::new(), self)
             })
             .clone()

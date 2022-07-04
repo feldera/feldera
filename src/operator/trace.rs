@@ -1,7 +1,7 @@
 use crate::{
     circuit::{
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
-        Circuit, ExportId, ExportStream, NodeId, OwnershipPreference, Scope, Stream,
+        Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
@@ -10,9 +10,9 @@ use crate::{
 use deepsize::DeepSizeOf;
 use std::{borrow::Cow, fmt::Write, marker::PhantomData, rc::Rc};
 
-circuit_cache_key!(TraceId<B, D>(NodeId => Stream<B, D>));
-circuit_cache_key!(DelayedTraceId<B, D>(NodeId => Stream<B, D>));
-circuit_cache_key!(IntegrateTraceId<B, D>(NodeId => Stream<B, D>));
+circuit_cache_key!(TraceId<B, D>(GlobalNodeId => Stream<B, D>));
+circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
+circuit_cache_key!(IntegrateTraceId<B, D>(GlobalNodeId => Stream<B, D>));
 
 // TODO: add infrastructure to compact the trace during slack time.
 
@@ -71,7 +71,7 @@ where
         T: NumEntries + DeepSizeOf + Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
                 self.circuit().region("trace", || {
                     let (ExportStream { local, export }, z1feedback) = self
                         .circuit()
@@ -88,9 +88,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
                     self.circuit()
-                        .cache_insert(DelayedTraceId::new(trace.local_node_id()), local);
+                        .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     self.circuit()
-                        .cache_insert(ExportId::new(trace.local_node_id()), export);
+                        .cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
                     trace
                 })
             })
@@ -105,7 +105,7 @@ where
         B::Val: Ord,
     {
         self.circuit()
-            .cache_get_or_insert_with(IntegrateTraceId::new(self.local_node_id()), || {
+            .cache_get_or_insert_with(IntegrateTraceId::new(self.origin_node_id().clone()), || {
                 self.circuit().region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = self
                         .circuit()
@@ -122,9 +122,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
                     self.circuit()
-                        .cache_insert(DelayedTraceId::new(trace.local_node_id()), local);
+                        .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     self.circuit()
-                        .cache_insert(ExportId::new(trace.local_node_id()), export);
+                        .cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
                     trace
                 })
             })
@@ -140,7 +140,7 @@ where
     pub fn delay_trace(&self) -> Stream<Circuit<P>, T> {
         self.circuit()
             .cache_get_or_insert_with(
-                DelayedTraceId::new(self.local_node_id()),
+                DelayedTraceId::new(self.origin_node_id().clone()),
                 || unimplemented!(),
             )
             .clone()
