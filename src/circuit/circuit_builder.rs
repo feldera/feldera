@@ -1418,7 +1418,7 @@ where
     /// ```
     /// # use dbsp::{
     /// #     circuit::Root,
-    /// #     operator::{Z1, Apply2, Generator},
+    /// #     operator::{Z1, Generator},
     /// # };
     /// # let root = Root::build(|circuit| {
     /// // Create a data source.
@@ -1427,11 +1427,7 @@ where
     /// // is a placeholder where we can later plug the input to `z1`.
     /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
     /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = circuit.add_binary_operator(
-    ///     Apply2::new(|n1: &usize, n2: &usize| n1 + n2),
-    ///     &source,
-    ///     &z1_output,
-    /// );
+    /// let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| n1 + n2);
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
     /// # });
@@ -1565,7 +1561,7 @@ where
     /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::{
     ///     circuit::Root,
-    ///     operator::{Apply2, Generator, Inspect, Z1},
+    ///     operator::{Generator, Inspect, Z1},
     /// };
     ///
     /// let root = Root::build(|circuit| {
@@ -1590,11 +1586,7 @@ where
     ///                 res
     ///             });
     ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
-    ///             let mul = child.add_binary_operator(
-    ///                 Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-    ///                 &countdown,
-    ///                 &z1_output.local,
-    ///             );
+    ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
     ///             z1_feedback.connect(&mul);
     ///             Ok((move || *counter.borrow() <= 1, z1_output.export))
     ///         })
@@ -2827,7 +2819,7 @@ mod tests {
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
-        operator::{Apply2, Generator, Inspect, Z1},
+        operator::{Generator, Inspect, Z1},
     };
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
@@ -2904,11 +2896,7 @@ mod tests {
                 result
             }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-            let plus = circuit.add_binary_operator(
-                Apply2::new(|n1: &usize, n2: &usize| *n1 + *n2),
-                &source,
-                &z1_output,
-            );
+            let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2);
             circuit.add_sink(
                 Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
                 &plus,
@@ -2972,11 +2960,7 @@ mod tests {
                         res
                     });
                     let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
-                    let mul = child.add_binary_operator(
-                        Apply2::new(|n1: &usize, n2: &usize| n1 * n2),
-                        &countdown,
-                        &z1_output.local,
-                    );
+                    let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
                     z1_feedback.connect(&mul);
                     Ok((countdown.condition(|n| *n <= 1), z1_output.export))
                 })

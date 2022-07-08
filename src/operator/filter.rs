@@ -279,19 +279,19 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{circuit::Root, indexed_zset, operator::Generator, trace::ord::OrdZSet, zset};
+    use crate::{circuit::Root, indexed_zset, operator::Generator, zset};
     use std::vec;
 
     #[test]
     fn filter_test() {
         let root = Root::build(move |circuit| {
-            let mut inputs: vec::IntoIter<OrdZSet<isize, isize>> = vec![
+            let mut inputs = vec![
                 zset! { 1 => 1, 2 => 1, 3 => -1 },
                 zset! { -1 => 1, -2 => 1, -3 => -1 },
                 zset! { -1 => 1, 2 => 1, 3 => -1 },
             ]
             .into_iter();
-            let mut expected_outputs: vec::IntoIter<OrdZSet<isize, isize>> = vec![
+            let mut expected_outputs = vec![
                 zset! { 1 => 1, 2 => 1, 3 => -1 },
                 zset! {},
                 zset! { 2 => 1, 3 => -1 },
