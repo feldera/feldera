@@ -248,17 +248,17 @@ mod test {
             let input_vec_stream =
                 circuit.add_source(Generator::new(move || input_vec.next().unwrap()));
             let times2: Stream<_, OrdZSet<_, _>> = input_map_stream.map_keys(|n| n * 2);
-            let times2_pos: Stream<_, OrdZSet<_, _>> =
-                input_map_stream.filter_map_keys(|n| if *n > 0 { Some(n * 2) } else { None });
+            let times2_pos =
+                input_map_stream.filter_map(|n| if *n > 0 { Some(n * 2) } else { None });
             let neg: Stream<_, OrdZSet<_, _>> = input_map_stream.map_keys_owned(|n| -n);
-            let neg_pos: Stream<_, OrdZSet<_, _>> =
-                input_map_stream.filter_map_keys_owned(|n| if n > 0 { Some(-n) } else { None });
+            let neg_pos =
+                input_map_stream.filter_map_owned(|n| if n > 0 { Some(-n) } else { None });
             let abs: Stream<_, OrdZSet<_, _>> = input_vec_stream.map_keys(|n| n.abs());
-            let abs_pos: Stream<_, OrdZSet<_, _>> =
-                input_vec_stream.filter_map_keys(|n| if *n > 0 { Some(n.abs()) } else { None });
+            let abs_pos =
+                input_vec_stream.filter_map(|n| if *n > 0 { Some(n.abs()) } else { None });
             let sqr: Stream<_, OrdZSet<_, _>> = input_vec_stream.map_keys_owned(|n| n * n);
-            let sqr_pos: Stream<_, OrdZSet<_, _>> =
-                input_vec_stream.filter_map_keys_owned(|n| if n > 0 { Some(n * n) } else { None });
+            let sqr_pos =
+                input_vec_stream.filter_map_owned(|n| if n > 0 { Some(n * n) } else { None });
             times2.inspect(move |n| {
                 assert_eq!(*n, times2_output.next().unwrap());
             });

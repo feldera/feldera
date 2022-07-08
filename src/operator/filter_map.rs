@@ -1,11 +1,15 @@
 //! Filter-map operators.
 
+// TODO: This can be easily generalized to flat_map by generalizing `func` to
+// return any `Iterator` type rather than `Some`.
+
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream,
     },
     trace::{Batch, BatchReader, Cursor},
+    OrdIndexedZSet, OrdZSet,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -14,10 +18,61 @@ where
     CI: Clone,
     P: Clone + 'static,
 {
-    /// Apply [`FilterMapKeys`] operator to `self`.
+    /// Both filter and map input batches with a user-provided closure.
     ///
-    /// The `func` closure takes input keys by reference.
-    pub fn filter_map_keys<CO, F>(&self, func: F) -> Stream<Circuit<P>, CO>
+    /// The operator applies `func` to each key in the input
+    /// batch and builds an output batch containing only the keys
+    /// returned by `func` as `Some(key)`.
+    ///
+    /// This method returns output batches of type [`OrdZSet`].
+    /// Use [`Self::filter_map_keys_generic`] to create other types
+    /// of output batches.
+    pub fn filter_map<F, T>(&self, func: F) -> Stream<Circuit<P>, OrdZSet<T, CI::R>>
+    where
+        CI: BatchReader<Val = (), Time = ()> + 'static,
+        T: Ord + Clone + 'static,
+        F: Fn(&CI::Key) -> Option<T> + Clone + 'static,
+    {
+        self.filter_map_keys_generic(func)
+    }
+
+    /// Both filter and map keys in the input batch with a user-provided
+    /// closure.
+    ///
+    /// For each `(key, value)` pair in the input batch, the operator computes
+    /// `func(key)`. If the result is `None`, the pair is dropped.  If the
+    /// result is `Some(newkey)`, the `(newkey, value)` pair is added to the
+    /// output batch.
+    ///
+    /// This method returns output batches of type [`OrdIndexedZSet`].
+    /// Use [`Self::filter_map_keys_generic`] to create other types of output
+    /// batches.
+    pub fn filter_map_keys<F, T>(
+        &self,
+        func: F,
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<T, CI::Val, CI::R>>
+    where
+        CI: BatchReader<Time = ()> + 'static,
+        CI::Val: Clone + Ord,
+        T: Ord + Clone + 'static,
+        F: Fn(&CI::Key) -> Option<T> + Clone + 'static,
+    {
+        self.filter_map_keys_generic(func)
+    }
+
+    /// Both filter and map keys in the input batch with a user-provided
+    /// closure.
+    ///
+    /// For each `(key, value)` pair in the input batch, the operator computes
+    /// `func(key)`. If the result is `None`, the pair is dropped.  If the
+    /// result is `Some(newkey)`, the `(newkey, value)` pair is added to the
+    /// output batch.
+    ///
+    /// This method is generic over output batch type.
+    /// Use `Self::filter_map` to return a batch of type [`OrdZSet`].
+    /// Use `Self::filter_map_keys` to return a batch of type
+    /// [`OrdIndexedZSet`].
+    pub fn filter_map_keys_generic<CO, F>(&self, func: F) -> Stream<Circuit<P>, CO>
     where
         CI: BatchReader<Time = ()> + 'static,
         CI::Val: Clone,
@@ -29,10 +84,37 @@ where
             .add_unary_operator(FilterMapKeys::new(func.clone(), move |x| (func)(&x)), self)
     }
 
-    /// Apply [`FilterMapKeys`] operator to `self`.
-    ///
-    /// The `func` closure operates on owned keys.
-    pub fn filter_map_keys_owned<CO, F>(&self, func: F) -> Stream<Circuit<P>, CO>
+    /// Like [`Self::filter_map`], but takes a closure that consumes inputs by
+    /// value.
+    pub fn filter_map_owned<F, T>(&self, func: F) -> Stream<Circuit<P>, OrdZSet<T, CI::R>>
+    where
+        CI: BatchReader<Val = (), Time = ()> + 'static,
+        CI::Key: Clone,
+        T: Ord + Clone + 'static,
+        F: Fn(CI::Key) -> Option<T> + Clone + 'static,
+    {
+        self.filter_map_keys_owned_generic(func)
+    }
+
+    /// Like [`Self::filter_map_keys`], but takes a closure that consumes inputs
+    /// by value.
+    pub fn filter_map_keys_owned<F, T>(
+        &self,
+        func: F,
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<T, CI::Val, CI::R>>
+    where
+        CI: BatchReader<Time = ()> + 'static,
+        CI::Key: Clone,
+        CI::Val: Clone + Ord,
+        T: Ord + Clone + 'static,
+        F: Fn(CI::Key) -> Option<T> + Clone + 'static,
+    {
+        self.filter_map_keys_owned_generic(func)
+    }
+
+    /// Like [`Self::filter_map_keys_generic`], but takes a closure that
+    /// consumes inputs by value.
+    pub fn filter_map_keys_owned_generic<CO, F>(&self, func: F) -> Stream<Circuit<P>, CO>
     where
         CI: BatchReader<Time = ()> + 'static,
         CI::Key: Clone,
@@ -127,5 +209,88 @@ where
     fn eval_owned(&mut self, i: CI) -> CO {
         // TODO: owned implementation.
         self.eval(&i)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{circuit::Root, indexed_zset, operator::Generator, zset, OrdIndexedZSet, OrdZSet};
+    use std::vec;
+
+    #[test]
+    fn filter_map_test() {
+        let root = Root::build(move |circuit| {
+            let mut inputs: vec::IntoIter<OrdZSet<isize, isize>> = vec![
+                zset! { 1 => 1, 2 => 1, 3 => -1 },
+                zset! { -1 => 1, -2 => 1, -3 => -1 },
+                zset! { -1 => 1, 2 => 1, 3 => -1 },
+            ]
+            .into_iter();
+            let expected_outputs_vec = vec![
+                zset! { -1 => 1, -2 => 1, -3 => -1 },
+                zset! {},
+                zset! { -2 => 1, -3 => -1 },
+            ];
+
+            let mut expected_outputs1 = expected_outputs_vec.clone().into_iter();
+            let mut expected_outputs2 = expected_outputs_vec.into_iter();
+
+            let source = circuit.add_source(Generator::new(move || inputs.next().unwrap()));
+
+            let output_stream1 = source.filter_map(|x| if *x > 0 { Some(-x) } else { None });
+
+            let output_stream2 = source.filter_map_owned(|x| if x > 0 { Some(-x) } else { None });
+
+            output_stream1.inspect(move |zs| {
+                assert_eq!(*zs, expected_outputs1.next().unwrap());
+            });
+            output_stream2.inspect(move |zs| {
+                assert_eq!(*zs, expected_outputs2.next().unwrap());
+            });
+        })
+        .unwrap();
+
+        for _ in 0..3 {
+            root.step().unwrap();
+        }
+    }
+
+    #[test]
+    fn filter_map_keys_test() {
+        let root = Root::build(move |circuit| {
+            let mut inputs: vec::IntoIter<OrdIndexedZSet<isize, &'static str, isize>> = vec![
+                indexed_zset! { 1 => {"1" => 1}, 2 => {"2" => 1}, 3 => {"3" => -1} },
+                indexed_zset! { -1 => {"-1" => 1}, -2 => {"-2" => 1}, -3 => {"-3" => -1} },
+                indexed_zset! { -1 => {"-1" => 1}, 2 => {"2" => 1}, 3 => {"3" => -1} },
+            ]
+            .into_iter();
+            let expected_outputs_vec = vec![
+                indexed_zset! { -1 => {"1" => 1}, -2 => {"2"=> 1}, -3 => {"3"=> -1} },
+                indexed_zset! {},
+                indexed_zset! { -2 => {"2" => 1}, -3 => {"3" => -1} },
+            ];
+
+            let mut expected_outputs1 = expected_outputs_vec.clone().into_iter();
+            let mut expected_outputs2 = expected_outputs_vec.into_iter();
+
+            let source = circuit.add_source(Generator::new(move || inputs.next().unwrap()));
+
+            let output_stream1 = source.filter_map_keys(|x| if *x > 0 { Some(-x) } else { None });
+
+            let output_stream2 =
+                source.filter_map_keys_owned(|x| if x > 0 { Some(-x) } else { None });
+
+            output_stream1.inspect(move |zs| {
+                assert_eq!(*zs, expected_outputs1.next().unwrap());
+            });
+            output_stream2.inspect(move |zs| {
+                assert_eq!(*zs, expected_outputs2.next().unwrap());
+            });
+        })
+        .unwrap();
+
+        for _ in 0..3 {
+            root.step().unwrap();
+        }
     }
 }
