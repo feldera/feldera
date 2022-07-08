@@ -292,12 +292,7 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{
-        circuit::Root,
-        operator::{Apply2, GeneratorNested},
-        trace::ord::OrdZSet,
-        zset, zset_set,
-    };
+    use crate::{circuit::Root, operator::GeneratorNested, trace::ord::OrdZSet, zset, zset_set};
 
     #[test]
     fn aggregate_test() {
@@ -355,16 +350,13 @@ mod test {
                         .differentiate_nested();
 
                     // Compare outputs of all three implementations.
-                    child
-                        .add_binary_operator(
-                            Apply2::new(
-                                |d1: &OrdZSet<(usize, isize), isize>,
-                                 d2: &OrdZSet<(usize, isize), isize>| {
-                                    (d1.clone(), d2.clone())
-                                },
-                            ),
-                            &sum_inc,
+                    sum_inc
+                        .apply2(
                             &sum_noninc,
+                            |d1: &OrdZSet<(usize, isize), isize>,
+                             d2: &OrdZSet<(usize, isize), isize>| {
+                                (d1.clone(), d2.clone())
+                            },
                         )
                         .inspect(|(d1, d2)| {
                             //println!("incremental: {:?}", d1);
@@ -406,16 +398,13 @@ mod test {
                         .differentiate()
                         .differentiate_nested();
 
-                    child
-                        .add_binary_operator(
-                            Apply2::new(
-                                |d1: &OrdZSet<(usize, usize), isize>,
-                                 d2: &OrdZSet<(usize, usize), isize>| {
-                                    (d1.clone(), d2.clone())
-                                },
-                            ),
-                            &min_inc,
+                    min_inc
+                        .apply2(
                             &min_noninc,
+                            |d1: &OrdZSet<(usize, usize), isize>,
+                             d2: &OrdZSet<(usize, usize), isize>| {
+                                (d1.clone(), d2.clone())
+                            },
                         )
                         .inspect(|(d1, d2)| {
                             assert_eq!(d1, d2);

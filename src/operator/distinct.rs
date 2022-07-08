@@ -566,12 +566,7 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{
-        circuit::Root,
-        operator::{Apply2, GeneratorNested},
-        trace::ord::OrdZSet,
-        zset,
-    };
+    use crate::{circuit::Root, operator::GeneratorNested, trace::ord::OrdZSet, zset};
 
     #[test]
     fn distinct_incremental_nested_test() {
@@ -607,15 +602,12 @@ mod test {
                         .differentiate()
                         .differentiate_nested();
 
-                    child
-                        .add_binary_operator(
-                            Apply2::new(
-                                |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
-                                    (d1.clone(), d2.clone())
-                                },
-                            ),
-                            &distinct_inc,
+                    distinct_inc
+                        .apply2(
                             &distinct_noninc,
+                            |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
+                                (d1.clone(), d2.clone())
+                            },
                         )
                         .inspect(|(d1, d2)| assert_eq!(d1, d2));
 
@@ -670,15 +662,12 @@ mod test {
                         .differentiate()
                         .differentiate_nested();
 
-                    child
-                        .add_binary_operator(
-                            Apply2::new(
-                                |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
-                                    (d1.clone(), d2.clone())
-                                },
-                            ),
-                            &distinct_inc,
+                    distinct_inc
+                        .apply2(
                             &distinct_noninc,
+                            |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
+                                (d1.clone(), d2.clone())
+                            },
                         )
                         .inspect(|(d1, d2)| assert_eq!(d1, d2));
 

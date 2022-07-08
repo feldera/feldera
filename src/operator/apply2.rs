@@ -2,9 +2,30 @@
 
 use crate::circuit::{
     operator_traits::{BinaryOperator, Operator},
-    Scope,
+    Circuit, Scope, Stream,
 };
 use std::borrow::Cow;
+
+impl<P, T1> Stream<Circuit<P>, T1>
+where
+    P: Clone + 'static,
+    T1: Clone + 'static,
+{
+    /// Apply a user-provided binary function to its inputs at each timestamp.
+    pub fn apply2<F, T2, T3>(
+        &self,
+        other: &Stream<Circuit<P>, T2>,
+        func: F,
+    ) -> Stream<Circuit<P>, T3>
+    where
+        T2: Clone + 'static,
+        T3: Clone + 'static,
+        F: Fn(&T1, &T2) -> T3 + 'static,
+    {
+        self.circuit()
+            .add_binary_operator(Apply2::new(func), self, other)
+    }
+}
 
 /// Applies a user-provided binary function to its inputs at each timestamp.
 pub struct Apply2<F> {
@@ -41,5 +62,31 @@ where
 {
     fn eval(&mut self, i1: &T1, i2: &T2) -> T3 {
         (self.func)(i1, i2)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{circuit::Root, operator::Generator};
+    use std::vec;
+
+    #[test]
+    fn apply2_test() {
+        let root = Root::build(move |circuit| {
+            let mut inputs1 = vec![1, 2, 3].into_iter();
+            let mut inputs2 = vec![-1, -2, -3].into_iter();
+
+            let source1 = circuit.add_source(Generator::new(move || inputs1.next().unwrap()));
+            let source2 = circuit.add_source(Generator::new(move || inputs2.next().unwrap()));
+
+            source1
+                .apply2(&source2, |x, y| *x + *y)
+                .inspect(|z| assert_eq!(*z, 0));
+        })
+        .unwrap();
+
+        for _ in 0..3 {
+            root.step().unwrap();
+        }
     }
 }

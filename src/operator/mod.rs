@@ -9,8 +9,7 @@ pub use inspect::Inspect;
 pub(crate) mod apply;
 pub use apply::Apply;
 
-mod apply2;
-pub use apply2::Apply2;
+pub mod apply2;
 
 mod plus;
 pub use plus::{Minus, Plus};
