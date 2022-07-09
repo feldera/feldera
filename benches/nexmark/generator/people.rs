@@ -38,11 +38,12 @@ impl<R: Rng> NexmarkGenerator<R> {
     // Generate and return a random person with next available id.
     pub fn next_person(&mut self, next_event_id: Id, timestamp: u64) -> Person {
         // TODO(absoludity): Figure out the purpose of the extra field - appears to be
-        // aiming to adjust the number of bytes for the record to be an average, which will
-        // need slightly different handling in Rust.
+        // aiming to adjust the number of bytes for the record to be an average, which
+        // will need slightly different handling in Rust.
         // int currentSize =
-        //     8 + name.length() + email.length() + creditCard.length() + city.length() + state.length();
-        // String extra = nextExtra(random, currentSize, config.getAvgPersonByteSize());
+        //     8 + name.length() + email.length() + creditCard.length() + city.length()
+        // + state.length(); String extra = nextExtra(random, currentSize,
+        // config.getAvgPersonByteSize());
 
         Person {
             id: self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID,
@@ -58,15 +59,17 @@ impl<R: Rng> NexmarkGenerator<R> {
 
     /// Return a random person id (base 0).
     ///
-    /// Choose a random person from any of the 'active' people, plus a few 'leads'.
-    /// By limiting to 'active' we ensure the density of bids or auctions per person
-    /// does not decrease over time for long running jobs.  By choosing a person id
-    /// ahead of the last valid person id we will make newPerson and newAuction
-    /// events appear to have been swapped in time.
+    /// Choose a random person from any of the 'active' people, plus a few
+    /// 'leads'. By limiting to 'active' we ensure the density of bids or
+    /// auctions per person does not decrease over time for long running
+    /// jobs.  By choosing a person id ahead of the last valid person id we
+    /// will make newPerson and newAuction events appear to have been
+    /// swapped in time.
     ///
-    /// NOTE: The above is the original comment from the Java implementation. The
-    /// "base 0" is referring to the fact that the returned Id is not including the
-    /// FIRST_PERSON_ID offset, and should really be "offset 0".
+    /// NOTE: The above is the original comment from the Java implementation.
+    /// The "base 0" is referring to the fact that the returned Id is not
+    /// including the FIRST_PERSON_ID offset, and should really be "offset
+    /// 0".
     pub fn next_base0_person_id(&mut self, event_id: Id) -> Id {
         let num_people = self.last_base0_person_id(event_id) + 1;
         let active_people = min(num_people, config::NUM_ACTIVE_PEOPLE);
