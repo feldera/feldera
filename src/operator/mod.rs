@@ -43,6 +43,8 @@ pub use index::Index;
 mod join;
 pub use join::Join;
 
+mod join_range;
+
 mod sum;
 pub use sum::Sum;
 
