@@ -483,7 +483,7 @@ where
 mod test {
     use crate::{
         circuit::{Circuit, Root, Stream},
-        operator::{DelayedFeedback, Generator},
+        operator::{DelayedFeedback, FilterMap, Generator},
         time::{NestedTimestamp32, Product, Timestamp},
         trace::ord::{OrdIndexedZSet, OrdZSet},
         zset,
@@ -666,7 +666,7 @@ mod test {
 
                 let paths_inverted: Stream<_, OrdZSet<(usize, usize), isize>> = paths_delayed
                     .stream()
-                    .map_keys(|&(x, y)| (y, x));
+                    .map(|&(x, y)| (y, x));
 
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();

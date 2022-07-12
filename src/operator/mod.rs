@@ -28,9 +28,6 @@ pub mod communication;
 
 mod differentiate;
 
-mod filter;
-pub use filter::FilterKeys;
-
 mod delta0;
 pub use delta0::Delta0;
 
@@ -51,11 +48,8 @@ pub use sum::Sum;
 mod distinct;
 pub use distinct::Distinct;
 
-mod map;
-pub use map::{MapKeys, MapValues};
-
 mod filter_map;
-pub use filter_map::FilterMapKeys;
+pub use filter_map::FilterMap;
 
 mod aggregate;
 pub use aggregate::Aggregate;

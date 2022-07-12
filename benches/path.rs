@@ -1,7 +1,7 @@
 use dbsp::{
     circuit::{trace::SchedulerEvent, GlobalNodeId, Root, Stream},
     monitor::TraceMonitor,
-    operator::Generator,
+    operator::{FilterMap, Generator},
     profile::CPUProfiler,
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, Batch},
@@ -88,8 +88,7 @@ fn main() {
                 // ```
                 let edges = edges.delta0(child);
 
-                let paths_inverted: Stream<_, OrdZSet<(u32, u32), i32>> =
-                    paths.map_keys(|&(x, y)| (y, x));
+                let paths_inverted = paths.map(|&(x, y)| (y, x));
 
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();

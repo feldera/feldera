@@ -136,7 +136,7 @@ mod test {
             Circuit, Root, Stream,
         },
         monitor::TraceMonitor,
-        operator::{DelayedFeedback, Generator},
+        operator::{DelayedFeedback, FilterMap, Generator},
         trace::{
             ord::{OrdIndexedZSet, OrdZSet},
             BatchReader,
@@ -210,7 +210,7 @@ mod test {
                             let feedback = <DelayedFeedback<_, OrdZSet<usize, isize>>>::new(child);
 
                             let feedback_pairs: Stream<_, OrdZSet<(usize, ()), isize>> =
-                                feedback.stream().map_keys(|&node| (node, ()));
+                                feedback.stream().map(|&node| (node, ()));
                             let feedback_indexed: Stream<_, OrdIndexedZSet<usize, (), isize>> =
                                 feedback_pairs.index();
 
