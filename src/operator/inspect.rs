@@ -2,7 +2,7 @@
 //! applying a user-provided callback to it.
 
 use crate::circuit::{
-    operator_traits::{Operator, SinkOperator},
+    operator_traits::{Operator, UnaryOperator},
     Circuit, Scope, Stream,
 };
 use std::{borrow::Cow, marker::PhantomData};
@@ -33,11 +33,12 @@ where
     /// })
     /// .unwrap();
     /// ```
-    pub fn inspect<F>(&self, callback: F)
+    pub fn inspect<F>(&self, callback: F) -> Self
     where
         F: FnMut(&D) + 'static,
     {
-        self.circuit().add_sink(Inspect::new(callback), self);
+        self.circuit()
+            .add_unary_operator(Inspect::new(callback), self)
     }
 }
 
@@ -76,12 +77,17 @@ where
     }
 }
 
-impl<T, F> SinkOperator<T> for Inspect<T, F>
+impl<T, F> UnaryOperator<T, T> for Inspect<T, F>
 where
-    T: 'static,
+    T: Clone + 'static,
     F: FnMut(&T) + 'static,
 {
-    fn eval(&mut self, i: &T) {
-        (self.callback)(i)
+    fn eval(&mut self, i: &T) -> T {
+        (self.callback)(i);
+        i.clone()
+    }
+    fn eval_owned(&mut self, i: T) -> T {
+        (self.callback)(&i);
+        i
     }
 }

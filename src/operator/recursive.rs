@@ -239,7 +239,7 @@ impl<P: Clone + 'static> Circuit<P> {
     ///
     ///     labels.inspect(move |ls| {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());
-    ///     })
+    ///     });
     /// })
     /// .unwrap();
     ///
@@ -292,11 +292,10 @@ impl<P: Clone + 'static> Circuit<P> {
 mod test {
     use crate::{
         circuit::{Root, Stream},
-        indexed_zset,
-        operator::{recursive::RecursiveStreams, FilterMap, Generator},
+        operator::{FilterMap, Generator},
         time::NestedTimestamp32,
-        trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
-        zset, Circuit, OrdIndexedZSet,
+        trace::ord::OrdZSet,
+        zset,
     };
     use std::vec;
 
@@ -326,10 +325,10 @@ mod test {
                 zset! { (2, 3) => 1, (1, 3) => 1 },
                 zset! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
                 zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
-                              (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
-                              (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
-                              (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
-                              (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
+                        (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
+                        (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
+                        (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
+                        (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
             ]
             .into_iter();
 
@@ -348,7 +347,7 @@ mod test {
 
             paths.integrate().distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
-            })
+            });
         })
         .unwrap();
 
@@ -418,163 +417,12 @@ mod test {
 
             reverse_paths.map(|(x, y)| (*y, *x)).integrate().distinct().inspect(move |ps: &OrdZSet<_,_>| {
                 assert_eq!(*ps, outputs2.next().unwrap());
-            })
+            });
         })
         .unwrap();
 
         for _ in 0..8 {
             root.step().unwrap();
         }
-    }
-
-    type Node = u64;
-    type Distance = u64;
-    type Weight = isize;
-
-    type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
-    type VertexSet = OrdZSet<Node, Weight>;
-    type DistanceSet = OrdZSet<(Node, Distance), Weight>;
-
-    #[test]
-    fn bfs_test() {
-        let root = Root::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges = vec![indexed_zset! {
-            2 => {3 => 1, 4 => 1},
-            3 => {4 => 1, 5 => 1, 8 => 1},
-            5 => {6 => 1, 8 => 1},
-            6 => {7 => 1, 8 => 1, 9 => 1, 10 => 1},
-            7 => {9 => 1}}]
-            .into_iter();
-
-            let mut vertices = vec![
-                zset! { 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1, 7 => 1, 8 => 1, 9 => 1, 10 => 1 },
-            ]
-            .into_iter();
-
-            let mut roots = vec![zset! { 2 => 1 }].into_iter();
-
-            let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
-            let vertices = circuit.add_source(Generator::new(move || vertices.next().unwrap()));
-            let roots = circuit.add_source(Generator::new(move || roots.next().unwrap()));
-
-            let reverse_edges = edges.map_index(|(src, dst)| (*dst, *src));
-            let all_edges = edges
-                .plus(&reverse_edges)
-                .inspect(|edges| eprintln!("edges: {:?}", edges));
-
-            bfs(roots, vertices, all_edges).inspect(|distances| {
-                let mut cursor = distances.cursor();
-                while cursor.key_valid() {
-                    let key = *cursor.key();
-                    println!("result: {key:?}: {:+}", cursor.weight());
-                    cursor.step_key();
-                }
-            });
-        })
-        .unwrap();
-
-        for _ in 0..1 {
-            root.step().unwrap();
-        }
-    }
-
-    fn bfs<P>(
-        roots: Stream<Circuit<P>, VertexSet>,
-        vertices: Stream<Circuit<P>, VertexSet>,
-        edges: Stream<Circuit<P>, EdgeMap>,
-    ) -> Stream<Circuit<P>, DistanceSet>
-    where
-        P: Clone + 'static,
-        Stream<Circuit<Circuit<P>>, DistanceSet>:
-            RecursiveStreams<Circuit<Circuit<P>>, Output = Stream<Circuit<P>, DistanceSet>>,
-    {
-        // Initialize the roots to have a distance of zero
-        let root_nodes = roots.index_with_generic::<DistanceSet, _>(|&root| ((root, 0), ()));
-
-        // edges.inspect(|edges| {
-        //     let mut cursor = edges.cursor();
-        //     while cursor.key_valid() {
-        //         let key = *cursor.key();
-        //         while cursor.val_valid() {
-        //             let value = *cursor.val();
-        //             println!("edges: {key}, {value} {:+}", cursor.weight());
-        //             cursor.step_val();
-        //         }
-        //         cursor.step_key();
-        //     }
-        // });
-
-        let distances = root_nodes
-            .circuit()
-            .recursive(|scope, nodes: Stream<_, DistanceSet>| {
-                // Import the nodes and edges into the recursive scope
-                let root_nodes = root_nodes.delta0(scope);
-                let edges = edges.delta0(scope);
-
-                let distances = nodes
-                    .index::<Node, Distance>()
-                    // Iterate over each edge within the graph, increasing the distance on each step
-                    .join::<NestedTimestamp32, _, _, DistanceSet>(&edges, |_, &dist, &dest| {
-                        (dest, dist + 1)
-                    })
-                    // Add in the root nodes
-                    .plus(&root_nodes)
-                    .index::<Node, Distance>()
-                    // Select only the shortest distance to continue iterating with, `distances`
-                    // is sorted so we can simply select the first element
-                    .aggregate_incremental_nested(|&node, distances| (node, *distances[0].0));
-
-                // distances.inspect(|distances: &DistanceSet| {
-                //     let mut cursor = distances.cursor();
-                //     while cursor.key_valid() {
-                //         let key = *cursor.key();
-                //         println!("distances (recursive): {key:?}: {:+}", cursor.weight());
-                //         cursor.step_key();
-                //     }
-                // });
-
-                Ok(distances)
-            })
-            .expect("failed to build dfs recursive scope");
-
-        // Collect all reachable nodes
-        let reachable_nodes = distances.map(|&(node, _)| node);
-        // Find all unreachable nodes (vertices not included in `distances`) and give
-        // them a weight of -1
-        let unreachable_nodes =
-            antijoin(&vertices, &reachable_nodes).map(|&node| (node, i64::MAX as Distance));
-
-        distances.inspect(|distances| {
-            let mut cursor = distances.cursor();
-            while cursor.key_valid() {
-                let key = *cursor.key();
-                println!("distance: {key:?}: {:+}", cursor.weight());
-                cursor.step_key();
-            }
-        });
-
-        reachable_nodes.inspect(|distances: &VertexSet| {
-            let mut cursor = distances.cursor();
-            while cursor.key_valid() {
-                let key = *cursor.key();
-                println!("reachable_nodes: {key:?}: {:+}", cursor.weight());
-                cursor.step_key();
-            }
-        });
-
-        distances.plus(&unreachable_nodes)
-    }
-
-    // FIXME: Replace with a dedicated antijoin
-    fn antijoin<P>(
-        vertices: &Stream<Circuit<P>, VertexSet>,
-        reachable_nodes: &Stream<Circuit<P>, VertexSet>,
-    ) -> Stream<Circuit<P>, VertexSet>
-    where
-        P: Clone + 'static,
-    {
-        let reachable_vertices = vertices.join::<(), _, _, _>(reachable_nodes, |&node, _, _| node);
-        vertices.minus(&reachable_vertices)
     }
 }

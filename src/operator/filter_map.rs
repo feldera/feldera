@@ -632,7 +632,6 @@ mod test {
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
             let mut i_filter_output =
                 vec![indexed_zset! { 5 => {"5 foo" => 1} }].into_iter();
-
             let mut indexed_output =
                 vec![indexed_zset! { 1 => {1 => 1}, -1 => {-1 => 1}, 5 => {5 => 1}, -2 => {-2 => 1} }].into_iter();
             let mut i_indexed_output =
@@ -703,7 +702,6 @@ mod test {
             let i_sqr_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * n) } else { None });
             let i_sqr_pos_indexed = input_indexed.flat_map_index(|(&n, &s)| if n > 0 { Some((n * n, s)) } else { None });
 
-
             filter_pos.inspect(move |n| {
                 assert_eq!(*n, filter_output.next().unwrap());
             });
@@ -737,7 +735,6 @@ mod test {
             sqr_pos_indexed.inspect(move |n| {
                 assert_eq!(*n, sqr_pos_indexed_output.next().unwrap());
             });
-
             i_filter_pos.inspect(move |n| {
                 assert_eq!(*n, i_filter_output.next().unwrap());
             });

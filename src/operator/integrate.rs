@@ -264,7 +264,7 @@ mod test {
                     ))
                 })
                 .unwrap();
-            integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()))
+            integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()));
         })
         .unwrap();
 
