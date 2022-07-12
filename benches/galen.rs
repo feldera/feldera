@@ -151,13 +151,12 @@ fn main() -> Result<()> {
             let s: Stream<_, OrdZSet<_, Weight>> =
                 circuit.region("s", || circuit.add_source(s_source));
 
+            type Pair = OrdZSet<(Number, Number), Weight>;
+            type Triple = OrdZSet<(Number, Number, Number), Weight>;
+
             let (outp, outq) = circuit
                 .recursive(
-                    |child,
-                     (pvar, qvar): (
-                        Stream<_, OrdZSet<(Number, Number), Weight>>,
-                        Stream<_, OrdZSet<(Number, Number, Number), Weight>>,
-                    )| {
+                    |child, (pvar, qvar): (Stream<_, Pair>, Stream<_, Triple>)| {
                         let p_by_1 = pvar.index();
                         let p_by_2 = pvar.index_with(|&(x, y)| (y, x));
                         let p_by_12 = pvar.index_with(|&(x, y)| ((x, y), ()));
