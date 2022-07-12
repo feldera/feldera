@@ -272,13 +272,13 @@ mod test {
         // Only consume source2 by value.
         let root = Root::build(move |circuit| {
             let (source1, _source2) = build_plus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source1,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
             let (source3, _source4) = build_minus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source3,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -293,14 +293,14 @@ mod test {
         // Only consume source1 by value.
         let root = Root::build(move |circuit| {
             let (_source1, source2) = build_plus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source2,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
 
             let (_source3, source4) = build_minus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source4,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -315,24 +315,24 @@ mod test {
         // Consume both streams by reference.
         let root = Root::build(move |circuit| {
             let (source1, source2) = build_plus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source1,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source2,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
 
             let (source3, source4) = build_minus_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source3,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source4,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,

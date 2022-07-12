@@ -351,7 +351,7 @@ where
 /// # fn main() {
 /// use dbsp::{
 ///     circuit::{Root, Runtime},
-///     operator::{communication::new_exchange_operators, Generator, Inspect},
+///     operator::{communication::new_exchange_operators, Generator},
 /// };
 /// use std::iter::repeat;
 ///
@@ -387,13 +387,10 @@ where
 ///         // [1,1,1,...]
 ///         // [2,2,2,...]
 ///         // ...
-///         circuit.add_sink(
-///             Inspect::new(move |v| {
-///                 assert_eq!(&vec![round; WORKERS], v);
-///                 round += 1;
-///             }),
-///             &combined,
-///         )
+///         combined.inspect(move |v| {
+///             assert_eq!(&vec![round; WORKERS], v);
+///             round += 1;
+///         });
 ///     })
 ///     .unwrap();
 ///
@@ -615,7 +612,7 @@ mod tests {
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Root, Runtime,
         },
-        operator::{communication::new_exchange_operators, Generator, Inspect},
+        operator::{communication::new_exchange_operators, Generator},
     };
     use std::{iter::repeat, thread::yield_now};
 
@@ -705,15 +702,13 @@ mod tests {
                         |v: &mut Vec<usize>, n| v.push(n),
                     );
 
-                    let combined = circuit.add_exchange(sender, receiver, &source);
                     let mut round = 0;
-                    circuit.add_sink(
-                        Inspect::new(move |v| {
+                    circuit
+                        .add_exchange(sender, receiver, &source)
+                        .inspect(move |v| {
                             assert_eq!(&vec![round; workers], v);
                             round += 1;
-                        }),
-                        &combined,
-                    )
+                        });
                 })
                 .unwrap();
 

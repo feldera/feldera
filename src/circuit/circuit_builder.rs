@@ -18,8 +18,8 @@
 //!     // Add a source operator.
 //!     let source_stream = circuit.add_source(Generator::new(|| "Hello, world!".to_owned()));
 //!
-//!     // Add a sink operator and wire the source directly to it.
-//!     circuit.add_sink(
+//!     // Add a unary operator and wire the source directly to it.
+//!     circuit.add_unary_operator(
 //!         Inspect::new(|n| println!("New output: {}", n)),
 //!         &source_stream,
 //!     );
@@ -1561,7 +1561,7 @@ where
     /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::{
     ///     circuit::Root,
-    ///     operator::{Generator, Inspect, Z1},
+    ///     operator::{Generator, Z1},
     /// };
     ///
     /// let root = Root::build(|circuit| {
@@ -1591,7 +1591,7 @@ where
     ///             Ok((move || *counter.borrow() <= 1, z1_output.export))
     ///         })
     ///         .unwrap();
-    ///     circuit.add_sink(Inspect::new(move |n| eprintln!("Output: {}", n)), &fact);
+    ///     fact.inspect(|n| eprintln!("Output: {}", n));
     /// });
     /// ```
     pub fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
@@ -2819,7 +2819,7 @@ mod tests {
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
-        operator::{Generator, Inspect, Z1},
+        operator::{Generator, Z1},
     };
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
@@ -2896,11 +2896,9 @@ mod tests {
                 result
             }));
             let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-            let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2);
-            circuit.add_sink(
-                Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
-                &plus,
-            );
+            let plus = source
+                .apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2)
+                .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
             z1_feedback.connect(&plus);
         })
         .unwrap();
@@ -2965,10 +2963,7 @@ mod tests {
                     Ok((countdown.condition(|n| *n <= 1), z1_output.export))
                 })
                 .unwrap();
-            circuit.add_sink(
-                Inspect::new(move |n| actual_output_clone.borrow_mut().push(*n)),
-                &fact,
-            );
+            fact.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
         .unwrap();
 

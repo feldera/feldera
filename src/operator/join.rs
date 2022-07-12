@@ -681,7 +681,7 @@ mod test {
 
             paths.consolidate::<OrdZSet<_, _>>().integrate().distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
-            })
+            });
         })
         .unwrap();
 

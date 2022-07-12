@@ -177,7 +177,7 @@ mod test {
         // Only consume source2, source3 by value.
         let root = Root::build(move |circuit| {
             let (source1, _source2, _source3) = build_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source1,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -192,17 +192,17 @@ mod test {
         // Consume all streams by reference.
         let root = Root::build(move |circuit| {
             let (source1, source2, source3) = build_circuit(circuit);
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source1,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source2,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
-            circuit.add_sink_with_preference(
+            circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
                 &source3,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
