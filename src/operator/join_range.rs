@@ -68,7 +68,7 @@ where
     ///
     /// This operator is non-incremental, i.e., it joins the pair of batches it
     /// receives at each timestamp ignoring previous inputs.
-    pub fn stream_join_range_indexed<RF, JF, It, K, V, I2>(
+    pub fn stream_join_range_index<RF, JF, It, K, V, I2>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         range_func: RF,
@@ -285,7 +285,7 @@ mod test {
                 |k1, v1, k2, v2| Some(((k1.clone(), v1.clone()), (k2.clone(), v2.clone()))),
             );
             output1.inspect(move |fm| assert_eq!(fm, &outputs.next().unwrap()));
-            let output2 = index1.stream_join_range_indexed(
+            let output2 = index1.stream_join_range_index(
                 &index2,
                 |&k| (k - 1, k + 2),
                 |k1, v1, k2, v2| Some(((k1.clone(), v1.clone()), (k2.clone(), v2.clone()))),
