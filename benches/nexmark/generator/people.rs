@@ -2,12 +2,13 @@
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/PersonGenerator.java).
 
+use super::config;
 use super::NexmarkGenerator;
-use crate::config;
-use crate::model::{DateTime, Id, Person};
+use crate::config as nexmark_config;
+use crate::model::{Id, Person};
 use rand::{seq::SliceRandom, Rng};
 use std::cmp::min;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
@@ -52,7 +53,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             credit_card: self.next_credit_card(),
             city: self.next_us_city(),
             state: self.next_us_state(),
-            date_time: DateTime::UNIX_EPOCH + Duration::from_millis(timestamp),
+            date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp),
             extra: String::new(),
         }
     }
@@ -72,26 +73,26 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// 0".
     pub fn next_base0_person_id(&mut self, event_id: Id) -> Id {
         let num_people = self.last_base0_person_id(event_id) + 1;
-        let active_people = min(num_people, config::NUM_ACTIVE_PEOPLE);
+        let active_people = min(num_people, self.config.nexmark_config.num_active_people);
         let n = self
             .rng
-            .gen_range(0..(active_people + config::PERSON_ID_LEAD));
+            .gen_range(0..(active_people + nexmark_config::PERSON_ID_LEAD));
         num_people - active_people + n
     }
 
     /// Return the last valid person id (ignoring FIRST_PERSON_ID). Will be the
     /// current person id if due to generate a person.
     pub fn last_base0_person_id(&self, event_id: Id) -> Id {
-        let epoch = event_id / self.config.total_proportion();
-        let mut offset = event_id % self.config.total_proportion();
+        let epoch = event_id / self.config.nexmark_config.total_proportion();
+        let mut offset = event_id % self.config.nexmark_config.total_proportion();
 
-        if offset >= self.config.person_proportion {
+        if offset >= self.config.nexmark_config.person_proportion {
             // About to generate an auction or bid.
             // Go back to the last person generated in this epoch.
-            offset = self.config.person_proportion - 1;
+            offset = self.config.nexmark_config.person_proportion - 1;
         }
         // About to generate a person.
-        epoch * self.config.person_proportion + offset
+        epoch * self.config.nexmark_config.person_proportion + offset
     }
 
     // Return a random US state.
@@ -133,22 +134,15 @@ impl<R: Rng> NexmarkGenerator<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::config::Config as NexmarkConfig;
+    use config::Config;
     use rand::rngs::mock::StepRng;
-
-    fn make_default_config() -> Config {
-        Config {
-            person_proportion: 1,
-            auction_proportion: 3,
-            bid_proportion: 46,
-        }
-    }
 
     #[test]
     fn test_next_person() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let p = ng.next_person(105, 1_000_000_000_000);
@@ -162,7 +156,7 @@ mod tests {
                 credit_card: "0000 0000 0000 0000".into(),
                 city: "Phoenix".into(),
                 state: "AZ".into(),
-                date_time: DateTime::UNIX_EPOCH + Duration::from_millis(1_000_000_000_000),
+                date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(1_000_000_000_000),
                 extra: String::new(),
             }
         );
@@ -172,7 +166,7 @@ mod tests {
     fn test_next_base0_person_id() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         // When one more than the last person id is less than the configured
@@ -204,7 +198,7 @@ mod tests {
     fn test_last_base0_person_id_default() {
         let ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         // With the default config, the first 50 events will only include one
@@ -227,8 +221,11 @@ mod tests {
         let ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
             config: Config {
-                bid_proportion: 21,
-                ..make_default_config()
+                nexmark_config: NexmarkConfig {
+                    bid_proportion: 21,
+                    ..NexmarkConfig::default()
+                },
+                ..Config::default()
             },
         };
 
@@ -244,7 +241,7 @@ mod tests {
     fn test_next_us_state() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let s = ng.next_us_state();
@@ -256,7 +253,7 @@ mod tests {
     fn test_next_us_city() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let c = ng.next_us_city();
@@ -268,7 +265,7 @@ mod tests {
     fn test_next_person_name() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let n = ng.next_person_name();
@@ -280,7 +277,7 @@ mod tests {
     fn test_next_email() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let e = ng.next_email();
@@ -292,7 +289,7 @@ mod tests {
     fn test_next_credit_card() {
         let mut ng = NexmarkGenerator {
             rng: StepRng::new(0, 5),
-            config: make_default_config(),
+            config: Config::default(),
         };
 
         let e = ng.next_credit_card();
