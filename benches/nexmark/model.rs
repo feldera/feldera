@@ -4,15 +4,13 @@
 
 use std::time::SystemTime;
 
-pub type Id = usize;
-
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct Person {
-    pub id: Id,
+    pub id: u64,
     pub name: String,
     pub email_address: String,
     pub credit_card: String,
@@ -28,15 +26,15 @@ pub struct Person {
 /// class.
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct Auction {
-    pub id: Id,
+    pub id: u64,
     pub item_name: String,
     pub description: String,
     pub initial_bid: usize,
     pub reserve: usize,
     pub date_time: SystemTime,
     pub expires: SystemTime,
-    pub seller: Id,
-    pub category: Id,
+    pub seller: u64,
+    pub category: usize,
 }
 
 /// The Nexmark Bid model based on the [Nexmark Java Bid class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Bid.java).
@@ -45,8 +43,8 @@ pub struct Auction {
 /// class.
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct Bid {
-    pub auction: Id,
-    pub bidder: Id,
+    pub auction: u64,
+    pub bidder: u64,
     pub price: usize,
     pub date_time: SystemTime,
 }

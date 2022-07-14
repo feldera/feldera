@@ -5,7 +5,7 @@
 use super::config;
 use super::NexmarkGenerator;
 use crate::config as nexmark_config;
-use crate::model::{Id, Person};
+use crate::model::Person;
 use rand::{seq::SliceRandom, Rng};
 use std::cmp::min;
 use std::time::{Duration, SystemTime};
@@ -37,7 +37,7 @@ const LAST_NAMES: &[&str] = &[
 
 impl<R: Rng> NexmarkGenerator<R> {
     // Generate and return a random person with next available id.
-    pub fn next_person(&mut self, next_event_id: Id, timestamp: u64) -> Person {
+    pub fn next_person(&mut self, next_event_id: u64, timestamp: u64) -> Person {
         // TODO(absoludity): Figure out the purpose of the extra field - appears to be
         // aiming to adjust the number of bytes for the record to be an average, which
         // will need slightly different handling in Rust.
@@ -47,7 +47,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         // config.getAvgPersonByteSize());
 
         Person {
-            id: self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID,
+            id: self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID as u64,
             name: self.next_person_name(),
             email_address: self.next_email(),
             credit_card: self.next_credit_card(),
@@ -71,28 +71,31 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// The "base 0" is referring to the fact that the returned Id is not
     /// including the FIRST_PERSON_ID offset, and should really be "offset
     /// 0".
-    pub fn next_base0_person_id(&mut self, event_id: Id) -> Id {
+    pub fn next_base0_person_id(&mut self, event_id: u64) -> u64 {
         let num_people = self.last_base0_person_id(event_id) + 1;
-        let active_people = min(num_people, self.config.nexmark_config.num_active_people);
+        let active_people = min(
+            num_people,
+            self.config.nexmark_config.num_active_people as u64,
+        );
         let n = self
             .rng
-            .gen_range(0..(active_people + nexmark_config::PERSON_ID_LEAD));
+            .gen_range(0..(active_people + nexmark_config::PERSON_ID_LEAD as u64));
         num_people - active_people + n
     }
 
     /// Return the last valid person id (ignoring FIRST_PERSON_ID). Will be the
     /// current person id if due to generate a person.
-    pub fn last_base0_person_id(&self, event_id: Id) -> Id {
-        let epoch = event_id / self.config.nexmark_config.total_proportion();
-        let mut offset = event_id % self.config.nexmark_config.total_proportion();
+    pub fn last_base0_person_id(&self, event_id: u64) -> u64 {
+        let epoch = event_id / self.config.nexmark_config.total_proportion() as u64;
+        let mut offset = event_id % self.config.nexmark_config.total_proportion() as u64;
 
-        if offset >= self.config.nexmark_config.person_proportion {
+        if offset >= self.config.nexmark_config.person_proportion as u64 {
             // About to generate an auction or bid.
             // Go back to the last person generated in this epoch.
-            offset = self.config.nexmark_config.person_proportion - 1;
+            offset = self.config.nexmark_config.person_proportion as u64 - 1;
         }
         // About to generate a person.
-        epoch * self.config.nexmark_config.person_proportion + offset
+        epoch * self.config.nexmark_config.person_proportion as u64 + offset
     }
 
     // Return a random US state.
