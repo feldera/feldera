@@ -2,7 +2,8 @@
 //!
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
-pub type DateTime = std::time::SystemTime;
+use std::time::SystemTime;
+
 pub type Id = usize;
 
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
@@ -17,7 +18,7 @@ pub struct Person {
     pub credit_card: String,
     pub city: String,
     pub state: String,
-    pub date_time: DateTime,
+    pub date_time: SystemTime,
     pub extra: String,
 }
 
@@ -32,8 +33,8 @@ pub struct Auction {
     pub description: String,
     pub initial_bid: usize,
     pub reserve: usize,
-    pub date_time: DateTime,
-    pub expires: DateTime,
+    pub date_time: SystemTime,
+    pub expires: SystemTime,
     pub seller: Id,
     pub category: Id,
 }
@@ -47,5 +48,5 @@ pub struct Bid {
     pub auction: Id,
     pub bidder: Id,
     pub price: usize,
-    pub date_time: DateTime,
+    pub date_time: SystemTime,
 }

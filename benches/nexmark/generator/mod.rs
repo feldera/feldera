@@ -2,9 +2,11 @@
 //!
 //! Based on the equivalent [Nexmark Flink generator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator).
 
-use crate::config::Config;
+use self::config::Config;
 use rand::Rng;
 
+mod auctions;
+mod config;
 mod people;
 mod strings;
 
