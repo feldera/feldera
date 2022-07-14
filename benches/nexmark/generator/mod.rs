@@ -8,6 +8,7 @@ use rand::Rng;
 mod auctions;
 mod config;
 mod people;
+mod price;
 mod strings;
 
 pub struct NexmarkGenerator<R: Rng> {

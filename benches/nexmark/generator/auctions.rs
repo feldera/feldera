@@ -2,7 +2,9 @@
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/AuctionGenerator.java).
 
+use super::config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID};
 use super::NexmarkGenerator;
+use crate::model::Auction;
 use anyhow::Result;
 use rand::Rng;
 use std::{
@@ -10,7 +12,61 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+/// Keep the number of categories small so the example queries will find results
+/// even with a small batch of events.
+const NUM_CATEGORIES: usize = 5;
+
+/// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
+/// 1 over these values.
+const HOT_SELLER_RATIO: usize = 100;
+
 impl<R: Rng> NexmarkGenerator<R> {
+    /// Generate and return a random auction with the next available id.
+    pub fn next_auction(
+        &mut self,
+        events_count_so_far: u64,
+        event_id: u64,
+        timestamp: u64,
+    ) -> Result<Auction> {
+        let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID as u64;
+
+        // Here P(auction will be for a hot seller) = 1 - 1/hot_sellers_ratio.
+        let seller = match self
+            .rng
+            .gen_range(0..self.config.nexmark_config.hot_sellers_ratio)
+        {
+            0 => self.next_base0_person_id(event_id),
+            _ => {
+                // Choose the first person in the batch of last hot_sellers_ratio people.
+                (self.last_base0_person_id(event_id) / HOT_SELLER_RATIO as u64)
+                    * HOT_SELLER_RATIO as u64
+            }
+        } + FIRST_PERSON_ID as u64;
+
+        let category = FIRST_CATEGORY_ID + self.rng.gen_range(0..NUM_CATEGORIES);
+        let initial_bid = self.next_price();
+        let timestamp = SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp);
+        let expires = timestamp
+            + self
+                .next_auction_length_ms(events_count_so_far, timestamp)
+                .expect("unable to calculate next auction length");
+        let item_name = self.next_string(20);
+        let description = self.next_string(100);
+        let reserve = initial_bid + self.next_price();
+        // TODO(absoludity): add the extra bytes for models.
+        Ok(Auction {
+            id,
+            item_name,
+            description,
+            initial_bid,
+            reserve,
+            date_time: timestamp,
+            expires,
+            seller,
+            category,
+        })
+    }
+
     /// Return the last valid auction id (ignoring FIRST_AUCTION_ID). Will be
     /// the current auction id if due to generate an auction.
     fn last_base0_auction_id(&self, event_id: u64) -> u64 {
@@ -54,7 +110,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// Return a random time delay, in milliseconds, for length of auctions.
     fn next_auction_length_ms(
         &mut self,
-        event_count_so_far: usize,
+        event_count_so_far: u64,
         timestamp: SystemTime,
     ) -> Result<Duration> {
         // What's our current event number?
@@ -70,7 +126,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         // (corresponding to 100 auctions from now).
         let future_auction = self
             .config
-            .timestamp_for_event((current_event_number + num_events_for_auctions) as u64);
+            .timestamp_for_event(current_event_number + num_events_for_auctions as u64);
         // Choose a length with average horizon.
         let horizon = future_auction.duration_since(timestamp)?;
 
@@ -87,6 +143,31 @@ mod tests {
     use crate::generator::config::Config;
     use rand::rngs::mock::StepRng;
     use rstest::rstest;
+
+    #[test]
+    fn test_next_auction() {
+        let mut ng = NexmarkGenerator {
+            rng: StepRng::new(0, 1),
+            config: Config::default(),
+        };
+
+        let auction = ng.next_auction(0, 0, 0).unwrap();
+
+        assert_eq!(
+            Auction {
+                id: FIRST_AUCTION_ID as u64,
+                item_name: "AAA".into(),
+                description: "AAA".into(),
+                initial_bid: 100,
+                reserve: 200,
+                date_time: SystemTime::UNIX_EPOCH,
+                expires: SystemTime::UNIX_EPOCH + Duration::from_millis(1),
+                seller: 1000,
+                category: 10,
+            },
+            auction
+        );
+    }
 
     #[rstest]
     // By default an epoch is 50 events and event 0 is a person, events 1, 2 and 3
