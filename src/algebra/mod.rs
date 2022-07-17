@@ -27,9 +27,12 @@ pub trait HasZero {
 macro_rules! impl_has_zero {
     ($type:ty) => {
         impl $crate::algebra::HasZero for $type {
+            #[inline]
             fn is_zero(&self) -> bool {
                 <Self as num::traits::Zero>::is_zero(self)
             }
+
+            #[inline]
             fn zero() -> Self {
                 <Self as num::traits::Zero>::zero()
             }
@@ -55,9 +58,12 @@ impl<T> HasZero for Wrapping<T>
 where
     T: HasZero,
 {
+    #[inline]
     fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
+
+    #[inline]
     fn zero() -> Self {
         Self(T::zero())
     }
@@ -74,6 +80,7 @@ pub trait HasOne {
 macro_rules! impl_has_one {
     ($type:ty) => {
         impl $crate::algebra::HasOne for $type {
+            #[inline]
             fn one() -> Self {
                 <Self as num::traits::One>::one()
             }
@@ -98,6 +105,7 @@ impl<T> HasOne for Rc<T>
 where
     T: HasOne,
 {
+    #[inline]
     fn one() -> Self {
         Rc::new(<T as HasOne>::one())
     }
@@ -113,6 +121,7 @@ impl<T> AddByRef for T
 where
     for<'a> &'a T: Add<Output = T>,
 {
+    #[inline]
     fn add_by_ref(&self, other: &Self) -> Self {
         self.add(other)
     }
@@ -128,6 +137,7 @@ impl<T> NegByRef for T
 where
     for<'a> &'a T: Neg<Output = T>,
 {
+    #[inline]
     fn neg_by_ref(&self) -> Self {
         self.neg()
     }
@@ -143,6 +153,7 @@ impl<T> AddAssignByRef for T
 where
     for<'a> T: AddAssign<&'a T>,
 {
+    #[inline]
     fn add_assign_by_ref(&mut self, other: &Self) {
         self.add_assign(other)
     }
@@ -158,6 +169,7 @@ impl<T> MulByRef for T
 where
     for<'a> &'a T: Mul<Output = T>,
 {
+    #[inline]
     fn mul_by_ref(&self, other: &Self) -> Self {
         self.mul(other)
     }
@@ -247,10 +259,12 @@ where
         + HasOne
         + Ord,
 {
+    #[inline]
     fn ge0(&self) -> bool {
         *self >= Self::zero()
     }
 
+    #[inline]
     fn le0(&self) -> bool {
         *self <= Self::zero()
     }
