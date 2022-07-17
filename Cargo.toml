@@ -33,6 +33,7 @@ anyhow = "1.0.57"
 rand = "0.8"
 clap = { version = "3.2", features = ["derive", "env"] }
 rstest = "0.15"
+cached = "0.36"
 
 [[bench]]
 name = "galen"
