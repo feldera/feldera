@@ -1,10 +1,4 @@
 {
-    "powerHeader.autoInsert.enable": true,
-    "powerHeader.autoInsert.languages": [
-        "rust",
-        "shell"
-    ],
-    "powerHeader.template": "file://$WORKSPACE_FOLDER/LICENSE_TEMPLATE",
     "testExplorer.addToEditorContextMenu": true,
     "testExplorer.showOnRun": true,
     "testExplorer.useNativeTesting": true,
