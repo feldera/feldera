@@ -137,16 +137,11 @@ impl<R: Rng> NexmarkGenerator<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config as NexmarkConfig;
-    use config::Config;
-    use rand::rngs::mock::StepRng;
+    use crate::generator::tests::make_test_generator;
 
     #[test]
     fn test_next_person() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let p = ng.next_person(105, 1_000_000_000_000);
 
@@ -167,10 +162,7 @@ mod tests {
 
     #[test]
     fn test_next_base0_person_id() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         // When one more than the last person id is less than the configured
         // active people (1000), the id returned is a random id from one of
@@ -199,10 +191,7 @@ mod tests {
 
     #[test]
     fn test_last_base0_person_id_default() {
-        let ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let ng = make_test_generator();
 
         // With the default config, the first 50 events will only include one
         // person
@@ -221,16 +210,8 @@ mod tests {
         // Set the configured bid proportion to 21,
         // which together with the other defaults for person and auction
         // proportion, makes the total 25.
-        let ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config {
-                nexmark_config: NexmarkConfig {
-                    bid_proportion: 21,
-                    ..NexmarkConfig::default()
-                },
-                ..Config::default()
-            },
-        };
+        let mut ng = make_test_generator();
+        ng.config.nexmark_config.bid_proportion = 21;
 
         // With the total proportion at 25, there will be a new person
         // at every 25th event.
@@ -242,10 +223,7 @@ mod tests {
 
     #[test]
     fn test_next_us_state() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let s = ng.next_us_state();
 
@@ -254,10 +232,7 @@ mod tests {
 
     #[test]
     fn test_next_us_city() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let c = ng.next_us_city();
 
@@ -266,10 +241,7 @@ mod tests {
 
     #[test]
     fn test_next_person_name() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let n = ng.next_person_name();
 
@@ -278,10 +250,7 @@ mod tests {
 
     #[test]
     fn test_next_email() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let e = ng.next_email();
 
@@ -290,10 +259,7 @@ mod tests {
 
     #[test]
     fn test_next_credit_card() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let e = ng.next_credit_card();
 

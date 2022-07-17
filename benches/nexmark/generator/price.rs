@@ -13,16 +13,11 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::generator::config::Config;
-    use rand::rngs::mock::StepRng;
+    use crate::generator::tests::make_test_generator;
 
     #[test]
     fn test_next_price() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 1),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let p = ng.next_price();
 

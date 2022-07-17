@@ -1,4 +1,4 @@
-use super::super::config::Config as NexmarkConfig;
+use crate::config::Config as NexmarkConfig;
 use std::time::{Duration, SystemTime};
 
 // We start the ids at specific values to help ensure the queries find a match

@@ -1,4 +1,4 @@
-//! Generates people for the Nexmark streaming data source.
+//! Generates auctions for the Nexmark streaming data source.
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/AuctionGenerator.java).
 
@@ -140,16 +140,12 @@ impl<R: Rng> NexmarkGenerator<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generator::config::Config;
-    use rand::rngs::mock::StepRng;
+    use crate::generator::tests::make_test_generator;
     use rstest::rstest;
 
     #[test]
     fn test_next_auction() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 1),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let auction = ng.next_auction(0, 0, 0).unwrap();
 
@@ -189,10 +185,7 @@ mod tests {
     // After the 1st person is generated in the 33rd epoch, we have 99 auctions.
     #[case(50*33 + 1, 99)]
     fn test_last_base0_auction_id(#[case] event_id: u64, #[case] expected_id: u64) {
-        let ng = NexmarkGenerator {
-            rng: StepRng::new(0, 1),
-            config: Config::default(),
-        };
+        let ng = make_test_generator();
 
         let last_auction_id = ng.last_base0_auction_id(event_id);
 
@@ -214,10 +207,7 @@ mod tests {
     #[case(50*35 + 0, 4)] // last_base0_auction_id is 35*3 + 0 - 1 = 104
     #[case(50*35 + 1, 5)] // last_base0_auction_id is 35*3 + 1 - 1 = 105
     fn test_next_base0_auction_id(#[case] next_event_id: u64, #[case] expected_id: u64) {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 1),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let next_auction_id = ng.next_base0_auction_id(next_event_id);
 
@@ -226,10 +216,7 @@ mod tests {
 
     #[test]
     fn test_next_auction_length_ms() {
-        let mut ng = NexmarkGenerator {
-            rng: StepRng::new(0, 5),
-            config: Config::default(),
-        };
+        let mut ng = make_test_generator();
 
         let len_ms = ng
             .next_auction_length_ms(0, SystemTime::UNIX_EPOCH)
