@@ -25,6 +25,14 @@ pub struct Config {
     #[clap(long, default_value = "10000", env = "NEXMARK_FIRST_EVENT_RATE")]
     pub first_event_rate: usize,
 
+    /// Ratio of bids to 'hot' auctions compared to all other auctions.
+    #[clap(long, default_value = "2", env = "NEXMARK_HOT_AUCTION_RATIO")]
+    pub hot_auction_ratio: usize,
+
+    /// Ratio of bids for 'hot' bidders compared to all other people.
+    #[clap(long, default_value = "4", env = "NEXMARK_HOT_BIDDERS_RATIO")]
+    pub hot_bidders_ratio: usize,
+
     /// Ration of auctions for 'hot' sellers compared to all other people.
     #[clap(long, default_value = "4", env = "NEXMARK_HOT_SELLERS_RATIO")]
     pub hot_sellers_ratio: usize,
@@ -69,6 +77,8 @@ impl Default for Config {
             auction_proportion: 3,
             bid_proportion: 46,
             first_event_rate: 10_000,
+            hot_auction_ratio: 2,
+            hot_bidders_ratio: 4,
             hot_sellers_ratio: 4,
             num_active_people: 1000,
             num_event_generators: 1,

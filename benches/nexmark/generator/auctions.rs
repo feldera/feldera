@@ -69,7 +69,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 
     /// Return the last valid auction id (ignoring FIRST_AUCTION_ID). Will be
     /// the current auction id if due to generate an auction.
-    fn last_base0_auction_id(&self, event_id: u64) -> u64 {
+    pub fn last_base0_auction_id(&self, event_id: u64) -> u64 {
         let mut epoch = event_id / self.config.nexmark_config.total_proportion() as u64;
         let mut offset = event_id % self.config.nexmark_config.total_proportion() as u64;
         let person_proportion = self.config.nexmark_config.person_proportion as u64;
@@ -95,7 +95,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     /// Return a random auction id (base 0).
-    fn next_base0_auction_id(&mut self, next_event_id: u64) -> u64 {
+    pub fn next_base0_auction_id(&mut self, next_event_id: u64) -> u64 {
         // Choose a random auction for any of those which are likely to still be in
         // flight, plus a few 'leads'.
         // Note that ideally we'd track non-expired auctions exactly, but that state

@@ -43,8 +43,19 @@ pub struct Auction {
 /// class.
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct Bid {
+    /// Id of auction this bid is for.
     pub auction: u64,
+    /// Id of the person bidding in auction.
     pub bidder: u64,
+    /// Price of bid, in cents.
     pub price: usize,
+    /// The channel that introduced this bidding.
+    pub channel: String,
+    /// The url of this [channel].
+    pub url: String,
+    /// Instant at which this bid was made. NOTE: This may be earlier than teh
+    /// system's event time.
     pub date_time: SystemTime,
+    /// Additional arbitrary payload for performance testing.
+    pub extra: String,
 }
