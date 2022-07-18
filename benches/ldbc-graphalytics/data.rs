@@ -7,7 +7,7 @@ use dbsp::{
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, BufWriter, Seek, Write},
+    io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     thread,
     time::Duration,
@@ -38,6 +38,10 @@ pub struct DataSet {
 impl DataSet {
     pub const fn new(name: &'static str, url: &'static str) -> Self {
         Self { name, url }
+    }
+
+    pub fn path(&self) -> PathBuf {
+        Path::new(DATA_PATH).join(self.name)
     }
 
     pub fn load(&self) -> io::Result<(Properties, EdgeMap, VertexSet, DistanceSet)> {
@@ -86,17 +90,14 @@ impl DataSet {
     ///
     /// [here]: https://repository.surfsara.nl/datasets/cwi/graphalytics
     fn dataset_dir(&self) -> io::Result<PathBuf> {
-        let data_path = Path::new(DATA_PATH).join(self.name);
+        let data_path = self.path();
         let archive_path = Path::new(DATA_PATH).join(format!("{}.tar.zst", self.name));
         let tarball_path = Path::new(DATA_PATH).join(format!("{}.tar", self.name));
 
-        // TODO: Finer-grained check for the files we care about
-        let needs_download = !data_path.exists()
-            || (!archive_path.exists() && fs::read_dir(&data_path).unwrap().count() == 0);
         fs::create_dir_all(&data_path)?;
 
         // If it doesn't exist, download the dataset
-        if needs_download {
+        if !archive_path.exists() && !tarball_path.exists() {
             let mut archive_file = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -153,18 +154,19 @@ impl DataSet {
             writer
                 .flush()
                 .unwrap_or_else(|error| panic!("failed to flush {} to disk: {error}", self.url));
-            drop(writer);
             progress.finish_with_message("done");
+        }
 
-            // Rewind the file to the start
-            archive_file.rewind()?;
+        if !tarball_path.exists() && fs::read_dir(&data_path).unwrap().count() == 0 {
+            // Note that we're *opening* the file and not *creating* it
+            let archive_file = BufReader::new(File::open(&archive_path).unwrap_or_else(|error| {
+                panic!("failed to create {}: {error}", archive_path.display())
+            }));
 
             // Decompress the zstd-compressed tarball
-            {
-                let mut decoder = Decoder::new(archive_file)?;
-                let mut tarball = BufWriter::new(File::create(&tarball_path)?);
-                io::copy(&mut decoder, &mut tarball)?;
-            }
+            let mut decoder = Decoder::new(archive_file)?;
+            let mut tarball = BufWriter::new(File::create(&tarball_path)?);
+            io::copy(&mut decoder, &mut tarball)?;
 
             // TODO: Maybe want to delete the original zsd file?
         }
@@ -199,13 +201,18 @@ impl DataSet {
         Ok(data_path)
     }
 
-    pub const DATASETS: [Self; 6] = [
+    pub const DATASETS: [Self; 11] = [
         Self::EXAMPLE_DIR,
         Self::EXAMPLE_UNDIR,
-        Self::D75,
-        Self::D76,
-        Self::D77,
-        Self::D85,
+        Self::DATAGEN_7_5,
+        Self::DATAGEN_7_6,
+        Self::DATAGEN_7_7,
+        Self::DATAGEN_8_2,
+        Self::DATAGEN_8_3,
+        Self::DATAGEN_8_4,
+        Self::DATAGEN_8_5,
+        Self::GRAPH_500_23,
+        Self::GRAPH_500_24,
     ];
 
     pub const EXAMPLE_DIR: DataSet = DataSet::new(
@@ -218,24 +225,49 @@ impl DataSet {
         "https://surfdrive.surf.nl/files/index.php/s/enKFbXmUBP2rxgB/download",
     );
 
-    pub const D75: DataSet = DataSet::new(
+    pub const DATAGEN_7_5: DataSet = DataSet::new(
         "datagen-7_5-fb",
         "https://surfdrive.surf.nl/files/index.php/s/ypGcsxzrBeh2YGb/download",
     );
 
-    pub const D76: DataSet = DataSet::new(
+    pub const DATAGEN_7_6: DataSet = DataSet::new(
         "datagen-7_6-fb",
         "https://surfdrive.surf.nl/files/index.php/s/pxl7rDvzDQJFhfc/download",
     );
 
-    pub const D77: DataSet = DataSet::new(
+    pub const DATAGEN_7_7: DataSet = DataSet::new(
         "datagen-7_7-zf",
         "https://surfdrive.surf.nl/files/index.php/s/sstTvqgcyhWVVPn/download",
     );
 
-    pub const D85: DataSet = DataSet::new(
+    pub const DATAGEN_8_2: DataSet = DataSet::new(
+        "datagen-8_2-zf",
+        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_2-zf.tar.zst",
+    );
+
+    pub const DATAGEN_8_3: DataSet = DataSet::new(
+        "datagen-8_3-zf",
+        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_3-zf.tar.zst",
+    );
+
+    pub const DATAGEN_8_4: DataSet = DataSet::new(
+        "datagen-8_4-fb",
+        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_4-fb.tar.zst",
+    );
+
+    pub const DATAGEN_8_5: DataSet = DataSet::new(
         "datagen-8_5-fb",
         "https://surfdrive.surf.nl/files/index.php/s/2d8wUj9HGIzime3/download",
+    );
+
+    pub const GRAPH_500_23: Self = Self::new(
+        "graph500-23",
+        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/graph500-23.tar.zst",
+    );
+
+    pub const GRAPH_500_24: Self = Self::new(
+        "graph500-24",
+        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/graph500-24.tar.zst",
     );
 }
 
@@ -263,6 +295,9 @@ pub struct Properties {
     pub edges: u64,
     pub directed: bool,
     pub source_vertex: Vertex,
+    pub algorithms: Vec<Algorithm>,
+    pub pagerank_damping_factor: Option<f64>,
+    pub pagerank_iters: Option<usize>,
 }
 
 impl Properties {
@@ -273,6 +308,9 @@ impl Properties {
         let mut edges = None;
         let mut directed = None;
         let mut source_vertex = None;
+        let mut algorithms = Vec::new();
+        let mut pagerank_iters = None;
+        let mut pagerank_damping_factor = None;
 
         let mut file = BufReader::new(file);
         let mut buffer = String::with_capacity(256);
@@ -305,6 +343,16 @@ impl Properties {
                     vertices = Some(value.parse().unwrap());
                 } else if line.starts_with("meta.edges") {
                     edges = Some(value.parse().unwrap());
+                } else if line.starts_with("algorithms") {
+                    algorithms.extend(
+                        value
+                            .split(',')
+                            .map(|algo| Algorithm::try_from(algo.trim()).unwrap()),
+                    );
+                } else if line.starts_with("pr.damping-factor") {
+                    pagerank_damping_factor = Some(value.parse().unwrap());
+                } else if line.starts_with("pr.num-iterations") {
+                    pagerank_iters = Some(value.parse().unwrap());
                 }
             }
 
@@ -318,7 +366,36 @@ impl Properties {
             edges: edges.unwrap(),
             directed: directed.unwrap(),
             source_vertex: source_vertex.unwrap(),
+            algorithms,
+            pagerank_damping_factor,
+            pagerank_iters,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Algorithm {
+    Pr,
+    Bfs,
+    Lcc,
+    Wcc,
+    Cdlp,
+    Sssp,
+}
+
+impl TryFrom<&str> for Algorithm {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match &*value.to_ascii_lowercase() {
+            "pr" => Self::Pr,
+            "bfs" => Self::Bfs,
+            "lcc" => Self::Lcc,
+            "wcc" => Self::Wcc,
+            "cdlp" => Self::Cdlp,
+            "sssp" => Self::Sssp,
+            unknown => return Err(format!("unknown algorithm: {unknown:?}")),
+        })
     }
 }
 
@@ -340,7 +417,7 @@ impl EdgeParser {
         let mut batch = Vec::with_capacity(1024);
 
         let directed = self.directed;
-        self.parse(|src, dest, _| {
+        self.parse(|src, dest| {
             batch.push(((src, dest), Weight::one()));
 
             // Add in the reversed edge if the graph isn't directed
@@ -359,7 +436,7 @@ impl EdgeParser {
 
     fn parse<F>(mut self, mut append: F)
     where
-        F: FnMut(Vertex, Vertex, f64),
+        F: FnMut(Vertex, Vertex),
     {
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = self.file.read_line(&mut buffer) {
@@ -372,8 +449,8 @@ impl EdgeParser {
 
             let src = line.next().unwrap().parse().unwrap();
             let dest = line.next().unwrap().parse().unwrap();
-            let weight = line.next().unwrap().parse().unwrap();
-            append(src, dest, weight);
+            // let weight = line.next().and_then(|weight| weight.parse().ok());
+            append(src, dest);
 
             buffer.clear();
         }

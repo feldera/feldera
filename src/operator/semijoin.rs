@@ -107,6 +107,9 @@ where
         let mut batch = Vec::with_capacity(min(pairs.len(), keys.len()));
 
         // While both keys are valid
+        // TODO: Is there a better way to iterate here? `keys_cursor` is the
+        //       thing really driving this, so can we just use it as the
+        //       source of iteration to do the least work possible?
         while key_cursor.key_valid() && pair_cursor.key_valid() {
             match key_cursor.key().cmp(pair_cursor.key()) {
                 // Match up both the cursors
@@ -114,11 +117,13 @@ where
                 Ordering::Greater => pair_cursor.seek_key(key_cursor.key()),
 
                 Ordering::Equal => {
-                    // For each value within the pair stream,
+                    // TODO: Can the value of `()` ever be invalid?
                     if key_cursor.val_valid() {
                         let key_weight = key_cursor.weight();
                         while pair_cursor.val_valid() {
                             // Get the weight of the output kv pair by multiplying them together
+                            // TODO: Can either weights possibly be zero? If so, we can check if `key_weight`
+                            //       is zero outside of the loop to skip redundant work
                             let pair_weight = pair_cursor.weight();
                             let kv_weight = pair_weight.mul_by_ref(&key_weight);
 
@@ -377,12 +382,16 @@ where
         let mut pairs_cursor = pairs.cursor();
         let mut keys_cursor = keys.cursor();
 
+        // TODO: Is there a better way to iterate here? `keys_cursor` is the
+        //       thing really driving this, so can we just use it as the
+        //       source of iteration to do the least work possible?
         while pairs_cursor.key_valid() && keys_cursor.key_valid() {
             match pairs_cursor.key().cmp(keys_cursor.key()) {
                 Ordering::Less => pairs_cursor.seek_key(keys_cursor.key()),
                 Ordering::Greater => keys_cursor.seek_key(pairs_cursor.key()),
 
                 Ordering::Equal => {
+                    // TODO: Can the value of `()` ever be invalid?
                     if keys_cursor.val_valid() {
                         while pairs_cursor.val_valid() {
                             let pair_weight = pairs_cursor.weight();
@@ -390,6 +399,8 @@ where
 
                             let output = (self.semijoin_func)(pairs_cursor.key(), pair_value);
 
+                            // TODO: We know there'll always be exactly one value but `.map_times()`
+                            //       doesn't let us express that
                             keys_cursor.map_times(|time, key_weight| {
                                 output_tuples.push((
                                     time.join(&self.time),
