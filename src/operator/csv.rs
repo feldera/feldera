@@ -6,7 +6,7 @@
 //   error).
 // - Batching (don't read the whole file in one clock cycle)
 // - Async implementation (wait for data to become available in the reader)
-// - Sharded implementation.
+// - Sharded implementation (currently we feed all data on worker 0).
 
 use crate::{
     algebra::{ZRingValue, ZSet},
@@ -14,6 +14,7 @@ use crate::{
         operator_traits::{Data, Operator, SourceOperator},
         Scope,
     },
+    Runtime,
 };
 use csv::Reader as CsvReader;
 use serde::Deserialize;
@@ -76,7 +77,7 @@ where
     C: Data + ZSet<Key = T, R = W>,
 {
     fn eval(&mut self) -> C {
-        let source = if self.time == 0 {
+        let source = if self.time == 0 && Runtime::worker_index() == 0 {
             let data: Vec<_> = self
                 .reader
                 .deserialize()

@@ -364,6 +364,17 @@ where
     }
 }
 
+impl<B> Default for Spine<B>
+where
+    B: Batch + Clone + 'static,
+    B::Key: Ord,
+    B::Val: Ord,
+{
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
 impl<B> Trace for Spine<B>
 where
     B: Batch + Clone + 'static,

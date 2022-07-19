@@ -109,20 +109,6 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
 }
 
-impl<K, R> HasZero for OrdZSet<K, R>
-where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
-{
-    fn zero() -> Self {
-        Self::empty(())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.is_empty()
-    }
-}
-
 impl<K, R> Default for OrdZSet<K, R>
 where
     K: Ord + Clone + 'static,

@@ -16,7 +16,11 @@ pub mod layers;
 pub mod ord;
 pub mod spine_fueled;
 
-use crate::{algebra::MonoidValue, lattice::Lattice, time::Timestamp};
+use crate::{
+    algebra::{HasZero, MonoidValue},
+    lattice::Lattice,
+    time::Timestamp,
+};
 use timely::progress::Antichain;
 
 pub use cursor::Cursor;
@@ -202,7 +206,7 @@ where
         merger.done()
     }
 
-    /// Creates an empty batch with timestamp `time`.
+    /// Creates an empty batch.
     fn empty(time: Self::Time) -> Self {
         <Self::Builder>::new(time).done()
     }
@@ -212,6 +216,19 @@ where
     /// Modifies all timestamps `t` that are not less than or equal to
     /// `frontier` to `t.meet(frontier)`.  See [`Trace::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
+}
+
+impl<B> HasZero for B
+where
+    B: Batch<Time = ()>,
+{
+    fn zero() -> Self {
+        Self::empty(())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.is_empty()
+    }
 }
 
 /// Functionality for collecting and batching updates.

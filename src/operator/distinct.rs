@@ -5,9 +5,11 @@ use std::{
     cmp::{max, Ordering},
     collections::BTreeSet,
     fmt::Write,
+    hash::Hash,
     marker::PhantomData,
     mem::take,
     ops::{Add, Neg},
+    rc::Rc,
 };
 
 use crate::{
@@ -34,11 +36,13 @@ where
     /// Apply [`Distinct`] operator to `self`.
     pub fn distinct(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: ZSet,
+        Z: ZSet + Send + TryFrom<Rc<Z>>,
+        Z::Key: Ord + Clone + Hash,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
-                self.circuit().add_unary_operator(Distinct::new(), self)
+                self.circuit()
+                    .add_unary_operator(Distinct::new(), &self.shard())
             })
             .clone()
     }
@@ -48,6 +52,15 @@ where
     /// This is equivalent to `self.integrate().distinct().differentiate()`, but
     /// is more efficient.
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
+    where
+        Z: DeepSizeOf + NumEntries + ZSet + Send + TryFrom<Rc<Z>>,
+        Z::Key: Clone + PartialEq + Ord + Hash,
+        Z::R: ZRingValue,
+    {
+        self.shard().distinct_incremental_inner()
+    }
+
+    fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
     where
         Z: DeepSizeOf + NumEntries + ZSet,
         Z::Key: Clone + PartialEq + Ord,
@@ -71,12 +84,13 @@ where
     // TODO: remove this method.
     pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + ZSet,
-        Z::Key: Clone + PartialEq + Ord,
+        Z: DeepSizeOf + NumEntries + Send + ZSet + TryFrom<Rc<Z>>,
+        Z::Key: Clone + PartialEq + Ord + Hash,
         Z::R: ZRingValue,
     {
-        self.integrate_nested()
-            .distinct_incremental()
+        self.shard()
+            .integrate_nested()
+            .distinct_incremental_inner()
             .differentiate_nested()
     }
 }
@@ -95,16 +109,17 @@ where
     /// [`Stream::distinct_incremental_nested`].
     pub fn distinct_trace(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: NumEntries + ZSet + DeepSizeOf,
-        Z::Key: Clone + Ord + DeepSizeOf,
+        Z: NumEntries + ZSet + DeepSizeOf + Send + TryFrom<Rc<Z>>,
+        Z::Key: Clone + Ord + DeepSizeOf + Hash,
         Z::R: ZRingValue + DeepSizeOf,
     {
+        let stream = self.shard();
         self.circuit()
             .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_binary_operator(
                     DistinctTrace::new(),
-                    self,
-                    &self
+                    &stream,
+                    &stream
                         .trace::<OrdKeySpine<Z::Key, NestedTimestamp32, Z::R>>()
                         .delay_trace(),
                 )
@@ -566,7 +581,23 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{circuit::Root, operator::GeneratorNested, trace::ord::OrdZSet, zset};
+    use crate::{circuit::Root, operator::GeneratorNested, zset, OrdZSet, Runtime};
+
+    fn do_distinct_incremental_nested_test_mt(workers: usize) {
+        let hruntime = Runtime::run(workers, || {
+            distinct_incremental_nested_test();
+        });
+
+        hruntime.join().unwrap();
+    }
+
+    #[test]
+    fn distinct_incremental_nested_test_mt() {
+        do_distinct_incremental_nested_test_mt(1);
+        do_distinct_incremental_nested_test_mt(2);
+        do_distinct_incremental_nested_test_mt(4);
+        do_distinct_incremental_nested_test_mt(16);
+    }
 
     #[test]
     fn distinct_incremental_nested_test() {
@@ -589,18 +620,23 @@ mod test {
 
                     let input = child.add_source(GeneratorNested::new(Box::new(move || {
                         *counter_clone.borrow_mut() = 0;
-                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                        Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                        if Runtime::worker_index() == 0 {
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                        } else {
+                            Box::new(|| zset! {})
+                        }
                     })));
 
-                    let distinct_inc = input.distinct_incremental_nested();
+                    let distinct_inc = input.distinct_incremental_nested().gather(0);
                     let distinct_noninc = input
                         // Non-incremental implementation of distinct_nested_incremental.
                         .integrate()
                         .integrate_nested()
                         .distinct()
                         .differentiate()
-                        .differentiate_nested();
+                        .differentiate_nested()
+                        .gather(0);
 
                     distinct_inc
                         .apply2(
@@ -614,7 +650,7 @@ mod test {
                     Ok((
                         move || {
                             *counter.borrow_mut() += 1;
-                            *counter.borrow() == 4
+                            Ok(*counter.borrow() == 4)
                         },
                         (),
                     ))
@@ -626,6 +662,22 @@ mod test {
         for _ in 0..3 {
             root.step().unwrap();
         }
+    }
+
+    fn do_distinct_trace_test_mt(workers: usize) {
+        let hruntime = Runtime::run(workers, || {
+            distinct_trace_test();
+        });
+
+        hruntime.join().unwrap();
+    }
+
+    #[test]
+    fn distinct_trace_test_mt() {
+        do_distinct_trace_test_mt(1);
+        do_distinct_trace_test_mt(2);
+        do_distinct_trace_test_mt(4);
+        do_distinct_trace_test_mt(16);
     }
 
     #[test]
@@ -649,18 +701,23 @@ mod test {
 
                     let input = child.add_source(GeneratorNested::new(Box::new(move || {
                         *counter_clone.borrow_mut() = 0;
-                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                        Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                        if Runtime::worker_index() == 0 {
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                        } else {
+                            Box::new(|| zset! {})
+                        }
                     })));
 
-                    let distinct_inc = input.distinct_trace();
+                    let distinct_inc = input.distinct_trace().gather(0);
                     let distinct_noninc = input
                         // Non-incremental implementation of distinct_nested_incremental.
                         .integrate()
                         .integrate_nested()
                         .distinct()
                         .differentiate()
-                        .differentiate_nested();
+                        .differentiate_nested()
+                        .gather(0);
 
                     distinct_inc
                         .apply2(
@@ -674,7 +731,7 @@ mod test {
                     Ok((
                         move || {
                             *counter.borrow_mut() += 1;
-                            *counter.borrow() == 4
+                            Ok(*counter.borrow() == 4)
                         },
                         (),
                     ))

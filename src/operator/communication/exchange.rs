@@ -5,9 +5,12 @@
 // TODO: We may want to generalize these operators to implement N-to-M
 // communication, including 1-to-N and N-to-1.
 
-use crate::circuit::{
-    operator_traits::{Operator, SinkOperator, SourceOperator},
-    LocalStoreMarker, OwnershipPreference, Runtime, Scope,
+use crate::{
+    circuit::{
+        operator_traits::{Operator, SinkOperator, SourceOperator},
+        LocalStoreMarker, OwnershipPreference, Runtime, Scope,
+    },
+    Circuit,
 };
 use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
@@ -15,7 +18,6 @@ use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem::swap,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -34,6 +36,8 @@ struct ExchangeId<T> {
     id: usize,
     _marker: PhantomData<T>,
 }
+
+unsafe impl<T> Sync for ExchangeId<T> {}
 
 // Implement `Hash`, `Eq` manually to avoid `T: Hash` type bound.
 impl<T> Hash for ExchangeId<T> {
@@ -78,12 +82,12 @@ where
 /// The send operation can only proceed when all peers have retrieved data
 /// produced at the previous round.  Likewise, the receive operation can proceed
 /// once all incoming values are ready for the current round.
-struct Exchange<T> {
+pub(crate) struct Exchange<T> {
     /// The number of communicating peers.
     npeers: usize,
     /// `npeers^2` mailboxes, one for each sender/receiver pair.  Note that each
     /// mailbox is accessed by exactly two threads, so contention is low.
-    mailboxes: Vec<Mutex<T>>,
+    mailboxes: Vec<Mutex<Option<T>>>,
     /// Counts the number of messages received in the current round of
     /// communication per receiver.  The receiver must wait until it has all
     /// `npeers` messages before reading all of them from mailboxes in one
@@ -101,15 +105,13 @@ struct Exchange<T> {
 
 impl<T> Exchange<T>
 where
-    T: Default + Send + Sync + 'static,
+    T: Send + 'static,
 {
     /// Create a new exchange operator for `npeers` communicating threads.
     fn new(npeers: usize) -> Self {
         Self {
             npeers,
-            mailboxes: (0..npeers * npeers)
-                .map(|_| Mutex::new(Default::default()))
-                .collect(),
+            mailboxes: (0..npeers * npeers).map(|_| Mutex::new(None)).collect(),
             receiver_counters: (0..npeers)
                 .map(|_| CachePadded::new(AtomicUsize::new(0)))
                 .collect(),
@@ -124,7 +126,7 @@ where
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    fn with_runtime(runtime: &Runtime, exchange_id: usize) -> Arc<Self> {
+    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: usize) -> Arc<Self> {
         runtime
             .local_store()
             .entry(ExchangeId::new(exchange_id))
@@ -134,7 +136,7 @@ where
     }
 
     /// Returns a reference to a mailbox for the sender/receiver pair.
-    fn mailbox(&self, sender: usize, receiver: usize) -> &Mutex<T> {
+    fn mailbox(&self, sender: usize, receiver: usize) -> &Mutex<Option<T>> {
         debug_assert!(sender < self.npeers);
         debug_assert!(receiver < self.npeers);
         &self.mailboxes[sender * self.npeers + receiver]
@@ -157,11 +159,12 @@ where
     /// 1, and so on.
     ///
     /// # Errors
+    ///
     /// Fails if at least one of the sender's outgoing mailboxes is not empty.
     ///
     /// # Panics
     /// Panics if `data` yields fewer than `self.npeers` items.
-    fn try_send_all<I>(&self, sender: usize, data: &mut I) -> bool
+    pub(crate) fn try_send_all<I>(&self, sender: usize, data: &mut I) -> bool
     where
         I: Iterator<Item = T>,
     {
@@ -170,7 +173,7 @@ where
         }
 
         for receiver in 0..self.npeers {
-            *self.mailbox(sender, receiver).lock().unwrap() = data.next().unwrap();
+            *self.mailbox(sender, receiver).lock().unwrap() = data.next();
             self.sender_counters[sender].fetch_sub(1, Ordering::SeqCst);
             let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::SeqCst);
             if old_counter >= self.npeers - 1 {
@@ -188,7 +191,7 @@ where
     ///
     /// Once this function returns true, a subsequent `try_receive_all`
     /// operation is guaranteed for `receiver`.
-    fn ready_to_receive(&self, receiver: usize) -> bool {
+    pub(crate) fn ready_to_receive(&self, receiver: usize) -> bool {
         debug_assert!(receiver < self.npeers);
         self.receiver_counters[receiver].load(Ordering::SeqCst) == self.npeers
     }
@@ -198,8 +201,9 @@ where
     /// Values are passed to callback function `cb`.
     ///
     /// # Errors
-    /// Fails if at least one of the receiver's incoming mailboxes empty.
-    fn try_receive_all<F>(&self, receiver: usize, mut cb: F) -> bool
+    ///
+    /// Fails if at least one of the receiver's incoming mailboxes is empty.
+    pub(crate) fn try_receive_all<F>(&self, receiver: usize, mut cb: F) -> bool
     where
         F: FnMut(T),
     {
@@ -208,11 +212,12 @@ where
         }
 
         for sender in 0..self.npeers {
-            let mut data = Default::default();
-            swap(
-                &mut data,
-                &mut *self.mailbox(sender, receiver).lock().unwrap(),
-            );
+            let data = self
+                .mailbox(sender, receiver)
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap();
             cb(data);
             self.receiver_counters[receiver].fetch_sub(1, Ordering::SeqCst);
             let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::SeqCst);
@@ -247,14 +252,14 @@ where
     /// can occur occasionally.  Therefore, the user must check the status
     /// explicitly by calling `ready_to_send` or be prepared that `try_send_all`
     /// can fail.
-    fn register_sender_callback<F>(&self, sender: usize, cb: F)
+    pub(crate) fn register_sender_callback<F>(&self, sender: usize, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {
         debug_assert!(sender < self.npeers);
         debug_assert!(self.sender_callbacks[sender].get().is_none());
-        let _res = self.sender_callbacks[sender].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(_res.is_ok());
+        let res = self.sender_callbacks[sender].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
+        debug_assert!(res.is_ok());
     }
 
     /// Register callback to be invoked whenever the `ready_to_receive`
@@ -272,15 +277,15 @@ where
     /// can occur occasionally.  The user must check the status explicitly
     /// by calling `ready_to_receive` or be prepared that `try_receive_all`
     /// can fail.
-    fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
+    pub(crate) fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {
         debug_assert!(receiver < self.npeers);
         debug_assert!(self.receiver_callbacks[receiver].get().is_none());
-        let _res =
+        let res =
             self.receiver_callbacks[receiver].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(_res.is_ok());
+        debug_assert!(res.is_ok());
     }
 }
 
@@ -330,7 +335,7 @@ where
 /// the operator becomes schedulable.
 ///
 /// `ExchangeSender` doesn't have a public constructor and must be instantiated
-/// using the [`new_exchange_operators`] function, which creates an
+/// using the [`Circuit::new_exchange_operators`] function, which creates an
 /// [`ExchangeSender`]/[`ExchangeReceiver`] pair of operators and connects them
 /// to their counterparts in other workers as in the diagram above.
 ///
@@ -351,14 +356,13 @@ where
 /// # fn main() {
 /// use dbsp::{
 ///     circuit::{Root, Runtime},
-///     operator::{communication::new_exchange_operators, Generator},
+///     operator::Generator,
 /// };
-/// use std::iter::repeat;
 ///
 /// const WORKERS: usize = 16;
 /// const ROUNDS: usize = 10;
 ///
-/// let hruntime = Runtime::run(WORKERS, |runtime, index| {
+/// let hruntime = Runtime::run(WORKERS, || {
 ///     let root = Root::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
 ///         let mut n: usize = 0;
@@ -369,11 +373,15 @@ where
 ///         }));
 ///
 ///         // Create an `ExchangeSender`/`ExchangeReceiver pair`.
-///         let (sender, receiver) = new_exchange_operators(
-///             runtime,
-///             index,
+///         let (sender, receiver) = circuit.new_exchange_operators(
+///             &Runtime::runtime().unwrap(),
+///             Runtime::worker_index(),
 ///             // Partitioning function sends a copy of the input `n` to each peer.
-///             |n| repeat(n).take(WORKERS),
+///             |n, output| {
+///                 for _ in 0..WORKERS {
+///                     output.push(n)
+///                 }
+///             },
 ///             // Reassemble received values into a vector.
 ///             |v: &mut Vec<usize>, n| v.push(n),
 ///         );
@@ -402,29 +410,34 @@ where
 /// hruntime.join().unwrap();
 /// # }
 /// ```
-pub struct ExchangeSender<T, L> {
+pub struct ExchangeSender<D, T, L> {
     worker_index: usize,
     partition: L,
+    outputs: Vec<T>,
     exchange: Arc<Exchange<T>>,
+    phantom: PhantomData<D>,
 }
 
-impl<T, L> ExchangeSender<T, L>
+impl<D, T, L> ExchangeSender<D, T, L>
 where
-    T: Default + Send + Sync + 'static,
+    T: Send + 'static,
 {
     fn new(runtime: &Runtime, worker_index: usize, exchange_id: usize, partition: L) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
         Self {
             worker_index,
             partition,
+            outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
+            phantom: PhantomData,
         }
     }
 }
 
-impl<T, L> Operator for ExchangeSender<T, L>
+impl<D, T, L> Operator for ExchangeSender<D, T, L>
 where
-    T: Default + Send + Sync + 'static,
+    D: 'static,
+    T: Send + 'static,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -451,17 +464,15 @@ where
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
-        // TODO: Add a mechanism to communicate fixed point status among peers.
-        unimplemented!()
+        true
     }
 }
 
-impl<D, T, L, I> SinkOperator<D> for ExchangeSender<T, L>
+impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
-    D: Clone,
-    T: Default + Clone + Send + Sync + 'static,
-    L: Fn(D) -> I + 'static,
-    I: Iterator<Item = T>,
+    D: Clone + 'static,
+    T: Clone + Send + 'static,
+    L: FnMut(D, &mut Vec<T>) + 'static,
 {
     fn eval(&mut self, input: &D) {
         self.eval_owned(input.clone());
@@ -469,10 +480,12 @@ where
 
     fn eval_owned(&mut self, input: D) {
         debug_assert!(self.ready());
-        let _res = self
+        self.outputs.clear();
+        (self.partition)(input, &mut self.outputs);
+        let res = self
             .exchange
-            .try_send_all(self.worker_index, &mut (self.partition)(input));
-        debug_assert!(_res);
+            .try_send_all(self.worker_index, &mut self.outputs.drain(..));
+        debug_assert!(res);
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -499,7 +512,7 @@ pub struct ExchangeReceiver<T, L> {
 
 impl<T, L> ExchangeReceiver<T, L>
 where
-    T: Default + Send + Sync + 'static,
+    T: Send + 'static,
 {
     fn new(runtime: &Runtime, worker_index: usize, exchange_id: usize, combine: L) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -513,15 +526,12 @@ where
 
 impl<T, L> Operator for ExchangeReceiver<T, L>
 where
-    T: Default + Send + Sync + 'static,
+    T: Send + 'static,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeReceiver")
     }
-
-    fn clock_start(&mut self, _scope: Scope) {}
-    fn clock_end(&mut self, _scope: Scope) {}
 
     fn is_async(&self) -> bool {
         true
@@ -540,68 +550,76 @@ where
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
-        // TODO: Add a mechanism to communicate fixed point status among peers.
-        unimplemented!()
+        true
     }
 }
 
 impl<D, T, L> SourceOperator<D> for ExchangeReceiver<T, L>
 where
     D: Default + Clone,
-    T: Default + Clone + Send + Sync + 'static,
+    T: Clone + Send + 'static,
     L: Fn(&mut D, T) + 'static,
 {
     fn eval(&mut self) -> D {
         debug_assert!(self.ready());
         let mut combined = Default::default();
-        let _res = self
+        let res = self
             .exchange
             .try_receive_all(self.worker_index, |x| (self.combine)(&mut combined, x));
-        debug_assert!(_res);
+
+        debug_assert!(res);
         combined
     }
 }
 
-/// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
-///
-/// See [`ExchangeSender`] documentation for details and example usage.
-///
-/// # Arguments
-///
-/// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators
-///   are created.
-/// * `worker_index` - index of the current worker.
-/// * `partition` - partitioning logic that, for each element of the input
-///   stream, returns an iterator with exactly `runtime.num_workers()` values.
-/// * `combine` - re-assemble logic that combines values received from all peers
-///   into a single output value.
-///
-/// # Type arguments
-/// * `TI` - Type of values in the input stream consumed by `ExchangeSender`.
-/// * `TO` - Type of values in the output stream produced by `ExchangeReceiver`.
-/// * `TE` - Type of values sent across workers.
-/// * `PL` - Type of closure that splits a value of type `TI` into
-///   `runtime.num_workers()` values of type `TE`.
-/// * `I` - Iterator returned by `PL`.
-/// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
-///   value of type `TO`.
-pub fn new_exchange_operators<TI, TO, TE, PL, I, CL>(
-    runtime: &Runtime,
-    worker_index: usize,
-    partition: PL,
-    combine: CL,
-) -> (ExchangeSender<TE, PL>, ExchangeReceiver<TE, CL>)
+impl<P> Circuit<P>
 where
-    TO: Default + Clone,
-    TE: Default + Send + Sync + 'static,
-    PL: Fn(TI) -> I + 'static,
-    I: Iterator<Item = TE>,
-    CL: Fn(&mut TO, TE) + 'static,
+    P: Clone + 'static,
 {
-    let exchange_id = runtime.sequence_next(worker_index);
-    let sender = ExchangeSender::new(runtime, worker_index, exchange_id, partition);
-    let receiver = ExchangeReceiver::new(runtime, worker_index, exchange_id, combine);
-    (sender, receiver)
+    /// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
+    ///
+    /// See [`ExchangeSender`] documentation for details and example usage.
+    ///
+    /// # Arguments
+    ///
+    /// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which
+    ///   operators are created.
+    /// * `worker_index` - index of the current worker.
+    /// * `partition` - partitioning logic that, for each element of the input
+    ///   stream, returns an iterator with exactly `runtime.num_workers()`
+    ///   values.
+    /// * `combine` - re-assemble logic that combines values received from all
+    ///   peers into a single output value.
+    ///
+    /// # Type arguments
+    /// * `TI` - Type of values in the input stream consumed by
+    ///   `ExchangeSender`.
+    /// * `TO` - Type of values in the output stream produced by
+    ///   `ExchangeReceiver`.
+    /// * `TE` - Type of values sent across workers.
+    /// * `PL` - Type of closure that splits a value of type `TI` into
+    ///   `runtime.num_workers()` values of type `TE`.
+    /// * `I` - Iterator returned by `PL`.
+    /// * `CL` - Type of closure that folds `num_workers` values of type `TE`
+    ///   into a value of type `TO`.
+    pub fn new_exchange_operators<TI, TO, TE, PL, CL>(
+        &self,
+        runtime: &Runtime,
+        worker_index: usize,
+        partition: PL,
+        combine: CL,
+    ) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
+    where
+        TO: Default + Clone,
+        TE: Send + 'static,
+        PL: FnMut(TI, &mut Vec<TE>) + 'static,
+        CL: Fn(&mut TO, TE) + 'static,
+    {
+        let exchange_id = runtime.sequence_next(worker_index);
+        let sender = ExchangeSender::new(runtime, worker_index, exchange_id, partition);
+        let receiver = ExchangeReceiver::new(runtime, worker_index, exchange_id, combine);
+        (sender, receiver)
+    }
 }
 
 #[cfg(test)]
@@ -612,9 +630,9 @@ mod tests {
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Root, Runtime,
         },
-        operator::{communication::new_exchange_operators, Generator},
+        operator::Generator,
     };
-    use std::{iter::repeat, thread::yield_now};
+    use std::thread::yield_now;
 
     // We decrease the number of rounds we do when we're running under miri,
     // otherwise it'll run forever
@@ -630,14 +648,14 @@ mod tests {
     fn test_exchange() {
         const WORKERS: usize = 16;
 
-        let hruntime = Runtime::run(WORKERS, |runtime, index| {
-            let exchange = Exchange::with_runtime(runtime, 0);
+        let hruntime = Runtime::run(WORKERS, || {
+            let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
 
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
                 let mut output_iter = output_data.clone().into_iter();
                 loop {
-                    if exchange.try_send_all(index, &mut output_iter) {
+                    if exchange.try_send_all(Runtime::worker_index(), &mut output_iter) {
                         break;
                     }
 
@@ -646,7 +664,7 @@ mod tests {
 
                 let mut input_data = Vec::with_capacity(WORKERS);
                 loop {
-                    if exchange.try_receive_all(index, |x| input_data.push(x)) {
+                    if exchange.try_receive_all(Runtime::worker_index(), |x| input_data.push(x)) {
                         break;
                     }
 
@@ -686,7 +704,7 @@ mod tests {
         where
             S: Scheduler + 'static,
         {
-            let hruntime = Runtime::run(workers, move |runtime, index| {
+            let hruntime = Runtime::run(workers, move || {
                 let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                     let mut n: usize = 0;
                     let source = circuit.add_source(Generator::new(move || {
@@ -695,10 +713,14 @@ mod tests {
                         result
                     }));
 
-                    let (sender, receiver) = new_exchange_operators(
-                        runtime,
-                        index,
-                        move |n| repeat(n).take(workers),
+                    let (sender, receiver) = circuit.new_exchange_operators(
+                        &Runtime::runtime().unwrap(),
+                        Runtime::worker_index(),
+                        move |n, vals| {
+                            for _ in 0..workers {
+                                vals.push(n)
+                            }
+                        },
                         |v: &mut Vec<usize>, n| v.push(n),
                     );
 

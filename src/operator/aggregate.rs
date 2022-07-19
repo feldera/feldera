@@ -1,6 +1,6 @@
 //! Aggregation operators.
 
-use std::{borrow::Cow, marker::PhantomData, ops::Neg};
+use std::{borrow::Cow, hash::Hash, marker::PhantomData, ops::Neg, rc::Rc};
 
 use crate::{
     algebra::{HasOne, IndexedZSet, ZRingValue, ZSet},
@@ -39,12 +39,15 @@ where
     /// * `O` - output Z-set type.
     pub fn aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + 'static,
+        Z: IndexedZSet<R = O::R> + Send + TryFrom<Rc<Z>> + 'static,
+        Z::Key: Ord + Clone + Hash,
+        Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
         O: Clone + ZSet + 'static,
         O::R: ZRingValue,
     {
-        self.circuit().add_unary_operator(Aggregate::new(f), self)
+        self.circuit()
+            .add_unary_operator(Aggregate::new(f), &self.shard())
     }
 
     /// Incremental version of the [`Aggregate`] operator.
@@ -52,6 +55,18 @@ where
     /// This is equivalent to `self.integrate().aggregate(f).differentiate()`,
     /// but is more efficient.
     pub fn aggregate_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    where
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send + TryFrom<Rc<Z>>,
+        Z::Key: PartialEq + Ord + Hash + Clone,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
+        O: Clone + ZSet + 'static,
+        O::R: ZRingValue,
+    {
+        self.shard().aggregate_incremental_inner(f)
+    }
+
+    fn aggregate_incremental_inner<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries,
         Z::Key: PartialEq + Ord,
@@ -84,15 +99,16 @@ where
     /// differentiate()`, but is more efficient.
     pub fn aggregate_incremental_nested<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries,
-        Z::Key: PartialEq + Ord,
-        Z::Val: Ord,
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send + TryFrom<Rc<Z>>,
+        Z::Key: PartialEq + Ord + Clone + Hash,
+        Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
         O: Clone + ZSet + DeepSizeOf + 'static,
         O::R: ZRingValue,
     {
-        self.integrate_nested()
-            .aggregate_incremental(f)
+        self.shard()
+            .integrate_nested()
+            .aggregate_incremental_inner(f)
             .differentiate_nested()
     }
 
@@ -292,15 +308,31 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{circuit::Root, operator::GeneratorNested, trace::ord::OrdZSet, zset, zset_set};
+    use crate::{circuit::Root, operator::GeneratorNested, zset, zset_set, OrdZSet, Runtime};
+
+    fn do_aggregate_test_mt(workers: usize) {
+        let hruntime = Runtime::run(workers, || {
+            aggregate_test();
+        });
+
+        hruntime.join().unwrap();
+    }
+
+    #[test]
+    fn aggregate_test_mt() {
+        do_aggregate_test_mt(1);
+        do_aggregate_test_mt(2);
+        do_aggregate_test_mt(4);
+        do_aggregate_test_mt(16);
+    }
 
     #[test]
     fn aggregate_test() {
         let root = Root::build(move |circuit| {
             let mut inputs = vec![
                 vec![
-                    zset_set! { (1, 10), (1, 20) },
-                    zset! { (2, 10) => 1, (1, 10) => -1, (1, 20) => 1, (3, 10) => 1 },
+                    zset_set! { (1, 10), (1, 20), (5, 1) },
+                    zset! { (2, 10) => 1, (1, 10) => -1, (1, 20) => 1, (3, 10) => 1, (5, 1) => 1 },
                 ],
                 vec![
                     zset! { (4, 20) => 1, (2, 10) => -1 },
@@ -318,8 +350,12 @@ mod test {
                     let input = child
                         .add_source(GeneratorNested::new(Box::new(move || {
                             *counter_clone.borrow_mut() = 0;
-                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                            if Runtime::worker_index() == 0 {
+                                let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                                Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                            } else {
+                                Box::new(|| zset! {})
+                            }
                         })))
                         .index();
 
@@ -340,14 +376,15 @@ mod test {
                         result
                     };*/
 
-                    let sum_inc = input.aggregate_incremental_nested(sum);
+                    let sum_inc = input.aggregate_incremental_nested(sum).gather(0);
                     //let sum_inc_linear = input.aggregate_linear_incremental_nested(sum_linear);
                     let sum_noninc = input
                         .integrate_nested()
                         .integrate()
                         .aggregate(sum)
                         .differentiate()
-                        .differentiate_nested();
+                        .differentiate_nested()
+                        .gather(0);
 
                     // Compare outputs of all three implementations.
                     sum_inc
@@ -359,8 +396,8 @@ mod test {
                             },
                         )
                         .inspect(|(d1, d2)| {
-                            //println!("incremental: {:?}", d1);
-                            //println!("non-incremental: {:?}", d2);
+                            //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
+                            //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
                             assert_eq!(d1, d2);
                         });
 
@@ -390,13 +427,14 @@ mod test {
                         (key, result)
                     };
 
-                    let min_inc = input.aggregate_incremental_nested(min);
+                    let min_inc = input.aggregate_incremental_nested(min).gather(0);
                     let min_noninc = input
                         .integrate_nested()
                         .integrate()
                         .aggregate(min)
                         .differentiate()
-                        .differentiate_nested();
+                        .differentiate_nested()
+                        .gather(0);
 
                     min_inc
                         .apply2(
@@ -413,7 +451,7 @@ mod test {
                     Ok((
                         move || {
                             *counter.borrow_mut() += 1;
-                            *counter.borrow() == 4
+                            Ok(*counter.borrow() == 4)
                         },
                         (),
                     ))

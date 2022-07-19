@@ -63,18 +63,6 @@ where
     }
 }
 
-impl<T> HasZero for Rc<T>
-where
-    T: HasZero,
-{
-    fn is_zero(&self) -> bool {
-        T::is_zero(self.as_ref())
-    }
-    fn zero() -> Self {
-        Rc::new(T::zero())
-    }
-}
-
 /// A trait for types that have a one value.
 /// This is similar to the standard One trait, but that
 /// trait depends on Mul and HasOne doesn't.

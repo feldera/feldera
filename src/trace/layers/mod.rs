@@ -4,8 +4,6 @@
 //! elements in the next layer. Similarly, ranges of elements in the layer
 //! itself may correspond to single elements in the layer above.
 
-use crate::algebra::HasZero;
-
 pub mod ordered;
 pub mod ordered_leaf;
 // pub mod hashed;
@@ -60,15 +58,6 @@ pub trait Trie: Sized {
         // println!("{:?} and {:?}", self.keys(), other.keys());
         merger.push_merge(self.cursor(), other.cursor());
         merger.done()
-    }
-}
-
-impl<T: Trie> HasZero for T {
-    fn is_zero(&self) -> bool {
-        self.keys() == 0
-    }
-    fn zero() -> Self {
-        <Self as Trie>::TupleBuilder::new().done()
     }
 }
 

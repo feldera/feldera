@@ -19,5 +19,5 @@ pub use ref_pair::RefPair;
 pub use shared_ref::SharedRef;
 pub use time::Timestamp;
 
-pub use circuit::{Circuit, Stream};
+pub use circuit::{Circuit, Runtime, Stream};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};
