@@ -57,3 +57,12 @@ pub struct Bid {
     /// Additional arbitrary payload for performance testing.
     pub extra: String,
 }
+
+/// An event in the auction system, either a (new) `Person`, a (new) `Auction`,
+/// or a `Bid`.
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub enum Event {
+    NewPerson(Person),
+    NewAuction(Auction),
+    NewBid(Bid),
+}
