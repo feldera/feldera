@@ -46,17 +46,8 @@ impl<R: Rng> NexmarkGenerator<R> {
             })
             .clone()
     }
-}
 
-fn get_base_url<R: Rng>(rng: &mut R) -> String {
-    format!(
-        "https://www.nexmark.com/{}/item.htm?query=1",
-        next_string(rng, BASE_URL_PATH_LENGTH)
-    )
-}
-
-impl<R: Rng> NexmarkGenerator<R> {
-    fn next_bid(&mut self, event_id: u64, timestamp: u64) -> Bid {
+    pub fn next_bid(&mut self, event_id: u64, timestamp: u64) -> Bid {
         let auction = match self
             .rng
             .gen_range(0..self.config.nexmark_config.hot_auction_ratio)
@@ -107,6 +98,13 @@ impl<R: Rng> NexmarkGenerator<R> {
             extra: String::new(),
         }
     }
+}
+
+fn get_base_url<R: Rng>(rng: &mut R) -> String {
+    format!(
+        "https://www.nexmark.com/{}/item.htm?query=1",
+        next_string(rng, BASE_URL_PATH_LENGTH)
+    )
 }
 
 #[cfg(test)]

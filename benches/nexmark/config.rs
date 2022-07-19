@@ -17,6 +17,18 @@ pub struct Config {
     #[clap(long, default_value = "3", env = "NEXMARK_AUCTION_PROPORTION")]
     pub auction_proportion: usize,
 
+    /// Average idealized size of a 'new auction' event, in bytes.
+    #[clap(long, default_value = "500", env = "NEXMARK_AVG_AUCTION_BYTE_SIZE")]
+    pub avg_auction_byte_size: usize,
+
+    /// Average idealized size of a 'bid event, in bytes.
+    #[clap(long, default_value = "100", env = "NEXMARK_AVG_BID_BYTE_SIZE")]
+    pub avg_bid_byte_size: usize,
+
+    /// Average idealized size of a 'new person' event, in bytes.
+    #[clap(long, default_value = "200", env = "NEXMARK_AVG_PERSON_BYTE_SIZE")]
+    pub avg_person_byte_size: usize,
+
     /// Specify the proportion of events that will be new bids.
     #[clap(long, default_value = "46", env = "NEXMARK_BID_PROPORTION")]
     pub bid_proportion: usize,
@@ -75,6 +87,9 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             auction_proportion: 3,
+            avg_auction_byte_size: 500,
+            avg_bid_byte_size: 100,
+            avg_person_byte_size: 200,
             bid_proportion: 46,
             first_event_rate: 10_000,
             hot_auction_ratio: 2,
