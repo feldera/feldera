@@ -2,8 +2,6 @@
 //!
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
-use std::time::SystemTime;
-
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
@@ -16,7 +14,7 @@ pub struct Person {
     pub credit_card: String,
     pub city: String,
     pub state: String,
-    pub date_time: SystemTime,
+    pub date_time: u64,
     pub extra: String,
 }
 
@@ -31,8 +29,8 @@ pub struct Auction {
     pub description: String,
     pub initial_bid: usize,
     pub reserve: usize,
-    pub date_time: SystemTime,
-    pub expires: SystemTime,
+    pub date_time: u64,
+    pub expires: u64,
     pub seller: u64,
     pub category: usize,
 }
@@ -55,7 +53,7 @@ pub struct Bid {
     pub url: String,
     /// Instant at which this bid was made. NOTE: This may be earlier than teh
     /// system's event time.
-    pub date_time: SystemTime,
+    pub date_time: u64,
     /// Additional arbitrary payload for performance testing.
     pub extra: String,
 }

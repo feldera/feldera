@@ -7,10 +7,7 @@ use super::NexmarkGenerator;
 use crate::model::Auction;
 use anyhow::Result;
 use rand::Rng;
-use std::{
-    cmp,
-    time::{Duration, SystemTime},
-};
+use std::cmp;
 
 /// Keep the number of categories small so the example queries will find results
 /// even with a small batch of events.
@@ -45,11 +42,9 @@ impl<R: Rng> NexmarkGenerator<R> {
 
         let category = FIRST_CATEGORY_ID + self.rng.gen_range(0..NUM_CATEGORIES);
         let initial_bid = self.next_price();
-        let timestamp = SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp);
-        let expires = timestamp
-            + self
-                .next_auction_length_ms(events_count_so_far, timestamp)
-                .expect("unable to calculate next auction length");
+
+        let next_length_ms: u64 = self.next_auction_length_ms(events_count_so_far, timestamp);
+
         let item_name = self.next_string(20);
         let description = self.next_string(100);
         let reserve = initial_bid + self.next_price();
@@ -61,7 +56,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             initial_bid,
             reserve,
             date_time: timestamp,
-            expires,
+            expires: timestamp + next_length_ms,
             seller,
             category,
         })
@@ -108,11 +103,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     /// Return a random time delay, in milliseconds, for length of auctions.
-    fn next_auction_length_ms(
-        &mut self,
-        event_count_so_far: u64,
-        timestamp: SystemTime,
-    ) -> Result<Duration> {
+    fn next_auction_length_ms(&mut self, event_count_so_far: u64, timestamp: u64) -> u64 {
         // What's our current event number?
         let current_event_number = self.config.next_adjusted_event_number(event_count_so_far);
         // How many events until we've generated num_in_flight_actions?
@@ -128,12 +119,9 @@ impl<R: Rng> NexmarkGenerator<R> {
             .config
             .timestamp_for_event(current_event_number + num_events_for_auctions as u64);
         // Choose a length with average horizon.
-        let horizon = future_auction.duration_since(timestamp)?;
+        let horizon = future_auction.saturating_sub(timestamp);
 
-        let next_duration_ms: u128 =
-            1 + self.rng.gen_range(0..cmp::max(horizon.as_millis() * 2, 1));
-
-        Ok(Duration::from_millis(next_duration_ms.try_into()?))
+        1 + self.rng.gen_range(0..cmp::max(horizon * 2, 1))
     }
 }
 
@@ -156,8 +144,8 @@ mod tests {
                 description: "AAA".into(),
                 initial_bid: 100,
                 reserve: 200,
-                date_time: SystemTime::UNIX_EPOCH,
-                expires: SystemTime::UNIX_EPOCH + Duration::from_millis(1),
+                date_time: 0,
+                expires: 1,
                 seller: 1000,
                 category: 10,
             },
@@ -215,14 +203,12 @@ mod tests {
     }
 
     #[test]
-    fn test_next_auction_length_ms() {
+    fn test_next_auction_length() {
         let mut ng = make_test_generator();
 
-        let len_ms = ng
-            .next_auction_length_ms(0, SystemTime::UNIX_EPOCH)
-            .unwrap();
+        let len_ms = ng.next_auction_length_ms(0, 0);
 
         // Since StepRng always returns zero, can only test the lower bound here.
-        assert_eq!(len_ms.as_millis(), 1);
+        assert_eq!(len_ms, 1);
     }
 }
