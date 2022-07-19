@@ -8,7 +8,6 @@ use crate::config as nexmark_config;
 use crate::model::Person;
 use rand::{seq::SliceRandom, Rng};
 use std::cmp::min;
-use std::time::{Duration, SystemTime};
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
@@ -53,7 +52,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             credit_card: self.next_credit_card(),
             city: self.next_us_city(),
             state: self.next_us_state(),
-            date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp),
+            date_time: timestamp,
             extra: String::new(),
         }
     }
@@ -154,7 +153,7 @@ mod tests {
                 credit_card: "0000 0000 0000 0000".into(),
                 city: "Phoenix".into(),
                 state: "AZ".into(),
-                date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(1_000_000_000_000),
+                date_time: 1_000_000_000_000,
                 extra: String::new(),
             }
         );

@@ -1,5 +1,4 @@
 use crate::config::Config as NexmarkConfig;
-use std::time::{Duration, SystemTime};
 
 // We start the ids at specific values to help ensure the queries find a match
 // even on small synthesized dataset sizes.
@@ -13,7 +12,7 @@ pub struct Config {
     pub nexmark_config: NexmarkConfig,
 
     /// Time for first event (ms since epoch).
-    pub base_time: SystemTime,
+    pub base_time: u64,
 
     /// Generators running in parallel time may share the same event number, and
     /// the event number is used to determine the event timestamp"
@@ -34,7 +33,7 @@ impl Config {
 
         Config {
             nexmark_config,
-            base_time: SystemTime::UNIX_EPOCH + Duration::from_millis(base_time),
+            base_time,
             first_event_number,
             inter_event_delay_us: [inter_event_delay, 0, 0, 0, 0],
         }
@@ -58,9 +57,8 @@ impl Config {
 
     // What timestamp should the event with `eventNumber` have for this
     // generator?
-    pub fn timestamp_for_event(&self, event_number: u64) -> SystemTime {
-        return self.base_time
-            + Duration::from_micros(self.inter_event_delay_us[0] as u64 * event_number);
+    pub fn timestamp_for_event(&self, event_number: u64) -> u64 {
+        return self.base_time + self.inter_event_delay_us[0] as u64 * event_number;
     }
 }
 
@@ -120,10 +118,10 @@ pub mod tests {
     // generator, there is 1_000_000 µs/s / 10_000 events/s = 100µs / event, so
     // the timestamp increases by 100µs for each event.
     #[rstest]
-    #[case(1, SystemTime::UNIX_EPOCH + Duration::from_micros(100*1))]
-    #[case(2, SystemTime::UNIX_EPOCH + Duration::from_micros(100*2))]
-    #[case(5, SystemTime::UNIX_EPOCH + Duration::from_micros(100*5))]
-    fn test_timestamp_for_event(#[case] event_number: u64, #[case] expected: SystemTime) {
+    #[case(1, 100*1)]
+    #[case(2, 100*2)]
+    #[case(5, 100*5)]
+    fn test_timestamp_for_event(#[case] event_number: u64, #[case] expected: u64) {
         assert_eq!(
             Config::default().timestamp_for_event(event_number),
             expected,

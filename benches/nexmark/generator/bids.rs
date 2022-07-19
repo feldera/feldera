@@ -7,7 +7,6 @@ use super::NexmarkGenerator;
 use crate::model::Bid;
 use cached::Cached;
 use rand::Rng;
-use std::time::{Duration, SystemTime};
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
@@ -104,7 +103,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             price,
             channel,
             url,
-            date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp),
+            date_time: timestamp,
             extra: String::new(),
         }
     }
@@ -137,7 +136,7 @@ pub mod tests {
                 price: 100,
                 channel: "Google".into(),
                 url: "https://www.nexmark.com/googl/item.htm?query=1".into(),
-                date_time: SystemTime::UNIX_EPOCH + Duration::from_millis(1_000_000_000_000),
+                date_time: 1_000_000_000_000,
                 extra: String::new(),
             },
             bid
