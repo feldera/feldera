@@ -32,6 +32,7 @@ use std::{
     collections::HashMap,
     fmt,
     fmt::{Debug, Display, Write},
+    iter::repeat,
     marker::PhantomData,
     rc::Rc,
 };
@@ -50,6 +51,8 @@ use crate::{
         trace::{CircuitEvent, SchedulerEvent},
     },
     circuit_cache_key,
+    operator::communication::Exchange,
+    Runtime,
 };
 use typedmap::{TypedMap, TypedMapKey};
 
@@ -1588,7 +1591,7 @@ where
     ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
     ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
     ///             z1_feedback.connect(&mul);
-    ///             Ok((move || *counter.borrow() <= 1, z1_output.export))
+    ///             Ok((move || Ok(*counter.borrow() <= 1), z1_output.export))
     ///         })
     ///         .unwrap();
     ///     fact.inspect(|n| eprintln!("Output: {}", n));
@@ -1597,7 +1600,7 @@ where
     pub fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> bool + 'static,
+        C: Fn() -> Result<bool, SchedulerError> + 'static,
     {
         self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
     }
@@ -1609,7 +1612,7 @@ where
     pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> bool + 'static,
+        C: Fn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
         self.subcircuit(true, |child| {
@@ -1670,13 +1673,61 @@ where
         F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static,
     {
-        self.subcircuit(true, |child| {
-            let res = constructor(child)?;
-            let child_clone = child.clone();
-            let termination_check = move || child_clone.inner().fixedpoint(0);
-            let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
-            Ok((res, executor))
-        })
+        match Runtime::runtime() {
+            // In a multithreaded environment the fixedpoint check cannot be performed locally.
+            // The circuit must iterate until all peers have reached a fixed point.
+            Some(runtime) if runtime.num_workers() > 1 => {
+                self.subcircuit(true, |child| {
+                    let res = constructor(child)?;
+                    let child_clone = child.clone();
+
+                    // Create an `Exchange` object that will be used to exchange the fixed point
+                    // status with peers.
+                    let worker_index = Runtime::worker_index();
+                    let exchange_id = runtime.sequence_next(worker_index);
+                    let exchange = Exchange::with_runtime(&runtime, exchange_id);
+
+                    let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
+                    exchange.register_sender_callback(worker_index, move || unparker.unpark());
+
+                    let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
+                    exchange.register_receiver_callback(worker_index, move || unparker.unpark());
+
+                    let termination_check = move || {
+                        // Send local fixed point status to all peers.
+                        let local_fixedpoint = child_clone.inner().fixedpoint(0);
+                        while !exchange.try_send_all(worker_index, &mut repeat(local_fixedpoint)) {
+                            if Runtime::kill_in_progress() {
+                                return Err(SchedulerError::Killed);
+                            }
+                            Runtime::parker().with(|parker| parker.park());
+                        }
+                        // Receive the fixed point status of each peer, compute global fixedpoint
+                        // state as a logical and of all peer states.
+                        let mut global_fixedpoint = true;
+                        while !exchange.try_receive_all(worker_index, |fp| global_fixedpoint &= fp)
+                        {
+                            if Runtime::kill_in_progress() {
+                                return Err(SchedulerError::Killed);
+                            }
+                            // Sleep if other threads are still working.
+                            Runtime::parker().with(|parker| parker.park());
+                        }
+                        Ok(global_fixedpoint)
+                    };
+                    let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                    Ok((res, executor))
+                })
+            }
+            _ => self.subcircuit(true, |child| {
+                let res = constructor(child)?;
+                let child_clone = child.clone();
+
+                let termination_check = move || Ok(child_clone.inner().fixedpoint(0));
+                let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                Ok((res, executor))
+            }),
+        }
     }
 }
 

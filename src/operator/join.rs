@@ -9,7 +9,8 @@ use crate::{
     lattice::Lattice,
     time::Timestamp,
     trace::{
-        cursor::Cursor as TraceCursor, ord::OrdValSpine, BatchReader, Batcher, Trace, TraceReader,
+        cursor::Cursor as TraceCursor, ord::OrdValSpine, Batch, BatchReader, Batcher, Trace,
+        TraceReader,
     },
 };
 use deepsize::DeepSizeOf;
@@ -18,8 +19,10 @@ use std::{
     cmp::{min, Ordering},
     collections::HashMap,
     fmt::Write,
+    hash::Hash,
     marker::PhantomData,
     mem::take,
+    rc::Rc,
 };
 use timely::PartialOrder;
 
@@ -45,6 +48,25 @@ where
     /// * `I2` - batch type in the second input stream.
     /// * `Z` - output Z-set type.
     pub fn stream_join<F, I2, Z>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        f: F,
+    ) -> Stream<Circuit<P>, Z>
+    where
+        I1: Batch<Time = (), R = Z::R> + Clone + Send + TryFrom<Rc<I1>> + 'static,
+        I1::Key: Ord + Hash + Clone,
+        I1::Val: Ord + Clone,
+        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + TryFrom<Rc<I2>> + 'static,
+        I2::Val: Ord + Clone,
+        Z: Clone + ZSet + 'static,
+        Z::R: MulByRef,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
+    {
+        self.circuit()
+            .add_binary_operator(Join::new(f), &self.shard(), &other.shard())
+    }
+
+    fn stream_join_inner<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         f: F,
@@ -83,27 +105,29 @@ impl<I1> Stream<Circuit<()>, I1> {
         join_func: F,
     ) -> Stream<Circuit<()>, Z>
     where
-        I1: IndexedZSet + DeepSizeOf,
-        I1::Key: Ord + DeepSizeOf,
-        I1::Val: Ord,
+        I1: IndexedZSet + DeepSizeOf + Send + TryFrom<Rc<I1>>,
+        I1::Key: Ord + Clone + Hash + DeepSizeOf,
+        I1::Val: Ord + Clone,
         I1::R: DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf,
-        I2::Val: Ord,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf + Send + TryFrom<Rc<I2>>,
+        I2::Val: Ord + Clone,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
         Z::R: MulByRef,
     {
-        self.integrate_trace()
+        let left = self.shard();
+        let right = other.shard();
+        left.integrate_trace()
             .delay_trace()
-            .stream_join(other, join_func.clone())
-            .plus(&self.stream_join(&other.integrate_trace(), join_func))
+            .stream_join_inner(&right, join_func.clone())
+            .plus(&left.stream_join_inner(&right.integrate_trace(), join_func))
     }
 }
 
 impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
-    I1: IndexedZSet,
+    I1: IndexedZSet + Send + TryFrom<Rc<I1>>,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incremental join two streams of batches.
@@ -127,12 +151,12 @@ where
     where
         TS: Timestamp + DeepSizeOf, /* + ::std::fmt::Display */
         //I1: ::std::fmt::Display,
-        I1::Key: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I1::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I1::R: DeepSizeOf,                 /* + ::std::fmt::Display */
-        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I2: IndexedZSet<Key = I1::Key, R = I1::R>, /* + ::std::fmt::Display */
-        Z: ZSet<R = I1::R>,                /* + ::std::fmt::Display */
+        I1::Key: DeepSizeOf + Clone + Ord + Hash, /* + ::std::fmt::Display */
+        I1::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
+        I1::R: DeepSizeOf,                        /* + ::std::fmt::Display */
+        I2::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + TryFrom<Rc<I2>>, /* + ::std::fmt::Display */
+        Z: ZSet<R = I1::R>, /* + ::std::fmt::Display */
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
         Z::R: MulByRef + Default,
@@ -178,13 +202,16 @@ where
         // The advantage of this representation is that each term can be computed
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
-        let self_trace = self.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
-        let other_trace = other.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
+        let left = self.shard();
+        let right = other.shard();
+
+        let left_trace = left.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
+        let right_trace = right.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
         let join_func_clone = join_func.clone();
 
         let left =
             self.circuit()
-                .add_binary_operator(JoinTrace::new(join_func), self, &other_trace);
+                .add_binary_operator(JoinTrace::new(join_func), &left, &right_trace);
 
         // This function does not do anything, it's only needed to tell the compiler
         // about the type of `f`.
@@ -197,8 +224,8 @@ where
 
         let right = self.circuit().add_binary_operator(
             JoinTrace::new(assert_type(move |k, v2, v1| join_func_clone(k, v1, v2))),
-            other,
-            &self_trace.delay_trace(),
+            &right,
+            &left_trace.delay_trace(),
         );
 
         left.plus(&right)
@@ -482,10 +509,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::{Circuit, Root, Stream},
+        circuit::{Circuit, Root, Runtime, Stream},
         operator::{DelayedFeedback, FilterMap, Generator},
         time::{NestedTimestamp32, Product, Timestamp},
-        trace::ord::{OrdIndexedZSet, OrdZSet},
+        trace::{
+            ord::{OrdIndexedZSet, OrdZSet},
+            Batch,
+        },
         zset,
     };
     use deepsize::DeepSizeOf;
@@ -576,26 +606,47 @@ mod test {
             let mut inc_outputs2 = inc_outputs_vec.into_iter();
 
             let index1: Stream<_, OrdIndexedZSet<usize, &'static str, isize>> = circuit
-                .add_source(Generator::new(move || input1.next().unwrap()))
+                .add_source(Generator::new(move || {
+                    if Runtime::worker_index() == 0 {
+                        input1.next().unwrap()
+                    } else {
+                        <OrdZSet<_, _>>::empty(())
+                    }
+                }))
                 .index();
             let index2: Stream<_, OrdIndexedZSet<usize, &'static str, isize>> = circuit
-                .add_source(Generator::new(move || input2.next().unwrap()))
+                .add_source(Generator::new(move || {
+                    if Runtime::worker_index() == 0 {
+                        input2.next().unwrap()
+                    } else {
+                        <OrdZSet<_, _>>::empty(())
+                    }
+                }))
                 .index();
             index1
                 .stream_join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .gather(0)
                 .inspect(move |fm: &OrdZSet<(usize, String), _>| {
-                    assert_eq!(fm, &outputs.next().unwrap())
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &outputs.next().unwrap())
+                    }
                 });
             index1
                 .join_incremental(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .gather(0)
                 .inspect(move |fm: &OrdZSet<(usize, String), _>| {
-                    assert_eq!(fm, &inc_outputs.next().unwrap())
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &inc_outputs.next().unwrap())
+                    }
                 });
 
             index1
                 .join::<(), _, _, _>(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .gather(0)
                 .inspect(move |fm: &OrdZSet<(usize, String), _>| {
-                    assert_eq!(fm, &inc_outputs2.next().unwrap())
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &inc_outputs2.next().unwrap())
+                    }
                 });
         })
         .unwrap();
@@ -603,6 +654,22 @@ mod test {
         for _ in 0..5 {
             root.step().unwrap();
         }
+    }
+
+    fn do_join_test_mt(workers: usize) {
+        let hruntime = Runtime::run(workers, || {
+            join_test();
+        });
+
+        hruntime.join().unwrap();
+    }
+
+    #[test]
+    fn join_test_mt() {
+        do_join_test_mt(1);
+        do_join_test_mt(2);
+        do_join_test_mt(4);
+        do_join_test_mt(16);
     }
 
     // Compute pairwise reachability relation between graph nodes as the
@@ -644,7 +711,7 @@ mod test {
                 circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let paths = circuit.fixedpoint(|child| {
+            let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<(usize, usize), isize>>| {
                 // ```text
                 //                          distinct_trace
                 //               ┌───┐          ┌───┐
@@ -659,27 +726,21 @@ mod test {
                 //     └────────►│ X │ ◄─────────────────────┘
                 //               │   │
                 //               └───┘
-                //               join 
+                //               join
                 // ```
                 let edges = edges.delta0(child);
-                let paths_delayed = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
 
                 let paths_inverted: Stream<_, OrdZSet<(usize, usize), isize>> = paths_delayed
-                    .stream()
                     .map(|&(x, y)| (y, x));
 
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();
 
-                let paths = edges.plus(&paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to)))
-                    .distinct_trace();
-                paths_delayed.connect(&paths);
-                let output = paths.integrate_trace();
-                Ok(output.export())
+                Ok(edges.plus(&paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to))))
             })
             .unwrap();
 
-            paths.consolidate::<OrdZSet<_, _>>().integrate().distinct().inspect(move |ps| {
+            paths.integrate().distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
         })
@@ -873,7 +934,7 @@ mod test {
                     }
                     *counter += 1;
                     //println!("counter: {}", *counter);
-                    *counter == 2
+                    Ok(*counter == 2)
                 },
                 result.integrate_trace().export()))
             }).unwrap();

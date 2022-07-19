@@ -51,7 +51,7 @@ where
     {
         self.iterate(|child| {
             let (condition, res) = constructor(child)?;
-            Ok((move || condition.check(), res))
+            Ok((move || Ok(condition.check()), res))
         })
     }
 
@@ -67,7 +67,7 @@ where
     {
         self.iterate_with_scheduler::<_, _, _, S>(|child| {
             let (condition, res) = constructor(child)?;
-            Ok((move || condition.check(), res))
+            Ok((move || Ok(condition.check()), res))
         })
     }
 
@@ -83,7 +83,7 @@ where
     {
         self.iterate(|child| {
             let (conditions, res) = constructor(child)?;
-            Ok((move || conditions.iter().all(Condition::check), res))
+            Ok((move || Ok(conditions.iter().all(Condition::check)), res))
         })
     }
 
@@ -99,7 +99,7 @@ where
     {
         self.iterate_with_scheduler::<_, _, _, S>(|child| {
             let (conditions, res) = constructor(child)?;
-            Ok((move || conditions.iter().all(Condition::check), res))
+            Ok((move || Ok(conditions.iter().all(Condition::check)), res))
         })
     }
 }

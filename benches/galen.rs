@@ -72,7 +72,7 @@ where
 fn main() -> Result<()> {
     unpack_galen_data()?;
 
-    let hruntime = Runtime::run(1, |_runtime, _index| {
+    let hruntime = Runtime::run(8, || {
         let monitor = TraceMonitor::new_panic_on_error();
 
         let root = Root::build(|circuit| {
@@ -174,7 +174,9 @@ fn main() -> Result<()> {
                         let ir1 = child.region("IR1", || {
                             p_by_2.join::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
                         });
-                        ir1.inspect(|zs: &OrdZSet<_, _>| println!("ir1: {}", zs.len()));
+                        ir1.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir1: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         // IR2: q(x,r,z) := p(x,y), q(y,r,z)
                         let ir2 = child.region("IR2", || {
@@ -184,7 +186,9 @@ fn main() -> Result<()> {
                                 })
                         });
 
-                        ir2.inspect(|zs: &OrdZSet<_, _>| println!("ir2: {}", zs.len()));
+                        ir2.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir2: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
                         let ir3 = child.region("IR3", || {
@@ -199,7 +203,9 @@ fn main() -> Result<()> {
                                     |&(_r, _y), &z, &x| (x, z),
                                 )
                         });
-                        ir3.inspect(|zs: &OrdZSet<_, _>| println!("ir3: {}", zs.len()));
+                        ir3.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir3: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
                         let ir4_1 = child.region("IR4-1", || {
@@ -208,7 +214,9 @@ fn main() -> Result<()> {
                                 |&_w, &(y, z), &x| ((x, y), z),
                             )
                         });
-                        ir4_1.inspect(|zs: &OrdZSet<_, _>| println!("ir4_1: {}", zs.len()));
+                        ir4_1.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir4_1: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         let ir4 = child.region("IR4-2", || {
                             ir4_1.index().join::<NestedTimestamp32, _, _, _>(
@@ -216,7 +224,9 @@ fn main() -> Result<()> {
                                 |&(x, _y), &z, &()| (x, z),
                             )
                         });
-                        ir4.inspect(|zs: &OrdZSet<_, _>| println!("ir4: {}", zs.len()));
+                        ir4.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir4: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         // IR5: q(x,q,z) := q(x,r,z), s(r,q)
                         let ir5 = child.region("IR5", || {
@@ -225,7 +235,9 @@ fn main() -> Result<()> {
                                     (x, q, z)
                                 })
                         });
-                        ir5.inspect(|zs: &OrdZSet<_, _>| println!("ir5: {}", zs.len()));
+                        ir5.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir5: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
                         let ir6_1 = child.region("IR6_1", || {
@@ -243,7 +255,9 @@ fn main() -> Result<()> {
                             )
                         });
 
-                        ir6.inspect(|zs: &OrdZSet<_, _>| println!("ir6: {}", zs.len()));
+                        ir6.inspect(|zs: &OrdZSet<_, _>| {
+                            println!("{}: ir6: {}", Runtime::worker_index(), zs.len())
+                        });
 
                         let p = p.delta0(child).sum([&ir1, &ir3, &ir4]);
                         let q = q.delta0(child).sum([&ir2, &ir5, &ir6]);
@@ -252,8 +266,10 @@ fn main() -> Result<()> {
                     },
                 )
                 .unwrap();
-            outp.inspect(|zs: &OrdZSet<_, _>| println!("outp: {}", zs.len()));
-            outq.inspect(|zs: &OrdZSet<_, _>| println!("outq: {}", zs.len()));
+            outp.gather(0)
+                .inspect(|zs: &OrdZSet<_, _>| println!("outp: {}", zs.len()));
+            outq.gather(0)
+                .inspect(|zs: &OrdZSet<_, _>| println!("outq: {}", zs.len()));
         })
         .unwrap();
 

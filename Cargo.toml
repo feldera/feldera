@@ -22,6 +22,7 @@ impl-trait-for-tuples = "0.2"
 deepsize = "0.2.0"
 deepsize_derive = "0.1.2"
 textwrap = "0.15.0"
+fxhash = "0.2"
 
 # TODO: eliminate dependency on timely-dataflow by cloning relevant
 # parts.

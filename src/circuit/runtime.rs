@@ -3,6 +3,7 @@
 
 use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
+    cell::{Cell, RefCell},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::sync_channel,
@@ -22,6 +23,18 @@ thread_local! {
     // Schedulers must check this signal before evaluating each operator
     // and exit immediately returning `SchedulerError::Killed`.
     static KILL_SIGNAL: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+}
+
+// Thread-local variables used to store per-worker context.
+thread_local! {
+    // Reference to the `Runtime` that manages this worker thread or `None`
+    // if the current thread is not running in a multithreaded runtime.
+    static RUNTIME: RefCell<Option<Runtime>> = RefCell::new(None);
+
+    // 0-based index of the current worker thread within its runtime.
+    // Returns `0` if the current thread in not running in a multithreaded
+    // runtime.
+    static WORKER_INDEX: Cell<usize> = Cell::new(0);
 }
 
 pub struct LocalStoreMarker;
@@ -63,9 +76,7 @@ impl Runtime {
     /// * `nworkers` - the number of worker threads to spawn.
     ///
     /// * `f` - closure that will be invoked in each worker thread.  Normally,
-    ///   this closure builds and runs a circuit.  The first argument of the
-    ///   closure is a reference to the `Runtime`, the second argument is the
-    ///   index of the worker thread within the runtime.
+    ///   this closure builds and runs a circuit.
     ///
     /// # Examples
     /// ```
@@ -77,7 +88,7 @@ impl Runtime {
     /// use dbsp::circuit::{Root, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
-    /// let hruntime = Runtime::run(4, |runtime, index| {
+    /// let hruntime = Runtime::run(4, || {
     ///     // This closure runs within each worker thread.
     ///
     ///     let root = Root::build(move |circuit| {
@@ -97,36 +108,59 @@ impl Runtime {
     /// ```
     pub fn run<F>(nworkers: usize, f: F) -> RuntimeHandle
     where
-        F: FnOnce(&Runtime, usize) + Clone + Send + 'static,
+        F: FnOnce() + Clone + Send + 'static,
     {
         let mut workers = Vec::with_capacity(nworkers);
 
         let runtime = Self(Arc::new(RuntimeInner::new(nworkers)));
 
-        for i in 0..nworkers {
+        for worker_index in 0..nworkers {
             let runtime = runtime.clone();
             let f = f.clone();
-            let builder = Builder::new().name(format!("worker{}", i));
+            let builder = Builder::new().name(format!("worker{}", worker_index));
 
             let (init_sender, init_receiver) = sync_channel(0);
 
             let join_handle = builder
                 .spawn(move || {
+                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                    WORKER_INDEX.with(|w| w.set(worker_index));
                     init_sender
                         .send((
                             PARKER.with(|parker| parker.unparker().clone()),
                             KILL_SIGNAL.with(|s| s.clone()),
                         ))
                         .unwrap();
-                    f(&runtime, i);
+                    f();
                 })
-                .unwrap_or_else(|_| panic!("failed to spawn worker thread {}", i));
+                .unwrap_or_else(|_| panic!("failed to spawn worker thread {}", worker_index));
 
             let (unparker, kill_signal) = init_receiver.recv().unwrap();
             workers.push(WorkerHandle::new(join_handle, unparker, kill_signal));
         }
 
         RuntimeHandle::new(runtime, workers)
+    }
+
+    /// Returns a reference to the multithreaded runtime that
+    /// manages the current worker thread, or `None` if the thread
+    /// runs without a runtime.
+    ///
+    /// Worker threads created by the [`Runtime::run`] method can access
+    /// the services provided by this API via an instance of `struct Runtime`,
+    /// which they can obtain by calling `Runtime::runtime()`.  DBSP circuits
+    /// created without a managed runtime run in the context of the client
+    /// thread.  When invoked by such a thread, this method returns `None`.
+    #[allow(clippy::self_named_constructors)]
+    pub fn runtime() -> Option<Runtime> {
+        RUNTIME.with(|rt| rt.borrow().clone())
+    }
+
+    /// Returns 0-based index of the current worker thread within its
+    /// runtime.  For threads that run without a runtime, this method
+    /// returns `0`.
+    pub fn worker_index() -> usize {
+        WORKER_INDEX.with(|index| index.get())
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -285,15 +319,16 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        let hruntime = Runtime::run(4, |runtime, index| {
+        let hruntime = Runtime::run(4, || {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
-            let runtime = runtime.clone();
             let root = Root::build_with_scheduler::<_, S>(move |circuit| {
-                let rtclone = runtime.clone();
+                let runtime = Runtime::runtime().unwrap();
                 // Generator that produces values using `sequence_next`.
                 circuit
-                    .add_source(Generator::new(move || rtclone.sequence_next(index)))
+                    .add_source(Generator::new(move || {
+                        runtime.sequence_next(Runtime::worker_index())
+                    }))
                     .inspect(move |n: &usize| data_clone.borrow_mut().push(*n));
             })
             .unwrap();
@@ -325,7 +360,7 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        let hruntime = Runtime::run(16, |_runtime, _index| {
+        let hruntime = Runtime::run(16, || {
             // Create a nested circuit that iterates forever.
             let root = Root::build_with_scheduler::<_, S>(move |circuit| {
                 circuit
@@ -337,7 +372,7 @@ mod tests {
                                 n
                             }))
                             .inspect(|_: &usize| {});
-                        Ok((|| false, ()))
+                        Ok((|| Ok(false), ()))
                     })
                     .unwrap();
             })

@@ -97,7 +97,7 @@ impl<F, S> IterativeExecutor<F, S> {
 
 impl<P, F, S> Executor<P> for IterativeExecutor<F, S>
 where
-    F: Fn() -> bool + 'static,
+    F: Fn() -> Result<bool, Error> + 'static,
     P: Clone + 'static,
     S: Scheduler + 'static,
 {
@@ -107,7 +107,7 @@ where
 
         loop {
             self.scheduler.step(circuit)?;
-            if (self.termination_check)() {
+            if (self.termination_check)()? {
                 break;
             }
         }
