@@ -2,7 +2,7 @@ use clap::{PossibleValue, ValueEnum};
 use dbsp::{
     algebra::HasOne,
     trace::{Batch, Batcher},
-    OrdIndexedZSet, OrdZSet,
+    Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
@@ -23,6 +23,10 @@ pub type Distance = u64;
 pub type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
 pub type VertexSet = OrdZSet<Node, Weight>;
 pub type DistanceSet = OrdZSet<(Node, Distance), Weight>;
+
+pub type Streamed<P, T> = Stream<Circuit<P>, T>;
+pub type Edges<P> = Streamed<P, EdgeMap>;
+pub type Vertices<P> = Streamed<P, VertexSet>;
 
 const DATA_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -111,7 +115,7 @@ impl DataSet {
 
             // Download and write the archive to disk
             println!(
-                "downloading {} from {}, this may take a while",
+                "\ndownloading {} from {}, this may take a while",
                 self.name, self.url
             );
             let response = reqwest::blocking::get(self.url)

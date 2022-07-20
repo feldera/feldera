@@ -26,6 +26,7 @@ pub trait Cursor<'s, K, V, T, R> {
     ///
     /// A value of `false` indicates that the cursor has exhausted all keys.
     fn key_valid(&self) -> bool;
+
     /// Indicates if the current value is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all values
@@ -34,6 +35,7 @@ pub trait Cursor<'s, K, V, T, R> {
 
     /// A reference to the current key. Panics if invalid.
     fn key(&self) -> &K;
+
     /// A reference to the current value. Panics if invalid.
     fn val(&self) -> &V;
 
@@ -45,6 +47,7 @@ pub trait Cursor<'s, K, V, T, R> {
             None
         }
     }
+
     /// Returns a reference to the current value, if valid.
     fn get_val(&self) -> Option<&V> {
         if self.val_valid() {
@@ -87,11 +90,13 @@ pub trait Cursor<'s, K, V, T, R> {
 
     /// Advances the cursor to the next key.
     fn step_key(&mut self);
+
     /// Advances the cursor to the specified key.
     fn seek_key(&mut self, key: &K);
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
+
     /// Advances the cursor to the specified value.
     fn seek_val(&mut self, val: &V);
 
@@ -103,6 +108,7 @@ pub trait Cursor<'s, K, V, T, R> {
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self);
+
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self);
 }
