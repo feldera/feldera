@@ -13,3 +13,4 @@
 mod config;
 mod generator;
 mod model;
+mod nexmark_dbsp_source;
