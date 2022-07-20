@@ -6,7 +6,7 @@
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Person {
     pub id: u64,
     pub name: String,
@@ -22,7 +22,7 @@ pub struct Person {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Auction {
     pub id: u64,
     pub item_name: String,
@@ -39,7 +39,7 @@ pub struct Auction {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
@@ -60,7 +60,7 @@ pub struct Bid {
 
 /// An event in the auction system, either a (new) `Person`, a (new) `Auction`,
 /// or a `Bid`.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Event {
     NewPerson(Person),
     NewAuction(Auction),

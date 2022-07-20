@@ -12,7 +12,7 @@ use std::time::SystemTime;
 
 mod auctions;
 mod bids;
-mod config;
+pub mod config;
 mod people;
 mod price;
 mod strings;
@@ -36,7 +36,7 @@ pub struct NexmarkGenerator<R: Rng> {
 }
 
 impl<R: Rng> NexmarkGenerator<R> {
-    fn new(config: Config, rng: R) -> NexmarkGenerator<R> {
+    pub fn new(config: Config, rng: R) -> NexmarkGenerator<R> {
         NexmarkGenerator {
             config,
             rng,
@@ -44,6 +44,20 @@ impl<R: Rng> NexmarkGenerator<R> {
             events_count_so_far: 0,
             wallclock_base_time: None,
         }
+    }
+
+    /// Set the wallclock base time explicitly rather than leaving it
+    /// to be set when the first event is generated. Useful when testing.
+    pub fn set_wallclock_base_time(&mut self, base_time: u64) {
+        self.wallclock_base_time = match self.wallclock_base_time {
+            None => Some(base_time),
+            Some(t) => {
+                panic!(
+                    "attempt to set wallclock basetime to {} when already set at {}.",
+                    base_time, t
+                )
+            }
+        };
     }
 
     fn get_next_event_id(&self) -> u64 {
@@ -118,7 +132,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 /// The next event and its various timestamps. Ordered by increasing wallclock
 /// timestamp, then (arbitrary but stable) event hash order.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NextEvent {
     /// When, in wallclock time, should this event be emitted?
     pub wallclock_timestamp: u64,
@@ -134,12 +148,24 @@ pub struct NextEvent {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use rand::{rngs::mock::StepRng, thread_rng};
 
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
         NexmarkGenerator::new(Config::default(), StepRng::new(0, 1))
+    }
+
+    /// Generates a specified number of next events using the default test
+    /// generator.
+    pub fn generate_expected_next_events(
+        wallclock_base_time: u64,
+        num_events: usize,
+    ) -> Vec<NextEvent> {
+        let mut ng = make_test_generator();
+        ng.set_wallclock_base_time(wallclock_base_time);
+
+        (0..num_events).map(|_| ng.next_event().unwrap()).collect()
     }
 
     #[test]
@@ -153,6 +179,8 @@ mod tests {
         assert_eq!(ng.get_next_event_id(), 2);
     }
 
+    // Tests the first five expected events without relying on any test
+    // helper for the data.
     #[test]
     fn test_next_event() {
         let mut ng = NexmarkGenerator::new(Config::default(), thread_rng());
@@ -199,6 +227,26 @@ mod tests {
             matches!(next_event.event, Event::NewPerson(_)),
             "got: {:?}, want: Event::NewPerson(_)",
             next_event.event
+        );
+    }
+
+    // Verifies that the `generate_expected_next_events()` test helper does
+    // indeed output predictable results matching the order verified manually in
+    // the above `test_next_events` (at least for the first 5 events).  Together
+    // with the manual test above of next_events, this ensures the order is
+    // correct for external call-sites.
+    #[test]
+    fn test_generate_expected_next_events() {
+        let mut ng = make_test_generator();
+        ng.set_wallclock_base_time(1_000_000);
+
+        let expected_events = generate_expected_next_events(1_000_000, 100);
+
+        assert_eq!(
+            (0..100)
+                .map(|_| ng.next_event().unwrap())
+                .collect::<Vec<NextEvent>>(),
+            expected_events
         );
     }
 }
