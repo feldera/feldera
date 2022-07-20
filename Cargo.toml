@@ -45,6 +45,7 @@ proptest = "1.0.0"
 criterion = "0.3.5"
 rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"
+ordered-float = "3.0.0"
 clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
 

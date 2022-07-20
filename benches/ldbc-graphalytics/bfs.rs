@@ -5,11 +5,9 @@
 //! [2.3.1]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.1
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
-use crate::data::{Distance, DistanceSet, EdgeMap, Node, VertexSet};
+use crate::data::{Distance, DistanceSet, Edges, Node, Vertices};
 use dbsp::{operator::recursive::RecursiveStreams, time::NestedTimestamp32, Circuit, Stream};
 
-type Edges<P> = Stream<Circuit<P>, EdgeMap>;
-type Vertices<P> = Stream<Circuit<P>, VertexSet>;
 type Distances<P> = Stream<Circuit<P>, DistanceSet>;
 
 // TODO: This straight up won't work on the quantities of data required by the
