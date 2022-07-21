@@ -46,6 +46,11 @@ impl<R: Rng> NexmarkGenerator<R> {
         }
     }
 
+    // Reset the generator to begin at event 0 again.
+    pub fn reset(&mut self) {
+        self.events_count_so_far = 0;
+    }
+
     /// Set the wallclock base time explicitly rather than leaving it
     /// to be set when the first event is generated. Useful when testing.
     pub fn set_wallclock_base_time(&mut self, base_time: u64) {
@@ -67,7 +72,15 @@ impl<R: Rng> NexmarkGenerator<R> {
                 .next_adjusted_event_number(self.events_count_so_far)
     }
 
-    pub fn next_event(&mut self) -> Result<NextEvent> {
+    /// Returns whether the generator should continue to generate events.
+    pub fn has_next(&self) -> bool {
+        self.events_count_so_far < self.config.max_events
+    }
+
+    pub fn next_event(&mut self) -> Result<Option<NextEvent>> {
+        if !self.has_next() {
+            return Ok(None);
+        }
         if self.wallclock_base_time == None {
             self.wallclock_base_time = Some(
                 SystemTime::now()
@@ -121,12 +134,12 @@ impl<R: Rng> NexmarkGenerator<R> {
         };
 
         self.events_count_so_far += 1;
-        Ok(NextEvent {
+        Ok(Some(NextEvent {
             wallclock_timestamp,
             event_timestamp,
             event,
             watermark,
-        })
+        }))
     }
 }
 
@@ -161,11 +174,31 @@ pub mod tests {
     pub fn generate_expected_next_events(
         wallclock_base_time: u64,
         num_events: usize,
-    ) -> Vec<NextEvent> {
+    ) -> Vec<Option<NextEvent>> {
         let mut ng = make_test_generator();
         ng.set_wallclock_base_time(wallclock_base_time);
 
         (0..num_events).map(|_| ng.next_event().unwrap()).collect()
+    }
+
+    #[test]
+    fn test_has_next() {
+        let mut ng = make_test_generator();
+        ng.config.max_events = 2;
+
+        assert!(ng.has_next());
+        ng.next_event().unwrap();
+        assert!(ng.has_next());
+        ng.next_event().unwrap();
+
+        assert!(!ng.has_next());
+        // There are no further events when has_next is false.
+        let event_or_none = ng.next_event().unwrap();
+        assert!(
+            matches!(event_or_none, None),
+            "got: {:?}, expected: Err(_)",
+            event_or_none
+        );
     }
 
     #[test]
@@ -187,6 +220,8 @@ pub mod tests {
 
         // The first event with the default config is the person
         let next_event = ng.next_event().unwrap();
+        assert!(next_event.is_some());
+        let next_event = next_event.unwrap();
 
         assert!(
             matches!(next_event.event, Event::NewPerson(_)),
@@ -198,6 +233,8 @@ pub mod tests {
         // The next 3 events with the default config are auctions
         for event_num in 1..=3 {
             let next_event = ng.next_event().unwrap();
+            assert!(next_event.is_some());
+            let next_event = next_event.unwrap();
 
             assert!(
                 matches!(next_event.event, Event::NewAuction(_)),
@@ -210,6 +247,8 @@ pub mod tests {
         // And the rest of the events in the first epoch are bids.
         for event_num in 4..=49 {
             let next_event = ng.next_event().unwrap();
+            assert!(next_event.is_some());
+            let next_event = next_event.unwrap();
 
             assert!(
                 matches!(next_event.event, Event::NewBid(_)),
@@ -221,6 +260,8 @@ pub mod tests {
 
         // The next epoch begins with another person etc.
         let next_event = ng.next_event().unwrap();
+        assert!(next_event.is_some());
+        let next_event = next_event.unwrap();
 
         assert_eq!(next_event.event_timestamp, 50 * 100);
         assert!(
@@ -245,8 +286,33 @@ pub mod tests {
         assert_eq!(
             (0..100)
                 .map(|_| ng.next_event().unwrap())
-                .collect::<Vec<NextEvent>>(),
+                .collect::<Vec<Option<NextEvent>>>(),
             expected_events
+        );
+    }
+
+    #[test]
+    fn test_reset() {
+        let mut ng = make_test_generator();
+        ng.set_wallclock_base_time(1_000_000);
+
+        let first_5_events = generate_expected_next_events(1_000_000, 5);
+
+        assert_eq!(
+            (0..5)
+                .map(|_| ng.next_event().unwrap())
+                .collect::<Vec<Option<NextEvent>>>(),
+            first_5_events
+        );
+
+        // After resetting the generator the first 5 events are emitted again.
+        ng.reset();
+
+        assert_eq!(
+            (0..5)
+                .map(|_| ng.next_event().unwrap())
+                .collect::<Vec<Option<NextEvent>>>(),
+            first_5_events
         );
     }
 }
