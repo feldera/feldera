@@ -9,6 +9,7 @@
 //! so we can work with the wider community to improve it, but also because
 //! it will allow us later to extend it to support multiple data sources in
 //! parallel when DBSP can be scaled.
+#![feature(is_some_with)]
 
 mod config;
 mod generator;
