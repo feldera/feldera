@@ -1,6 +1,6 @@
 //! DBSP Source operator that reads from a Nexmark Generator.
 
-use crate::generator::NexmarkGenerator;
+use crate::generator::{wallclock_time, NexmarkGenerator, NextEvent};
 use crate::model::Event;
 use dbsp::{
     algebra::{ZRingValue, ZSet},
@@ -10,6 +10,8 @@ use dbsp::{
     },
 };
 use rand::Rng;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{borrow::Cow, marker::PhantomData};
 
 pub struct NexmarkDBSPSource<R: Rng, W, C> {
@@ -18,7 +20,10 @@ pub struct NexmarkDBSPSource<R: Rng, W, C> {
     // completely separate the generator and allow the generator to be used with other languages
     // etc.
     generator: NexmarkGenerator<R>,
-    batch_size: usize,
+    // next_event stores the next event during `eval` when `next_event()` is called but returns an
+    // event in the future, so that we can include it in the next call to eval.
+    next_event: Option<NextEvent>,
+
     _t: PhantomData<(C, W)>,
 }
 
@@ -26,10 +31,10 @@ impl<R, W, C> NexmarkDBSPSource<R, W, C>
 where
     R: Rng,
 {
-    pub fn from_generator(generator: NexmarkGenerator<R>, batch_size: usize) -> Self {
+    pub fn from_generator(generator: NexmarkGenerator<R>) -> Self {
         NexmarkDBSPSource {
             generator,
-            batch_size,
+            next_event: None,
             _t: PhantomData,
         }
     }
@@ -66,11 +71,49 @@ where
     C: Data + ZSet<Key = Event, R = W>,
 {
     fn eval(&mut self) -> C {
+        // Grab a next event, either the last event from the previous call that
+        // was saved because it couldn't yet be emitted, or the next generated
+        // event.
+        let next_event = match self.next_event.clone() {
+            Some(e) => Some(e),
+            None => self.generator.next_event().unwrap(),
+        };
+
+        // If there are no more events, we return an empty set.
+        if next_event.is_none() {
+            return C::empty(());
+        }
+
+        // Otherwise we want to emit at least one event, so if the next event
+        // is still in the future, we sleep until we can emit it.
+        let next_event = next_event.unwrap();
+        let wallclock_time_now = wallclock_time();
+        if next_event.wallclock_timestamp > wallclock_time_now {
+            sleep(Duration::from_millis(
+                next_event.wallclock_timestamp - wallclock_time_now,
+            ));
+        }
+
+        // Collect as many next events as are ready.
+        let mut next_events = vec![next_event];
+        let mut next_event = self.generator.next_event().unwrap();
+        let wallclock_time_now = wallclock_time();
+        while next_event
+            .is_some_and(|next_event| next_event.wallclock_timestamp.clone() < wallclock_time_now)
+        {
+            next_events.push(next_event.unwrap());
+            next_event = self.generator.next_event().unwrap();
+        }
+
+        // Ensure we remember the last event that was generated but not emitted for the
+        // next call.
+        self.next_event = next_event;
+
         C::from_tuples(
             (),
-            (0..self.batch_size)
-                .map(|_| self.generator.next_event().unwrap())
-                .filter_map(|event| event.map(|event| ((event.event, ()), W::one())))
+            next_events
+                .into_iter()
+                .map(|next_event| ((next_event.event, ()), W::one()))
                 .collect(),
         )
     }
@@ -85,23 +128,32 @@ mod test {
 
     fn make_test_source(
         wallclock_base_time: u64,
-        batch_size: usize,
         max_events: u64,
     ) -> NexmarkDBSPSource<StepRng, isize, OrdZSet<Event, isize>> {
-        let mut source = NexmarkDBSPSource::from_generator(
-            NexmarkGenerator::new(
-                Config {
-                    max_events,
-                    ..Config::default()
-                },
-                StepRng::new(0, 1),
-            ),
-            batch_size,
-        );
+        let mut source = NexmarkDBSPSource::from_generator(NexmarkGenerator::new(
+            Config {
+                max_events,
+                ..Config::default()
+            },
+            StepRng::new(0, 1),
+        ));
         source
             .generator
             .set_wallclock_base_time(wallclock_base_time);
         source
+    }
+
+    fn generate_expected_zset_tuples(
+        wallclock_base_time: u64,
+        num_events: usize,
+    ) -> Vec<((Event, ()), isize)> {
+        let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
+
+        expected_events
+            .into_iter()
+            .filter(|event| event.is_some())
+            .map(|event| ((event.unwrap().event, ()), 1))
+            .collect()
     }
 
     // Generates a zset manually using the default test NexmarkGenerator
@@ -109,21 +161,17 @@ mod test {
         wallclock_base_time: u64,
         num_events: usize,
     ) -> OrdZSet<Event, isize> {
-        let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
-        let expected_zset_tuples = expected_events
-            .into_iter()
-            .filter(|event| event.is_some())
-            .map(|event| ((event.unwrap().event, ()), 1))
-            .collect();
-
-        OrdZSet::<Event, isize>::from_tuples((), expected_zset_tuples)
+        OrdZSet::<Event, isize>::from_tuples(
+            (),
+            generate_expected_zset_tuples(wallclock_base_time, num_events),
+        )
     }
 
     #[test]
     fn test_start_clock() {
         let expected_zset = generate_expected_zset(1_000_000, 2);
 
-        let mut source = make_test_source(1_000_000, 2, 5);
+        let mut source = make_test_source(1_000_000, 2);
 
         assert_eq!(source.eval(), expected_zset);
 
@@ -137,7 +185,7 @@ mod test {
     // After exhausting events, the source indicates a fixed point.
     #[test]
     fn test_fixed_point() {
-        let mut source = make_test_source(1_000_000, 1, 1);
+        let mut source = make_test_source(1_000_000, 1);
 
         source.eval();
 
@@ -147,7 +195,7 @@ mod test {
     // After exhausting events, the source returns empty ZSets.
     #[test]
     fn test_eval_empty_zset() {
-        let mut source = make_test_source(1_000_000, 1, 1);
+        let mut source = make_test_source(1_000_000, 1);
 
         source.eval();
 
@@ -155,9 +203,9 @@ mod test {
     }
 
     #[test]
-    fn test_nexmark_dbsp_source_batch_10() {
+    fn test_nexmark_dbsp_source_full_batch() {
         let root = Root::build(move |circuit| {
-            let source = make_test_source(1_000_000, 10, 10);
+            let source = make_test_source(1_000_000, 10);
 
             let expected_zset = generate_expected_zset(1_000_000, 10);
 
@@ -172,5 +220,37 @@ mod test {
         root.step().unwrap();
     }
 
-    // TODO: test multiple batches from a source.
+    // When keeping up with the input, there is no buffering and results
+    // are returned one at a time.
+    #[test]
+    fn test_eval_current_time() {
+        let wallclock_time = wallclock_time();
+        let mut source = make_test_source(wallclock_time, 5);
+        let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 10);
+
+        assert_eq!(
+            source.eval(),
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[0..1]))
+        );
+
+        assert_eq!(
+            source.eval(),
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[1..2]))
+        );
+
+        assert_eq!(
+            source.eval(),
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[2..3]))
+        );
+
+        assert_eq!(
+            source.eval(),
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[3..4]))
+        );
+
+        assert_eq!(
+            source.eval(),
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[4..5]))
+        );
+    }
 }
