@@ -60,6 +60,38 @@ where
     }
 }
 
+impl<K, V, R, O> Default for OrdIndexedZSet<K, V, R, O>
+where
+    K: Ord + Clone + 'static,
+    V: Ord + Clone,
+    R: MonoidValue,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn default() -> Self {
+        Self::empty(())
+    }
+}
+
+impl<K, V, R, O> HasZero for OrdIndexedZSet<K, V, R, O>
+where
+    K: Ord + Clone + 'static,
+    V: Ord + Clone,
+    R: MonoidValue,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn zero() -> Self {
+        Self::empty(())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.is_empty()
+    }
+}
+
 impl<K, V, R, O> SharedRef for OrdIndexedZSet<K, V, R, O>
 where
     K: Ord + Clone,

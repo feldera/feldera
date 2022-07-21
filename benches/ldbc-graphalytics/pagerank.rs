@@ -1,5 +1,7 @@
-use crate::data::{Edges, Node, Streamed, Vertices, Weight};
+use crate::data::{Edges, Node, Rank, RankPairs, RankSet, Ranks, Streamed, Vertices, Weight, F64};
 use dbsp::{
+    algebra::HasOne,
+    circuit::operator_traits::Data,
     operator::{DelayedFeedback, Generator},
     trace::{
         layers::Trie, ord::indexed_zset_batch::OrdIndexedZSetBuilder, Batch, BatchReader, Batcher,
@@ -7,29 +9,33 @@ use dbsp::{
     },
     zset_set, OrdIndexedZSet, OrdZSet,
 };
-use deepsize::DeepSizeOf;
-use ordered_float::OrderedFloat;
 use std::{
-    fmt::{self, Debug, Display},
-    io::Write,
-    ops::Add,
+    cmp::{min, Ordering},
+    fmt::{self, Display},
 };
 
-/// Pagerank must use 64bit float values
-type Rank = F64;
-
-type RankSet = OrdZSet<(Node, Rank), Weight>;
-type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
-
-type Ranks<P> = Streamed<P, RankSet>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum PageRankKind {
     Scoped,
     Static,
+    Diffed,
 }
 
-/// Specified in https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
+impl Display for PageRankKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self {
+            Self::Scoped => "scoped",
+            Self::Static => "static",
+            Self::Diffed => "diffed",
+        };
+        f.write_str(kind)
+    }
+}
+
+/// Specified in the [LDBC Spec] ([Pseudo-code])
+///
+/// [LDBC Spec]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
+/// [Pseudo-code]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.2
 pub fn pagerank<P>(
     pagerank_iters: usize,
     damping_factor: f64,
@@ -37,10 +43,11 @@ pub fn pagerank<P>(
     vertices: Vertices<P>,
     edges: Edges<P>,
     kind: PageRankKind,
-) -> Streamed<P, RankMap>
+) -> RankPairs<P>
 where
     P: Clone + 'static,
 {
+    assert_ne!(pagerank_iters, 0);
     assert!((0.0..=1.0).contains(&damping_factor));
 
     // Initially each vertex is assigned a value so that the sum of all vertexes is one,
@@ -63,20 +70,6 @@ where
         batcher.push_batch(&mut output);
         batcher.seal()
     });
-
-    // initial_weights.inspect(|weights| {
-    //     let mut stdout = std::io::stdout().lock();
-
-    //     let mut cursor = weights.cursor();
-    //     while cursor.key_valid() {
-    //         let (key, value) = *cursor.key();
-    //         let weight = cursor.weight();
-    //         writeln!(stdout, "initial_weights: {key}, {value} ({weight:+})").unwrap();
-    //         cursor.step_key();
-    //     }
-
-    //     stdout.flush().unwrap();
-    // });
 
     // Find the total number of vertices within the graph
     let total_vertices = vertices.apply(|vertices| {
@@ -121,44 +114,29 @@ where
     // Make the edge weights for all dangling nodes, we only need to calculate this once
     let dangling_edge_weights = dangling_nodes.map_keys(|&node| (node, F64::new(0.0)));
 
-    // dangling_nodes.inspect(|weights| {
-    //     let mut stdout = std::io::stdout().lock();
-    //
-    //     let mut cursor = weights.cursor();
-    //     while cursor.key_valid() {
-    //         let node = *cursor.key();
-    //         let weight = cursor.weight();
-    //         writeln!(stdout, "dangling_nodes: {node} ({weight:+})").unwrap();
-    //         cursor.step_key();
-    //     }
-    //
-    //     stdout.flush().unwrap();
-    // });
-
     let reversed = if directed {
-        edges
-            .apply(|edges| {
-                let mut output = Vec::with_capacity(edges.len());
+        edges.apply(|edges| {
+            let mut output = Vec::with_capacity(edges.len());
 
-                let mut cursor = edges.cursor();
-                while cursor.key_valid() {
-                    while cursor.val_valid() {
-                        output.push(((*cursor.val(), ()), 1));
-                        cursor.step_val();
-                    }
-                    cursor.step_key();
+            let mut cursor = edges.cursor();
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    output.push(((*cursor.val(), ()), 1));
+                    cursor.step_val();
                 }
+                cursor.step_key();
+            }
 
-                let mut batcher = <OrdZSet<_, _> as Batch>::Batcher::new(());
-                batcher.push_batch(&mut output);
-                batcher.seal()
-            })
-            .distinct()
+            let mut batcher = <OrdZSet<_, _> as Batch>::Batcher::new(());
+            batcher.push_batch(&mut output);
+            batcher.seal()
+        })
 
     // Undirected graphs already have all the edges we need
     } else {
         edges.map_values(|_, _| ())
-    };
+    }
+    .distinct();
 
     // Find vertices without any incoming edges
     let zero_incoming = vertices
@@ -198,9 +176,13 @@ where
             dangling_nodes,
             initial_weights,
             dangling_edge_weights,
-        )
-        .index(),
+        ),
+
+        PageRankKind::Diffed => {
+            pagerank_differential(pagerank_iters, damping_factor, directed, vertices, edges)
+        }
     }
+    .index()
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -217,7 +199,7 @@ fn pagerank_scoped_iteration<P>(
     dangling_nodes: Vertices<P>,
     initial_weights: Ranks<P>,
     dangling_edge_weights: Ranks<P>,
-) -> Streamed<P, RankMap>
+) -> Ranks<P>
 where
     P: Clone + 'static,
 {
@@ -235,8 +217,17 @@ where
             let dangling_edge_weights = dangling_edge_weights.delta0(scope).integrate();
 
             // Create a feedback for the weights
-            let weights_var = DelayedFeedback::new(scope);
-            let weights: &Streamed<_, RankMap> = weights_var.stream();
+            let weights_var: DelayedFeedback<_, RankSet> = DelayedFeedback::new(scope);
+            let weights: RankPairs<_> = weights_var
+                .stream()
+                .apply2(&initial_weights, |weights, init_weights| {
+                    if init_weights.len() != 0 {
+                        init_weights.clone()
+                    } else {
+                        weights.clone()
+                    }
+                })
+                .index();
 
             // Find the weight pushed out to each edge by taking the weight of the node for the previous
             // iteration and dividing it by the number of outgoing edges it has
@@ -246,94 +237,52 @@ where
                     |&node, &previous_weight: &F64, &outgoing_edges| {
                         // We shouldn't get any dangling nodes here
                         debug_assert_ne!(outgoing_edges, 0);
-
-                        let weight = F64::new(previous_weight.inner() / outgoing_edges as f64);
-                        (node, weight)
+                        (node, previous_weight / outgoing_edges as f64)
                     },
                 )
                 .plus(&dangling_edge_weights)
                 .index();
 
-            weight_per_edge.inspect(|weights| {
-                let mut stdout = std::io::stdout().lock();
-
-                let mut cursor = weights.cursor();
-                while cursor.key_valid() {
-                    let key = *cursor.key();
-                    while cursor.val_valid() {
-                        let value = *cursor.val();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "weight_per_edge: {key}, {value} ({weight:+})").unwrap();
-                        cursor.step_val();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
-
             // Calculate the importance of each node, the sum of all weights from each incoming edge
             // multiplied by the damping factor
             let importance = weight_per_edge
-                .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| {
-                    // println!("{dest} -> {weight}");
-                    (dest, weight)
-                })
+                .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| (dest, weight))
                 .index()
                 .aggregate::<_, OrdZSet<_, _>>(move |&node, incoming: &mut Vec<(&F64, Weight)>| {
-                    let summed_weight: f64 = incoming
+                    let summed_weight: F64 = incoming
                         .iter()
-                        .map(|&(&weight, diff)| weight.inner() * diff as f64)
+                        .map(|&(&weight, diff)| weight * diff as f64)
                         .sum();
 
-                    // println!("importance: {node} -> {}", damping_factor * summed_weight);
-                    ((), (node, F64::new(damping_factor * summed_weight)))
+                    ((), (node, damping_factor * summed_weight))
                 })
                 // Add back in nodes without incoming edges
                 .plus(&zero_incoming)
                 .index();
 
-            importance.inspect(|weights| {
-                let mut stdout = std::io::stdout().lock();
-
-                let mut cursor = weights.cursor();
-                while cursor.key_valid() {
-                    while cursor.val_valid() {
-                        let (key, value) = *cursor.val();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "importance: {key}, {value} ({weight:+})").unwrap();
-                        cursor.step_val();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
-
             // Calculate the redistributed weights, the sum of all dangling vertices' weights
             // divided by the total number of nodes
             // TODO: Multiply the sum by `damping_factor / total_vertices`
             let redistributed = dangling_nodes
-                .stream_join::<_, _, OrdZSet<_, _>>(weights, |_, &(), &weight| ((), weight))
+                .stream_join::<_, _, OrdZSet<_, _>>(&weights, |_, &(), &weight| ((), weight))
                 // Ensure that even if there's no dangling vertices the stream still exists
                 .plus(&zero)
                 .index::<(), Rank>()
                 .aggregate::<_, OrdZSet<_, _>>(|&(), dangling_weights: &mut Vec<(&F64, Weight)>| {
-                    let summed_weight: f64 = dangling_weights
+                    let summed_weight = dangling_weights
                         .iter()
-                        .map(|&(&weight, diff)| weight.inner() * diff as f64)
+                        .map(|&(&weight, diff)| weight * diff as f64)
                         .sum();
 
-                    // println!("redistributed: {summed_weight}");
-                    ((), F64::new(summed_weight))
+                    ((), summed_weight)
                 })
                 .index::<(), Rank>()
                 .stream_join::<_, _, OrdZSet<_, _>>(
                     &total_vertices,
                     move |&(), redistributed, &total_vertices| {
                         let redistributed_weight =
-                            (damping_factor / total_vertices as f64) * redistributed.inner();
-                        ((), F64::new(redistributed_weight))
+                            (damping_factor / total_vertices as f64) * redistributed;
+                        ((), redistributed_weight)
                     },
                 )
                 .index::<(), Rank>();
@@ -345,11 +294,10 @@ where
                     |&(), &teleport, &(node, importance)| ((), (node, teleport + importance)),
                 )
                 .index::<(), (Node, Rank)>()
-                .stream_join::<_, _, RankSet>(&redistributed, |_, &(node, rank), &redistributed| {
-                    (node, rank + redistributed)
-                })
-                .plus(&initial_weights)
-                .index();
+                .stream_join::<_, _, RankSet>(
+                    &redistributed,
+                    |_, &(node, rank), &redistributed| (node, rank + redistributed),
+                );
             weights_var.connect(&page_rank);
 
             // Ensure we do only `iters` iterations of pagerank
@@ -360,7 +308,7 @@ where
                     current_iter += 1;
                     iter
                 }))
-                .condition(move |&iter| iter > pagerank_iters);
+                .condition(move |&iter| iter == pagerank_iters - 1);
 
             Ok((condition, page_rank.export()))
         })
@@ -395,9 +343,7 @@ where
                 |&node, &previous_weight: &F64, &outgoing_edges| {
                     // We shouldn't get any dangling nodes here
                     debug_assert_ne!(outgoing_edges, 0);
-
-                    let weight = F64::new(previous_weight.inner() / outgoing_edges as f64);
-                    (node, weight)
+                    (node, previous_weight / outgoing_edges as f64)
                 },
             )
             .plus(&dangling_edge_weights)
@@ -406,25 +352,15 @@ where
         // Calculate the importance of each node, the sum of all weights from each incoming edge
         // multiplied by the damping factor
         let importance = weight_per_edge
-            .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| {
-                // println!("{dest} -> {weight}");
-                (dest, weight)
-            })
+            .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| (dest, weight))
             .index()
             .aggregate::<_, OrdZSet<_, _>>(move |&node, incoming: &mut Vec<(&F64, Weight)>| {
-                let summed_weight: f64 = incoming
+                let summed_weight: F64 = incoming
                     .iter()
-                    .map(|&(&weight, diff)| {
-                        if diff.is_negative() {
-                            0.0
-                        } else {
-                            weight.inner() * diff as f64
-                        }
-                    })
+                    .map(|&(&weight, diff)| weight * diff as f64)
                     .sum();
 
-                // println!("importance: {node} -> {}", damping_factor * summed_weight);
-                ((), (node, F64::new(damping_factor * summed_weight)))
+                ((), (node, damping_factor * summed_weight))
             })
             // Add back in nodes without incoming edges
             .plus(&zero_incoming)
@@ -439,27 +375,21 @@ where
             .plus(&zero)
             .index::<(), Rank>()
             .aggregate::<_, OrdZSet<_, _>>(|&(), dangling_weights: &mut Vec<(&F64, Weight)>| {
-                let summed_weight: f64 = dangling_weights
+                let summed_weight = dangling_weights
                     .iter()
-                    .map(|&(&weight, diff)| {
-                        if diff.is_negative() {
-                            0.0
-                        } else {
-                            weight.inner() * diff as f64
-                        }
-                    })
+                    .map(|&(&weight, diff)| weight * diff as f64)
                     .sum();
 
-                ((), F64::new(summed_weight))
+                ((), summed_weight)
             })
             .index::<(), Rank>()
             .stream_join::<_, _, OrdZSet<_, _>>(
                 &total_vertices,
                 move |&(), redistributed, &total_vertices| {
                     let redistributed_weight =
-                        (damping_factor / total_vertices as f64) * redistributed.inner();
+                        (damping_factor / total_vertices as f64) * redistributed;
 
-                    ((), F64::new(redistributed_weight))
+                    ((), redistributed_weight)
                 },
             )
             .index::<(), Rank>();
@@ -481,45 +411,450 @@ where
     weights
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct F64(OrderedFloat<f64>);
+fn pagerank_differential<P>(
+    pagerank_iters: usize,
+    damping_factor: f64,
+    directed: bool,
+    vertices: Vertices<P>,
+    edges: Edges<P>,
+) -> Ranks<P>
+where
+    P: Clone + 'static,
+{
+    type Weights = OrdZSet<Node, Rank>;
+    type Weighted<S> = Streamed<S, Weights>;
 
-impl F64 {
-    pub const fn new(float: f64) -> Self {
-        Self(OrderedFloat(float))
-    }
+    // Vertices weighted by F64s instead of isizes
+    let weighted_vertices = vertices.apply(|vertices| {
+        let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
-    #[rustfmt::skip]
-    pub const fn inner(self) -> f64 {
-        self.0.0
-    }
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+            builder.push((node, (), Rank::one()));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    // Vertices weighted by the damping factor
+    let damped_vertices = vertices.apply(move |vertices| {
+        let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+            builder.push((node, (), Rank::new(damping_factor)));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    // Vertices weighted by the damping factor divided by the total number of vertices
+    let damped_div_total_vertices = vertices.apply(move |vertices| {
+        let total_vertices = vertices.len();
+        let weight = Rank::new(damping_factor) / total_vertices as f64;
+        let mut builder =
+            <OrdIndexedZSet<(), Node, Rank> as Batch>::Builder::with_capacity((), total_vertices);
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+            builder.push(((), node, weight));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    // Initially each vertex is assigned a value so that the sum of all vertexes is one,
+    // `PR(𝑣)₀ = 1 ÷ |𝑉|`
+    let initial_weights = vertices.apply(|vertices| {
+        let total_vertices = vertices.len();
+        let initial_weight = Rank::one() / total_vertices as f64;
+
+        // We can use a builder here since the cursor yields ordered values
+        let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+            builder.push((node, (), initial_weight));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    // Calculate the teleport, `(1 - d) ÷ |𝑉|`
+    let teleport = vertices.apply(move |vertices| {
+        let total_vertices = vertices.len();
+        let teleport = (Rank::one() - damping_factor) / total_vertices as f64;
+
+        // We can use a builder here since the cursor yields ordered values
+        let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+            builder.push((node, (), teleport));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    teleport.inspect(|teleport| {
+        use std::io::Write;
+
+        let mut stdout = std::io::stdout().lock();
+        let mut cursor = teleport.cursor();
+
+        while cursor.key_valid() {
+            if cursor.val_valid() {
+                let key = *cursor.key();
+                let weight = cursor.weight();
+                writeln!(stdout, "teleport: {key}, {weight}").unwrap();
+            }
+            cursor.step_key();
+        }
+
+        stdout.flush().unwrap();
+    });
+
+    // Count the number of outgoing edges for each node
+    let outgoing_edge_counts = edges.apply(|weights| {
+        // We can use a builder here since the cursor yields ordered values
+        let mut builder = <Weights as Batch>::Builder::with_capacity((), weights.len());
+
+        let mut cursor = weights.cursor();
+        while cursor.key_valid() {
+            let node = *cursor.key();
+
+            let mut total_outputs = 0usize;
+            while cursor.val_valid() {
+                total_outputs += 1;
+                cursor.step_val();
+            }
+
+            builder.push((node, (), Rank::new(total_outputs as f64)));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    outgoing_edge_counts.inspect(|outgoing_edge_counts| {
+        use std::io::Write;
+
+        let mut stdout = std::io::stdout().lock();
+        let mut cursor = outgoing_edge_counts.cursor();
+
+        while cursor.key_valid() {
+            if cursor.val_valid() {
+                let key = *cursor.key();
+                let weight = cursor.weight();
+                writeln!(stdout, "outgoing_edge_counts: {key}, {weight}").unwrap();
+            }
+            cursor.step_key();
+        }
+
+        stdout.flush().unwrap();
+    });
+
+    // Find all dangling nodes (nodes without outgoing edges)
+    let dangling_nodes = weighted_vertices.minus(
+        &outgoing_edge_counts
+            .distinct()
+            .semijoin_stream_core(&weighted_vertices, |&node, _| node),
+    );
+
+    dangling_nodes.inspect(|dangling_nodes| {
+        use std::io::Write;
+
+        let mut stdout = std::io::stdout().lock();
+        let mut cursor = dangling_nodes.cursor();
+
+        while cursor.key_valid() {
+            if cursor.val_valid() {
+                let key = *cursor.key();
+                let weight = cursor.weight();
+                writeln!(stdout, "dangling_nodes: {key}, {weight}").unwrap();
+            }
+            cursor.step_key();
+        }
+
+        stdout.flush().unwrap();
+    });
+
+    let edge_weights = edges.apply(|edges| {
+        let mut builder =
+            <OrdIndexedZSet<Node, Node, Rank> as Batch>::Builder::with_capacity((), edges.len());
+
+        let mut cursor = edges.cursor();
+        while cursor.key_valid() {
+            let src = *cursor.key();
+            while cursor.val_valid() {
+                let dest = *cursor.val();
+                let weight = Rank::new(cursor.weight() as f64);
+                builder.push((src, dest, weight));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
+    let edges_rev = if directed {
+        edge_weights
+            .apply(|edges| {
+                let mut batch = Vec::with_capacity(edges.len());
+                let mut edges = edges.cursor();
+                while edges.key_valid() {
+                    let src = *edges.key();
+                    while edges.val_valid() {
+                        let dest = *edges.val();
+                        let weight = edges.weight();
+                        batch.push((((dest, src), ()), weight));
+                        edges.step_val();
+                    }
+                    edges.step_key();
+                }
+
+                let mut batcher = <OrdZSet<(Node, Node), Rank> as Batch>::Batcher::new(());
+                batcher.push_batch(&mut batch);
+                batcher.seal()
+            })
+            .distinct()
+            .index()
+    } else {
+        todo!()
+    };
+
+    let weights = vertices
+        .circuit()
+        .iterate_with_condition(|scope| {
+            let initial_weights = initial_weights.delta0(scope);
+            let teleport = teleport.delta0(scope).integrate();
+            let edges_rev = edges_rev.delta0(scope).integrate();
+            let dangling_nodes = dangling_nodes.delta0(scope).integrate();
+            let damped_vertices = damped_vertices.delta0(scope).integrate();
+            let outgoing_edge_counts = outgoing_edge_counts.delta0(scope).integrate();
+            let damped_div_total_vertices = damped_div_total_vertices.delta0(scope).integrate();
+
+            // Create a feedback for the weights
+            let weights_var: DelayedFeedback<_, Weights> = DelayedFeedback::new(scope);
+            let weights: Weighted<_> =
+                weights_var
+                    .stream()
+                    .apply2(&initial_weights, |weights, initial_weights| {
+                        if initial_weights.len() != 0 {
+                            initial_weights.clone()
+                        } else {
+                            weights.clone()
+                        }
+                    });
+
+            weights.inspect(|weights| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = weights.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "weights: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            // Find the weight pushed out to each edge by taking the weight of the node for the previous
+            // iteration and dividing it by the number of outgoing edges it has
+            // prev_iter_weight / total_outgoing_edges
+            let weight_per_edge = div_join_stream(&weights, &outgoing_edge_counts);
+
+            weight_per_edge.inspect(|weight_per_edge| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = weight_per_edge.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "weight_per_edge: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            // Calculate the importance of each node, the sum of all weights from each incoming edge
+            // multiplied by the damping factor
+            // damping_factor * sum(incoming_edge_weights)
+            let importance = damped_vertices.stream_join::<_, _, Weights>(
+                &weight_per_edge.stream_join::<_, _, Weights>(&edges_rev, |_, _, &src| src),
+                |&node, _, _| node,
+            );
+
+            importance.inspect(|importance| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = importance.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "importance: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            let redistributed = weights
+                // Sum up the weights of all dangling nodes, sum(dangling_nodes)
+                .stream_join::<_, _, OrdZSet<_, _>>(&dangling_nodes, |&node, _, _| ((), node))
+                .index()
+                // (damping_factor / total_vertices) * sum(dangling_nodes)
+                .stream_join::<_, _, OrdZSet<_, _>>(&damped_div_total_vertices, |_, &node, _| node);
+
+            redistributed.inspect(|redistributed| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = redistributed.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "redistributed: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            let teleport_importance = teleport.plus(&importance);
+            teleport_importance.inspect(|teleport_importance| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = teleport_importance.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "teleport_importance: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            let page_rank = teleport_importance.plus(&redistributed);
+            weights_var.connect(&page_rank);
+            page_rank.inspect(|page_rank| {
+                use std::io::Write;
+
+                let mut stdout = std::io::stdout().lock();
+                let mut cursor = page_rank.cursor();
+
+                while cursor.key_valid() {
+                    if cursor.val_valid() {
+                        let key = *cursor.key();
+                        let weight = cursor.weight();
+                        writeln!(stdout, "page_rank: {key}, {weight}").unwrap();
+                    }
+                    cursor.step_key();
+                }
+
+                stdout.flush().unwrap();
+            });
+
+            // Ensure we do only `iters` iterations of pagerank
+            let mut current_iter = 0;
+            let condition = scope
+                .add_source(Generator::new(move || {
+                    let iter = current_iter;
+                    current_iter += 1;
+                    iter
+                }))
+                .condition(move |&iter| iter >= pagerank_iters);
+
+            Ok((condition, page_rank.export()))
+        })
+        .unwrap();
+
+    // Hoist the weights out of the weight and into the value
+    weights.apply(|weights| {
+        let mut batch = Vec::with_capacity(weights.len());
+        let mut weights = weights.cursor();
+        while weights.key_valid() {
+            batch.push((((*weights.key(), weights.weight()), ()), 1));
+            weights.step_key();
+        }
+
+        let mut batcher = <RankSet as Batch>::Batcher::new(());
+        batcher.push_batch(&mut batch);
+        batcher.seal()
+    })
 }
 
-impl Add for F64 {
-    type Output = Self;
+// This code implements a join with weight division instead of multiplication
+fn div_join_stream<S, K>(
+    lhs: &Streamed<S, OrdZSet<K, Rank>>,
+    rhs: &Streamed<S, OrdZSet<K, Rank>>,
+) -> Streamed<S, OrdZSet<K, Rank>>
+where
+    S: Clone + 'static,
+    K: Ord + Copy + Data,
+{
+    lhs.apply2(rhs, |lhs, rhs| {
+        let capacity = min(lhs.len(), rhs.len());
+        let mut builder = <OrdZSet<K, Rank> as Batch>::Builder::with_capacity((), capacity);
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
+        let (mut lhs, mut rhs) = (lhs.cursor(), rhs.cursor());
+        while lhs.key_valid() && rhs.key_valid() {
+            match lhs.key().cmp(rhs.key()) {
+                Ordering::Less => lhs.seek_key(rhs.key()),
+                Ordering::Greater => rhs.seek_key(lhs.key()),
+                Ordering::Equal => {
+                    if lhs.val_valid() {
+                        let lhs_weight = lhs.weight();
+                        if rhs.val_valid() {
+                            let rhs_weight = rhs.weight();
+                            println!(
+                                "div_join_stream: {lhs_weight} / {rhs_weight} = {}",
+                                lhs_weight / rhs_weight,
+                            );
+                            builder.push((*lhs.key(), (), lhs_weight / rhs_weight));
+                        }
+                    }
 
-impl DeepSizeOf for F64 {
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-        0
-    }
-}
+                    lhs.step_key();
+                    rhs.step_key();
+                }
+            }
+        }
 
-impl Debug for F64 {
-    #[rustfmt::skip]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.0.0, f)
-    }
-}
-
-impl Display for F64 {
-    #[rustfmt::skip]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.0.0, f)
-    }
+        builder.done()
+    })
 }

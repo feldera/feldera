@@ -2,9 +2,13 @@ mod bfs;
 mod data;
 mod pagerank;
 
-use crate::{data::DataSet, pagerank::PageRankKind};
-use clap::{Parser, ValueEnum};
+use crate::{
+    data::{BfsResults, DataSet, DistanceSet, NoopResults, PageRankResults, RankMap},
+    pagerank::PageRankKind,
+};
+use clap::Parser;
 use dbsp::{
+    algebra::NegByRef,
     circuit::{trace::SchedulerEvent, Root, Runtime},
     monitor::TraceMonitor,
     operator::Generator,
@@ -13,17 +17,39 @@ use dbsp::{
     zset_set, Circuit,
 };
 use hashbrown::HashMap;
-use std::{cell::RefCell, fmt::Write as _, io::Write, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell,
+    fmt::Write as _,
+    io::{self, Write},
+    ops::Add,
+    rc::Rc,
+    time::Instant,
+};
+
+enum OutputData {
+    None,
+    Bfs(DistanceSet),
+    PageRank(RankMap),
+}
 
 fn main() {
-    let config = Config::parse();
+    let args = Args::parse();
+    let config = match args {
+        Args::Bfs { config } => config,
+        Args::Pagerank { config, .. } => config,
+    };
     let dataset = config.dataset;
 
+    match args {
+        Args::Bfs { .. } => println!("running breadth-first search"),
+        Args::Pagerank { flavor, .. } => println!("running pagerank ({flavor})"),
+    }
+
     print!("loading dataset {}...", dataset.name);
-    std::io::stdout().flush().unwrap();
+    io::stdout().flush().unwrap();
     let start = Instant::now();
 
-    let (properties, edges, vertices, expected_output) = dataset.load().unwrap();
+    let (properties, edges, vertices, _) = dataset.load::<NoopResults>().unwrap();
     let mut root_data = Some(zset_set! { properties.source_vertex });
     let mut vertex_data = Some(vertices);
     let mut edge_data = Some(edges);
@@ -37,10 +63,10 @@ fn main() {
     );
     Runtime::run(1, move |_runtime, _index| {
         print!("building dataflow... ");
-        std::io::stdout().flush().unwrap();
+        io::stdout().flush().unwrap();
         let start = Instant::now();
 
-        let output = Rc::new(RefCell::new(None));
+        let output = Rc::new(RefCell::new(OutputData::None));
 
         let output_inner = output.clone();
         let root = Root::build(move |circuit| {
@@ -52,41 +78,24 @@ fn main() {
             let vertices = circuit.add_source(Generator::new(move || vertex_data.take().unwrap()));
             let edges = circuit.add_source(Generator::new(move || edge_data.take().unwrap()));
 
-            match config.benchmark {
-                Benchmark::Bfs => {
-                    bfs::bfs(roots, vertices, edges)
-                        .inspect(move |results| *output_inner.borrow_mut() = Some(results.clone()));
+            match args {
+                Args::Bfs { .. } => {
+                    bfs::bfs(roots, vertices, edges).inspect(move |results| {
+                        *output_inner.borrow_mut() = OutputData::Bfs(results.clone());
+                    });
                 }
 
-                Benchmark::Pagerank => {
+                Args::Pagerank { flavor, .. } => {
                     pagerank::pagerank(
                         properties.pagerank_iters.unwrap(),
                         properties.pagerank_damping_factor.unwrap(),
                         properties.directed,
                         vertices,
                         edges,
-                        PageRankKind::Scoped,
+                        flavor,
                     )
-                    .inspect(|ranks| {
-                        let mut stdout = std::io::stdout().lock();
-
-                        let mut cursor = ranks.cursor();
-                        let mut sum = 0.0;
-                        while cursor.key_valid() {
-                            let key = *cursor.key();
-                            while cursor.val_valid() {
-                                let value = *cursor.val();
-                                sum += value.inner();
-
-                                let weight = cursor.weight();
-                                writeln!(stdout, "output: {key}, {value} ({weight:+})").unwrap();
-                                cursor.step_val();
-                            }
-                            cursor.step_key();
-                        }
-
-                        writeln!(stdout, "sum of all ranks: {sum}").unwrap();
-                        stdout.flush().unwrap();
+                    .inspect(move |results| {
+                        *output_inner.borrow_mut() = OutputData::PageRank(results.clone());
                     });
                 }
             }
@@ -96,8 +105,8 @@ fn main() {
         let elapsed = start.elapsed();
         println!("finished in {elapsed:#?}");
 
-        print!("running dfs benchmark... ");
-        std::io::stdout().flush().unwrap();
+        print!("running benchmark... ");
+        io::stdout().flush().unwrap();
         let start = Instant::now();
 
         root.step().unwrap();
@@ -108,18 +117,81 @@ fn main() {
         // TODO: Is it correct to multiply edges by two for undirected graphs?
         let total_edges = properties.edges * (!properties.directed as u64 + 1);
 
-        // Metrics calculation from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
+        // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
         let eps = total_edges as f64 / elapsed.as_secs_f64();
         let keps = eps / 1000.0;
         println!("achieved {keps:.02} kEPS ({eps:.02} EPS)");
 
-        let elements = total_edges * properties.vertices;
+        let elements = total_edges + properties.vertices;
         let evps = elements as f64 / elapsed.as_secs_f64();
         let kevps = evps / 1000.0;
         println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
 
-        if config.benchmark == Benchmark::Bfs {
-            assert_eq!(output.borrow_mut().take().unwrap(), expected_output);
+        let output = output.borrow();
+        match &*output {
+            OutputData::None => println!("no output was produced"),
+
+            OutputData::Bfs(result) => {
+                let expected = dataset.load_results::<BfsResults>().unwrap();
+                // TODO: Better diff function
+                assert_eq!(result, &expected);
+            }
+
+            OutputData::PageRank(result) => {
+                let expected = dataset.load_results::<PageRankResults>().unwrap();
+                let difference = expected.add(result.neg_by_ref());
+
+                let mut incorrect = 0;
+                if !difference.is_empty() {
+                    let mut stdout = io::stdout().lock();
+                    let mut cursor = difference.cursor();
+
+                    while cursor.key_valid() {
+                        let key = *cursor.key();
+
+                        if let Some(first) = cursor.get_val().copied() {
+                            let first_weight = cursor.weight();
+                            cursor.step_val();
+
+                            if let Some(second) = cursor.get_val().copied() {
+                                let second_weight = cursor.weight();
+                                cursor.step_val();
+
+                                // Sometimes the values are only different because of floating point
+                                // inaccuracies, e.g. 0.14776291666666666 vs. 0.1477629166666667
+                                if (first.inner() - second.inner()).abs() > f64::EPSILON {
+                                    let (first, first_weight, second, second_weight) = if first_weight.is_positive()
+                                        && second_weight.is_negative()
+                                    {
+                                        (second, second_weight, first, first_weight)
+                                    } else {
+                                        (first, first_weight, second, second_weight)
+                                    };
+
+                                    writeln!(stdout, "{key}, expected {second} and got {first}  ({first_weight:+}, {second_weight:+})")
+                                        .unwrap();
+                                    incorrect += 1;
+                                }
+                            } else if first_weight.is_positive() {
+                                writeln!(stdout, "{key}, missing: {first} ({first_weight:+})")
+                                    .unwrap();
+                            } else {
+                                writeln!(stdout, "{key}, unexpected: {first} ({first_weight:+})")
+                                    .unwrap();
+                            }
+                        }
+
+                        cursor.step_key();
+                    }
+
+                    stdout.flush().unwrap();
+                }
+
+                println!(
+                    "pagerank had {incorrect} incorrect result{}",
+                    if incorrect == 1 { "" } else { "s" },
+                );
+            }
         }
     })
     .join()
@@ -145,10 +217,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
 
         SchedulerEvent::StepEnd => {
             let graph = monitor.visualize_circuit_annotate(|node_id| {
-                let mut metadata_string = metadata
-                    .get(node_id)
-                    .cloned()
-                    .unwrap_or_else(|| "".to_string());
+                let mut metadata_string = metadata.get(node_id).cloned().unwrap_or_default();
 
                 if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
                     writeln!(
@@ -176,14 +245,28 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
     });
 }
 
-#[derive(Debug, Clone, Parser)]
-struct Config {
-    /// The benchmark to run
-    #[clap(long, value_enum, default_value = "bfs")]
-    benchmark: Benchmark,
+#[derive(Debug, Clone, Copy, Parser)]
+enum Args {
+    /// Run the breadth-first search benchmark
+    Bfs {
+        #[clap(flatten)]
+        config: Config,
+    },
 
+    /// Run the pagerank benchmark
+    Pagerank {
+        #[clap(flatten)]
+        config: Config,
+
+        #[clap(long, value_enum, default_value = "scoped")]
+        flavor: PageRankKind,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Parser)]
+struct Config {
     /// Select the dataset to benchmark
-    #[clap(long, value_enum, default_value = "example-directed")]
+    #[clap(value_enum, default_value = "example-directed")]
     dataset: DataSet,
 
     /// Whether or not to profile the dataflow
@@ -195,10 +278,4 @@ struct Config {
     #[doc(hidden)]
     #[clap(long = "bench", hide = true)]
     __bench: bool,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-enum Benchmark {
-    Bfs,
-    Pagerank,
 }

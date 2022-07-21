@@ -1,13 +1,18 @@
 use clap::{PossibleValue, ValueEnum};
 use dbsp::{
-    algebra::HasOne,
+    algebra::{HasOne, HasZero},
     trace::{Batch, Batcher},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
+use deepsize::DeepSizeOf;
 use indicatif::{ProgressBar, ProgressStyle};
+use ordered_float::OrderedFloat;
 use std::{
+    fmt::{self, Debug, Display},
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
+    iter::{Product, Sum},
+    ops::{Add, AddAssign, Div, Mul, Neg, Sub},
     path::{Path, PathBuf},
     thread,
     time::Duration,
@@ -16,6 +21,8 @@ use tar::Archive;
 use zstd::Decoder;
 
 pub type Node = u64;
+/// Pagerank must use 64bit float values
+pub type Rank = F64;
 pub type Vertex = u64;
 pub type Weight = isize;
 pub type Distance = u64;
@@ -23,9 +30,14 @@ pub type Distance = u64;
 pub type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
 pub type VertexSet = OrdZSet<Node, Weight>;
 pub type DistanceSet = OrdZSet<(Node, Distance), Weight>;
+pub type RankSet = OrdZSet<(Node, Rank), Weight>;
+pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
 
 pub type Streamed<P, T> = Stream<Circuit<P>, T>;
+
 pub type Edges<P> = Streamed<P, EdgeMap>;
+pub type Ranks<P> = Streamed<P, RankSet>;
+pub type RankPairs<P> = Streamed<P, RankMap>;
 pub type Vertices<P> = Streamed<P, VertexSet>;
 
 const DATA_PATH: &str = concat!(
@@ -48,7 +60,7 @@ impl DataSet {
         Path::new(DATA_PATH).join(self.name)
     }
 
-    pub fn load(&self) -> io::Result<(Properties, EdgeMap, VertexSet, DistanceSet)> {
+    pub fn load<R: ResultParser>(&self) -> io::Result<(Properties, EdgeMap, VertexSet, R::Parsed)> {
         let dataset_dir = self.dataset_dir()?;
 
         // Open & parse the properties file
@@ -68,24 +80,50 @@ impl DataSet {
         let vertices = File::open(&vertices_path)
             .unwrap_or_else(|error| panic!("failed to open {}: {error}", vertices_path.display()));
 
-        // Open the bfs results file
-        let bfs_path = dataset_dir.join(format!("{name}-BFS", name = self.name));
-        let bfs_results = File::open(&bfs_path)
-            .unwrap_or_else(|error| panic!("failed to open {}: {error}", bfs_path.display()));
-
         // Load the edges and vertices in parallel
         let edges_handle =
             thread::spawn(move || EdgeParser::new(edges, properties.directed).load());
-        let vertices_handle = thread::spawn(move || VertexParser::new(vertices).load());
 
-        // Parse the bfs results on the current thread
-        let bfs_results = ResultsParser::new(bfs_results).load();
+        let (vertices, results) = if let Some(suffix) = R::file_suffix() {
+            let vertices_handle = thread::spawn(move || VertexParser::new(vertices).load());
+
+            // Open the results file
+            let result_path = dataset_dir.join(format!("{}{suffix}", self.name));
+            let result_file = File::open(&result_path).unwrap_or_else(|error| {
+                panic!("failed to open {}: {error}", result_path.display())
+            });
+
+            // Parse the results file in parallel to the vertices file
+            let results = R::load(result_file);
+            let vertices = vertices_handle.join().unwrap();
+
+            (vertices, results)
+
+        // Otherwise parse the vertices file on this thread
+        } else {
+            let vertices = VertexParser::new(vertices).load();
+            (vertices, R::Parsed::default())
+        };
 
         // Wait for the vertex and edge threads to finish parsing
-        let vertices = vertices_handle.join().unwrap();
         let edges = edges_handle.join().unwrap();
 
-        Ok((properties, edges, vertices, bfs_results))
+        Ok((properties, edges, vertices, results))
+    }
+
+    pub fn load_results<R: ResultParser>(&self) -> io::Result<R::Parsed> {
+        if let Some(suffix) = R::file_suffix() {
+            let dataset_dir = self.dataset_dir()?;
+
+            let result_path = dataset_dir.join(format!("{}{suffix}", self.name));
+            let result_file = File::open(&result_path).unwrap_or_else(|error| {
+                panic!("failed to open {}: {error}", result_path.display())
+            });
+
+            Ok(R::load(result_file))
+        } else {
+            Ok(R::Parsed::default())
+        }
     }
 
     /// Gets the dataset's directory if it exists or downloads and extracts it
@@ -507,39 +545,44 @@ impl VertexParser {
     }
 }
 
-struct ResultsParser {
-    file: BufReader<File>,
+pub trait ResultParser {
+    type Parsed: Default;
+
+    fn file_suffix() -> Option<&'static str>;
+
+    fn load(file: File) -> Self::Parsed;
 }
 
-impl ResultsParser {
-    pub fn new(file: File) -> Self {
-        Self {
-            file: BufReader::new(file),
-        }
+pub struct NoopResults;
+
+impl ResultParser for NoopResults {
+    type Parsed = ();
+
+    fn file_suffix() -> Option<&'static str> {
+        None
     }
 
-    pub fn load(self) -> DistanceSet {
+    fn load(_file: File) -> Self::Parsed {}
+}
+
+pub struct BfsResults;
+
+impl ResultParser for BfsResults {
+    type Parsed = DistanceSet;
+
+    fn file_suffix() -> Option<&'static str> {
+        Some("-BFS")
+    }
+
+    fn load(file: File) -> Self::Parsed {
+        let mut file = BufReader::new(file);
+
+        // TODO: Can we estimate the capacity any better?
         let mut results = <DistanceSet as Batch>::Batcher::new(());
         let mut batch = Vec::with_capacity(1024);
 
-        self.parse(|vertex, distance| {
-            batch.push((((vertex, distance), ()), Weight::one()));
-
-            if batch.len() + 1 >= 1024 {
-                results.push_batch(&mut batch);
-            }
-        });
-        results.push_batch(&mut batch);
-
-        results.seal()
-    }
-
-    fn parse<F>(mut self, mut append: F)
-    where
-        F: FnMut(Vertex, Distance),
-    {
         let mut buffer = String::with_capacity(256);
-        while let Ok(n) = self.file.read_line(&mut buffer) {
+        while let Ok(n) = file.read_line(&mut buffer) {
             if n == 0 {
                 break;
             }
@@ -549,9 +592,350 @@ impl ResultsParser {
 
             let vertex = vertex.parse().unwrap();
             let distance = distance.parse().unwrap();
-            append(vertex, distance);
+
+            batch.push((((vertex, distance), ()), Weight::one()));
+            if batch.len() + 1 >= 1024 {
+                results.push_batch(&mut batch);
+            }
 
             buffer.clear();
         }
+
+        results.push_batch(&mut batch);
+        results.seal()
+    }
+}
+
+pub struct PageRankResults;
+
+impl ResultParser for PageRankResults {
+    type Parsed = RankMap;
+
+    fn file_suffix() -> Option<&'static str> {
+        Some("-PR")
+    }
+
+    fn load(file: File) -> Self::Parsed {
+        let mut file = BufReader::new(file);
+
+        // TODO: Can we estimate the capacity any better?
+        let mut results = <RankMap as Batch>::Batcher::new(());
+        let mut batch = Vec::with_capacity(1024);
+
+        let mut buffer = String::with_capacity(256);
+        while let Ok(n) = file.read_line(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+
+            let line = buffer.trim_end();
+            let (vertex, distance) = line.split_once(' ').unwrap();
+
+            let vertex = vertex.parse().unwrap();
+            let rank = F64::new(distance.parse::<f64>().unwrap());
+
+            batch.push(((vertex, rank), Weight::one()));
+            if batch.len() + 1 >= 1024 {
+                results.push_batch(&mut batch);
+            }
+
+            buffer.clear();
+        }
+
+        results.push_batch(&mut batch);
+        results.seal()
+    }
+}
+
+// Custom f64 wrapper for ordering and DeepSizeOf
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct F64(OrderedFloat<f64>);
+
+impl F64 {
+    #[inline]
+    pub const fn new(float: f64) -> Self {
+        Self(OrderedFloat(float))
+    }
+
+            #[inline]
+    #[rustfmt::skip]
+    pub const fn inner(self) -> f64 {
+        self.0.0
+    }
+}
+
+impl PartialEq<f64> for F64 {
+    #[inline]
+    fn eq(&self, other: &f64) -> bool {
+        *self == F64::new(*other)
+    }
+}
+
+impl PartialEq<F64> for f64 {
+    #[inline]
+    fn eq(&self, other: &F64) -> bool {
+        F64::new(*self) == *other
+    }
+}
+
+impl Add for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Add<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: &Self) -> Self::Output {
+        self + *rhs
+    }
+}
+
+impl<'a> Add<&'a F64> for &'a F64 {
+    type Output = F64;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        *self + *rhs
+    }
+}
+
+impl AddAssign for F64 {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl AddAssign<&'_ F64> for F64 {
+    fn add_assign(&mut self, rhs: &Self) {
+        *self = *self + *rhs;
+    }
+}
+
+impl Sub for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl Sub<f64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: f64) -> Self::Output {
+        self - Self::new(rhs)
+    }
+}
+
+impl Sub<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: &Self) -> Self::Output {
+        self - *rhs
+    }
+}
+
+impl<'a> Sub<&'a F64> for &'a F64 {
+    type Output = F64;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        *self - *rhs
+    }
+}
+
+impl Mul for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)
+    }
+}
+
+impl Mul<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: &Self) -> Self::Output {
+        self * *rhs
+    }
+}
+
+impl<'a> Mul<&'a F64> for &'a F64 {
+    type Output = F64;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        *self * *rhs
+    }
+}
+
+impl Mul<f64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: f64) -> Self::Output {
+        self * Self::new(rhs)
+    }
+}
+
+impl Mul<F64> for f64 {
+    type Output = F64;
+
+    #[inline]
+    fn mul(self, rhs: F64) -> Self::Output {
+        F64::new(self) * rhs
+    }
+}
+
+impl Mul<&F64> for f64 {
+    type Output = F64;
+
+    #[inline]
+    fn mul(self, rhs: &F64) -> Self::Output {
+        F64::new(self) * *rhs
+    }
+}
+
+impl Div for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        Self(self.0 / rhs.0)
+    }
+}
+
+impl Div<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: &Self) -> Self::Output {
+        self / *rhs
+    }
+}
+
+impl Div<f64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: f64) -> Self::Output {
+        self / Self::new(rhs)
+    }
+}
+
+impl Div<F64> for f64 {
+    type Output = F64;
+
+    #[inline]
+    fn div(self, rhs: F64) -> Self::Output {
+        F64::new(self) / rhs
+    }
+}
+
+impl Div<&F64> for f64 {
+    type Output = F64;
+
+    #[inline]
+    fn div(self, rhs: &F64) -> Self::Output {
+        F64::new(self) / *rhs
+    }
+}
+
+impl Neg for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+
+impl Neg for &F64 {
+    type Output = F64;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        F64(-self.0)
+    }
+}
+
+impl HasZero for F64 {
+    #[inline]
+    fn zero() -> Self {
+        Self::new(0.0)
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        // TODO: Should this use an epsilon comparison?
+        *self == 0.0
+    }
+}
+
+impl HasOne for F64 {
+    #[inline]
+    fn one() -> Self {
+        Self::new(1.0)
+    }
+}
+
+impl DeepSizeOf for F64 {
+    #[inline]
+    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
+        0
+    }
+}
+
+impl Sum for F64 {
+    #[inline]
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |a, b| a + b)
+    }
+}
+
+impl<'a> Sum<&'a F64> for F64 {
+    #[inline]
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |a, b| a + b)
+    }
+}
+
+impl Product for F64 {
+    #[inline]
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::one(), |a, b| a * b)
+    }
+}
+
+impl<'a> Product<&'a F64> for F64 {
+    #[inline]
+    fn product<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::one(), |a, b| a * b)
+    }
+}
+
+impl Debug for F64 {
+    #[rustfmt::skip]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self.0.0, f)
+    }
+}
+
+impl Display for F64 {
+    #[rustfmt::skip]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0.0, f)
     }
 }
