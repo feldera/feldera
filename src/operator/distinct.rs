@@ -9,7 +9,6 @@ use std::{
     marker::PhantomData,
     mem::take,
     ops::{Add, Neg},
-    rc::Rc,
 };
 
 use crate::{
@@ -36,7 +35,7 @@ where
     /// Apply [`Distinct`] operator to `self`.
     pub fn distinct(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: ZSet + Send + TryFrom<Rc<Z>>,
+        Z: ZSet + Send,
         Z::Key: Ord + Clone + Hash,
     {
         self.circuit()
@@ -53,7 +52,7 @@ where
     /// is more efficient.
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + ZSet + Send + TryFrom<Rc<Z>>,
+        Z: DeepSizeOf + NumEntries + ZSet + Send,
         Z::Key: Clone + PartialEq + Ord + Hash,
         Z::R: ZRingValue,
     {
@@ -84,7 +83,7 @@ where
     // TODO: remove this method.
     pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + Send + ZSet + TryFrom<Rc<Z>>,
+        Z: DeepSizeOf + NumEntries + Send + ZSet,
         Z::Key: Clone + PartialEq + Ord + Hash,
         Z::R: ZRingValue,
     {
@@ -109,7 +108,7 @@ where
     /// [`Stream::distinct_incremental_nested`].
     pub fn distinct_trace(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: NumEntries + ZSet + DeepSizeOf + Send + TryFrom<Rc<Z>>,
+        Z: NumEntries + ZSet + DeepSizeOf + Send,
         Z::Key: Clone + Ord + DeepSizeOf + Hash,
         Z::R: ZRingValue + DeepSizeOf,
     {

@@ -8,7 +8,7 @@ use crate::{
     NumEntries, Timestamp,
 };
 use deepsize::DeepSizeOf;
-use std::{borrow::Cow, fmt::Write, marker::PhantomData, rc::Rc};
+use std::{borrow::Cow, fmt::Write, marker::PhantomData};
 
 circuit_cache_key!(TraceId<B, D>(GlobalNodeId => Stream<B, D>));
 circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
@@ -98,7 +98,7 @@ where
     }
 
     // TODO: this method should replace `Stream::integrate()`.
-    pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<Rc<B>>>
+    pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<B>>
     where
         B: Batch + DeepSizeOf,
         B::Key: Ord,
@@ -111,7 +111,7 @@ where
                         .circuit()
                         .add_feedback_with_export(Z1Trace::new(true, self.circuit().root_scope()));
                     let trace = self.circuit().add_binary_operator_with_preference(
-                        <UntimedTraceAppend<Spine<Rc<B>>, B>>::new(),
+                        <UntimedTraceAppend<Spine<B>>>::new(),
                         &local,
                         self,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -147,14 +147,14 @@ where
     }
 }
 
-pub struct UntimedTraceAppend<T, B>
+pub struct UntimedTraceAppend<T>
 where
     T: TraceReader,
 {
-    _phantom: PhantomData<(T, B)>,
+    _phantom: PhantomData<T>,
 }
 
-impl<T, B> UntimedTraceAppend<T, B>
+impl<T> UntimedTraceAppend<T>
 where
     T: TraceReader,
 {
@@ -165,7 +165,7 @@ where
     }
 }
 
-impl<T, B> Default for UntimedTraceAppend<T, B>
+impl<T> Default for UntimedTraceAppend<T>
 where
     T: TraceReader,
 {
@@ -174,10 +174,9 @@ where
     }
 }
 
-impl<T, B> Operator for UntimedTraceAppend<T, B>
+impl<T> Operator for UntimedTraceAppend<T>
 where
     T: TraceReader + 'static,
-    B: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
@@ -187,30 +186,29 @@ where
     }
 }
 
-impl<T, B> BinaryOperator<T, B, T> for UntimedTraceAppend<T, B>
+impl<T> BinaryOperator<T, T::Batch, T> for UntimedTraceAppend<T>
 where
-    B: Batch + Clone + 'static,
-    T: Trace<Batch = Rc<B>> + 'static,
+    T: Trace + 'static,
 {
-    fn eval(&mut self, _trace: &T, _batch: &B) -> T {
+    fn eval(&mut self, _trace: &T, _batch: &T::Batch) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         panic!("UntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
-    fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
-        trace.insert(From::from(batch.clone()));
+    fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
+        trace.insert(batch.clone());
         trace
     }
 
-    fn eval_ref_and_owned(&mut self, _trace: &T, _batch: B) -> T {
+    fn eval_ref_and_owned(&mut self, _trace: &T, _batch: T::Batch) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         panic!("UntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference")
     }
 
-    fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        trace.insert(Rc::new(batch));
+    fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
+        trace.insert(batch);
         trace
     }
 

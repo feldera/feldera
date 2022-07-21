@@ -1,6 +1,5 @@
 use std::{
     cmp::max,
-    convert::TryFrom,
     fmt::{Debug, Display},
     ops::{Add, AddAssign, Neg},
     rc::Rc,
@@ -69,17 +68,6 @@ where
 {
     fn from(layer: OrderedLeaf<K, R>) -> Self {
         Rc::new(From::from(layer))
-    }
-}
-
-impl<K, R> TryFrom<Rc<OrdZSet<K, R>>> for OrdZSet<K, R>
-where
-    K: Ord,
-{
-    type Error = Rc<OrdZSet<K, R>>;
-
-    fn try_from(batch: Rc<OrdZSet<K, R>>) -> Result<Self, Self::Error> {
-        Rc::try_unwrap(batch)
     }
 }
 

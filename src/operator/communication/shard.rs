@@ -11,7 +11,7 @@ use crate::{
     Circuit, Runtime, Stream,
 };
 use fxhash::hash32;
-use std::{hash::Hash, rc::Rc};
+use std::hash::Hash;
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
 circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
@@ -88,7 +88,7 @@ where
     /// parallelization.
     pub fn shard(&self) -> Stream<Circuit<P>, IB>
     where
-        IB: Batch + TryFrom<Rc<IB>> + Send,
+        IB: Batch + Send,
     {
         // `shard_generic` returns `None` if there is only one worker thread
         // and hence sharding is a no-op.  In this case, we simply return the
@@ -104,11 +104,7 @@ where
     /// rutime or is running in a runtime with a single worker thread.
     pub fn shard_generic<OB>(&self) -> Option<Stream<Circuit<P>, OB>>
     where
-        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R>
-            + Clone
-            + TryFrom<Rc<OB>>
-            + Send
-            + 'static,
+        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Clone + Send + 'static,
     {
         Runtime::runtime().and_then(|runtime| {
             let num_workers = runtime.num_workers();
@@ -133,7 +129,7 @@ where
                                 move |batch: IB, batches: &mut Vec<OB>| {
                                     Self::shard_batch(&batch, num_workers, &mut builders, batches);
                                 },
-                                |trace: &mut Spine<Rc<OB>>, batch: OB| trace.insert(Rc::new(batch)),
+                                |trace: &mut Spine<OB>, batch: OB| trace.insert(batch),
                             );
                             // Is `consolidate` always necessary? Some (all?) consumers may be happy
                             // working with traces.
@@ -155,7 +151,7 @@ where
     /// workers will contain empty batches.
     pub fn gather(&self, receiver_worker: usize) -> Stream<Circuit<P>, IB>
     where
-        IB: Batch + TryFrom<Rc<IB>> + Send,
+        IB: Batch + Send,
     {
         match Runtime::runtime() {
             None => self.clone(),
@@ -179,9 +175,7 @@ where
                                         }
                                         batches[receiver_worker] = batch;
                                     },
-                                    |trace: &mut Spine<Rc<IB>>, batch: IB| {
-                                        trace.insert(Rc::new(batch))
-                                    },
+                                    |trace: &mut Spine<IB>, batch: IB| trace.insert(batch),
                                 );
                                 // Is `consolidate` always necessary? Some (all?) consumers may be
                                 // happy working with traces.

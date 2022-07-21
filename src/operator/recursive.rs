@@ -8,7 +8,7 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 use impl_trait_for_tuples::impl_for_tuples;
-use std::{hash::Hash, rc::Rc, result::Result};
+use std::{hash::Hash, result::Result};
 
 /// Generalizes stream operators to groups of streams.
 ///
@@ -55,12 +55,12 @@ impl<B> RecursiveStreams<Circuit<Circuit<()>>> for Stream<Circuit<Circuit<()>>, 
 where
     //P: Clone +
     // 'static,
-    B: ZSet + DeepSizeOf + Send + TryFrom<Rc<B>> + 'static,
+    B: ZSet + DeepSizeOf + Send + 'static,
     B::Key: Clone + Ord + Hash + DeepSizeOf,
     B::R: DeepSizeOf + ZRingValue,
 {
     type Feedback = DelayedFeedback<Circuit<()>, B>;
-    type Export = Stream<Circuit<()>, Spine<Rc<B>>>;
+    type Export = Stream<Circuit<()>, Spine<B>>;
     type Output = Stream<Circuit<()>, B>;
 
     fn new(circuit: &Circuit<Circuit<()>>) -> (Self::Feedback, Self) {

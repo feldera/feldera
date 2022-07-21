@@ -1,6 +1,6 @@
 //! Aggregation operators.
 
-use std::{borrow::Cow, hash::Hash, marker::PhantomData, ops::Neg, rc::Rc};
+use std::{borrow::Cow, hash::Hash, marker::PhantomData, ops::Neg};
 
 use crate::{
     algebra::{HasOne, IndexedZSet, ZRingValue, ZSet},
@@ -39,7 +39,7 @@ where
     /// * `O` - output Z-set type.
     pub fn aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + Send + TryFrom<Rc<Z>> + 'static,
+        Z: IndexedZSet<R = O::R> + Send + 'static,
         Z::Key: Ord + Clone + Hash,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
@@ -56,7 +56,7 @@ where
     /// but is more efficient.
     pub fn aggregate_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send + TryFrom<Rc<Z>>,
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send,
         Z::Key: PartialEq + Ord + Hash + Clone,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
@@ -99,7 +99,7 @@ where
     /// differentiate()`, but is more efficient.
     pub fn aggregate_incremental_nested<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send + TryFrom<Rc<Z>>,
+        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send,
         Z::Key: PartialEq + Ord + Clone + Hash,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,

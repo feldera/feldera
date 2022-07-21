@@ -23,7 +23,6 @@
 //! `OrdKey` respectively, but are more light-weight.
 
 use crate::trace::spine_fueled::Spine;
-use std::rc::Rc;
 
 mod merge_batcher;
 
@@ -31,21 +30,21 @@ pub mod val_batch;
 pub use val_batch::OrdValBatch;
 
 /// A trace implementation using a spine of ordered lists.
-pub type OrdValSpine<K, V, T, R, O = usize> = Spine<Rc<OrdValBatch<K, V, T, R, O>>>;
+pub type OrdValSpine<K, V, T, R, O = usize> = Spine<OrdValBatch<K, V, T, R, O>>;
 
 pub mod key_batch;
 pub use key_batch::OrdKeyBatch;
 
 /// A trace implementation for empty values using a spine of ordered lists.
-pub type OrdKeySpine<K, T, R, O = usize> = Spine<Rc<OrdKeyBatch<K, T, R, O>>>;
+pub type OrdKeySpine<K, T, R, O = usize> = Spine<OrdKeyBatch<K, T, R, O>>;
 
 pub mod zset_batch;
 pub use zset_batch::OrdZSet;
 
 /// A trace implementation using a [`Spine`] of [`OrdZSet`].
-pub type OrdZSetSpine<K, R> = Spine<Rc<OrdZSet<K, R>>>;
+pub type OrdZSetSpine<K, R> = Spine<OrdZSet<K, R>>;
 
 pub mod indexed_zset_batch;
 pub use indexed_zset_batch::OrdIndexedZSet;
 
-pub type OrdIndexedZSetSpine<K, V, R, O = usize> = Spine<Rc<OrdIndexedZSet<K, V, R, O>>>;
+pub type OrdIndexedZSetSpine<K, V, R, O = usize> = Spine<OrdIndexedZSet<K, V, R, O>>;

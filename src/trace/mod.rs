@@ -34,9 +34,7 @@ pub use cursor::Cursor;
 /// underlying trace and cause work to happen).
 pub trait TraceReader: BatchReader {
     /// The type of an immutable collection of updates.
-    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>
-        + Clone
-        + 'static;
+    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R> + 'static;
 
     // TODO: Do we want a version of `cursor` with an upper bound on time?  E.g., it
     // could help in `distinct` to avoid iterating into the future (and then
@@ -168,7 +166,7 @@ where
 }
 
 /// An immutable collection of updates.
-pub trait Batch: BatchReader
+pub trait Batch: BatchReader + Clone
 where
     Self: Sized,
 {

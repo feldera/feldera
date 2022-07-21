@@ -9,7 +9,7 @@ use crate::{
     trace::{cursor::Cursor, ord::OrdZSet, spine_fueled::Spine, Batch, BatchReader},
 };
 use deepsize::DeepSizeOf;
-use std::{borrow::Cow, cmp::max, marker::PhantomData, rc::Rc};
+use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
 impl<P, B> Stream<Circuit<P>, B>
 where
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<B> TernaryOperator<Spine<Rc<B>>, B, (B::Key, B::Key), OrdZSet<B::Val, B::R>> for Window<B>
+impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), OrdZSet<B::Val, B::R>> for Window<B>
 where
     B: IndexedZSet,
     B::Val: Ord + Clone,
@@ -132,7 +132,7 @@ where
     /// * `bounds` - window bounds.  The lower bound must grow monotonically.
     fn eval(
         &mut self,
-        trace: Cow<'_, Spine<Rc<B>>>,
+        trace: Cow<'_, Spine<B>>,
         batch: Cow<'_, B>,
         bounds: Cow<'_, (B::Key, B::Key)>,
     ) -> OrdZSet<B::Val, B::R> {
