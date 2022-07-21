@@ -22,7 +22,6 @@ use std::{
     hash::Hash,
     marker::PhantomData,
     mem::take,
-    rc::Rc,
 };
 use timely::PartialOrder;
 
@@ -53,10 +52,10 @@ where
         f: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: Batch<Time = (), R = Z::R> + Clone + Send + TryFrom<Rc<I1>> + 'static,
+        I1: Batch<Time = (), R = Z::R> + Clone + Send + 'static,
         I1::Key: Ord + Hash + Clone,
         I1::Val: Ord + Clone,
-        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + TryFrom<Rc<I2>> + 'static,
+        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
         I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
         Z::R: MulByRef,
@@ -105,11 +104,11 @@ impl<I1> Stream<Circuit<()>, I1> {
         join_func: F,
     ) -> Stream<Circuit<()>, Z>
     where
-        I1: IndexedZSet + DeepSizeOf + Send + TryFrom<Rc<I1>>,
+        I1: IndexedZSet + DeepSizeOf + Send,
         I1::Key: Ord + Clone + Hash + DeepSizeOf,
         I1::Val: Ord + Clone,
         I1::R: DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf + Send + TryFrom<Rc<I2>>,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf + Send,
         I2::Val: Ord + Clone,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
@@ -127,7 +126,7 @@ impl<I1> Stream<Circuit<()>, I1> {
 impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
-    I1: IndexedZSet + Send + TryFrom<Rc<I1>>,
+    I1: IndexedZSet + Send,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incremental join two streams of batches.
@@ -155,8 +154,8 @@ where
         I1::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
         I1::R: DeepSizeOf,                        /* + ::std::fmt::Display */
         I2::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + TryFrom<Rc<I2>>, /* + ::std::fmt::Display */
-        Z: ZSet<R = I1::R>, /* + ::std::fmt::Display */
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
+        Z: ZSet<R = I1::R>,                       /* + ::std::fmt::Display */
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
         Z::R: MulByRef + Default,
@@ -803,7 +802,7 @@ mod test {
             })
             .unwrap();
 
-        computed_labels.consolidate::<OrdZSet<_, _>>()
+        computed_labels.consolidate()
     }
 
     #[test]

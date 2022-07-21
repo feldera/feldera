@@ -83,6 +83,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Formatter},
     mem::replace,
+    rc::Rc,
 };
 
 use crate::{
@@ -90,6 +91,7 @@ use crate::{
     time::Timestamp,
     trace::{
         cursor::{Cursor, CursorList},
+        rc_blanket_impls::RcBatchCursor,
         Antichain, Batch, BatchReader, Merger, Trace, TraceReader,
     },
     NumEntries,
@@ -107,13 +109,13 @@ pub struct Spine<B>
 where
     B: Batch,
 {
-    merging: Vec<MergeState<B>>,
+    merging: Vec<MergeState<Rc<B>>>,
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     // Batches from `merging` stored in a flat array, for use by `SpineCursor`.
     // Any operation that modifies spine invalidates this vector (and the associated
     // cursor, if any).
-    cursor_storage: RefCell<Vec<B>>,
+    cursor_storage: RefCell<Vec<Rc<B>>>,
     effort: usize,
     activator: Option<timely::scheduling::activate::Activator>,
     dirty: bool,
@@ -121,7 +123,7 @@ where
 
 impl<B> Display for Spine<B>
 where
-    B: Batch + Display + Clone + 'static,
+    B: Batch + Display + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -150,7 +152,7 @@ where
 
 impl<B> DeepSizeOf for Spine<B>
 where
-    B: Batch + DeepSizeOf + Clone + 'static,
+    B: Batch + DeepSizeOf + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -163,7 +165,7 @@ where
 
 impl<B> NumEntries for Spine<B>
 where
-    B: Batch + DeepSizeOf + Clone + 'static,
+    B: Batch + DeepSizeOf + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -182,7 +184,7 @@ where
 
 impl<B> BatchReader for Spine<B>
 where
-    B: Batch + Clone + 'static,
+    B: Batch + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -250,7 +252,7 @@ where
 
 impl<B> TraceReader for Spine<B>
 where
-    B: Batch + Clone + 'static,
+    B: Batch + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -273,7 +275,7 @@ where
 
 pub struct SpineCursor<'s, B: Batch + 's> {
     #[allow(clippy::type_complexity)]
-    cursor: CursorList<'s, B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
+    cursor: CursorList<'s, B::Key, B::Val, B::Time, B::R, RcBatchCursor<'s, B>>,
 }
 
 impl<'s, B: Batch> SpineCursor<'s, B>
@@ -281,7 +283,7 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    fn new(cursors: Vec<B::Cursor<'s>>) -> Self {
+    fn new(cursors: Vec<RcBatchCursor<'s, B>>) -> Self {
         Self {
             cursor: CursorList::new(cursors),
         }
@@ -377,7 +379,7 @@ where
 
 impl<B> Trace for Spine<B>
 where
-    B: Batch + Clone + 'static,
+    B: Batch + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -435,7 +437,14 @@ where
         for merging in self.merging.into_iter() {
             if let MergeState::Single(Some(batch)) = merging {
                 if !batch.is_empty() {
-                    return Some(batch);
+                    match Rc::try_unwrap(batch) {
+                        Ok(batch) => return Some(batch),
+                        Err(_) => {
+                            // Ref counter can only be >1 while iterating over batch,
+                            // which should be impossible as we own `self`.
+                            panic!("consolidate doesn't own its result");
+                        }
+                    }
                 }
             }
         }
@@ -466,7 +475,7 @@ where
         //assert_eq!(batch.lower(), &self.upper);
 
         let index = batch.len().next_power_of_two();
-        self.introduce_batch(Some(batch), index.trailing_zeros() as usize);
+        self.introduce_batch(Some(Rc::new(batch)), index.trailing_zeros() as usize);
 
         // If more than one batch remains reschedule ourself.
         if !self.reduced() {
@@ -487,7 +496,7 @@ where
 
 impl<B> Spine<B>
 where
-    B: Batch + Clone + 'static,
+    B: Batch + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -558,7 +567,7 @@ where
     /// The level indication is often related to the size of the batch, but
     /// it can also be used to artificially fuel the computation by supplying
     /// empty batches at non-trivial indices, to move merges along.
-    pub fn introduce_batch(&mut self, batch: Option<B>, batch_index: usize) {
+    pub fn introduce_batch(&mut self, batch: Option<Rc<B>>, batch_index: usize) {
         // Step 0.  Determine an amount of fuel to use for the computation.
         //
         //          Fuel is used to drive maintenance of the data structure,
@@ -713,7 +722,7 @@ where
     /// This is a non-public internal method that can panic if we try and insert
     /// into a layer which already contains two batches (and is still in the
     /// process of merging).
-    fn insert_at(&mut self, batch: Option<B>, index: usize) {
+    fn insert_at(&mut self, batch: Option<Rc<B>>, index: usize) {
         // Ensure the spine is large enough.
         while self.merging.len() <= index {
             self.merging.push(MergeState::Vacant);
@@ -734,7 +743,7 @@ where
     }
 
     /// Completes and extracts what ever is at layer `index`.
-    fn complete_at(&mut self, index: usize) -> Option<B> {
+    fn complete_at(&mut self, index: usize) -> Option<Rc<B>> {
         self.merging[index].complete()
     }
 
@@ -823,8 +832,12 @@ where
                 MergeState::Double(MergeVariant::InProgress(_batch1, _batch2, _)) => {
                     panic!("map_batches_mut called on an in-progress batch")
                 }
-                MergeState::Double(MergeVariant::Complete(Some(batch))) => f(batch),
-                MergeState::Single(Some(batch)) => f(batch),
+                MergeState::Double(MergeVariant::Complete(Some(batch))) => {
+                    // Ref counter can only be >1 while iterating over batch,
+                    // which should be impossible as we hold a mutable reference to it.
+                    f(Rc::get_mut(batch).unwrap())
+                }
+                MergeState::Single(Some(batch)) => f(Rc::get_mut(batch).unwrap()),
                 _ => {}
             }
         }

@@ -108,22 +108,6 @@ where
     }
 }
 
-impl<K, V, R, O> TryFrom<Rc<OrdIndexedZSet<K, V, R, O>>> for OrdIndexedZSet<K, V, R, O>
-where
-    K: Ord,
-    V: Ord,
-    R: Clone,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
-    type Error = Rc<OrdIndexedZSet<K, V, R, O>>;
-
-    fn try_from(batch: Rc<OrdIndexedZSet<K, V, R, O>>) -> Result<Self, Self::Error> {
-        Rc::try_unwrap(batch)
-    }
-}
-
 impl<K, V, R, O> DeepSizeOf for OrdIndexedZSet<K, V, R, O>
 where
     K: DeepSizeOf + Ord,

@@ -1,6 +1,6 @@
 //! Operator that consolidates a trace into a single batch.
 
-use std::{borrow::Cow, convert::TryFrom, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
     circuit::{
@@ -30,10 +30,7 @@ where
     /// computed as the sum of deltas across all iterations of the circuit.
     /// Once the iteration has converged (e.g., reaching a fixed point) is a
     /// good time to consolidate the output.
-    pub fn consolidate<B>(&self) -> Stream<Circuit<P>, B>
-    where
-        B: TryFrom<T::Batch> + Clone + 'static,
-    {
+    pub fn consolidate(&self) -> Stream<Circuit<P>, T::Batch> {
         self.circuit()
             .cache_get_or_insert_with(ConsolidateId::new(self.origin_node_id().clone()), || {
                 self.circuit().add_unary_operator_with_preference(
@@ -46,26 +43,25 @@ where
     }
 }
 
-pub struct Consolidate<T, B> {
-    _type: PhantomData<(T, B)>,
+pub struct Consolidate<T> {
+    _type: PhantomData<T>,
 }
 
-impl<T, B> Consolidate<T, B> {
+impl<T> Consolidate<T> {
     pub fn new() -> Self {
         Self { _type: PhantomData }
     }
 }
 
-impl<T, B> Default for Consolidate<T, B> {
+impl<T> Default for Consolidate<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, B> Operator for Consolidate<T, B>
+impl<T> Operator for Consolidate<T>
 where
     T: 'static,
-    B: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Consolidate")
@@ -75,20 +71,18 @@ where
     }
 }
 
-impl<T, B> UnaryOperator<T, B> for Consolidate<T, B>
+impl<T> UnaryOperator<T, T::Batch> for Consolidate<T>
 where
     T: Trace<Time = ()> + 'static,
-    B: TryFrom<T::Batch> + 'static,
 {
-    fn eval(&mut self, _i: &T) -> B {
+    fn eval(&mut self, _i: &T) -> T::Batch {
         unimplemented!()
     }
 
-    fn eval_owned(&mut self, i: T) -> B {
+    fn eval_owned(&mut self, i: T) -> T::Batch {
         match i.consolidate() {
-            Some(batch) => TryFrom::try_from(batch),
-            None => TryFrom::try_from(T::Batch::empty(())),
+            Some(batch) => batch,
+            None => T::Batch::empty(()),
         }
-        .unwrap_or_else(|_| panic!("Consolidate::eval_owned does not own its input"))
     }
 }

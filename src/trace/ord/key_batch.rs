@@ -24,7 +24,7 @@ use deepsize::DeepSizeOf;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrdKeyBatch<K, T, R, O = usize>
 where
     K: Ord,
