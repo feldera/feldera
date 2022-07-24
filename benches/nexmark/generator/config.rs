@@ -98,7 +98,7 @@ impl Config {
     // What timestamp should the event with `eventNumber` have for this
     // generator?
     pub fn timestamp_for_event(&self, event_number: u64) -> u64 {
-        return self.base_time + self.inter_event_delay_us[0] as u64 * event_number;
+        return self.base_time + self.inter_event_delay_us[0] as u64 * event_number / 1000;
     }
 }
 
@@ -169,11 +169,11 @@ pub mod tests {
 
     // With the default first event rate of 10_000 events per second and one
     // generator, there is 1_000_000 µs/s / 10_000 events/s = 100µs / event, so
-    // the timestamp increases by 100µs for each event.
+    // the timestamp increases by 100µs, ie. 0.1ms for each event.
     #[rstest]
-    #[case(1, 100*1)]
-    #[case(2, 100*2)]
-    #[case(5, 100*5)]
+    #[case(10, 1)]
+    #[case(20, 2)]
+    #[case(50, 5)]
     fn test_timestamp_for_event(#[case] event_number: u64, #[case] expected: u64) {
         assert_eq!(
             Config::default().timestamp_for_event(event_number),

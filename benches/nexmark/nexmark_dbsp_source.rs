@@ -1,6 +1,6 @@
 //! DBSP Source operator that reads from a Nexmark Generator.
 
-use crate::generator::{wallclock_time, NexmarkGenerator, NextEvent};
+use crate::generator::{NexmarkGenerator, NextEvent};
 use crate::model::Event;
 use dbsp::{
     algebra::{ZRingValue, ZSet},
@@ -74,10 +74,10 @@ where
         // Grab a next event, either the last event from the previous call that
         // was saved because it couldn't yet be emitted, or the next generated
         // event.
-        let next_event = match self.next_event.clone() {
-            Some(e) => Some(e),
-            None => self.generator.next_event().unwrap(),
-        };
+        let next_event = self
+            .next_event
+            .clone()
+            .or_else(|| self.generator.next_event().unwrap());
 
         // If there are no more events, we return an empty set.
         if next_event.is_none() {
@@ -87,19 +87,18 @@ where
         // Otherwise we want to emit at least one event, so if the next event
         // is still in the future, we sleep until we can emit it.
         let next_event = next_event.unwrap();
-        let wallclock_time_now = wallclock_time();
+        let mut wallclock_time_now = self.generator.wallclock_time();
         if next_event.wallclock_timestamp > wallclock_time_now {
-            sleep(Duration::from_millis(
-                next_event.wallclock_timestamp - wallclock_time_now,
-            ));
+            let millis_to_sleep = next_event.wallclock_timestamp - wallclock_time_now;
+            sleep(Duration::from_millis(millis_to_sleep));
+            wallclock_time_now += millis_to_sleep;
         }
 
         // Collect as many next events as are ready.
         let mut next_events = vec![next_event];
         let mut next_event = self.generator.next_event().unwrap();
-        let wallclock_time_now = wallclock_time();
         while next_event
-            .is_some_and(|next_event| next_event.wallclock_timestamp.clone() < wallclock_time_now)
+            .is_some_and(|next_event| next_event.wallclock_timestamp.clone() <= wallclock_time_now)
         {
             next_events.push(next_event.unwrap());
             next_event = self.generator.next_event().unwrap();
@@ -220,37 +219,31 @@ mod test {
         root.step().unwrap();
     }
 
-    // When keeping up with the input, there is no buffering and results
-    // are returned one at a time.
+    // With the default rate of 10_000 events per second, or 10 per millisecond,
+    // and then using canned milliseconds for the wallclock time, we can expect
+    // batches of 10 events per call to eval.
     #[test]
-    fn test_eval_current_time() {
-        let wallclock_time = wallclock_time();
-        let mut source = make_test_source(wallclock_time, 5);
-        let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 10);
+    fn test_eval_batched() {
+        let wallclock_time = 0;
+        let mut source = make_test_source(wallclock_time, 30);
+        source
+            .generator
+            .set_wallclock_time_iterator((0..30).into_iter());
+        let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 30);
 
         assert_eq!(
             source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[0..1]))
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[0..10]))
         );
 
         assert_eq!(
             source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[1..2]))
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[10..20]))
         );
 
         assert_eq!(
             source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[2..3]))
-        );
-
-        assert_eq!(
-            source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[3..4]))
-        );
-
-        assert_eq!(
-            source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[4..5]))
+            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[20..30]))
         );
     }
 }
