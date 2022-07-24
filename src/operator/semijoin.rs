@@ -5,7 +5,7 @@ use crate::{
         Scope,
     },
     lattice::Lattice,
-    trace::{ord::OrdValSpine, BatchReader, Batcher, Builder, Cursor, Trace, TraceReader},
+    trace::{ord::OrdValSpine, Batch, BatchReader, Batcher, Builder, Cursor, Trace, TraceReader},
     Circuit, Stream, Timestamp,
 };
 use deepsize::DeepSizeOf;
@@ -14,6 +14,7 @@ use std::{
     borrow::Cow,
     cmp::{min, Ordering},
     fmt::Write,
+    hash::Hash,
     marker::PhantomData,
 };
 use timely::PartialOrder;
@@ -43,8 +44,26 @@ where
     where
         // TODO: Associated type bounds (rust/#52662) really simplify things
         // TODO: Allow non-unit timestamps
+        Pairs: Batch<Time = ()> + Data + Send,
+        Pairs::Key: Hash + Ord + Clone,
+        Pairs::Val: Ord + Clone,
+        Pairs::R: HasZero + MulByRef,
+        Keys: Batch<Key = Pairs::Key, Val = (), Time = (), R = Pairs::R> + Data + Send,
+        // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
+        Out: ZSet<Key = (Pairs::Key, Pairs::Val), R = Pairs::R> + 'static,
+    {
+        self.shard().semijoin_stream_inner(&keys.shard())
+    }
+
+    fn semijoin_stream_inner<Keys, Out>(
+        &self,
+        keys: &Stream<Circuit<S>, Keys>,
+    ) -> Stream<Circuit<S>, Out>
+    where
+        // TODO: Associated type bounds (rust/#52662) really simplify things
+        // TODO: Allow non-unit timestamps
         Pairs: BatchReader<Time = ()> + Data,
-        Pairs::Key: Clone + Ord,
+        Pairs::Key: Ord + Clone,
         Pairs::Val: Clone,
         Pairs::R: HasZero + MulByRef,
         Keys: BatchReader<Key = Pairs::Key, Val = (), Time = (), R = Pairs::R> + Data,
@@ -70,6 +89,27 @@ where
     /// * `Out` - output Z-set type.
     ///
     pub fn semijoin_stream_core<F, Keys, Out>(
+        &self,
+        keys: &Stream<Circuit<S>, Keys>,
+        semijoin_func: F,
+    ) -> Stream<Circuit<S>, Out>
+    where
+        F: Fn(&Pairs::Key, &Pairs::Val) -> Out::Key + 'static,
+        // TODO: Associated type bounds (rust/#52662) really simplify things
+        // TODO: Allow non-unit timestamps
+        Pairs: Batch<Time = ()> + Data + Send,
+        Pairs::Key: Hash + Ord + Clone,
+        Pairs::Val: Ord + Clone,
+        Pairs::R: HasZero + MulByRef,
+        Keys: Batch<Key = Pairs::Key, Val = (), Time = (), R = Pairs::R> + Data + Send,
+        // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
+        Out: ZSet<R = Pairs::R> + 'static,
+    {
+        self.shard()
+            .semijoin_stream_core_inner(&keys.shard(), semijoin_func)
+    }
+
+    fn semijoin_stream_core_inner<F, Keys, Out>(
         &self,
         keys: &Stream<Circuit<S>, Keys>,
         semijoin_func: F,
@@ -283,17 +323,19 @@ impl<Pairs> Stream<Circuit<()>, Pairs> {
         keys: &Stream<Circuit<()>, Keys>,
     ) -> Stream<Circuit<()>, Out>
     where
-        Pairs: IndexedZSet + DeepSizeOf,
-        Pairs::Key: Clone + Ord + DeepSizeOf,
-        Pairs::Val: Clone + Ord,
+        Pairs: IndexedZSet + DeepSizeOf + Send,
+        Pairs::Key: Hash + Ord + Clone + DeepSizeOf,
+        Pairs::Val: Ord + Clone,
         Pairs::R: MulByRef + DeepSizeOf,
-        Keys: ZSet<Key = Pairs::Key, R = Pairs::R> + DeepSizeOf,
+        Keys: ZSet<Key = Pairs::Key, R = Pairs::R> + DeepSizeOf + Send,
         Out: ZSet<Key = (Pairs::Key, Pairs::Val), R = Pairs::R>,
     {
-        self.integrate_trace()
+        let (pairs, keys) = (self.shard(), keys.shard());
+        pairs
+            .integrate_trace()
             .delay_trace()
-            .semijoin_stream(keys)
-            .plus(&self.semijoin_stream(&keys.integrate_trace()))
+            .semijoin_stream_inner(&keys)
+            .plus(&pairs.semijoin_stream_inner(&keys.integrate_trace()))
     }
 
     /// Incremental semijoin of two streams of batches.
@@ -317,17 +359,19 @@ impl<Pairs> Stream<Circuit<()>, Pairs> {
     ) -> Stream<Circuit<()>, Out>
     where
         F: Fn(&Pairs::Key, &Pairs::Val) -> Out::Key + Clone + 'static,
-        Pairs: IndexedZSet + DeepSizeOf,
-        Pairs::Key: Clone + Ord + DeepSizeOf,
-        Pairs::Val: Clone + Ord,
+        Pairs: IndexedZSet + DeepSizeOf + Send,
+        Pairs::Key: Hash + Ord + Clone + DeepSizeOf,
+        Pairs::Val: Ord + Clone,
         Pairs::R: MulByRef + DeepSizeOf,
-        Keys: ZSet<Key = Pairs::Key, R = Pairs::R> + DeepSizeOf,
+        Keys: ZSet<Key = Pairs::Key, R = Pairs::R> + DeepSizeOf + Send,
         Out: ZSet<R = Pairs::R>,
     {
-        self.integrate_trace()
+        let (pairs, keys) = (self.shard(), keys.shard());
+        pairs
+            .integrate_trace()
             .delay_trace()
-            .semijoin_stream_core(keys, semijoin_func.clone())
-            .plus(&self.semijoin_stream_core(&keys.integrate_trace(), semijoin_func))
+            .semijoin_stream_core_inner(&keys, semijoin_func.clone())
+            .plus(&pairs.semijoin_stream_core_inner(&keys.integrate_trace(), semijoin_func))
     }
 }
 

@@ -21,8 +21,10 @@ use std::{
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},
+    num::NonZeroUsize,
     ops::Add,
     rc::Rc,
+    thread,
     time::Instant,
 };
 
@@ -38,11 +40,23 @@ fn main() {
         Args::Bfs { config } => config,
         Args::Pagerank { config, .. } => config,
     };
+    let threads = config
+        .threads
+        .or_else(|| thread::available_parallelism().ok())
+        .unwrap_or_else(|| NonZeroUsize::new(8).unwrap());
     let dataset = config.dataset;
 
     match args {
-        Args::Bfs { .. } => println!("running breadth-first search"),
-        Args::Pagerank { flavor, .. } => println!("running pagerank ({flavor})"),
+        Args::Bfs { .. } => println!(
+            "running breadth-first search with {threads} thread{}",
+            if threads.get() == 1 { "" } else { "s" },
+        ),
+        Args::Pagerank { flavor, .. } => {
+            println!(
+                "running pagerank ({flavor}) with {threads} thread{}",
+                if threads.get() == 1 { "" } else { "s" },
+            );
+        }
     }
 
     print!("loading dataset {}...", dataset.name);
@@ -61,28 +75,57 @@ fn main() {
         "using dataset {} with {} vertices and {} edges",
         dataset.name, properties.vertices, properties.edges,
     );
-    Runtime::run(1, move || {
-        print!("building dataflow... ");
-        io::stdout().flush().unwrap();
+    Runtime::run(threads.get(), move || {
+        if Runtime::worker_index() == 0 {
+            print!(
+                "building dataflow{}... ",
+                if config.profile { " with profiling" } else { "" },
+            );
+            io::stdout().flush().unwrap();
+        }
         let start = Instant::now();
 
         let output = Rc::new(RefCell::new(OutputData::None));
 
         let output_inner = output.clone();
         let root = Root::build(move |circuit| {
-            if config.profile {
+            if config.profile && Runtime::worker_index() == 0 {
                 attach_profiling(dataset, circuit);
             }
 
-            let roots = circuit.add_source(Generator::new(move || root_data.take().unwrap()));
-            let vertices = circuit.add_source(Generator::new(move || vertex_data.take().unwrap()));
-            let edges = circuit.add_source(Generator::new(move || edge_data.take().unwrap()));
+            let roots = circuit.region("roots", || {
+                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
+                    root_data.take().unwrap()
+                } else {
+                    Default::default()
+                }))
+            });
+            let vertices = circuit.region("vertices", || {
+                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
+                    vertex_data.take().unwrap()
+                } else {
+                    Default::default()
+                }))
+            });
+            let edges = circuit.region("edges", || {
+                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
+                    edge_data.take().unwrap()
+                } else {
+                    Default::default()
+                }))
+            });
 
             match args {
                 Args::Bfs { .. } => {
-                    bfs::bfs(roots, vertices, edges).inspect(move |results| {
-                        *output_inner.borrow_mut() = OutputData::Bfs(results.clone());
-                    });
+                    bfs::bfs(roots, vertices, edges)
+                        .gather(0)
+                        .inspect(move |results| {
+                            if Runtime::worker_index() == 0 {
+                                *output_inner.borrow_mut() = OutputData::Bfs(results.clone());
+                            } else {
+                                assert!(results.is_empty());
+                            }
+                        });
                 }
 
                 Args::Pagerank { flavor, .. } => {
@@ -94,103 +137,112 @@ fn main() {
                         edges,
                         flavor,
                     )
+                    .gather(0)
                     .inspect(move |results| {
-                        *output_inner.borrow_mut() = OutputData::PageRank(results.clone());
+                        if Runtime::worker_index() == 0 {
+                            *output_inner.borrow_mut() = OutputData::PageRank(results.clone());
+                        } else {
+                            assert!(results.is_empty());
+                        }
                     });
                 }
             }
         })
         .unwrap();
 
-        let elapsed = start.elapsed();
-        println!("finished in {elapsed:#?}");
+        if Runtime::worker_index() == 0 {
+            let elapsed = start.elapsed();
+            println!("finished in {elapsed:#?}");
 
-        print!("running benchmark... ");
-        io::stdout().flush().unwrap();
+            print!("running benchmark... ");
+            io::stdout().flush().unwrap();
+        }
         let start = Instant::now();
 
         root.step().unwrap();
 
-        let elapsed = start.elapsed();
-        println!("finished in {elapsed:#?}");
+        if Runtime::worker_index() == 0 {
+            let elapsed = start.elapsed();
+            println!("finished in {elapsed:#?}");
 
-        // TODO: Is it correct to multiply edges by two for undirected graphs?
-        let total_edges = properties.edges * (!properties.directed as u64 + 1);
+            // TODO: Is it correct to multiply edges by two for undirected graphs?
+            let total_edges = properties.edges * (!properties.directed as u64 + 1);
 
-        // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
-        let eps = total_edges as f64 / elapsed.as_secs_f64();
-        let keps = eps / 1000.0;
-        println!("achieved {keps:.02} kEPS ({eps:.02} EPS)");
+            // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
+            let eps = total_edges as f64 / elapsed.as_secs_f64();
+            let keps = eps / 1000.0;
+            println!("achieved {keps:.02} kEPS ({eps:.02} EPS)");
 
-        let elements = total_edges + properties.vertices;
-        let evps = elements as f64 / elapsed.as_secs_f64();
-        let kevps = evps / 1000.0;
-        println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
+            let elements = total_edges + properties.vertices;
+            let evps = elements as f64 / elapsed.as_secs_f64();
+            let kevps = evps / 1000.0;
+            println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
 
-        let output = output.borrow();
-        match &*output {
-            OutputData::None => println!("no output was produced"),
+            let output = output.borrow();
+            match &*output {
+                OutputData::None => println!("no output was produced"),
 
-            OutputData::Bfs(result) => {
-                let expected = dataset.load_results::<BfsResults>().unwrap();
-                // TODO: Better diff function
-                assert_eq!(result, &expected);
-            }
-
-            OutputData::PageRank(result) => {
-                let expected = dataset.load_results::<PageRankResults>().unwrap();
-                let difference = expected.add(result.neg_by_ref());
-
-                let mut incorrect = 0;
-                if !difference.is_empty() {
-                    let mut stdout = io::stdout().lock();
-                    let mut cursor = difference.cursor();
-
-                    while cursor.key_valid() {
-                        let key = *cursor.key();
-
-                        if let Some(first) = cursor.get_val().copied() {
-                            let first_weight = cursor.weight();
-                            cursor.step_val();
-
-                            if let Some(second) = cursor.get_val().copied() {
-                                let second_weight = cursor.weight();
-                                cursor.step_val();
-
-                                // Sometimes the values are only different because of floating point
-                                // inaccuracies, e.g. 0.14776291666666666 vs. 0.1477629166666667
-                                if (first.inner() - second.inner()).abs() > f64::EPSILON {
-                                    let (first, first_weight, second, second_weight) = if first_weight.is_positive()
-                                        && second_weight.is_negative()
-                                    {
-                                        (second, second_weight, first, first_weight)
-                                    } else {
-                                        (first, first_weight, second, second_weight)
-                                    };
-
-                                    writeln!(stdout, "{key}, expected {second} and got {first}  ({first_weight:+}, {second_weight:+})")
-                                        .unwrap();
-                                    incorrect += 1;
-                                }
-                            } else if first_weight.is_positive() {
-                                writeln!(stdout, "{key}, missing: {first} ({first_weight:+})")
-                                    .unwrap();
-                            } else {
-                                writeln!(stdout, "{key}, unexpected: {first} ({first_weight:+})")
-                                    .unwrap();
-                            }
-                        }
-
-                        cursor.step_key();
-                    }
-
-                    stdout.flush().unwrap();
+                OutputData::Bfs(result) => {
+                    let expected = dataset.load_results::<BfsResults>().unwrap();
+                    // TODO: Better diff function
+                    assert_eq!(result, &expected);
                 }
 
-                println!(
-                    "pagerank had {incorrect} incorrect result{}",
-                    if incorrect == 1 { "" } else { "s" },
-                );
+                OutputData::PageRank(result) => {
+                    let expected = dataset.load_results::<PageRankResults>().unwrap();
+                    let difference = expected.add(result.neg_by_ref());
+
+                    let mut incorrect = 0;
+                    if !difference.is_empty() {
+                        let mut stdout = io::stdout().lock();
+                        let mut cursor = difference.cursor();
+
+                        while cursor.key_valid() {
+                            let key = *cursor.key();
+
+                            if let Some(first) = cursor.get_val().copied() {
+                                let first_weight = cursor.weight();
+                                cursor.step_val();
+
+                                if let Some(second) = cursor.get_val().copied() {
+                                    let second_weight = cursor.weight();
+                                    cursor.step_val();
+
+                                    // Sometimes the values are only different because of floating point
+                                    // inaccuracies, e.g. 0.14776291666666666 vs. 0.1477629166666667
+                                    if (first.inner() - second.inner()).abs() > f64::EPSILON {
+                                        let (first, first_weight, second, second_weight) = if first_weight.is_positive()
+                                            && second_weight.is_negative()
+                                        {
+                                            (second, second_weight, first, first_weight)
+                                        } else {
+                                            (first, first_weight, second, second_weight)
+                                        };
+
+                                        writeln!(stdout, "{key}, expected {second} and got {first}  ({first_weight:+}, {second_weight:+})")
+                                            .unwrap();
+                                        incorrect += 1;
+                                    }
+                                } else if first_weight.is_positive() {
+                                    writeln!(stdout, "{key}, missing: {first} ({first_weight:+})")
+                                        .unwrap();
+                                } else {
+                                    writeln!(stdout, "{key}, unexpected: {first} ({first_weight:+})")
+                                        .unwrap();
+                                }
+                            }
+
+                            cursor.step_key();
+                        }
+
+                        stdout.flush().unwrap();
+                    }
+
+                    println!(
+                        "pagerank had {incorrect} incorrect result{}",
+                        if incorrect == 1 { "" } else { "s" },
+                    );
+                }
             }
         }
     })
@@ -258,7 +310,7 @@ enum Args {
         #[clap(flatten)]
         config: Config,
 
-        #[clap(long, value_enum, default_value = "scoped")]
+        #[clap(long, value_enum, default_value = "diffed")]
         flavor: PageRankKind,
     },
 }
@@ -272,6 +324,11 @@ struct Config {
     /// Whether or not to profile the dataflow
     #[clap(long)]
     profile: bool,
+
+    /// The number of threads to use for the dataflow, defaults to the
+    /// number of cores the current machine has
+    #[clap(long)]
+    threads: Option<NonZeroUsize>,
 
     // When running with `cargo bench` the binary gets the `--bench` flag, so we
     // have to parse and ignore it so clap doesn't get angry

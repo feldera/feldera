@@ -139,7 +139,8 @@ impl DataSet {
         fs::create_dir_all(&data_path)?;
 
         // If it doesn't exist, download the dataset
-        if !archive_path.exists() && !tarball_path.exists() {
+        // TODO: Check if dir is empty
+        if !(archive_path.exists() || tarball_path.exists()) {
             let mut archive_file = OpenOptions::new()
                 .read(true)
                 .write(true)

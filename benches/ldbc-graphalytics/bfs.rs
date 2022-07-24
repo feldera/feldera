@@ -14,6 +14,7 @@ use dbsp::{
 
 type Distances<P> = Stream<Circuit<P>, DistanceSet>;
 
+// FIXME: Doesn't work with more than one worker
 // TODO: This straight up won't work on the quantities of data required by the
 //       higher scale factor benchmarks, there's simply too much data. We'll
 //       have to process batched data sourced from a custom operator that slowly
