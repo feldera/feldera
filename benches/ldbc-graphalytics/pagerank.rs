@@ -12,6 +12,7 @@ use dbsp::{
 use std::{
     cmp::{min, Ordering},
     fmt::{self, Display},
+    hash::Hash,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -32,10 +33,11 @@ impl Display for PageRankKind {
     }
 }
 
-/// Specified in the [LDBC Spec] ([Pseudo-code])
+/// Specified in the [LDBC Spec][0] ([Pseudo-code][1])
 ///
-/// [LDBC Spec]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
-/// [Pseudo-code]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.2
+/// [0]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
+/// [1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.2
+// FIXME: Doesn't work with more than one worker
 pub fn pagerank<P>(
     pagerank_iters: usize,
     damping_factor: f64,
@@ -179,7 +181,7 @@ where
         ),
 
         PageRankKind::Diffed => {
-            pagerank_differential(pagerank_iters, damping_factor, directed, vertices, edges)
+            pagerank_differential(pagerank_iters, damping_factor, vertices, edges)
         }
     }
     .index()
@@ -414,7 +416,6 @@ where
 fn pagerank_differential<P>(
     pagerank_iters: usize,
     damping_factor: f64,
-    directed: bool,
     vertices: Vertices<P>,
     edges: Edges<P>,
 ) -> Ranks<P>
@@ -425,7 +426,7 @@ where
     type Weighted<S> = Streamed<S, Weights>;
 
     // Vertices weighted by F64s instead of isizes
-    let weighted_vertices = vertices.apply(|vertices| {
+    let weighted_vertices = vertices.shard().apply(|vertices| {
         let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
         let mut cursor = vertices.cursor();
@@ -439,7 +440,7 @@ where
     });
 
     // Vertices weighted by the damping factor
-    let damped_vertices = vertices.apply(move |vertices| {
+    let damped_vertices = vertices.shard().apply(move |vertices| {
         let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
         let mut cursor = vertices.cursor();
@@ -506,26 +507,8 @@ where
         builder.done()
     });
 
-    teleport.inspect(|teleport| {
-        use std::io::Write;
-
-        let mut stdout = std::io::stdout().lock();
-        let mut cursor = teleport.cursor();
-
-        while cursor.key_valid() {
-            if cursor.val_valid() {
-                let key = *cursor.key();
-                let weight = cursor.weight();
-                writeln!(stdout, "teleport: {key}, {weight}").unwrap();
-            }
-            cursor.step_key();
-        }
-
-        stdout.flush().unwrap();
-    });
-
     // Count the number of outgoing edges for each node
-    let outgoing_edge_counts = edges.apply(|weights| {
+    let outgoing_edge_counts = edges.shard().apply(|weights| {
         // We can use a builder here since the cursor yields ordered values
         let mut builder = <Weights as Batch>::Builder::with_capacity((), weights.len());
 
@@ -546,24 +529,6 @@ where
         builder.done()
     });
 
-    outgoing_edge_counts.inspect(|outgoing_edge_counts| {
-        use std::io::Write;
-
-        let mut stdout = std::io::stdout().lock();
-        let mut cursor = outgoing_edge_counts.cursor();
-
-        while cursor.key_valid() {
-            if cursor.val_valid() {
-                let key = *cursor.key();
-                let weight = cursor.weight();
-                writeln!(stdout, "outgoing_edge_counts: {key}, {weight}").unwrap();
-            }
-            cursor.step_key();
-        }
-
-        stdout.flush().unwrap();
-    });
-
     // Find all dangling nodes (nodes without outgoing edges)
     let dangling_nodes = weighted_vertices.minus(
         &outgoing_edge_counts
@@ -571,25 +536,7 @@ where
             .semijoin_stream_core(&weighted_vertices, |&node, _| node),
     );
 
-    dangling_nodes.inspect(|dangling_nodes| {
-        use std::io::Write;
-
-        let mut stdout = std::io::stdout().lock();
-        let mut cursor = dangling_nodes.cursor();
-
-        while cursor.key_valid() {
-            if cursor.val_valid() {
-                let key = *cursor.key();
-                let weight = cursor.weight();
-                writeln!(stdout, "dangling_nodes: {key}, {weight}").unwrap();
-            }
-            cursor.step_key();
-        }
-
-        stdout.flush().unwrap();
-    });
-
-    let edge_weights = edges.apply(|edges| {
+    let edge_weights = edges.shard().apply(|edges| {
         let mut builder =
             <OrdIndexedZSet<Node, Node, Rank> as Batch>::Builder::with_capacity((), edges.len());
 
@@ -608,38 +555,12 @@ where
         builder.done()
     });
 
-    let edges_rev = if directed {
-        edge_weights
-            .apply(|edges| {
-                let mut batch = Vec::with_capacity(edges.len());
-                let mut edges = edges.cursor();
-                while edges.key_valid() {
-                    let src = *edges.key();
-                    while edges.val_valid() {
-                        let dest = *edges.val();
-                        let weight = edges.weight();
-                        batch.push((((dest, src), ()), weight));
-                        edges.step_val();
-                    }
-                    edges.step_key();
-                }
-
-                let mut batcher = <OrdZSet<(Node, Node), Rank> as Batch>::Batcher::new(());
-                batcher.push_batch(&mut batch);
-                batcher.seal()
-            })
-            .distinct()
-            .index()
-    } else {
-        todo!()
-    };
-
     let weights = vertices
         .circuit()
         .iterate_with_condition(|scope| {
             let initial_weights = initial_weights.delta0(scope);
             let teleport = teleport.delta0(scope).integrate();
-            let edges_rev = edges_rev.delta0(scope).integrate();
+            let edge_weights = edge_weights.delta0(scope).integrate();
             let dangling_nodes = dangling_nodes.delta0(scope).integrate();
             let damped_vertices = damped_vertices.delta0(scope).integrate();
             let outgoing_edge_counts = outgoing_edge_counts.delta0(scope).integrate();
@@ -658,136 +579,36 @@ where
                         }
                     });
 
-            weights.inspect(|weights| {
-                use std::io::Write;
+            let importance = scope.region("importance", || {
+                // Find the weight pushed out to each edge by taking the weight of the node for the previous
+                // iteration and dividing it by the number of outgoing edges it has
+                // prev_iter_weight / total_outgoing_edges
+                let weight_per_edge = div_join_stream(&weights, &outgoing_edge_counts);
 
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = weights.cursor();
+                // Aggregate the weights of all incoming edges for any given vertex
+                // sum(incoming_edge_weights)
+                let incoming_vertex_weights =
+                    weight_per_edge.stream_join::<_, _, Weights>(&edge_weights, |_, _, &dest| dest);
 
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "weights: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
+                // Calculate the importance of each node, the sum of all weights from each incoming edge
+                // multiplied by the damping factor
+                // damping_factor * sum(incoming_edge_weights)
+                damped_vertices
+                    .stream_join::<_, _, Weights>(&incoming_vertex_weights, |&node, _, _| node)
             });
 
-            // Find the weight pushed out to each edge by taking the weight of the node for the previous
-            // iteration and dividing it by the number of outgoing edges it has
-            // prev_iter_weight / total_outgoing_edges
-            let weight_per_edge = div_join_stream(&weights, &outgoing_edge_counts);
+            let redistributed = scope.region("redistributed", || {
+                // Sum up the weights of all dangling nodes, `sum(dangling_nodes)`
+                let dangling_sum =
+                    dangling_nodes.stream_join::<_, _, OrdZSet<_, _>>(&weights, |_, _, _| ());
 
-            weight_per_edge.inspect(|weight_per_edge| {
-                use std::io::Write;
-
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = weight_per_edge.cursor();
-
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "weight_per_edge: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
-
-            // Calculate the importance of each node, the sum of all weights from each incoming edge
-            // multiplied by the damping factor
-            // damping_factor * sum(incoming_edge_weights)
-            let importance = damped_vertices.stream_join::<_, _, Weights>(
-                &weight_per_edge.stream_join::<_, _, Weights>(&edges_rev, |_, _, &src| src),
-                |&node, _, _| node,
-            );
-
-            importance.inspect(|importance| {
-                use std::io::Write;
-
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = importance.cursor();
-
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "importance: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
-
-            let redistributed = weights
-                // Sum up the weights of all dangling nodes, sum(dangling_nodes)
-                .stream_join::<_, _, OrdZSet<_, _>>(&dangling_nodes, |&node, _, _| ((), node))
-                .index()
                 // (damping_factor / total_vertices) * sum(dangling_nodes)
-                .stream_join::<_, _, OrdZSet<_, _>>(&damped_div_total_vertices, |_, &node, _| node);
-
-            redistributed.inspect(|redistributed| {
-                use std::io::Write;
-
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = redistributed.cursor();
-
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "redistributed: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
+                damped_div_total_vertices
+                    .stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
             });
 
-            let teleport_importance = teleport.plus(&importance);
-            teleport_importance.inspect(|teleport_importance| {
-                use std::io::Write;
-
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = teleport_importance.cursor();
-
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "teleport_importance: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
-
-            let page_rank = teleport_importance.plus(&redistributed);
+            let page_rank = teleport.sum([&importance, &redistributed]);
             weights_var.connect(&page_rank);
-            page_rank.inspect(|page_rank| {
-                use std::io::Write;
-
-                let mut stdout = std::io::stdout().lock();
-                let mut cursor = page_rank.cursor();
-
-                while cursor.key_valid() {
-                    if cursor.val_valid() {
-                        let key = *cursor.key();
-                        let weight = cursor.weight();
-                        writeln!(stdout, "page_rank: {key}, {weight}").unwrap();
-                    }
-                    cursor.step_key();
-                }
-
-                stdout.flush().unwrap();
-            });
 
             // Ensure we do only `iters` iterations of pagerank
             let mut current_iter = 0;
@@ -797,14 +618,14 @@ where
                     current_iter += 1;
                     iter
                 }))
-                .condition(move |&iter| iter >= pagerank_iters);
+                .condition(move |&iter| iter == pagerank_iters - 1);
 
             Ok((condition, page_rank.export()))
         })
         .unwrap();
 
     // Hoist the weights out of the weight and into the value
-    weights.apply(|weights| {
+    weights.shard().apply(|weights| {
         let mut batch = Vec::with_capacity(weights.len());
         let mut weights = weights.cursor();
         while weights.key_valid() {
@@ -825,9 +646,9 @@ fn div_join_stream<S, K>(
 ) -> Streamed<S, OrdZSet<K, Rank>>
 where
     S: Clone + 'static,
-    K: Ord + Copy + Data,
+    K: Hash + Ord + Copy + Data + Send,
 {
-    lhs.apply2(rhs, |lhs, rhs| {
+    lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {
         let capacity = min(lhs.len(), rhs.len());
         let mut builder = <OrdZSet<K, Rank> as Batch>::Builder::with_capacity((), capacity);
 
@@ -841,10 +662,6 @@ where
                         let lhs_weight = lhs.weight();
                         if rhs.val_valid() {
                             let rhs_weight = rhs.weight();
-                            println!(
-                                "div_join_stream: {lhs_weight} / {rhs_weight} = {}",
-                                lhs_weight / rhs_weight,
-                            );
                             builder.push((*lhs.key(), (), lhs_weight / rhs_weight));
                         }
                     }

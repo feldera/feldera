@@ -149,7 +149,7 @@ where
     /// is guaranteed to succeed for `sender`.
     fn ready_to_send(&self, sender: usize) -> bool {
         debug_assert!(sender < self.npeers);
-        self.sender_counters[sender].load(Ordering::SeqCst) == self.npeers
+        self.sender_counters[sender].load(Ordering::Acquire) == self.npeers
     }
 
     /// Write all outgoing messages for `sender` to mailboxes.
@@ -174,8 +174,8 @@ where
 
         for receiver in 0..self.npeers {
             *self.mailbox(sender, receiver).lock().unwrap() = data.next();
-            self.sender_counters[sender].fetch_sub(1, Ordering::SeqCst);
-            let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::SeqCst);
+            self.sender_counters[sender].fetch_sub(1, Ordering::Release);
+            let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
             if old_counter >= self.npeers - 1 {
                 // This can be a spurious callback (see detailed comment in `try_receive_all`)
                 // below.
@@ -193,7 +193,7 @@ where
     /// operation is guaranteed for `receiver`.
     pub(crate) fn ready_to_receive(&self, receiver: usize) -> bool {
         debug_assert!(receiver < self.npeers);
-        self.receiver_counters[receiver].load(Ordering::SeqCst) == self.npeers
+        self.receiver_counters[receiver].load(Ordering::Acquire) == self.npeers
     }
 
     /// Read all incoming messages for `receiver`.
@@ -219,8 +219,8 @@ where
                 .take()
                 .unwrap();
             cb(data);
-            self.receiver_counters[receiver].fetch_sub(1, Ordering::SeqCst);
-            let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::SeqCst);
+            self.receiver_counters[receiver].fetch_sub(1, Ordering::Release);
+            let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
             if old_counter >= self.npeers - 1 {
                 // This can be a spurious callback if the following thread interleaving occurs:
                 // 1. Another receiver increments the sender's counter to `npeers`.

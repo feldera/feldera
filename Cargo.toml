@@ -67,6 +67,7 @@ required-features = ["with-nexmark"]
 name = "consolidation"
 harness = false
 
+[[bench]]
 name = "ldbc-graphalytics"
 harness = false
 
