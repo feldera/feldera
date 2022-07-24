@@ -61,7 +61,7 @@ fn main() {
         "using dataset {} with {} vertices and {} edges",
         dataset.name, properties.vertices, properties.edges,
     );
-    Runtime::run(1, move |_runtime, _index| {
+    Runtime::run(1, move || {
         print!("building dataflow... ");
         io::stdout().flush().unwrap();
         let start = Instant::now();
