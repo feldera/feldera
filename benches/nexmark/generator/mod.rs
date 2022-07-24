@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use bids::CHANNELS_NUMBER;
 use cached::SizedCache;
 use rand::Rng;
-use std::time::SystemTime;
+use std::{ops::Range, time::SystemTime};
 
 mod auctions;
 mod bids;
@@ -33,13 +33,10 @@ pub struct NexmarkGenerator<R: Rng> {
     /// Initialised to the current system time when the first event is
     /// emitted.
     wallclock_base_time: Option<u64>,
-}
 
-pub fn wallclock_time() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    /// An optional iterator that provides wallclock timestamps in tests.
+    /// This is set to None by default.
+    wallclock_iterator: Option<Range<u64>>,
 }
 
 impl<R: Rng> NexmarkGenerator<R> {
@@ -50,12 +47,25 @@ impl<R: Rng> NexmarkGenerator<R> {
             bid_channel_cache: SizedCache::with_size(CHANNELS_NUMBER),
             events_count_so_far: 0,
             wallclock_base_time: None,
+            wallclock_iterator: None,
         }
     }
 
     // Reset the generator to begin at event 0 again.
     pub fn reset(&mut self) {
         self.events_count_so_far = 0;
+    }
+
+    // Returns the real current wallclock time or a specific range of numbers
+    // in tests.
+    pub fn wallclock_time(&mut self) -> u64 {
+        match &mut self.wallclock_iterator {
+            Some(i) => i.next().unwrap(),
+            None => SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        }
     }
 
     /// Set the wallclock base time explicitly rather than leaving it
@@ -70,6 +80,11 @@ impl<R: Rng> NexmarkGenerator<R> {
                 )
             }
         };
+    }
+
+    /// Set the wallclock time iterator to generate canned times in tests.
+    pub fn set_wallclock_time_iterator(&mut self, i: Range<u64>) {
+        self.wallclock_iterator = Some(i);
     }
 
     fn get_next_event_id(&self) -> u64 {
@@ -89,7 +104,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             return Ok(None);
         }
         if self.wallclock_base_time == None {
-            self.wallclock_base_time = Some(wallclock_time());
+            self.wallclock_base_time = Some(self.wallclock_time());
         }
 
         // When, in event time, we should generate the event. Monotonic.
@@ -243,7 +258,7 @@ pub mod tests {
                 "got: {:?}, want: Event::NewAuction(_)",
                 next_event.event
             );
-            assert_eq!(next_event.event_timestamp, event_num * 100);
+            assert_eq!(next_event.event_timestamp, event_num / 10);
         }
 
         // And the rest of the events in the first epoch are bids.
@@ -257,7 +272,7 @@ pub mod tests {
                 "got: {:?}, want: Event::NewBid(_)",
                 next_event.event
             );
-            assert_eq!(next_event.event_timestamp, event_num * 100);
+            assert_eq!(next_event.event_timestamp, event_num / 10);
         }
 
         // The next epoch begins with another person etc.
@@ -265,7 +280,7 @@ pub mod tests {
         assert!(next_event.is_some());
         let next_event = next_event.unwrap();
 
-        assert_eq!(next_event.event_timestamp, 50 * 100);
+        assert_eq!(next_event.event_timestamp, 5);
         assert!(
             matches!(next_event.event, Event::NewPerson(_)),
             "got: {:?}, want: Event::NewPerson(_)",
