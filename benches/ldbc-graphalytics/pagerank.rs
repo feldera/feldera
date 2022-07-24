@@ -2,7 +2,7 @@ use crate::data::{Edges, Node, Rank, RankPairs, RankSet, Ranks, Streamed, Vertic
 use dbsp::{
     algebra::HasOne,
     circuit::operator_traits::Data,
-    operator::{DelayedFeedback, Generator},
+    operator::{DelayedFeedback, FilterMap, Generator},
     trace::{
         layers::Trie, ord::indexed_zset_batch::OrdIndexedZSetBuilder, Batch, BatchReader, Batcher,
         Builder, Cursor,
@@ -80,10 +80,10 @@ where
     });
 
     // Calculate the teleport, `(1 - 𝑑) ÷ |V|`
-    let teleport =
-        total_vertices.map_values::<OrdIndexedZSet<_, _, _>, _>(move |&(), &total_vertices| {
-            F64::new((1.0 - damping_factor) / total_vertices as f64)
-        });
+    let teleport = total_vertices.map_index(move |(&node, &total_vertices)| {
+        let teleport = F64::new((1.0 - damping_factor) / total_vertices as f64);
+        (node, teleport)
+    });
 
     // Count the number of outgoing edges for each node
     let outgoing_sans_dangling = edges.apply(|weights| {
@@ -112,7 +112,7 @@ where
         vertices.minus(&outgoing_sans_dangling.semijoin_stream_core(&vertices, |&node, _| node));
 
     // Make the edge weights for all dangling nodes, we only need to calculate this once
-    let dangling_edge_weights = dangling_nodes.map_keys(|&node| (node, F64::new(0.0)));
+    let dangling_edge_weights = dangling_nodes.map(|&node| (node, F64::new(0.0)));
 
     let reversed = if directed {
         edges.apply(|edges| {
@@ -134,14 +134,14 @@ where
 
     // Undirected graphs already have all the edges we need
     } else {
-        edges.map_values(|_, _| ())
+        edges.map(|(&src, _)| src)
     }
     .distinct();
 
     // Find vertices without any incoming edges
     let zero_incoming = vertices
         .minus(&reversed.semijoin::<(), _, _, _>(&vertices, |&node, _| node))
-        .map_keys::<OrdZSet<_, _>, _>(|&node| ((), (node, F64::new(0.0))));
+        .map(|&node| ((), (node, F64::new(0.0))));
 
     // Create a stream containing one `((), 0)` pair
     let zero = vertices

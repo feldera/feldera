@@ -6,7 +6,11 @@
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
 use crate::data::{Distance, DistanceSet, Edges, Node, Vertices};
-use dbsp::{operator::recursive::RecursiveStreams, time::NestedTimestamp32, Circuit, Stream};
+use dbsp::{
+    operator::{recursive::RecursiveStreams, FilterMap},
+    time::NestedTimestamp32,
+    Circuit, Stream,
+};
 
 type Distances<P> = Stream<Circuit<P>, DistanceSet>;
 
@@ -48,10 +52,10 @@ where
         .expect("failed to build dfs recursive scope");
 
     // Collect all reachable nodes
-    let reachable_nodes = distances.map_keys(|&(node, _)| node);
+    let reachable_nodes = distances.map(|&(node, _)| node);
     // Find all unreachable nodes (vertices not included in `distances`) and give them a weight of -1
     let unreachable_nodes =
-        antijoin(&vertices, &reachable_nodes).map_keys(|&node| (node, i64::MAX as Distance));
+        antijoin(&vertices, &reachable_nodes).map(|&node| (node, i64::MAX as Distance));
 
     distances.plus(&unreachable_nodes)
 }
