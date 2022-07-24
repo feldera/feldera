@@ -243,6 +243,46 @@ impl DataSet {
         Ok(data_path)
     }
 
+    // Urls are hosted with faster download speeds here:
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/cit-Patents.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/com-friendster.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_5-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_6-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_7-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_8-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_9-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_0-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_1-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_2-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_3-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_4-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_5-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_6-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_7-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_8-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_9-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_0-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_1-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_2-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_3-zf.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_4-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-sf10k-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-sf3k-fb.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/dota-league.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/example-directed.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/example-undirected.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-22.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-23.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-24.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-25.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-26.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-27.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-28.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-29.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-30.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/kgs.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/twitter_mpi.tar.zst
+    // https://r2-public-worker.ldbc.workers.dev/graphalytics/wiki-Talk.tar.zst
     pub const DATASETS: [Self; 11] = [
         Self::EXAMPLE_DIR,
         Self::EXAMPLE_UNDIR,
@@ -259,57 +299,57 @@ impl DataSet {
 
     pub const EXAMPLE_DIR: DataSet = DataSet::new(
         "example-directed",
-        "https://surfdrive.surf.nl/files/index.php/s/7hGIIZ6nzxgi0dU/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/example-directed.tar.zst",
     );
 
     pub const EXAMPLE_UNDIR: DataSet = DataSet::new(
         "example-undirected",
-        "https://surfdrive.surf.nl/files/index.php/s/enKFbXmUBP2rxgB/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/example-undirected.tar.zst",
     );
 
     pub const DATAGEN_7_5: DataSet = DataSet::new(
         "datagen-7_5-fb",
-        "https://surfdrive.surf.nl/files/index.php/s/ypGcsxzrBeh2YGb/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_5-fb.tar.zst",
     );
 
     pub const DATAGEN_7_6: DataSet = DataSet::new(
         "datagen-7_6-fb",
-        "https://surfdrive.surf.nl/files/index.php/s/pxl7rDvzDQJFhfc/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_6-fb.tar.zst",
     );
 
     pub const DATAGEN_7_7: DataSet = DataSet::new(
         "datagen-7_7-zf",
-        "https://surfdrive.surf.nl/files/index.php/s/sstTvqgcyhWVVPn/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_7-zf.tar.zst",
     );
 
     pub const DATAGEN_8_2: DataSet = DataSet::new(
         "datagen-8_2-zf",
-        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_2-zf.tar.zst",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_2-zf.tar.zst",
     );
 
     pub const DATAGEN_8_3: DataSet = DataSet::new(
         "datagen-8_3-zf",
-        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_3-zf.tar.zst",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_3-zf.tar.zst",
     );
 
     pub const DATAGEN_8_4: DataSet = DataSet::new(
         "datagen-8_4-fb",
-        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/datagen-8_4-fb.tar.zst",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_4-fb.tar.zst",
     );
 
     pub const DATAGEN_8_5: DataSet = DataSet::new(
         "datagen-8_5-fb",
-        "https://surfdrive.surf.nl/files/index.php/s/2d8wUj9HGIzime3/download",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_5-fb.tar.zst",
     );
 
     pub const GRAPH_500_23: Self = Self::new(
         "graph500-23",
-        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/graph500-23.tar.zst",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-23.tar.zst",
     );
 
     pub const GRAPH_500_24: Self = Self::new(
         "graph500-24",
-        "https://repository.surfsara.nl/datasets/cwi/graphalytics/files/graphalytics-graph-data-sets/graph500-24.tar.zst",
+        "https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-24.tar.zst",
     );
 }
 
