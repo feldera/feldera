@@ -231,7 +231,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all -- --check --config format_code_in_doc_comments=true --config wrap_comments=true
+          args: --all -- --check
 
   links:
     name: Check Doc Links

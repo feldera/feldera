@@ -282,13 +282,13 @@ mod test {
             let output1 = index1.stream_join_range(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |k1, v1, k2, v2| Some(((k1.clone(), v1.clone()), (k2.clone(), v2.clone()))),
+                |&k1, &v1, &k2, &v2| Some(((k1, v1), (k2, v2))),
             );
             output1.inspect(move |fm| assert_eq!(fm, &outputs.next().unwrap()));
             let output2 = index1.stream_join_range_index(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |k1, v1, k2, v2| Some(((k1.clone(), v1.clone()), (k2.clone(), v2.clone()))),
+                |&k1, &v1, &k2, &v2| Some(((k1, v1), (k2, v2))),
             );
             output1
                 .index()

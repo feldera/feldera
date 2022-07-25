@@ -45,7 +45,7 @@ fn small_push() {
 
     assert_eq!(
         output,
-        vec![vec![((45, 0), -1)], vec![((0, 0), 1)], vec![((45, 1), 1)]],
+        vec![vec![((0, 0), 1), ((45, 0), -1)], vec![((45, 1), 1)]],
     );
 }
 
@@ -117,9 +117,9 @@ fn force_merge_on_push() {
     merger.finish_into(&mut output);
 
     let expected = vec![
-        vec![(0, 9), (1, 18), (24, 5), (25, 12), (54, -46)],
+        vec![(0, 9), (1, 18), (23, 54), (24, 5), (25, 12), (54, -46)],
         vec![(97, -102)],
-        vec![(23, 54), (89, 1)],
+        vec![(89, 1)],
     ];
     assert_eq!(output, expected);
 }
