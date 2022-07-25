@@ -84,6 +84,17 @@ mod tests {
     use crate::utils::VecExt;
 
     #[test]
+    #[cfg_attr(coverage_nightly, no_coverage)]
+    fn is_sorted_by() {
+        let x = vec![1, 2, 3, 4, 5, 6];
+        assert!(x.is_sorted_by(|a, b| a.partial_cmp(b)));
+
+        let x = vec![1, 2, 6, 3, 4, 5];
+        assert!(!x.is_sorted_by(|a, b| a.partial_cmp(b)));
+    }
+
+    #[test]
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn spare_capacity() {
         let mut vec = Vec::with_capacity(0);
         assert_eq!(vec.spare_capacity(), 0);
@@ -105,6 +116,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn push_unchecked_1() {
         let mut vec = Vec::with_capacity(1);
         unsafe { vec.push_unchecked("something") };
@@ -114,6 +126,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn push_unchecked_100() {
         let mut vec = Vec::with_capacity(100);
         assert!(vec.is_empty());
@@ -131,6 +144,7 @@ mod tests {
     // for checking `push_unchecked()`'s invariants
     #[test]
     #[cfg(debug_assertions)]
+    #[cfg_attr(coverage_nightly, no_coverage)]
     #[should_panic = "cannot push to a vec of length zero"]
     fn push_unchecked_zero_capacity() {
         let mut empty = Vec::with_capacity(0);
@@ -141,6 +155,7 @@ mod tests {
     // for checking `push_unchecked()`'s invariants
     #[test]
     #[cfg(debug_assertions)]
+    #[cfg_attr(coverage_nightly, no_coverage)]
     #[should_panic = "cannot push to a vec without spare capacity"]
     fn push_unchecked_full() {
         let mut full = Vec::with_capacity(10);

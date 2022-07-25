@@ -64,6 +64,21 @@ macro_rules! num_entries_scalar {
             $(assert_eq!(<$type>::default().num_entries_shallow(), 1);)+
             $(assert_eq!(<$type>::default().num_entries_deep(), 1);)+
         }
+
+        #[test]
+        fn check_scalar_entry_refs() {
+            $(assert_eq!(<&$type>::CONST_NUM_ENTRIES, Some(1));)+
+            $(assert_eq!(<&$type as $crate::NumEntries>::num_entries_shallow(&&<$type>::default()), 1);)+
+            $(assert_eq!(<&$type as $crate::NumEntries>::num_entries_deep(&&<$type>::default()), 1);)+
+        }
+
+        #[test]
+        fn check_scalar_entry_rc() {
+            use std::rc::Rc;
+            $(assert_eq!(<Rc<$type>>::CONST_NUM_ENTRIES, Some(1));)+
+            $(assert_eq!(<Rc<$type> as $crate::NumEntries>::num_entries_shallow(&Rc::new(<$type>::default())), 1);)+
+            $(assert_eq!(<Rc<$type> as $crate::NumEntries>::num_entries_deep(&Rc::new(<$type>::default())), 1);)+
+        }
     };
 }
 
@@ -191,5 +206,66 @@ where
     #[inline]
     fn num_entries_deep(&self) -> usize {
         self.as_ref().num_entries_deep()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::NumEntries;
+
+    #[test]
+    fn vec_entries() {
+        let x: Vec<u8> = Vec::new();
+        assert_eq!(x.num_entries_shallow(), 0);
+        assert_eq!(x.num_entries_deep(), 0);
+
+        let x: Vec<u8> = vec![0; 256];
+        assert_eq!(x.num_entries_shallow(), 256);
+        assert_eq!(x.num_entries_deep(), 256);
+
+        let x: Vec<Vec<u8>> = vec![vec![0]; 256];
+        assert_eq!(x.num_entries_shallow(), 256);
+        assert_eq!(x.num_entries_deep(), 256);
+    }
+
+    #[test]
+    fn slice_entries() {
+        let x: Vec<u8> = Vec::new();
+        assert_eq!(x.as_slice().num_entries_shallow(), 0);
+        assert_eq!(x.as_slice().num_entries_deep(), 0);
+
+        let x: Vec<u8> = vec![0; 256];
+        assert_eq!(x.as_slice().num_entries_shallow(), 256);
+        assert_eq!(x.as_slice().num_entries_deep(), 256);
+
+        let x: Vec<Vec<u8>> = vec![vec![0]; 256];
+        assert_eq!(x.as_slice().num_entries_shallow(), 256);
+        assert_eq!(x.as_slice().num_entries_deep(), 256);
+    }
+
+    #[test]
+    fn array_entries() {
+        let x: [u8; 0] = [];
+        assert_eq!(x.num_entries_shallow(), 0);
+        assert_eq!(x.num_entries_deep(), 0);
+
+        let x: [u8; 256] = [0; 256];
+        assert_eq!(x.num_entries_shallow(), 256);
+        assert_eq!(x.num_entries_deep(), 256);
+
+        let x: [Vec<u8>; 256] = [(); 256].map(|_| vec![0]);
+        assert_eq!(x.num_entries_shallow(), 256);
+        assert_eq!(x.num_entries_deep(), 256);
+    }
+
+    #[test]
+    fn str_entries() {
+        let x = "";
+        assert_eq!(x.num_entries_shallow(), 1);
+        assert_eq!(x.num_entries_deep(), 1);
+
+        let x = "sdgfdsgfggregw";
+        assert_eq!(x.num_entries_shallow(), 1);
+        assert_eq!(x.num_entries_deep(), 1);
     }
 }
