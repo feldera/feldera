@@ -282,7 +282,7 @@ mod test {
                 indexed_zset!{ 1 => {"a" => 3, "d" => 1, "e" => 1}, 2 => {"c" => 1}, 3 => {"a" => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
-                   .index_with(|(k, v)| (k.clone(), v.clone()))
+                   .index_with(|&(k, v)| (k, v))
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })

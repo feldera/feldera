@@ -233,11 +233,12 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
     // merges two sorted input lists into one sorted output list.
     // TODO: Split this into two functions:
     //       - `fn merge_batch(Vec<(D, R)>, Vec<(D, R)>) -> Vec<(D, R)>`
-    //       - `fn merge_batches(Vec<Vec<(D, R)>>, Vec<Vec<(D, R)>>) -> Vec<Vec<(D, R)>>`
+    //       - `fn merge_batches(Vec<Vec<(D, R)>>, Vec<Vec<(D, R)>>) -> Vec<Vec<(D,
+    //         R)>>`
     // TODO: There's some things that need to be evaluated/tested/benchmarked here:
-    //       - When getting a new head1/head2 after the inner merge happens,
-    //         is it beneficial to pop from the opposite list (list1/list2)
-    //         when one of them is exhausted?
+    //       - When getting a new head1/head2 after the inner merge happens, is it
+    //         beneficial to pop from the opposite list (list1/list2) when one of
+    //         them is exhausted?
     //       - Sometimes we can keep on merging into the same results vec when one
     //         head is exhausted, we should do that when possible
     //       - Whenever we push a batch to `output` we lose the ability to merge
@@ -337,11 +338,11 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
                 head2 = list2.pop().map_or_else(VecDeque::new, VecDeque::from);
             }
 
-            // // If result is empty we have to start a new result vec to make sure
-            // // that we don't append to result in an unsorted manner
-            // if !result.is_empty() {
-            //     debug_assert!(result.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))));
-            //     output.push(result);
+            // // If result is empty we have to start a new result vec to make
+            // sure // that we don't append to result in an unsorted
+            // manner if !result.is_empty() {
+            //     debug_assert!(result.is_sorted_by(|(a, _), (b, _)|
+            // Some(a.cmp(b))));     output.push(result);
             //     result = self.buffer();
             // }
         }
