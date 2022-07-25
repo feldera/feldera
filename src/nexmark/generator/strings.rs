@@ -27,7 +27,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::generator::tests::make_test_generator;
+    use super::super::tests::make_test_generator;
 
     #[test]
     fn next_string_length() {

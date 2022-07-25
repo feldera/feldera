@@ -1,4 +1,5 @@
 #![feature(generic_associated_types)]
+#![feature(is_some_with)]
 
 mod num_entries;
 mod ref_pair;
@@ -13,6 +14,9 @@ pub mod operator;
 pub mod profile;
 pub mod time;
 pub mod trace;
+
+#[cfg(feature = "with-nexmark")]
+pub mod nexmark;
 
 pub use num_entries::NumEntries;
 pub use ref_pair::RefPair;

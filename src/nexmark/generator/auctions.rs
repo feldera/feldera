@@ -2,9 +2,11 @@
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/AuctionGenerator.java).
 
-use super::config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID};
-use super::NexmarkGenerator;
-use crate::model::Auction;
+use super::{
+    super::model::Auction,
+    config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID},
+    NexmarkGenerator,
+};
 use anyhow::Result;
 use rand::Rng;
 use std::cmp;
@@ -127,8 +129,8 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::make_test_generator;
     use super::*;
-    use crate::generator::tests::make_test_generator;
     use rstest::rstest;
 
     #[test]

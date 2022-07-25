@@ -1,8 +1,18 @@
-//! DBSP Source operator that reads from a Nexmark Generator.
+//! Nexmark provides a configurable Nexmark data source.
+//!
+//! Based on the API defined by the [Java Flink NEXMmark implementation](https://github.com/nexmark/nexmark)
+//! with some inspiration from the [Megaphone Nexmark tests](https://github.com/strymon-system/megaphone/tree/master/nexmark)
+//! which are themselves based on the [Timely Nexmark benchmark implementation](https://github.com/Shinmera/bsc-thesis/tree/master/benchmarks).
+//!
+//! I'm writing this Nexmark data source generator with the intention of
+//! moving it to its own repo and publishing as a re-usable crate, not only
+//! so we can work with the wider community to improve it, but also because
+//! it will allow us later to extend it to support multiple data sources in
+//! parallel when DBSP can be scaled.
 
-use crate::generator::{NexmarkGenerator, NextEvent};
-use crate::model::Event;
-use dbsp::{
+use self::generator::{NexmarkGenerator, NextEvent};
+use self::model::Event;
+use crate::{
     algebra::{ZRingValue, ZSet},
     circuit::{
         operator_traits::{Data, Operator, SourceOperator},
@@ -14,7 +24,11 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::{borrow::Cow, marker::PhantomData};
 
-pub struct NexmarkDBSPSource<R: Rng, W, C> {
+mod config;
+mod generator;
+mod model;
+
+pub struct NexmarkSource<R: Rng, W, C> {
     /// The generator for events emitted by this source.
     // TODO(absoludity): Longer-term, it'd be great to use a client (such as a gRPC client) here to
     // completely separate the generator and allow the generator to be used with other languages
@@ -27,12 +41,12 @@ pub struct NexmarkDBSPSource<R: Rng, W, C> {
     _t: PhantomData<(C, W)>,
 }
 
-impl<R, W, C> NexmarkDBSPSource<R, W, C>
+impl<R, W, C> NexmarkSource<R, W, C>
 where
     R: Rng,
 {
     pub fn from_generator(generator: NexmarkGenerator<R>) -> Self {
-        NexmarkDBSPSource {
+        NexmarkSource {
             generator,
             next_event: None,
             _t: PhantomData,
@@ -40,7 +54,7 @@ where
     }
 }
 
-impl<R, W, C> Operator for NexmarkDBSPSource<R, W, C>
+impl<R, W, C> Operator for NexmarkSource<R, W, C>
 where
     C: Data,
     R: Rng + 'static,
@@ -64,7 +78,7 @@ where
     }
 }
 
-impl<R, W, C> SourceOperator<C> for NexmarkDBSPSource<R, W, C>
+impl<R, W, C> SourceOperator<C> for NexmarkSource<R, W, C>
 where
     R: Rng + 'static,
     W: ZRingValue + 'static,
@@ -98,7 +112,7 @@ where
         let mut next_events = vec![next_event];
         let mut next_event = self.generator.next_event().unwrap();
         while next_event
-            .is_some_and(|next_event| next_event.wallclock_timestamp.clone() <= wallclock_time_now)
+            .is_some_and(|next_event| next_event.wallclock_timestamp <= wallclock_time_now)
         {
             next_events.push(next_event.unwrap());
             next_event = self.generator.next_event().unwrap();
@@ -120,16 +134,16 @@ where
 
 #[cfg(test)]
 mod test {
+    use self::generator::{config::Config, tests::generate_expected_next_events};
     use super::*;
-    use crate::generator::{config::Config, tests::generate_expected_next_events};
-    use dbsp::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
+    use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
 
     fn make_test_source(
         wallclock_base_time: u64,
         max_events: u64,
-    ) -> NexmarkDBSPSource<StepRng, isize, OrdZSet<Event, isize>> {
-        let mut source = NexmarkDBSPSource::from_generator(NexmarkGenerator::new(
+    ) -> NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> {
+        let mut source = NexmarkSource::from_generator(NexmarkGenerator::new(
             Config {
                 max_events,
                 ..Config::default()

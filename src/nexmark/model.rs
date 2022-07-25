@@ -62,7 +62,7 @@ pub struct Bid {
 /// or a `Bid`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Event {
-    NewPerson(Person),
-    NewAuction(Auction),
-    NewBid(Bid),
+    Person(Person),
+    Auction(Auction),
+    Bid(Bid),
 }

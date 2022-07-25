@@ -1,4 +1,4 @@
-use crate::config::Config as NexmarkConfig;
+use super::super::config::Config as NexmarkConfig;
 
 // We start the ids at specific values to help ensure the queries find a match
 // even on small synthesized dataset sizes.
@@ -98,7 +98,7 @@ impl Config {
     // What timestamp should the event with `eventNumber` have for this
     // generator?
     pub fn timestamp_for_event(&self, event_number: u64) -> u64 {
-        return self.base_time + self.inter_event_delay_us[0] as u64 * event_number / 1000;
+        self.base_time + self.inter_event_delay_us[0] as u64 * event_number / 1000
     }
 }
 
@@ -122,8 +122,8 @@ impl Default for Config {
 
 #[cfg(test)]
 pub mod tests {
+    use super::super::super::config::Config as NexmarkConfig;
     use super::*;
-    use crate::config::Config as NexmarkConfig;
     use rstest::rstest;
 
     #[test]
