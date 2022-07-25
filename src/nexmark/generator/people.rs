@@ -2,10 +2,10 @@
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/PersonGenerator.java).
 
-use super::config;
-use super::NexmarkGenerator;
-use crate::config as nexmark_config;
-use crate::model::Person;
+use super::{
+    super::{config as nexmark_config, model::Person},
+    config, NexmarkGenerator,
+};
 use rand::{seq::SliceRandom, Rng};
 use std::cmp::min;
 
@@ -135,8 +135,8 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::make_test_generator;
     use super::*;
-    use crate::generator::tests::make_test_generator;
 
     #[test]
     fn test_next_person() {
