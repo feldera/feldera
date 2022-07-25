@@ -24,6 +24,7 @@ where
 
 // Merging empty lists should produce an empty list
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn merge_empty_inputs() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter::new();
     let merged = merger.merge_by(Vec::new(), Vec::new());
@@ -31,6 +32,7 @@ fn merge_empty_inputs() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn small_push() {
     let mut merger = MergeSorter::<(usize, usize), isize> {
         queue: vec![vec![vec![((45, 0), -1)], vec![((0, 0), 1)]]],
@@ -50,6 +52,7 @@ fn small_push() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn merge_by() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter::new();
 
@@ -64,6 +67,7 @@ fn merge_by() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn push_with_excess_stashes() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter {
         queue: Vec::new(),
@@ -78,6 +82,7 @@ fn push_with_excess_stashes() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn force_finish_merge() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter {
         queue: vec![
@@ -101,6 +106,7 @@ fn force_finish_merge() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn force_merge_on_push() {
     let mut merger: MergeSorter<usize, isize> = MergeSorter {
         queue: vec![
@@ -125,6 +131,7 @@ fn force_merge_on_push() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, no_coverage)]
 fn count_tuples() {
     let empty = <MergeSorter<usize, isize>>::new();
     assert_eq!(empty.tuples(), 0);
@@ -195,6 +202,7 @@ mod proptests {
     }
 
     /// Generate a random, consolidated batch of data
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn consolidated_batch() -> impl Strategy<Value = Vec<((usize, usize), isize)>> {
         batch().prop_map(|mut batch| {
             consolidate(&mut batch);
@@ -239,6 +247,7 @@ mod proptests {
         }
     }
 
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn empty_merge_sorter() -> MergeSorter<(usize, usize), isize> {
         MergeSorter {
             queue: Vec::new(),
@@ -246,6 +255,7 @@ mod proptests {
         }
     }
 
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn expected_data(
         merger: &MergeSorter<(usize, usize), isize>,
         batch: &[((usize, usize), isize)],
@@ -280,6 +290,7 @@ mod proptests {
         values
     }
 
+    #[cfg_attr(coverage_nightly, no_coverage)]
     fn batches_data(batches: &[Vec<((usize, usize), isize)>]) -> AggregatedData {
         let mut values = BTreeMap::new();
         for batch in batches {
