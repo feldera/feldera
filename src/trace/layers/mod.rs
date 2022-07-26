@@ -152,7 +152,7 @@ pub fn advance<T, F: Fn(&T) -> bool>(slice: &[T], function: F) -> usize {
             let mut step = 1;
             while index + step < slice.len() && function(&slice[index + step]) {
                 index += step;
-                step <<= step;
+                step <<= 1;
             }
 
             // advance in exponentially shrinking steps.
