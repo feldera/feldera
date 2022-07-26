@@ -52,8 +52,8 @@ where
     assert_ne!(pagerank_iters, 0);
     assert!((0.0..=1.0).contains(&damping_factor));
 
-    // Initially each vertex is assigned a value so that the sum of all vertexes is one,
-    // `PR(𝑣)₀ = 1 ÷ |𝑉|`
+    // Initially each vertex is assigned a value so that the sum of all vertexes is
+    // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
     let initial_weights: Ranks<_> = vertices.apply(|vertices| {
         let total_vertices = vertices.layer.keys();
         let initial_weight = F64::new(1.0 / total_vertices as f64);
@@ -113,7 +113,8 @@ where
     let dangling_nodes =
         vertices.minus(&outgoing_sans_dangling.semijoin_stream_core(&vertices, |&node, _| node));
 
-    // Make the edge weights for all dangling nodes, we only need to calculate this once
+    // Make the edge weights for all dangling nodes, we only need to calculate this
+    // once
     let dangling_edge_weights = dangling_nodes.map(|&node| (node, F64::new(0.0)));
 
     let reversed = if directed {
@@ -231,8 +232,9 @@ where
                 })
                 .index();
 
-            // Find the weight pushed out to each edge by taking the weight of the node for the previous
-            // iteration and dividing it by the number of outgoing edges it has
+            // Find the weight pushed out to each edge by taking the weight of the node for
+            // the previous iteration and dividing it by the number of outgoing
+            // edges it has
             let weight_per_edge = weights
                 .stream_join::<_, _, RankSet>(
                     &outgoing_sans_dangling,
@@ -245,8 +247,8 @@ where
                 .plus(&dangling_edge_weights)
                 .index();
 
-            // Calculate the importance of each node, the sum of all weights from each incoming edge
-            // multiplied by the damping factor
+            // Calculate the importance of each node, the sum of all weights from each
+            // incoming edge multiplied by the damping factor
             let importance = weight_per_edge
                 .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| (dest, weight))
                 .index()
@@ -262,8 +264,8 @@ where
                 .plus(&zero_incoming)
                 .index();
 
-            // Calculate the redistributed weights, the sum of all dangling vertices' weights
-            // divided by the total number of nodes
+            // Calculate the redistributed weights, the sum of all dangling vertices'
+            // weights divided by the total number of nodes
             // TODO: Multiply the sum by `damping_factor / total_vertices`
             let redistributed = dangling_nodes
                 .stream_join::<_, _, OrdZSet<_, _>>(&weights, |_, &(), &weight| ((), weight))
@@ -337,8 +339,9 @@ where
     for _ in 0..pagerank_iters {
         let weights_index = weights.index();
 
-        // Find the weight pushed out to each edge by taking the weight of the node for the previous
-        // iteration and dividing it by the number of outgoing edges it has
+        // Find the weight pushed out to each edge by taking the weight of the node for
+        // the previous iteration and dividing it by the number of outgoing
+        // edges it has
         let weight_per_edge = weights_index
             .stream_join::<_, _, RankSet>(
                 &outgoing_sans_dangling,
@@ -351,8 +354,8 @@ where
             .plus(&dangling_edge_weights)
             .index();
 
-        // Calculate the importance of each node, the sum of all weights from each incoming edge
-        // multiplied by the damping factor
+        // Calculate the importance of each node, the sum of all weights from each
+        // incoming edge multiplied by the damping factor
         let importance = weight_per_edge
             .stream_join::<_, _, RankSet>(&edges, |_, &weight, &dest| (dest, weight))
             .index()
@@ -368,8 +371,8 @@ where
             .plus(&zero_incoming)
             .index();
 
-        // Calculate the redistributed weights, the sum of all dangling vertices' weights
-        // divided by the total number of nodes
+        // Calculate the redistributed weights, the sum of all dangling vertices'
+        // weights divided by the total number of nodes
         // TODO: Multiply the sum by `damping_factor / total_vertices`
         let redistributed = dangling_nodes
             .stream_join::<_, _, OrdZSet<_, _>>(&weights_index, |_, &(), &weight| ((), weight))
@@ -453,7 +456,8 @@ where
         builder.done()
     });
 
-    // Vertices weighted by the damping factor divided by the total number of vertices
+    // Vertices weighted by the damping factor divided by the total number of
+    // vertices
     let damped_div_total_vertices = vertices.apply(move |vertices| {
         let total_vertices = vertices.len();
         let weight = Rank::new(damping_factor) / total_vertices as f64;
@@ -470,8 +474,8 @@ where
         builder.done()
     });
 
-    // Initially each vertex is assigned a value so that the sum of all vertexes is one,
-    // `PR(𝑣)₀ = 1 ÷ |𝑉|`
+    // Initially each vertex is assigned a value so that the sum of all vertexes is
+    // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
     let initial_weights = vertices.apply(|vertices| {
         let total_vertices = vertices.len();
         let initial_weight = Rank::one() / total_vertices as f64;
@@ -580,9 +584,9 @@ where
                     });
 
             let importance = scope.region("importance", || {
-                // Find the weight pushed out to each edge by taking the weight of the node for the previous
-                // iteration and dividing it by the number of outgoing edges it has
-                // prev_iter_weight / total_outgoing_edges
+                // Find the weight pushed out to each edge by taking the weight of the node for
+                // the previous iteration and dividing it by the number of
+                // outgoing edges it has prev_iter_weight / total_outgoing_edges
                 let weight_per_edge = div_join_stream(&weights, &outgoing_edge_counts);
 
                 // Aggregate the weights of all incoming edges for any given vertex
@@ -590,8 +594,8 @@ where
                 let incoming_vertex_weights =
                     weight_per_edge.stream_join::<_, _, Weights>(&edge_weights, |_, _, &dest| dest);
 
-                // Calculate the importance of each node, the sum of all weights from each incoming edge
-                // multiplied by the damping factor
+                // Calculate the importance of each node, the sum of all weights from each
+                // incoming edge multiplied by the damping factor
                 // damping_factor * sum(incoming_edge_weights)
                 damped_vertices
                     .stream_join::<_, _, Weights>(&incoming_vertex_weights, |&node, _, _| node)
