@@ -401,11 +401,11 @@ where
     where
         Time: Timestamp + DeepSizeOf,
         F: Fn(&Pairs::Key, &Pairs::Val) -> Out::Key + 'static,
-        Pairs: IndexedZSet,
-        Pairs::Key: DeepSizeOf + Clone + Ord,
-        Pairs::Val: DeepSizeOf + Clone + Ord,
+        Pairs: IndexedZSet + Send,
+        Pairs::Key: Hash + Ord + DeepSizeOf + Clone,
+        Pairs::Val: Ord + DeepSizeOf + Clone,
         Pairs::R: MulByRef + Default + DeepSizeOf,
-        Keys: ZSet<Key = Pairs::Key, R = Pairs::R>,
+        Keys: ZSet<Key = Pairs::Key, R = Pairs::R> + Send,
         Out: ZSet<R = Pairs::R>,
         Out::Key: Clone,
         Out::Batcher: DeepSizeOf,
@@ -450,9 +450,14 @@ where
         // The advantage of this representation is that each term can be computed
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
-        let key_trace = keys.trace::<OrdValSpine<Pairs::Key, Keys::Val, Time, Pairs::R>>();
-        self.circuit()
-            .add_binary_operator(SemiJoinTrace::new(semijoin_func), self, &key_trace)
+        let key_trace = keys
+            .shard()
+            .trace::<OrdValSpine<Pairs::Key, Keys::Val, Time, Pairs::R>>();
+        self.circuit().add_binary_operator(
+            SemiJoinTrace::new(semijoin_func),
+            &self.shard(),
+            &key_trace,
+        )
     }
 }
 
