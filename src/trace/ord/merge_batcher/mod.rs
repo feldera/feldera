@@ -338,13 +338,13 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
                 head2 = list2.pop().map_or_else(VecDeque::new, VecDeque::from);
             }
 
-            // // If result is empty we have to start a new result vec to make
-            // sure // that we don't append to result in an unsorted
-            // manner if !result.is_empty() {
-            //     debug_assert!(result.is_sorted_by(|(a, _), (b, _)|
-            // Some(a.cmp(b))));     output.push(result);
-            //     result = self.buffer();
-            // }
+            // If result is empty we have to start a new result vec to make
+            // sure that we don't append to result in an unsorted manner
+            if !result.is_empty() {
+                debug_assert!(result.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))));
+                output.push(result);
+                result = self.buffer();
+            }
         }
 
         if !result.is_empty() {

@@ -37,6 +37,16 @@ where
 }
 
 /// Sorts and consolidates a slice, returning the valid prefix length.
+// TODO: I'm pretty sure there's some improvements to be made here.
+//       We don't really need (pure) slice consolidation from what I've
+//       seen, we only actually care about consolidating vectors and
+//       portions *of* vectors, so taking a starting index and a vector
+//       would allow us to operate over the vec with the ability to discard
+//       elements, meaning that we could drop elements instead of swapping
+//       them once their diff hits zero. Is that significant? I don't really
+//       know, but ~1 second to consolidate 10 million elements is
+//       nearly intolerable, combining the sorting and compacting processes
+//       could help alleviate that though.
 pub fn consolidate_slice<T, R>(slice: &mut [(T, R)]) -> usize
 where
     T: Ord,
