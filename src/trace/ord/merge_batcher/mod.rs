@@ -101,7 +101,11 @@ where
 
 #[derive(Debug)]
 struct MergeSorter<D: Ord, R: MonoidValue> {
-    queue: Vec<Vec<Vec<(D, R)>>>, // each power-of-two length list of allocations.
+    /// Queue's invariant is not that every `Vec<Vec<(D, R)>>` is sorted
+    /// relative to each other but instead that within each `Vec<Vec<(D, R)>>`
+    /// every inner `Vec<(D, R)>` is sorted by `D` relative to the rest of the
+    /// vecs within its current batch
+    queue: Vec<Vec<Vec<(D, R)>>>,
     stash: Vec<Vec<(D, R)>>,
 }
 
@@ -225,7 +229,11 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
 
         if let Some(mut last) = self.queue.pop() {
             // TODO: Reuse the `last` buffer somehow
-            target.append(&mut last);
+            if target.capacity() == 0 {
+                target.append(&mut last);
+            } else {
+                *target = last;
+            }
         }
         debug_assert!(self.queue.is_empty());
     }
@@ -253,6 +261,8 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         list1.retain(|batch| !batch.is_empty());
         list2.retain(|batch| !batch.is_empty());
 
+        let (mut list1, mut list2) = (VecDeque::from(list1), VecDeque::from(list2));
+
         // Ensure all the batches we've been given are in sorted order
         if cfg!(debug_assertions) {
             for batch in list1.iter().chain(&list2) {
@@ -265,8 +275,8 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         let mut output = Vec::with_capacity(list1.len() + list2.len());
         let mut result = self.buffer();
 
-        let mut head1 = list1.pop().map_or_else(VecDeque::new, VecDeque::from);
-        let mut head2 = list2.pop().map_or_else(VecDeque::new, VecDeque::from);
+        let mut head1 = list1.pop_front().map_or_else(VecDeque::new, VecDeque::from);
+        let mut head2 = list2.pop_front().map_or_else(VecDeque::new, VecDeque::from);
 
         // while we have valid data in each input, merge.
         while !head1.is_empty() && !head2.is_empty() {
@@ -320,14 +330,19 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
                 debug_assert!(result.has_spare_capacity());
                 unsafe { result.push_unchecked(merged) };
             }
+
             debug_assert!(result.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))));
+            if !result.has_spare_capacity() {
+                output.push(result);
+                result = self.buffer();
+            }
 
             if head1.is_empty() {
                 if head1.capacity() >= Self::BUFFER_ELEMENTS {
                     self.stash.push(Vec::from(head1));
                 }
 
-                head1 = list1.pop().map_or_else(VecDeque::new, VecDeque::from);
+                head1 = list1.pop_front().map_or_else(VecDeque::new, VecDeque::from);
             }
 
             if head2.is_empty() {
@@ -335,16 +350,16 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
                     self.stash.push(Vec::from(head2));
                 }
 
-                head2 = list2.pop().map_or_else(VecDeque::new, VecDeque::from);
+                head2 = list2.pop_front().map_or_else(VecDeque::new, VecDeque::from);
             }
 
-            // If result is empty we have to start a new result vec to make
-            // sure that we don't append to result in an unsorted manner
-            if !result.is_empty() {
-                debug_assert!(result.is_sorted_by(|(a, _), (b, _)| Some(a.cmp(b))));
-                output.push(result);
-                result = self.buffer();
-            }
+            // // If result is empty we have to start a new result vec to make
+            // // sure that we don't append to result in an unsorted manner
+            // if !result.is_empty() {
+            //     debug_assert!(result.is_sorted_by(|(a, _), (b, _)|
+            // Some(a.cmp(b))));     output.push(result);
+            //     result = self.buffer();
+            // }
         }
 
         if !result.is_empty() {
@@ -362,6 +377,7 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         } else if head1.capacity() >= Self::BUFFER_ELEMENTS {
             self.stash.push(head1);
         }
+        output.extend(list1);
 
         let head2 = Vec::from(head2);
         if !head2.is_empty() {
@@ -371,9 +387,7 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         } else if head2.capacity() >= Self::BUFFER_ELEMENTS {
             self.stash.push(head2);
         }
-
-        output.append(&mut list1);
-        output.append(&mut list2);
+        output.extend(list2);
 
         // None of the batches we output should be empty
         debug_assert!(output.iter().all(|batch| !batch.is_empty()));
