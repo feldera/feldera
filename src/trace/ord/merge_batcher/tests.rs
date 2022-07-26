@@ -33,7 +33,7 @@ fn merge_empty_inputs() {
 #[test]
 fn small_push() {
     let mut merger = MergeSorter::<(usize, usize), isize> {
-        queue: vec![vec![vec![((45, 0), -1)], vec![((0, 0), 1)]]],
+        queue: vec![vec![vec![((0, 0), 1)], vec![((45, 0), -1)]]],
         stash: Vec::new(),
     };
 
@@ -45,7 +45,7 @@ fn small_push() {
 
     assert_eq!(
         output,
-        vec![vec![((0, 0), 1)], vec![((45, 0), -1)], vec![((45, 1), 1)]],
+        vec![vec![((0, 0), 1), ((45, 0), -1)], vec![((45, 1), 1)]],
     );
 }
 
@@ -94,8 +94,8 @@ fn force_finish_merge() {
 
     let expected = vec![
         vec![(0, 9), (1, 18), (23, 54), (24, 5), (25, 12), (54, -46)],
-        vec![(97, -102)],
         vec![(89, 1)],
+        vec![(97, -102)],
     ];
     assert_eq!(output, expected);
 }
@@ -118,8 +118,8 @@ fn force_merge_on_push() {
 
     let expected = vec![
         vec![(0, 9), (1, 18), (23, 54), (24, 5), (25, 12), (54, -46)],
-        vec![(97, -102)],
         vec![(89, 1)],
+        vec![(97, -102)],
     ];
     assert_eq!(output, expected);
 }
@@ -300,7 +300,8 @@ mod proptests {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
-        fn push_single_batch(mut merger in merge_sorter(), mut batch in batch()) {
+        #[ignore = "Currently broken, merge_sorter() doesn't ensure that the queue is sorted"]
+        fn push_multiple_batches(mut merger in merge_sorter(), mut batch in batch()) {
             let input = expected_data(&merger, &batch);
 
             // Push the new batch
