@@ -281,7 +281,7 @@ where
     }
 }
 
-/// Internal implementation of [`OrdZSet::filter`](`crate::OrdZSet::filter`).
+/// Internal implementation for filtering [`BatchReader`]s
 pub struct FilterKeys<CI, CO, F> {
     filter: F,
     _type: PhantomData<(CI, CO)>,
@@ -349,8 +349,7 @@ where
     }
 }
 
-/// Internal implementation of
-/// [`OrdIndexedZSet::filter`](`crate::OrdIndexedZSet::filter`).
+/// Internal implementation for filtering [`BatchReader`]s
 pub struct FilterVals<CI, CO, F>
 where
     F: 'static,

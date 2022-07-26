@@ -200,19 +200,22 @@ where
         // The advantage of this representation is that each term can be computed
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
-        let self_trace = self.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
-        let other_trace = other.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
+        let left = self.shard();
+        let right = other.shard();
+
+        let left_trace = left.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
+        let right_trace = right.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
 
         let left = self.circuit().add_binary_operator(
             JoinTrace::new(join_func.clone()),
-            self,
-            &other_trace,
+            &left,
+            &right_trace,
         );
 
         let right = self.circuit().add_binary_operator(
             JoinTrace::new(move |k: &I1::Key, v2: &I2::Val, v1: &I1::Val| join_func(k, v1, v2)),
-            other,
-            &self_trace.delay_trace(),
+            &right,
+            &left_trace.delay_trace(),
         );
 
         left.plus(&right)
