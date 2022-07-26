@@ -49,7 +49,7 @@ pub struct Bid {
     pub price: usize,
     /// The channel that introduced this bidding.
     pub channel: String,
-    /// The url of this [channel].
+    /// The url of this channel.
     pub url: String,
     /// Instant at which this bid was made. NOTE: This may be earlier than teh
     /// system's event time.

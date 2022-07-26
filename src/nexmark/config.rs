@@ -13,6 +13,11 @@ pub const PERSON_ID_LEAD: usize = 10;
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct Config {
+    // Cargo passes any `--bench nexmark` (for example) through to our main
+    // as an arg, so just ensure it's a valid arg option for now.
+    #[clap(long)]
+    pub bench: bool,
+
     /// Specify the proportion of events that will be new auctions.
     #[clap(long, default_value = "3", env = "NEXMARK_AUCTION_PROPORTION")]
     pub auction_proportion: usize,
@@ -86,6 +91,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            bench: true,
             auction_proportion: 3,
             avg_auction_byte_size: 500,
             avg_bid_byte_size: 100,

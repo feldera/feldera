@@ -10,7 +10,7 @@
 //! it will allow us later to extend it to support multiple data sources in
 //! parallel when DBSP can be scaled.
 
-use self::generator::{NexmarkGenerator, NextEvent};
+use self::generator::{config::Config, NexmarkGenerator, NextEvent};
 use self::model::Event;
 use crate::{
     algebra::{ZRingValue, ZSet},
@@ -18,15 +18,19 @@ use crate::{
         operator_traits::{Data, Operator, SourceOperator},
         Scope,
     },
+    OrdZSet,
 };
-use rand::Rng;
+use rand::prelude::ThreadRng;
+use rand::{thread_rng, Rng};
+use std::ops::Range;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{borrow::Cow, marker::PhantomData};
 
-mod config;
-mod generator;
-mod model;
+pub mod config;
+pub mod generator;
+pub mod model;
+pub mod queries;
 
 pub struct NexmarkSource<R: Rng, W, C> {
     /// The generator for events emitted by this source.
@@ -52,6 +56,9 @@ where
             _t: PhantomData,
         }
     }
+    pub fn new(config: Config) -> NexmarkSource<ThreadRng, isize, OrdZSet<Event, isize>> {
+        NexmarkSource::from_generator(NexmarkGenerator::new(config, thread_rng()))
+    }
 }
 
 impl<R, W, C> Operator for NexmarkSource<R, W, C>
@@ -61,7 +68,7 @@ where
     W: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("NexmarkDBSPSource")
+        Cow::from("NexmarkSource")
     }
 
     // For the ability to reset the circuit and run it from clean state without
@@ -132,14 +139,25 @@ where
     }
 }
 
+impl<R, W, C> NexmarkSource<R, W, C>
+where
+    R: Rng + 'static,
+    W: ZRingValue + 'static,
+    C: Data + ZSet<Key = Event, R = W>,
+{
+    pub fn set_wallclock_time_iterator(&mut self, i: Range<u64>) {
+        self.generator.set_wallclock_time_iterator(i)
+    }
+}
+
 #[cfg(test)]
-mod test {
+pub mod tests {
     use self::generator::{config::Config, tests::generate_expected_next_events};
     use super::*;
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
 
-    fn make_test_source(
+    pub fn make_test_source(
         wallclock_base_time: u64,
         max_events: u64,
     ) -> NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> {
@@ -156,7 +174,7 @@ mod test {
         source
     }
 
-    fn generate_expected_zset_tuples(
+    pub fn generate_expected_zset_tuples(
         wallclock_base_time: u64,
         num_events: usize,
     ) -> Vec<((Event, ()), isize)> {
