@@ -26,17 +26,17 @@ where
     /// Semijoin two streams of batches.
     ///
     /// The operator takes two streams of batches indexed with the same key type
-    /// (`Pairs::Key = Keys::Key`) and outputs a stream obtained by joining each pair
-    /// of inputs.
+    /// (`Pairs::Key = Keys::Key`) and outputs a stream obtained by joining each
+    /// pair of inputs.
     ///
-    /// Input streams will typically be produced by [`Stream::index()`] or [`Stream::index_with()`]
+    /// Input streams will typically be produced by [`Stream::index()`] or
+    /// [`Stream::index_with()`]
     ///
     /// #### Type arguments
     ///
     /// * `Pairs` - batch type in the first input stream.
     /// * `Keys` - batch type in the second input stream.
     /// * `Out` - output Z-set type.
-    ///
     pub fn semijoin_stream<Keys, Out>(
         &self,
         keys: &Stream<Circuit<S>, Keys>,
@@ -77,17 +77,17 @@ where
     /// Semijoin two streams of batches.
     ///
     /// The operator takes two streams of batches indexed with the same key type
-    /// (`Pairs::Key = Keys::Key`) and outputs a stream obtained by joining each pair
-    /// of inputs.
+    /// (`Pairs::Key = Keys::Key`) and outputs a stream obtained by joining each
+    /// pair of inputs.
     ///
-    /// Input streams will typically be produced by [`Stream::index()`] or [`Stream::index_with()`]
+    /// Input streams will typically be produced by [`Stream::index()`] or
+    /// [`Stream::index_with()`]
     ///
     /// #### Type arguments
     ///
     /// * `Pairs` - batch type in the first input stream.
     /// * `Keys` - batch type in the second input stream.
     /// * `Out` - output Z-set type.
-    ///
     pub fn semijoin_stream_core<F, Keys, Out>(
         &self,
         keys: &Stream<Circuit<S>, Keys>,
@@ -187,12 +187,14 @@ where
                 Ordering::Greater => pair_cursor.seek_key(key_cursor.key()),
 
                 Ordering::Equal => {
-                    // TODO: Can the value of `()` ever be invalid? Do we need an `if key_cursor.val_valid()` check?
+                    // TODO: Can the value of `()` ever be invalid? Do we need an `if
+                    // key_cursor.val_valid()` check?
                     let key_weight = key_cursor.weight();
                     while pair_cursor.val_valid() {
                         // Get the weight of the output kv pair by multiplying them together
-                        // TODO: Can either weights possibly be zero? If so, we can check if `key_weight`
-                        //       is zero outside of the loop to skip redundant work
+                        // TODO: Can either weights possibly be zero? If so, we can check if
+                        // `key_weight`       is zero outside of the loop to
+                        // skip redundant work
                         let pair_weight = pair_cursor.weight();
                         let kv_weight = pair_weight.mul_by_ref(&key_weight);
 
@@ -275,12 +277,14 @@ where
                 Ordering::Greater => pair_cursor.seek_key(key_cursor.key()),
 
                 Ordering::Equal => {
-                    // TODO: Can the value of `()` ever be invalid? Do we need an `if key_cursor.val_valid()` check?
+                    // TODO: Can the value of `()` ever be invalid? Do we need an `if
+                    // key_cursor.val_valid()` check?
                     let key_weight = key_cursor.weight();
                     while pair_cursor.val_valid() {
                         // Get the weight of the output kv pair by multiplying them together
-                        // TODO: Can either weights possibly be zero? If so, we can check if `key_weight`
-                        //       is zero outside of the loop to skip redundant work
+                        // TODO: Can either weights possibly be zero? If so, we can check if
+                        // `key_weight`       is zero outside of the loop to
+                        // skip redundant work
                         let pair_weight = pair_cursor.weight();
                         let kv_weight = pair_weight.mul_by_ref(&key_weight);
 
@@ -314,10 +318,9 @@ impl<Pairs> Stream<Circuit<()>, Pairs> {
     /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
     /// ```
     ///
-    /// This method only works in the top-level scope.  It is superseded by [`Stream::semijoin()`],
-    /// which works in arbitrary nested scopes. We keep this implementation for testing and
-    /// benchmarking purposes.
-    ///
+    /// This method only works in the top-level scope.  It is superseded by
+    /// [`Stream::semijoin()`], which works in arbitrary nested scopes. We
+    /// keep this implementation for testing and benchmarking purposes.
     pub fn semijoin_incremental<Keys, Out>(
         &self,
         keys: &Stream<Circuit<()>, Keys>,
@@ -348,10 +351,9 @@ impl<Pairs> Stream<Circuit<()>, Pairs> {
     /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
     /// ```
     ///
-    /// This method only works in the top-level scope.  It is superseded by [`Stream::semijoin()`],
-    /// which works in arbitrary nested scopes. We keep this implementation for testing and
-    /// benchmarking purposes.
-    ///
+    /// This method only works in the top-level scope.  It is superseded by
+    /// [`Stream::semijoin()`], which works in arbitrary nested scopes. We
+    /// keep this implementation for testing and benchmarking purposes.
     pub fn semijoin_incremental_core<F, Keys, Out>(
         &self,
         keys: &Stream<Circuit<()>, Keys>,
@@ -391,7 +393,6 @@ where
     /// * `Pairs` - batch type in the first input stream.
     /// * `Keys` - batch type in the second input stream.
     /// * `Out` - output Z-set type.
-    ///
     pub fn semijoin<Time, F, Keys, Out>(
         &self,
         keys: &Stream<Circuit<S>, Keys>,
@@ -583,7 +584,8 @@ where
                 Ordering::Greater => keys_cursor.seek_key(pairs_cursor.key()),
 
                 Ordering::Equal => {
-                    // TODO: Can the value of `()` ever be invalid? Do we need an `if keys_cursor.val_valid()` check?
+                    // TODO: Can the value of `()` ever be invalid? Do we need an `if
+                    // keys_cursor.val_valid()` check?
                     while pairs_cursor.val_valid() {
                         let pair_weight = pairs_cursor.weight();
                         let pair_value = pairs_cursor.val();

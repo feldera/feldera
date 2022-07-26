@@ -128,7 +128,8 @@ impl DataSet {
 
     /// Gets the dataset's directory if it exists or downloads and extracts it
     ///
-    /// The full data repository is stored [here], the downloads can be *very* slow
+    /// The full data repository is stored [here], the downloads can be *very*
+    /// slow
     ///
     /// [here]: https://repository.surfsara.nl/datasets/cwi/graphalytics
     fn dataset_dir(&self) -> io::Result<PathBuf> {

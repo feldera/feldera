@@ -54,7 +54,8 @@ where
 
     // Collect all reachable nodes
     let reachable_nodes = distances.map(|&(node, _)| node);
-    // Find all unreachable nodes (vertices not included in `distances`) and give them a weight of -1
+    // Find all unreachable nodes (vertices not included in `distances`) and give
+    // them a weight of -1
     let unreachable_nodes =
         antijoin(&vertices, &reachable_nodes).map(|&node| (node, i64::MAX as Distance));
 
