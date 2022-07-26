@@ -48,6 +48,8 @@ harness = false
 
 [[bench]]
 name = "nexmark"
+harness = false
+required-features = ["with-nexmark"]
 
 [profile.bench]
 debug = true
