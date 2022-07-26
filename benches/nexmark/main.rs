@@ -10,7 +10,6 @@ use dbsp::{
         config::Config as NexmarkConfig, generator::config::Config as GeneratorConfig,
         model::Event, queries::q1, NexmarkSource,
     },
-    profile::CPUProfiler,
     trace::{ord::OrdZSet, BatchReader},
 };
 use rand::prelude::ThreadRng;

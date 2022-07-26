@@ -167,11 +167,11 @@ mod tests {
     #[case(49, 2)]
     // Epoch 1: When we're about to generate a person, we return the last auction from
     // the previous epoch.
-    #[case(50*1, 2)] // About to generate a person again
-    #[case(50*1 + 1, 3)]
-    #[case(50*1 + 2, 4)]
-    #[case(50*1 + 3, 5)]
-    #[case(50*1 + 23, 5)]
+    #[case(50, 2)] // About to generate a person again
+    #[case(50 + 1, 3)]
+    #[case(50 + 2, 4)]
+    #[case(50 + 3, 5)]
+    #[case(50 + 23, 5)]
     // After the 1st person is generated in the 33rd epoch, we have 99 auctions.
     #[case(50*33 + 1, 99)]
     fn test_last_base0_auction_id(#[case] event_id: u64, #[case] expected_id: u64) {
@@ -186,16 +186,16 @@ mod tests {
     // Since the default number of inflight auctions is 100, we need to get above an event
     // id of 50*33 events (ie. 33 epochs, since there are 3 auction events per epoch)
     #[case(2, 0)]
-    #[case(50*33 + 1, 0)] // last_base0_auction_id is 33*3 + 1 - 1 = 99
-    #[case(50*33 + 2, 0)] // last_base0_auction_id is 33*3 + 2 - 1 = 100
-    #[case(50*33 + 3, 1)] // last_base0_auction_id is 33*3 + 3 - 1 = 101
-    #[case(50*34 + 0, 1)] // last_base0_auction_id is 34*3 + 0 - 1 = 101
-    #[case(50*34 + 1, 2)] // last_base0_auction_id is 34*3 + 1 - 1 = 102
-    #[case(50*34 + 2, 3)] // last_base0_auction_id is 34*3 + 2 - 1 = 103
-    #[case(50*34 + 3, 4)] // last_base0_auction_id is 34*3 + 3 - 1 = 104
-    #[case(50*34 + 49, 4)] // last_base0_auction_id is still 104 (all extra are bids)
-    #[case(50*35 + 0, 4)] // last_base0_auction_id is 35*3 + 0 - 1 = 104
-    #[case(50*35 + 1, 5)] // last_base0_auction_id is 35*3 + 1 - 1 = 105
+    #[case(50 * 33 + 1, 0)] // last_base0_auction_id is 33*3 + 1 - 1 = 99
+    #[case(50 * 33 + 2, 0)] // last_base0_auction_id is 33*3 + 2 - 1 = 100
+    #[case(50 * 33 + 3, 1)] // last_base0_auction_id is 33*3 + 3 - 1 = 101
+    #[case(50 * 34, 1)] // last_base0_auction_id is 34*3 + 0 - 1 = 101
+    #[case(50 * 34 + 1, 2)] // last_base0_auction_id is 34*3 + 1 - 1 = 102
+    #[case(50 * 34 + 2, 3)] // last_base0_auction_id is 34*3 + 2 - 1 = 103
+    #[case(50 * 34 + 3, 4)] // last_base0_auction_id is 34*3 + 3 - 1 = 104
+    #[case(50 * 34 + 49, 4)] // last_base0_auction_id is still 104 (all extra are bids)
+    #[case(50 * 35, 4)] // last_base0_auction_id is 35*3 + 0 - 1 = 104
+    #[case(50 * 35 + 1, 5)] // last_base0_auction_id is 35*3 + 1 - 1 = 105
     fn test_next_base0_auction_id(#[case] next_event_id: u64, #[case] expected_id: u64) {
         let mut ng = make_test_generator();
 
