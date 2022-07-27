@@ -16,7 +16,9 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     zset_set, Circuit,
 };
+use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
+use indicatif::HumanBytes;
 use std::{
     cell::RefCell,
     fmt::Write as _,
@@ -64,12 +66,17 @@ fn main() {
     let start = Instant::now();
 
     let (properties, edges, vertices, _) = dataset.load::<NoopResults>().unwrap();
+    let data_loaded = edges.deep_size_of() as u64 + vertices.deep_size_of() as u64;
+
     let mut root_data = Some(zset_set! { properties.source_vertex });
     let mut vertex_data = Some(vertices);
     let mut edge_data = Some(edges);
 
     let elapsed = start.elapsed();
-    println!("finished in {elapsed:#?}");
+    println!(
+        "finished in {elapsed:#?}, loaded {} of data",
+        HumanBytes(data_loaded),
+    );
 
     println!(
         "using dataset {} with {} vertices and {} edges",
@@ -152,9 +159,7 @@ fn main() {
 
         if Runtime::worker_index() == 0 {
             let elapsed = start.elapsed();
-            println!("finished in {elapsed:#?}");
-
-            print!("running benchmark... ");
+            print!("finished in {elapsed:#?}\nrunning benchmark... ");
             io::stdout().flush().unwrap();
         }
         let start = Instant::now();
