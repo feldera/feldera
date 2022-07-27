@@ -67,12 +67,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{circuit::Root, operator::Generator};
+    use crate::{operator::Generator, Circuit};
     use std::vec;
 
     #[test]
     fn apply2_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut inputs1 = vec![1, 2, 3].into_iter();
             let mut inputs2 = vec![-1, -2, -3].into_iter();
 
@@ -86,7 +86,7 @@ mod test {
         .unwrap();
 
         for _ in 0..3 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

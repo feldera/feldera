@@ -175,16 +175,15 @@ impl<P: Clone + 'static> Circuit<P> {
     ///
     /// ```
     /// use dbsp::{
-    ///     circuit::{Root, Stream},
     ///     operator::Generator,
     ///     time::NestedTimestamp32,
     ///     trace::ord::OrdZSet,
-    ///     zset, zset_set,
+    ///     Circuit, Stream, zset, zset_set,
     /// };
     /// use std::vec;
     ///
     /// // Propagate labels along graph edges.
-    /// let root = Root::build(move |circuit| {
+    /// let root = Circuit::build(move |circuit| {
     ///     // Graph topology.
     ///     let mut edges = vec![
     ///         // Start with four nodes connected in a cycle.
@@ -291,17 +290,16 @@ impl<P: Clone + 'static> Circuit<P> {
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::{Root, Stream},
         operator::{FilterMap, Generator},
         time::NestedTimestamp32,
         trace::ord::OrdZSet,
-        zset,
+        zset, Circuit, Stream,
     };
     use std::vec;
 
     #[test]
     fn reachability() {
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { (1, 2) => 1 },
@@ -362,7 +360,7 @@ mod test {
     fn reachability2() {
         type Edges<S> = Stream<S, OrdZSet<(usize, usize), isize>>;
 
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { (1, 2) => 1 },

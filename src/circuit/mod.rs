@@ -21,7 +21,7 @@ pub mod schedule;
 pub mod trace;
 
 pub use circuit_builder::{
-    Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId, OwnershipPreference,
-    Root, Scope, Stream,
+    Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId,
+    OwnershipPreference, Scope, Stream,
 };
 pub use runtime::{LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};

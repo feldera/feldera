@@ -68,10 +68,9 @@ where
 mod test {
     use crate::{
         algebra::HasZero,
-        circuit::{Circuit, Root},
         operator::Generator,
         trace::{ord::OrdZSet, Batch},
-        zset,
+        zset, Circuit,
     };
 
     #[test]
@@ -90,13 +89,13 @@ mod test {
             source
         };
 
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             build_circuit(circuit);
         })
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

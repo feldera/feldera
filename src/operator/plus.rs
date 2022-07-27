@@ -24,10 +24,10 @@ where
     ///
     /// ```
     /// # use dbsp::{
-    /// #   circuit::Root,
     /// #   operator::Generator,
+    /// #   Circuit,
     /// # };
-    /// let root = Root::build(move |circuit| {
+    /// let circuit = Circuit::build(move |circuit| {
     ///     // Stream of non-negative values: 0, 1, 2, ...
     ///     let mut n = 0;
     ///     let source1 = circuit.add_source(Generator::new(move || {
@@ -48,7 +48,7 @@ where
     /// .unwrap();
     ///
     /// # for _ in 0..5 {
-    /// #     root.step().unwrap();
+    /// #     circuit.step().unwrap();
     /// # }
     /// ```
     pub fn plus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
@@ -188,15 +188,15 @@ where
 mod test {
     use crate::{
         algebra::HasZero,
-        circuit::{Circuit, OwnershipPreference, Root},
+        circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         trace::{ord::OrdZSet, Batch},
-        zset,
+        zset, Circuit,
     };
 
     #[test]
     fn scalar_plus() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut n = 0;
             let source1 = circuit.add_source(Generator::new(move || {
                 let res = n;
@@ -214,7 +214,7 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
@@ -259,18 +259,18 @@ mod test {
             (source1, source2)
         };
         // Allow `Plus` to consume both streams by value.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             build_plus_circuit(circuit);
             build_minus_circuit(circuit);
         })
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         // Only consume source2 by value.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let (source1, _source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -287,11 +287,11 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         // Only consume source1 by value.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let (_source1, source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -309,11 +309,11 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         // Consume both streams by reference.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let (source1, source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -341,7 +341,7 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

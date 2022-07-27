@@ -232,10 +232,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::Root,
         operator::Generator,
         trace::{Batch, BatchReader},
-        OrdIndexedZSet, Runtime,
+        Circuit, OrdIndexedZSet, Runtime,
     };
 
     #[test]
@@ -255,7 +254,7 @@ mod tests {
 
     fn do_test_shard(workers: usize) {
         let hruntime = Runtime::run(workers, || {
-            let root = Root::build(move |circuit| {
+            let circuit = Circuit::build(move |circuit| {
                 let input = circuit.add_source(Generator::new(|| {
                     let worker_index = Runtime::worker_index();
                     let num_workers = Runtime::runtime().unwrap().num_workers();
@@ -275,7 +274,7 @@ mod tests {
             .unwrap();
 
             for _ in 0..3 {
-                root.step().unwrap();
+                circuit.step().unwrap();
             }
         });
 

@@ -1,14 +1,13 @@
 use dbsp::{
-    circuit::{Root, Stream},
     operator::{FilterMap, Generator},
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, Batch, BatchReader},
-    Runtime,
+    Circuit, Runtime, Stream,
 };
 
 fn main() {
     let hruntime = Runtime::run(16, || {
-        let root = Root::build(|circuit| {
+        let circuit = Circuit::build(|circuit| {
             /*
             use dbsp::{
                 circuit::{trace::SchedulerEvent, GlobalNodeId},
@@ -126,7 +125,7 @@ fn main() {
         //let graph = monitor.visualize_circuit();
         //fs::write("path.dot", graph.to_dot()).unwrap();
 
-        root.step().unwrap();
+        circuit.step().unwrap();
     });
 
     hruntime.join().unwrap();

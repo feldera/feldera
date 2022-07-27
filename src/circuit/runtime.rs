@@ -85,13 +85,13 @@ impl Runtime {
     ///
     /// # #[cfg(not(all(windows, miri)))]
     /// # fn main() {
-    /// use dbsp::circuit::{Root, Runtime};
+    /// use dbsp::circuit::{Circuit, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
     /// let hruntime = Runtime::run(4, || {
     ///     // This closure runs within each worker thread.
     ///
-    ///     let root = Root::build(move |circuit| {
+    ///     let root = Circuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
     ///     })
     ///     .unwrap();
@@ -295,11 +295,9 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 mod tests {
     use super::Runtime;
     use crate::{
-        circuit::{
-            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-            Root,
-        },
+        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         operator::Generator,
+        Circuit,
     };
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
@@ -322,7 +320,7 @@ mod tests {
         let hruntime = Runtime::run(4, || {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
-            let root = Root::build_with_scheduler::<_, S>(move |circuit| {
+            let root = Circuit::build_with_scheduler::<_, S>(move |circuit| {
                 let runtime = Runtime::runtime().unwrap();
                 // Generator that produces values using `sequence_next`.
                 circuit
@@ -362,7 +360,7 @@ mod tests {
     {
         let hruntime = Runtime::run(16, || {
             // Create a nested circuit that iterates forever.
-            let root = Root::build_with_scheduler::<_, S>(move |circuit| {
+            let root = Circuit::build_with_scheduler::<_, S>(move |circuit| {
                 circuit
                     .iterate_with_scheduler::<_, _, _, S>(|child| {
                         let mut n: usize = 0;

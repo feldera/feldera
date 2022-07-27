@@ -308,7 +308,7 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{circuit::Root, operator::GeneratorNested, zset, zset_set, OrdZSet, Runtime};
+    use crate::{operator::GeneratorNested, zset, zset_set, Circuit, OrdZSet, Runtime};
 
     fn do_aggregate_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
@@ -328,7 +328,7 @@ mod test {
 
     #[test]
     fn aggregate_test() {
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![
                     zset_set! { (1, 10), (1, 20), (5, 1) },

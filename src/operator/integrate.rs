@@ -37,10 +37,10 @@ where
     ///
     /// ```
     /// # use dbsp::{
-    /// #     circuit::Root,
     /// #     operator::Generator,
+    /// #     Circuit,
     /// # };
-    /// let root = Root::build(move |circuit| {
+    /// let circuit = Circuit::build(move |circuit| {
     ///     // Generate a stream of 1's.
     ///     let stream = circuit.add_source(Generator::new(|| 1));
     ///     // Integrate the stream.
@@ -53,7 +53,7 @@ where
     /// .unwrap();
     ///
     /// # for _ in 0..5 {
-    /// #     root.step().unwrap();
+    /// #     circuit.step().unwrap();
     /// # }
     /// ```
     ///
@@ -155,16 +155,15 @@ where
 mod test {
     use crate::{
         algebra::HasZero,
-        circuit::Root,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
         trace::{ord::OrdZSet, Batch},
-        zset,
+        zset, Circuit,
     };
 
     #[test]
     fn scalar_integrate() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let source = circuit.add_source(Generator::new(|| 1));
             let mut counter = 0;
             source.integrate().inspect(move |n| {
@@ -175,13 +174,13 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
     #[test]
     fn zset_integrate() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut counter1 = 0;
             let mut s = <OrdZSet<usize, isize>>::zero();
             let source = circuit.add_source(Generator::new(move || {
@@ -214,7 +213,7 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
@@ -236,7 +235,7 @@ mod test {
     /// ```
     #[test]
     fn scalar_integrate_nested() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut input = vec![3, 4, 2, 5].into_iter();
@@ -269,7 +268,7 @@ mod test {
         .unwrap();
 
         for _ in 0..4 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

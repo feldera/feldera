@@ -18,10 +18,10 @@ where
     ///
     /// ```
     /// # use dbsp::{
-    /// #     circuit::Root,
     /// #     operator::Generator,
+    /// #     Circuit,
     /// # };
-    /// let root = Root::build(move |circuit| {
+    /// let circuit = Circuit::build(move |circuit| {
     ///     let mut n = 1;
     ///     let stream = circuit.add_source(Generator::new(move || {
     ///         let res = n;
