@@ -10,13 +10,12 @@ pub fn q0(input: NexmarkStream) -> NexmarkStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nexmark::tests::{generate_expected_zset_tuples, make_test_source};
+    use crate::nexmark::tests::{generate_expected_zset_tuples, make_source_with_wallclock_times};
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
 
     #[test]
     fn test_q0() {
-        let mut source = make_test_source(0, 10);
-        source.set_wallclock_time_iterator((0..1).into_iter());
+        let source = make_source_with_wallclock_times(1..3, 10);
 
         let root = Root::build(move |circuit| {
             let input = circuit.add_source(source);

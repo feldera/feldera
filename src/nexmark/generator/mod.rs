@@ -17,6 +17,25 @@ mod people;
 mod price;
 mod strings;
 
+pub trait EventGenerator<R: Rng> {
+    /// Returns the generator's wallclock time
+    fn wallclock_time(&mut self) -> u64 {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
+    /// Reset the generator to begin at event 0 again.
+    fn reset(&mut self);
+
+    /// Returns whether the generator should continue to generate events.
+    fn has_next(&self) -> bool;
+
+    /// Returns the next generated event
+    fn next_event(&mut self) -> Result<Option<NextEvent>>;
+}
+
 pub struct NexmarkGenerator<R: Rng> {
     /// Configuration to generate events against. Note that it may be replaced
     /// by a call to `splitAtEventId`.
@@ -39,26 +58,16 @@ pub struct NexmarkGenerator<R: Rng> {
     wallclock_iterator: Option<Range<u64>>,
 }
 
-impl<R: Rng> NexmarkGenerator<R> {
-    pub fn new(config: Config, rng: R) -> NexmarkGenerator<R> {
-        NexmarkGenerator {
-            config,
-            rng,
-            bid_channel_cache: SizedCache::with_size(CHANNELS_NUMBER as usize),
-            events_count_so_far: 0,
-            wallclock_base_time: None,
-            wallclock_iterator: None,
-        }
-    }
-
-    // Reset the generator to begin at event 0 again.
-    pub fn reset(&mut self) {
+impl<R: Rng> EventGenerator<R> for NexmarkGenerator<R> {
+    fn reset(&mut self) {
         self.events_count_so_far = 0;
     }
 
-    // Returns the real current wallclock time or a specific range of numbers
-    // in tests.
-    pub fn wallclock_time(&mut self) -> u64 {
+    fn has_next(&self) -> bool {
+        self.events_count_so_far < self.config.max_events
+    }
+
+    fn wallclock_time(&mut self) -> u64 {
         match &mut self.wallclock_iterator {
             Some(i) => i.next().unwrap(),
             None => SystemTime::now()
@@ -68,38 +77,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         }
     }
 
-    /// Set the wallclock base time explicitly rather than leaving it
-    /// to be set when the first event is generated. Useful when testing.
-    pub fn set_wallclock_base_time(&mut self, base_time: u64) {
-        self.wallclock_base_time = match self.wallclock_base_time {
-            None => Some(base_time),
-            Some(t) => {
-                panic!(
-                    "attempt to set wallclock basetime to {} when already set at {}.",
-                    base_time, t
-                )
-            }
-        };
-    }
-
-    /// Set the wallclock time iterator to generate canned times in tests.
-    pub fn set_wallclock_time_iterator(&mut self, i: Range<u64>) {
-        self.wallclock_iterator = Some(i);
-    }
-
-    fn get_next_event_id(&self) -> u64 {
-        self.config.first_event_id
-            + self
-                .config
-                .next_adjusted_event_number(self.events_count_so_far)
-    }
-
-    /// Returns whether the generator should continue to generate events.
-    pub fn has_next(&self) -> bool {
-        self.events_count_so_far < self.config.max_events
-    }
-
-    pub fn next_event(&mut self) -> Result<Option<NextEvent>> {
+    fn next_event(&mut self) -> Result<Option<NextEvent>> {
         if !self.has_next() {
             return Ok(None);
         }
@@ -160,6 +138,26 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 }
 
+impl<R: Rng> NexmarkGenerator<R> {
+    pub fn new(config: Config, rng: R) -> NexmarkGenerator<R> {
+        NexmarkGenerator {
+            config,
+            rng,
+            bid_channel_cache: SizedCache::with_size(CHANNELS_NUMBER as usize),
+            events_count_so_far: 0,
+            wallclock_base_time: None,
+            wallclock_iterator: None,
+        }
+    }
+
+    fn get_next_event_id(&self) -> u64 {
+        self.config.first_event_id
+            + self
+                .config
+                .next_adjusted_event_number(self.events_count_so_far)
+    }
+}
+
 /// The next event and its various timestamps. Ordered by increasing wallclock
 /// timestamp, then (arbitrary but stable) event hash order.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -182,6 +180,94 @@ pub mod tests {
     use super::*;
     use rand::{rngs::mock::StepRng, thread_rng};
 
+    /// A NexmarkGenerator with an iterator for the wallclock time.
+    /// Useful in tests to have specific times.
+    pub struct RangedTimeGenerator {
+        // Embedded generator to which we defer for all except getting
+        // the wallclock time.
+        generator: NexmarkGenerator<StepRng>,
+
+        /// An iterator that provides wallclock timestamps in tests.
+        /// This is set to None by default.
+        wallclock_iterator: Range<u64>,
+    }
+
+    impl<R: Rng> EventGenerator<R> for RangedTimeGenerator {
+        fn reset(&mut self) {
+            self.generator.reset();
+        }
+
+        fn has_next(&self) -> bool {
+            self.generator.has_next()
+        }
+
+        fn next_event(&mut self) -> Result<Option<NextEvent>> {
+            self.generator.next_event()
+        }
+
+        fn wallclock_time(&mut self) -> u64 {
+            match self.wallclock_iterator.next() {
+                Some(t) => t,
+                None => panic!("exhausted wallclock time range"),
+            }
+        }
+    }
+
+    impl RangedTimeGenerator {
+        pub fn new(range: Range<u64>, max_events: u64) -> Self {
+            let mut nexmark_generator = NexmarkGenerator::new(
+                Config {
+                    max_events,
+                    ..Config::default()
+                },
+                StepRng::new(0, 1),
+            );
+            nexmark_generator.wallclock_base_time = Some(range.start);
+            RangedTimeGenerator {
+                generator: nexmark_generator,
+                wallclock_iterator: range,
+            }
+        }
+    }
+
+    /// Returned canned events for tests.
+    pub struct CannedEventGenerator {
+        // The canned next events to be returned.
+        next_events: Vec<NextEvent>,
+
+        current_event_index: usize,
+    }
+
+    impl<R: Rng> EventGenerator<R> for CannedEventGenerator {
+        fn reset(&mut self) {
+            self.current_event_index = 0;
+        }
+
+        fn has_next(&self) -> bool {
+            self.current_event_index < self.next_events.len()
+        }
+
+        fn next_event(&mut self) -> Result<Option<NextEvent>> {
+            Ok(match self.current_event_index < self.next_events.len() {
+                true => {
+                    let next_event = Some(self.next_events[self.current_event_index].clone());
+                    self.current_event_index += 1;
+                    next_event
+                }
+                _ => None,
+            })
+        }
+    }
+
+    impl CannedEventGenerator {
+        pub fn new(next_events: Vec<NextEvent>) -> Self {
+            CannedEventGenerator {
+                next_events,
+                current_event_index: 0,
+            }
+        }
+    }
+
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
         NexmarkGenerator::new(Config::default(), StepRng::new(0, 1))
     }
@@ -193,7 +279,7 @@ pub mod tests {
         num_events: usize,
     ) -> Vec<Option<NextEvent>> {
         let mut ng = make_test_generator();
-        ng.set_wallclock_base_time(wallclock_base_time);
+        ng.wallclock_base_time = Some(wallclock_base_time);
 
         (0..num_events).map(|_| ng.next_event().unwrap()).collect()
     }
@@ -296,7 +382,7 @@ pub mod tests {
     #[test]
     fn test_generate_expected_next_events() {
         let mut ng = make_test_generator();
-        ng.set_wallclock_base_time(1_000_000);
+        ng.wallclock_base_time = Some(1_000_000);
 
         let expected_events = generate_expected_next_events(1_000_000, 100);
 
@@ -311,7 +397,7 @@ pub mod tests {
     #[test]
     fn test_reset() {
         let mut ng = make_test_generator();
-        ng.set_wallclock_base_time(1_000_000);
+        ng.wallclock_base_time = Some(1_000_000);
 
         let first_5_events = generate_expected_next_events(1_000_000, 5);
 
