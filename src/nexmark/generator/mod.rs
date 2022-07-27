@@ -178,6 +178,7 @@ pub struct NextEvent {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::nexmark::model::{Auction, Bid, Person};
     use rand::{rngs::mock::StepRng, thread_rng};
 
     /// A NexmarkGenerator with an iterator for the wallclock time.
@@ -270,6 +271,54 @@ pub mod tests {
 
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
         NexmarkGenerator::new(Config::default(), StepRng::new(0, 1))
+    }
+
+    pub fn make_person() -> Person {
+        Person {
+            id: 1,
+            name: String::from("AAA BBBB"),
+            email_address: String::from("AAABBB@example.com"),
+            credit_card: String::from("1111 2222 3333 4444"),
+            city: String::from("Phoenix"),
+            state: String::from("OR"),
+            date_time: 0,
+            extra: String::from(""),
+        }
+    }
+
+    pub fn make_bid() -> Bid {
+        Bid {
+            auction: 1,
+            bidder: 1,
+            price: 99,
+            channel: String::from("my-channel"),
+            url: String::from("https://example.com"),
+            date_time: 0,
+            extra: String::new(),
+        }
+    }
+
+    pub fn make_auction() -> Auction {
+        Auction {
+            id: 1,
+            item_name: String::from("item-name"),
+            description: String::from("description"),
+            initial_bid: 5,
+            reserve: 10,
+            date_time: 0,
+            expires: 0,
+            seller: 1,
+            category: 1,
+        }
+    }
+
+    pub fn make_next_event() -> NextEvent {
+        NextEvent {
+            wallclock_timestamp: 0,
+            event_timestamp: 0,
+            event: Event::Bid(make_bid()),
+            watermark: 0,
+        }
     }
 
     /// Generates a specified number of next events using the default test
