@@ -4,7 +4,29 @@ use crate::operator::FilterMap;
 
 /// Currency Conversion
 ///
-/// Convert each bid value from dollars to euros.
+/// Convert each bid value from dollars to euros. Illustrates a simple
+/// transformation.
+///
+/// From [Nexmark q1.sql](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q1.sql):
+///
+/// CREATE TABLE discard_sink (
+///   auction  BIGINT,
+///   bidder  BIGINT,
+///   price  DECIMAL(23, 3),
+///   dateTime  TIMESTAMP(3),
+///   extra  VARCHAR
+/// ) WITH (
+///   'connector' = 'blackhole'
+/// );
+///
+/// INSERT INTO discard_sink
+/// SELECT
+///     auction,
+///     bidder,
+///     0.908 * price as price, -- convert dollar to euro
+///     dateTime,
+///     extra
+/// FROM bid;
 pub fn q1(input: NexmarkStream) -> NexmarkStream {
     input.map(|event| match event {
         Event::Bid(b) => Event::Bid(Bid {

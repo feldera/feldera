@@ -4,7 +4,18 @@ use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream
 /// Selection
 ///
 /// Find bids with specific auction ids and show their bid price.
-/// See https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q2.sql
+///
+/// From [Nexmark q2.sql](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q2.sql):
+///
+/// CREATE TABLE discard_sink (
+///   auction  BIGINT,
+///   price  BIGINT
+/// ) WITH (
+///   'connector' = 'blackhole'
+/// );
+///
+/// INSERT INTO discard_sink
+/// SELECT auction, price FROM bid WHERE MOD(auction, 123) = 0;
 const AUCTION_ID_MODULO: u64 = 123;
 
 pub fn q2(input: NexmarkStream) -> Stream<Circuit<()>, OrdZSet<(u64, usize), isize>> {
@@ -21,47 +32,15 @@ pub fn q2(input: NexmarkStream) -> Stream<Circuit<()>, OrdZSet<(u64, usize), isi
 mod tests {
     use super::*;
     use crate::nexmark::{
-        generator::{tests::CannedEventGenerator, NextEvent},
-        model::{Auction, Bid},
+        generator::{
+            tests::{make_auction, make_bid, make_next_event, CannedEventGenerator},
+            NextEvent,
+        },
+        model::Bid,
         NexmarkSource,
     };
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
-
-    fn default_bid() -> Bid {
-        Bid {
-            auction: AUCTION_ID_MODULO,
-            bidder: 0,
-            price: 99,
-            channel: String::from("my-channel"),
-            url: String::from("https://example.com"),
-            date_time: 0,
-            extra: String::new(),
-        }
-    }
-
-    fn default_auction() -> Auction {
-        Auction {
-            id: 1,
-            item_name: String::from("item-name"),
-            description: String::from("description"),
-            initial_bid: 5,
-            reserve: 10,
-            date_time: 0,
-            expires: 0,
-            seller: 1,
-            category: 1,
-        }
-    }
-
-    fn default_next_event() -> NextEvent {
-        NextEvent {
-            wallclock_timestamp: 0,
-            event_timestamp: 0,
-            event: Event::Bid(default_bid()),
-            watermark: 0,
-        }
-    }
 
     #[test]
     fn test_q2() {
@@ -70,29 +49,29 @@ mod tests {
                 event: Event::Bid(Bid {
                     auction: AUCTION_ID_MODULO,
                     price: 99,
-                    ..default_bid()
+                    ..make_bid()
                 }),
-                ..default_next_event()
+                ..make_next_event()
             },
             NextEvent {
                 event: Event::Bid(Bid {
                     auction: 125,
                     price: 101,
-                    ..default_bid()
+                    ..make_bid()
                 }),
-                ..default_next_event()
+                ..make_next_event()
             },
             NextEvent {
-                event: Event::Auction(default_auction()),
-                ..default_next_event()
+                event: Event::Auction(make_auction()),
+                ..make_next_event()
             },
             NextEvent {
                 event: Event::Bid(Bid {
                     auction: 5 * AUCTION_ID_MODULO,
                     price: 125,
-                    ..default_bid()
+                    ..make_bid()
                 }),
-                ..default_next_event()
+                ..make_next_event()
             },
         ];
         let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
@@ -121,8 +100,6 @@ mod tests {
         })
         .unwrap();
 
-        for _ in 0..1 {
-            root.step().unwrap();
-        }
+        root.step().unwrap();
     }
 }
