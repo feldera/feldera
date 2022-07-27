@@ -10,7 +10,7 @@
 //! it will allow us later to extend it to support multiple data sources in
 //! parallel when DBSP can be scaled.
 
-use self::generator::{config::Config, NexmarkGenerator, NextEvent};
+use self::generator::{config::Config, EventGenerator, NexmarkGenerator, NextEvent};
 use self::model::Event;
 use crate::{
     algebra::{ZRingValue, ZSet},
@@ -22,7 +22,6 @@ use crate::{
 };
 use rand::prelude::ThreadRng;
 use rand::{thread_rng, Rng};
-use std::ops::Range;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{borrow::Cow, marker::PhantomData};
@@ -37,7 +36,7 @@ pub struct NexmarkSource<R: Rng, W, C> {
     // TODO(absoludity): Longer-term, it'd be great to use a client (such as a gRPC client) here to
     // completely separate the generator and allow the generator to be used with other languages
     // etc.
-    generator: NexmarkGenerator<R>,
+    generator: Box<dyn EventGenerator<R>>,
     // next_event stores the next event during `eval` when `next_event()` is called but returns an
     // event in the future, so that we can include it in the next call to eval.
     next_event: Option<NextEvent>,
@@ -47,11 +46,11 @@ pub struct NexmarkSource<R: Rng, W, C> {
 
 impl<R, W, C> NexmarkSource<R, W, C>
 where
-    R: Rng,
+    R: Rng + 'static,
 {
-    pub fn from_generator(generator: NexmarkGenerator<R>) -> Self {
+    pub fn from_generator<G: EventGenerator<R> + 'static>(generator: G) -> Self {
         NexmarkSource {
-            generator,
+            generator: Box::new(generator),
             next_event: None,
             _t: PhantomData,
         }
@@ -139,39 +138,21 @@ where
     }
 }
 
-impl<R, W, C> NexmarkSource<R, W, C>
-where
-    R: Rng + 'static,
-    W: ZRingValue + 'static,
-    C: Data + ZSet<Key = Event, R = W>,
-{
-    pub fn set_wallclock_time_iterator(&mut self, i: Range<u64>) {
-        self.generator.set_wallclock_time_iterator(i)
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
-    use self::generator::{config::Config, tests::generate_expected_next_events};
+    use self::generator::tests::{generate_expected_next_events, RangedTimeGenerator};
     use super::*;
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
+    use core::ops::Range;
     use rand::rngs::mock::StepRng;
 
-    pub fn make_test_source(
-        wallclock_base_time: u64,
+    /// Returns a source that generates 10_000 events/s with the specified
+    /// range of wallclock time ticks.
+    pub fn make_source_with_wallclock_times(
+        times: Range<u64>,
         max_events: u64,
     ) -> NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> {
-        let mut source = NexmarkSource::from_generator(NexmarkGenerator::new(
-            Config {
-                max_events,
-                ..Config::default()
-            },
-            StepRng::new(0, 1),
-        ));
-        source
-            .generator
-            .set_wallclock_base_time(wallclock_base_time);
-        source
+        NexmarkSource::from_generator(RangedTimeGenerator::new(times, max_events))
     }
 
     pub fn generate_expected_zset_tuples(
@@ -200,9 +181,9 @@ pub mod tests {
 
     #[test]
     fn test_start_clock() {
-        let expected_zset = generate_expected_zset(1_000_000, 2);
+        let expected_zset = generate_expected_zset(0, 2);
 
-        let mut source = make_test_source(1_000_000, 2);
+        let mut source = make_source_with_wallclock_times(0..2, 2);
 
         assert_eq!(source.eval(), expected_zset);
 
@@ -216,7 +197,8 @@ pub mod tests {
     // After exhausting events, the source indicates a fixed point.
     #[test]
     fn test_fixed_point() {
-        let mut source = make_test_source(1_000_000, 1);
+        let mut source = make_source_with_wallclock_times(0..1, 1);
+        assert!(!source.fixedpoint(1));
 
         source.eval();
 
@@ -226,7 +208,7 @@ pub mod tests {
     // After exhausting events, the source returns empty ZSets.
     #[test]
     fn test_eval_empty_zset() {
-        let mut source = make_test_source(1_000_000, 1);
+        let mut source = make_source_with_wallclock_times(0..2, 1);
 
         source.eval();
 
@@ -236,9 +218,9 @@ pub mod tests {
     #[test]
     fn test_nexmark_dbsp_source_full_batch() {
         let root = Root::build(move |circuit| {
-            let source = make_test_source(1_000_000, 10);
+            let source = make_source_with_wallclock_times(0..9, 10);
 
-            let expected_zset = generate_expected_zset(1_000_000, 10);
+            let expected_zset = generate_expected_zset(0, 10);
 
             circuit
                 .add_source(source)
@@ -257,11 +239,8 @@ pub mod tests {
     #[test]
     fn test_eval_batched() {
         let wallclock_time = 0;
-        let mut source = make_test_source(wallclock_time, 30);
-        source
-            .generator
-            .set_wallclock_time_iterator((0..30).into_iter());
-        let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 30);
+        let mut source = make_source_with_wallclock_times(0..3, 60);
+        let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 60);
 
         assert_eq!(
             source.eval(),
