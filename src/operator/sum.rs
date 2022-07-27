@@ -129,10 +129,10 @@ where
 mod test {
     use crate::{
         algebra::HasZero,
-        circuit::{Circuit, OwnershipPreference, Root},
+        circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         trace::{ord::OrdZSet, Batch},
-        zset,
+        zset, Circuit,
     };
 
     #[test]
@@ -165,17 +165,17 @@ mod test {
         };
 
         // Allow `Sum` to consume all streams by value.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             build_circuit(circuit);
         })
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         // Only consume source2, source3 by value.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let (source1, _source2, _source3) = build_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -186,11 +186,11 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         // Consume all streams by reference.
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let (source1, source2, source3) = build_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -211,7 +211,7 @@ mod test {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

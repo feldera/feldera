@@ -223,13 +223,11 @@ where
 }
 #[cfg(test)]
 mod test {
-    use crate::{
-        circuit::Root, indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset,
-    };
+    use crate::{indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit};
 
     #[test]
     fn index_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 zset!{ (1, "a") => 1
                      , (1, "b") => 1
@@ -256,13 +254,13 @@ mod test {
         .unwrap();
 
         for _ in 0..2 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
     #[test]
     fn index_with_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 zset!{ (1, "a") => 1
                      , (1, "b") => 1
@@ -289,7 +287,7 @@ mod test {
         .unwrap();
 
         for _ in 0..2 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

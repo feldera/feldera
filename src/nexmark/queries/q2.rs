@@ -39,7 +39,7 @@ mod tests {
         model::Bid,
         NexmarkSource,
     };
-    use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
+    use crate::{OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
     use std::sync::mpsc;
 
@@ -79,7 +79,7 @@ mod tests {
         let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
             NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
 
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             let input = circuit.add_source(source);
 
             let output = q2(input);

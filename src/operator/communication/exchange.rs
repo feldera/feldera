@@ -355,15 +355,15 @@ where
 /// # #[cfg(not(miri))]
 /// # fn main() {
 /// use dbsp::{
-///     circuit::{Root, Runtime},
 ///     operator::Generator,
+///     Circuit, Runtime,
 /// };
 ///
 /// const WORKERS: usize = 16;
 /// const ROUNDS: usize = 10;
 ///
 /// let hruntime = Runtime::run(WORKERS, || {
-///     let root = Root::build(|circuit| {
+///     let circuit = Circuit::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
 ///         let mut n: usize = 0;
 ///         let source = circuit.add_source(Generator::new(move || {
@@ -403,7 +403,7 @@ where
 ///     .unwrap();
 ///
 ///     for _ in 1..ROUNDS {
-///         root.step();
+///         circuit.step();
 ///     }
 /// });
 ///
@@ -628,9 +628,10 @@ mod tests {
     use crate::{
         circuit::{
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-            Root, Runtime,
+            Runtime,
         },
         operator::Generator,
+        Circuit,
     };
     use std::thread::yield_now;
 
@@ -705,7 +706,7 @@ mod tests {
             S: Scheduler + 'static,
         {
             let hruntime = Runtime::run(workers, move || {
-                let root = Root::build_with_scheduler::<_, S>(move |circuit| {
+                let circuit = Circuit::build_with_scheduler::<_, S>(move |circuit| {
                     let mut n: usize = 0;
                     let source = circuit.add_source(Generator::new(move || {
                         let result = n;
@@ -735,7 +736,7 @@ mod tests {
                 .unwrap();
 
                 for _ in 1..ROUNDS {
-                    root.step().unwrap();
+                    circuit.step().unwrap();
                 }
             });
 

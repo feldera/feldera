@@ -4,11 +4,11 @@
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use dbsp::{
-    circuit::{Root, Runtime, Stream},
     monitor::TraceMonitor,
     operator::CsvSource,
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, BatchReader},
+    Circuit, Runtime, Stream,
 };
 use std::{
     fs::{self, File},
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
     let hruntime = Runtime::run(8, || {
         let monitor = TraceMonitor::new_panic_on_error();
 
-        let root = Root::build(|circuit| {
+        let circuit = Circuit::build(|circuit| {
             /*
             use dbsp::{
                 circuit::GlobalNodeId,
@@ -275,7 +275,7 @@ fn main() -> Result<()> {
         let graph = monitor.visualize_circuit();
         fs::write(GALEN_GRAPH, graph.to_dot()).unwrap();
 
-        root.step().unwrap();
+        circuit.step().unwrap();
     });
 
     hruntime.join().map_err(|error| {

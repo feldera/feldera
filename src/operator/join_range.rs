@@ -202,11 +202,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{circuit::Root, operator::Generator, zset};
+    use crate::{operator::Generator, zset, Circuit};
 
     #[test]
     fn stream_join_range_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
                     (1, "a") => 1,
@@ -297,7 +297,7 @@ mod test {
         .unwrap();
 
         for _ in 0..5 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

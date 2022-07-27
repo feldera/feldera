@@ -109,7 +109,7 @@ mod tests {
         model::{Auction, Bid, Event},
         NexmarkSource,
     };
-    use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
+    use crate::{Circuit, OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
     use std::sync::mpsc;
 
@@ -206,7 +206,7 @@ mod tests {
 
         // Winning bids for auctions in category 1 are 100 and 300 - ie. AVG of 200
         // Winning (only) bid for auction in category 2 is 20.
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             let input = circuit.add_source(source);
 
             let output = q4(input);

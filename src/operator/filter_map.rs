@@ -613,17 +613,16 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::Root,
         indexed_zset,
         operator::{FilterMap, Generator},
         trace::ord::OrdZSet,
-        zset,
+        zset, Circuit,
     };
     use std::vec;
 
     #[test]
     fn filter_map_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut input: vec::IntoIter<OrdZSet<(isize, &'static str), isize>> =
                 vec![zset! { (1, "1") => 1, (-1, "-1") => 1, (5, "5 foo") => 1, (-2, "-2") => 1 }].into_iter();
 
@@ -771,7 +770,7 @@ mod test {
         .unwrap();
 
         for _ in 0..1 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

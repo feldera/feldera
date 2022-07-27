@@ -10,11 +10,11 @@
 //!
 //! ```
 //! use dbsp::{
-//!     circuit::Root,
 //!     operator::{Generator, Inspect},
+//!     Circuit,
 //! };
 //!
-//! let root = Root::build(|circuit| {
+//! let circuit = Circuit::build(|circuit| {
 //!     // Add a source operator.
 //!     let source_stream = circuit.add_source(Generator::new(|| "Hello, world!".to_owned()));
 //!
@@ -667,7 +667,44 @@ impl<P> Clone for Circuit<P> {
 }
 
 impl Circuit<()> {
-    // Create new top-level circuit.  Clients invoke this via the [`Root::build`]
+    /// Create a circuit and prepate it for execution.
+    ///
+    /// Creates an empty circuit and populates it with operators by calling a
+    /// user-provided `constructor` function.  The circuit will be scheduled
+    /// using the default scheduler (currently [`DynamicScheduler`]).
+    pub fn build<F>(constructor: F) -> Result<CircuitHandle, SchedulerError>
+    where
+        F: FnOnce(&mut Circuit<()>),
+    {
+        // TODO: use dynamic scheduler by default.
+        Self::build_with_scheduler::<F, DynamicScheduler>(constructor)
+    }
+
+    /// Create a circuit and prepate it for execution.
+    ///
+    /// Similar to [`build`](`Self::build`), but with a user-specified
+    /// [`Scheduler`] implementation.
+    pub fn build_with_scheduler<F, S>(constructor: F) -> Result<CircuitHandle, SchedulerError>
+    where
+        F: FnOnce(&mut Circuit<()>),
+        S: Scheduler + 'static,
+    {
+        let mut circuit = Circuit::new();
+        constructor(&mut circuit);
+        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
+
+        // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
+        // APIs, so that the user can reset the circuit at runtime and start
+        // evaluation from clean state without having to rebuild it from
+        // scratch.
+        circuit.log_scheduler_event(&SchedulerEvent::clock_start());
+        circuit.clock_start(0);
+        Ok(CircuitHandle { circuit, executor })
+    }
+}
+
+impl Circuit<()> {
+    // Create new top-level circuit.  Clients invoke this via the [`Circuit::build`]
     // API.
     fn new() -> Self {
         Self(Rc::new(RefCell::new(CircuitInner::new(
@@ -686,7 +723,7 @@ impl Circuit<()> {
     /// [`super::trace::CircuitEvent`] for a description of circuit events).
     ///
     /// This method should normally be called inside the closure passed to
-    /// [`Root::build`] before adding any operators to the circuit, so that
+    /// [`Circuit::build`] before adding any operators to the circuit, so that
     /// the handler gets to observe all nodes, edges, and subcircuits added
     /// to the circuit.
     ///
@@ -720,10 +757,10 @@ impl Circuit<()> {
     /// events).
     ///
     /// This method can be used during circuit construction, inside the closure
-    /// provided to [`Root::build`].  Use
-    /// [`Root::register_scheduler_event_handler`],
-    /// [`Root::unregister_scheduler_event_handler`] to manipulate scheduler
-    /// callbacks at runtime.
+    /// provided to [`Circuit::build`].  Use
+    /// [`CircuitHandle::register_scheduler_event_handler`],
+    /// [`CircuitHandle::unregister_scheduler_event_handler`] to manipulate
+    /// scheduler callbacks at runtime.
     ///
     /// `name` - user-readable name assigned to the handler.  If a handler with
     /// the same name exists, it will be replaced by the new handler.
@@ -1420,10 +1457,10 @@ where
     ///
     /// ```
     /// # use dbsp::{
-    /// #     circuit::Root,
     /// #     operator::{Z1, Generator},
+    /// #     Circuit,
     /// # };
-    /// # let root = Root::build(|circuit| {
+    /// # let circuit = Circuit::build(|circuit| {
     /// // Create a data source.
     /// let source = circuit.add_source(Generator::new(|| 10));
     /// // Create z1.  `z1_output` will contain the output stream of `z1`; `z1_feedback`
@@ -1563,11 +1600,11 @@ where
     /// ```
     /// # use std::{cell::RefCell, rc::Rc};
     /// use dbsp::{
-    ///     circuit::Root,
     ///     operator::{Generator, Z1},
+    ///     Circuit,
     /// };
     ///
-    /// let root = Root::build(|circuit| {
+    /// let circuit = Circuit::build(|circuit| {
     ///     // Generate sequence 0, 1, 2, ...
     ///     let mut n: usize = 0;
     ///     let source = circuit.add_source(Generator::new(move || {
@@ -2771,12 +2808,12 @@ where
 }
 
 /// Top-level circuit with executor.
-pub struct Root {
+pub struct CircuitHandle {
     circuit: Circuit<()>,
     executor: Box<dyn Executor<()>>,
 }
 
-impl Drop for Root {
+impl Drop for CircuitHandle {
     fn drop(&mut self) {
         self.circuit
             .log_scheduler_event(&SchedulerEvent::clock_end());
@@ -2791,41 +2828,7 @@ impl Drop for Root {
     }
 }
 
-impl Root {
-    /// Create a circuit and prepate it for execution.
-    ///
-    /// Creates an empty circuit and populates it with operators by calling a
-    /// user-provided `constructor` function.  The circuit will be scheduled
-    /// using the default scheduler (currently [`DynamicScheduler`]).
-    pub fn build<F>(constructor: F) -> Result<Self, SchedulerError>
-    where
-        F: FnOnce(&mut Circuit<()>),
-    {
-        // TODO: use dynamic scheduler by default.
-        Self::build_with_scheduler::<F, DynamicScheduler>(constructor)
-    }
-
-    /// Create a circuit and prepate it for execution.
-    ///
-    /// Similar to [`build`](`Self::build`), but with a user-specified
-    /// [`Scheduler`] implementation.
-    pub fn build_with_scheduler<F, S>(constructor: F) -> Result<Self, SchedulerError>
-    where
-        F: FnOnce(&mut Circuit<()>),
-        S: Scheduler + 'static,
-    {
-        let mut circuit = Circuit::new();
-        constructor(&mut circuit);
-        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
-
-        // Alternatively, `Root` should expose `clock_start` and `clock_end` APIs, so
-        // that the user can reset the circuit at runtime and start evaluation
-        // from clean state without having to rebuild it from scratch.
-        circuit.log_scheduler_event(&SchedulerEvent::clock_start());
-        circuit.clock_start(0);
-        Ok(Self { circuit, executor })
-    }
-
+impl CircuitHandle {
     /// Function that drives the execution of the circuit.
     ///
     /// Every call to `step()` corresponds to one tick of the global logical
@@ -2866,11 +2869,11 @@ impl Root {
 
 #[cfg(test)]
 mod tests {
-    use super::Root;
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
+        Circuit,
     };
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
@@ -2892,7 +2895,7 @@ mod tests {
     {
         let actual_output: Rc<RefCell<Vec<isize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
-        let root = Root::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
             let mut n: isize = 0;
             let source = circuit.add_source(Generator::new(move || {
@@ -2907,7 +2910,7 @@ mod tests {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         let mut sum = 0;
@@ -2937,7 +2940,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let root = Root::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
@@ -2955,7 +2958,7 @@ mod tests {
         .unwrap();
 
         for _ in 0..100 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         let mut sum = 0;
@@ -2977,7 +2980,7 @@ mod tests {
         factorial::<DynamicScheduler>();
     }
 
-    // Nested circuit.  The root circuit contains a source node that counts up from
+    // Nested circuit.  The circuit contains a source node that counts up from
     // 1.  For each `n` output by the source node, the nested circuit computes
     // factorial(n) using a `NestedSource` operator that counts from n down to
     // `1` and a multiplier that multiplies the next count by the product
@@ -2989,7 +2992,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let root = Root::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
@@ -3019,7 +3022,7 @@ mod tests {
         .unwrap();
 
         for _ in 1..10 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
 
         let mut expected_output: Vec<usize> = Vec::with_capacity(10);

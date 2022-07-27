@@ -580,7 +580,7 @@ where
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{circuit::Root, operator::GeneratorNested, zset, OrdZSet, Runtime};
+    use crate::{operator::GeneratorNested, zset, Circuit, OrdZSet, Runtime};
 
     fn do_distinct_incremental_nested_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
@@ -600,7 +600,7 @@ mod test {
 
     #[test]
     fn distinct_incremental_nested_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
                 vec![zset! { 2 => 1, 3 => 1 }, zset! { 3 => -2, 4 => -1 }],
@@ -659,7 +659,7 @@ mod test {
         .unwrap();
 
         for _ in 0..3 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
@@ -681,7 +681,7 @@ mod test {
 
     #[test]
     fn distinct_trace_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
                 vec![zset! { 2 => 1, 3 => 1 }, zset! { 3 => -2, 4 => -1 }],
@@ -740,7 +740,7 @@ mod test {
         .unwrap();
 
         for _ in 0..3 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

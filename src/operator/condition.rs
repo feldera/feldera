@@ -131,17 +131,14 @@ impl<C> Condition<C> {
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::{
-            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
-            Circuit, Root, Stream,
-        },
+        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{DelayedFeedback, FilterMap, Generator},
         trace::{
             ord::{OrdIndexedZSet, OrdZSet},
             BatchReader,
         },
-        zset,
+        zset, Circuit, Stream,
     };
 
     #[test]
@@ -158,7 +155,7 @@ mod test {
     where
         S: Scheduler + 'static,
     {
-        let root = Root::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             // Graph edges
@@ -238,7 +235,7 @@ mod test {
         .unwrap();
 
         for _ in 0..3 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

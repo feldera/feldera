@@ -599,14 +599,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::{Circuit, Root, Runtime, Stream},
         operator::{DelayedFeedback, FilterMap, Generator},
         time::{NestedTimestamp32, Product, Timestamp},
         trace::{
             ord::{OrdIndexedZSet, OrdZSet},
             Batch,
         },
-        zset,
+        zset, Circuit, Runtime, Stream,
     };
     use deepsize::DeepSizeOf;
     use std::{
@@ -616,7 +615,7 @@ mod test {
 
     #[test]
     fn join_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
                     (1, "a") => 1,
@@ -742,7 +741,7 @@ mod test {
         .unwrap();
 
         for _ in 0..5 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
@@ -766,7 +765,7 @@ mod test {
     // transitive closure of the edge relation.
     #[test]
     fn join_trace_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges: vec::IntoIter<OrdZSet<(usize, usize), isize>> = vec![
                 zset! { (1, 2) => 1 },
@@ -838,7 +837,7 @@ mod test {
 
         for _ in 0..8 {
             //eprintln!("{}", i);
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
@@ -898,7 +897,7 @@ mod test {
 
     #[test]
     fn propagate_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
                 zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
                 zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
@@ -951,13 +950,13 @@ mod test {
 
         for _ in 0..8 {
             //eprintln!("{}", i);
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
     #[test]
     fn propagate_nested_test() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
                 zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
                 zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
@@ -1037,7 +1036,7 @@ mod test {
 
         for _ in 0..8 {
             //eprintln!("{}", i);
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

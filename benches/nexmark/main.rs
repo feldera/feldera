@@ -15,7 +15,6 @@ use anyhow::Result;
 use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::{
-    circuit::{Circuit, Root},
     nexmark::{
         config::Config as NexmarkConfig,
         generator::config::Config as GeneratorConfig,
@@ -24,6 +23,7 @@ use dbsp::{
         NexmarkSource,
     },
     trace::{ord::OrdZSet, BatchReader},
+    Circuit,
 };
 use num_format::{Locale, ToFormattedString};
 use rand::prelude::ThreadRng;

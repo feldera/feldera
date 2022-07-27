@@ -220,17 +220,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        circuit::{Root, Stream},
-        operator::Generator,
-        trace::ord::OrdIndexedZSet,
-        zset,
-    };
+    use crate::{operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, Stream};
     use std::vec;
 
     #[test]
     fn sliding() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![
@@ -286,13 +281,13 @@ mod test {
         .unwrap();
 
         for _ in 0..6 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
     #[test]
     fn tumbling() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![
@@ -348,13 +343,13 @@ mod test {
         .unwrap();
 
         for _ in 0..11 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 
     #[test]
     fn shrinking() {
-        let root = Root::build(move |circuit| {
+        let circuit = Circuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![
@@ -427,7 +422,7 @@ mod test {
         .unwrap();
 
         for _ in 0..6 {
-            root.step().unwrap();
+            circuit.step().unwrap();
         }
     }
 }

@@ -160,8 +160,8 @@ where
 pub mod tests {
     use self::generator::tests::{generate_expected_next_events, RangedTimeGenerator};
     use super::*;
-    use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use core::ops::Range;
+    use crate::{OrdZSet, trace::Batch, Circuit};
     use rand::rngs::mock::StepRng;
     use std::sync::{mpsc, mpsc::Receiver};
 
@@ -257,9 +257,8 @@ pub mod tests {
 
     #[test]
     fn test_nexmark_dbsp_source_full_batch() {
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             let (source, _) = make_source_with_wallclock_times(0..9, 10);
-
             let expected_zset = generate_expected_zset(0, 10);
 
             circuit
