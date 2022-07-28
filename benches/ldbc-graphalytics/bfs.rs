@@ -67,6 +67,6 @@ fn antijoin<P>(vertices: &Vertices<P>, reachable_nodes: &Vertices<P>) -> Vertice
 where
     P: Clone + 'static,
 {
-    let reachable_nodes = vertices.semijoin::<(), _, _, _>(reachable_nodes, |&vertex, &()| vertex);
+    let reachable_nodes = vertices.join::<(), _, _, _>(reachable_nodes, |&vertex, &(), &()| vertex);
     vertices.minus(&reachable_nodes)
 }

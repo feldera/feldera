@@ -623,13 +623,15 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Key = K;
+    type Key<'k> = &'k K
+    where
+        Self: 'k;
     type ValueStorage = L;
 
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
-    fn key(&self) -> &'s Self::Key {
+    fn key(&self) -> Self::Key<'s> {
         &self.storage.keys[self.pos]
     }
     fn values(&self) -> L::Cursor<'s> {
@@ -654,8 +656,12 @@ where
             self.pos = self.bounds.1;
         }
     }
-    fn seek(&mut self, key: &Self::Key) {
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
+
+    fn seek<'a>(&mut self, key: Self::Key<'a>)
+    where
+        's: 'a,
+    {
+        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k < key);
         if self.valid() {
             self.child.reposition(
                 self.storage.offs[self.pos].try_into().unwrap(),

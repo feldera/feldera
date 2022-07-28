@@ -1,18 +1,10 @@
-use std::{
-    cmp::max,
-    fmt::{Debug, Display},
-    ops::{Add, AddAssign, Neg},
-    rc::Rc,
-};
-
-use timely::progress::Antichain;
-
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
     lattice::Lattice,
     trace::{
         layers::{
-            ordered_leaf::{OrderedLeaf, OrderedLeafBuilder, OrderedLeafCursor},
+            ordered_leaf::OrderedLeaf,
+            ordered_set_leaf::{OrderedSetLeaf, OrderedSetLeafBuilder, OrderedSetLeafCursor},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
@@ -20,8 +12,14 @@ use crate::{
     },
     NumEntries, SharedRef,
 };
-
 use deepsize::DeepSizeOf;
+use std::{
+    cmp::max,
+    fmt::{self, Debug, Display},
+    ops::{Add, AddAssign, Neg},
+    rc::Rc,
+};
+use timely::progress::Antichain;
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -30,7 +28,7 @@ where
     K: Ord,
 {
     /// Where all the dataz is.
-    pub layer: OrderedLeaf<K, R>,
+    pub layer: OrderedSetLeaf<K, R>,
     pub lower: Antichain<()>,
     pub upper: Antichain<()>,
 }
@@ -40,7 +38,7 @@ where
     K: Ord + Clone + Display,
     R: Eq + HasZero + AddAssignByRef + Clone + Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
             "layer:\n{}",
@@ -49,11 +47,11 @@ where
     }
 }
 
-impl<K, R> From<OrderedLeaf<K, R>> for OrdZSet<K, R>
+impl<K, R> From<OrderedSetLeaf<K, R>> for OrdZSet<K, R>
 where
     K: Ord,
 {
-    fn from(layer: OrderedLeaf<K, R>) -> Self {
+    fn from(layer: OrderedSetLeaf<K, R>) -> Self {
         Self {
             layer,
             lower: Antichain::from_elem(()),
@@ -62,11 +60,11 @@ where
     }
 }
 
-impl<K, R> From<OrderedLeaf<K, R>> for Rc<OrdZSet<K, R>>
+impl<K, R> From<OrderedSetLeaf<K, R>> for Rc<OrdZSet<K, R>>
 where
     K: Ord,
 {
-    fn from(layer: OrderedLeaf<K, R>) -> Self {
+    fn from(layer: OrderedSetLeaf<K, R>) -> Self {
         Rc::new(From::from(layer))
     }
 }
@@ -76,8 +74,8 @@ where
     K: DeepSizeOf + Ord,
     R: DeepSizeOf,
 {
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-        self.layer.deep_size_of()
+    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
+        self.layer.deep_size_of_children(context)
     }
 }
 
@@ -218,19 +216,25 @@ where
     type R = R;
     type Cursor<'s> = OrdZSetCursor<'s, K, R>;
 
+    #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         OrdZSetCursor {
-            empty: (),
             valid: true,
             cursor: self.layer.cursor(),
         }
     }
+
+    #[inline]
     fn len(&self) -> usize {
-        <OrderedLeaf<K, R> as Trie>::tuples(&self.layer)
+        self.layer.tuples()
     }
+
+    #[inline]
     fn lower(&self) -> &Antichain<()> {
         &self.lower
     }
+
+    #[inline]
     fn upper(&self) -> &Antichain<()> {
         &self.upper
     }
@@ -259,7 +263,7 @@ where
     R: MonoidValue,
 {
     // result that we are currently assembling.
-    result: <OrderedLeaf<K, R> as Trie>::MergeBuilder,
+    result: <OrderedSetLeaf<K, R> as Trie>::MergeBuilder,
 }
 
 impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
@@ -268,13 +272,14 @@ where
     R: MonoidValue,
 {
     fn new(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
-        OrdZSetMerger {
-            result: <<OrderedLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
+        Self {
+            result: <<OrderedSetLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,
                 &batch2.layer,
             ),
         }
     }
+
     fn done(self) -> OrdZSet<K, R> {
         OrdZSet {
             layer: self.result.done(),
@@ -282,6 +287,7 @@ where
             upper: Antichain::new(),
         }
     }
+
     fn work(&mut self, source1: &OrdZSet<K, R>, source2: &OrdZSet<K, R>, fuel: &mut isize) {
         *fuel -= self
             .result
@@ -298,8 +304,7 @@ where
     R: MonoidValue,
 {
     valid: bool,
-    empty: (),
-    cursor: OrderedLeafCursor<'s, K, R>,
+    cursor: OrderedSetLeafCursor<'s, K, R>,
 }
 
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
@@ -309,38 +314,57 @@ where
 {
     type Storage = OrdZSet<K, R>;
 
+    #[inline]
     fn key(&self) -> &K {
-        &self.cursor.key().0
+        self.cursor.current_key()
     }
+
+    #[inline]
     fn val(&self) -> &() {
-        unsafe { ::std::mem::transmute(&self.empty) }
+        &()
     }
+
+    #[inline]
     fn map_times<L: FnMut(&(), &R)>(&mut self, mut logic: L) {
         if self.cursor.valid() {
-            logic(&(), &self.cursor.key().1);
+            logic(&(), self.cursor.current_diff());
         }
     }
+
+    #[inline]
     fn weight(&mut self) -> R {
         debug_assert!(&self.cursor.valid());
-        self.cursor.key().1.clone()
+        self.cursor.current_diff().clone()
     }
+
+    #[inline]
     fn key_valid(&self) -> bool {
         self.cursor.valid()
     }
+
+    #[inline]
     fn val_valid(&self) -> bool {
         self.valid
     }
+
+    #[inline]
     fn step_key(&mut self) {
         self.cursor.step();
         self.valid = true;
     }
+
+    #[inline]
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek_key(key);
         self.valid = true;
     }
+
+    #[inline]
     fn step_val(&mut self) {
         self.valid = false;
     }
+
+    #[inline]
     fn seek_val(&mut self, _val: &()) {}
 
     fn values<'a>(&mut self, _vals: &mut Vec<(&'a (), R)>)
@@ -352,10 +376,13 @@ where
         unimplemented!();
     }
 
+    #[inline]
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
         self.valid = true;
     }
+
+    #[inline]
     fn rewind_vals(&mut self) {
         self.valid = true;
     }
@@ -367,7 +394,7 @@ where
     K: Ord,
     R: MonoidValue,
 {
-    builder: OrderedLeafBuilder<K, R>,
+    builder: OrderedSetLeafBuilder<K, R>,
 }
 
 impl<K, R> Builder<K, (), (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
@@ -376,14 +403,14 @@ where
     R: MonoidValue,
 {
     fn new(_time: ()) -> Self {
-        OrdZSetBuilder {
-            builder: <OrderedLeafBuilder<K, R>>::new(),
+        Self {
+            builder: OrderedSetLeafBuilder::new(),
         }
     }
 
-    fn with_capacity(_time: (), cap: usize) -> Self {
-        OrdZSetBuilder {
-            builder: <OrderedLeafBuilder<K, R> as TupleBuilder>::with_capacity(cap),
+    fn with_capacity(_time: (), capacity: usize) -> Self {
+        Self {
+            builder: <OrderedSetLeafBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
         }
     }
 

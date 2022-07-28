@@ -174,7 +174,7 @@ where
 
         for receiver in 0..self.npeers {
             *self.mailbox(sender, receiver).lock().unwrap() = data.next();
-            self.sender_counters[sender].fetch_sub(1, Ordering::Release);
+            self.sender_counters[sender].fetch_sub(1, Ordering::AcqRel);
             let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
             if old_counter >= self.npeers - 1 {
                 // This can be a spurious callback (see detailed comment in `try_receive_all`)
