@@ -2,7 +2,7 @@
 mod zset_macro;
 
 use crate::{
-    algebra::{GroupValue, HasOne, ZRingValue},
+    algebra::{GroupValue, HasOne, HasZero, ZRingValue},
     trace::{cursor::Cursor, Batch, Builder},
     NumEntries, SharedRef,
 };
@@ -30,6 +30,10 @@ pub trait ZSet: IndexedZSet<Val = ()> {
 
     /// Like `distinct` but optimized to operate on an owned value.
     fn distinct_owned(self) -> Self;
+
+    /// Count of elements, where each count is multiplied by its weight.
+    /// Notice that the result could be 0 for non-empty sets.
+    fn weighted_count(&self) -> Self::R;
 }
 
 impl<Z> ZSet for Z
@@ -56,5 +60,15 @@ where
     // TODO: optimized implementation for owned values
     fn distinct_owned(self) -> Self {
         self.distinct()
+    }
+
+    fn weighted_count(&self) -> Self::R {
+        let mut sum = Self::R::zero();
+        let mut cursor = self.cursor();
+        while cursor.key_valid() {
+            sum += cursor.weight();
+            cursor.step_key();
+        }
+        sum
     }
 }
