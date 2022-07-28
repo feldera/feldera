@@ -391,25 +391,35 @@ where
     K: Eq + Ord + Clone,
     R: Clone,
 {
-    type Key = (K, R);
+    type Key<'k> = &'k (K, R)
+    where
+        Self: 'k;
     type ValueStorage = ();
 
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
-    fn key(&self) -> &'s Self::Key {
+
+    fn key(&self) -> Self::Key<'s> {
         &self.storage.vals[self.pos]
     }
+
     fn values(&self) {}
+
     fn step(&mut self) {
         self.pos += 1;
         if !self.valid() {
             self.pos = self.bounds.1;
         }
     }
-    fn seek(&mut self, key: &Self::Key) {
+
+    fn seek<'a>(&mut self, key: Self::Key<'a>)
+    where
+        's: 'a,
+    {
         self.seek_key(&key.0);
     }
+
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }

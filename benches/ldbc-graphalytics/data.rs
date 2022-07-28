@@ -102,6 +102,7 @@ impl DataSet {
         // Otherwise parse the vertices file on this thread
         } else {
             let vertices = VertexParser::new(vertices).load();
+
             (vertices, R::Parsed::default())
         };
 
@@ -508,13 +509,8 @@ impl EdgeParser {
             if !directed {
                 batch.push(((dest, src), Weight::one()));
             }
-
-            if batch.len() + 1 + directed as usize >= 1024 {
-                edges.push_batch(&mut batch);
-            }
         });
         edges.push_batch(&mut batch);
-
         edges.seal()
     }
 
@@ -558,13 +554,8 @@ impl VertexParser {
 
         self.parse(|vertex| {
             batch.push(((vertex, ()), Weight::one()));
-
-            if batch.len() + 1 >= 1024 {
-                edges.push_batch(&mut batch);
-            }
         });
         edges.push_batch(&mut batch);
-
         edges.seal()
     }
 

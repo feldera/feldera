@@ -52,9 +52,7 @@ where
     T: Ord,
     R: AddAssignByRef + HasZero,
 {
-    // We could do an insertion-sort like initial scan which builds up sorted,
-    // consolidated runs. In a world where there are not many results, we may
-    // never even need to call in to merge sort.
+    // Ideally we'd combine the sorting and value merging portions
     slice.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
 
     let slice_ptr = slice.as_mut_ptr();

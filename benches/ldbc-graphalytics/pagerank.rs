@@ -110,8 +110,11 @@ where
     });
 
     // Find all dangling nodes (nodes without outgoing edges)
-    let dangling_nodes =
-        vertices.minus(&outgoing_sans_dangling.semijoin_stream_core(&vertices, |&node, _| node));
+    let dangling_nodes = vertices.minus(
+        &outgoing_sans_dangling
+            .semijoin_stream::<_, OrdZSet<_, _>>(&vertices)
+            .map(|&(node, _)| node),
+    );
 
     // Make the edge weights for all dangling nodes, we only need to calculate this
     // once
@@ -143,7 +146,7 @@ where
 
     // Find vertices without any incoming edges
     let zero_incoming = vertices
-        .minus(&reversed.semijoin::<(), _, _, _>(&vertices, |&node, _| node))
+        .minus(&reversed.join::<(), _, _, _>(&vertices, |&node, _, _| node))
         .map(|&node| ((), (node, F64::new(0.0))));
 
     // Create a stream containing one `((), 0)` pair
@@ -537,7 +540,8 @@ where
     let dangling_nodes = weighted_vertices.minus(
         &outgoing_edge_counts
             .distinct()
-            .semijoin_stream_core(&weighted_vertices, |&node, _| node),
+            .semijoin_stream::<_, OrdZSet<_, _>>(&weighted_vertices)
+            .map(|&(node, _)| node),
     );
 
     let edge_weights = edges.shard().apply(|edges| {
