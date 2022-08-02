@@ -27,12 +27,18 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedL
     type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedLeafBuilder<K, R>;
     type TupleBuilder = UnorderedLeafBuilder<K, R>;
+
+    #[inline]
     fn keys(&self) -> usize {
         self.vals.len()
     }
+
+    #[inline]
     fn tuples(&self) -> usize {
         <OrderedLeaf<K, R> as Trie>::keys(self)
     }
+
+    #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         OrderedLeafCursor {
             storage: self,
@@ -197,6 +203,12 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
             vals: Vec::with_capacity(cap),
         }
     }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        self.vals.reserve(additional);
+    }
+
     #[inline]
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         self.vals.extend_from_slice(&other.vals[lower..upper]);

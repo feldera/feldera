@@ -1,17 +1,20 @@
 use clap::{PossibleValue, ValueEnum};
 use dbsp::{
     algebra::{HasOne, HasZero},
-    trace::{Batch, Batcher},
+    trace::{Batch, Batcher, Builder},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use deepsize::DeepSizeOf;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use ordered_float::OrderedFloat;
 use std::{
+    cmp::Reverse,
+    ffi::OsStr,
     fmt::{self, Debug, Display},
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
     iter::{Product, Sum},
+    mem::size_of,
     ops::{Add, AddAssign, Div, Mul, Neg, Sub},
     path::{Path, PathBuf},
     thread,
@@ -27,11 +30,11 @@ pub type Vertex = u64;
 pub type Weight = isize;
 pub type Distance = u64;
 
-pub type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
 pub type VertexSet = OrdZSet<Node, Weight>;
-pub type DistanceSet = OrdZSet<(Node, Distance), Weight>;
 pub type RankSet = OrdZSet<(Node, Rank), Weight>;
 pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
+pub type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
+pub type DistanceSet = OrdZSet<(Node, Distance), Weight>;
 
 pub type Streamed<P, T> = Stream<Circuit<P>, T>;
 
@@ -45,15 +48,103 @@ const DATA_PATH: &str = concat!(
     "/benches/ldbc-graphalytics-data",
 );
 
+pub(crate) fn list_downloaded_benchmarks() {
+    let data_path = Path::new(DATA_PATH);
+
+    let mut datasets = Vec::new();
+    for dir in fs::read_dir(data_path)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_type().map_or(false, |ty| ty.is_dir()))
+    {
+        let path = dir.path();
+
+        if let Ok(dir) = fs::read_dir(&path) {
+            for entry in dir.flatten() {
+                let path = entry.path();
+                if path.extension() == Some(OsStr::new("properties")) {
+                    let properties_file = File::open(&path).unwrap_or_else(|error| {
+                        panic!("failed to open {}: {error}", path.display())
+                    });
+
+                    let name = path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .split_once('.')
+                        .unwrap()
+                        .0
+                        .to_owned();
+
+                    let properties = Properties::from_file(&name, properties_file);
+                    let vertex_bytes = properties.vertices * size_of::<Node>() as u64;
+                    let total_edges = properties.edges; // * (!properties.directed as u64 + 1);
+                    let edge_bytes = total_edges * size_of::<Node>() as u64 * 2;
+
+                    datasets.push((name, properties.scale(), vertex_bytes, edge_bytes));
+                    break;
+                }
+            }
+        }
+    }
+    datasets.sort_by_key(|(.., vertex_bytes, edge_bytes)| Reverse(vertex_bytes + edge_bytes));
+
+    if datasets.is_empty() {
+        println!("No datasets are currently downloaded");
+    }
+
+    let longest_name = datasets.iter().map(|(name, ..)| name.len()).max().unwrap() + 1;
+
+    let mut stdout = io::stdout().lock();
+    for (name, scale, vertex_bytes, edge_bytes) in datasets {
+        writeln!(
+            stdout,
+            "{name:<longest_name$} scale: {:.01}, total size: {}, vertices: {}, edges: {}",
+            scale,
+            HumanBytes(vertex_bytes + edge_bytes),
+            HumanBytes(vertex_bytes),
+            HumanBytes(edge_bytes),
+        )
+        .unwrap();
+    }
+
+    stdout.flush().unwrap();
+}
+
+pub(crate) fn list_datasets() {
+    let mut datasets = DataSet::DATASETS.to_vec();
+    datasets.sort_by_key(|dataset| dataset.scale);
+
+    let longest_name = datasets
+        .iter()
+        .map(|dataset| dataset.name.len())
+        .max()
+        .unwrap();
+
+    let mut stdout = io::stdout().lock();
+    for dataset in datasets {
+        writeln!(
+            stdout,
+            "{:<longest_name$} scale: {:?}",
+            dataset.name, dataset.scale,
+        )
+        .unwrap();
+    }
+
+    stdout.flush().unwrap();
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DataSet {
     pub name: &'static str,
     pub url: &'static str,
+    pub scale: Scale,
 }
 
 impl DataSet {
-    pub const fn new(name: &'static str, url: &'static str) -> Self {
-        Self { name, url }
+    pub const fn new(name: &'static str, url: &'static str, scale: Scale) -> Self {
+        Self { name, url, scale }
     }
 
     pub fn path(&self) -> PathBuf {
@@ -81,11 +172,14 @@ impl DataSet {
             .unwrap_or_else(|error| panic!("failed to open {}: {error}", vertices_path.display()));
 
         // Load the edges and vertices in parallel
-        let edges_handle =
-            thread::spawn(move || EdgeParser::new(edges, properties.directed).load());
+        let edges_handle = thread::spawn(move || {
+            EdgeParser::new(edges, properties.directed).load(properties.edges as usize)
+        });
 
         let (vertices, results) = if let Some(suffix) = R::file_suffix() {
-            let vertices_handle = thread::spawn(move || VertexParser::new(vertices).load());
+            let vertices_handle = thread::spawn(move || {
+                VertexParser::new(vertices).load(properties.vertices as usize)
+            });
 
             // Open the results file
             let result_path = dataset_dir.join(format!("{}{suffix}", self.name));
@@ -94,15 +188,14 @@ impl DataSet {
             });
 
             // Parse the results file in parallel to the vertices file
-            let results = R::load(result_file);
+            let results = R::load(&properties, result_file);
             let vertices = vertices_handle.join().unwrap();
 
             (vertices, results)
 
         // Otherwise parse the vertices file on this thread
         } else {
-            let vertices = VertexParser::new(vertices).load();
-
+            let vertices = VertexParser::new(vertices).load(properties.vertices as usize);
             (vertices, R::Parsed::default())
         };
 
@@ -112,7 +205,7 @@ impl DataSet {
         Ok((properties, edges, vertices, results))
     }
 
-    pub fn load_results<R: ResultParser>(&self) -> io::Result<R::Parsed> {
+    pub fn load_results<R: ResultParser>(&self, props: &Properties) -> io::Result<R::Parsed> {
         if let Some(suffix) = R::file_suffix() {
             let dataset_dir = self.dataset_dir()?;
 
@@ -121,7 +214,7 @@ impl DataSet {
                 panic!("failed to open {}: {error}", result_path.display())
             });
 
-            Ok(R::load(result_file))
+            Ok(R::load(props, result_file))
         } else {
             Ok(R::Parsed::default())
         }
@@ -286,74 +379,72 @@ impl DataSet {
     // https://r2-public-worker.ldbc.workers.dev/graphalytics/kgs.tar.zst
     // https://r2-public-worker.ldbc.workers.dev/graphalytics/twitter_mpi.tar.zst
     // https://r2-public-worker.ldbc.workers.dev/graphalytics/wiki-Talk.tar.zst
-    pub const DATASETS: [Self; 11] = [
-        Self::EXAMPLE_DIR,
-        Self::EXAMPLE_UNDIR,
-        Self::DATAGEN_7_5,
-        Self::DATAGEN_7_6,
-        Self::DATAGEN_7_7,
-        Self::DATAGEN_8_2,
-        Self::DATAGEN_8_3,
-        Self::DATAGEN_8_4,
-        Self::DATAGEN_8_5,
-        Self::GRAPH_500_23,
-        Self::GRAPH_500_24,
-    ];
+}
 
-    pub const EXAMPLE_DIR: DataSet = DataSet::new(
-        "example-directed",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/example-directed.tar.zst",
-    );
+macro_rules! datasets {
+    ($($const:ident = $name:literal @ $scale:ident),* $(,)?) => {
+        const DATASETS_LEN: usize = [$(DataSet::$const,)*].len();
 
-    pub const EXAMPLE_UNDIR: DataSet = DataSet::new(
-        "example-undirected",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/example-undirected.tar.zst",
-    );
+        impl DataSet {
+            pub const DATASETS: [Self; DATASETS_LEN] = [$(Self::$const,)*];
 
-    pub const DATAGEN_7_5: DataSet = DataSet::new(
-        "datagen-7_5-fb",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_5-fb.tar.zst",
-    );
+            $(
+                pub const $const: Self = Self::new(
+                    $name,
+                    concat!("https://r2-public-worker.ldbc.workers.dev/graphalytics/", $name, ".tar.zst"),
+                    Scale::$scale,
+                );
+            )*
+        }
+    }
+}
 
-    pub const DATAGEN_7_6: DataSet = DataSet::new(
-        "datagen-7_6-fb",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_6-fb.tar.zst",
-    );
+datasets! {
+    EXAMPLE_DIR = "example-directed" @ Example,
+    EXAMPLE_UNDIR = "example-undirected" @ Example,
 
-    pub const DATAGEN_7_7: DataSet = DataSet::new(
-        "datagen-7_7-zf",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_7-zf.tar.zst",
-    );
+    DATAGEN_7_5 = "datagen-7_5-fb" @ S,
+    DATAGEN_7_6 = "datagen-7_6-fb" @ S,
+    DATAGEN_7_7 = "datagen-7_7-zf" @ S,
+    DATAGEN_7_8 = "datagen-7_8-zf" @ S,
+    DATAGEN_7_9 = "datagen-7_9-fb" @ S,
 
-    pub const DATAGEN_8_2: DataSet = DataSet::new(
-        "datagen-8_2-zf",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_2-zf.tar.zst",
-    );
+    DATAGEN_8_0 = "datagen-8_0-fb" @ M,
+    DATAGEN_8_1 = "datagen-8_1-fb" @ M,
+    DATAGEN_8_2 = "datagen-8_2-zf" @ M,
+    DATAGEN_8_3 = "datagen-8_3-zf" @ M,
+    DATAGEN_8_4 = "datagen-8_4-fb" @ M,
+    DATAGEN_8_5 = "datagen-8_5-fb" @ L,
+    DATAGEN_8_6 = "datagen-8_6-fb" @ L,
+    DATAGEN_8_7 = "datagen-8_7-zf" @ L,
+    DATAGEN_8_8 = "datagen-8_8-zf" @ L,
+    DATAGEN_8_9 = "datagen-8_9-fb" @ L,
 
-    pub const DATAGEN_8_3: DataSet = DataSet::new(
-        "datagen-8_3-zf",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_3-zf.tar.zst",
-    );
+    DATAGEN_9_0 = "datagen-9_0-fb" @ XL,
+    DATAGEN_9_1 = "datagen-9_1-fb" @ XL,
+    DATAGEN_9_2 = "datagen-9_2-zf" @ XL,
+    DATAGEN_9_3 = "datagen-9_3-zf" @ XL,
+    DATAGEN_9_4 = "datagen-9_4-fb" @ XL,
 
-    pub const DATAGEN_8_4: DataSet = DataSet::new(
-        "datagen-8_4-fb",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_4-fb.tar.zst",
-    );
+    DATAGEN_SF3K = "datagen-sf3k-fb" @ XL,
+    // There's also datagen-sf10k-fb but it requires downloading 2 files
 
-    pub const DATAGEN_8_5: DataSet = DataSet::new(
-        "datagen-8_5-fb",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_5-fb.tar.zst",
-    );
+    GRAPH_500_22 = "graph500-22" @ S,
+    GRAPH_500_23 = "graph500-23" @ M,
+    GRAPH_500_24 = "graph500-24" @ M,
+    GRAPH_500_25 = "graph500-25" @ L,
+    GRAPH_500_26 = "graph500-26" @ XL,
+    GRAPH_500_27 = "graph500-27" @ XL,
+    GRAPH_500_28 = "graph500-28" @ XXL,
+    GRAPH_500_29 = "graph500-29" @ XXL,
+    // There's also graph500-30 but it's massive and requires downloading 4 files
 
-    pub const GRAPH_500_23: Self = Self::new(
-        "graph500-23",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-23.tar.zst",
-    );
-
-    pub const GRAPH_500_24: Self = Self::new(
-        "graph500-24",
-        "https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-24.tar.zst",
-    );
+    KGS = "kgs" @ XS,
+    WIKI_TALK = "wiki-Talk" @ XXS,
+    CIT_PATENTS = "cit-Patents" @ XS,
+    DOTA_LEAGUE = "dota-league" @ S,
+    TWITTER_MPI = "twitter_mpi" @ XL,
+    COM_FRIENDSTER = "com-friendster" @ XL,
 }
 
 impl ValueEnum for DataSet {
@@ -372,7 +463,30 @@ impl Default for DataSet {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::upper_case_acronyms)]
+pub enum Scale {
+    /// Really tiny datasets for testing
+    Example,
+    /// Datasets with a scale factor of 6.5 to 6.9
+    XXS,
+    /// Datasets with a scale factor of 7.0 to 7.4
+    XS,
+    /// Datasets with a scale factor of 7.5 to 7.9
+    S,
+    /// Datasets with a scale factor of 8.0 to 8.4
+    M,
+    /// Datasets with a scale factor of 8.5 to 8.9
+    L,
+    /// Datasets with a scale factor of 9.0 to 9.4
+    XL,
+    /// Datasets with a scale factor of 9.5 to 9.9
+    XXL,
+    // /// Datasets with a scale factor of 10.0 to 10.4
+    // XXXL,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Properties {
     pub vertex_file: String,
     pub edge_file: String,
@@ -456,6 +570,12 @@ impl Properties {
             pagerank_iters,
         }
     }
+
+    /// Gets the scale of the current benchmark as defined
+    /// [here](https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.2.3)
+    pub fn scale(&self) -> f64 {
+        (self.edges as f64 + self.vertices as f64).log10()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -497,21 +617,28 @@ impl EdgeParser {
         }
     }
 
-    pub fn load(self) -> EdgeMap {
-        let mut edges = <EdgeMap as Batch>::Batcher::new(());
-        let mut batch = Vec::with_capacity(1024);
+    pub fn load(self, approx_edges: usize) -> EdgeMap {
+        // Directed graphs can use an ordered builder
+        if self.directed {
+            let mut edges = <EdgeMap as Batch>::Builder::with_capacity((), approx_edges);
+            self.parse(|src, dest| edges.push((src, dest, Weight::one())));
+            edges.done()
 
-        let directed = self.directed;
-        self.parse(|src, dest| {
-            batch.push(((src, dest), Weight::one()));
+        // Undirected graphs must use an unordered builder
+        } else {
+            let mut forward_batch = Vec::with_capacity(approx_edges);
+            let mut reverse_batch = Vec::with_capacity(approx_edges);
 
-            // Add in the reversed edge if the graph isn't directed
-            if !directed {
-                batch.push(((dest, src), Weight::one()));
-            }
-        });
-        edges.push_batch(&mut batch);
-        edges.seal()
+            self.parse(|src, dest| {
+                forward_batch.push(((src, dest), Weight::one()));
+                reverse_batch.push(((dest, src), Weight::one()));
+            });
+
+            let mut edges = <EdgeMap as Batch>::Batcher::new(());
+            edges.push_consolidated_batch(&mut forward_batch);
+            edges.push_batch(&mut reverse_batch);
+            edges.seal()
+        }
     }
 
     fn parse<F>(mut self, mut append: F)
@@ -548,15 +675,11 @@ impl VertexParser {
         }
     }
 
-    pub fn load(self) -> VertexSet {
-        let mut edges = <VertexSet as Batch>::Batcher::new(());
-        let mut batch = Vec::with_capacity(1024);
-
-        self.parse(|vertex| {
-            batch.push(((vertex, ()), Weight::one()));
-        });
-        edges.push_batch(&mut batch);
-        edges.seal()
+    pub fn load(self, approx_vertices: usize) -> VertexSet {
+        // The vertices file is ordered so we can use an ordered builder
+        let mut vertices = <VertexSet as Batch>::Builder::with_capacity((), approx_vertices);
+        self.parse(|vertex| vertices.push((vertex, (), Weight::one())));
+        vertices.done()
     }
 
     fn parse<F>(mut self, mut append: F)
@@ -583,7 +706,7 @@ pub trait ResultParser {
 
     fn file_suffix() -> Option<&'static str>;
 
-    fn load(file: File) -> Self::Parsed;
+    fn load(props: &Properties, file: File) -> Self::Parsed;
 }
 
 pub struct NoopResults;
@@ -595,7 +718,7 @@ impl ResultParser for NoopResults {
         None
     }
 
-    fn load(_file: File) -> Self::Parsed {}
+    fn load(_props: &Properties, _file: File) -> Self::Parsed {}
 }
 
 pub struct BfsResults;
@@ -607,12 +730,12 @@ impl ResultParser for BfsResults {
         Some("-BFS")
     }
 
-    fn load(file: File) -> Self::Parsed {
+    fn load(props: &Properties, file: File) -> Self::Parsed {
         let mut file = BufReader::new(file);
 
-        // TODO: Can we estimate the capacity any better?
-        let mut results = <DistanceSet as Batch>::Batcher::new(());
-        let mut batch = Vec::with_capacity(1024);
+        // The bfs results file is ordered so we can use an ordered builder
+        let mut results =
+            <DistanceSet as Batch>::Builder::with_capacity((), props.vertices as usize);
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {
@@ -626,16 +749,11 @@ impl ResultParser for BfsResults {
             let vertex = vertex.parse().unwrap();
             let distance = distance.parse().unwrap();
 
-            batch.push((((vertex, distance), ()), Weight::one()));
-            if batch.len() + 1 >= 1024 {
-                results.push_batch(&mut batch);
-            }
-
+            results.push(((vertex, distance), (), Weight::one()));
             buffer.clear();
         }
 
-        results.push_batch(&mut batch);
-        results.seal()
+        results.done()
     }
 }
 
@@ -648,12 +766,11 @@ impl ResultParser for PageRankResults {
         Some("-PR")
     }
 
-    fn load(file: File) -> Self::Parsed {
+    fn load(props: &Properties, file: File) -> Self::Parsed {
         let mut file = BufReader::new(file);
 
-        // TODO: Can we estimate the capacity any better?
-        let mut results = <RankMap as Batch>::Batcher::new(());
-        let mut batch = Vec::with_capacity(1024);
+        // The pagerank results file is ordered so we can use an ordered builder
+        let mut results = <RankMap as Batch>::Builder::with_capacity((), props.vertices as usize);
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {
@@ -667,16 +784,11 @@ impl ResultParser for PageRankResults {
             let vertex = vertex.parse().unwrap();
             let rank = F64::new(distance.parse::<f64>().unwrap());
 
-            batch.push(((vertex, rank), Weight::one()));
-            if batch.len() + 1 >= 1024 {
-                results.push_batch(&mut batch);
-            }
-
+            results.push((vertex, rank, Weight::one()));
             buffer.clear();
         }
 
-        results.push_batch(&mut batch);
-        results.seal()
+        results.done()
     }
 }
 
@@ -691,7 +803,7 @@ impl F64 {
         Self(OrderedFloat(float))
     }
 
-            #[inline]
+    #[inline]
     #[rustfmt::skip]
     pub const fn inner(self) -> f64 {
         self.0.0
@@ -740,12 +852,14 @@ impl<'a> Add<&'a F64> for &'a F64 {
 }
 
 impl AddAssign for F64 {
+    #[inline]
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
     }
 }
 
 impl AddAssign<&'_ F64> for F64 {
+    #[inline]
     fn add_assign(&mut self, rhs: &Self) {
         *self = *self + *rhs;
     }

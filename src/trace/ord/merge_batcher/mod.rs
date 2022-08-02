@@ -51,6 +51,10 @@ where
         self.sorter.push(batch);
     }
 
+    fn push_consolidated_batch(&mut self, batch: &mut Vec<((K, V), R)>) {
+        self.sorter.push_consolidated(batch);
+    }
+
     fn tuples(&self) -> usize {
         self.sorter.tuples()
     }
@@ -69,9 +73,10 @@ where
         self.sorter.finish_into(&mut merged);
 
         // Try and pre-allocate our builder a little bit
-        // TODO: We could potentially maintain a count of elements
-        //       within the sorter, could that be worth it?
-        let mut builder = B::Builder::with_capacity(self.time.clone(), merged.len() * 4);
+        let mut builder = B::Builder::with_capacity(
+            self.time.clone(),
+            merged.iter().map(|batch| batch.len()).sum(),
+        );
 
         for mut buffer in merged.drain(..) {
             builder.extend(buffer.drain(..).map(|((key, val), diff)| (key, val, diff)));
@@ -191,6 +196,49 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
 
             // Consolidate and push the batch we were given
             consolidation::consolidate(&mut batch);
+            if !batch.is_empty() {
+                self.queue.push(vec![batch]);
+
+                // While there's at least two elements in our queue and one
+                // of them is much larger than the other
+                while self.queue.len() > 1
+                    && (self.queue[self.queue.len() - 1].len()
+                        >= self.queue[self.queue.len() - 2].len() / 2)
+                {
+                    let (left, right) = (
+                        self.queue.pop().expect("there's at least two batches"),
+                        self.queue.pop().expect("there's at least two batches"),
+                    );
+
+                    // Merge the two batches together
+                    let merged = self.merge_by(left, right);
+                    if !merged.is_empty() {
+                        self.queue.push(merged);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn push_consolidated(&mut self, batch: &mut Vec<(D, R)>) {
+        // If the batch we're given is empty, do nothing
+        if !batch.is_empty() {
+            // TODO: Reason about possible unbounded stash growth. How to / should we return
+            // them? TODO: Reason about mis-sized vectors, from deserialized data;
+            // should probably drop.
+            // If we have at least three stashed vectors (one for swapping, two for merging)
+            // then we replace the batch we were given with one of our stashed ones
+            // so that the caller doesn't have to reallocate when reusing the buffer
+            let batch = if self.stash.len() > 2 {
+                replace(batch, self.stash.pop().expect("there's at least 3 stashes"))
+
+            // Otherwise if we don't have at least three stashed buffers we just
+            // replace the buffer we were given with an empty one
+            } else {
+                take(batch)
+            };
+
+            // Push the batch we were given, it's already consolidated
             if !batch.is_empty() {
                 self.queue.push(vec![batch]);
 

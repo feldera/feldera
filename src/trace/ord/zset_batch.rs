@@ -84,6 +84,8 @@ where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
 {
+    const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
+
     fn num_entries_shallow(&self) -> usize {
         self.layer.num_entries_shallow()
     }
@@ -91,8 +93,6 @@ where
     fn num_entries_deep(&self) -> usize {
         self.layer.num_entries_deep()
     }
-
-    const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
 }
 
 impl<K, R> Default for OrdZSet<K, R>
@@ -402,16 +402,23 @@ where
     K: Ord + Clone + 'static,
     R: MonoidValue,
 {
+    #[inline]
     fn new(_time: ()) -> Self {
         Self {
             builder: OrderedSetLeafBuilder::new(),
         }
     }
 
+    #[inline]
     fn with_capacity(_time: (), capacity: usize) -> Self {
         Self {
             builder: <OrderedSetLeafBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
         }
+    }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        self.builder.reserve(additional);
     }
 
     #[inline]

@@ -1,7 +1,7 @@
 //! Implementation using ordered keys and exponential search.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     NumEntries, SharedRef,
 };
@@ -19,12 +19,24 @@ use textwrap::indent;
 /// This is usually `usize`, but `u32` can also be used in applications
 /// where huge batches do not occur to reduce metadata size.
 pub trait OrdOffset:
-    Copy + PartialEq + Add<Output = Self> + Sub<Output = Self> + TryFrom<usize> + TryInto<usize>
+    Copy
+    + PartialEq
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + TryFrom<usize>
+    + TryInto<usize>
+    + HasZero
 {
 }
 
 impl<O> OrdOffset for O where
-    O: Copy + PartialEq + Add<Output = Self> + Sub<Output = Self> + TryFrom<usize> + TryInto<usize>
+    O: Copy
+        + PartialEq
+        + Add<Output = Self>
+        + Sub<Output = Self>
+        + TryFrom<usize>
+        + TryInto<usize>
+        + HasZero
 {
 }
 
@@ -78,6 +90,7 @@ where
 {
     type Target = Self;
 
+    #[inline]
     fn try_into_owned(self) -> Result<Self::Target, Self> {
         Ok(self)
     }
@@ -91,15 +104,17 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    const CONST_NUM_ENTRIES: Option<usize> = None;
+
+    #[inline]
     fn num_entries_shallow(&self) -> usize {
         self.keys()
     }
 
+    #[inline]
     fn num_entries_deep(&self) -> usize {
         self.tuples()
     }
-
-    const CONST_NUM_ENTRIES: Option<usize> = None;
 }
 
 impl<K, L, O> NegByRef for OrderedLayer<K, L, O>
@@ -110,6 +125,7 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn neg_by_ref(&self) -> Self {
         Self {
             keys: self.keys.clone(),
@@ -131,6 +147,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn neg(self) -> Self {
         Self {
             keys: self.keys,
@@ -153,6 +170,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         if self.is_empty() {
             rhs
@@ -172,6 +190,7 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn add_assign(&mut self, rhs: Self) {
         if self.is_empty() {
             *self = rhs;
@@ -189,6 +208,7 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
             *self = self.merge(other);
@@ -204,6 +224,7 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
     }
@@ -222,17 +243,22 @@ where
     type MergeBuilder = OrderedBuilder<K, L::MergeBuilder, O>;
     type TupleBuilder = UnorderedBuilder<K, L::TupleBuilder, O>;
 
+    #[inline]
     fn keys(&self) -> usize {
         self.keys.len()
     }
+
+    #[inline]
     fn tuples(&self) -> usize {
         self.vals.tuples()
     }
 
+    #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         if lower < upper {
             let child_lower = self.offs[lower];
             let child_upper = self.offs[lower + 1];
+
             OrderedCursor {
                 bounds: (lower, upper),
                 storage: self,
@@ -278,14 +304,19 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
+
+    #[inline]
     fn boundary(&mut self) -> usize {
         self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
         self.keys.len()
     }
+
+    #[inline]
     fn done(mut self) -> Self::Trie {
-        if !self.keys.is_empty() && self.offs[self.keys.len()].try_into().unwrap() == 0 {
+        if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
             self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
         }
+
         OrderedLayer {
             keys: self.keys,
             offs: self.offs,
@@ -302,40 +333,49 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self {
         let mut offs = Vec::with_capacity(other1.keys() + other2.keys() + 1);
-        offs.push(O::try_from(0_usize).unwrap());
-        OrderedBuilder {
+        offs.push(O::zero());
+
+        Self {
             keys: Vec::with_capacity(other1.keys() + other2.keys()),
             offs,
             vals: L::with_capacity(&other1.vals, &other2.vals),
         }
     }
-    fn with_key_capacity(cap: usize) -> Self {
-        let mut offs = Vec::with_capacity(cap + 1);
-        offs.push(O::try_from(0_usize).unwrap());
-        OrderedBuilder {
-            keys: Vec::with_capacity(cap),
+
+    #[inline]
+    fn with_key_capacity(capacity: usize) -> Self {
+        let mut offs = Vec::with_capacity(capacity + 1);
+        offs.push(O::zero());
+
+        Self {
+            keys: Vec::with_capacity(capacity),
             offs,
-            vals: L::with_key_capacity(cap),
+            vals: L::with_key_capacity(capacity),
         }
     }
 
     #[inline]
+    fn reserve(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+        self.offs.reserve(additional);
+        self.vals.reserve(additional);
+    }
+
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
-        debug_assert!(lower < upper);
+        assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
+
         let other_basis = other.offs[lower];
-        let self_basis = self
-            .offs
-            .last()
-            .copied()
-            .unwrap_or_else(|| O::try_from(0).unwrap());
+        let self_basis = self.offs.last().copied().unwrap_or_else(|| O::zero());
 
         self.keys.extend_from_slice(&other.keys[lower..upper]);
         for index in lower..upper {
             self.offs
                 .push((other.offs[index + 1] + self_basis) - other_basis);
         }
+
         self.vals.copy_range(
             &other.vals,
             other_basis.try_into().unwrap(),
@@ -348,12 +388,12 @@ where
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize {
-        let mut lower1 = cursor1.bounds.0;
-        let upper1 = cursor1.bounds.1;
-        let mut lower2 = cursor2.bounds.0;
-        let upper2 = cursor2.bounds.1;
+        let (mut lower1, upper1) = cursor1.bounds;
+        let (mut lower2, upper2) = cursor2.bounds;
 
-        self.keys.reserve((upper1 - lower1) + (upper2 - lower2));
+        let capacity = (upper1 - lower1) + (upper2 - lower2);
+        self.keys.reserve(capacity);
+        self.offs.reserve(capacity);
 
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
@@ -445,42 +485,49 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
+
+    #[inline]
     fn new() -> Self {
-        OrderedBuilder {
+        Self {
             keys: Vec::new(),
-            offs: vec![O::try_from(0).unwrap()],
+            offs: vec![O::zero()],
             vals: L::new(),
         }
     }
+
+    #[inline]
     fn with_capacity(cap: usize) -> Self {
         let mut offs = Vec::with_capacity(cap + 1);
-        offs.push(O::try_from(0).unwrap());
-        OrderedBuilder {
+        offs.push(O::zero());
+
+        Self {
             keys: Vec::with_capacity(cap),
             offs,
             vals: L::with_capacity(cap),
         }
     }
+
+    #[inline]
+    fn tuples(&self) -> usize {
+        self.vals.tuples()
+    }
+
     #[inline]
     fn push_tuple(&mut self, (key, val): (K, L::Item)) {
         // if first element, prior element finish, or different element, need to push
         // and maybe punctuate.
         if self.keys.is_empty()
-            || self.offs[self.keys.len()].try_into().unwrap() != 0
+            || !self.offs[self.keys.len()].is_zero()
             || self.keys[self.keys.len() - 1] != key
         {
-            if !self.keys.is_empty() && self.offs[self.keys.len()].try_into().unwrap() == 0 {
+            if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
                 self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
             }
             self.keys.push(key);
-            self.offs.push(O::try_from(0).unwrap()); // <-- indicates
-                                                     // "unfinished".
+            self.offs.push(O::zero()); // <-- indicates
+                                       // "unfinished".
         }
         self.vals.push_tuple(val);
-    }
-
-    fn tuples(&self) -> usize {
-        self.vals.tuples()
     }
 }
 
@@ -505,9 +552,13 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
+
+    #[inline]
     fn boundary(&mut self) -> usize {
         self.vals.len()
     }
+
+    #[inline]
     fn done(mut self) -> Self::Trie {
         // Don't use `sort_unstable_by_key` to avoid cloning the key.
         self.vals
@@ -530,25 +581,31 @@ where
     <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
+
+    #[inline]
     fn new() -> Self {
-        UnorderedBuilder {
+        Self {
             vals: Vec::new(),
             _phantom: PhantomData,
         }
     }
+
+    #[inline]
     fn with_capacity(cap: usize) -> Self {
-        UnorderedBuilder {
+        Self {
             vals: Vec::with_capacity(cap),
             _phantom: PhantomData,
         }
     }
+
+    #[inline]
+    fn tuples(&self) -> usize {
+        self.vals.len()
+    }
+
     #[inline]
     fn push_tuple(&mut self, kv: Self::Item) {
         self.vals.push(kv);
-    }
-
-    fn tuples(&self) -> usize {
-        self.vals.len()
     }
 }
 
@@ -562,8 +619,6 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    // keys: OwningRef<Rc<Erased>, [K]>,
-    // offs: OwningRef<Rc<Erased>, [usize]>,
     storage: &'s OrderedLayer<K, L, O>,
     pos: usize,
     bounds: (usize, usize),
@@ -580,6 +635,7 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             storage: self.storage,
@@ -587,6 +643,14 @@ where
             bounds: self.bounds,
             child: self.child.clone(),
         }
+    }
+
+    #[inline]
+    fn clone_from(&mut self, source: &Self) {
+        self.storage.clone_from(&source.storage);
+        self.pos.clone_from(&source.pos);
+        self.bounds.clone_from(&source.bounds);
+        self.child.clone_from(&source.child);
     }
 }
 
@@ -628,25 +692,30 @@ where
         Self: 'k;
     type ValueStorage = L;
 
+    #[inline]
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
+
+    #[inline]
     fn key(&self) -> Self::Key<'s> {
         &self.storage.keys[self.pos]
     }
+
     fn values(&self) -> L::Cursor<'s> {
-        let child_cursor = if self.valid() {
+        if self.valid() {
             self.storage.vals.cursor_from(
                 self.storage.offs[self.pos].try_into().unwrap(),
                 self.storage.offs[self.pos + 1].try_into().unwrap(),
             )
         } else {
             self.storage.vals.cursor_from(0, 0)
-        };
-        child_cursor
+        }
     }
+
     fn step(&mut self) {
         self.pos += 1;
+
         if self.valid() {
             self.child.reposition(
                 self.storage.offs[self.pos].try_into().unwrap(),
@@ -662,6 +731,7 @@ where
         's: 'a,
     {
         self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k < key);
+
         if self.valid() {
             self.child.reposition(
                 self.storage.offs[self.pos].try_into().unwrap(),
@@ -669,12 +739,17 @@ where
             );
         }
     }
+
     // fn size(&self) -> usize { self.bounds.1 - self.bounds.0 }
+
+    #[inline]
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
+
     fn rewind(&mut self) {
         self.pos = self.bounds.0;
+
         if self.valid() {
             self.child.reposition(
                 self.storage.offs[self.pos].try_into().unwrap(),
@@ -682,9 +757,11 @@ where
             );
         }
     }
+
     fn reposition(&mut self, lower: usize, upper: usize) {
         self.pos = lower;
         self.bounds = (lower, upper);
+
         if self.valid() {
             self.child.reposition(
                 self.storage.offs[self.pos].try_into().unwrap(),
