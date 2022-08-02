@@ -306,7 +306,7 @@ pub mod tests {
             initial_bid: 5,
             reserve: 10,
             date_time: 0,
-            expires: 0,
+            expires: 2000,
             seller: 1,
             category: 1,
         }
