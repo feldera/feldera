@@ -82,9 +82,14 @@ pub trait MergeBuilder: Builder {
     /// Allocates an instance of the builder with sufficient capacity to contain
     /// the merged data.
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self;
+
     fn with_key_capacity(cap: usize) -> Self;
+
+    fn reserve(&mut self, additional: usize);
+
     /// Copies sub-collections of `other` into this collection.
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize);
+
     /// Merges two sub-collections into one sub-collection.
     fn push_merge<'a>(
         &'a mut self,
@@ -213,8 +218,13 @@ impl Builder for () {
 
 impl MergeBuilder for () {
     fn with_capacity(_other1: &(), _other2: &()) -> Self {}
-    fn with_key_capacity(_cap: usize) -> Self {}
+
+    fn with_key_capacity(_capacity: usize) -> Self {}
+
+    fn reserve(&mut self, _additional: usize) {}
+
     fn copy_range(&mut self, _other: &Self::Trie, _lower: usize, _upper: usize) {}
+
     fn push_merge(
         &mut self,
         _other1: <Self::Trie as Trie>::Cursor<'static>,

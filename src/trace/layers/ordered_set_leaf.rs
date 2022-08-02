@@ -6,13 +6,13 @@ use crate::{
         consolidation::consolidate_slice,
         layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     },
+    utils::assume,
     NumEntries, SharedRef,
 };
 use deepsize::DeepSizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{self, Display},
-    hint::unreachable_unchecked,
     ops::{Add, AddAssign, Neg},
 };
 
@@ -24,7 +24,11 @@ pub struct OrderedSetLeaf<K, R> {
     diffs: Vec<R>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedSetLeaf<K, R> {
+impl<K, R> Trie for OrderedSetLeaf<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
+{
     type Item = (K, R);
     type Cursor<'s> = OrderedSetLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedSetLeafBuilder<K, R>;
@@ -143,9 +147,6 @@ where
     fn neg(self) -> Self {
         Self {
             keys: self.keys,
-            // FIXME: I'd rather use an explicit loop that operates
-            //        over mutable refs instead of relying on optimizations
-            //        to remove the extra allocation
             diffs: self.diffs.into_iter().map(Neg::neg).collect(),
         }
     }
@@ -189,8 +190,10 @@ pub struct OrderedSetLeafBuilder<K, R> {
     diffs: Vec<R>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
-    for OrderedSetLeafBuilder<K, R>
+impl<K, R> Builder for OrderedSetLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
 {
     type Trie = OrderedSetLeaf<K, R>;
 
@@ -204,6 +207,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
     fn done(self) -> Self::Trie {
         unsafe { assume(self.keys.len() == self.diffs.len()) }
 
+        // TODO: Should we call `.shrink_to_fit()` here?
         OrderedSetLeaf {
             keys: self.keys,
             diffs: self.diffs,
@@ -211,8 +215,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
-    for OrderedSetLeafBuilder<K, R>
+impl<K, R> MergeBuilder for OrderedSetLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
 {
     #[inline]
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
@@ -226,6 +232,12 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
             keys: Vec::with_capacity(capacity),
             diffs: Vec::with_capacity(capacity),
         }
+    }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+        self.diffs.reserve(additional);
     }
 
     #[inline]
@@ -324,8 +336,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
-    for OrderedSetLeafBuilder<K, R>
+impl<K, R> TupleBuilder for OrderedSetLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
 {
     type Item = (K, R);
 
@@ -354,6 +368,14 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
     #[inline]
     fn push_tuple(&mut self, (key, diff): (K, R)) {
         unsafe { assume(self.keys.len() == self.diffs.len()) }
+
+        // if cfg!(debug_assertions) && !self.keys.is_empty() {
+        //     debug_assert!(
+        //         self.keys.last().unwrap() <= &key,
+        //         "OrderedSetLeafBuilder expects sorted values to be passed to \
+        //          `TupleBuilder::push_tuple()`",
+        //      );
+        // }
 
         self.keys.push(key);
         self.diffs.push(diff);
@@ -386,8 +408,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
-    for UnorderedSetLeafBuilder<K, R>
+impl<K, R> TupleBuilder for UnorderedSetLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
 {
     type Item = (K, R);
 
@@ -470,9 +494,6 @@ where
         self.bounds.1 - self.bounds.0
     }
 
-    // FIXME: If we could return our key value and our weight separately we'd be
-    //        more efficient and cache-friendly. Maybe implement `trace::Cursor`
-    //        directly?
     #[inline]
     fn key(&self) -> Self::Key<'s> {
         // Elide extra bounds checking
@@ -543,20 +564,4 @@ where
 #[inline(never)]
 fn cursor_position_oob(position: usize, length: usize) -> ! {
     panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
-}
-
-/// Tells the optimizer that a condition is always true
-///
-/// # Safety
-///
-/// It's UB to call this function with `false` as the condition
-#[inline(always)]
-#[deny(unsafe_op_in_unsafe_fn)]
-unsafe fn assume(cond: bool) {
-    debug_assert!(cond, "called `assume()` on a false condition");
-
-    if !cond {
-        // Safety: It's UB for `cond` to be false
-        unsafe { unreachable_unchecked() };
-    }
 }

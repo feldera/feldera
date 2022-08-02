@@ -402,19 +402,26 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
+    #[inline]
     fn new(time: T) -> Self {
-        OrdKeyBuilder {
+        Self {
             time,
             builder: OrderedBuilder::<K, OrderedLeafBuilder<T, R>, O>::new(),
         }
     }
 
+    #[inline]
     fn with_capacity(time: T, cap: usize) -> Self {
-        OrdKeyBuilder {
+        Self {
             time,
             builder:
                 <OrderedBuilder<K, OrderedLeafBuilder<T, R>, O> as TupleBuilder>::with_capacity(cap),
         }
+    }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        self.builder.reserve(additional);
     }
 
     #[inline]

@@ -3,7 +3,10 @@ mod data;
 mod pagerank;
 
 use crate::{
-    data::{BfsResults, DataSet, DistanceSet, NoopResults, PageRankResults, RankMap},
+    data::{
+        list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node,
+        NoopResults, PageRankResults, RankMap,
+    },
     pagerank::PageRankKind,
 };
 use clap::Parser;
@@ -16,14 +19,14 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     zset_set, Circuit,
 };
-use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use std::{
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},
-    num::NonZeroUsize,
+    mem::size_of,
+    num::{NonZeroU8, NonZeroUsize},
     ops::Add,
     rc::Rc,
     thread,
@@ -38,10 +41,7 @@ enum OutputData {
 
 fn main() {
     let args = Args::parse();
-    let config = match args {
-        Args::Bfs { config } => config,
-        Args::Pagerank { config, .. } => config,
-    };
+    let config = args.config();
     let threads = config
         .threads
         .or_else(|| thread::available_parallelism().ok())
@@ -53,11 +53,22 @@ fn main() {
             "running breadth-first search with {threads} thread{}",
             if threads.get() == 1 { "" } else { "s" },
         ),
+
         Args::Pagerank { flavor, .. } => {
             println!(
                 "running pagerank ({flavor}) with {threads} thread{}",
                 if threads.get() == 1 { "" } else { "s" },
             );
+        }
+
+        Args::ListDatasets { .. } => {
+            list_datasets();
+            return;
+        }
+
+        Args::ListDownloaded { .. } => {
+            list_downloaded_benchmarks();
+            return;
         }
     }
 
@@ -66,7 +77,8 @@ fn main() {
     let start = Instant::now();
 
     let (properties, edges, vertices, _) = dataset.load::<NoopResults>().unwrap();
-    let data_loaded = edges.deep_size_of() as u64 + vertices.deep_size_of() as u64;
+    let data_loaded = (edges.len() as u64 * size_of::<Node>() as u64 * 2)
+        + (vertices.len() as u64 * size_of::<Node>() as u64);
 
     let mut root_data = Some(zset_set! { properties.source_vertex });
     let mut vertex_data = Some(vertices);
@@ -79,8 +91,15 @@ fn main() {
     );
 
     println!(
-        "using dataset {} with {} vertices and {} edges",
-        dataset.name, properties.vertices, properties.edges,
+        "using dataset {} which is {} graph with {} vertices and {} edges",
+        dataset.name,
+        if properties.directed {
+            "a directed"
+        } else {
+            "an undirected"
+        },
+        properties.vertices,
+        properties.edges,
     );
     Runtime::run(threads.get(), move || {
         if Runtime::worker_index() == 0 {
@@ -153,6 +172,8 @@ fn main() {
                         }
                     });
                 }
+
+                Args::ListDatasets { .. } | Args::ListDownloaded { .. } => unreachable!(),
             }
         })
         .unwrap();
@@ -171,7 +192,7 @@ fn main() {
             println!("finished in {elapsed:#?}");
 
             // TODO: Is it correct to multiply edges by two for undirected graphs?
-            let total_edges = properties.edges * (!properties.directed as u64 + 1);
+            let total_edges = properties.edges; // * (!properties.directed as u64 + 1);
 
             // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
             let eps = total_edges as f64 / elapsed.as_secs_f64();
@@ -188,13 +209,13 @@ fn main() {
                 OutputData::None => println!("no output was produced"),
 
                 OutputData::Bfs(result) => {
-                    let expected = dataset.load_results::<BfsResults>().unwrap();
+                    let expected = dataset.load_results::<BfsResults>(&properties).unwrap();
                     // TODO: Better diff function
                     assert_eq!(result, &expected);
                 }
 
                 OutputData::PageRank(result) => {
-                    let expected = dataset.load_results::<PageRankResults>().unwrap();
+                    let expected = dataset.load_results::<PageRankResults>(&properties).unwrap();
                     let difference = expected.add(result.neg_by_ref());
 
                     let mut incorrect = 0;
@@ -318,6 +339,29 @@ enum Args {
         #[clap(long, value_enum, default_value = "diffed")]
         flavor: PageRankKind,
     },
+
+    /// List all available datasets
+    ListDatasets {
+        #[clap(flatten)]
+        config: Config,
+    },
+
+    /// List the sizes of all downloaded benchmark datasets
+    ListDownloaded {
+        #[clap(flatten)]
+        config: Config,
+    },
+}
+
+impl Args {
+    pub(crate) fn config(self) -> Config {
+        match self {
+            Self::Bfs { config }
+            | Self::Pagerank { config, .. }
+            | Self::ListDownloaded { config }
+            | Self::ListDatasets { config } => config,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Parser)]
@@ -334,6 +378,10 @@ struct Config {
     /// number of cores the current machine has
     #[clap(long)]
     threads: Option<NonZeroUsize>,
+
+    /// The number of iterations to run
+    #[clap(long, default_value = "5")]
+    iters: NonZeroU8,
 
     // When running with `cargo bench` the binary gets the `--bench` flag, so we
     // have to parse and ignore it so clap doesn't get angry

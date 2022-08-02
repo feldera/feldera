@@ -234,10 +234,16 @@ pub trait Batcher<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> 
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
     fn new(time: T) -> Self;
+
     /// Adds an unordered batch of elements to the batcher.
     fn push_batch(&mut self, batch: &mut Vec<((K, V), R)>);
+
+    /// Adds a consolidated batch of elements to the batcher
+    fn push_consolidated_batch(&mut self, batch: &mut Vec<((K, V), R)>);
+
     /// Returns the number of tuples in the batcher.
     fn tuples(&self) -> usize;
+
     /// Returns all updates not greater or equal to an element of `upper`.
     fn seal(self) -> Output;
 }
@@ -247,17 +253,27 @@ pub trait Builder<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> 
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
     fn new(time: T) -> Self;
+
     /// Allocates an empty builder with some capacity.  All tuples in the
     /// builder (and its output batch) will have timestamp `time`.
     fn with_capacity(time: T, cap: usize) -> Self;
+
     /// Adds an element to the batch.
     fn push(&mut self, element: (K, V, R));
+
+    fn reserve(&mut self, additional: usize);
+
     /// Adds an ordered sequence of elements to the batch.
+    #[inline]
     fn extend<I: Iterator<Item = (K, V, R)>>(&mut self, iter: I) {
+        let (lower, upper) = iter.size_hint();
+        self.reserve(upper.unwrap_or(lower));
+
         for item in iter {
             self.push(item);
         }
     }
+
     /// Completes building and returns the batch.
     fn done(self) -> Output;
 }
@@ -416,17 +432,29 @@ pub mod rc_blanket_impls {
 
     /// Functionality for collecting and batching updates.
     impl<B: Batch> Batcher<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcBatcher<B> {
+        #[inline]
         fn new(time: B::Time) -> Self {
-            RcBatcher {
+            Self {
                 batcher: <B::Batcher as Batcher<B::Key, B::Val, B::Time, B::R, B>>::new(time),
             }
         }
+
+        #[inline]
         fn push_batch(&mut self, batch: &mut Vec<((B::Key, B::Val), B::R)>) {
             self.batcher.push_batch(batch)
         }
+
+        #[inline]
+        fn push_consolidated_batch(&mut self, batch: &mut Vec<((B::Key, B::Val), B::R)>) {
+            self.batcher.push_consolidated_batch(batch)
+        }
+
+        #[inline]
         fn tuples(&self) -> usize {
             self.batcher.tuples()
         }
+
+        #[inline]
         fn seal(self) -> Rc<B> {
             Rc::new(self.batcher.seal())
         }
@@ -439,21 +467,33 @@ pub mod rc_blanket_impls {
 
     /// Functionality for building batches from ordered update sequences.
     impl<B: Batch> Builder<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcBuilder<B> {
+        #[inline]
         fn new(time: B::Time) -> Self {
-            RcBuilder {
+            Self {
                 builder: <B::Builder as Builder<B::Key, B::Val, B::Time, B::R, B>>::new(time),
             }
         }
+
+        #[inline]
         fn with_capacity(time: B::Time, cap: usize) -> Self {
-            RcBuilder {
+            Self {
                 builder: <B::Builder as Builder<B::Key, B::Val, B::Time, B::R, B>>::with_capacity(
                     time, cap,
                 ),
             }
         }
+
+        #[inline]
+        fn reserve(&mut self, additional: usize) {
+            self.builder.reserve(additional);
+        }
+
+        #[inline]
         fn push(&mut self, element: (B::Key, B::Val, B::R)) {
             self.builder.push(element)
         }
+
+        #[inline]
         fn done(self) -> Rc<B> {
             Rc::new(self.builder.done())
         }
@@ -466,14 +506,19 @@ pub mod rc_blanket_impls {
 
     /// Represents a merge in progress.
     impl<B: Batch> Merger<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcMerger<B> {
+        #[inline]
         fn new(source1: &Rc<B>, source2: &Rc<B>) -> Self {
-            RcMerger {
+            Self {
                 merger: B::begin_merge(source1, source2),
             }
         }
+
+        #[inline]
         fn work(&mut self, source1: &Rc<B>, source2: &Rc<B>, fuel: &mut isize) {
             self.merger.work(source1, source2, fuel)
         }
+
+        #[inline]
         fn done(self) -> Rc<B> {
             Rc::new(self.merger.done())
         }
