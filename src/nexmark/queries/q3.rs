@@ -134,9 +134,6 @@ mod tests {
             let output = q3(input);
 
             output.inspect(move |e| {
-                // This is failing currently because it's just returning the sellers and not
-                // joining to get the correct auction ids, until I go back and learn more about
-                // DBSP joins.
                 assert_eq!(
                     e,
                     &OrdZSet::from_tuples(
