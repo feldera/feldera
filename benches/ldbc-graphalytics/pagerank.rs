@@ -37,7 +37,6 @@ impl Display for PageRankKind {
 ///
 /// [0]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
 /// [1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.2
-// FIXME: Doesn't work with more than one worker
 pub fn pagerank<P>(
     pagerank_iters: usize,
     damping_factor: f64,
