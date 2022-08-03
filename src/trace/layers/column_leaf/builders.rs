@@ -78,6 +78,7 @@ where
             assume(other.keys.len() == other.diffs.len());
         }
 
+        assert!(lower < other.keys.len() && upper < other.keys.len());
         self.keys.extend_from_slice(&other.keys[lower..upper]);
         self.diffs.extend_from_slice(&other.diffs[lower..upper]);
     }
