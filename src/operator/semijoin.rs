@@ -126,9 +126,6 @@ where
                     let key_weight = key_cursor.weight();
                     while pair_cursor.val_valid() {
                         // Get the weight of the output kv pair by multiplying them together
-                        // TODO: Can either weights possibly be zero? If so, we can check if
-                        // `key_weight`       is zero outside of the loop to
-                        // skip redundant work
                         let pair_weight = pair_cursor.weight();
                         let kv_weight = pair_weight.mul_by_ref(&key_weight);
 
