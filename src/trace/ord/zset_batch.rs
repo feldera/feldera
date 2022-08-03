@@ -3,8 +3,10 @@ use crate::{
     lattice::Lattice,
     trace::{
         layers::{
+            ordered_column_leaf::{
+                OrderedColumnLeaf, OrderedColumnLeafBuilder, OrderedColumnLeafCursor,
+            },
             ordered_leaf::OrderedLeaf,
-            ordered_set_leaf::{OrderedSetLeaf, OrderedSetLeafBuilder, OrderedSetLeafCursor},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
@@ -28,7 +30,7 @@ where
     K: Ord,
 {
     /// Where all the dataz is.
-    pub layer: OrderedSetLeaf<K, R>,
+    pub layer: OrderedColumnLeaf<K, R>,
     pub lower: Antichain<()>,
     pub upper: Antichain<()>,
 }
@@ -47,11 +49,11 @@ where
     }
 }
 
-impl<K, R> From<OrderedSetLeaf<K, R>> for OrdZSet<K, R>
+impl<K, R> From<OrderedColumnLeaf<K, R>> for OrdZSet<K, R>
 where
     K: Ord,
 {
-    fn from(layer: OrderedSetLeaf<K, R>) -> Self {
+    fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
         Self {
             layer,
             lower: Antichain::from_elem(()),
@@ -60,11 +62,11 @@ where
     }
 }
 
-impl<K, R> From<OrderedSetLeaf<K, R>> for Rc<OrdZSet<K, R>>
+impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>>
 where
     K: Ord,
 {
-    fn from(layer: OrderedSetLeaf<K, R>) -> Self {
+    fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
         Rc::new(From::from(layer))
     }
 }
@@ -263,7 +265,7 @@ where
     R: MonoidValue,
 {
     // result that we are currently assembling.
-    result: <OrderedSetLeaf<K, R> as Trie>::MergeBuilder,
+    result: <OrderedColumnLeaf<K, R> as Trie>::MergeBuilder,
 }
 
 impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
@@ -273,10 +275,11 @@ where
 {
     fn new(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
-            result: <<OrderedSetLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                &batch1.layer,
-                &batch2.layer,
-            ),
+            result:
+                <<OrderedColumnLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
+                    &batch1.layer,
+                    &batch2.layer,
+                ),
         }
     }
 
@@ -304,7 +307,7 @@ where
     R: MonoidValue,
 {
     valid: bool,
-    cursor: OrderedSetLeafCursor<'s, K, R>,
+    cursor: OrderedColumnLeafCursor<'s, K, R>,
 }
 
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
@@ -394,7 +397,7 @@ where
     K: Ord,
     R: MonoidValue,
 {
-    builder: OrderedSetLeafBuilder<K, R>,
+    builder: OrderedColumnLeafBuilder<K, R>,
 }
 
 impl<K, R> Builder<K, (), (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
@@ -405,14 +408,14 @@ where
     #[inline]
     fn new(_time: ()) -> Self {
         Self {
-            builder: OrderedSetLeafBuilder::new(),
+            builder: OrderedColumnLeafBuilder::new(),
         }
     }
 
     #[inline]
     fn with_capacity(_time: (), capacity: usize) -> Self {
         Self {
-            builder: <OrderedSetLeafBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
+            builder: <OrderedColumnLeafBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
         }
     }
 

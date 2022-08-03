@@ -480,6 +480,7 @@ where
                 .entry(batch_time)
                 .or_insert_with(|| Z::Batcher::new(()))
                 .push_batch(&mut batch);
+            batch.clear();
         }
 
         // Finalize the batch for the current timestamp (`self.time`) and return it.

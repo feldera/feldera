@@ -4,8 +4,8 @@ use crate::{
     trace::{
         layers::{
             ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered_column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered_leaf::OrderedLeaf,
-            ordered_set_leaf::{OrderedSetLeaf, OrderedSetLeafBuilder},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
@@ -23,7 +23,7 @@ use std::{
 };
 use timely::progress::Antichain;
 
-type Layers<K, V, R, O> = OrderedLayer<K, OrderedSetLeaf<V, R>, O>;
+type Layers<K, V, R, O> = OrderedLayer<K, OrderedColumnLeaf<V, R>, O>;
 
 /// An immutable collection of update tuples.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -411,7 +411,7 @@ where
     <O as TryInto<usize>>::Error: Debug,
     <O as TryFrom<usize>>::Error: Debug,
 {
-    cursor: OrderedCursor<'s, K, O, OrderedSetLeaf<V, R>>,
+    cursor: OrderedCursor<'s, K, O, OrderedColumnLeaf<V, R>>,
 }
 
 impl<'s, K, V, R, O> Cursor<'s, K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
@@ -506,7 +506,7 @@ where
     }
 }
 
-type IndexBuilder<K, V, R, O> = OrderedBuilder<K, OrderedSetLeafBuilder<V, R>, O>;
+type IndexBuilder<K, V, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 pub struct OrdIndexedZSetBuilder<K, V, R, O>

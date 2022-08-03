@@ -1,4 +1,5 @@
-//! Implementation using ordered keys and exponential search.
+//! Implementation using ordered keys and exponential search over a
+//! struct-of-array container
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -18,21 +19,21 @@ use std::{
 
 /// A layer of unordered values.
 #[derive(Debug, Eq, PartialEq, Clone, Default, DeepSizeOf)]
-pub struct OrderedSetLeaf<K, R> {
+pub struct OrderedColumnLeaf<K, R> {
     // Invariant: keys.len == diffs.len
     keys: Vec<K>,
     diffs: Vec<R>,
 }
 
-impl<K, R> Trie for OrderedSetLeaf<K, R>
+impl<K, R> Trie for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
 {
     type Item = (K, R);
-    type Cursor<'s> = OrderedSetLeafCursor<'s, K, R> where K: 's, R: 's;
-    type MergeBuilder = OrderedSetLeafBuilder<K, R>;
-    type TupleBuilder = UnorderedSetLeafBuilder<K, R>;
+    type Cursor<'s> = OrderedColumnLeafCursor<'s, K, R> where K: 's, R: 's;
+    type MergeBuilder = OrderedColumnLeafBuilder<K, R>;
+    type TupleBuilder = UnorderedColumnLeafBuilder<K, R>;
 
     #[inline]
     fn keys(&self) -> usize {
@@ -50,7 +51,7 @@ where
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         unsafe { assume(self.keys.len() == self.diffs.len()) }
 
-        OrderedSetLeafCursor {
+        OrderedColumnLeafCursor {
             storage: self,
             bounds: (lower, upper),
             pos: lower,
@@ -58,7 +59,7 @@ where
     }
 }
 
-impl<K, R> Display for OrderedSetLeaf<K, R>
+impl<K, R> Display for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone + Display,
     R: Eq + HasZero + AddAssignByRef + Clone + Display,
@@ -69,7 +70,7 @@ where
 }
 
 // TODO: by-value merge
-impl<K, R> Add<Self> for OrderedSetLeaf<K, R>
+impl<K, R> Add<Self> for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -88,7 +89,7 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for OrderedSetLeaf<K, R>
+impl<K, R> AddAssign<Self> for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -101,7 +102,7 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for OrderedSetLeaf<K, R>
+impl<K, R> AddAssignByRef for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -114,7 +115,7 @@ where
     }
 }
 
-impl<K, R> AddByRef for OrderedSetLeaf<K, R>
+impl<K, R> AddByRef for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -124,7 +125,7 @@ where
     }
 }
 
-impl<K, R> NegByRef for OrderedSetLeaf<K, R>
+impl<K, R> NegByRef for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: NegByRef,
@@ -137,7 +138,7 @@ where
     }
 }
 
-impl<K, R> Neg for OrderedSetLeaf<K, R>
+impl<K, R> Neg for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Neg<Output = R>,
@@ -152,7 +153,7 @@ where
     }
 }
 
-impl<K, R> NumEntries for OrderedSetLeaf<K, R>
+impl<K, R> NumEntries for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -171,7 +172,7 @@ where
     }
 }
 
-impl<K, R> SharedRef for OrderedSetLeaf<K, R>
+impl<K, R> SharedRef for OrderedColumnLeaf<K, R>
 where
     K: Clone,
     R: Clone,
@@ -184,18 +185,18 @@ where
 }
 
 /// A builder for unordered values.
-pub struct OrderedSetLeafBuilder<K, R> {
+pub struct OrderedColumnLeafBuilder<K, R> {
     // Invariant: `keys.len() == diffs.len`
     keys: Vec<K>,
     diffs: Vec<R>,
 }
 
-impl<K, R> Builder for OrderedSetLeafBuilder<K, R>
+impl<K, R> Builder for OrderedColumnLeafBuilder<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
 {
-    type Trie = OrderedSetLeaf<K, R>;
+    type Trie = OrderedColumnLeaf<K, R>;
 
     #[inline]
     fn boundary(&mut self) -> usize {
@@ -208,14 +209,14 @@ where
         unsafe { assume(self.keys.len() == self.diffs.len()) }
 
         // TODO: Should we call `.shrink_to_fit()` here?
-        OrderedSetLeaf {
+        OrderedColumnLeaf {
             keys: self.keys,
             diffs: self.diffs,
         }
     }
 }
 
-impl<K, R> MergeBuilder for OrderedSetLeafBuilder<K, R>
+impl<K, R> MergeBuilder for OrderedColumnLeafBuilder<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -282,7 +283,7 @@ where
                     });
 
                     let step = min(step, 1000);
-                    <OrderedSetLeafBuilder<K, R> as MergeBuilder>::copy_range(
+                    <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
                         self,
                         trie1,
                         lower1,
@@ -312,7 +313,7 @@ where
                     });
 
                     let step = min(step, 1000);
-                    <OrderedSetLeafBuilder<K, R> as MergeBuilder>::copy_range(
+                    <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
                         self,
                         trie2,
                         lower2,
@@ -325,10 +326,14 @@ where
         }
 
         if lower1 < upper1 {
-            <OrderedSetLeafBuilder<K, R> as MergeBuilder>::copy_range(self, trie1, lower1, upper1);
+            <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
+                self, trie1, lower1, upper1,
+            );
         }
         if lower2 < upper2 {
-            <OrderedSetLeafBuilder<K, R> as MergeBuilder>::copy_range(self, trie2, lower2, upper2);
+            <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
+                self, trie2, lower2, upper2,
+            );
         }
 
         unsafe { assume(self.keys.len() == self.diffs.len()) }
@@ -336,7 +341,7 @@ where
     }
 }
 
-impl<K, R> TupleBuilder for OrderedSetLeafBuilder<K, R>
+impl<K, R> TupleBuilder for OrderedColumnLeafBuilder<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -383,15 +388,17 @@ where
 }
 
 #[derive(DeepSizeOf)]
-pub struct UnorderedSetLeafBuilder<K, R> {
+pub struct UnorderedColumnLeafBuilder<K, R> {
     pub vals: Vec<(K, R)>,
     boundary: usize,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
-    for UnorderedSetLeafBuilder<K, R>
+impl<K, R> Builder for UnorderedColumnLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssignByRef + Clone,
 {
-    type Trie = OrderedSetLeaf<K, R>;
+    type Trie = OrderedColumnLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
         let consolidated_len = consolidate_slice(&mut self.vals[self.boundary..]);
@@ -404,11 +411,11 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
         self.boundary();
 
         let (keys, diffs) = self.vals.into_iter().unzip();
-        OrderedSetLeaf { keys, diffs }
+        OrderedColumnLeaf { keys, diffs }
     }
 }
 
-impl<K, R> TupleBuilder for UnorderedSetLeafBuilder<K, R>
+impl<K, R> TupleBuilder for UnorderedColumnLeafBuilder<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssignByRef + Clone,
@@ -447,17 +454,17 @@ where
 /// This cursor does not support `seek`, though I'm not certain how to expose
 /// this.
 #[derive(Clone, Debug)]
-pub struct OrderedSetLeafCursor<'s, K, R>
+pub struct OrderedColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
 {
     pos: usize,
-    storage: &'s OrderedSetLeaf<K, R>,
+    storage: &'s OrderedColumnLeaf<K, R>,
     bounds: (usize, usize),
 }
 
-impl<'s, K, R> OrderedSetLeafCursor<'s, K, R>
+impl<'s, K, R> OrderedColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -478,7 +485,7 @@ where
     }
 }
 
-impl<'s, K, R> Cursor<'s> for OrderedSetLeafCursor<'s, K, R>
+impl<'s, K, R> Cursor<'s> for OrderedColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -542,13 +549,13 @@ where
     }
 }
 
-impl<'a, K, R> Display for OrderedSetLeafCursor<'a, K, R>
+impl<'a, K, R> Display for OrderedColumnLeafCursor<'a, K, R>
 where
     K: Ord + Clone + Display,
     R: Eq + HasZero + AddAssignByRef + Clone + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut cursor: OrderedSetLeafCursor<K, R> = self.clone();
+        let mut cursor: OrderedColumnLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.key();
