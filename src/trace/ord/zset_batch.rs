@@ -3,9 +3,7 @@ use crate::{
     lattice::Lattice,
     trace::{
         layers::{
-            ordered_column_leaf::{
-                OrderedColumnLeaf, OrderedColumnLeafBuilder, OrderedColumnLeafCursor,
-            },
+            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder, OrderedColumnLeafCursor},
             ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
@@ -38,7 +36,7 @@ where
 impl<K, R> Display for OrdZSet<K, R>
 where
     K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -84,7 +82,7 @@ where
 impl<K, R> NumEntries for OrdZSet<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
 

@@ -3,8 +3,8 @@ use crate::{
     lattice::Lattice,
     trace::{
         layers::{
+            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
-            ordered_column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
@@ -46,7 +46,7 @@ impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
 where
     K: Ord + Clone + Display,
     V: Ord + Clone + Display + 'static,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display + 'static,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
@@ -148,7 +148,7 @@ impl<K, V, R, O> NumEntries for OrdIndexedZSet<K, V, R, O>
 where
     K: Clone + Ord,
     V: Clone + Ord,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
