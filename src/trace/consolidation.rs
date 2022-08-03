@@ -8,6 +8,7 @@
 use crate::algebra::{AddAssignByRef, HasZero, MonoidValue};
 use std::{
     mem::{forget, replace},
+    ops::AddAssign,
     ptr,
 };
 
@@ -48,7 +49,7 @@ where
 pub fn consolidate_from<T, R>(vec: &mut Vec<(T, R)>, offset: usize)
 where
     T: Ord,
-    R: MonoidValue,
+    R: HasZero + AddAssign,
 {
     // let length = consolidate_slice(&mut vec[offset..]);
     // vec.truncate(offset + length);
