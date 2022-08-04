@@ -170,21 +170,36 @@ pub trait Batch: BatchReader + Clone
 where
     Self: Sized,
 {
+    /// Items used to assemble the batch.  Must be one of `Self::Key`
+    /// (when `Self::Val = ()`) or `(Self::Key, Self::Val)`.
+    type Item;
+
     /// A type used to assemble batches from disordered updates.
-    type Batcher: Batcher<Self::Key, Self::Val, Self::Time, Self::R, Self>;
+    type Batcher: Batcher<Self::Item, Self::Time, Self::R, Self>;
 
     /// A type used to assemble batches from ordered update sequences.
-    type Builder: Builder<Self::Key, Self::Val, Self::Time, Self::R, Self>;
+    type Builder: Builder<Self::Item, Self::Time, Self::R, Self>;
 
     /// A type used to progressively merge batches.
     type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
 
+    /// Create an item from a `(key, value)` pair.
+    fn item_from(key: Self::Key, val: Self::Val) -> Self::Item;
+
+    /// Assemble an unordered vector of weighted items into a batch.
     #[allow(clippy::type_complexity)]
-    fn from_tuples(time: Self::Time, mut tuples: Vec<((Self::Key, Self::Val), Self::R)>) -> Self {
+    fn from_tuples(time: Self::Time, mut tuples: Vec<(Self::Item, Self::R)>) -> Self {
         let mut batcher = Self::Batcher::new(time);
         batcher.push_batch(&mut tuples);
         batcher.seal()
     }
+
+    /// Assemble an unodered vector of keys into a batch.
+    ///
+    /// This method is only defined for batches whose `Val` type is `()`.
+    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
+    where
+        Self::Val: From<()>;
 
     /// Initiates the merging of consecutive batches.
     ///
@@ -230,16 +245,16 @@ where
 }
 
 /// Functionality for collecting and batching updates.
-pub trait Batcher<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
+pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
     fn new(time: T) -> Self;
 
     /// Adds an unordered batch of elements to the batcher.
-    fn push_batch(&mut self, batch: &mut Vec<((K, V), R)>);
+    fn push_batch(&mut self, batch: &mut Vec<(I, R)>);
 
     /// Adds a consolidated batch of elements to the batcher
-    fn push_consolidated_batch(&mut self, batch: &mut Vec<((K, V), R)>);
+    fn push_consolidated_batch(&mut self, batch: &mut Vec<(I, R)>);
 
     /// Returns the number of tuples in the batcher.
     fn tuples(&self) -> usize;
@@ -249,7 +264,7 @@ pub trait Batcher<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> 
 }
 
 /// Functionality for building batches from ordered update sequences.
-pub trait Builder<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
+pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
     fn new(time: T) -> Self;
@@ -259,13 +274,13 @@ pub trait Builder<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> 
     fn with_capacity(time: T, cap: usize) -> Self;
 
     /// Adds an element to the batch.
-    fn push(&mut self, element: (K, V, R));
+    fn push(&mut self, element: (I, R));
 
     fn reserve(&mut self, additional: usize);
 
     /// Adds an ordered sequence of elements to the batch.
     #[inline]
-    fn extend<I: Iterator<Item = (K, V, R)>>(&mut self, iter: I) {
+    fn extend<It: Iterator<Item = (I, R)>>(&mut self, iter: It) {
         let (lower, upper) = iter.size_hint();
         self.reserve(upper.unwrap_or(lower));
 
@@ -416,9 +431,21 @@ pub mod rc_blanket_impls {
 
     /// An immutable collection of updates.
     impl<B: Batch> Batch for Rc<B> {
+        type Item = B::Item;
         type Batcher = RcBatcher<B>;
         type Builder = RcBuilder<B>;
         type Merger = RcMerger<B>;
+
+        fn item_from(key: Self::Key, val: Self::Val) -> Self::Item {
+            B::item_from(key, val)
+        }
+
+        fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
+        where
+            Self::Val: From<()>,
+        {
+            Rc::new(B::from_keys(time, keys))
+        }
 
         fn recede_to(&mut self, frontier: &B::Time) {
             Rc::get_mut(self).unwrap().recede_to(frontier);
@@ -431,21 +458,21 @@ pub mod rc_blanket_impls {
     }
 
     /// Functionality for collecting and batching updates.
-    impl<B: Batch> Batcher<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcBatcher<B> {
+    impl<B: Batch> Batcher<B::Item, B::Time, B::R, Rc<B>> for RcBatcher<B> {
         #[inline]
         fn new(time: B::Time) -> Self {
             Self {
-                batcher: <B::Batcher as Batcher<B::Key, B::Val, B::Time, B::R, B>>::new(time),
+                batcher: <B::Batcher as Batcher<B::Item, B::Time, B::R, B>>::new(time),
             }
         }
 
         #[inline]
-        fn push_batch(&mut self, batch: &mut Vec<((B::Key, B::Val), B::R)>) {
+        fn push_batch(&mut self, batch: &mut Vec<(B::Item, B::R)>) {
             self.batcher.push_batch(batch)
         }
 
         #[inline]
-        fn push_consolidated_batch(&mut self, batch: &mut Vec<((B::Key, B::Val), B::R)>) {
+        fn push_consolidated_batch(&mut self, batch: &mut Vec<(B::Item, B::R)>) {
             self.batcher.push_consolidated_batch(batch)
         }
 
@@ -466,18 +493,18 @@ pub mod rc_blanket_impls {
     }
 
     /// Functionality for building batches from ordered update sequences.
-    impl<B: Batch> Builder<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcBuilder<B> {
+    impl<B: Batch> Builder<B::Item, B::Time, B::R, Rc<B>> for RcBuilder<B> {
         #[inline]
         fn new(time: B::Time) -> Self {
             Self {
-                builder: <B::Builder as Builder<B::Key, B::Val, B::Time, B::R, B>>::new(time),
+                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::new(time),
             }
         }
 
         #[inline]
         fn with_capacity(time: B::Time, cap: usize) -> Self {
             Self {
-                builder: <B::Builder as Builder<B::Key, B::Val, B::Time, B::R, B>>::with_capacity(
+                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::with_capacity(
                     time, cap,
                 ),
             }
@@ -489,7 +516,7 @@ pub mod rc_blanket_impls {
         }
 
         #[inline]
-        fn push(&mut self, element: (B::Key, B::Val, B::R)) {
+        fn push(&mut self, element: (B::Item, B::R)) {
             self.builder.push(element)
         }
 

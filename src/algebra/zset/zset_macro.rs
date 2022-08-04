@@ -6,7 +6,7 @@
 #[macro_export]
 macro_rules! indexed_zset {
     ( $($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
-        let mut batcher = <<$crate::trace::ord::OrdIndexedZSet<_, _, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _, _>>::new(());
+        let mut batcher = <<$crate::trace::ord::OrdIndexedZSet<_, _, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _>>::new(());
         let mut batch = ::std::vec![ $( $( (($key, $value), $weight) ),* ),* ];
         $crate::trace::Batcher::push_batch(&mut batcher, &mut batch);
         $crate::trace::Batcher::seal(batcher)
@@ -20,9 +20,9 @@ macro_rules! indexed_zset {
 #[macro_export]
 macro_rules! zset {
     ( $( $key:expr => $weight:expr ),* $(,)?) => {{
-        let mut batcher = <<$crate::trace::ord::OrdZSet<_, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _, _>>::new(());
+        let mut batcher = <<$crate::trace::ord::OrdZSet<_, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _>>::new(());
 
-        let mut batch = ::std::vec![ $( (($key, ()), $weight) ),* ];
+        let mut batch = ::std::vec![ $( ($key, $weight) ),* ];
         $crate::trace::Batcher::push_batch(&mut batcher, &mut batch);
         $crate::trace::Batcher::seal(batcher)
     }};
@@ -35,9 +35,9 @@ macro_rules! zset {
 #[macro_export]
 macro_rules! zset_set {
     ( $( $key:expr ),* $(,)?) => {{
-        let mut batcher = <<$crate::trace::ord::OrdZSet<_, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _, _>>::new(());
+        let mut batcher = <<$crate::trace::ord::OrdZSet<_, _> as $crate::trace::Batch>::Batcher as $crate::trace::Batcher<_, _, _, _>>::new(());
 
-        let mut batch = ::std::vec![ $( (($key, ()), 1) ),* ];
+        let mut batch = ::std::vec![ $( ($key, 1) ),* ];
         $crate::trace::Batcher::push_batch(&mut batcher, &mut batch);
         $crate::trace::Batcher::seal(batcher)
     }};

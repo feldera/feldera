@@ -339,7 +339,7 @@ where
                 while cursor.val_valid() {
                     let val = cursor.val().clone();
                     let w = cursor.weight();
-                    builder.push((cursor.key().clone(), val, w.clone()));
+                    builder.push((CO::item_from(cursor.key().clone(), val), w.clone()));
                     cursor.step_val();
                 }
             }
@@ -410,7 +410,7 @@ where
                 if (self.filter)((cursor.key(), cursor.val())) {
                     let val = cursor.val().clone();
                     let w = cursor.weight();
-                    builder.push((cursor.key().clone(), val, w.clone()));
+                    builder.push((CO::item_from(cursor.key().clone(), val), w.clone()));
                 }
                 cursor.step_val();
             }
@@ -467,7 +467,7 @@ where
         while cursor.key_valid() {
             while cursor.val_valid() {
                 let (k, v) = (self.map)((cursor.key(), cursor.val()));
-                batch.push(((k, v), cursor.weight()));
+                batch.push((CO::item_from(k, v), cursor.weight()));
                 cursor.step_val();
             }
             cursor.step_key();
@@ -533,7 +533,7 @@ where
                 let w = cursor.weight();
                 let v = cursor.val();
                 let k = cursor.key();
-                batch.push((((self.map_borrowed)(k), v.clone()), w.clone()));
+                batch.push((CO::item_from((self.map_borrowed)(k), v.clone()), w.clone()));
                 cursor.step_val();
             }
             cursor.step_key();
@@ -599,7 +599,7 @@ where
             while cursor.val_valid() {
                 let w = cursor.weight();
                 for (x, y) in (self.map_func)((cursor.key(), cursor.val())).into_iter() {
-                    batch.push(((x, y), w.clone()));
+                    batch.push((CO::item_from(x, y), w.clone()));
                 }
                 cursor.step_val();
             }

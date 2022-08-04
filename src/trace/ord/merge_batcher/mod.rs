@@ -19,25 +19,18 @@ use std::{
 mod tests;
 
 /// Creates batches from unordered tuples.
-pub struct MergeBatcher<
-    K: Ord,
-    V: Ord,
-    T: Ord,
-    R: MonoidValue,
-    B: Batch<Key = K, Val = V, Time = T, R = R>,
-> {
-    sorter: MergeSorter<(K, V), R>,
+pub struct MergeBatcher<I: Ord, T: Ord, R: MonoidValue, B: Batch<Item = I, Time = T, R = R>> {
+    sorter: MergeSorter<I, R>,
     time: T,
     phantom: PhantomData<B>,
 }
 
-impl<K, V, T, R, B> Batcher<K, V, T, R, B> for MergeBatcher<K, V, T, R, B>
+impl<I, T, R, B> Batcher<I, T, R, B> for MergeBatcher<I, T, R, B>
 where
-    K: Ord + Clone,
-    V: Ord + Clone,
+    I: Ord + Clone,
     T: Lattice + Timestamp + Ord + Clone,
     R: MonoidValue,
-    B: Batch<Key = K, Val = V, Time = T, R = R>,
+    B: Batch<Item = I, Time = T, R = R>,
 {
     fn new(time: T) -> Self {
         Self {
@@ -47,11 +40,11 @@ where
         }
     }
 
-    fn push_batch(&mut self, batch: &mut Vec<((K, V), R)>) {
+    fn push_batch(&mut self, batch: &mut Vec<(I, R)>) {
         self.sorter.push(batch);
     }
 
-    fn push_consolidated_batch(&mut self, batch: &mut Vec<((K, V), R)>) {
+    fn push_consolidated_batch(&mut self, batch: &mut Vec<(I, R)>) {
         self.sorter.push_consolidated(batch);
     }
 
@@ -78,25 +71,20 @@ where
             merged.iter().map(|batch| batch.len()).sum(),
         );
 
-        for mut buffer in merged.drain(..) {
-            builder.extend(buffer.drain(..).map(|((key, val), diff)| (key, val, diff)));
-
-            if buffer.capacity() >= MergeSorter::<(K, V), R>::BUFFER_ELEMENTS {
-                self.sorter.stash.push(buffer);
-            }
+        for buffer in merged.drain(..) {
+            builder.extend(buffer.into_iter());
         }
 
         builder.done()
     }
 }
 
-impl<K, V, T, R, B> DeepSizeOf for MergeBatcher<K, V, T, R, B>
+impl<I, T, R, B> DeepSizeOf for MergeBatcher<I, T, R, B>
 where
-    K: DeepSizeOf + Ord,
-    V: DeepSizeOf + Ord,
+    I: DeepSizeOf + Ord,
     T: Ord,
     R: DeepSizeOf + MonoidValue,
-    B: Batch<Key = K, Val = V, Time = T, R = R>,
+    B: Batch<Item = I, Time = T, R = R>,
 {
     fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
         // TODO: Should we get time's size too?

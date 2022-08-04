@@ -131,8 +131,7 @@ where
 
                         // Add to our output batch
                         builder.push((
-                            (pair_cursor.key().clone(), pair_cursor.val().clone()),
-                            (),
+                            Out::item_from((pair_cursor.key().clone(), pair_cursor.val().clone()), ()),
                             kv_weight,
                         ));
                         pair_cursor.step_val();

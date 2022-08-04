@@ -214,7 +214,7 @@ mod tests {
             output.inspect(move |e| {
                 assert_eq!(
                     e,
-                    &OrdZSet::from_tuples((), vec![(((1, 200), ()), 1), (((2, 20), ()), 1),])
+                    &OrdZSet::from_tuples((), vec![((1, 200), 1), ((2, 20), 1),])
                 )
             });
         })

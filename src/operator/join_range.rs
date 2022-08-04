@@ -185,7 +185,7 @@ where
 
                         // Add all `(k,v)` tuples output by `join_func` to the output batch.
                         for (k, v) in (self.join_func)(k1, v1, i2_cursor.key(), i2_cursor.val()) {
-                            tuples.push(((k, v), w.clone()));
+                            tuples.push((O::item_from(k, v), w.clone()));
                         }
                         i2_cursor.step_val();
                     }
@@ -295,7 +295,7 @@ mod test {
                 .apply2(&output2, |o1, o2| assert_eq!(o1, o2));
         })
         .unwrap();
-
+        
         for _ in 0..5 {
             circuit.step().unwrap();
         }

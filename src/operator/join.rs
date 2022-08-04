@@ -178,6 +178,7 @@ where
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
         Z::R: MulByRef + Default,
+        Z::Item: Default,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
     {
         // TODO: I think this is correct, but we need a proper proof.
@@ -304,7 +305,7 @@ where
                             let v2 = cursor2.val();
 
                             batch.push((
-                                ((self.join_func)(cursor1.key(), v1, v2), ()),
+                                (self.join_func)(cursor1.key(), v1, v2),
                                 w1.mul_by_ref(&w2),
                             ));
                             cursor2.step_val();
@@ -320,7 +321,7 @@ where
             }
         }
 
-        Z::from_tuples((), batch)
+        Z::from_keys((), batch)
     }
 }
 
@@ -383,7 +384,7 @@ where
                             let v2 = cursor2.val();
 
                             batch.push((
-                                ((self.join_func)(cursor1.key(), v1, v2), ()),
+                                Z::item_from((self.join_func)(cursor1.key(), v1, v2), ()),
                                 w1.mul_by_ref(&w2),
                             ));
                             cursor2.step_val();
@@ -507,6 +508,7 @@ where
     Z::Key: Clone + Default,
     Z::Batcher: DeepSizeOf,
     Z::R: MulByRef + Default,
+    Z::Item: Default,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
         /*println!("JoinTrace::eval@{}:\n  index:\n{}\n  trace:\n{}",
@@ -547,7 +549,7 @@ where
                             trace_cursor.map_times(|ts, w2| {
                                 output_tuples.push((
                                     ts.join(&self.time),
-                                    ((output.clone(), ()), w1.mul_by_ref(w2)),
+                                    (Z::item_from(output.clone(), ()), w1.mul_by_ref(w2)),
                                 ));
                                 //println!("  tuple@{}: ({:?}, {})", off,
                                 // output, w1.clone() * w2.clone());

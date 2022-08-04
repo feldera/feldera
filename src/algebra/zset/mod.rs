@@ -36,10 +36,10 @@ pub trait ZSet: IndexedZSet<Val = ()> {
     fn weighted_count(&self) -> Self::R;
 }
 
-impl<Z> ZSet for Z
+impl<Z, K> ZSet for Z
 where
-    Z: IndexedZSet<Val = ()>,
-    Z::Key: Clone,
+    Z: IndexedZSet<Item = K, Key = K, Val = ()>,
+    K: Clone,
     Z::R: ZRingValue,
 {
     fn distinct(&self) -> Self {
@@ -49,7 +49,7 @@ where
         while cursor.key_valid() {
             let w = cursor.weight();
             if w.ge0() {
-                builder.push((cursor.key().clone(), (), HasOne::one()));
+                builder.push((cursor.key().clone(), HasOne::one()));
             }
             cursor.step_key();
         }

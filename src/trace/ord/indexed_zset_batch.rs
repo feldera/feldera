@@ -332,9 +332,26 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Batcher = MergeBatcher<K, V, (), R, Self>;
+    type Item = (K, V);
+    type Batcher = MergeBatcher<(K, V), (), R, Self>;
     type Builder = OrdIndexedZSetBuilder<K, V, R, O>;
     type Merger = OrdIndexedZSetMerger<K, V, R, O>;
+
+    fn item_from(key: K, val: V) -> Self::Item {
+        (key, val)
+    }
+
+    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
+    where
+        Self::Val: From<()>,
+    {
+        Self::from_tuples(
+            time,
+            keys.into_iter()
+                .map(|(k, w)| ((k, From::from(())), w))
+                .collect(),
+        )
+    }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
         OrdIndexedZSetMerger::new(self, other)
@@ -521,7 +538,7 @@ where
     builder: IndexBuilder<K, V, R, O>,
 }
 
-impl<K, V, R, O> Builder<K, V, (), R, OrdIndexedZSet<K, V, R, O>>
+impl<K, V, R, O> Builder<(K, V), (), R, OrdIndexedZSet<K, V, R, O>>
     for OrdIndexedZSetBuilder<K, V, R, O>
 where
     K: Ord + Clone + 'static,
@@ -551,7 +568,7 @@ where
     }
 
     #[inline]
-    fn push(&mut self, (key, val, diff): (K, V, R)) {
+    fn push(&mut self, ((key, val), diff): ((K, V), R)) {
         self.builder.push_tuple((key, (val, diff)));
     }
 

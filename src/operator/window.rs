@@ -165,9 +165,8 @@ where
                 && trace_cursor.key() < &start1
                 && trace_cursor.key() < end0
             {
-                trace_cursor.map_values(|val, weight| {
-                    tuples.push(((val.clone(), ()), weight.neg_by_ref()))
-                });
+                trace_cursor
+                    .map_values(|val, weight| tuples.push((val.clone(), weight.neg_by_ref())));
                 trace_cursor.step_key();
             }
 
@@ -176,9 +175,8 @@ where
             if &end1 < end0 {
                 trace_cursor.seek_key(&end1);
                 while trace_cursor.key_valid() && trace_cursor.key() < end0 {
-                    trace_cursor.map_values(|val, weight| {
-                        tuples.push(((val.clone(), ()), weight.neg_by_ref()))
-                    });
+                    trace_cursor
+                        .map_values(|val, weight| tuples.push((val.clone(), weight.neg_by_ref())));
                     trace_cursor.step_key();
                 }
             }
@@ -186,8 +184,7 @@ where
             // Add tuples in `trace` that slid into the window (region 3).
             trace_cursor.seek_key(max(end0, &start1));
             while trace_cursor.key_valid() && trace_cursor.key() < &end1 {
-                trace_cursor
-                    .map_values(|val, weight| tuples.push(((val.clone(), ()), weight.clone())));
+                trace_cursor.map_values(|val, weight| tuples.push((val.clone(), weight.clone())));
                 trace_cursor.step_key();
             }
         };
@@ -195,12 +192,12 @@ where
         // Insert tuples in `batch` that fall within the new window.
         batch_cursor.seek_key(&start1);
         while batch_cursor.key_valid() && batch_cursor.key() < &end1 {
-            batch_cursor.map_values(|val, weight| tuples.push(((val.clone(), ()), weight.clone())));
+            batch_cursor.map_values(|val, weight| tuples.push((val.clone(), weight.clone())));
             batch_cursor.step_key();
         }
 
         self.window = Some((start1, end1));
-        OrdZSet::from_tuples((), tuples)
+        OrdZSet::from_keys((), tuples)
     }
 
     fn input_preference(

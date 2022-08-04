@@ -67,7 +67,7 @@ fn main() {
                     for from in 0..LAYER {
                         for to in 0..LAYER {
                             tuples.push((
-                                ((from + (LAYER * layer), to + LAYER * (layer + 1)), ()),
+                                (from + (LAYER * layer), to + LAYER * (layer + 1)),
                                 1,
                             ));
                         }

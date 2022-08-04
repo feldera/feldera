@@ -57,16 +57,16 @@ mod tests {
             output.inspect(move |e| {
                 assert_eq!(
                     e,
-                    &OrdZSet::from_tuples(
+                    &OrdZSet::from_keys(
                         (),
                         generate_expected_zset_tuples(0, 10)
                             .into_iter()
-                            .map(|((event, _), w)| {
+                            .map(|(event, w)| {
                                 let event = match event {
                                     Event::Bid(b) => Event::Bid(Bid { price: 89, ..b }),
                                     _ => event,
                                 };
-                                ((event, ()), w)
+                                (event, w)
                             })
                             .collect()
                     )

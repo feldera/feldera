@@ -620,7 +620,7 @@ impl EdgeParser {
         // Directed graphs can use an ordered builder
         if self.directed {
             let mut edges = <EdgeMap as Batch>::Builder::with_capacity((), approx_edges);
-            self.parse(|src, dest| edges.push((src, dest, Weight::one())));
+            self.parse(|src, dest| edges.push(((src, dest), Weight::one())));
             edges.done()
 
         // Undirected graphs must use an unordered builder
@@ -677,7 +677,7 @@ impl VertexParser {
     pub fn load(self, approx_vertices: usize) -> VertexSet {
         // The vertices file is ordered so we can use an ordered builder
         let mut vertices = <VertexSet as Batch>::Builder::with_capacity((), approx_vertices);
-        self.parse(|vertex| vertices.push((vertex, (), Weight::one())));
+        self.parse(|vertex| vertices.push((vertex, Weight::one())));
         vertices.done()
     }
 
@@ -748,7 +748,7 @@ impl ResultParser for BfsResults {
             let vertex = vertex.parse().unwrap();
             let distance = distance.parse().unwrap();
 
-            results.push(((vertex, distance), (), Weight::one()));
+            results.push(((vertex, distance), Weight::one()));
             buffer.clear();
         }
 
@@ -783,7 +783,7 @@ impl ResultParser for PageRankResults {
             let vertex = vertex.parse().unwrap();
             let rank = F64::new(distance.parse::<f64>().unwrap());
 
-            results.push((vertex, rank, Weight::one()));
+            results.push(((vertex, rank), Weight::one()));
             buffer.clear();
         }
 

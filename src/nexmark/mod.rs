@@ -146,11 +146,11 @@ where
         // next call.
         self.next_event = next_event;
 
-        C::from_tuples(
+        C::from_keys(
             (),
             next_events
                 .into_iter()
-                .map(|next_event| ((next_event.event, ()), W::one()))
+                .map(|next_event| (next_event.event, W::one()))
                 .collect(),
         )
     }
@@ -160,8 +160,8 @@ where
 pub mod tests {
     use self::generator::tests::{generate_expected_next_events, RangedTimeGenerator};
     use super::*;
+    use crate::{trace::Batch, Circuit, OrdZSet};
     use core::ops::Range;
-    use crate::{OrdZSet, trace::Batch, Circuit};
     use rand::rngs::mock::StepRng;
     use std::sync::{mpsc, mpsc::Receiver};
 
@@ -184,13 +184,13 @@ pub mod tests {
     pub fn generate_expected_zset_tuples(
         wallclock_base_time: u64,
         num_events: usize,
-    ) -> Vec<((Event, ()), isize)> {
+    ) -> Vec<(Event, isize)> {
         let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
 
         expected_events
             .into_iter()
             .filter(|event| event.is_some())
-            .map(|event| ((event.unwrap().event, ()), 1))
+            .map(|event| (event.unwrap().event, 1))
             .collect()
     }
 
@@ -199,7 +199,7 @@ pub mod tests {
         wallclock_base_time: u64,
         num_events: usize,
     ) -> OrdZSet<Event, isize> {
-        OrdZSet::<Event, isize>::from_tuples(
+        OrdZSet::<Event, isize>::from_keys(
             (),
             generate_expected_zset_tuples(wallclock_base_time, num_events),
         )

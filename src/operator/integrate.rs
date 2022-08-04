@@ -195,18 +195,18 @@ mod test {
             integral.inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 0..counter2 {
-                    batch.push(((i, ()), (counter2 - i) as isize));
+                    batch.push((i, (counter2 - i) as isize));
                 }
-                assert_eq!(s, &<OrdZSet<_, _>>::from_tuples((), batch));
+                assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
                 counter2 += 1;
             });
             let mut counter3 = 0;
             integral.delay().inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 1..counter3 {
-                    batch.push((((i - 1), ()), (counter3 - i) as isize));
+                    batch.push(((i - 1), (counter3 - i) as isize));
                 }
-                assert_eq!(s, &<OrdZSet<_, _>>::from_tuples((), batch));
+                assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
                 counter3 += 1;
             });
         })
