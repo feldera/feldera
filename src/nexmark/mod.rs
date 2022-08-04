@@ -267,7 +267,8 @@ pub mod tests {
                     assert_eq!(data, &expected_zset);
                 });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         root.step().unwrap();
     }

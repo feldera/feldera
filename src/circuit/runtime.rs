@@ -1,17 +1,25 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
     cell::{Cell, RefCell},
+    fmt,
+    fmt::{Debug, Formatter},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::sync_channel,
         Arc,
     },
     thread::{Builder, JoinHandle, LocalKey, Result as ThreadResult},
 };
 use typedmap::{TypedDashMap, TypedMapKey};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    WorkerPanic(usize),
+    Killed,
+}
 
 // Thread-local variables used by the termination protocol.
 thread_local! {
@@ -47,6 +55,14 @@ struct RuntimeInner {
     store: LocalStore,
 }
 
+impl Debug for RuntimeInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RuntimeInner")
+            .field("nworkers", &self.nworkers)
+            .finish()
+    }
+}
+
 impl RuntimeInner {
     fn new(nworkers: usize) -> Self {
         Self {
@@ -60,7 +76,7 @@ impl RuntimeInner {
 /// threads. Typically, all `N` circuits are identical, but this is not required
 /// or enforced.
 #[repr(transparent)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Runtime(Arc<RuntimeInner>);
 
 impl Runtime {
@@ -94,7 +110,8 @@ impl Runtime {
     ///     let root = Circuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
     ///     })
-    ///     .unwrap();
+    ///     .unwrap()
+    ///     .0;
     ///
     ///     // Run circuit for 100 clock cycles.
     ///     for _ in 0..100 {
@@ -119,7 +136,7 @@ impl Runtime {
             let f = f.clone();
             let builder = Builder::new().name(format!("worker{}", worker_index));
 
-            let (init_sender, init_receiver) = sync_channel(0);
+            let (init_sender, init_receiver) = bounded(0);
 
             let join_handle = builder
                 .spawn(move || {
@@ -221,6 +238,7 @@ impl Runtime {
 }
 
 /// Per-worker controls.
+#[derive(Debug)]
 struct WorkerHandle {
     join_handle: JoinHandle<()>,
     unparker: Unparker,
@@ -235,9 +253,14 @@ impl WorkerHandle {
             kill_signal,
         }
     }
+
+    fn unpark(&self) {
+        self.unparker.unpark();
+    }
 }
 
 /// Handle returned by `Runtime::run`.
+#[derive(Debug)]
 pub struct RuntimeHandle {
     runtime: Runtime,
     workers: Vec<WorkerHandle>,
@@ -246,6 +269,15 @@ pub struct RuntimeHandle {
 impl RuntimeHandle {
     fn new(runtime: Runtime, workers: Vec<WorkerHandle>) -> Self {
         Self { runtime, workers }
+    }
+
+    /// Unpark worker thread.
+    ///
+    /// Workers release the CPU by parking when they have no work to do.
+    /// This method unparks a thread after sending a command to it or
+    /// when killing a circuit.
+    pub(super) fn unpark_worker(&self, worker: usize) {
+        self.workers[worker].unpark();
     }
 
     /// Returns reference to the runtime.
@@ -263,7 +295,7 @@ impl RuntimeHandle {
     pub fn kill(self) -> ThreadResult<()> {
         for worker in self.workers.iter() {
             worker.kill_signal.store(true, Ordering::SeqCst);
-            worker.unparker.unpark();
+            worker.unpark();
         }
 
         self.join()
@@ -320,7 +352,7 @@ mod tests {
         let hruntime = Runtime::run(4, || {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
-            let root = Circuit::build_with_scheduler::<_, S>(move |circuit| {
+            let root = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
                 let runtime = Runtime::runtime().unwrap();
                 // Generator that produces values using `sequence_next`.
                 circuit
@@ -329,7 +361,8 @@ mod tests {
                     }))
                     .inspect(move |n: &usize| data_clone.borrow_mut().push(*n));
             })
-            .unwrap();
+            .unwrap()
+            .0;
 
             for _ in 0..100 {
                 root.step().unwrap();
@@ -360,7 +393,7 @@ mod tests {
     {
         let hruntime = Runtime::run(16, || {
             // Create a nested circuit that iterates forever.
-            let root = Circuit::build_with_scheduler::<_, S>(move |circuit| {
+            let root = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
                 circuit
                     .iterate_with_scheduler::<_, _, _, S>(|child| {
                         let mut n: usize = 0;
@@ -374,7 +407,8 @@ mod tests {
                     })
                     .unwrap();
             })
-            .unwrap();
+            .unwrap()
+            .0;
 
             loop {
                 if root.step().is_err() {

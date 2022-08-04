@@ -354,10 +354,7 @@ where
 ///
 /// # #[cfg(not(miri))]
 /// # fn main() {
-/// use dbsp::{
-///     operator::Generator,
-///     Circuit, Runtime,
-/// };
+/// use dbsp::{operator::Generator, Circuit, Runtime};
 ///
 /// const WORKERS: usize = 16;
 /// const ROUNDS: usize = 10;
@@ -400,7 +397,8 @@ where
 ///             round += 1;
 ///         });
 ///     })
-///     .unwrap();
+///     .unwrap()
+///     .0;
 ///
 ///     for _ in 1..ROUNDS {
 ///         circuit.step();
@@ -706,7 +704,7 @@ mod tests {
             S: Scheduler + 'static,
         {
             let hruntime = Runtime::run(workers, move || {
-                let circuit = Circuit::build_with_scheduler::<_, S>(move |circuit| {
+                let circuit = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
                     let mut n: usize = 0;
                     let source = circuit.add_source(Generator::new(move || {
                         let result = n;
@@ -733,7 +731,8 @@ mod tests {
                             round += 1;
                         });
                 })
-                .unwrap();
+                .unwrap()
+                .0;
 
                 for _ in 1..ROUNDS {
                     circuit.step().unwrap();

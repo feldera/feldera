@@ -50,7 +50,8 @@ where
     /// #   let mut counter2 = 0;
     /// #   integral.delay().inspect(move |n| { assert_eq!(*n, counter2); counter2 += 1; });
     /// })
-    /// .unwrap();
+    /// .unwrap()
+    /// .0;
     ///
     /// # for _ in 0..5 {
     /// #     circuit.step().unwrap();
@@ -171,7 +172,8 @@ mod test {
                 assert_eq!(*n, counter);
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -210,7 +212,8 @@ mod test {
                 counter3 += 1;
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -265,7 +268,8 @@ mod test {
                 .unwrap();
             integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..4 {
             circuit.step().unwrap();

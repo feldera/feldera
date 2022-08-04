@@ -12,7 +12,7 @@ use crate::{
 use clap::Parser;
 use dbsp::{
     algebra::NegByRef,
-    circuit::{trace::SchedulerEvent, Root, Runtime},
+    circuit::{trace::SchedulerEvent, Runtime},
     monitor::TraceMonitor,
     operator::Generator,
     profile::CPUProfiler,
@@ -124,7 +124,7 @@ fn main() {
         let output = Rc::new(RefCell::new(OutputData::None));
 
         let output_inner = output.clone();
-        let root = Root::build(move |circuit| {
+        let root = Circuit::build(move |circuit| {
             if config.profile && Runtime::worker_index() == 0 {
                 attach_profiling(dataset, circuit);
             }
@@ -186,7 +186,7 @@ fn main() {
                 Args::ListDatasets { .. } | Args::ListDownloaded { .. } => unreachable!(),
             }
         })
-        .unwrap();
+        .unwrap().0;
 
         if Runtime::worker_index() == 0 {
             let elapsed = start.elapsed();

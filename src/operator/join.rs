@@ -740,7 +740,8 @@ mod test {
                     }
                 });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..5 {
             circuit.step().unwrap();
@@ -835,7 +836,7 @@ mod test {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);
@@ -948,7 +949,7 @@ mod test {
                 assert_eq!(*labeled, outputs.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);
@@ -1034,7 +1035,7 @@ mod test {
                 assert_eq!(*res, outputs.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);

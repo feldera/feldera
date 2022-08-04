@@ -9,8 +9,8 @@
 //! behavior.
 //!
 //! See [`super::Circuit::register_circuit_event_handler`] and
-//! [`super::Root::register_scheduler_event_handler`] APIs for attaching
-//! event handlers to a circuit.
+//! [`super::CircuitHandle::register_scheduler_event_handler`] APIs for
+//! attaching event handlers to a circuit.
 //!
 //! Event handlers are invoked synchronously and therefore must complete
 //! quickly, with any expensive processing completed asynchronously.
@@ -362,7 +362,7 @@ impl Display for CircuitEvent {
 ///                ClockEnd               StepEnd       EvalEnd(id)
 /// ```
 ///
-/// The root circuit automaton is instantiated by the [`super::Root::build`]
+/// The root circuit automaton is instantiated by the [`super::Circuit::build`]
 /// function.  A subcircuit automaton is instantiated when its parent scheduler
 /// evaluates the node that contains this subcircuit (see below).
 ///

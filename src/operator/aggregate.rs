@@ -458,7 +458,8 @@ mod test {
                 })
                 .unwrap();
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..3 {
             root.step().unwrap();

@@ -130,7 +130,8 @@ mod test {
                     assert_eq!(data, &expected)
                 });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         circuit.step().unwrap();
     }

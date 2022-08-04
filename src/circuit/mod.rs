@@ -13,6 +13,7 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! streams and emitting a single value to the output stream.
 
 pub mod circuit_builder;
+mod dbsp_handle;
 mod runtime;
 
 pub mod cache;
@@ -24,4 +25,7 @@ pub use circuit_builder::{
     Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId,
     OwnershipPreference, Scope, Stream,
 };
-pub use runtime::{LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
+pub use dbsp_handle::DBSPHandle;
+pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
+
+pub use schedule::Error as SchedulerError;

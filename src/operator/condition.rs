@@ -155,7 +155,7 @@ mod test {
     where
         S: Scheduler + 'static,
     {
-        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             // Graph edges
@@ -232,7 +232,8 @@ mod test {
             });
             reachable2.inspect(|r| assert_eq!(r, &zset! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..3 {
             circuit.step().unwrap();

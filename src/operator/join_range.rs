@@ -294,8 +294,9 @@ mod test {
                 .index()
                 .apply2(&output2, |o1, o2| assert_eq!(o1, o2));
         })
-        .unwrap();
-        
+        .unwrap()
+        .0;
+
         for _ in 0..5 {
             circuit.step().unwrap();
         }

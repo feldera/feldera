@@ -109,7 +109,7 @@ mod tests {
         model::{Auction, Bid, Event},
         NexmarkSource,
     };
-    use crate::{Circuit, OrdZSet, trace::Batch};
+    use crate::{trace::Batch, Circuit, OrdZSet};
     use rand::rngs::mock::StepRng;
     use std::sync::mpsc;
 
@@ -218,7 +218,8 @@ mod tests {
                 )
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         root.step().unwrap();
     }

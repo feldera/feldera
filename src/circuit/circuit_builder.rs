@@ -656,7 +656,7 @@ impl<P> CircuitInner<P> {
     }
 }
 
-/// A handle to a circuit.
+/// A circuit.
 #[repr(transparent)]
 pub struct Circuit<P>(Rc<RefCell<CircuitInner<P>>>);
 
@@ -667,30 +667,43 @@ impl<P> Clone for Circuit<P> {
 }
 
 impl Circuit<()> {
-    /// Create a circuit and prepate it for execution.
+    /// Create a circuit and prepare it for execution.
     ///
     /// Creates an empty circuit and populates it with operators by calling a
     /// user-provided `constructor` function.  The circuit will be scheduled
     /// using the default scheduler (currently [`DynamicScheduler`]).
-    pub fn build<F>(constructor: F) -> Result<CircuitHandle, SchedulerError>
+    ///
+    /// Returns a handle to the newly-created circuit and a user-defined value
+    /// returned by the constructor.  This value typically contains one or more
+    /// input handles used to push data to the circuit at runtime (see
+    /// [`Circuit::add_input_stream`], [`Circuit::add_input_zset`], and related
+    /// methods).
+    ///
+    /// The circuit created using this API does
+    /// not have its own worker thread(s) and will instead execute in the
+    /// context of the calling thread.  The caller should use the returned
+    /// [`CircuitHandle`] to control the execution of the circuit.
+    // TODO: Allow `constructor` to fail.
+    pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), SchedulerError>
     where
-        F: FnOnce(&mut Circuit<()>),
+        F: FnOnce(&mut Circuit<()>) -> T,
     {
-        // TODO: use dynamic scheduler by default.
-        Self::build_with_scheduler::<F, DynamicScheduler>(constructor)
+        Self::build_with_scheduler::<F, T, DynamicScheduler>(constructor)
     }
 
-    /// Create a circuit and prepate it for execution.
+    /// Create a circuit and prepare it for execution.
     ///
     /// Similar to [`build`](`Self::build`), but with a user-specified
     /// [`Scheduler`] implementation.
-    pub fn build_with_scheduler<F, S>(constructor: F) -> Result<CircuitHandle, SchedulerError>
+    pub fn build_with_scheduler<F, T, S>(
+        constructor: F,
+    ) -> Result<(CircuitHandle, T), SchedulerError>
     where
-        F: FnOnce(&mut Circuit<()>),
+        F: FnOnce(&mut Circuit<()>) -> T,
         S: Scheduler + 'static,
     {
         let mut circuit = Circuit::new();
-        constructor(&mut circuit);
+        let res = constructor(&mut circuit);
         let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
 
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
@@ -699,7 +712,7 @@ impl Circuit<()> {
         // scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start(0);
-        Ok(CircuitHandle { circuit, executor })
+        Ok((CircuitHandle { circuit, executor }, res))
     }
 }
 
@@ -2895,7 +2908,7 @@ mod tests {
     {
         let actual_output: Rc<RefCell<Vec<isize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
-        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
             let mut n: isize = 0;
             let source = circuit.add_source(Generator::new(move || {
@@ -2907,7 +2920,8 @@ mod tests {
             integrator.inspect(|n| println!("{}", n));
             integrator.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -2940,7 +2954,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
@@ -2955,7 +2969,8 @@ mod tests {
                 .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
             z1_feedback.connect(&plus);
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -2992,7 +3007,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let circuit = Circuit::build_with_scheduler::<_, S>(|circuit| {
+        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
@@ -3019,7 +3034,8 @@ mod tests {
                 .unwrap();
             fact.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 1..10 {
             circuit.step().unwrap();

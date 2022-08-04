@@ -275,7 +275,8 @@ mod test {
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..6 {
             circuit.step().unwrap();
@@ -337,7 +338,7 @@ mod test {
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..11 {
             circuit.step().unwrap();
@@ -416,7 +417,7 @@ mod test {
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..6 {
             circuit.step().unwrap();
