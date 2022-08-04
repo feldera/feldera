@@ -3,7 +3,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::{
-        consolidation::consolidate_slice,
+        consolidation::consolidate_from,
         layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     },
     NumEntries, SharedRef,
@@ -22,7 +22,9 @@ pub struct OrderedLeaf<K, R> {
     pub vals: Vec<(K, R)>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedLeaf<K, R> {
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Trie
+    for OrderedLeaf<K, R>
+{
     type Item = (K, R);
     type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedLeafBuilder<K, R>;
@@ -51,7 +53,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Trie for OrderedL
 impl<K, R> Display for OrderedLeaf<K, R>
 where
     K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.cursor().fmt(f)
@@ -62,7 +64,7 @@ where
 impl<K, R> Add<Self> for OrderedLeaf<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     type Output = Self;
 
@@ -80,7 +82,7 @@ where
 impl<K, R> AddAssign<Self> for OrderedLeaf<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -92,7 +94,7 @@ where
 impl<K, R> AddAssignByRef for OrderedLeaf<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -104,7 +106,7 @@ where
 impl<K, R> AddByRef for OrderedLeaf<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
@@ -144,7 +146,7 @@ where
 impl<K, R> NumEntries for OrderedLeaf<K, R>
 where
     K: Ord + Clone,
-    R: Eq + HasZero + AddAssignByRef + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     fn num_entries_shallow(&self) -> usize {
         self.keys()
@@ -175,7 +177,7 @@ pub struct OrderedLeafBuilder<K, R> {
     pub vals: Vec<(K, R)>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Builder
     for OrderedLeafBuilder<K, R>
 {
     type Trie = OrderedLeaf<K, R>;
@@ -187,7 +189,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> MergeBuilder
     for OrderedLeafBuilder<K, R>
 {
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self {
@@ -282,7 +284,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> MergeBuilder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> TupleBuilder
     for OrderedLeafBuilder<K, R>
 {
     type Item = (K, R);
@@ -310,15 +312,14 @@ pub struct UnorderedLeafBuilder<K, R> {
     boundary: usize,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Builder
     for UnorderedLeafBuilder<K, R>
 {
     type Trie = OrderedLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
-        let consolidated_len = consolidate_slice(&mut self.vals[self.boundary..]);
-        self.boundary += consolidated_len;
-        self.vals.truncate(self.boundary);
+        consolidate_from(&mut self.vals, self.boundary);
+        self.boundary = self.vals.len();
         self.boundary
     }
     fn done(mut self) -> Self::Trie {
@@ -327,7 +328,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> Builder
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssignByRef + Clone> TupleBuilder
+impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> TupleBuilder
     for UnorderedLeafBuilder<K, R>
 {
     type Item = (K, R);

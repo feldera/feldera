@@ -29,6 +29,7 @@ where
     let distances = root_nodes
         .circuit()
         // TODO: Can recurse over the indexed version of `nodes` instead of having to re-index it?
+        // TODO: Can we use zst weights here?
         .recursive(|scope, nodes: Distances<_>| {
             // Import the nodes and edges into the recursive scope
             let root_nodes = root_nodes.delta0(scope);

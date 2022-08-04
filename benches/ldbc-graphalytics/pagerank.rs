@@ -51,6 +51,79 @@ where
     assert_ne!(pagerank_iters, 0);
     assert!((0.0..=1.0).contains(&damping_factor));
 
+    match kind {
+        kind @ (PageRankKind::Scoped | PageRankKind::Static) => {
+            let (
+                initial_weights,
+                total_vertices,
+                teleport,
+                outgoing_sans_dangling,
+                dangling_nodes,
+                dangling_edge_weights,
+                zero_incoming,
+                zero,
+            ) = setup_iterative_pagerank(damping_factor, directed, &vertices, &edges);
+
+            match kind {
+                PageRankKind::Static => pagerank_static_iteration(
+                    pagerank_iters,
+                    damping_factor,
+                    edges,
+                    zero,
+                    teleport,
+                    zero_incoming,
+                    total_vertices,
+                    outgoing_sans_dangling,
+                    dangling_nodes,
+                    initial_weights,
+                    dangling_edge_weights,
+                ),
+
+                PageRankKind::Scoped => pagerank_scoped_iteration(
+                    pagerank_iters,
+                    damping_factor,
+                    edges,
+                    vertices,
+                    zero,
+                    teleport,
+                    zero_incoming,
+                    total_vertices,
+                    outgoing_sans_dangling,
+                    dangling_nodes,
+                    initial_weights,
+                    dangling_edge_weights,
+                ),
+
+                PageRankKind::Diffed => unreachable!(),
+            }
+        }
+
+        PageRankKind::Diffed => {
+            pagerank_differential(pagerank_iters, damping_factor, vertices, edges)
+        }
+    }
+    .index()
+}
+
+#[allow(clippy::type_complexity)]
+fn setup_iterative_pagerank<P>(
+    damping_factor: f64,
+    directed: bool,
+    vertices: &Vertices<P>,
+    edges: &Edges<P>,
+) -> (
+    Ranks<P>,
+    Streamed<P, OrdIndexedZSet<(), usize, Weight>>,
+    Streamed<P, OrdIndexedZSet<(), Rank, Weight>>,
+    Streamed<P, OrdIndexedZSet<Node, usize, Weight>>,
+    Vertices<P>,
+    Ranks<P>,
+    Streamed<P, OrdZSet<((), (Node, Rank)), Weight>>,
+    Streamed<P, OrdZSet<((), Rank), Weight>>,
+)
+where
+    P: Clone + 'static,
+{
     // Initially each vertex is assigned a value so that the sum of all vertexes is
     // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
     let initial_weights: Ranks<_> = vertices.apply(|vertices| {
@@ -111,7 +184,7 @@ where
     // Find all dangling nodes (nodes without outgoing edges)
     let dangling_nodes = vertices.minus(
         &outgoing_sans_dangling
-            .semijoin_stream::<_, OrdZSet<_, _>>(&vertices)
+            .semijoin_stream::<_, OrdZSet<_, _>>(vertices)
             .map(|&(node, _)| node),
     );
 
@@ -145,7 +218,7 @@ where
 
     // Find vertices without any incoming edges
     let zero_incoming = vertices
-        .minus(&reversed.join::<(), _, _, _>(&vertices, |&node, _, _| node))
+        .minus(&reversed.join::<(), _, _, _>(vertices, |&node, _, _| node))
         .map(|&node| ((), (node, F64::new(0.0))));
 
     // Create a stream containing one `((), 0)` pair
@@ -153,41 +226,16 @@ where
         .circuit()
         .add_source(Generator::new(|| zset_set! { ((), F64::new(0.0)) }));
 
-    match kind {
-        PageRankKind::Scoped => pagerank_scoped_iteration(
-            pagerank_iters,
-            damping_factor,
-            edges,
-            vertices,
-            zero,
-            teleport,
-            zero_incoming,
-            total_vertices,
-            outgoing_sans_dangling,
-            dangling_nodes,
-            initial_weights,
-            dangling_edge_weights,
-        ),
-
-        PageRankKind::Static => pagerank_static_iteration(
-            pagerank_iters,
-            damping_factor,
-            edges,
-            zero,
-            teleport,
-            zero_incoming,
-            total_vertices,
-            outgoing_sans_dangling,
-            dangling_nodes,
-            initial_weights,
-            dangling_edge_weights,
-        ),
-
-        PageRankKind::Diffed => {
-            pagerank_differential(pagerank_iters, damping_factor, vertices, edges)
-        }
-    }
-    .index()
+    (
+        initial_weights,
+        total_vertices,
+        teleport,
+        outgoing_sans_dangling,
+        dangling_nodes,
+        dangling_edge_weights,
+        zero_incoming,
+        zero,
+    )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -444,20 +492,6 @@ where
         builder.done()
     });
 
-    // Vertices weighted by the damping factor
-    let damped_vertices = vertices.shard().apply(move |vertices| {
-        let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
-
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-            builder.push((node, (), Rank::new(damping_factor)));
-            cursor.step_key();
-        }
-
-        builder.done()
-    });
-
     // Vertices weighted by the damping factor divided by the total number of
     // vertices
     let damped_div_total_vertices = vertices.apply(move |vertices| {
@@ -569,7 +603,6 @@ where
             let teleport = teleport.delta0(scope).integrate();
             let edge_weights = edge_weights.delta0(scope).integrate();
             let dangling_nodes = dangling_nodes.delta0(scope).integrate();
-            let damped_vertices = damped_vertices.delta0(scope).integrate();
             let outgoing_edge_counts = outgoing_edge_counts.delta0(scope).integrate();
             let damped_div_total_vertices = damped_div_total_vertices.delta0(scope).integrate();
 
@@ -592,16 +625,23 @@ where
                 // outgoing edges it has prev_iter_weight / total_outgoing_edges
                 let weight_per_edge = div_join_stream(&weights, &outgoing_edge_counts);
 
-                // Aggregate the weights of all incoming edges for any given vertex
-                // sum(incoming_edge_weights)
-                let incoming_vertex_weights =
-                    weight_per_edge.stream_join::<_, _, Weights>(&edge_weights, |_, _, &dest| dest);
-
                 // Calculate the importance of each node, the sum of all weights from each
                 // incoming edge multiplied by the damping factor
                 // damping_factor * sum(incoming_edge_weights)
-                damped_vertices
-                    .stream_join::<_, _, Weights>(&incoming_vertex_weights, |&node, _, _| node)
+                //
+                // This is the big kahuna in regards to performance: %99.9 of our runtime
+                // (214 seconds out of 221 seconds, for example) is spent here, most of which
+                // is spent consolidating the join's outputs
+                weight_per_edge
+                    .stream_join::<_, _, Weights>(&edge_weights, |_, _, &dest| dest)
+                    .apply_owned(move |mut importance| {
+                        // TODO: Try using the `std::simd` api
+                        for weight in importance.layer.diffs_mut() {
+                            *weight = damping_factor * *weight;
+                        }
+
+                        importance
+                    })
             });
 
             let redistributed = scope.region("redistributed", || {
@@ -611,7 +651,7 @@ where
 
                 // (damping_factor / total_vertices) * sum(dangling_nodes)
                 damped_div_total_vertices
-                    .stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
+                    .monotonic_stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
             });
 
             let page_rank = teleport.sum([&importance, &redistributed]);
@@ -665,13 +705,12 @@ where
                 Ordering::Less => lhs.seek_key(rhs.key()),
                 Ordering::Greater => rhs.seek_key(lhs.key()),
                 Ordering::Equal => {
-                    if lhs.val_valid() {
-                        let lhs_weight = lhs.weight();
-                        if rhs.val_valid() {
-                            let rhs_weight = rhs.weight();
-                            builder.push((*lhs.key(), (), lhs_weight / rhs_weight));
-                        }
-                    }
+                    // Note: We don't have to check for value validity here because `()` always has
+                    //       a valid value
+                    debug_assert!(lhs.val_valid() && rhs.val_valid());
+
+                    let (lhs_weight, rhs_weight) = (lhs.weight(), rhs.weight());
+                    builder.push((*lhs.key(), (), lhs_weight / rhs_weight));
 
                     lhs.step_key();
                     rhs.step_key();
