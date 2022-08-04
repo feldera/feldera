@@ -58,6 +58,7 @@ libc = "0.2.127"
 
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { version = "0.3.9", features = ["psapi"] }
+mimalloc = { version = "*", default-features = false }
 
 [profile.bench]
 debug = true

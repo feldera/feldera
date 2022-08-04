@@ -1,6 +1,6 @@
 use clap::{PossibleValue, ValueEnum};
 use dbsp::{
-    algebra::{HasOne, F64},
+    algebra::{HasOne, Present, F64},
     trace::{Batch, Batcher, Builder},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
@@ -26,18 +26,18 @@ pub type Vertex = u64;
 pub type Weight = isize;
 pub type Distance = u64;
 
-pub type VertexSet = OrdZSet<Node, Weight>;
+pub type VertexSet<D = Present> = OrdZSet<Node, D>;
 pub type RankSet = OrdZSet<(Node, Rank), Weight>;
 pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
-pub type EdgeMap = OrdIndexedZSet<Node, Node, Weight>;
-pub type DistanceSet = OrdZSet<(Node, Distance), Weight>;
+pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
+pub type DistanceSet<D = Present> = OrdZSet<(Node, Distance), D>;
 
 pub type Streamed<P, T> = Stream<Circuit<P>, T>;
 
-pub type Edges<P> = Streamed<P, EdgeMap>;
+pub type Edges<P, D = Present> = Streamed<P, EdgeMap<D>>;
 pub type Ranks<P> = Streamed<P, RankSet>;
 pub type RankPairs<P> = Streamed<P, RankMap>;
-pub type Vertices<P> = Streamed<P, VertexSet>;
+pub type Vertices<P, D = Present> = Streamed<P, VertexSet<D>>;
 
 const DATA_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -616,7 +616,7 @@ impl EdgeParser {
         // Directed graphs can use an ordered builder
         if self.directed {
             let mut edges = <EdgeMap as Batch>::Builder::with_capacity((), approx_edges);
-            self.parse(|src, dest| edges.push(((src, dest), Weight::one())));
+            self.parse(|src, dest| edges.push(((src, dest), Present)));
             edges.done()
 
         // Undirected graphs must use an unordered builder
@@ -625,8 +625,8 @@ impl EdgeParser {
             let mut reverse_batch = Vec::with_capacity(approx_edges);
 
             self.parse(|src, dest| {
-                forward_batch.push(((src, dest), Weight::one()));
-                reverse_batch.push(((dest, src), Weight::one()));
+                forward_batch.push(((src, dest), Present));
+                reverse_batch.push(((dest, src), Present));
             });
 
             let mut edges = <EdgeMap as Batch>::Batcher::new(());
@@ -673,7 +673,7 @@ impl VertexParser {
     pub fn load(self, approx_vertices: usize) -> VertexSet {
         // The vertices file is ordered so we can use an ordered builder
         let mut vertices = <VertexSet as Batch>::Builder::with_capacity((), approx_vertices);
-        self.parse(|vertex| vertices.push((vertex, Weight::one())));
+        self.parse(|vertex| vertices.push((vertex, Present)));
         vertices.done()
     }
 
@@ -719,7 +719,7 @@ impl ResultParser for NoopResults {
 pub struct BfsResults;
 
 impl ResultParser for BfsResults {
-    type Parsed = DistanceSet;
+    type Parsed = DistanceSet<Weight>;
 
     fn file_suffix() -> Option<&'static str> {
         Some("-BFS")
@@ -730,7 +730,7 @@ impl ResultParser for BfsResults {
 
         // The bfs results file is ordered so we can use an ordered builder
         let mut results =
-            <DistanceSet as Batch>::Builder::with_capacity((), props.vertices as usize);
+            <DistanceSet<Weight> as Batch>::Builder::with_capacity((), props.vertices as usize);
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {

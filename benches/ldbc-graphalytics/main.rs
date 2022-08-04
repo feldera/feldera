@@ -8,14 +8,15 @@ use crate::data::{
 };
 use clap::Parser;
 use dbsp::{
-    algebra::NegByRef,
+    algebra::{NegByRef, Present},
     circuit::{trace::SchedulerEvent, Runtime},
     monitor::TraceMonitor,
     operator::Generator,
     profile::CPUProfiler,
     trace::{BatchReader, Cursor},
-    zset_set, Circuit,
+    zset, Circuit,
 };
+use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use std::{
@@ -30,9 +31,13 @@ use std::{
     time::Instant,
 };
 
+#[global_allocator]
+#[cfg(windows)]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 enum OutputData {
     None,
-    Bfs(DistanceSet),
+    Bfs(DistanceSet<Weight>),
     PageRank(RankMap),
 }
 
@@ -77,23 +82,23 @@ fn main() {
     let elapsed = start.elapsed();
 
     // Calculate the amount of data that we've loaded in, including weights
-    let data_loaded = {
+    let actual_size = edges.deep_size_of() + vertices.deep_size_of();
+    let theoretical_size = {
         let node = size_of::<Node>() as u64;
-        let weight = size_of::<Weight>() as u64;
-        let edges = edges.len() as u64 * (!properties.directed as u64 + 1);
+        let edges = edges.len() as u64;
         let vertices = vertices.len() as u64;
 
-        let vertex_bytes = (vertices * node) + (vertices * weight);
-        let edge_bytes = (edges * node * 2) + (edges * weight);
-        let root_bytes = node + weight;
+        let vertex_bytes = vertices * node;
+        let edge_bytes = edges * node * 2;
 
-        vertex_bytes + edge_bytes + root_bytes
+        vertex_bytes + edge_bytes
     };
 
     println!(
-        "finished in {elapsed:#?}, loaded {} of data\n\
+        "finished in {elapsed:#?}, loaded {} of data (theoretical size of {})\n\
          using dataset {} which is {} graph with {} vertices and {} edges",
-        HumanBytes(data_loaded),
+        HumanBytes(actual_size as u64),
+        HumanBytes(theoretical_size),
         dataset.name,
         if properties.directed {
             "a directed"
@@ -104,7 +109,7 @@ fn main() {
         properties.edges,
     );
 
-    let mut root_data = Some(zset_set! { properties.source_vertex });
+    let mut root_data = Some(zset! { properties.source_vertex => Present });
     let mut vertex_data = Some(vertices);
     let mut edge_data = Some(edges);
 
@@ -312,6 +317,10 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
     let monitor = TraceMonitor::new_panic_on_error();
     monitor.attach(circuit, "monitor");
 
+    let profile_path = dataset.path().join("profile");
+    let _ = std::fs::remove_dir_all(&profile_path);
+    std::fs::create_dir_all(&profile_path).expect("failed to create directory for profile");
+
     let mut metadata = HashMap::<_, String>::new();
     let mut steps = 0;
 
@@ -340,7 +349,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
             });
 
             std::fs::write(
-                dataset.path().join(format!("path.{}.dot", steps)),
+                profile_path.join(format!("path.{}.dot", steps)),
                 graph.to_dot(),
             )
             .unwrap();

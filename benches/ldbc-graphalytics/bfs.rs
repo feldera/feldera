@@ -5,14 +5,16 @@
 //! [2.3.1]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.1
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
-use crate::data::{Distance, DistanceSet, Edges, Node, Vertices};
+use crate::data::{Distance, DistanceSet, EdgeMap, Edges, Node, VertexSet, Vertices, Weight};
 use dbsp::{
+    algebra::HasOne,
     operator::{recursive::RecursiveStreams, FilterMap},
     time::NestedTimestamp32,
+    trace::{Batch, BatchReader, Builder, Cursor},
     Circuit, Stream,
 };
 
-type Distances<P> = Stream<Circuit<P>, DistanceSet>;
+type Distances<P> = Stream<Circuit<P>, DistanceSet<Weight>>;
 
 // TODO: This straight up won't work on the quantities of data required by the
 //       higher scale factor benchmarks, there's simply too much data. We'll
@@ -23,8 +25,45 @@ where
     P: Clone + 'static,
     Distances<Circuit<P>>: RecursiveStreams<Circuit<Circuit<P>>, Output = Distances<P>>,
 {
+    let vertices = vertices.apply(|vertices| {
+        let mut builder = <VertexSet<Weight> as Batch>::Builder::with_capacity((), vertices.len());
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            builder.push((*cursor.key(), (), Weight::one()));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+    let edges = edges.apply(|edges| {
+        let mut builder = <EdgeMap<Weight> as Batch>::Builder::with_capacity((), edges.len());
+
+        let mut cursor = edges.cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                builder.push((*cursor.key(), *cursor.val(), Weight::one()));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
+
     // Initialize the roots to have a distance of zero
-    let root_nodes = roots.index_with_generic::<DistanceSet, _>(|&root| ((root, 0), ()));
+    let root_nodes = roots.apply(|vertices| {
+        let mut builder =
+            <DistanceSet<Weight> as Batch>::Builder::with_capacity((), vertices.len());
+
+        let mut cursor = vertices.cursor();
+        while cursor.key_valid() {
+            builder.push(((*cursor.key(), 0), (), Weight::one()));
+            cursor.step_key();
+        }
+
+        builder.done()
+    });
 
     let distances = root_nodes
         .circuit()
@@ -38,7 +77,7 @@ where
             let distances = nodes
                 .index::<Node, Distance>()
                 // Iterate over each edge within the graph, increasing the distance on each step
-                .join::<NestedTimestamp32, _, _, DistanceSet>(&edges, |_, &dist, &dest| {
+                .join::<NestedTimestamp32, _, _, DistanceSet<Weight>>(&edges, |_, &dist, &dest| {
                     (dest, dist + 1)
                 })
                 // Add in the root nodes
@@ -63,7 +102,10 @@ where
 }
 
 // FIXME: Replace with a dedicated antijoin
-fn antijoin<P>(vertices: &Vertices<P>, reachable_nodes: &Vertices<P>) -> Vertices<P>
+fn antijoin<P>(
+    vertices: &Vertices<P, Weight>,
+    reachable_nodes: &Vertices<P, Weight>,
+) -> Vertices<P, Weight>
 where
     P: Clone + 'static,
 {
