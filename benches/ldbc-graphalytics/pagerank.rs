@@ -141,31 +141,13 @@ where
             .map(|&(node, _)| node),
     );
 
-    let edge_weights = edges.shard().apply(|edges| {
-        let mut builder =
-            <OrdIndexedZSet<Node, Node, Rank> as Batch>::Builder::with_capacity((), edges.len());
-
-        let mut cursor = edges.cursor();
-        while cursor.key_valid() {
-            let src = *cursor.key();
-            while cursor.val_valid() {
-                let dest = *cursor.val();
-                let weight = Rank::new(cursor.weight() as f64);
-                builder.push(((src, dest), weight));
-                cursor.step_val();
-            }
-            cursor.step_key();
-        }
-
-        builder.done()
-    });
-
     let weights = vertices
         .circuit()
         .iterate_with_condition(|scope| {
             let initial_weights = initial_weights.delta0(scope);
+
+            let edges = edges.delta0(scope).integrate();
             let teleport = teleport.delta0(scope).integrate();
-            let edge_weights = edge_weights.delta0(scope).integrate();
             let dangling_nodes = dangling_nodes.delta0(scope).integrate();
             let outgoing_edge_counts = outgoing_edge_counts.delta0(scope).integrate();
             let damped_div_total_vertices = damped_div_total_vertices.delta0(scope).integrate();
@@ -197,7 +179,7 @@ where
                 // (214 seconds out of 221 seconds, for example) is spent here, most of which
                 // is spent consolidating the join's outputs
                 weight_per_edge
-                    .stream_join::<_, _, Weights>(&edge_weights, |_, _, &dest| dest)
+                    .stream_join::<_, _, Weights>(&edges, |_, _, &dest| dest)
                     .apply_owned(move |mut importance| {
                         // TODO: Try using the `std::simd` api
                         for weight in importance.layer.diffs_mut() {

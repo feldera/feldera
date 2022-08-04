@@ -1,9 +1,20 @@
-use crate::algebra::HasOne;
+use crate::algebra::{HasOne, HasZero, MulByRef};
+use deepsize::DeepSizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 /// A zero-sized weight that indicates a value is present
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Present;
+
+impl HasZero for Present {
+    fn zero() -> Self {
+        todo!()
+    }
+
+    fn is_zero(&self) -> bool {
+        false
+    }
+}
 
 impl HasOne for Present {
     fn one() -> Self {
@@ -11,26 +22,25 @@ impl HasOne for Present {
     }
 }
 
-impl Add for Present {
-    type Output = Self;
-
-    fn add(self, _rhs: Self) -> Self::Output {
-        Self
+impl DeepSizeOf for Present {
+    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
+        0
     }
 }
 
-impl Add<&Present> for Present {
-    type Output = Self;
+impl<T> Add<T> for Present {
+    type Output = T;
 
-    fn add(self, _rhs: &Self) -> Self::Output {
-        Self
+    #[inline]
+    fn add(self, rhs: T) -> Self::Output {
+        rhs
     }
 }
 
-impl<'a> Add<&'a Present> for &'a Present {
+impl Add<&Present> for &Present {
     type Output = Present;
 
-    fn add(self, _rhs: Self) -> Self::Output {
+    fn add(self, _rhs: &Present) -> Self::Output {
         Present
     }
 }
@@ -43,35 +53,12 @@ impl AddAssign<&'_ Present> for Present {
     fn add_assign(&mut self, _rhs: &Self) {}
 }
 
-impl Sub for Present {
-    type Output = Self;
+impl<T> Sub<T> for Present {
+    type Output = T;
 
-    fn sub(self, _rhs: Self) -> Self::Output {
-        Self
-    }
-}
-
-impl Sub<&Present> for Present {
-    type Output = Self;
-
-    fn sub(self, _rhs: &Self) -> Self::Output {
-        Self
-    }
-}
-
-impl Sub<Present> for &Present {
-    type Output = Present;
-
-    fn sub(self, _rhs: Present) -> Self::Output {
-        Present
-    }
-}
-
-impl<'a> Sub<&'a Present> for &'a Present {
-    type Output = Present;
-
-    fn sub(self, _rhs: Self) -> Self::Output {
-        Present
+    #[inline]
+    fn sub(self, rhs: T) -> Self::Output {
+        rhs
     }
 }
 
@@ -83,35 +70,12 @@ impl SubAssign<&'_ Present> for Present {
     fn sub_assign(&mut self, _rhs: &Self) {}
 }
 
-impl Mul for Present {
-    type Output = Self;
+impl<T> Mul<T> for Present {
+    type Output = T;
 
-    fn mul(self, _rhs: Self) -> Self::Output {
-        Self
-    }
-}
-
-impl Mul<&Present> for Present {
-    type Output = Self;
-
-    fn mul(self, _rhs: &Self) -> Self::Output {
-        Self
-    }
-}
-
-impl<'a> Mul<&'a Present> for &'a Present {
-    type Output = Present;
-
-    fn mul(self, _rhs: Self) -> Self::Output {
-        Present
-    }
-}
-
-impl Mul<Present> for &Present {
-    type Output = Present;
-
-    fn mul(self, _rhs: Present) -> Self::Output {
-        Present
+    #[inline]
+    fn mul(self, rhs: T) -> Self::Output {
+        rhs
     }
 }
 
@@ -121,4 +85,16 @@ impl MulAssign for Present {
 
 impl MulAssign<&'_ Present> for Present {
     fn mul_assign(&mut self, _rhs: &Self) {}
+}
+
+impl<T> MulByRef<Present> for T
+where
+    T: Clone,
+{
+    type Output = T;
+
+    #[inline]
+    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
+        self.clone()
+    }
 }

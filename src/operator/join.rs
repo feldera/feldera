@@ -9,8 +9,8 @@ use crate::{
     lattice::Lattice,
     time::Timestamp,
     trace::{
-        cursor::Cursor as TraceCursor, ord::OrdValSpine, Batch, BatchReader, Batcher, Trace,
-        TraceReader,
+        cursor::Cursor as TraceCursor, ord::OrdValSpine, Batch, BatchReader, Batcher, Builder,
+        Trace, TraceReader,
     },
 };
 use deepsize::DeepSizeOf;
@@ -52,13 +52,13 @@ where
         f: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: Batch<Time = (), R = Z::R> + Clone + Send + 'static,
+        I1: Batch<Time = ()> + Clone + Send + 'static,
         I1::Key: Ord + Hash + Clone,
         I1::Val: Ord + Clone,
-        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
+        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
         I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
-        Z::R: MulByRef<Output = Z::R>,
+        I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -71,13 +71,13 @@ where
         f: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: Batch<Time = (), R = Z::R> + Clone + Send + 'static,
+        I1: Batch<Time = ()> + Clone + Send + 'static,
         I1::Key: Ord + Hash + Clone,
         I1::Val: Ord + Clone,
-        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
+        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
         I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
-        Z::R: MulByRef<Output = Z::R>,
+        I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -278,12 +278,12 @@ where
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<F, I1, I2, Z>
 where
-    I1: BatchReader<Time = (), R = Z::R> + 'static,
+    I1: BatchReader<Time = ()> + 'static,
     I1::Key: Ord,
-    I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
+    I1::R: MulByRef<I2::R, Output = Z::R>,
+    I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
-    Z::R: MulByRef<Output = Z::R>,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
@@ -357,19 +357,19 @@ where
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<F, I1, I2, Z>
 where
-    I1: BatchReader<Time = (), R = Z::R> + 'static,
+    I1: BatchReader<Time = ()> + 'static,
     I1::Key: Ord,
-    I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
+    I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
-    Z::R: MulByRef<Output = Z::R>,
+    I1::R: MulByRef<I2::R, Output = Z::R>,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
         let mut cursor2 = i2.cursor();
 
         // Choose capacity heuristically.
-        let mut batch = Vec::with_capacity(min(i1.len(), i2.len()));
+        let mut builder = Z::Builder::with_capacity((), min(i1.len(), i2.len()));
 
         while cursor1.key_valid() && cursor2.key_valid() {
             match cursor1.key().cmp(cursor2.key()) {
@@ -383,7 +383,7 @@ where
                             let w2 = cursor2.weight();
                             let v2 = cursor2.val();
 
-                            batch.push((
+                            builder.push((
                                 Z::item_from((self.join_func)(cursor1.key(), v1, v2), ()),
                                 w1.mul_by_ref(&w2),
                             ));
@@ -400,7 +400,7 @@ where
             }
         }
 
-        Z::from_tuples((), batch)
+        builder.done()
     }
 }
 
