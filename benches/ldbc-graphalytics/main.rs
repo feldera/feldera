@@ -5,7 +5,7 @@ mod pagerank;
 use crate::{
     data::{
         list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node,
-        NoopResults, PageRankResults, RankMap,
+        NoopResults, PageRankResults, RankMap, Weight,
     },
     pagerank::PageRankKind,
 };
@@ -77,21 +77,26 @@ fn main() {
     let start = Instant::now();
 
     let (properties, edges, vertices, _) = dataset.load::<NoopResults>().unwrap();
-    let data_loaded = (edges.len() as u64 * size_of::<Node>() as u64 * 2)
-        + (vertices.len() as u64 * size_of::<Node>() as u64);
-
-    let mut root_data = Some(zset_set! { properties.source_vertex });
-    let mut vertex_data = Some(vertices);
-    let mut edge_data = Some(edges);
-
     let elapsed = start.elapsed();
-    println!(
-        "finished in {elapsed:#?}, loaded {} of data",
-        HumanBytes(data_loaded),
-    );
+
+    // Calculate the amount of data that we've loaded in, including weights
+    let data_loaded = {
+        let node = size_of::<Node>() as u64;
+        let weight = size_of::<Weight>() as u64;
+        let edges = edges.len() as u64 * (!properties.directed as u64 + 1);
+        let vertices = vertices.len() as u64;
+
+        let vertex_bytes = (vertices * node) + (vertices * weight);
+        let edge_bytes = (edges * node * 2) + (edges * weight);
+        let root_bytes = node + weight;
+
+        vertex_bytes + edge_bytes + root_bytes
+    };
 
     println!(
-        "using dataset {} which is {} graph with {} vertices and {} edges",
+        "finished in {elapsed:#?}, loaded {} of data\n\
+         using dataset {} which is {} graph with {} vertices and {} edges",
+        HumanBytes(data_loaded),
         dataset.name,
         if properties.directed {
             "a directed"
@@ -101,6 +106,11 @@ fn main() {
         properties.vertices,
         properties.edges,
     );
+
+    let mut root_data = Some(zset_set! { properties.source_vertex });
+    let mut vertex_data = Some(vertices);
+    let mut edge_data = Some(edges);
+
     Runtime::run(threads.get(), move || {
         if Runtime::worker_index() == 0 {
             print!(
@@ -191,15 +201,39 @@ fn main() {
             let elapsed = start.elapsed();
             println!("finished in {elapsed:#?}");
 
-            // TODO: Is it correct to multiply edges by two for undirected graphs?
-            let total_edges = properties.edges; // * (!properties.directed as u64 + 1);
+            // TODO: Generalize this some more <https://stackoverflow.com/a/64166/9885253>
+            #[cfg(windows)]
+            {
+                use winapi::um::{
+                    processthreadsapi::GetCurrentProcess,
+                    psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
+                };
+                use std::mem::MaybeUninit;
+
+                let mut info = MaybeUninit::<PROCESS_MEMORY_COUNTERS>::uninit();
+                let status = unsafe {
+                    GetProcessMemoryInfo(
+                        GetCurrentProcess(),
+                        info.as_mut_ptr(),
+                        size_of::<PROCESS_MEMORY_COUNTERS>() as _,
+                    )
+                };
+
+                if status != 0 {
+                    let info = unsafe { info.assume_init() };
+                    println!(
+                        "peak memory usage: {}",
+                        HumanBytes(info.PeakWorkingSetSize as u64),
+                    );
+                }
+            }
 
             // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
-            let eps = total_edges as f64 / elapsed.as_secs_f64();
+            let eps = properties.edges as f64 / elapsed.as_secs_f64();
             let keps = eps / 1000.0;
             println!("achieved {keps:.02} kEPS ({eps:.02} EPS)");
 
-            let elements = total_edges + properties.vertices;
+            let elements = properties.edges + properties.vertices;
             let evps = elements as f64 / elapsed.as_secs_f64();
             let kevps = evps / 1000.0;
             println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");

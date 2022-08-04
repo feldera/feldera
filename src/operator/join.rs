@@ -45,6 +45,7 @@ where
     /// * `I1` - batch type in the first input stream.
     /// * `I2` - batch type in the second input stream.
     /// * `Z` - output Z-set type.
+    // TODO: Allow taking two different `R` types for each collection
     pub fn stream_join<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
@@ -62,6 +63,25 @@ where
     {
         self.circuit()
             .add_binary_operator(Join::new(f), &self.shard(), &other.shard())
+    }
+
+    pub fn monotonic_stream_join<F, I2, Z>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        f: F,
+    ) -> Stream<Circuit<P>, Z>
+    where
+        I1: Batch<Time = (), R = Z::R> + Clone + Send + 'static,
+        I1::Key: Ord + Hash + Clone,
+        I1::Val: Ord + Clone,
+        I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
+        I2::Val: Ord + Clone,
+        Z: Clone + ZSet + 'static,
+        Z::R: MulByRef,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
+    {
+        self.circuit()
+            .add_binary_operator(MonotonicJoin::new(f), &self.shard(), &other.shard())
     }
 
     fn stream_join_inner<F, I2, Z>(
@@ -256,6 +276,85 @@ where
 }
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<F, I1, I2, Z>
+where
+    I1: BatchReader<Time = (), R = Z::R> + 'static,
+    I1::Key: Ord,
+    I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
+    F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
+    Z: ZSet + 'static,
+    Z::R: MulByRef,
+{
+    fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
+        let mut cursor1 = i1.cursor();
+        let mut cursor2 = i2.cursor();
+
+        // Choose capacity heuristically.
+        let mut batch = Vec::with_capacity(min(i1.len(), i2.len()));
+
+        while cursor1.key_valid() && cursor2.key_valid() {
+            match cursor1.key().cmp(cursor2.key()) {
+                Ordering::Less => cursor1.seek_key(cursor2.key()),
+                Ordering::Greater => cursor2.seek_key(cursor1.key()),
+                Ordering::Equal => {
+                    while cursor1.val_valid() {
+                        let w1 = cursor1.weight();
+                        let v1 = cursor1.val();
+                        while cursor2.val_valid() {
+                            let w2 = cursor2.weight();
+                            let v2 = cursor2.val();
+
+                            batch.push((
+                                ((self.join_func)(cursor1.key(), v1, v2), ()),
+                                w1.mul_by_ref(&w2),
+                            ));
+                            cursor2.step_val();
+                        }
+
+                        cursor2.rewind_vals();
+                        cursor1.step_val();
+                    }
+
+                    cursor1.step_key();
+                    cursor2.step_key();
+                }
+            }
+        }
+
+        Z::from_tuples((), batch)
+    }
+}
+
+pub struct MonotonicJoin<F, I1, I2, Z> {
+    join_func: F,
+    _types: PhantomData<(I1, I2, Z)>,
+}
+
+impl<F, I1, I2, Z> MonotonicJoin<F, I1, I2, Z> {
+    pub fn new(join_func: F) -> Self {
+        Self {
+            join_func,
+            _types: PhantomData,
+        }
+    }
+}
+
+impl<F, I1, I2, Z> Operator for MonotonicJoin<F, I1, I2, Z>
+where
+    I1: 'static,
+    I2: 'static,
+    F: 'static,
+    Z: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("MonotonicJoin")
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<F, I1, I2, Z>
 where
     I1: BatchReader<Time = (), R = Z::R> + 'static,
     I1::Key: Ord,

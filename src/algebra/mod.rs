@@ -160,14 +160,14 @@ where
 }
 
 /// Like the Mul trait, but with arguments by reference
-pub trait MulByRef {
-    fn mul_by_ref(&self, other: &Self) -> Self;
+pub trait MulByRef<Rhs = Self> {
+    fn mul_by_ref(&self, other: &Rhs) -> Self;
 }
 
 /// Implementation of MulByRef for types that already have Mul.
-impl<T> MulByRef for T
+impl<T> MulByRef<T> for T
 where
-    for<'a> &'a T: Mul<Output = T>,
+    for<'a> &'a T: Mul<Output = Self>,
 {
     #[inline]
     fn mul_by_ref(&self, other: &Self) -> Self {

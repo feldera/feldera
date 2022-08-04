@@ -79,8 +79,7 @@ pub(crate) fn list_downloaded_benchmarks() {
 
                     let properties = Properties::from_file(&name, properties_file);
                     let vertex_bytes = properties.vertices * size_of::<Node>() as u64;
-                    let total_edges = properties.edges; // * (!properties.directed as u64 + 1);
-                    let edge_bytes = total_edges * size_of::<Node>() as u64 * 2;
+                    let edge_bytes = properties.edges * size_of::<Node>() as u64 * 2;
 
                     datasets.push((name, properties.scale(), vertex_bytes, edge_bytes));
                     break;

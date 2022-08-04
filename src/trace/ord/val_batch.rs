@@ -16,6 +16,7 @@ use deepsize::DeepSizeOf;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::{Debug, Display, Formatter},
+    ops::AddAssign,
 };
 use timely::progress::Antichain;
 
@@ -45,7 +46,7 @@ where
     K: Ord + Clone + Display,
     V: Ord + Clone + Display + 'static,
     T: Lattice + Clone + Ord + Display + Debug + 'static,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display + 'static,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset + 'static,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,

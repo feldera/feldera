@@ -27,6 +27,14 @@ pub struct OrderedColumnLeaf<K, R> {
     diffs: Vec<R>,
 }
 
+impl<K, R> OrderedColumnLeaf<K, R> {
+    #[inline]
+    #[doc(hidden)]
+    pub fn diffs_mut(&mut self) -> &mut [R] {
+        &mut self.diffs
+    }
+}
+
 impl<K, R> Trie for OrderedColumnLeaf<K, R>
 where
     K: Ord + Clone,
