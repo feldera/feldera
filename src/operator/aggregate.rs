@@ -215,12 +215,12 @@ where
             cursor.values(&mut vals);
             // Skip keys that only contain values with weight zero.
             if !vals.is_empty() {
-                elements.push((((self.agg_func)(cursor.key(), &mut vals), ()), Z::R::one()));
+                elements.push(((self.agg_func)(cursor.key(), &mut vals), Z::R::one()));
             }
             vals.clear();
             cursor.step_key();
         }
-        O::from_tuples((), elements)
+        O::from_keys((), elements)
     }
 }
 
@@ -293,14 +293,14 @@ where
                 integral_cursor.values(&mut vals);
                 // Skip keys that only contain values with weight 0.
                 if !vals.is_empty() {
-                    result.push((((self.agg_func)(key, &mut vals), ()), weight.clone()));
+                    result.push(((self.agg_func)(key, &mut vals), weight.clone()));
                 }
                 vals.clear();
             }
             delta_cursor.step_key();
         }
 
-        O::from_tuples((), result)
+        O::from_keys((), result)
     }
 }
 

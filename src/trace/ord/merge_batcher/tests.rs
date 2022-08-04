@@ -147,8 +147,7 @@ fn count_tuples() {
 
     #[allow(clippy::type_complexity)]
     let batcher: MergeBatcher<
-        usize,
-        usize,
+        (usize, usize),
         u32,
         isize,
         OrdValBatch<usize, usize, u32, isize, usize>,

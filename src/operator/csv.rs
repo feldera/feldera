@@ -81,10 +81,10 @@ where
             let data: Vec<_> = self
                 .reader
                 .deserialize()
-                .map(|x| ((x.unwrap(), ()), W::one()))
+                .map(|x| (x.unwrap(), W::one()))
                 .collect();
 
-            C::from_tuples((), data)
+            C::from_keys((), data)
         } else {
             C::zero()
         };

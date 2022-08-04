@@ -139,7 +139,7 @@ where
             let (k, v) = cursor.key().clone();
             // TODO: pass key (and value?) by reference
             let w = cursor.weight();
-            builder.push((k, v, w));
+            builder.push((CO::item_from(k, v), w));
             cursor.step_key();
         }
         builder.done()
@@ -209,7 +209,7 @@ where
             let (k, v) = (self.index_func)(cursor.key());
             // TODO: pass key (and value?) by reference
             let w = cursor.weight();
-            tuples.push(((k, v), w));
+            tuples.push((CO::item_from(k, v), w));
             cursor.step_key();
         }
 

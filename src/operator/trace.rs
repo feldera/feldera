@@ -44,7 +44,7 @@ where
         while cursor.val_valid() {
             let val = cursor.val().clone();
             let w = cursor.weight();
-            builder.push((cursor.key().clone(), val, w.clone()));
+            builder.push((BO::item_from(cursor.key().clone(), val), w.clone()));
             cursor.step_val();
         }
         cursor.step_key();

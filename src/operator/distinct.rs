@@ -231,11 +231,11 @@ where
             if old_weight.le0() {
                 // Weight changes from non-positive to positive.
                 if new_weight.ge0() && !new_weight.is_zero() {
-                    builder.push((v.clone(), (), HasOne::one()));
+                    builder.push((Z::item_from(v.clone(), ()), HasOne::one()));
                 }
             } else if new_weight.le0() {
                 // Weight changes from positive to non-positive.
-                builder.push((v.clone(), (), Z::R::one().neg()));
+                builder.push((Z::item_from(v.clone(), ()), Z::R::one().neg()));
             }
             delta_cursor.step_key();
         }
@@ -347,7 +347,7 @@ where
         _trace: &'s T,
         value: &Z::Key,
         weight: Z::R,
-        output: &mut Vec<((Z::Key, ()), Z::R)>,
+        output: &mut Vec<(Z::Item, Z::R)>,
     ) {
         //eprintln!("value: {:?}, weight: {:?}", value, weight);
         trace_cursor.seek_key(value);
@@ -397,7 +397,7 @@ where
 
             // Update output.
             if delta_old != delta_new {
-                output.push(((value.clone(), ()), delta_new + delta_old.neg()));
+                output.push((Z::item_from(value.clone(), ()), delta_new + delta_old.neg()));
             }
 
             // Record next_ts in `self.future_updates`.
@@ -406,7 +406,7 @@ where
                 self.future_updates[idx].insert(value.clone());
             }
         } else if weight.ge0() && !weight.is_zero() {
-            output.push(((value.clone(), ()), HasOne::one()));
+            output.push((Z::item_from(value.clone(), ()), HasOne::one()));
         }
     }
 }

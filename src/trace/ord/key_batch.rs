@@ -94,9 +94,18 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Batcher = MergeBatcher<K, (), T, R, Self>;
+    type Item = K;
+    type Batcher = MergeBatcher<K, T, R, Self>;
     type Builder = OrdKeyBuilder<K, T, R, O>;
     type Merger = OrdKeyMerger<K, T, R, O>;
+
+    fn item_from(key: K, _val: ()) -> Self::Item {
+        key
+    }
+
+    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
+        Self::from_tuples(time, keys)
+    }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
         OrdKeyMerger::new(self, other)
@@ -393,7 +402,7 @@ where
     builder: OrderedBuilder<K, OrderedLeafBuilder<T, R>, O>,
 }
 
-impl<K, T, R, O> Builder<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
+impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
 where
     K: Ord + Clone + 'static,
     T: Lattice + Timestamp + Ord + Clone + 'static,
@@ -425,7 +434,7 @@ where
     }
 
     #[inline]
-    fn push(&mut self, (key, _, diff): (K, (), R)) {
+    fn push(&mut self, (key, diff): (K, R)) {
         self.builder.push_tuple((key, (self.time.clone(), diff)));
     }
 

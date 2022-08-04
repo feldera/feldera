@@ -214,8 +214,7 @@ where
             let batch_index = (hash32(cursor.key()) as usize) % nshards;
             while cursor.val_valid() {
                 builders[batch_index].push((
-                    cursor.key().clone(),
-                    cursor.val().clone(),
+                    OB::item_from(cursor.key().clone(), cursor.val().clone()),
                     cursor.weight(),
                 ));
                 cursor.step_val();

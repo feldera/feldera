@@ -245,9 +245,18 @@ where
     K: Ord + Clone + 'static,
     R: MonoidValue,
 {
-    type Batcher = MergeBatcher<K, (), (), R, Self>;
+    type Item = K;
+    type Batcher = MergeBatcher<K, (), R, Self>;
     type Builder = OrdZSetBuilder<K, R>;
     type Merger = OrdZSetMerger<K, R>;
+
+    fn item_from(key: K, _val: ()) -> Self::Item {
+        key
+    }
+
+    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
+        Self::from_tuples(time, keys)
+    }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
         OrdZSetMerger::new(self, other)
@@ -398,7 +407,7 @@ where
     builder: OrderedColumnLeafBuilder<K, R>,
 }
 
-impl<K, R> Builder<K, (), (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
+impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
 where
     K: Ord + Clone + 'static,
     R: MonoidValue,
@@ -423,7 +432,7 @@ where
     }
 
     #[inline]
-    fn push(&mut self, (key, (), diff): (K, (), R)) {
+    fn push(&mut self, (key, diff): (K, R)) {
         self.builder.push_tuple((key, diff));
     }
 

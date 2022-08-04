@@ -136,7 +136,7 @@ where
         let mut cursor = vertices.cursor();
         while cursor.key_valid() {
             let node = *cursor.key();
-            output.push((((node, initial_weight), ()), 1));
+            output.push(((node, initial_weight), 1));
             cursor.step_key();
         }
 
@@ -149,7 +149,7 @@ where
     let total_vertices = vertices.apply(|vertices| {
         let total_vertices = vertices.layer.keys();
         let mut builder = <OrdIndexedZSet<_, _, _> as Batch>::Builder::with_capacity((), 1);
-        builder.push(((), total_vertices, 1));
+        builder.push((((), total_vertices), 1));
         builder.done()
     });
 
@@ -174,7 +174,7 @@ where
                 cursor.step_val();
             }
 
-            output.push((node, total_outputs, 1));
+            output.push(((node, total_outputs), 1));
             cursor.step_key();
         }
 
@@ -199,7 +199,7 @@ where
             let mut cursor = edges.cursor();
             while cursor.key_valid() {
                 while cursor.val_valid() {
-                    output.push(((*cursor.val(), ()), 1));
+                    output.push((*cursor.val(), 1));
                     cursor.step_val();
                 }
                 cursor.step_key();
@@ -485,7 +485,7 @@ where
         let mut cursor = vertices.cursor();
         while cursor.key_valid() {
             let node = *cursor.key();
-            builder.push((node, (), Rank::one()));
+            builder.push((node, Rank::one()));
             cursor.step_key();
         }
 
@@ -503,7 +503,7 @@ where
         let mut cursor = vertices.cursor();
         while cursor.key_valid() {
             let node = *cursor.key();
-            builder.push(((), node, weight));
+            builder.push((((), node), weight));
             cursor.step_key();
         }
 
@@ -522,7 +522,7 @@ where
         let mut cursor = vertices.cursor();
         while cursor.key_valid() {
             let node = *cursor.key();
-            builder.push((node, (), initial_weight));
+            builder.push((node, initial_weight));
             cursor.step_key();
         }
 
@@ -540,7 +540,7 @@ where
         let mut cursor = vertices.cursor();
         while cursor.key_valid() {
             let node = *cursor.key();
-            builder.push((node, (), teleport));
+            builder.push((node, teleport));
             cursor.step_key();
         }
 
@@ -562,7 +562,7 @@ where
                 cursor.step_val();
             }
 
-            builder.push((node, (), Rank::new(total_outputs as f64)));
+            builder.push((node, Rank::new(total_outputs as f64)));
             cursor.step_key();
         }
 
@@ -587,7 +587,7 @@ where
             while cursor.val_valid() {
                 let dest = *cursor.val();
                 let weight = Rank::new(cursor.weight() as f64);
-                builder.push((src, dest, weight));
+                builder.push(((src, dest), weight));
                 cursor.step_val();
             }
             cursor.step_key();
@@ -676,7 +676,7 @@ where
         let mut batch = Vec::with_capacity(weights.len());
         let mut weights = weights.cursor();
         while weights.key_valid() {
-            batch.push((((*weights.key(), weights.weight()), ()), 1));
+            batch.push(((*weights.key(), weights.weight()), 1));
             weights.step_key();
         }
 
@@ -710,7 +710,7 @@ where
                     debug_assert!(lhs.val_valid() && rhs.val_valid());
 
                     let (lhs_weight, rhs_weight) = (lhs.weight(), rhs.weight());
-                    builder.push((*lhs.key(), (), lhs_weight / rhs_weight));
+                    builder.push((*lhs.key(), lhs_weight / rhs_weight));
 
                     lhs.step_key();
                     rhs.step_key();

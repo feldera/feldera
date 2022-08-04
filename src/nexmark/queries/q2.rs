@@ -39,7 +39,7 @@ mod tests {
         model::Bid,
         NexmarkSource,
     };
-    use crate::{OrdZSet, trace::Batch};
+    use crate::{trace::Batch, OrdZSet};
     use rand::rngs::mock::StepRng;
     use std::sync::mpsc;
 
@@ -90,11 +90,11 @@ mod tests {
                 // id and price.
                 assert_eq!(
                     e,
-                    &OrdZSet::from_tuples(
+                    &OrdZSet::from_keys(
                         (),
                         vec![
-                            (((AUCTION_ID_MODULO, 99), ()), 1),
-                            (((5 * AUCTION_ID_MODULO, 125), ()), 1),
+                            ((AUCTION_ID_MODULO, 99), 1),
+                            ((5 * AUCTION_ID_MODULO, 125), 1),
                         ]
                     )
                 )

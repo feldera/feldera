@@ -12,7 +12,7 @@ pub fn q0(input: NexmarkStream) -> NexmarkStream {
 mod tests {
     use super::*;
     use crate::nexmark::tests::{generate_expected_zset_tuples, make_source_with_wallclock_times};
-    use crate::{Circuit, OrdZSet, trace::Batch};
+    use crate::{trace::Batch, Circuit, OrdZSet};
 
     #[test]
     fn test_q0() {

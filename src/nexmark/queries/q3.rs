@@ -72,7 +72,7 @@ mod tests {
         model::{Auction, Person},
         NexmarkSource,
     };
-    use crate::{Circuit, OrdZSet, trace::Batch};
+    use crate::{trace::Batch, Circuit, OrdZSet};
     use rand::rngs::mock::StepRng;
     use std::sync::mpsc;
 
@@ -138,30 +138,24 @@ mod tests {
             output.inspect(move |e| {
                 assert_eq!(
                     e,
-                    &OrdZSet::from_tuples(
+                    &OrdZSet::from_keys(
                         (),
                         vec![
                             (
                                 (
-                                    (
-                                        String::from("CA Seller"),
-                                        String::from("Phoenix"),
-                                        String::from("CA"),
-                                        999,
-                                    ),
-                                    ()
+                                    String::from("CA Seller"),
+                                    String::from("Phoenix"),
+                                    String::from("CA"),
+                                    999,
                                 ),
                                 1
                             ),
                             (
                                 (
-                                    (
-                                        String::from("ID Seller"),
-                                        String::from("Phoenix"),
-                                        String::from("ID"),
-                                        452,
-                                    ),
-                                    ()
+                                    String::from("ID Seller"),
+                                    String::from("Phoenix"),
+                                    String::from("ID"),
+                                    452,
                                 ),
                                 1
                             ),
