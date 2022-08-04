@@ -27,7 +27,7 @@ textwrap = "0.15.0"
 fxhash = "0.2"
 rand = { version = "0.8", optional = true }
 clap = { version = "3.2", optional = true, features = ["derive", "env"] }
-cached = { version = "0.37.0", optional = true }
+cached = { version = "0.38.0", optional = true }
 
 # TODO: eliminate dependency on timely-dataflow by cloning relevant
 # parts.
@@ -40,7 +40,7 @@ rand = "0.8.5"
 zstd = "0.10.0"
 anyhow = "1.0.57"
 rstest = "0.15"
-cached = "0.36"
+cached = "0.38.0"
 proptest = "1.0.0"
 criterion = "0.3.6"
 rand_xoshiro = "0.6.0"

@@ -5,7 +5,7 @@ use dbsp::{
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use deepsize::DeepSizeOf;
-use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use ordered_float::OrderedFloat;
 use std::{
     cmp::Reverse,
@@ -262,7 +262,7 @@ impl DataSet {
                         "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})",
                     )
                     .unwrap()
-                    .with_key("eta", |state| format!("{:.1}s", state.eta().as_secs_f64()))
+                    .with_key("eta", |state: &ProgressState, write: &mut dyn fmt::Write| write!(write, "{:.1}s", state.eta().as_secs_f64()).unwrap())
                     .progress_chars("#>-"),
                 );
 
