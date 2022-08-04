@@ -2,6 +2,8 @@
 //!
 //! CLI for running Nexmark benchmarks with DBSP.
 #![feature(is_some_with)]
+
+#[cfg(unix)]
 use libc::{getrusage, rusage, timeval, RUSAGE_THREAD};
 use std::{
     io::Error,
@@ -179,6 +181,12 @@ fn create_ascii_table() -> AsciiTable {
 // https://github.com/matklad/t-cmd/blob/master/src/main.rs Also CpuMonitor.java
 // in nexmark (binary that uses procfs to get cpu usage ever 100ms?)
 
+// TODO: Implement for non-unix platforms (mainly removing libc perf stuff)
+#[cfg(not(unix))]
+fn main() -> Result<()> {
+    Ok(())
+}
+
 #[cfg(unix)]
 fn main() -> Result<()> {
     let nexmark_config = NexmarkConfig::parse();
@@ -217,11 +225,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn duration_for_timeval(tv: timeval) -> Duration {
     Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1_000)
 }
 
 /// Returns the user CPU, system CPU and maxrss (in Kb) for the current thread.
+#[cfg(unix)]
 pub unsafe fn rusage_thread() -> (Duration, Duration, u64) {
     let mut ru: MaybeUninit<rusage> = MaybeUninit::uninit();
     let err_code = getrusage(RUSAGE_THREAD, ru.as_mut_ptr());

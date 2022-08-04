@@ -58,7 +58,7 @@ where
         I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
         I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
-        Z::R: MulByRef,
+        Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -77,7 +77,7 @@ where
         I2: Batch<Key = I1::Key, Time = (), R = Z::R> + Send + Clone + 'static,
         I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
-        Z::R: MulByRef,
+        Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -94,7 +94,7 @@ where
         I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + Clone + 'static,
         I1::Key: Ord,
         Z: Clone + ZSet + 'static,
-        Z::R: MulByRef,
+        Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -131,7 +131,7 @@ impl<I1> Stream<Circuit<()>, I1> {
         I2::Val: Ord + Clone,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
-        Z::R: MulByRef,
+        Z::R: MulByRef<Output = Z::R>,
     {
         let left = self.shard();
         let right = other.shard();
@@ -177,7 +177,7 @@ where
         Z: ZSet<R = I1::R>,                       /* + ::std::fmt::Display */
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
-        Z::R: MulByRef + Default,
+        Z::R: MulByRef<Output = Z::R> + Default,
         Z::Item: Default,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
     {
@@ -283,7 +283,7 @@ where
     I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
-    Z::R: MulByRef,
+    Z::R: MulByRef<Output = Z::R>,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
@@ -362,7 +362,7 @@ where
     I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
-    Z::R: MulByRef,
+    Z::R: MulByRef<Output = Z::R>,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
@@ -507,7 +507,7 @@ where
     Z: ZSet<R = I::R>, /* + ::std::fmt::Display */
     Z::Key: Clone + Default,
     Z::Batcher: DeepSizeOf,
-    Z::R: MulByRef + Default,
+    Z::R: MulByRef<Output = Z::R> + Default,
     Z::Item: Default,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
