@@ -270,7 +270,8 @@ fn main() -> Result<()> {
             outq.gather(0)
                 .inspect(|zs: &OrdZSet<_, _>| println!("outq: {}", zs.len()));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         let graph = monitor.visualize_circuit();
         fs::write(GALEN_GRAPH, graph.to_dot()).unwrap();

@@ -73,7 +73,8 @@ mod tests {
                 )
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         circuit.step().unwrap();
     }

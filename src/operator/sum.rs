@@ -168,7 +168,8 @@ mod test {
         let circuit = Circuit::build(move |circuit| {
             build_circuit(circuit);
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -183,7 +184,8 @@ mod test {
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -208,7 +210,8 @@ mod test {
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();

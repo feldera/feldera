@@ -45,7 +45,8 @@ where
     ///     // Compute pairwise sums of values in the stream; the output stream will contain zeros.
     ///     source1.plus(&source2).inspect(|n| assert_eq!(*n, 0));
     /// })
-    /// .unwrap();
+    /// .unwrap()
+    /// .0;
     ///
     /// # for _ in 0..5 {
     /// #     circuit.step().unwrap();
@@ -211,7 +212,8 @@ mod test {
             }));
             source1.plus(&source2).inspect(|n| assert_eq!(*n, 100));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -263,7 +265,8 @@ mod test {
             build_plus_circuit(circuit);
             build_minus_circuit(circuit);
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -284,7 +287,8 @@ mod test {
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -306,7 +310,8 @@ mod test {
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();
@@ -338,7 +343,8 @@ mod test {
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();

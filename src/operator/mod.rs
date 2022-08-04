@@ -6,7 +6,9 @@ pub mod communication;
 pub mod recursive;
 
 pub(crate) mod apply;
+mod input;
 pub(crate) mod inspect;
+pub(crate) mod upsert;
 
 mod aggregate;
 mod condition;
@@ -41,6 +43,7 @@ pub use distinct::Distinct;
 pub use filter_map::{FilterKeys, FilterMap, FilterVals, FlatMap, Map, MapKeys};
 pub use generator::{Generator, GeneratorNested};
 pub use index::Index;
+pub use input::{CollectionHandle, InputHandle};
 pub use inspect::Inspect;
 pub use join::Join;
 pub use join_range::StreamJoinRange;

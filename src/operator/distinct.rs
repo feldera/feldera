@@ -656,7 +656,8 @@ mod test {
                 })
                 .unwrap();
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..3 {
             circuit.step().unwrap();
@@ -737,7 +738,8 @@ mod test {
                 })
                 .unwrap();
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..3 {
             circuit.step().unwrap();

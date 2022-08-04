@@ -83,7 +83,8 @@ mod test {
                 .apply2(&source2, |x, y| *x + *y)
                 .inspect(|z| assert_eq!(*z, 0));
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         for _ in 0..3 {
             circuit.step().unwrap();

@@ -240,7 +240,7 @@ impl<P: Clone + 'static> Circuit<P> {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());
     ///     });
     /// })
-    /// .unwrap();
+    /// .unwrap().0;
     ///
     /// for _ in 0..3 {
     ///     root.step().unwrap();
@@ -347,7 +347,7 @@ mod test {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..8 {
             root.step().unwrap();
@@ -419,7 +419,7 @@ mod test {
                 assert_eq!(*ps, outputs2.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..8 {
             root.step().unwrap();

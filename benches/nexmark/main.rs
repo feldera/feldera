@@ -98,7 +98,7 @@ macro_rules! run_query {
 
         let circuit = nexmark_circuit!($q, $generator_config, fixedpoint_tx);
 
-        let root = Root::build(circuit).unwrap();
+        let root = Circuit::build(circuit).unwrap().0;
 
         let num_events_generated;
         let start = Instant::now();

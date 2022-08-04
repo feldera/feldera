@@ -270,7 +270,8 @@ mod tests {
                         }
                     });
             })
-            .unwrap();
+            .unwrap()
+            .0;
 
             for _ in 0..3 {
                 circuit.step().unwrap();

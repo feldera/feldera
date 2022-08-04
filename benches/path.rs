@@ -66,10 +66,7 @@ fn main() {
                 for layer in 0..5 {
                     for from in 0..LAYER {
                         for to in 0..LAYER {
-                            tuples.push((
-                                (from + (LAYER * layer), to + LAYER * (layer + 1)),
-                                1,
-                            ));
+                            tuples.push(((from + (LAYER * layer), to + LAYER * (layer + 1)), 1));
                         }
                     }
                 }
@@ -120,7 +117,8 @@ fn main() {
                 }
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         //let graph = monitor.visualize_circuit();
         //fs::write("path.dot", graph.to_dot()).unwrap();

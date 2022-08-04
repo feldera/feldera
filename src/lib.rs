@@ -1,6 +1,7 @@
 #![feature(generic_associated_types)]
 #![cfg_attr(feature = "with-nexmark", feature(is_some_with))]
 
+mod error;
 mod num_entries;
 mod ref_pair;
 mod shared_ref;
@@ -18,10 +19,14 @@ pub mod trace;
 #[cfg(feature = "with-nexmark")]
 pub mod nexmark;
 
+pub use error::Error;
 pub use num_entries::NumEntries;
 pub use ref_pair::RefPair;
 pub use shared_ref::SharedRef;
 pub use time::Timestamp;
 
-pub use circuit::{Circuit, CircuitHandle, Runtime, Stream};
+pub use circuit::{
+    Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
+};
+pub use operator::{CollectionHandle, InputHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};

@@ -100,7 +100,8 @@ mod tests {
                 )
             });
         })
-        .unwrap();
+        .unwrap()
+        .0;
 
         root.step().unwrap();
     }

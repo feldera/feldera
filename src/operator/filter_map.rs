@@ -767,7 +767,7 @@ mod test {
                 assert_eq!(*n, i_sqr_pos_indexed_output.next().unwrap());
             });
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..1 {
             circuit.step().unwrap();

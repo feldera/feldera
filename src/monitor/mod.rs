@@ -196,9 +196,9 @@ impl TraceMonitorInternal {
             });
         });
         circuit.register_scheduler_event_handler(handler_name, move |event| {
-            // The `ClockEnd` event can be triggered by `Root::drop()` while the thread
-            // is being terminated, at which point the lock may be poisoned.  Just ignore
-            // the event in that case.
+            // The `ClockEnd` event can be triggered by `CircuitHandle::drop()` while the
+            // thread is being terminated, at which point the lock may be
+            // poisoned.  Just ignore the event in that case.
             if let Ok(mut this) = this_clone.lock() {
                 let _ = this.scheduler_event(event).map_err(|e| {
                     (this.scheduler_error_handler)(event, &e);

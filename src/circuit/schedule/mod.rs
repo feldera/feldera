@@ -9,7 +9,7 @@ mod dynamic_scheduler;
 pub use dynamic_scheduler::DynamicScheduler;
 
 /// Scheduler errors.
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// `origin` node has more than one strong successors who insist on
     /// consuming its output by value (`OwnershipPreference::

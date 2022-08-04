@@ -251,7 +251,7 @@ mod test {
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..2 {
             circuit.step().unwrap();
@@ -284,7 +284,7 @@ mod test {
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
         })
-        .unwrap();
+        .unwrap().0;
 
         for _ in 0..2 {
             circuit.step().unwrap();
