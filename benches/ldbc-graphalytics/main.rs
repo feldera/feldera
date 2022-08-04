@@ -2,12 +2,9 @@ mod bfs;
 mod data;
 mod pagerank;
 
-use crate::{
-    data::{
-        list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node,
-        NoopResults, PageRankResults, RankMap, Weight,
-    },
-    pagerank::PageRankKind,
+use crate::data::{
+    list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node, NoopResults,
+    PageRankResults, Rank, RankMap, Weight,
 };
 use clap::Parser;
 use dbsp::{
@@ -54,9 +51,9 @@ fn main() {
             if threads.get() == 1 { "" } else { "s" },
         ),
 
-        Args::Pagerank { flavor, .. } => {
+        Args::Pagerank { .. } => {
             println!(
-                "running pagerank ({flavor}) with {threads} thread{}",
+                "running pagerank with {threads} thread{}",
                 if threads.get() == 1 { "" } else { "s" },
             );
         }
@@ -164,14 +161,12 @@ fn main() {
                         });
                 }
 
-                Args::Pagerank { flavor, .. } => {
+                Args::Pagerank {  .. } => {
                     pagerank::pagerank(
                         properties.pagerank_iters.unwrap(),
                         properties.pagerank_damping_factor.unwrap(),
-                        properties.directed,
                         vertices,
                         edges,
-                        flavor,
                     )
                     .gather(0)
                     .inspect(move |results| {
@@ -270,7 +265,7 @@ fn main() {
 
                                     // Sometimes the values are only different because of floating point
                                     // inaccuracies, e.g. 0.14776291666666666 vs. 0.1477629166666667
-                                    if (first.inner() - second.inner()).abs() > f64::EPSILON {
+                                    if (first - second).abs() > Rank::EPSILON {
                                         let (first, first_weight, second, second_weight) = if first_weight.is_positive()
                                             && second_weight.is_negative()
                                         {
@@ -369,9 +364,6 @@ enum Args {
     Pagerank {
         #[clap(flatten)]
         config: Config,
-
-        #[clap(long, value_enum, default_value = "diffed")]
-        flavor: PageRankKind,
     },
 
     /// List all available datasets
@@ -391,7 +383,7 @@ impl Args {
     pub(crate) fn config(self) -> Config {
         match self {
             Self::Bfs { config }
-            | Self::Pagerank { config, .. }
+            | Self::Pagerank { config }
             | Self::ListDownloaded { config }
             | Self::ListDatasets { config } => config,
         }

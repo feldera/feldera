@@ -44,7 +44,7 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<It::Item, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef,
+        I1::R: MulByRef<Output = I1::R>,
         I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
         I2::Key: Ord,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
@@ -76,7 +76,7 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef,
+        I1::R: MulByRef<Output = I1::R>,
         I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
         I2::Key: Ord,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
@@ -100,7 +100,7 @@ where
         I2: BatchReader<Time = (), R = O::R> + Clone + 'static,
         I2::Key: Ord,
         O: Batch<Time = ()> + Clone + 'static,
-        O::R: MulByRef,
+        O::R: MulByRef<Output = O::R>,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
         It: IntoIterator<Item = (O::Key, O::Val)> + 'static,
@@ -149,7 +149,7 @@ where
     I2: BatchReader<Time = (), R = O::R> + Clone + 'static,
     I2::Key: Ord,
     O: Batch<Time = ()> + 'static,
-    O::R: MulByRef,
+    O::R: MulByRef<Output = O::R>,
     RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
     JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
     It: IntoIterator<Item = (O::Key, O::Val)> + 'static,

@@ -33,7 +33,10 @@ where
     fn add(self, other: Self) -> Self {
         // intentional panic on overflow
         Self {
-            value: self.value.checked_add(&other.value).expect("overflow"),
+            value: self
+                .value
+                .checked_add(&other.value)
+                .unwrap_or_else(|| checked_int_overflow()),
         }
     }
 }
@@ -45,7 +48,10 @@ where
     fn add_by_ref(&self, other: &Self) -> Self {
         // intentional panic on overflow
         Self {
-            value: self.value.checked_add(&other.value).expect("overflow"),
+            value: self
+                .value
+                .checked_add(&other.value)
+                .unwrap_or_else(|| checked_int_overflow()),
         }
     }
 }
@@ -55,7 +61,10 @@ where
     T: CheckedAdd,
 {
     fn add_assign(&mut self, other: Self) {
-        self.value = self.value.checked_add(&other.value).expect("overflow")
+        self.value = self
+            .value
+            .checked_add(&other.value)
+            .unwrap_or_else(|| checked_int_overflow())
     }
 }
 
@@ -64,7 +73,10 @@ where
     T: CheckedAdd,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
-        self.value = self.value.checked_add(&other.value).expect("overflow")
+        self.value = self
+            .value
+            .checked_add(&other.value)
+            .unwrap_or_else(|| checked_int_overflow())
     }
 }
 
@@ -72,10 +84,15 @@ impl<T> MulByRef for CheckedInt<T>
 where
     T: CheckedMul,
 {
-    fn mul_by_ref(&self, rhs: &Self) -> Self {
+    type Output = Self;
+
+    fn mul_by_ref(&self, rhs: &Self) -> Self::Output {
         // intentional panic on overflow
         Self {
-            value: self.value.checked_mul(&rhs.value).expect("overflow"),
+            value: self
+                .value
+                .checked_mul(&rhs.value)
+                .unwrap_or_else(|| checked_int_overflow()),
         }
     }
 }
@@ -87,7 +104,10 @@ where
     fn neg_by_ref(&self) -> Self {
         Self {
             // intentional panic on overflow
-            value: self.value.checked_neg().expect("overflow"),
+            value: self
+                .value
+                .checked_neg()
+                .unwrap_or_else(|| checked_int_overflow()),
         }
     }
 }
@@ -101,7 +121,10 @@ where
     fn neg(self) -> Self {
         Self {
             // intentional panic on overflow
-            value: self.value.checked_neg().expect("overflow"),
+            value: self
+                .value
+                .checked_neg()
+                .unwrap_or_else(|| checked_int_overflow()),
         }
     }
 }
@@ -168,6 +191,12 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         self.value.fmt(f)
     }
+}
+
+#[cold]
+#[inline(never)]
+fn checked_int_overflow() -> ! {
+    panic!("an operation on a CheckedInt overflowed or underflowed")
 }
 
 #[cfg(test)]

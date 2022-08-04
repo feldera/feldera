@@ -9,14 +9,19 @@ use std::{
 
 #[macro_use]
 mod checked_int;
+mod floats;
+mod present;
+
 pub mod zset;
 
 pub use checked_int::CheckedInt;
+pub use floats::{F32, F64};
+pub use present::Present;
 pub use zset::{IndexedZSet, ZSet};
 
 /// A trait for types that have a zero value.
 ///
-/// This is simlar to the standard Zero trait, but that
+/// This is similar to the standard Zero trait, but that
 /// trait depends on Add and HasZero doesn't.
 pub trait HasZero {
     fn is_zero(&self) -> bool;
@@ -112,8 +117,8 @@ where
 }
 
 /// Like the Add trait, but with arguments by reference.
-pub trait AddByRef {
-    fn add_by_ref(&self, other: &Self) -> Self;
+pub trait AddByRef<Rhs = Self> {
+    fn add_by_ref(&self, other: &Rhs) -> Self;
 }
 
 /// Implementation of AddByRef for types that have an Add.
@@ -144,8 +149,8 @@ where
 }
 
 /// Like the AddAsssign trait, but with arguments by reference
-pub trait AddAssignByRef {
-    fn add_assign_by_ref(&mut self, other: &Self);
+pub trait AddAssignByRef<Rhs = Self> {
+    fn add_assign_by_ref(&mut self, other: &Rhs);
 }
 
 /// Implemenation of AddAssignByRef for types that already have `AddAssign<&T>`.
@@ -161,7 +166,9 @@ where
 
 /// Like the Mul trait, but with arguments by reference
 pub trait MulByRef<Rhs = Self> {
-    fn mul_by_ref(&self, other: &Rhs) -> Self;
+    type Output;
+
+    fn mul_by_ref(&self, other: &Rhs) -> Self::Output;
 }
 
 /// Implementation of MulByRef for types that already have Mul.
@@ -169,8 +176,10 @@ impl<T> MulByRef<T> for T
 where
     for<'a> &'a T: Mul<Output = Self>,
 {
+    type Output = Self;
+
     #[inline]
-    fn mul_by_ref(&self, other: &Self) -> Self {
+    fn mul_by_ref(&self, other: &Self) -> Self::Output {
         self.mul(other)
     }
 }

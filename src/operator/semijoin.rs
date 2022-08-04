@@ -46,10 +46,11 @@ where
         Pairs: Batch<Time = ()> + Data + Send,
         Pairs::Key: Hash + Ord + Clone,
         Pairs::Val: Ord + Clone,
-        Pairs::R: HasZero + MulByRef,
-        Keys: Batch<Key = Pairs::Key, Val = (), Time = (), R = Pairs::R> + Data + Send,
+        Keys: Batch<Key = Pairs::Key, Val = (), Time = ()> + Data + Send,
         // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
-        Out: ZSet<Key = (Pairs::Key, Pairs::Val), R = Pairs::R> + 'static,
+        Out: ZSet<Key = (Pairs::Key, Pairs::Val)> + 'static,
+        Out::R: HasZero,
+        Pairs::R: MulByRef<Keys::R, Output = Out::R>,
     {
         self.circuit()
             .cache_get_or_insert_with(
@@ -99,9 +100,10 @@ where
     Pairs: BatchReader<Time = ()> + 'static,
     Pairs::Key: Clone + Ord,
     Pairs::Val: Clone,
-    Pairs::R: HasZero + MulByRef,
-    Keys: BatchReader<Key = Pairs::Key, Val = (), Time = (), R = Pairs::R> + 'static,
-    Out: ZSet<Key = (Pairs::Key, Pairs::Val), R = Pairs::R> + 'static,
+    Keys: BatchReader<Key = Pairs::Key, Val = (), Time = ()> + 'static,
+    Out: ZSet<Key = (Pairs::Key, Pairs::Val)> + 'static,
+    Out::R: HasZero,
+    Pairs::R: MulByRef<Keys::R, Output = Out::R>,
 {
     fn eval(&mut self, pairs: &Pairs, keys: &Keys) -> Out {
         let mut pair_cursor = pairs.cursor();
