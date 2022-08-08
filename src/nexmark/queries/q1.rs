@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn test_q1() {
-        let source = make_source_with_wallclock_times(0..2, 10);
+        let (source, _) = make_source_with_wallclock_times(0..2, 10);
 
         let root = Root::build(move |circuit| {
             let input = circuit.add_source(source);

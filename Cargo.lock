@@ -64,6 +64,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c91f1f46651137be86f3a2b9a8359f9ab421d04d941c62b5982e1ca21113adf9"
 
 [[package]]
+name = "arrayvec"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd9fd44efafa8690358b7408d253adf110036b88f55672a933f01d616ad9b1b9"
+dependencies = [
+ "nodrop",
+]
+
+[[package]]
+name = "ascii_table"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75054ce561491263d7b80dc2f6f6c6f8cdfd0c7a7c17c5cf3b8117829fa72ae1"
+
+[[package]]
 name = "async-trait"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -526,6 +541,7 @@ name = "dbsp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ascii_table",
  "cached",
  "clap 3.2.16",
  "criterion",
@@ -538,6 +554,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "indicatif",
  "num",
+ "num-format",
  "once_cell",
  "ordered-float",
  "petgraph",
@@ -1141,6 +1158,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nodrop"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
+
+[[package]]
 name = "num"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1172,6 +1195,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ae39348c8bc5fbd7f40c727a9925f03517afd2ab27d46702108b6a7e5414c19"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "num-format"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bafe4179722c2894288ee77a9f044f02811c86af699344c498b0840c698a2465"
+dependencies = [
+ "arrayvec",
+ "itoa 0.4.8",
 ]
 
 [[package]]

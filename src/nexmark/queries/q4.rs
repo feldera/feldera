@@ -111,6 +111,7 @@ mod tests {
     };
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
+    use std::sync::mpsc;
 
     #[test]
     fn test_q4_average_final_bids_per_category() {
@@ -199,8 +200,9 @@ mod tests {
             },
         ];
 
+        let (tx, _) = mpsc::channel();
         let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
-            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events));
+            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
 
         // Winning bids for auctions in category 1 are 100 and 300 - ie. AVG of 200
         // Winning (only) bid for auction in category 2 is 20.
