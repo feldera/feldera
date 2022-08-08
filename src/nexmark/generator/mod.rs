@@ -32,6 +32,9 @@ pub trait EventGenerator<R: Rng> {
     /// Returns whether the generator should continue to generate events.
     fn has_next(&self) -> bool;
 
+    /// Returns the number of events generated at the time of the call.
+    fn event_count(&self) -> u64;
+
     /// Returns the next generated event
     fn next_event(&mut self) -> Result<Option<NextEvent>>;
 }
@@ -65,6 +68,10 @@ impl<R: Rng> EventGenerator<R> for NexmarkGenerator<R> {
 
     fn has_next(&self) -> bool {
         self.events_count_so_far < self.config.max_events
+    }
+
+    fn event_count(&self) -> u64 {
+        self.events_count_so_far
     }
 
     fn wallclock_time(&mut self) -> u64 {
@@ -206,6 +213,10 @@ pub mod tests {
             self.generator.next_event()
         }
 
+        fn event_count(&self) -> u64 {
+            self.generator.event_count()
+        }
+
         fn wallclock_time(&mut self) -> u64 {
             match self.wallclock_iterator.next() {
                 Some(t) => t,
@@ -246,6 +257,10 @@ pub mod tests {
 
         fn has_next(&self) -> bool {
             self.current_event_index < self.next_events.len()
+        }
+
+        fn event_count(&self) -> u64 {
+            self.current_event_index as u64
         }
 
         fn next_event(&mut self) -> Result<Option<NextEvent>> {

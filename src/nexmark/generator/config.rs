@@ -8,6 +8,7 @@ pub const FIRST_CATEGORY_ID: usize = 10;
 
 /// The generator config is a combination of the CLI configuration and the
 /// options specific to this generator instantiation.
+#[derive(Clone)]
 pub struct Config {
     pub nexmark_config: NexmarkConfig,
 
@@ -38,7 +39,6 @@ impl Config {
         nexmark_config: NexmarkConfig,
         base_time: u64,
         first_event_id: u64,
-        max_events_or_zero: u64,
         first_event_number: usize,
     ) -> Config {
         let inter_event_delay =
@@ -47,7 +47,7 @@ impl Config {
         // Original Java implementation says:
         // "Scale maximum down to avoid overflow in getEstimatedSizeBytes."
         // but including to ensure similar behavior.
-        let max_events = match max_events_or_zero {
+        let max_events = match nexmark_config.max_events {
             0 => {
                 let max_average = *[
                     nexmark_config.avg_person_byte_size,
@@ -59,7 +59,7 @@ impl Config {
                 .unwrap();
                 u64::MAX / (nexmark_config.total_proportion() as u64 * max_average as u64)
             }
-            _ => max_events_or_zero,
+            _ => nexmark_config.max_events,
         };
         Config {
             nexmark_config,
@@ -116,7 +116,7 @@ impl Default for Config {
         // the Java output before creating an issue against their repo, but for
         // now I'm using defaults of 0 for both, which results in the expected
         // events (first event is a person with id 1000, etc.).
-        Config::new(NexmarkConfig::default(), 0, 0, 0, 0)
+        Config::new(NexmarkConfig::default(), 0, 0, 0)
     }
 }
 

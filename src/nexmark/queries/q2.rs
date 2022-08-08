@@ -41,6 +41,7 @@ mod tests {
     };
     use crate::{circuit::Root, trace::ord::OrdZSet, trace::Batch};
     use rand::rngs::mock::StepRng;
+    use std::sync::mpsc;
 
     #[test]
     fn test_q2() {
@@ -74,8 +75,9 @@ mod tests {
                 ..make_next_event()
             },
         ];
+        let (tx, _) = mpsc::channel();
         let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
-            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events));
+            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
 
         let root = Root::build(move |circuit| {
             let input = circuit.add_source(source);
