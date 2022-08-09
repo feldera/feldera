@@ -38,7 +38,6 @@ use std::{
 };
 
 #[global_allocator]
-#[cfg(windows)]
 static ALLOC: MiMalloc = MiMalloc;
 
 struct MiMalloc;
