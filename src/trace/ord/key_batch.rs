@@ -74,6 +74,9 @@ where
             cursor: self.layer.cursor(),
         }
     }
+    fn key_count(&self) -> usize {
+        <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::keys(&self.layer)
+    }
     fn len(&self) -> usize {
         <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::tuples(&self.layer)
     }
