@@ -433,6 +433,14 @@ where
         self.seek_key(&key.0);
     }
 
+    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+        if self.bounds.1 > self.bounds.0 {
+            Some(&self.storage.vals[self.bounds.1 - 1])
+        } else {
+            None
+        }
+    }
+
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }

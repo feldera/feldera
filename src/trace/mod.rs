@@ -401,7 +401,10 @@ pub mod rc_blanket_impls {
         fn seek_key(&mut self, key: &B::Key) {
             self.cursor.seek_key(key)
         }
-
+        #[inline]
+        fn last_key(&mut self) -> Option<&B::Key> {
+            self.cursor.last_key()
+        }
         #[inline]
         fn step_val(&mut self) {
             self.cursor.step_val()

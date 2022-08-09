@@ -486,6 +486,11 @@ where
     }
 
     #[inline]
+    fn last_key(&mut self) -> Option<&K> {
+        self.cursor.last_key()
+    }
+
+    #[inline]
     fn step_val(&mut self) {
         self.cursor.child.step();
     }

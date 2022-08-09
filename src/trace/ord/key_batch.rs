@@ -365,6 +365,9 @@ where
         self.cursor.seek(key);
         self.valid = true;
     }
+    fn last_key(&mut self) -> Option<&K> {
+        self.cursor.last_key()
+    }
     fn step_val(&mut self) {
         self.valid = false;
     }

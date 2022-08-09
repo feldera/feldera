@@ -118,6 +118,18 @@ where
     }
 
     #[inline]
+    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+        if self.bounds.1 > self.bounds.0 {
+            Some((
+                &self.storage.keys[self.bounds.1 - 1],
+                &self.storage.diffs[self.bounds.1 - 1],
+            ))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
