@@ -2,8 +2,12 @@
 //!
 //! CLI for running Nexmark benchmarks with DBSP.
 #![feature(is_some_with)]
+use libc::{getrusage, rusage, timeval, RUSAGE_THREAD};
 use std::{
+    io::Error,
+    mem::MaybeUninit,
     sync::{mpsc, mpsc::TryRecvError},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -75,18 +79,20 @@ macro_rules! nexmark_circuit {
 }
 
 /// Currently just the elapsed time, but later add CPU and Mem.
-#[derive(Debug)]
 struct NexmarkResult {
     name: String,
     num_events: u64,
     elapsed: Duration,
+    usr_cpu: Duration,
+    sys_cpu: Duration,
+    max_rss: u64,
 }
 
 macro_rules! run_query {
-    ( $q_name:expr, $q:expr, $generator_config:expr, $max_events:expr ) => {{
+    ( $q_name:expr, $q:expr, $generator_config:expr, $max_events:expr, $result_tx:expr ) => {{
         // Until we have the I/O API to control the running of circuits,
-        // use an empty channel to signal when the test is finished (all events emitted
-        // by the generator).
+        // use a channel to signal when the test is finished (all events emitted
+        // by the generator), sending back the number of events processed.
         let (fixedpoint_tx, fixedpoint_rx): (mpsc::Sender<u64>, mpsc::Receiver<u64>) =
             mpsc::channel();
 
@@ -106,22 +112,42 @@ macro_rules! run_query {
                 _ => panic!("unexpected result from fixedpoint sync channel"),
             }
         }
-        NexmarkResult {
-            name: $q_name.to_string(),
-            num_events: num_events_generated,
-            elapsed: start.elapsed(),
-        }
+
+        let (usr_cpu, sys_cpu, max_rss) = unsafe { rusage_thread() };
+
+        $result_tx
+            .send(NexmarkResult {
+                name: $q_name.to_string(),
+                num_events: num_events_generated,
+                elapsed: start.elapsed(),
+                sys_cpu,
+                usr_cpu,
+                max_rss,
+            })
+            .unwrap();
     }};
 }
 
 macro_rules! run_queries {
     ( $generator_config:expr, $max_events:expr, $queries_to_run:expr, $( ($q_name:expr, $q:expr) ),+ ) => {{
         let mut results: Vec<NexmarkResult> = Vec::new();
+
+        // Run each query in a separate thread so we can measure the resource
+        // usage of the thread in isolation. We'll communicate the resource usage
+        // for collection via a channel to accumulate here.
+        let (result_tx, result_rx): (mpsc::Sender<NexmarkResult>, mpsc::Receiver<NexmarkResult>) =
+            mpsc::channel();
+
         $(
         if $queries_to_run.len() == 0 || $queries_to_run.contains(&$q_name.to_string()) {
             println!("Starting {} bench of {} events...", $q_name, $max_events);
-
-            results.push(run_query!($q_name, $q, $generator_config.clone(), $max_events));
+            let thread_result_tx = result_tx.clone();
+            let thread_generator_config = $generator_config.clone();
+            thread::spawn(move || {
+                run_query!($q_name, $q, thread_generator_config, $max_events, thread_result_tx);
+            });
+            // Wait for the thread to finish then collect the result.
+            results.push(result_rx.recv().unwrap());
         }
         )+
         results
@@ -130,12 +156,16 @@ macro_rules! run_queries {
 
 fn create_ascii_table() -> AsciiTable {
     let mut ascii_table = AsciiTable::default();
-    ascii_table.column(0).set_header("Nexmark Query");
-    ascii_table.column(1).set_header("Events Num");
+    ascii_table.column(0).set_header("Query");
+    ascii_table.column(1).set_header("#Events");
     ascii_table.column(2).set_header("Cores");
-    ascii_table.column(3).set_header("Time(s)");
-    ascii_table.column(4).set_header("Cores * Time(s)");
-    ascii_table.column(5).set_header("Throughput/Cores");
+    ascii_table.column(3).set_header("Elapsed(s)");
+    // Redundant until we use more than one core.
+    // ascii_table.column(4).set_header("Cores * Time(s)");
+    ascii_table.column(4).set_header("Throughput/Cores");
+    ascii_table.column(5).set_header("User CPU(s)");
+    ascii_table.column(6).set_header("System CPU(s)");
+    ascii_table.column(7).set_header("Max RSS(Kb)");
     ascii_table
 }
 
@@ -149,6 +179,7 @@ fn create_ascii_table() -> AsciiTable {
 // https://github.com/matklad/t-cmd/blob/master/src/main.rs Also CpuMonitor.java
 // in nexmark (binary that uses procfs to get cpu usage ever 100ms?)
 
+#[cfg(unix)]
 fn main() -> Result<()> {
     let nexmark_config = NexmarkConfig::parse();
     let max_events = nexmark_config.max_events;
@@ -173,13 +204,34 @@ fn main() -> Result<()> {
             format!("{}", r.num_events.to_formatted_string(&Locale::en)),
             String::from("1"),
             format!("{0:.3}", r.elapsed.as_secs_f32()),
-            format!("{0:.3}", r.elapsed.as_secs_f32()),
             format!(
                 "{0:.3} K/s",
                 r.num_events as f32 / r.elapsed.as_secs_f32() / 1000.0
             ),
+            format!("{0:.3}", r.usr_cpu.as_secs_f32()),
+            format!("{0:.3}", r.sys_cpu.as_secs_f32()),
+            format!("{}", r.max_rss.to_formatted_string(&Locale::en)),
         ]
     }));
 
     Ok(())
+}
+
+fn duration_for_timeval(tv: timeval) -> Duration {
+    Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1_000)
+}
+
+/// Returns the user CPU, system CPU and maxrss (in Kb) for the current thread.
+pub unsafe fn rusage_thread() -> (Duration, Duration, u64) {
+    let mut ru: MaybeUninit<rusage> = MaybeUninit::uninit();
+    let err_code = getrusage(RUSAGE_THREAD, ru.as_mut_ptr());
+    if err_code != 0 {
+        panic!("getrusage returned {}", Error::last_os_error());
+    }
+    let ru = ru.assume_init();
+    (
+        duration_for_timeval(ru.ru_utime),
+        duration_for_timeval(ru.ru_stime),
+        ru.ru_maxrss as u64,
+    )
 }

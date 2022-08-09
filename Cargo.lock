@@ -553,6 +553,7 @@ dependencies = [
  "hashbrown",
  "impl-trait-for-tuples",
  "indicatif",
+ "libc",
  "num",
  "num-format",
  "once_cell",
