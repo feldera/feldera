@@ -43,95 +43,109 @@ where
     type Weighted<S> = Streamed<S, Weights>;
 
     // Vertices weighted by F64s instead of isizes
-    let weighted_vertices = vertices.shard().apply(|vertices| {
-        let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
+    let weighted_vertices = vertices
+        .shard()
+        .apply(|vertices| {
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-            builder.push((node, Rank::one()));
-            cursor.step_key();
-        }
+            let mut cursor = vertices.cursor();
+            while cursor.key_valid() {
+                let node = *cursor.key();
+                builder.push((node, Rank::one()));
+                cursor.step_key();
+            }
 
-        builder.done()
-    });
+            builder.done()
+        })
+        .shard();
 
     // Vertices weighted by the damping factor divided by the total number of
     // vertices
-    let damped_div_total_vertices = vertices.apply(move |vertices| {
-        let total_vertices = vertices.len();
-        let weight = Rank::new(damping_factor) / total_vertices as f64;
-        let mut builder =
-            <OrdIndexedZSet<(), Node, Rank> as Batch>::Builder::with_capacity((), total_vertices);
+    let damped_div_total_vertices = vertices
+        .apply(move |vertices| {
+            let total_vertices = vertices.len();
+            let weight = Rank::new(damping_factor) / total_vertices as f64;
+            let mut builder = <OrdIndexedZSet<(), Node, Rank> as Batch>::Builder::with_capacity(
+                (),
+                total_vertices,
+            );
 
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-            builder.push((((), node), weight));
-            cursor.step_key();
-        }
+            let mut cursor = vertices.cursor();
+            while cursor.key_valid() {
+                let node = *cursor.key();
+                builder.push((((), node), weight));
+                cursor.step_key();
+            }
 
-        builder.done()
-    });
+            builder.done()
+        })
+        .shard();
 
     // Initially each vertex is assigned a value so that the sum of all vertexes is
     // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
-    let initial_weights = vertices.apply(|vertices| {
-        let total_vertices = vertices.len();
-        let initial_weight = Rank::one() / total_vertices as f64;
+    let initial_weights = vertices
+        .apply(|vertices| {
+            let total_vertices = vertices.len();
+            let initial_weight = Rank::one() / total_vertices as f64;
 
-        // We can use a builder here since the cursor yields ordered values
-        let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+            // We can use a builder here since the cursor yields ordered values
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
 
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-            builder.push((node, initial_weight));
-            cursor.step_key();
-        }
-
-        builder.done()
-    });
-
-    // Calculate the teleport, `(1 - d) ÷ |𝑉|`
-    let teleport = vertices.apply(move |vertices| {
-        let total_vertices = vertices.len();
-        let teleport = (Rank::one() - damping_factor) / total_vertices as f64;
-
-        // We can use a builder here since the cursor yields ordered values
-        let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
-
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-            builder.push((node, teleport));
-            cursor.step_key();
-        }
-
-        builder.done()
-    });
-
-    // Count the number of outgoing edges for each node
-    let outgoing_edge_counts = edges.shard().apply(|weights| {
-        // We can use a builder here since the cursor yields ordered values
-        let mut builder = <Weights as Batch>::Builder::with_capacity((), weights.len());
-
-        let mut cursor = weights.cursor();
-        while cursor.key_valid() {
-            let node = *cursor.key();
-
-            let mut total_outputs = 0usize;
-            while cursor.val_valid() {
-                total_outputs += 1;
-                cursor.step_val();
+            let mut cursor = vertices.cursor();
+            while cursor.key_valid() {
+                let node = *cursor.key();
+                builder.push((node, initial_weight));
+                cursor.step_key();
             }
 
-            builder.push((node, Rank::new(total_outputs as f64)));
-            cursor.step_key();
-        }
+            builder.done()
+        })
+        .shard();
 
-        builder.done()
-    });
+    // Calculate the teleport, `(1 - d) ÷ |𝑉|`
+    let teleport = vertices
+        .apply(move |vertices| {
+            let total_vertices = vertices.len();
+            let teleport = (Rank::one() - damping_factor) / total_vertices as f64;
+
+            // We can use a builder here since the cursor yields ordered values
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+
+            let mut cursor = vertices.cursor();
+            while cursor.key_valid() {
+                let node = *cursor.key();
+                builder.push((node, teleport));
+                cursor.step_key();
+            }
+
+            builder.done()
+        })
+        .shard();
+
+    // Count the number of outgoing edges for each node
+    let outgoing_edge_counts = edges
+        .shard()
+        .apply(|weights| {
+            // We can use a builder here since the cursor yields ordered values
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), weights.len());
+
+            let mut cursor = weights.cursor();
+            while cursor.key_valid() {
+                let node = *cursor.key();
+
+                let mut total_outputs = 0usize;
+                while cursor.val_valid() {
+                    total_outputs += 1;
+                    cursor.step_val();
+                }
+
+                builder.push((node, Rank::new(total_outputs as f64)));
+                cursor.step_key();
+            }
+
+            builder.done()
+        })
+        .shard();
 
     // Find all dangling nodes (nodes without outgoing edges)
     let dangling_nodes = weighted_vertices.minus(
@@ -197,7 +211,7 @@ where
 
                 // (damping_factor / total_vertices) * sum(dangling_nodes)
                 damped_div_total_vertices
-                    .monotonic_stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
+                    .stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
             });
 
             let page_rank = teleport.sum([&importance, &redistributed]);

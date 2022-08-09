@@ -10,7 +10,6 @@ use crate::{
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
     Circuit, Runtime, Stream,
 };
-use fxhash::hash32;
 use std::hash::Hash;
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
@@ -211,7 +210,7 @@ where
         let mut cursor = batch.cursor();
 
         while cursor.key_valid() {
-            let batch_index = (hash32(cursor.key()) as usize) % nshards;
+            let batch_index = fxhash::hash(cursor.key()) % nshards;
             while cursor.val_valid() {
                 builders[batch_index].push((
                     OB::item_from(cursor.key().clone(), cursor.val().clone()),
