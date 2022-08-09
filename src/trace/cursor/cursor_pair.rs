@@ -1,6 +1,6 @@
 //! A generic cursor implementation merging pairs of different cursors.
 
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 
 use crate::{
     algebra::{HasZero, MonoidValue},
@@ -111,6 +111,10 @@ where
             (_, false) => Ordering::Less,
             (true, true) => self.cursor1.key().cmp(self.cursor2.key()),
         };
+    }
+
+    fn last_key(&mut self) -> Option<&K> {
+        max(self.cursor1.last_key(), self.cursor2.last_key())
     }
 
     fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)

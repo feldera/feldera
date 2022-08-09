@@ -370,6 +370,11 @@ where
     }
 
     #[inline]
+    fn last_key(&mut self) -> Option<&K> {
+        self.cursor.last_key().map(|(k, _)| k)
+    }
+
+    #[inline]
     fn step_val(&mut self) {
         self.valid = false;
     }

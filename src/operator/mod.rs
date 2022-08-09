@@ -27,9 +27,10 @@ mod join_range;
 mod neg;
 mod plus;
 mod semijoin;
+mod stream_fold;
 mod sum;
+mod time_series;
 mod trace;
-mod window;
 mod z1;
 
 #[cfg(feature = "with-csv")]

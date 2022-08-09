@@ -163,6 +163,15 @@ where
         self.minimize_keys();
     }
 
+    #[inline]
+    fn last_key(&mut self) -> Option<&K> {
+        self.cursors
+            .iter_mut()
+            .map(|c| c.last_key())
+            .max()
+            .unwrap_or(None)
+    }
+
     // value methods
     #[inline]
     fn step_val(&mut self) {

@@ -94,6 +94,9 @@ pub trait Cursor<'s, K, V, T, R> {
     /// Advances the cursor to the specified key.
     fn seek_key(&mut self, key: &K);
 
+    /// Returns the last key in the cursor or `None` if the cursor is empty.
+    fn last_key(&mut self) -> Option<&K>;
+
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
 

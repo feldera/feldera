@@ -740,6 +740,15 @@ where
         }
     }
 
+    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+        // Cursor not empty?
+        if self.bounds.1 > self.bounds.0 {
+            Some(&self.storage.keys[self.bounds.1 - 1])
+        } else {
+            None
+        }
+    }
+
     // fn size(&self) -> usize { self.bounds.1 - self.bounds.0 }
 
     #[inline]

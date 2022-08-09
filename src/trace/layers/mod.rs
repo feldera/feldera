@@ -141,6 +141,9 @@ pub trait Cursor<'s> {
     where
         's: 'a;
 
+    /// Returns the last key in the cursor or `None` if the cursor is empty.
+    fn last_key(&mut self) -> Option<Self::Key<'s>>;
+
     /// Returns `true` if the cursor points at valid data. Returns `false` if
     /// the cursor is exhausted.
     fn valid(&self) -> bool;
@@ -152,7 +155,7 @@ pub trait Cursor<'s> {
     fn reposition(&mut self, lower: usize, upper: usize);
 }
 
-/// Reports the number of elements satisfing the predicate.
+/// Reports the number of elements satisfying the predicate.
 ///
 /// This methods *relies strongly* on the assumption that the predicate
 /// stays false once it becomes false, a joint property of the predicate
@@ -262,6 +265,10 @@ impl<'s> Cursor<'s> for () {
     where
         's: 'a,
     {
+    }
+
+    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+        None
     }
 
     fn valid(&self) -> bool {
