@@ -719,7 +719,7 @@ impl ResultParser for NoopResults {
 pub struct BfsResults;
 
 impl ResultParser for BfsResults {
-    type Parsed = DistanceSet<Weight>;
+    type Parsed = DistanceSet<i8>;
 
     fn file_suffix() -> Option<&'static str> {
         Some("-BFS")
@@ -730,7 +730,7 @@ impl ResultParser for BfsResults {
 
         // The bfs results file is ordered so we can use an ordered builder
         let mut results =
-            <DistanceSet<Weight> as Batch>::Builder::with_capacity((), props.vertices as usize);
+            <DistanceSet<i8> as Batch>::Builder::with_capacity((), props.vertices as usize);
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {
@@ -744,7 +744,7 @@ impl ResultParser for BfsResults {
             let vertex = vertex.parse().unwrap();
             let distance = distance.parse().unwrap();
 
-            results.push(((vertex, distance), Weight::one()));
+            results.push(((vertex, distance), 1));
             buffer.clear();
         }
 

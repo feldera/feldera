@@ -4,7 +4,7 @@ mod pagerank;
 
 use crate::data::{
     list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node, NoopResults,
-    PageRankResults, Rank, RankMap, Weight,
+    PageRankResults, Rank, RankMap,
 };
 use clap::Parser;
 use dbsp::{
@@ -19,7 +19,13 @@ use dbsp::{
 use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
+use mimalloc_rust_sys::{
+    aligned_allocation::{mi_malloc_aligned, mi_realloc_aligned, mi_zalloc_aligned},
+    basic_allocation::mi_free,
+    extended_functions::{mi_process_info, mi_stats_reset},
+};
 use std::{
+    alloc::{GlobalAlloc, Layout},
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},
@@ -28,16 +34,77 @@ use std::{
     ops::Add,
     rc::Rc,
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 #[global_allocator]
 #[cfg(windows)]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static ALLOC: MiMalloc = MiMalloc;
+
+struct MiMalloc;
+
+impl MiMalloc {
+    /// Reset allocation statistics
+    pub fn reset_stats(&self) {
+        unsafe { mi_stats_reset() };
+    }
+
+    pub fn stats(&self) -> AllocStats {
+        let mut stats = AllocStats::default();
+        unsafe {
+            mi_process_info(
+                &mut stats.elapsed_ms,
+                &mut stats.user_ms,
+                &mut stats.system_ms,
+                &mut stats.current_rss,
+                &mut stats.peak_rss,
+                &mut stats.current_commit,
+                &mut stats.peak_commit,
+                &mut stats.page_faults,
+            );
+        }
+
+        stats
+    }
+}
+
+unsafe impl GlobalAlloc for MiMalloc {
+    #[inline]
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        mi_malloc_aligned(layout.size(), layout.align()).cast()
+    }
+
+    #[inline]
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        mi_zalloc_aligned(layout.size(), layout.align()).cast()
+    }
+
+    #[inline]
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        mi_realloc_aligned(ptr.cast(), new_size, layout.align()).cast()
+    }
+
+    #[inline]
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        mi_free(ptr.cast());
+    }
+}
+
+#[derive(Debug, Default)]
+struct AllocStats {
+    elapsed_ms: usize,
+    user_ms: usize,
+    system_ms: usize,
+    current_rss: usize,
+    peak_rss: usize,
+    current_commit: usize,
+    peak_commit: usize,
+    page_faults: usize,
+}
 
 enum OutputData {
     None,
-    Bfs(DistanceSet<Weight>),
+    Bfs(DistanceSet<i8>),
     PageRank(RankMap),
 }
 
@@ -114,13 +181,17 @@ fn main() {
     let mut edge_data = Some(edges);
 
     Runtime::run(threads.get(), move || {
-        if Runtime::worker_index() == 0 {
+        let init_stats = if Runtime::worker_index() == 0 {
             print!(
                 "building dataflow{}... ",
                 if config.profile { " with profiling" } else { "" },
             );
             io::stdout().flush().unwrap();
-        }
+            ALLOC.reset_stats();
+            ALLOC.stats()
+        } else {
+            AllocStats::default()
+        };
         let start = Instant::now();
 
         let output = Rc::new(RefCell::new(OutputData::None));
@@ -193,40 +264,24 @@ fn main() {
             print!("finished in {elapsed:#?}\nrunning benchmark... ");
             io::stdout().flush().unwrap();
         }
-        let start = Instant::now();
 
+        let start = Instant::now();
         root.step().unwrap();
+        let elapsed = start.elapsed();
 
         if Runtime::worker_index() == 0 {
-            let elapsed = start.elapsed();
-            println!("finished in {elapsed:#?}");
-
-            // TODO: Generalize this some more <https://stackoverflow.com/a/64166/9885253>
-            #[cfg(windows)]
-            {
-                use winapi::um::{
-                    processthreadsapi::GetCurrentProcess,
-                    psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
-                };
-                use std::mem::MaybeUninit;
-
-                let mut info = MaybeUninit::<PROCESS_MEMORY_COUNTERS>::uninit();
-                let status = unsafe {
-                    GetProcessMemoryInfo(
-                        GetCurrentProcess(),
-                        info.as_mut_ptr(),
-                        size_of::<PROCESS_MEMORY_COUNTERS>() as _,
-                    )
-                };
-
-                if status != 0 {
-                    let info = unsafe { info.assume_init() };
-                    println!(
-                        "peak memory usage: {}",
-                        HumanBytes(info.PeakWorkingSetSize as u64),
-                    );
-                }
-            }
+            let stats = ALLOC.stats();
+            println!(
+                "finished in {elapsed:#?}\ntime: {:#?}, user: {:#?}, system: {:#?}\nrss: {}, peak: {}\ncommit: {}, peak: {}\npage faults: {}",
+                Duration::from_millis((stats.elapsed_ms - init_stats.elapsed_ms) as u64),
+                Duration::from_millis((stats.user_ms - init_stats.user_ms) as u64),
+                Duration::from_millis((stats.system_ms - init_stats.system_ms) as u64),
+                HumanBytes(stats.current_rss as u64),
+                HumanBytes(stats.peak_rss as u64),
+                HumanBytes(stats.current_commit as u64),
+                HumanBytes(stats.peak_commit as u64),
+                stats.page_faults,
+            );
 
             // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3
             let eps = properties.edges as f64 / elapsed.as_secs_f64();
@@ -338,7 +393,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
                 if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
                     writeln!(
                         metadata_string,
-                        "invocations: {}\ntime: {:?}",
+                        "invocations: {}\ntime: {:#?}",
                         cpu_profile.invocations(),
                         cpu_profile.total_time(),
                     )

@@ -1,6 +1,6 @@
 use crate::algebra::{HasOne, HasZero, MulByRef};
 use deepsize::DeepSizeOf;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A zero-sized weight that indicates a value is present
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -8,7 +8,8 @@ pub struct Present;
 
 impl HasZero for Present {
     fn zero() -> Self {
-        todo!()
+        // FIXME: This isn't correct
+        Self
     }
 
     fn is_zero(&self) -> bool {
@@ -96,5 +97,25 @@ where
     #[inline]
     fn mul_by_ref(&self, _other: &Present) -> Self::Output {
         self.clone()
+    }
+}
+
+// FIXME: This doesn't really make sense and is wrong
+impl Neg for Present {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Present
+    }
+}
+
+// FIXME: This doesn't really make sense and is wrong
+impl Neg for &Present {
+    type Output = Present;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Present
     }
 }
