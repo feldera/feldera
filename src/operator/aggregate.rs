@@ -3,13 +3,13 @@
 use std::{borrow::Cow, hash::Hash, marker::PhantomData, ops::Neg};
 
 use crate::{
-    algebra::{HasOne, IndexedZSet, ZRingValue, ZSet},
+    algebra::{HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, Scope, Stream,
     },
-    trace::{cursor::Cursor, BatchReader},
-    NumEntries,
+    trace::{cursor::Cursor, Batch, BatchReader, Builder},
+    NumEntries, OrdZSet,
 };
 use deepsize::DeepSizeOf;
 
@@ -18,11 +18,6 @@ where
     P: Clone + 'static,
     Z: Clone + 'static,
 {
-    // TODO: Consider changing the signature of aggregation function to take a slice
-    // of values instead of iterator.  This is easier to understand and use, and
-    // allows computing the number of unique values in a group (an important
-    // aggregate) in `O(1)`.  Most batch implementations will allow extracting
-    // such a slice efficiently.
     /// Aggregate each indexed Z-set in the input stream.
     ///
     /// Values in the input stream are
@@ -125,21 +120,61 @@ where
     /// v)`, the output Z-set contains value `(k, f(k, v))`.  In contrast,
     /// [`Self::aggregate_incremental`] does not automatically include key
     /// in the output, since a user-defined aggregation function can be
-    /// designed to return the key if necessar.  However,
+    /// designed to return the key if necessary.  However,
     /// such an aggregation function can be non-linear (in fact, the plus
     /// operation may not even be defined for its output type).
-    pub fn aggregate_linear_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    pub fn aggregate_linear_incremental<F, A, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        <SR as SharedRef>::Target: BatchReader<R=O::R> + DeepSizeOf + NumEntries + GroupValue + SharedRef<Target = SR::Target> + 'static,
-        <<SR as SharedRef>::Target as BatchReader>::Key: PartialEq + Clone,
-        F: Fn(&<<SR as SharedRef>::Target as BatchReader>::Key,
-              &<<SR as SharedRef>::Target as BatchReader>::Val) -> O::Val + 'static,
+        Z: IndexedZSet<R = O::R>,
+        Z::Key: PartialEq + Ord + Hash + Clone,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        O: Clone + IndexedZSet<Key = Z::Key> + 'static,
+        O::R: ZRingValue,
         O: Clone + ZSet + 'static,
     {
-        let agg_delta: Stream<_, OrdZSet<_, _>> = self.map_values(f);
-        agg_delta.aggregate_incremental(|zset, cursor| (zset.key().clone(), agg_val.clone()))
+        agg_delta.aggregate_incremental(|key, weights| {
+            debug_assert_eq!(weights.len(), 1);
+            (key.clone(), weights[0].1)
+        })
     }
     */
+
+    pub fn weigh_generic<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    where
+        Z: IndexedZSet,
+        Z::Key: Ord + Clone,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &Z::Val) -> O::R + 'static,
+        O: Clone + Batch<Key = Z::Key, Val = (), Time = ()> + 'static,
+        O::R: MulByRef<Z::R>,
+    {
+        self.apply(move |batch| {
+            let mut delta = <O::Builder>::with_capacity((), batch.key_count());
+            let mut cursor = batch.cursor();
+            while cursor.key_valid() {
+                let mut agg = HasZero::zero();
+                while cursor.val_valid() {
+                    agg += f(cursor.key(), cursor.val()).mul_by_ref(&cursor.weight());
+                    cursor.step_val();
+                }
+                delta.push((O::item_from(cursor.key().clone(), ()), agg));
+                cursor.step_key();
+            }
+            delta.done()
+        })
+    }
+
+    pub fn weigh<F, T>(&self, f: F) -> Stream<Circuit<P>, OrdZSet<Z::Key, T>>
+    where
+        Z: IndexedZSet,
+        Z::Key: Ord + Clone,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &Z::Val) -> T + 'static,
+        T: MulByRef<Z::R> + MonoidValue,
+    {
+        self.weigh_generic::<_, OrdZSet<_, _>>(f)
+    }
 
     /*
     /// A version of [`Self::aggregate_incremental_nested`] optimized for linear

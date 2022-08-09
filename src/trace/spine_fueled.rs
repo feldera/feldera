@@ -195,6 +195,12 @@ where
 
     type Cursor<'s> = SpineCursor<'s, B>;
 
+    fn key_count(&self) -> usize {
+        let mut result = 0;
+        self.map_batches(|b| result += b.key_count());
+        result
+    }
+
     fn len(&self) -> usize {
         let mut result = 0;
         self.map_batches(|b| result += b.len());

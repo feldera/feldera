@@ -98,6 +98,9 @@ where
             cursor: self.layer.cursor(),
         }
     }
+    fn key_count(&self) -> usize {
+        <OrdValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
+    }
     fn len(&self) -> usize {
         <OrdValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }

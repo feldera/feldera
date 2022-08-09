@@ -225,6 +225,11 @@ where
     }
 
     #[inline]
+    fn key_count(&self) -> usize {
+        self.layer.keys()
+    }
+
+    #[inline]
     fn len(&self) -> usize {
         self.layer.tuples()
     }

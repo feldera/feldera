@@ -151,6 +151,8 @@ where
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
+    /// The number of keys in the batch.
+    fn key_count(&self) -> usize;
     /// The number of updates in the batch.
     fn len(&self) -> usize;
     /// True if the batch is empty.
@@ -330,6 +332,15 @@ pub mod rc_blanket_impls {
         /// Acquires a cursor to the batch's contents.
         fn cursor(&self) -> Self::Cursor<'_> {
             RcBatchCursor::new((**self).cursor())
+        }
+
+        /// The number of updates in the batch.
+        // TODO: return `(usize, Option<usize>)`, similar to
+        // `Iterator::size_hint`, since not all implementations
+        // can compute the number of keys precisely.  Same for
+        // `len()`.
+        fn key_count(&self) -> usize {
+            (**self).key_count()
         }
 
         /// The number of updates in the batch.
