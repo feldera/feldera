@@ -387,13 +387,12 @@ where
     #[inline]
     fn seek_val(&mut self, _val: &()) {}
 
-    fn values<'a>(&mut self, _vals: &mut Vec<(&'a (), R)>)
+    #[inline]
+    fn values<'a>(&mut self, vals: &mut Vec<(&'a (), R)>)
     where
         's: 'a,
     {
-        // It's technically ok to call this on a batch with value type `()`,
-        // but shouldn't happen in practice.
-        unimplemented!();
+        vals.push((&(), self.cursor.current_diff().clone()))
     }
 
     #[inline]
