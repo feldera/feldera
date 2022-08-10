@@ -194,11 +194,11 @@ where
     {
         let offset = vals.len();
 
-        for &index in self.min_val.iter() {
+        for &index in self.min_key.iter() {
             self.cursors[index].values(vals);
         }
 
-        if self.min_val.len() > 1 {
+        if self.min_key.len() > 1 {
             consolidate_from(vals, offset);
         }
     }
