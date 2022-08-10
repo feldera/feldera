@@ -3,7 +3,7 @@
 use std::{borrow::Cow, hash::Hash, marker::PhantomData, ops::Neg};
 
 use crate::{
-    algebra::{HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef, ZRingValue, ZSet},
+    algebra::{GroupValue, HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, Scope, Stream,
@@ -34,7 +34,7 @@ where
     /// * `O` - output Z-set type.
     pub fn aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + Send + 'static,
+        Z: IndexedZSet + Send + 'static,
         Z::Key: Ord + Clone + Hash,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
@@ -45,13 +45,13 @@ where
             .add_unary_operator(Aggregate::new(f), &self.shard())
     }
 
-    /// Incremental version of the [`Aggregate`] operator.
+    /// Incremental version of the [`Self::aggregate`] operator.
     ///
     /// This is equivalent to `self.integrate().aggregate(f).differentiate()`,
     /// but is more efficient.
     pub fn aggregate_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send,
+        Z: IndexedZSet + DeepSizeOf + NumEntries + Send,
         Z::Key: PartialEq + Ord + Hash + Clone,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
@@ -63,7 +63,7 @@ where
 
     fn aggregate_incremental_inner<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries,
+        Z: IndexedZSet + DeepSizeOf + NumEntries,
         Z::Key: PartialEq + Ord,
         Z::Val: Ord,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
@@ -87,14 +87,14 @@ where
         retract_old.plus(&insert_new)
     }
 
-    /// Incremental nested version of the [`Aggregate`] operator.
+    /// Incremental nested version of the [`Self::aggregate`] operator.
     ///
     /// This is equivalent to
     /// `self.integrate().integrate_nested().aggregate(f).differentiate_nested.
     /// differentiate()`, but is more efficient.
     pub fn aggregate_incremental_nested<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R> + DeepSizeOf + NumEntries + Send,
+        Z: IndexedZSet + DeepSizeOf + NumEntries + Send,
         Z::Key: PartialEq + Ord + Clone + Hash,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + Clone + 'static,
@@ -107,13 +107,13 @@ where
             .differentiate_nested()
     }
 
-    /*
     /// A version of [`Self::aggregate_incremental`] optimized for linear
     /// aggregation functions.
     ///
     /// This method only works for linear aggregation functions `f`, i.e.,
     /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
-    /// incorrect results if `f` is not linear.
+    /// incorrect results if `f` is not linear.  Linearity means that
+    /// `f` can be defined per `(key, value)` tuple.
     ///
     /// Note that this method adds the value of the key from the input indexed
     /// Z-set to the output Z-set, i.e., given an input key-value pair `(k,
@@ -125,21 +125,62 @@ where
     /// operation may not even be defined for its output type).
     pub fn aggregate_linear_incremental<F, A, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet<R = O::R>,
-        Z::Key: PartialEq + Ord + Hash + Clone,
+        Z: IndexedZSet,
+        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf + Send,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
-        O: Clone + IndexedZSet<Key = Z::Key> + 'static,
+        O: Clone + ZSet<Key = (Z::Key, A), R = Z::R> + 'static,
         O::R: ZRingValue,
-        O: Clone + ZSet + 'static,
+        A: MulByRef<Z::R> + GroupValue + DeepSizeOf + Send,
     {
-        agg_delta.aggregate_incremental(|key, weights| {
+        self.weigh(f).aggregate_incremental(|key, weights| {
             debug_assert_eq!(weights.len(), 1);
-            (key.clone(), weights[0].1)
+            (key.clone(), weights.pop().unwrap().1)
         })
     }
-    */
 
+    /// A version of [`Self::aggregate_incremental_nested`] optimized for linear
+    /// aggregation functions.
+    pub fn aggregate_linear_incremental_nested<F, A, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    where
+        Z: IndexedZSet,
+        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf + Send,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        O: Clone + ZSet<Key = (Z::Key, A), R = Z::R> + DeepSizeOf + 'static,
+        O::R: ZRingValue,
+        A: MulByRef<Z::R> + GroupValue + DeepSizeOf + Send,
+    {
+        self.weigh(f).aggregate_incremental_nested(|key, weights| {
+            debug_assert_eq!(weights.len(), 1);
+            (key.clone(), weights.pop().unwrap().1)
+        })
+    }
+
+    /// Convert indexed Z-set `Z` into a Z-set where the weight of each key
+    /// is computed as:
+    ///
+    /// ```text
+    ///    __
+    ///    ╲
+    ///    ╱ f(k,v) * w
+    ///    ‾‾
+    /// (k,v,w) ∈ Z
+    /// ```
+    ///
+    /// This is a linear operator.
+    pub fn weigh<F, T>(&self, f: F) -> Stream<Circuit<P>, OrdZSet<Z::Key, T>>
+    where
+        Z: IndexedZSet,
+        Z::Key: Ord + Clone,
+        Z::Val: Ord + Clone,
+        F: Fn(&Z::Key, &Z::Val) -> T + 'static,
+        T: MulByRef<Z::R> + MonoidValue,
+    {
+        self.weigh_generic::<_, OrdZSet<_, _>>(f)
+    }
+
+    /// Like [`Self::weigh`], but can return any batch type.
     pub fn weigh_generic<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet,
@@ -164,46 +205,6 @@ where
             delta.done()
         })
     }
-
-    pub fn weigh<F, T>(&self, f: F) -> Stream<Circuit<P>, OrdZSet<Z::Key, T>>
-    where
-        Z: IndexedZSet,
-        Z::Key: Ord + Clone,
-        Z::Val: Ord + Clone,
-        F: Fn(&Z::Key, &Z::Val) -> T + 'static,
-        T: MulByRef<Z::R> + MonoidValue,
-    {
-        self.weigh_generic::<_, OrdZSet<_, _>>(f)
-    }
-
-    /*
-    /// A version of [`Self::aggregate_incremental_nested`] optimized for linear
-    /// aggregation functions.
-    ///
-    /// This method only works for linear aggregation functions `f`, i.e.,
-    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
-    /// incorrect results if `f` is not linear.
-    pub fn aggregate_linear_incremental_nested<K, VI, VO, W, F, O>(
-        &self,
-        f: F,
-    ) -> Stream<Circuit<P>, O>
-    where
-        K: KeyProperties,
-        VI: GroupValue,
-        SR: SharedRef + 'static,
-        <SR as SharedRef>::Target: ZSet<K, VI>,
-        <SR as SharedRef>::Target: NumEntries + SharedRef<Target = SR::Target>,
-        for<'a> &'a <SR as SharedRef>::Target: IntoIterator<Item = (&'a K, &'a VI)>,
-        F: Fn(&K, &VI) -> VO + 'static,
-        VO: NumEntries + GroupValue,
-        W: ZRingValue,
-        O: Clone + MapBuilder<(K, VO), W> + NumEntries + GroupValue,
-    {
-        self.integrate_nested()
-            .aggregate_linear_incremental(f)
-            .differentiate_nested()
-    }
-    */
 }
 
 pub struct Aggregate<Z, F, O> {
@@ -236,7 +237,7 @@ where
 
 impl<Z, F, O> UnaryOperator<Z, O> for Aggregate<Z, F, O>
 where
-    Z: IndexedZSet<R = O::R> + 'static,
+    Z: IndexedZSet + 'static,
     F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
     O: Clone + ZSet + 'static,
     O::R: ZRingValue,
@@ -250,7 +251,7 @@ where
             cursor.values(&mut vals);
             // Skip keys that only contain values with weight zero.
             if !vals.is_empty() {
-                elements.push(((self.agg_func)(cursor.key(), &mut vals), Z::R::one()));
+                elements.push(((self.agg_func)(cursor.key(), &mut vals), O::R::one()));
             }
             vals.clear();
             cursor.step_key();
@@ -298,9 +299,9 @@ where
 
 impl<Z, I, F, O> BinaryOperator<Z, I, O> for AggregateIncremental<Z, I, F, O>
 where
-    Z: IndexedZSet<R = O::R> + 'static,
+    Z: IndexedZSet + 'static,
     Z::Key: PartialEq,
-    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = O::R> + 'static,
+    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + 'static,
     F: Fn(&Z::Key, &mut Vec<(&Z::Val, Z::R)>) -> O::Key + 'static,
     O: Clone + ZSet + 'static,
     O::R: ZRingValue,
@@ -311,9 +312,9 @@ where
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = integral.cursor();
         let weight = if self.polarity {
-            I::R::one()
+            O::R::one()
         } else {
-            I::R::one().neg()
+            O::R::one().neg()
         };
 
         // This could be an overkill.
@@ -341,9 +342,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, Mutex},
+    };
 
-    use crate::{operator::GeneratorNested, zset, zset_set, Circuit, OrdZSet, Runtime};
+    use crate::{operator::GeneratorNested, zset, zset_set, Circuit, OrdZSet, Runtime, Stream};
 
     fn do_aggregate_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
@@ -402,17 +407,12 @@ mod test {
 
                     // Weighted sum aggregate that returns only the weighted sum
                     // value and is therefore linear.
-                    /*let sum_linear = |_key: &usize, zset: &OrdZSet<usize, isize>| -> isize {
-                        let mut result: isize = 0;
-                        for (v, w) in zset.into_iter() {
-                            result += (*v as isize) * w;
-                        }
-
-                        result
-                    };*/
+                    let sum_linear = |_key: &usize, val: &usize| -> isize { *val as isize };
 
                     let sum_inc = input.aggregate_incremental_nested(sum).gather(0);
-                    //let sum_inc_linear = input.aggregate_linear_incremental_nested(sum_linear);
+                    let sum_inc_linear: Stream<_, OrdZSet<(usize, isize), isize>> = input
+                        .aggregate_linear_incremental_nested(sum_linear)
+                        .gather(0);
                     let sum_noninc = input
                         .integrate_nested()
                         .integrate()
@@ -436,20 +436,13 @@ mod test {
                             assert_eq!(d1, d2);
                         });
 
-                    /*child
-                    .add_binary_operator(
-                        Apply2::new(
-                            |d1: &OrdZSet<(usize, isize), isize>,
-                             d2: &OrdZSet<(usize, isize), isize>| {
-                                (d1.clone(), d2.clone())
-                            },
-                        ),
-                        &sum_inc,
+                    sum_inc.apply2(
                         &sum_inc_linear,
-                    )
-                    .inspect(|(d1, d2)| {
-                        assert_eq!(d1, d2);
-                    });*/
+                        |d1: &OrdZSet<(usize, isize), isize>,
+                         d2: &OrdZSet<(usize, isize), isize>| {
+                            assert_eq!(d1, d2);
+                        },
+                    );
 
                     // Min aggregate (non-linear).
                     let min = |&key: &usize, vals: &mut Vec<(&usize, isize)>| -> (usize, usize) {
@@ -499,5 +492,137 @@ mod test {
         for _ in 0..3 {
             root.step().unwrap();
         }
+    }
+
+    fn count_test(workers: usize) {
+        let count_weighted_output: Arc<Mutex<OrdZSet<(usize, isize), isize>>> =
+            Arc::new(Mutex::new(zset! {}));
+        let sum_weighted_output: Arc<Mutex<OrdZSet<(usize, isize), isize>>> =
+            Arc::new(Mutex::new(zset! {}));
+        let count_distinct_output: Arc<Mutex<OrdZSet<(usize, usize), isize>>> =
+            Arc::new(Mutex::new(zset! {}));
+        let sum_distinct_output: Arc<Mutex<OrdZSet<(usize, usize), isize>>> =
+            Arc::new(Mutex::new(zset! {}));
+
+        let count_weighted_output_clone = count_weighted_output.clone();
+        let count_distinct_output_clone = count_distinct_output.clone();
+        let sum_weighted_output_clone = sum_weighted_output.clone();
+        let sum_distinct_output_clone = sum_distinct_output.clone();
+
+        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
+            let (input_stream, input_handle) = circuit.add_input_indexed_zset();
+            input_stream
+                .aggregate_linear_incremental::<_, _, OrdZSet<(usize, isize), isize>>(
+                    |_key, _value: &usize| 1isize,
+                )
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *count_weighted_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate_linear_incremental::<_, _, OrdZSet<(usize, isize), isize>>(
+                    |_key, value: &usize| *value as isize,
+                )
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *sum_weighted_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate_incremental::<_, OrdZSet<(usize, usize), isize>>(|key, weights| {
+                    (*key, weights.len())
+                })
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *count_distinct_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate_incremental::<_, OrdZSet<(usize, usize), isize>>(|key, weights| {
+                    let mut sum = 0;
+                    for (v, _) in weights.iter() {
+                        sum += *v;
+                    }
+                    (*key, sum)
+                })
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *sum_distinct_output.lock().unwrap() = batch.clone();
+                    }
+                });
+            input_handle
+        })
+        .unwrap();
+
+        input_handle.append(&mut vec![(1, (1, 1)), (1, (2, 2))]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            &*count_distinct_output_clone.lock().unwrap(),
+            &zset! {(1, 2) => 1}
+        );
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &zset! {(1, 3) => 1}
+        );
+        assert_eq!(
+            &*count_weighted_output_clone.lock().unwrap(),
+            &zset! {(1, 3) => 1}
+        );
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &zset! {(1, 5) => 1}
+        );
+
+        input_handle.append(&mut vec![(2, (2, 1)), (2, (4, 1)), (1, (2, -1))]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            &*count_distinct_output_clone.lock().unwrap(),
+            &zset! {(2, 2) => 1}
+        );
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &zset! {(2, 6) => 1}
+        );
+        assert_eq!(
+            &*count_weighted_output_clone.lock().unwrap(),
+            &zset! {(1, 3) => -1, (1, 2) => 1, (2, 2) => 1}
+        );
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &zset! {(2, 6) => 1, (1, 5) => -1, (1, 3) => 1}
+        );
+
+        input_handle.append(&mut vec![(1, (3, 1)), (1, (2, -1))]);
+        dbsp.step().unwrap();
+        assert_eq!(&*count_distinct_output_clone.lock().unwrap(), &zset! {});
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &zset! {(1, 3) => -1, (1, 4) => 1}
+        );
+        assert_eq!(&*count_weighted_output_clone.lock().unwrap(), &zset! {});
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &zset! {(1, 3) => -1, (1, 4) => 1}
+        );
+
+        dbsp.kill().unwrap();
+    }
+
+    #[test]
+    fn count_test1() {
+        count_test(1);
+    }
+
+    #[test]
+    fn count_test4() {
+        count_test(4);
     }
 }
