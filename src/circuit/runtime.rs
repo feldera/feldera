@@ -37,12 +37,12 @@ thread_local! {
 thread_local! {
     // Reference to the `Runtime` that manages this worker thread or `None`
     // if the current thread is not running in a multithreaded runtime.
-    static RUNTIME: RefCell<Option<Runtime>> = RefCell::new(None);
+    static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 
     // 0-based index of the current worker thread within its runtime.
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
-    static WORKER_INDEX: Cell<usize> = Cell::new(0);
+    pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
 }
 
 pub struct LocalStoreMarker;
@@ -123,38 +123,55 @@ impl Runtime {
     /// hruntime.join().unwrap();
     /// # }
     /// ```
-    pub fn run<F>(nworkers: usize, f: F) -> RuntimeHandle
+    pub fn run<F>(workers: usize, circuit: F) -> RuntimeHandle
     where
         F: FnOnce() + Clone + Send + 'static,
     {
-        let mut workers = Vec::with_capacity(nworkers);
+        let runtime = Self(Arc::new(RuntimeInner::new(workers)));
 
-        let runtime = Self(Arc::new(RuntimeInner::new(nworkers)));
+        println!("started spawning workers");
+        let start = std::time::Instant::now();
 
-        for worker_index in 0..nworkers {
+        let mut handles = Vec::with_capacity(workers);
+        handles.extend((0..workers).map(|worker_index| {
             let runtime = runtime.clone();
-            let f = f.clone();
-            let builder = Builder::new().name(format!("worker{}", worker_index));
+            let build_circuit = circuit.clone();
 
-            let (init_sender, init_receiver) = bounded(0);
-
-            let join_handle = builder
+            let (init_sender, init_receiver) = bounded(1);
+            let join_handle = Builder::new()
+                .name(format!("dbsp-worker-{worker_index}"))
                 .spawn(move || {
+                    // Set the worker's runtime handle and index
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                    WORKER_INDEX.with(|w| w.set(worker_index));
+                    WORKER_INDEX.with(|idx| idx.set(worker_index));
+
+                    // Send the main thread our parker and kill signal
+                    // TODO: Share a single kill signal across all workers
                     init_sender
                         .send((
                             PARKER.with(|parker| parker.unparker().clone()),
                             KILL_SIGNAL.with(|s| s.clone()),
                         ))
                         .unwrap();
-                    f();
-                })
-                .unwrap_or_else(|_| panic!("failed to spawn worker thread {}", worker_index));
 
-            let (unparker, kill_signal) = init_receiver.recv().unwrap();
-            workers.push(WorkerHandle::new(join_handle, unparker, kill_signal));
-        }
+                    // Build the worker's circuit
+                    build_circuit();
+                })
+                .unwrap_or_else(|error| {
+                    panic!("failed to spawn worker thread {worker_index}: {error}");
+                });
+
+            (join_handle, init_receiver)
+        }));
+
+        let mut workers = Vec::with_capacity(workers);
+        workers.extend(handles.into_iter().map(|(handle, recv)| {
+            let (unparker, kill_signal) = recv.recv().unwrap();
+            WorkerHandle::new(handle, unparker, kill_signal)
+        }));
+
+        let elapsed = start.elapsed();
+        println!("finished spawning workers in {elapsed:#?}");
 
         RuntimeHandle::new(runtime, workers)
     }

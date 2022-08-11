@@ -12,11 +12,12 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! the circuit is triggered, consuming a single value from each of its input
 //! streams and emitting a single value to the output stream.
 
-pub mod circuit_builder;
 mod dbsp_handle;
-mod runtime;
+
+pub(crate) mod runtime;
 
 pub mod cache;
+pub mod circuit_builder;
 pub mod operator_traits;
 pub mod schedule;
 pub mod trace;

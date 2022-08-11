@@ -130,6 +130,7 @@ where
                                 },
                                 |trace: &mut Spine<OB>, batch: OB| trace.insert(batch),
                             );
+
                             // Is `consolidate` always necessary? Some (all?) consumers may be happy
                             // working with traces.
                             self.circuit()
@@ -138,6 +139,7 @@ where
                         },
                     )
                     .clone();
+
                 Some(output)
             }
         })
@@ -176,6 +178,7 @@ where
                                     },
                                     |trace: &mut Spine<IB>, batch: IB| trace.insert(batch),
                                 );
+
                                 // Is `consolidate` always necessary? Some (all?) consumers may be
                                 // happy working with traces.
                                 self.circuit()

@@ -218,7 +218,7 @@ fn main() {
                 HumanBytes(stats.peak_rss as u64),
                 HumanBytes(stats.current_commit as u64),
                 HumanBytes(stats.peak_commit as u64),
-                stats.page_faults,
+                stats.page_faults - init_stats.page_faults,
             );
 
             // Metrics calculations from https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.5.3

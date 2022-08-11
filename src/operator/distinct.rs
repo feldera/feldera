@@ -112,9 +112,10 @@ where
         Z::Key: Clone + Ord + DeepSizeOf + Hash,
         Z::R: ZRingValue + DeepSizeOf,
     {
-        let stream = self.shard();
         self.circuit()
             .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
+                let stream = self.shard();
+
                 self.circuit().add_binary_operator(
                     DistinctTrace::new(),
                     &stream,
