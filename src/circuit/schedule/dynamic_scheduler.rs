@@ -214,6 +214,7 @@ impl Inner {
             // Ignore spurious notifications.
             if circuit.ready(id) {
                 task.is_ready = true;
+
                 // We can see a notification for an already scheduled task
                 // indicating that it's become ready again.
                 // This notification should take effect at the next clock
@@ -283,7 +284,8 @@ impl Inner {
             let is_async = circuit.is_async_node(node_id);
             if is_async {
                 num_async_nodes += 1;
-            };
+            }
+
             tasks.push(Task {
                 node_id,
                 num_predecessors,
@@ -335,6 +337,7 @@ impl Inner {
         for task in self.tasks.iter_mut() {
             task.unsatisfied_dependencies = task.num_predecessors;
             task.scheduled = false;
+
             if task.unsatisfied_dependencies == 0 && task.is_ready {
                 self.runnable.push(task);
             }
@@ -344,6 +347,7 @@ impl Inner {
             if Runtime::kill_in_progress() {
                 return Err(Error::Killed);
             }
+
             match self.dequeue_next_task() {
                 None => {
                     // No more tasks in the run queue -- try to add some by
@@ -356,11 +360,13 @@ impl Inner {
                         Runtime::parker().with(|parker| parker.park());
                     }
                 }
+
                 Some(node_id) => {
                     circuit.eval_node(node_id)?;
                     if self.tasks[node_id.id()].is_async {
                         self.tasks[node_id.id()].is_ready = false;
                     }
+
                     completed_tasks += 1;
                 }
             }

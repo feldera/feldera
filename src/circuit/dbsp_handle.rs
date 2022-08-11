@@ -116,9 +116,9 @@ impl Runtime {
         }
 
         // On error, kill the runtime.
-        if let Some(Err(e)) = init_status.iter().find(|status| status.is_err()) {
+        if let Some(error) = init_status.iter().find_map(|status| status.as_ref().err()) {
             let _ = runtime.kill();
-            return Err(e.clone());
+            return Err(error.clone());
         }
 
         let dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
