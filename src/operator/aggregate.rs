@@ -32,7 +32,7 @@ where
     ///
     /// * `Z` - input indexed Z-set type.
     /// * `O` - output Z-set type.
-    pub fn aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    pub fn stream_aggregate<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet + Send + 'static,
         Z::Key: Ord + Clone + Hash,
@@ -45,10 +45,11 @@ where
             .add_unary_operator(Aggregate::new(f), &self.shard())
     }
 
-    /// Incremental version of the [`Self::aggregate`] operator.
+    /// Incremental version of the [`Self::stream_aggregate`] operator.
     ///
-    /// This is equivalent to `self.integrate().aggregate(f).differentiate()`,
-    /// but is more efficient.
+    /// This is equivalent to
+    /// `self.integrate().stream_aggregate(f).differentiate()`, but is more
+    /// efficient.
     pub fn aggregate_incremental<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet + DeepSizeOf + NumEntries + Send,
@@ -87,11 +88,11 @@ where
         retract_old.plus(&insert_new)
     }
 
-    /// Incremental nested version of the [`Self::aggregate`] operator.
+    /// Incremental nested version of the [`Self::stream_aggregate`] operator.
     ///
     /// This is equivalent to
-    /// `self.integrate().integrate_nested().aggregate(f).differentiate_nested.
-    /// differentiate()`, but is more efficient.
+    /// `self.integrate().integrate_nested().stream_aggregate(f).
+    /// differentiate_nested. differentiate()`, but is more efficient.
     pub fn aggregate_incremental_nested<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet + DeepSizeOf + NumEntries + Send,
@@ -416,7 +417,7 @@ mod test {
                     let sum_noninc = input
                         .integrate_nested()
                         .integrate()
-                        .aggregate(sum)
+                        .stream_aggregate(sum)
                         .differentiate()
                         .differentiate_nested()
                         .gather(0);
@@ -459,7 +460,7 @@ mod test {
                     let min_noninc = input
                         .integrate_nested()
                         .integrate()
-                        .aggregate(min)
+                        .stream_aggregate(min)
                         .differentiate()
                         .differentiate_nested()
                         .gather(0);
