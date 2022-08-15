@@ -301,12 +301,11 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    type Storage = Spine<B>;
-
     #[inline]
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
+
     #[inline]
     fn val_valid(&self) -> bool {
         self.cursor.val_valid()
@@ -316,13 +315,20 @@ where
     fn key(&self) -> &B::Key {
         self.cursor.key()
     }
+
     #[inline]
     fn val(&self) -> &B::Val {
         self.cursor.val()
     }
+
     #[inline]
     fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L) {
         self.cursor.map_times(logic);
+    }
+
+    #[inline]
+    fn map_times_through<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L, upper: &B::Time) {
+        self.cursor.map_times_through(logic, upper);
     }
 
     #[inline]
@@ -356,14 +362,6 @@ where
     #[inline]
     fn seek_val(&mut self, val: &B::Val) {
         self.cursor.seek_val(val);
-    }
-
-    #[inline]
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a B::Val, B::R)>)
-    where
-        's: 'a,
-    {
-        self.cursor.values(vals);
     }
 
     #[inline]

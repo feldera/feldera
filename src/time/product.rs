@@ -1,5 +1,8 @@
-use crate::{circuit::Scope, lattice::Lattice, time::Timestamp};
-use deepsize_derive::DeepSizeOf;
+use crate::{
+    algebra::MonoidValue, circuit::Scope, lattice::Lattice, time::Timestamp,
+    trace::ord::OrdValBatch,
+};
+use deepsize::DeepSizeOf;
 use std::fmt::{Debug, Display, Formatter};
 use timely::PartialOrder;
 
@@ -59,9 +62,15 @@ impl<TOuter: PartialOrder, TInner: PartialOrder> PartialOrder for Product<TOuter
 
 impl<TOuter, TInner> Timestamp for Product<TOuter, TInner>
 where
-    TOuter: Timestamp,
-    TInner: Timestamp,
+    TOuter: Timestamp + DeepSizeOf,
+    TInner: Timestamp + DeepSizeOf,
 {
+    type OrdValBatch<
+        K: Ord + Clone + DeepSizeOf + 'static,
+        V: Ord + Clone + DeepSizeOf + 'static,
+        R: MonoidValue + DeepSizeOf,
+    > = OrdValBatch<K, V, Self, R>;
+
     fn minimum() -> Self {
         Self::new(TOuter::minimum(), TInner::minimum())
     }

@@ -2,7 +2,7 @@
 
 use crate::{
     algebra::{HasZero, MonoidValue},
-    trace::{consolidation::consolidate_from, cursor::Cursor},
+    trace::cursor::Cursor,
 };
 use std::marker::PhantomData;
 
@@ -101,8 +101,6 @@ where
     V: Ord,
     R: MonoidValue,
 {
-    type Storage = Vec<C::Storage>;
-
     // validation methods
     #[inline]
     fn key_valid(&self) -> bool {
@@ -131,6 +129,12 @@ where
     fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
         for &index in self.min_val.iter() {
             self.cursors[index].map_times(|t, d| logic(t, d));
+        }
+    }
+    #[inline]
+    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+        for &index in self.min_val.iter() {
+            self.cursors[index].map_times_through(|t, d| logic(t, d), upper);
         }
     }
 
@@ -186,21 +190,6 @@ where
             self.cursors[index].seek_val(val);
         }
         self.minimize_vals();
-    }
-
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
-    where
-        's: 'a,
-    {
-        let offset = vals.len();
-
-        for &index in self.min_key.iter() {
-            self.cursors[index].values(vals);
-        }
-
-        if self.min_key.len() > 1 {
-            consolidate_from(vals, offset);
-        }
     }
 
     // rewinding methods

@@ -1,5 +1,9 @@
 use super::NexmarkStream;
-use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream};
+use crate::{
+    nexmark::model::Event,
+    operator::{FilterMap, Max},
+    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+};
 
 /// Query 4: Average Price for a Category
 ///
@@ -80,22 +84,16 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    let winning_bids_by_category: Stream<Circuit<()>, OrdZSet<(usize, usize), isize>> =
-        bids_for_auctions_indexed.aggregate_incremental(|&key, vals| -> (usize, usize) {
-            // `vals` is sorted in ascending order for each key, so we can
-            // just grab the last one.
-            let (&max, _) = vals.last().unwrap();
-            (key.1, max)
-        });
-    let winning_bids_by_category_indexed = winning_bids_by_category.index();
+    let winning_bids: Stream<Circuit<()>, OrdIndexedZSet<(u64, usize), usize, isize>> =
+        bids_for_auctions_indexed.aggregate::<(), _>(Max);
+    let winning_bids_by_category_indexed =
+        winning_bids.map_index(|((_, category), winning_bid)| (*category, *winning_bid));
 
     // Finally, calculate the average winning bid per category.
     // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_category_indexed.aggregate_incremental(|&key, vals| -> (usize, usize) {
-        let num_items = vals.len();
-        let sum = vals.drain(..).map(|(bid, _)| bid).sum::<usize>();
-        (key, sum / num_items)
-    })
+    winning_bids_by_category_indexed
+        .average::<(), _, _>(|_category, val| *val as isize)
+        .map(|(category, avg): (&usize, &isize)| (*category, *avg as usize))
 }
 
 #[cfg(test)]

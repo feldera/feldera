@@ -12,16 +12,15 @@
 //! on multiple levels (key and val), but also because it supports efficient
 //! seeking (via the `seek_key` and `seek_val` methods).
 
+pub mod cursor_group;
 pub mod cursor_list;
 pub mod cursor_pair;
 
+pub use self::cursor_group::CursorGroup;
 pub use self::cursor_list::CursorList;
 
 /// A cursor for navigating ordered `(key, val, time, diff)` tuples.
 pub trait Cursor<'s, K, V, T, R> {
-    /// Type the cursor addresses data in.
-    type Storage;
-
     /// Indicates if the current key is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all keys.
@@ -60,6 +59,10 @@ pub trait Cursor<'s, K, V, T, R> {
     /// Applies `logic` to each pair of time and difference. Intended for
     /// mutation of the closure's scope.
     fn map_times<L: FnMut(&T, &R)>(&mut self, logic: L);
+
+    /// Applies `logic` to each pair of time and difference, restricted
+    /// to times `t <= upper`.
+    fn map_times_through<L: FnMut(&T, &R)>(&mut self, logic: L, upper: &T);
 
     /// Returns the weight associated with the current key/value pair.
     ///
@@ -102,12 +105,6 @@ pub trait Cursor<'s, K, V, T, R> {
 
     /// Advances the cursor to the specified value.
     fn seek_val(&mut self, val: &V);
-
-    /// Push sorted list of values for the current key
-    /// to `vals`.
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
-    where
-        's: 'a;
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self);

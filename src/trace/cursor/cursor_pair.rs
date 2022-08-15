@@ -4,7 +4,7 @@ use std::cmp::{max, Ordering};
 
 use crate::{
     algebra::{HasZero, MonoidValue},
-    trace::{consolidation::consolidate_from, cursor::Cursor},
+    trace::cursor::Cursor,
 };
 
 /// A cursor over the combined updates of two different cursors.
@@ -28,8 +28,6 @@ where
     C2: Cursor<'s, K, V, T, R>,
     R: MonoidValue,
 {
-    type Storage = (C1::Storage, C2::Storage);
-
     // validation methods
     fn key_valid(&self) -> bool {
         match self.key_order {
@@ -77,6 +75,20 @@ where
         }
     }
 
+    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+        if self.key_order == Ordering::Less
+            || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
+        {
+            self.cursor1.map_times_through(|t, d| logic(t, d), upper);
+        }
+
+        if self.key_order == Ordering::Greater
+            || (self.key_order == Ordering::Equal && self.val_order != Ordering::Less)
+        {
+            self.cursor2.map_times_through(|t, d| logic(t, d), upper);
+        }
+    }
+
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
@@ -115,23 +127,6 @@ where
 
     fn last_key(&mut self) -> Option<&K> {
         max(self.cursor1.last_key(), self.cursor2.last_key())
-    }
-
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
-    where
-        's: 'a,
-    {
-        let offset = vals.len();
-
-        match self.key_order {
-            Ordering::Less => self.cursor1.values(vals),
-            Ordering::Greater => self.cursor2.values(vals),
-            Ordering::Equal => {
-                self.cursor1.values(vals);
-                self.cursor2.values(vals);
-                consolidate_from(vals, offset);
-            }
-        }
     }
 
     // value methods

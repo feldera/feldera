@@ -45,7 +45,7 @@ macro_rules! nexmark_circuit {
 
             let output = $q(stream);
 
-            output.inspect(move |_zs: &OrdZSet<_, _>| ());
+            output.inspect(move |_zs| ());
 
             input_handle
         }

@@ -5,10 +5,10 @@
 //! [2.3.1]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.1
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
-use crate::data::{Distance, DistanceSet, Edges, Node, VertexSet, Vertices};
+use crate::data::{Distance, DistanceMap, DistanceSet, Edges, Node, VertexSet, Vertices};
 use dbsp::{
     algebra::Present,
-    operator::{recursive::RecursiveStreams, FilterMap},
+    operator::{recursive::RecursiveStreams, FilterMap, Min},
     time::NestedTimestamp32,
     trace::{Batch, BatchReader, Builder, Cursor},
     Circuit, Stream,
@@ -53,7 +53,7 @@ where
             let edges = edges.delta0(scope);
 
             let distances = nodes
-                .index::<Node, Distance>()
+                .index()
                 // Iterate over each edge within the graph, increasing the distance on each step
                 .join::<NestedTimestamp32, _, _, DistanceSet<Present>>(&edges, |_, &dist, &dest| {
                     (dest, dist + 1)
@@ -61,10 +61,9 @@ where
                 // Add in the root nodes
                 .plus(&roots)
                 .index::<Node, Distance>()
-                // Select only the shortest distance to continue iterating with, `distances`
-                // is sorted so we can simply select the first element
-                .aggregate_incremental_nested(|&node, distances| (node, *distances[0].0));
-
+                // Select only the shortest distance to continue iterating.
+                .aggregate_generic::<(), _, DistanceMap<Present>>(Min)
+                .map(|(&node, &distance)| (node, distance));
             Ok(distances)
         })
         .expect("failed to build dfs recursive scope");

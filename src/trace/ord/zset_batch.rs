@@ -315,8 +315,6 @@ where
     K: Ord + Clone,
     R: MonoidValue,
 {
-    type Storage = OrdZSet<K, R>;
-
     #[inline]
     fn key(&self) -> &K {
         self.cursor.current_key()
@@ -332,6 +330,11 @@ where
         if self.cursor.valid() {
             logic(&(), self.cursor.current_diff());
         }
+    }
+
+    #[inline]
+    fn map_times_through<L: FnMut(&(), &R)>(&mut self, logic: L, _upper: &()) {
+        self.map_times(logic)
     }
 
     #[inline]
@@ -374,14 +377,6 @@ where
 
     #[inline]
     fn seek_val(&mut self, _val: &()) {}
-
-    #[inline]
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a (), R)>)
-    where
-        's: 'a,
-    {
-        vals.push((&(), self.cursor.current_diff().clone()))
-    }
 
     #[inline]
     fn rewind_keys(&mut self) {

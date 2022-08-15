@@ -428,8 +428,6 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Storage = OrdIndexedZSet<K, V, R, O>;
-
     #[inline]
     fn key(&self) -> &K {
         self.cursor.key()
@@ -445,6 +443,11 @@ where
         if self.cursor.child.valid() {
             logic(&(), self.cursor.child.current_diff());
         }
+    }
+
+    #[inline]
+    fn map_times_through<L: FnMut(&(), &R)>(&mut self, logic: L, _upper: &()) {
+        self.map_times(logic)
     }
 
     #[inline]
@@ -486,23 +489,6 @@ where
     #[inline]
     fn seek_val(&mut self, val: &V) {
         self.cursor.child.seek_key(val);
-    }
-
-    #[inline]
-    fn values<'a>(&mut self, vals: &mut Vec<(&'a V, R)>)
-    where
-        's: 'a,
-    {
-        debug_assert!(self.cursor.valid());
-
-        let mut val_cursor = self.cursor.values();
-        vals.reserve(val_cursor.keys());
-
-        while val_cursor.valid() {
-            let (value, diff) = val_cursor.key();
-            vals.push((value, diff.clone()));
-            val_cursor.step();
-        }
     }
 
     #[inline]

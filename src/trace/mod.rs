@@ -144,7 +144,7 @@ where
     type R: MonoidValue;
 
     /// The type used to enumerate the batch's contents.
-    type Cursor<'s>: Cursor<'s, Self::Key, Self::Val, Self::Time, Self::R, Storage = Self>
+    type Cursor<'s>: Cursor<'s, Self::Key, Self::Val, Self::Time, Self::R>
     where
         Self: 's;
 
@@ -371,8 +371,6 @@ pub mod rc_blanket_impls {
     }
 
     impl<'s, B: BatchReader> Cursor<'s, B::Key, B::Val, B::Time, B::R> for RcBatchCursor<'s, B> {
-        type Storage = Rc<B>;
-
         #[inline]
         fn key_valid(&self) -> bool {
             self.cursor.key_valid()
@@ -394,6 +392,11 @@ pub mod rc_blanket_impls {
         #[inline]
         fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L) {
             self.cursor.map_times(logic)
+        }
+
+        #[inline]
+        fn map_times_through<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L, upper: &B::Time) {
+            self.cursor.map_times_through(logic, upper)
         }
 
         #[inline]
@@ -423,14 +426,6 @@ pub mod rc_blanket_impls {
         #[inline]
         fn seek_val(&mut self, val: &B::Val) {
             self.cursor.seek_val(val)
-        }
-
-        #[inline]
-        fn values<'a>(&mut self, vals: &mut Vec<(&'a B::Val, B::R)>)
-        where
-            's: 'a,
-        {
-            self.cursor.values(vals);
         }
 
         #[inline]
