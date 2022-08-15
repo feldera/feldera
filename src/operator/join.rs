@@ -9,7 +9,7 @@ use crate::{
     lattice::Lattice,
     time::Timestamp,
     trace::{
-        cursor::Cursor as TraceCursor, ord::OrdValSpine, Batch, BatchReader, Batcher, Builder,
+        cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
         Trace, TraceReader,
     },
 };
@@ -225,8 +225,8 @@ where
         let left = self.shard();
         let right = other.shard();
 
-        let left_trace = left.trace::<OrdValSpine<I1::Key, I1::Val, TS, I1::R>>();
-        let right_trace = right.trace::<OrdValSpine<I1::Key, I2::Val, TS, I1::R>>();
+        let left_trace = left.trace::<Spine<TS::OrdValBatch<I1::Key, I1::Val, I1::R>>>();
+        let right_trace = right.trace::<Spine<TS::OrdValBatch<I1::Key, I2::Val, I1::R>>>();
 
         let left = self.circuit().add_binary_operator(
             JoinTrace::new(join_func.clone()),

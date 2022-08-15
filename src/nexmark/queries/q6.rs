@@ -1,5 +1,10 @@
 use super::NexmarkStream;
-use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream};
+use crate::{
+    nexmark::model::Event,
+    operator::{FilterMap, Fold, Max},
+    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+};
+use std::collections::VecDeque;
 
 /// Query 6: Average Selling Price by Seller
 ///
@@ -32,7 +37,7 @@ use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream
 /// ) AS Q;
 /// ```
 
-type Q6Stream = Stream<Circuit<()>, OrdZSet<(u64, usize), isize>>;
+type Q6Stream = Stream<Circuit<()>, OrdIndexedZSet<u64, usize, isize>>;
 
 const NUM_AUCTIONS_PER_SELLER: usize = 10;
 
@@ -80,42 +85,40 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    type WinningBidsBySeller = Stream<Circuit<()>, OrdZSet<(u64, (u64, usize)), isize>>;
-    let winning_bids_by_seller: WinningBidsBySeller = bids_for_auctions_indexed
-        .aggregate_incremental(|&key, vals| -> (u64, (u64, usize)) {
-            // `vals` is sorted in ascending order for each key, so we can
-            // just grab the last one.
-            let (&max, _) = vals.last().unwrap();
-            (key.1, (key.0, max))
-        });
-    let winning_bids_by_seller_indexed = winning_bids_by_seller.index();
+    type WinningBidsBySeller = Stream<Circuit<()>, OrdIndexedZSet<u64, (u64, usize), isize>>;
+    let winning_bids_by_seller_indexed: WinningBidsBySeller = bids_for_auctions_indexed
+        .aggregate::<(), _>(Max)
+        .map_index(|(key, max)| (key.1, (key.0, *max)));
 
     // Finally, calculate the average winning bid per seller, using the last
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_seller_indexed.aggregate_incremental(|&key, vals| -> (u64, usize) {
-        // Grab the last 10 vals,
-        let len = vals.len();
-        let start = len.saturating_sub(NUM_AUCTIONS_PER_SELLER);
-        let last_10 = &vals[start..len];
-        let num_items = last_10.len();
-        let sum = last_10
-            .iter()
-            .map(|((_, bid), _)| *bid as usize) // No deletions
-            .sum::<usize>();
-        (key, sum / num_items as usize)
-    })
+    winning_bids_by_seller_indexed.aggregate::<(), _>(Fold::with_output(
+        VecDeque::with_capacity(NUM_AUCTIONS_PER_SELLER),
+        |top: &mut VecDeque<usize>, val: &(u64, usize), _w| {
+            if top.len() >= NUM_AUCTIONS_PER_SELLER {
+                top.pop_front();
+            }
+            top.push_back(val.1);
+        },
+        |top: VecDeque<usize>| -> usize {
+            let len = top.len();
+            let sum: usize = Iterator::sum(top.into_iter());
+            sum / len
+        },
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
+        indexed_zset,
         nexmark::{
             generator::tests::{make_auction, make_bid},
             model::{Auction, Bid, Event},
         },
-        zset, Circuit,
+        Circuit,
     };
 
     #[test]
@@ -180,12 +183,12 @@ mod tests {
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
-                zset! { (99, 100) => 1 },
+                indexed_zset! { 99 => {100 => 1} },
                 // The second batch just updates the best bid for the single auction to 200 (ie. no
                 // averaging).
-                zset! {(99, 100) => -1, (99, 200) => 1 },
+                indexed_zset! { 99 => {100 => -1, 200 => 1} },
                 // The third batch has a bid that isn't higher, so no change.
-                zset! {},
+                indexed_zset! {},
             ]
             .into_iter();
 
@@ -256,10 +259,10 @@ mod tests {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
-                zset! { (99, 100) => 1 },
+                indexed_zset! { 99 => {100 => 1} },
                 // The second batch adds another auction for the same seller with a final bid of
                 // 200, so average is 150.
-                zset! { (99, 100) => -1, (99, 150) => 1 },
+                indexed_zset! { 99 => {100 => -1, 150 => 1} },
             ]
             .into_iter();
 
@@ -496,12 +499,12 @@ mod tests {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
-                zset! { (99, 120) => 1 },
+                indexed_zset! { 99 => {120 => 1} },
                 // Second batch adds another 5 auctions for person 99, but average is still 110.
-                zset! {(99, 120) => -1, (99, 110) => 1 },
+                indexed_zset! { 99 => {120 => -1, 110 => 1} },
                 // Third batch adds a single auction with bid of 100, pushing
                 // out the first bid so average is now 100.
-                zset! {(99, 110) => -1, (99, 100) => 1 },
+                indexed_zset! { 99 => {110 => -1, 100 => 1} },
             ]
             .into_iter();
 
@@ -615,12 +618,12 @@ mod tests {
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
-                zset! { (99, 100) => 1 },
+                indexed_zset! { 99 => {100 => 1} },
                 // The second batch adds another auction for the same seller with a final bid of
                 // 200, so average is 150.
-                zset! { (33, 200) => 1 },
+                indexed_zset! { 33 => {200 => 1} },
                 // The average for person 33 doesn't change, only for 99.
-                zset! { (99, 100) => -1, (99, 150) => 1},
+                indexed_zset! { 99 => {100 => -1, 150 => 1} },
             ]
             .into_iter();
 

@@ -34,7 +34,7 @@ mod z1;
 
 #[cfg(feature = "with-csv")]
 pub use self::csv::CsvSource;
-pub use aggregate::Aggregate;
+pub use aggregate::{Aggregator, Fold, Max, Min};
 pub use apply::Apply;
 pub use condition::Condition;
 pub use delta0::Delta0;

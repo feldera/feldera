@@ -46,7 +46,7 @@ where
     }
 }
 
-fn skip_zero_weights<'s, K, V, R, C>(cursor: &mut C) -> bool
+fn skip_zero_weights<'s, K, V: 's, R, C>(cursor: &mut C) -> bool
 where
     C: Cursor<'s, K, V, (), R>,
     R: HasZero,

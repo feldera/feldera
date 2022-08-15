@@ -31,6 +31,7 @@ pub type RankSet = OrdZSet<(Node, Rank), Weight>;
 pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
 pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
 pub type DistanceSet<D = Present> = OrdZSet<(Node, Distance), D>;
+pub type DistanceMap<D = Present> = OrdIndexedZSet<Node, Distance, D>;
 
 pub type Streamed<P, T> = Stream<Circuit<P>, T>;
 

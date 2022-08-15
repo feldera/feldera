@@ -3,10 +3,17 @@
 mod nested_ts32;
 mod product;
 
-use crate::{circuit::Scope, lattice::Lattice};
+use crate::{
+    algebra::MonoidValue,
+    circuit::Scope,
+    lattice::Lattice,
+    trace::{ord::OrdValBatch, Batch},
+    OrdIndexedZSet,
+};
 use std::{fmt::Debug, hash::Hash};
 use timely::PartialOrder;
 
+use deepsize::DeepSizeOf;
 pub use nested_ts32::NestedTimestamp32;
 pub use product::Product;
 
@@ -69,6 +76,26 @@ pub use product::Product;
 pub trait Timestamp:
     PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + 'static
 {
+    /// A default `Batch` type for batches using this timestamp.
+    ///
+    /// We sometimes need to instantiate a batch with the given key, value,
+    /// timestamp, and weight types to store the intermediate result of a
+    /// computation, and we don't want to bother the user with specifying the
+    /// concrete batch type to use.  A reasonable default is one of
+    /// `OrdValBatch` and `OrdIndexedZSet` depending on the timestamp type.
+    /// The former works for all timestamps, while the latter is more
+    /// compact and efficient, but is only applicable to batches with unit
+    /// timestamps `()`.
+    ///
+    /// We automate this choice by making it an associated type of
+    /// `trait Timestamp` -- not a very elegant solution, but I couldn't
+    /// think of a better one.
+    type OrdValBatch<
+        K: Ord + Clone + DeepSizeOf + 'static,
+        V: Ord + Clone + DeepSizeOf + 'static,
+        R: MonoidValue + DeepSizeOf>
+            : Batch<Key=K, Val=V, Time=Self, R=R> + DeepSizeOf;
+
     fn minimum() -> Self;
 
     /// The value of the timestamp when the clock starts ticking.
@@ -133,6 +160,12 @@ pub trait Timestamp:
 }
 
 impl Timestamp for () {
+    type OrdValBatch<
+        K: Ord + Clone + DeepSizeOf + 'static,
+        V: Ord + Clone + DeepSizeOf + 'static,
+        R: MonoidValue + DeepSizeOf,
+    > = OrdIndexedZSet<K, V, R>;
+
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
     fn recede(&self, _scope: Scope) -> Self {}
@@ -141,6 +174,12 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
+    type OrdValBatch<
+        K: Ord + Clone + DeepSizeOf + 'static,
+        V: Ord + Clone + DeepSizeOf + 'static,
+        R: MonoidValue + DeepSizeOf,
+    > = OrdValBatch<K, V, Self, R>;
+
     fn minimum() -> Self {
         0
     }

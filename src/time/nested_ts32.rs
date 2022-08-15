@@ -1,5 +1,8 @@
-use crate::{circuit::Scope, lattice::Lattice, time::Timestamp};
-use deepsize_derive::DeepSizeOf;
+use crate::{
+    algebra::MonoidValue, circuit::Scope, lattice::Lattice, time::Timestamp,
+    trace::ord::OrdValBatch,
+};
+use deepsize::DeepSizeOf;
 use std::fmt::{Debug, Display, Formatter};
 use timely::PartialOrder;
 
@@ -54,6 +57,12 @@ impl PartialOrder for NestedTimestamp32 {
 }
 
 impl Timestamp for NestedTimestamp32 {
+    type OrdValBatch<
+        K: Ord + Clone + DeepSizeOf + 'static,
+        V: Ord + Clone + DeepSizeOf + 'static,
+        R: MonoidValue + DeepSizeOf,
+    > = OrdValBatch<K, V, Self, R>;
+
     fn minimum() -> Self {
         Self::new(false, 0)
     }

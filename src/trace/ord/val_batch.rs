@@ -394,8 +394,6 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Storage = OrdValBatch<K, V, T, R, O>;
-
     fn key(&self) -> &K {
         self.cursor.key()
     }
@@ -412,6 +410,17 @@ where
             self.cursor.child.child.step();
         }
     }
+    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+        self.cursor.child.child.rewind();
+        while self.cursor.child.child.valid() && self.cursor.child.child.key().0.less_equal(upper) {
+            logic(
+                &self.cursor.child.child.key().0,
+                &self.cursor.child.child.key().1,
+            );
+            self.cursor.child.child.step();
+        }
+    }
+
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
@@ -440,16 +449,6 @@ where
     }
     fn seek_val(&mut self, val: &V) {
         self.cursor.child.seek(val);
-    }
-
-    fn values<'a>(&mut self, _vals: &mut Vec<(&'a V, R)>)
-    where
-        's: 'a,
-    {
-        // We currently don't use this method on timed batches.
-        // When we do, the API is likely to change, so just
-        // leave it unimplemented for now.
-        unimplemented!()
     }
 
     fn rewind_keys(&mut self) {

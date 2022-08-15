@@ -332,8 +332,6 @@ where
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    type Storage = OrdKeyBatch<K, T, R, O>;
-
     fn key(&self) -> &K {
         self.cursor.key()
     }
@@ -343,6 +341,13 @@ where
     fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {
+            logic(&self.cursor.child.key().0, &self.cursor.child.key().1);
+            self.cursor.child.step();
+        }
+    }
+    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+        self.cursor.child.rewind();
+        while self.cursor.child.valid() && self.cursor.child.key().0.less_equal(upper) {
             logic(&self.cursor.child.key().0, &self.cursor.child.key().1);
             self.cursor.child.step();
         }
@@ -375,15 +380,6 @@ where
         self.valid = false;
     }
     fn seek_val(&mut self, _val: &()) {}
-
-    fn values<'a>(&mut self, _vals: &mut Vec<(&'a (), R)>)
-    where
-        's: 'a,
-    {
-        // It's technically ok to call this on a batch with value type `()`,
-        // but shouldn't happen in practice.
-        unimplemented!()
-    }
 
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
