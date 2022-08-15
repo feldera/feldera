@@ -348,7 +348,7 @@ where
         _trace: &'s T,
         value: &Z::Key,
         weight: Z::R,
-        output: &mut Vec<(Z::Item, Z::R)>,
+        builder: &mut Z::Builder,
     ) {
         //eprintln!("value: {:?}, weight: {:?}", value, weight);
         trace_cursor.seek_key(value);
@@ -398,7 +398,7 @@ where
 
             // Update output.
             if delta_old != delta_new {
-                output.push((Z::item_from(value.clone(), ()), delta_new + delta_old.neg()));
+                builder.push((Z::item_from(value.clone(), ()), delta_new + delta_old.neg()));
             }
 
             // Record next_ts in `self.future_updates`.
@@ -407,7 +407,7 @@ where
                 self.future_updates[idx].insert(value.clone());
             }
         } else if weight.ge0() && !weight.is_zero() {
-            output.push((Z::item_from(value.clone(), ()), HasOne::one()));
+            builder.push((Z::item_from(value.clone(), ()), HasOne::one()));
         }
     }
 }
@@ -505,7 +505,7 @@ where
         self.future_updates
             .resize(new_len as usize, BTreeSet::new());
 
-        let mut batch = Vec::with_capacity(delta.len());
+        let mut builder = Z::Builder::with_capacity((), delta.len());
 
         let mut trace_cursor = trace.cursor();
 
@@ -525,7 +525,7 @@ where
             match k.cmp(cand_val) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
+                    self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
                     delta_cursor.step_key();
                 }
                 // Key only appears in `future_updates`.
@@ -535,13 +535,13 @@ where
                         trace,
                         cand_val,
                         HasZero::zero(),
-                        &mut batch,
+                        &mut builder,
                     );
                     candidate = cand_iterator.next();
                 }
                 // Key appears in both `delta` and `future_updates`.
                 Ordering::Equal => {
-                    self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
+                    self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
                     delta_cursor.step_key();
                     candidate = cand_iterator.next();
                 }
@@ -555,7 +555,7 @@ where
             let w = delta_cursor.weight();
             let k = delta_cursor.key();
 
-            self.eval_value(&mut trace_cursor, trace, k, w, &mut batch);
+            self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
             delta_cursor.step_key();
         }
         while candidate.is_some() {
@@ -564,15 +564,15 @@ where
                 trace,
                 candidate.unwrap(),
                 HasZero::zero(),
-                &mut batch,
+                &mut builder,
             );
             candidate = cand_iterator.next();
         }
 
         self.time += 1;
 
-        let result = Z::from_tuples((), batch);
-        self.empty_output = result.is_zero();
+        let result = builder.done();
+        self.empty_output = result.key_count() == 0;
         result
     }
 }
