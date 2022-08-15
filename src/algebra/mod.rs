@@ -132,7 +132,7 @@ pub trait NegByRef {
     fn neg_by_ref(&self) -> Self;
 }
 
-/// Implementation of AddByRef for types that have an Add.
+/// Implementation of NegByRef for types that have a Neg.
 impl<T> NegByRef for T
 where
     for<'a> &'a T: Neg<Output = T>,
@@ -267,6 +267,62 @@ where
     #[inline]
     fn le0(&self) -> bool {
         *self <= Self::zero()
+    }
+}
+
+impl MulByRef<isize> for i32 {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        (*self as isize * w) as Self
+    }
+}
+
+impl MulByRef<isize> for i64 {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        (*self as isize * w) as Self
+    }
+}
+
+impl MulByRef<isize> for f32 {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<isize> for f64 {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<isize> for Option<i32> {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        self.as_ref().map(|x| (*x as isize * w) as i32)
+    }
+}
+
+impl MulByRef<isize> for Option<i64> {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        self.as_ref().map(|x| (*x as isize * w) as i64)
+    }
+}
+
+impl MulByRef<isize> for Option<f32> {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        self.as_ref().map(|x| *x * (*w as f32))
+    }
+}
+
+impl MulByRef<isize> for Option<f64> {
+    #[inline(always)]
+    fn mul_by_ref(&self, w: &isize) -> Self {
+        self.as_ref().map(|x| *x * (*w as f64))
     }
 }
 
