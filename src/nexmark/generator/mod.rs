@@ -88,7 +88,7 @@ impl<R: Rng> EventGenerator<R> for NexmarkGenerator<R> {
         if !self.has_next() {
             return Ok(None);
         }
-        if self.wallclock_base_time == None {
+        if self.wallclock_base_time.is_none() {
             self.wallclock_base_time = Some(self.wallclock_time());
         }
 
