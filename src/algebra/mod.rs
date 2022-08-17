@@ -280,57 +280,73 @@ where
 }
 
 impl MulByRef<isize> for i32 {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         (*self as isize * w) as Self
     }
 }
 
 impl MulByRef<isize> for i64 {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         (*self as isize * w) as Self
     }
 }
 
 impl MulByRef<isize> for f32 {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         *self * ((*w) as f32)
     }
 }
 
 impl MulByRef<isize> for f64 {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         *self * ((*w) as f64)
     }
 }
 
 impl MulByRef<isize> for Option<i32> {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         self.as_ref().map(|x| (*x as isize * w) as i32)
     }
 }
 
 impl MulByRef<isize> for Option<i64> {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         self.as_ref().map(|x| (*x as isize * w) as i64)
     }
 }
 
 impl MulByRef<isize> for Option<f32> {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         self.as_ref().map(|x| *x * (*w as f32))
     }
 }
 
 impl MulByRef<isize> for Option<f64> {
-    #[inline(always)]
-    fn mul_by_ref(&self, w: &isize) -> Self {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
         self.as_ref().map(|x| *x * (*w as f64))
     }
 }

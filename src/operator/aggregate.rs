@@ -131,7 +131,7 @@ where
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
         O: Clone + ZSet<Key = (Z::Key, A), R = Z::R> + 'static,
         O::R: ZRingValue,
-        A: MulByRef<Z::R> + GroupValue + DeepSizeOf + Send,
+        A: MulByRef<Z::R, Output = A> + GroupValue + DeepSizeOf + Send,
     {
         self.weigh(f).aggregate_incremental(|key, weights| {
             debug_assert_eq!(weights.len(), 1);
@@ -149,7 +149,7 @@ where
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
         O: Clone + ZSet<Key = (Z::Key, A), R = Z::R> + DeepSizeOf + 'static,
         O::R: ZRingValue,
-        A: MulByRef<Z::R> + GroupValue + DeepSizeOf + Send,
+        A: MulByRef<Z::R, Output = A> + GroupValue + DeepSizeOf + Send,
     {
         self.weigh(f).aggregate_incremental_nested(|key, weights| {
             debug_assert_eq!(weights.len(), 1);
@@ -175,7 +175,7 @@ where
         Z::Key: Ord + Clone,
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &Z::Val) -> T + 'static,
-        T: MulByRef<Z::R> + MonoidValue,
+        T: MulByRef<Z::R, Output = T> + MonoidValue,
     {
         self.weigh_generic::<_, OrdZSet<_, _>>(f)
     }
@@ -188,7 +188,7 @@ where
         Z::Val: Ord + Clone,
         F: Fn(&Z::Key, &Z::Val) -> O::R + 'static,
         O: Clone + Batch<Key = Z::Key, Val = (), Time = ()> + 'static,
-        O::R: MulByRef<Z::R>,
+        O::R: MulByRef<Z::R, Output = O::R>,
     {
         self.apply(move |batch| {
             let mut delta = <O::Builder>::with_capacity((), batch.key_count());
