@@ -32,77 +32,82 @@ pub fn q2(input: NexmarkStream) -> Stream<Circuit<()>, OrdZSet<(u64, usize), isi
 mod tests {
     use super::*;
     use crate::nexmark::{
-        generator::{
-            tests::{make_auction, make_bid, make_next_event, CannedEventGenerator},
-            NextEvent,
-        },
-        model::Bid,
-        NexmarkSource,
+        generator::tests::make_bid,
+        model::{Bid, Event},
     };
-    use crate::{trace::Batch, OrdZSet};
-    use rand::rngs::mock::StepRng;
-    use std::sync::mpsc;
+    use crate::{trace::Batch, Circuit, OrdZSet};
 
     #[test]
     fn test_q2() {
-        let canned_events: Vec<NextEvent> = vec![
-            NextEvent {
-                event: Event::Bid(Bid {
-                    auction: AUCTION_ID_MODULO,
-                    price: 99,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Bid(Bid {
-                    auction: 125,
-                    price: 101,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Auction(make_auction()),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Bid(Bid {
-                    auction: 5 * AUCTION_ID_MODULO,
-                    price: 125,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-        ];
-        let (tx, _) = mpsc::channel();
-        let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
-            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
+        fn input_vecs() -> Vec<Vec<(Event, isize)>> {
+            vec![
+                vec![
+                    (
+                        Event::Bid(Bid {
+                            auction: 1,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: AUCTION_ID_MODULO,
+                            price: 111,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: AUCTION_ID_MODULO + 1,
+                            price: 100,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+                vec![
+                    (
+                        Event::Bid(Bid {
+                            auction: 3 * AUCTION_ID_MODULO + 25,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 4 * AUCTION_ID_MODULO,
+                            price: 222,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+            ]
+        }
 
-        let root = Circuit::build(move |circuit| {
-            let input = circuit.add_source(source);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
-            let output = q2(input);
+            let output = q2(stream);
 
-            output.inspect(move |e| {
-                // Only the two bids with an auction (id) that is modulo
-                // AUCTION_ID_MODULO are included in the tuple results of
-                // id and price.
-                assert_eq!(
-                    e,
-                    &OrdZSet::from_keys(
-                        (),
-                        vec![
-                            ((AUCTION_ID_MODULO, 99), 1),
-                            ((5 * AUCTION_ID_MODULO, 125), 1),
-                        ]
-                    )
-                )
-            });
+            let mut expected_output = vec![
+                OrdZSet::from_keys((), vec![((AUCTION_ID_MODULO, 111), 1)]),
+                OrdZSet::from_keys((), vec![((4 * AUCTION_ID_MODULO, 222), 1)]),
+            ]
+            .into_iter();
+
+            output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
+
+            input_handle
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
-        root.step().unwrap();
+        for mut vec in input_vecs().into_iter() {
+            input_handle.append(&mut vec);
+            circuit.step().unwrap();
+        }
     }
 }

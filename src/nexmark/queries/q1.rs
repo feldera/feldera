@@ -40,42 +40,108 @@ pub fn q1(input: NexmarkStream) -> NexmarkStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nexmark::tests::{generate_expected_zset_tuples, make_source_with_wallclock_times};
+    use crate::nexmark::{
+        generator::tests::{make_auction, make_bid},
+        model::{Auction, Bid, Event},
+    };
     use crate::{trace::Batch, Circuit, OrdZSet};
 
     #[test]
     fn test_q1() {
-        let (source, _) = make_source_with_wallclock_times(0..2, 10);
+        fn input_vecs() -> Vec<Vec<(Event, isize)>> {
+            vec![
+                vec![
+                    (
+                        Event::Auction(Auction {
+                            id: 1,
+                            seller: 99,
+                            expires: 10_000,
+                            ..make_auction()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 1,
+                            date_time: 1_000,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 1,
+                            date_time: 2_000,
+                            price: 100,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+                vec![
+                    (
+                        Event::Auction(Auction {
+                            id: 2,
+                            seller: 99,
+                            expires: 10_000,
+                            ..make_auction()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 2,
+                            date_time: 1_000,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 2,
+                            date_time: 2_000,
+                            price: 100,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+            ]
+        }
 
-        let circuit = Circuit::build(move |circuit| {
-            let input = circuit.add_source(source);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
-            let output = q1(input);
+            let output = q1(stream);
 
-            // Manually update the generated test result with the expected prices
-            // for a single batch.
-            output.inspect(move |e| {
-                assert_eq!(
-                    e,
-                    &OrdZSet::from_keys(
-                        (),
-                        generate_expected_zset_tuples(0, 10)
-                            .into_iter()
-                            .map(|(event, w)| {
-                                let event = match event {
-                                    Event::Bid(b) => Event::Bid(Bid { price: 89, ..b }),
-                                    _ => event,
-                                };
-                                (event, w)
-                            })
-                            .collect()
-                    )
-                )
+            let mut expected_output = input_vecs().into_iter().map(|v| {
+                let expected_v = v
+                    .into_iter()
+                    .map(|(e, w)| match e {
+                        Event::Bid(b) => (
+                            Event::Bid(Bid {
+                                price: b.price * 89 / 100,
+                                ..b
+                            }),
+                            w,
+                        ),
+                        _ => (e, w),
+                    })
+                    .collect();
+                OrdZSet::from_tuples((), expected_v)
             });
-        })
-        .unwrap()
-        .0;
 
-        circuit.step().unwrap();
+            output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
+
+            input_handle
+        })
+        .unwrap();
+
+        for mut vec in input_vecs().into_iter() {
+            input_handle.append(&mut vec);
+            circuit.step().unwrap();
+        }
     }
 }

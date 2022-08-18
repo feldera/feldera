@@ -11,28 +11,95 @@ pub fn q0(input: NexmarkStream) -> NexmarkStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nexmark::tests::{generate_expected_zset_tuples, make_source_with_wallclock_times};
+    use crate::nexmark::{
+        generator::tests::{make_auction, make_bid},
+        model::{Auction, Bid, Event},
+    };
     use crate::{trace::Batch, Circuit, OrdZSet};
 
     #[test]
     fn test_q0() {
-        let (source, _) = make_source_with_wallclock_times(1..3, 10);
+        fn input_vecs() -> Vec<Vec<(Event, isize)>> {
+            vec![
+                vec![
+                    (
+                        Event::Auction(Auction {
+                            id: 1,
+                            seller: 99,
+                            expires: 10_000,
+                            ..make_auction()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 1,
+                            date_time: 1_000,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 1,
+                            date_time: 2_000,
+                            price: 100,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+                vec![
+                    (
+                        Event::Auction(Auction {
+                            id: 2,
+                            seller: 99,
+                            expires: 10_000,
+                            ..make_auction()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 2,
+                            date_time: 1_000,
+                            price: 80,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                    (
+                        Event::Bid(Bid {
+                            auction: 2,
+                            date_time: 2_000,
+                            price: 100,
+                            ..make_bid()
+                        }),
+                        1,
+                    ),
+                ],
+            ]
+        }
 
-        let circuit = Circuit::build(move |circuit| {
-            let input = circuit.add_source(source);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
-            let output = q0(input);
+            let output = q0(stream);
 
-            output.inspect(move |e| {
-                assert_eq!(
-                    e,
-                    &OrdZSet::from_tuples((), generate_expected_zset_tuples(0, 10))
-                )
-            });
+            let mut expected_output = input_vecs()
+                .into_iter()
+                .map(|v| OrdZSet::from_tuples((), v));
+
+            output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
+
+            input_handle
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
-        circuit.step().unwrap();
+        for mut vec in input_vecs().into_iter() {
+            input_handle.append(&mut vec);
+            circuit.step().unwrap();
+        }
     }
 }
