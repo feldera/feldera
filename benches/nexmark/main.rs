@@ -21,7 +21,7 @@ use dbsp::{
         config::Config as NexmarkConfig,
         generator::config::Config as GeneratorConfig,
         model::Event,
-        queries::{q0, q1, q2, q3, q4},
+        queries::{q0, q1, q2, q3, q4, q6},
         NexmarkSource,
     },
     trace::{ord::OrdZSet, BatchReader},
@@ -202,7 +202,8 @@ fn main() -> Result<()> {
         ("q1", q1),
         ("q2", q2),
         ("q3", q3),
-        ("q4", q4)
+        ("q4", q4),
+        ("q6", q6)
     );
 
     let ascii_table = create_ascii_table();
