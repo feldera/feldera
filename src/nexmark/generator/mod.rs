@@ -242,48 +242,6 @@ pub mod tests {
         }
     }
 
-    /// Returned canned events for tests.
-    pub struct CannedEventGenerator {
-        // The canned next events to be returned.
-        next_events: Vec<NextEvent>,
-
-        current_event_index: usize,
-    }
-
-    impl<R: Rng> EventGenerator<R> for CannedEventGenerator {
-        fn reset(&mut self) {
-            self.current_event_index = 0;
-        }
-
-        fn has_next(&self) -> bool {
-            self.current_event_index < self.next_events.len()
-        }
-
-        fn event_count(&self) -> u64 {
-            self.current_event_index as u64
-        }
-
-        fn next_event(&mut self) -> Result<Option<NextEvent>> {
-            Ok(match self.current_event_index < self.next_events.len() {
-                true => {
-                    let next_event = Some(self.next_events[self.current_event_index].clone());
-                    self.current_event_index += 1;
-                    next_event
-                }
-                _ => None,
-            })
-        }
-    }
-
-    impl CannedEventGenerator {
-        pub fn new(next_events: Vec<NextEvent>) -> Self {
-            CannedEventGenerator {
-                next_events,
-                current_event_index: 0,
-            }
-        }
-    }
-
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
         NexmarkGenerator::new(Config::default(), StepRng::new(0, 1))
     }
