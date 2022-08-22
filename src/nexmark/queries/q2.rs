@@ -39,54 +39,52 @@ mod tests {
 
     #[test]
     fn test_q2() {
-        fn input_vecs() -> Vec<Vec<(Event, isize)>> {
+        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
             vec![
-                vec![
-                    (
-                        Event::Bid(Bid {
-                            auction: 1,
-                            price: 80,
-                            ..make_bid()
-                        }),
-                        1,
-                    ),
-                    (
-                        Event::Bid(Bid {
-                            auction: AUCTION_ID_MODULO,
-                            price: 111,
-                            ..make_bid()
-                        }),
-                        1,
-                    ),
-                    (
-                        Event::Bid(Bid {
-                            auction: AUCTION_ID_MODULO + 1,
-                            price: 100,
-                            ..make_bid()
-                        }),
-                        1,
-                    ),
-                ],
-                vec![
-                    (
-                        Event::Bid(Bid {
-                            auction: 3 * AUCTION_ID_MODULO + 25,
-                            price: 80,
-                            ..make_bid()
-                        }),
-                        1,
-                    ),
-                    (
-                        Event::Bid(Bid {
-                            auction: 4 * AUCTION_ID_MODULO,
-                            price: 222,
-                            ..make_bid()
-                        }),
-                        1,
-                    ),
-                ],
-            ]
-        }
+                (
+                    Event::Bid(Bid {
+                        auction: 1,
+                        price: 80,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        auction: AUCTION_ID_MODULO,
+                        price: 111,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        auction: AUCTION_ID_MODULO + 1,
+                        price: 100,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+            ],
+            vec![
+                (
+                    Event::Bid(Bid {
+                        auction: 3 * AUCTION_ID_MODULO + 25,
+                        price: 80,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        auction: 4 * AUCTION_ID_MODULO,
+                        price: 222,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+            ],
+        ];
 
         let (circuit, mut input_handle) = Circuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
@@ -105,7 +103,7 @@ mod tests {
         })
         .unwrap();
 
-        for mut vec in input_vecs().into_iter() {
+        for mut vec in input_vecs.into_iter() {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }

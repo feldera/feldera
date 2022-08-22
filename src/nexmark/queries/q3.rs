@@ -65,108 +65,156 @@ pub fn q3(input: NexmarkStream) -> Q3Stream {
 mod tests {
     use super::*;
     use crate::nexmark::{
-        generator::{
-            tests::{make_auction, make_next_event, make_person, CannedEventGenerator},
-            NextEvent,
-        },
+        generator::tests::{make_auction, make_person},
         model::{Auction, Person},
-        NexmarkSource,
     };
     use crate::{trace::Batch, Circuit, OrdZSet};
-    use rand::rngs::mock::StepRng;
-    use std::sync::mpsc;
 
     #[test]
     fn test_q3_people() {
-        let canned_events: Vec<NextEvent> = vec![
-            NextEvent {
-                event: Event::Person(Person {
-                    id: 1,
-                    name: String::from("NL Seller"),
-                    state: String::from("NL"),
-                    ..make_person()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Person(Person {
-                    id: 2,
-                    name: String::from("CA Seller"),
-                    state: String::from("CA"),
-                    ..make_person()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Person(Person {
-                    id: 3,
-                    name: String::from("ID Seller"),
-                    state: String::from("ID"),
-                    ..make_person()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Auction(Auction {
-                    id: 999,
-                    seller: 2,
-                    category: CATEGORY_OF_INTEREST,
-                    ..make_auction()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Auction(Auction {
-                    id: 452,
-                    seller: 3,
-                    category: CATEGORY_OF_INTEREST,
-                    ..make_auction()
-                }),
-                ..make_next_event()
-            },
+        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
+            vec![
+                (
+                    Event::Person(Person {
+                        id: 1,
+                        name: String::from("NL Seller"),
+                        state: String::from("NL"),
+                        ..make_person()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Person(Person {
+                        id: 2,
+                        name: String::from("CA Seller"),
+                        state: String::from("CA"),
+                        ..make_person()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Person(Person {
+                        id: 3,
+                        name: String::from("ID Seller"),
+                        state: String::from("ID"),
+                        ..make_person()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 999,
+                        seller: 2,
+                        category: CATEGORY_OF_INTEREST,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 452,
+                        seller: 3,
+                        category: CATEGORY_OF_INTEREST,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+            ],
+            vec![
+                // This person is selling in OR, but a different category.
+                (
+                    Event::Person(Person {
+                        id: 4,
+                        name: String::from("OR Seller"),
+                        state: String::from("OR"),
+                        ..make_person()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 999,
+                        seller: 4,
+                        category: CATEGORY_OF_INTEREST + 1,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                // This person is selling in OR in the category of interest.
+                (
+                    Event::Person(Person {
+                        id: 5,
+                        name: String::from("OR Seller"),
+                        state: String::from("OR"),
+                        ..make_person()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 333,
+                        seller: 5,
+                        category: CATEGORY_OF_INTEREST,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+            ],
         ];
 
-        let (tx, _) = mpsc::channel();
-        let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
-            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
-        let root = Circuit::build(move |circuit| {
-            let input = circuit.add_source(source);
+            let output = q3(stream);
 
-            let output = q3(input);
-
-            output.inspect(move |e| {
-                assert_eq!(
-                    e,
-                    &OrdZSet::from_keys(
-                        (),
-                        vec![
+            let mut expected_output = vec![
+                OrdZSet::from_keys(
+                    (),
+                    vec![
+                        (
                             (
-                                (
-                                    String::from("CA Seller"),
-                                    String::from("Phoenix"),
-                                    String::from("CA"),
-                                    999,
-                                ),
-                                1
+                                String::from("CA Seller"),
+                                String::from("Phoenix"),
+                                String::from("CA"),
+                                999,
                             ),
+                            1,
+                        ),
+                        (
                             (
-                                (
-                                    String::from("ID Seller"),
-                                    String::from("Phoenix"),
-                                    String::from("ID"),
-                                    452,
-                                ),
-                                1
+                                String::from("ID Seller"),
+                                String::from("Phoenix"),
+                                String::from("ID"),
+                                452,
                             ),
-                        ]
-                    )
-                )
-            });
+                            1,
+                        ),
+                    ],
+                ),
+                OrdZSet::from_keys(
+                    (),
+                    vec![(
+                        (
+                            String::from("OR Seller"),
+                            String::from("Phoenix"),
+                            String::from("OR"),
+                            333,
+                        ),
+                        1,
+                    )],
+                ),
+            ]
+            .into_iter();
+
+            output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
+
+            input_handle
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
-        root.step().unwrap();
+        for mut vec in input_vecs.into_iter() {
+            input_handle.append(&mut vec);
+            circuit.step().unwrap();
+        }
     }
 }

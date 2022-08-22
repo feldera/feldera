@@ -102,125 +102,153 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
 mod tests {
     use super::*;
     use crate::nexmark::{
-        generator::{
-            tests::{make_auction, make_bid, make_next_event, CannedEventGenerator},
-            NextEvent,
-        },
+        generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
-        NexmarkSource,
     };
     use crate::{trace::Batch, Circuit, OrdZSet};
-    use rand::rngs::mock::StepRng;
-    use std::sync::mpsc;
 
     #[test]
     fn test_q4_average_final_bids_per_category() {
-        let canned_events: Vec<NextEvent> = vec![
-            // Auction 1 is open between time 1000 and 2000.
-            NextEvent {
-                event: Event::Auction(Auction {
-                    id: 1,
-                    category: 1,
-                    date_time: 1000,
-                    expires: 2000,
-                    ..make_auction()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Auction(Auction {
-                    id: 2,
-                    category: 1,
-                    ..make_auction()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Auction(Auction {
-                    id: 3,
-                    category: 2,
-                    ..make_auction()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Bid(Bid {
-                    auction: 1,
-                    date_time: 1100,
-                    price: 80,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            // Winning bid for auction 1 (category 1).
-            NextEvent {
-                event: Event::Bid(Bid {
-                    price: 100,
-                    auction: 1,
-                    date_time: 1500,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            // This bid would have one but isn't included as it came in too late.
-            NextEvent {
-                event: Event::Bid(Bid {
-                    price: 500,
-                    auction: 1,
-                    date_time: 2500,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            // Max bid for auction 2 (category 1).
-            NextEvent {
-                event: Event::Bid(Bid {
-                    price: 300,
-                    auction: 2,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            NextEvent {
-                event: Event::Bid(Bid {
-                    price: 200,
-                    auction: 2,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
-            // Only bid for auction 3 (category 2).
-            NextEvent {
-                event: Event::Bid(Bid {
-                    price: 20,
-                    auction: 3,
-                    ..make_bid()
-                }),
-                ..make_next_event()
-            },
+        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
+            vec![
+                (
+                    Event::Auction(Auction {
+                        id: 1,
+                        category: 1,
+                        date_time: 1000,
+                        expires: 2000,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 2,
+                        category: 1,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Auction(Auction {
+                        id: 3,
+                        category: 2,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        auction: 1,
+                        date_time: 1100,
+                        price: 80,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                // Winning bid for auction 1 (category 1).
+                (
+                    Event::Bid(Bid {
+                        price: 100,
+                        auction: 1,
+                        date_time: 1500,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                // This bid would have one but isn't included as it came in too late.
+                (
+                    Event::Bid(Bid {
+                        price: 500,
+                        auction: 1,
+                        date_time: 2500,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                // Max bid for auction 2 (category 1).
+                (
+                    Event::Bid(Bid {
+                        price: 300,
+                        auction: 2,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        price: 200,
+                        auction: 2,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+                // Only bid for auction 3 (category 2)
+                (
+                    Event::Bid(Bid {
+                        price: 20,
+                        auction: 3,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+            ],
+            vec![
+                // Another bid for auction 3 that should update the winning bid for category 2.
+                (
+                    Event::Bid(Bid {
+                        price: 30,
+                        auction: 3,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+            ],
+            vec![
+                // Another auction with a single winning bid in category 2.
+                (
+                    Event::Auction(Auction {
+                        id: 4,
+                        category: 2,
+                        ..make_auction()
+                    }),
+                    1,
+                ),
+                (
+                    Event::Bid(Bid {
+                        price: 60,
+                        auction: 4,
+                        ..make_bid()
+                    }),
+                    1,
+                ),
+            ],
         ];
 
-        let (tx, _) = mpsc::channel();
-        let source: NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> =
-            NexmarkSource::from_generator(CannedEventGenerator::new(canned_events), tx);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
-        // Winning bids for auctions in category 1 are 100 and 300 - ie. AVG of 200
-        // Winning (only) bid for auction in category 2 is 20.
-        let root = Circuit::build(move |circuit| {
-            let input = circuit.add_source(source);
+            let output = q4(stream);
 
-            let output = q4(input);
+            let mut expected_output = vec![
+                OrdZSet::from_tuples((), vec![((1, 200), 1), ((2, 20), 1)]),
+                // The winning bid for auction 3 (only auction in category 2) updates the
+                // average (of the single auction) to 30.
+                OrdZSet::from_tuples((), vec![((2, 20), -1), ((2, 30), 1)]),
+                // The average for category 2 is now 30 + 60 / 2 = 45.
+                OrdZSet::from_tuples((), vec![((2, 30), -1), ((2, 45), 1)]),
+            ]
+            .into_iter();
 
-            output.inspect(move |e| {
-                assert_eq!(
-                    e,
-                    &OrdZSet::from_tuples((), vec![((1, 200), 1), ((2, 20), 1),])
-                )
-            });
+            output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
+
+            input_handle
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
-        root.step().unwrap();
+        for mut vec in input_vecs.into_iter() {
+            input_handle.append(&mut vec);
+            circuit.step().unwrap();
+        }
     }
 }
