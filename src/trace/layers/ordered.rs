@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     utils::assume,
-    NumEntries, SharedRef,
+    NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -82,22 +82,6 @@ where
     #[inline]
     unsafe fn assume_invariants(&self) {
         unsafe { assume(self.offs.len() == self.keys.len() + 1) }
-    }
-}
-
-impl<K, L, O> SharedRef for OrderedLayer<K, L, O>
-where
-    K: Ord + Clone,
-    L: Clone,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
-    type Target = Self;
-
-    #[inline]
-    fn try_into_owned(self) -> Result<Self::Target, Self> {
-        Ok(self)
     }
 }
 

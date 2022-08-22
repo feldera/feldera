@@ -11,7 +11,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Cursor, Merger,
     },
-    NumEntries, SharedRef,
+    NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -75,23 +75,6 @@ where
     #[inline]
     fn default() -> Self {
         Self::empty(())
-    }
-}
-
-impl<K, V, R, O> SharedRef for OrdIndexedZSet<K, V, R, O>
-where
-    K: Ord + Clone,
-    V: Ord + Clone,
-    R: Clone,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
-    type Target = Self;
-
-    #[inline]
-    fn try_into_owned(self) -> Result<Self::Target, Self> {
-        Ok(self)
     }
 }
 

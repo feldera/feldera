@@ -11,7 +11,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::Trie,
     utils::assume,
-    NumEntries, SharedRef,
+    NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -184,17 +184,5 @@ where
     fn num_entries_deep(&self) -> usize {
         // FIXME: Doesn't take element sizes into account
         self.keys()
-    }
-}
-
-impl<K, R> SharedRef for OrderedColumnLeaf<K, R>
-where
-    K: Clone,
-    R: Clone,
-{
-    type Target = Self;
-
-    fn try_into_owned(self) -> Result<Self::Target, Self> {
-        Ok(self)
     }
 }
