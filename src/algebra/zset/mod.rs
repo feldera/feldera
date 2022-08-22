@@ -4,20 +4,14 @@ mod zset_macro;
 use crate::{
     algebra::{GroupValue, HasOne, HasZero, ZRingValue},
     trace::{cursor::Cursor, Batch, Builder},
-    NumEntries, SharedRef,
+    NumEntries,
 };
 
 // TODO: allow arbitrary `Time` types?
 /// An indexed Z-set maps arbitrary keys to Z-set values.
-pub trait IndexedZSet:
-    Batch<Time = ()> + GroupValue + NumEntries + SharedRef<Target = Self>
-{
-}
+pub trait IndexedZSet: Batch<Time = ()> + GroupValue + NumEntries {}
 
-impl<Z> IndexedZSet for Z where
-    Z: Batch<Time = ()> + GroupValue + NumEntries + SharedRef<Target = Self>
-{
-}
+impl<Z> IndexedZSet for Z where Z: Batch<Time = ()> + GroupValue + NumEntries {}
 
 /// The Z-set trait.
 ///

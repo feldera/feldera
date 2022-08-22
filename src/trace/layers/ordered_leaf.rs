@@ -6,7 +6,7 @@ use crate::{
         consolidation::consolidate_from,
         layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     },
-    NumEntries, SharedRef,
+    NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -157,18 +157,6 @@ where
     }
 
     const CONST_NUM_ENTRIES: Option<usize> = None;
-}
-
-impl<K, R> SharedRef for OrderedLeaf<K, R>
-where
-    K: Clone,
-    R: Clone,
-{
-    type Target = Self;
-
-    fn try_into_owned(self) -> Result<Self::Target, Self> {
-        Ok(self)
-    }
 }
 
 /// A builder for unordered values.

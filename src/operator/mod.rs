@@ -1,6 +1,5 @@
 //! Some basic operators.
 
-pub mod adapter;
 pub mod apply2;
 pub mod communication;
 pub mod recursive;
@@ -35,7 +34,6 @@ mod z1;
 
 #[cfg(feature = "with-csv")]
 pub use self::csv::CsvSource;
-pub use adapter::{BinaryOperatorAdapter, UnaryOperatorAdapter};
 pub use aggregate::Aggregate;
 pub use apply::Apply;
 pub use condition::Condition;

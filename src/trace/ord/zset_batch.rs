@@ -10,7 +10,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Cursor, Merger,
     },
-    NumEntries, SharedRef,
+    NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -102,18 +102,6 @@ where
 {
     fn default() -> Self {
         OrdZSet::<K, R>::zero()
-    }
-}
-
-impl<K, R> SharedRef for OrdZSet<K, R>
-where
-    K: Ord + Clone,
-    R: Clone,
-{
-    type Target = Self;
-
-    fn try_into_owned(self) -> Result<Self::Target, Self> {
-        Ok(self)
     }
 }
 
