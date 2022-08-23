@@ -42,7 +42,7 @@ pub use distinct::Distinct;
 pub use filter_map::{FilterKeys, FilterMap, FilterVals, FlatMap, Map, MapKeys};
 pub use generator::{Generator, GeneratorNested};
 pub use index::Index;
-pub use input::{CollectionHandle, InputHandle};
+pub use input::{CollectionHandle, InputHandle, UpsertHandle};
 pub use inspect::Inspect;
 pub use join::Join;
 pub use join_range::StreamJoinRange;
