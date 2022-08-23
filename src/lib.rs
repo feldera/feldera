@@ -26,5 +26,5 @@ pub use time::Timestamp;
 pub use circuit::{
     Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
 };
-pub use operator::{CollectionHandle, InputHandle};
+pub use operator::{CollectionHandle, InputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};

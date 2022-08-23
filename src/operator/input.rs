@@ -19,7 +19,10 @@ use std::{
     marker::PhantomData,
     mem::take,
     ops::{DerefMut, Neg},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use typedmap::TypedMapKey;
 
@@ -78,7 +81,7 @@ impl Circuit<()> {
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
     where
-        K: Clone + Send + Ord + Hash + 'static,
+        K: Clone + Send + Ord + 'static,
         R: MonoidValue + Send,
     {
         let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
@@ -113,7 +116,7 @@ impl Circuit<()> {
         &self,
     ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, (V, R)>)
     where
-        K: Ord + Clone + Hash + Send + 'static,
+        K: Ord + Clone + Send + 'static,
         V: Ord + Clone + Send + 'static,
         R: MonoidValue + Clone + Send,
     {
@@ -136,20 +139,20 @@ impl Circuit<()> {
         upsert_func: F,
     ) -> Stream<Self, B>
     where
-        K: Clone + Ord + Hash + Send + DeepSizeOf + 'static,
+        K: Clone + Ord + Send + DeepSizeOf + Hash + 'static,
         F: Fn(VI) -> Option<V> + 'static,
         B: Batch<Key = K, Val = V, Time = ()> + DeepSizeOf + 'static,
         B::R: MonoidValue + HasOne + Neg<Output = B::R> + DeepSizeOf,
         V: Eq + Clone + Ord + 'static,
-        VI: Eq + Clone + 'static,
+        VI: Eq + Clone + Send + 'static,
     {
-        // ```text
         // We build the following circuit to implement the upsert semantics.
         // The collection is accumulated into a trace using integrator
         // (UntimedTraceAppend + Z1Trace = integrator).  The `Upsert` operator
         // evaluates each upsert command in the input stream against the trace
         // and computes a batch of updates to be added to the trace.
         //
+        // ```text
         //                          ┌─────────────────────────────────────────►
         //                          │
         //                          │
@@ -222,8 +225,8 @@ impl Circuit<()> {
     /// appears as a Z-set with unit weights, but that ingests input data
     /// using set semantics. It returns a stream that carries values of type
     /// `OrdZSet<K, R>` and an input handle of type
-    /// [`CollectionHandle<K,bool>`](`CollectionHandle`).  The client uses
-    /// `[CollectionHandle::push]` and [`CollectionHandle::append`] to submit
+    /// [`UpsertHandle<K,bool>`](`UpsertHandle`).  The client uses
+    /// `[UpsertHandle::push]` and [`UpsertHandle::append`] to submit
     /// commands of the form `(val, true)` to insert an element to the set
     /// and `(val, false) ` to delete `val` from the set.  These commands
     /// are buffered until the start of the next clock cycle.
@@ -253,20 +256,20 @@ impl Circuit<()> {
     /// value.  Insert/delete commands are routed to the worker in charge of
     /// the given value.
     // TODO: Add a version that takes a custom hash function.
-    pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, CollectionHandle<K, bool>)
+    pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
-        K: Clone + Ord + Hash + Send + DeepSizeOf + 'static,
+        K: Clone + Ord + Send + DeepSizeOf + Hash + 'static,
         R: MonoidValue + HasOne + Neg<Output = R> + DeepSizeOf,
     {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, bool)>| tuples);
             let input_stream = self.add_source(input);
-            let zset_handle = <CollectionHandle<K, bool>>::new(input_handle);
+            let upsert_handle = <UpsertHandle<K, bool>>::new(input_handle);
 
             let upsert =
                 self.add_upsert(input_stream, |insert| if insert { Some(()) } else { None });
 
-            (upsert, zset_handle)
+            (upsert, upsert_handle)
         })
     }
 
@@ -286,7 +289,7 @@ impl Circuit<()> {
     /// outside world, and may require a translation layer to eliminate this
     /// mismatch when ingesting indexed data into DBSP.
     ///
-    /// In particular, input tables often behave as key-value maps.  
+    /// In particular, input tables often behave as key-value maps.
     /// A map is a special case of an indexed Z-set where each key has
     /// a unique value associated with it and where all weights are 1.
     /// Map updates follow the update-or-insert (*upsert*) semantics,
@@ -299,8 +302,8 @@ impl Circuit<()> {
     /// appears as an indexed Z-set with all unit weights, but that ingests
     /// input data using upsert semantics. It returns a stream that carries
     /// values of type `OrdIndexedZSet<K, V, R>` and an input handle of type
-    /// [`CollectionHandle<K,Option<V>>`](`CollectionHandle`).  The client uses
-    /// `[CollectionHandle::push]` and [`CollectionHandle::append`] to submit
+    /// [`UpsertHandle<K,Option<V>>`](`UpsertHandle`).  The client uses
+    /// `[UpsertHandle::push]` and [`UpsertHandle::append`] to submit
     /// commands of the form `(key, Some(val))` to insert a new key-value
     /// pair and `(key, None) ` to delete the value associated with `key` is
     /// any. These commands are buffered until the start of the next clock
@@ -336,9 +339,7 @@ impl Circuit<()> {
     /// key.  Upsert/delete commands are routed to the worker in charge of
     /// the given key.
     // TODO: Add a version that takes a custom hash function.
-    pub fn add_input_map<K, V, R>(
-        &self,
-    ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, Option<V>>)
+    pub fn add_input_map<K, V, R>(&self) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Option<V>>)
     where
         K: Clone + Ord + Hash + Send + DeepSizeOf + 'static,
         V: Ord + Clone + Send + DeepSizeOf + 'static,
@@ -347,7 +348,7 @@ impl Circuit<()> {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);
             let input_stream = self.add_source(input);
-            let zset_handle = <CollectionHandle<K, Option<V>>>::new(input_handle);
+            let zset_handle = <UpsertHandle<K, Option<V>>>::new(input_handle);
 
             let upsert = self.add_upsert(input_stream, |val| val);
 
@@ -355,6 +356,57 @@ impl Circuit<()> {
         })
     }
 }
+
+/*
+// We may want to uncomment and use the following operator based on
+// profiling data.  At the moment the `Input` operator assembles input
+// tuples into batches as they are received from `CollectionHandle`s.
+// Since `CollectionHandle` doesn't consistently map keys to workers,
+// resulting batches may need to be re-sharded by the next operator.
+// It may be more efficient to shard update vectors received from
+// `CollectionHandle` directly without paying the cost of assembling
+// them into batches first.  This is what this operator does.
+impl<K, V> Stream<Circuit<()>, Vec<(K, V)>>
+where
+    K: Send + Hash + Clone + 'static,
+    V: Send + Clone + 'static,
+{
+    fn shard_vec(&self) -> Stream<Circuit<()>, Vec<(K, V)>> {
+        Runtime::runtime()
+            .map(|runtime| {
+                let num_workers = runtime.num_workers();
+
+                if num_workers == 1 {
+                    self.clone()
+                } else {
+                    let (sender, receiver) = self.circuit().new_exchange_operators(
+                        &runtime,
+                        Runtime::worker_index(),
+                        move |batch: Vec<(K, V)>, batches: &mut Vec<Vec<(K, V)>>| {
+                            for _ in 0..num_workers {
+                                batches.push(Vec::with_capacity(batch.len() / num_workers));
+                            }
+
+                            for (key, val) in batch.into_iter() {
+                                let batch_index = fxhash::hash(&key) % num_workers;
+                                batches[batch_index].push((key, val))
+                            }
+                        },
+                        move |output: &mut Vec<(K, V)>, batch: Vec<(K, V)>| {
+                            if output.is_empty() {
+                                output.reserve(batch.len() * num_workers);
+                            }
+                            output.extend(batch);
+                        },
+                    );
+
+                    self.circuit().add_exchange(sender, receiver, self)
+                }
+            })
+            .unwrap_or_else(|| self.clone())
+    }
+}
+*/
 
 /// `TypedMapKey` entry used to share InputHandle objects across workers in a
 /// runtime. The first worker to create the handle will store it in the map,
@@ -546,22 +598,169 @@ where
     }
 }
 
-pub trait HashFunc<K>: Fn(&K) -> u32 + Send + Sync {}
-
-impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
-
 /// A handle used to write data to an input stream created by
 /// [`add_input_zset`](`Circuit::add_input_zset`),
-/// [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`),
-/// [`add_input_set`](`Circuit::add_input_set`), and
-/// [`add_input_map`](`Circuit::add_input_map`)
+/// and [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`)
 /// methods.
 ///
 /// The handle provides an API to push updates to the stream in
 /// the form of `(key, value)` tuples.  See
 /// [`add_input_zset`](`Circuit::add_input_zset`),
-/// [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`),
-/// [`add_input_set`](`Circuit::add_input_set`), and
+/// [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`) and
+/// documentation for the exact semantics of these updates.
+///
+/// Internally, the handle manages an array of mailboxes, one for
+/// each worker thread. It automatically partitions updates across
+/// mailboxes in a round robin fashion.  At the start of each clock
+/// cycle, the circuit consumes updates buffered in each mailbox,
+/// leaving the mailbox empty.
+pub struct CollectionHandle<K, V> {
+    buffers: Vec<Vec<(K, V)>>,
+    input_handle: InputHandle<Vec<(K, V)>>,
+    // Used to send tuples to workers in round robin.  Oftentimes the
+    // workers will immediately repartition the inputs based on the hash
+    // of the key; however this is more efficient than doing it here, as
+    // the work will be evenly split across workers.
+    next_worker: AtomicUsize,
+}
+
+impl<K, V> Clone for CollectionHandle<K, V>
+where
+    K: Clone + Send + 'static,
+    V: Clone + Send + 'static,
+{
+    fn clone(&self) -> Self {
+        // Don't clone buffers.
+        Self::new(self.input_handle.clone())
+    }
+}
+
+impl<K, V> CollectionHandle<K, V>
+where
+    K: Clone + Send + 'static,
+    V: Clone + Send + 'static,
+{
+    fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self {
+        Self {
+            buffers: vec![Vec::new(); input_handle.0.mailbox.len()],
+            input_handle,
+            next_worker: AtomicUsize::new(0),
+        }
+    }
+
+    #[inline]
+    fn num_partitions(&self) -> usize {
+        self.buffers.len()
+    }
+
+    /// Push a single `(key,value)` pair to the input stream.
+    pub fn push(&self, k: K, v: V) {
+        let num_partitions = self.num_partitions();
+
+        if num_partitions > 1 {
+            let next_worker = self.next_worker.fetch_add(1, Ordering::AcqRel);
+            self.input_handle
+                .update_for_worker(next_worker % num_partitions, |tuples| tuples.push((k, v)));
+        } else {
+            self.input_handle
+                .update_for_worker(0, |tuples| tuples.push((k, v)));
+        }
+    }
+
+    /// Push multiple `(key,value)` pairs to the input stream.
+    ///
+    /// This is more efficient than pushing values one-by-one using
+    /// [`Self::push`].
+    ///
+    /// # Concurrency
+    ///
+    /// This method partitions updates across workers and then buffers them
+    /// atomically with respect to each worker, i.e., each worker observes
+    /// all updates in an `append` at the same logical time.  However the
+    /// operation is not atomic as a whole: concurrent `append` and
+    /// `clear_input` calls (performed via clones of the
+    /// same `CollectionHandle`) may apply in different orders in different
+    /// worker threads.  This method is also not atomic with respect to
+    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
+    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
+    /// `DBSPHandle::step` call performed concurrently with `append` may
+    /// result in only a subset of the workers observing updates from this
+    /// `append` operation.  The remaining updates will appear
+    /// during subsequent logical clock cycles.
+    pub fn append(&mut self, vals: &mut Vec<(K, V)>) {
+        let num_partitions = self.num_partitions();
+
+        if num_partitions > 1 {
+            let mut next_worker = self.next_worker.load(Ordering::Acquire);
+            let partition_size = vals.len() / num_partitions;
+
+            for worker in 0..num_partitions {
+                if worker == num_partitions - 1 {
+                    self.buffers[next_worker % num_partitions].append(vals);
+                } else {
+                    let len = vals.len();
+                    // Draining from the end should be more efficient as it doesn't
+                    // require memcpy'ing the tail of the vector to the front.
+                    self.buffers[next_worker % num_partitions]
+                        .extend(vals.drain(len - partition_size..));
+                }
+                next_worker += 1;
+            }
+            self.next_worker.store(next_worker, Ordering::Release);
+
+            for worker in 0..num_partitions {
+                self.input_handle.update_for_worker(worker, |tuples| {
+                    if tuples.is_empty() {
+                        *tuples = take(&mut self.buffers[worker]);
+                    } else {
+                        tuples.append(&mut self.buffers[worker]);
+                    }
+                })
+            }
+        } else {
+            self.input_handle.update_for_worker(0, |tuples| {
+                if tuples.is_empty() {
+                    *tuples = take(vals);
+                } else {
+                    tuples.append(vals);
+                }
+            });
+        }
+    }
+
+    /// Clear all inputs buffered since the start of the last clock cycle.
+    ///
+    /// # Concurrency
+    ///
+    /// Similar to [`Self::append`], this method atomically clears updates
+    /// buffered for each worker thread, i.e., the worker observes all or none
+    /// of the updates buffered before the call to `clear_input`; however the
+    /// operation is not atomic as a whole: concurrent `append` and
+    /// `clear_input` calls (performed via clones of the
+    /// same `CollectionHandle`) may apply in different orders in different
+    /// worker threads.  This method is also not atomic with respect to
+    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
+    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
+    /// `DBSPHandle::step` call performed concurrently with `clear_input` may
+    /// result in only a subset of the workers observing empty inputs, while
+    /// other workers observe updates buffered prior to the `clear_input` call.
+    pub fn clear_input(&self) {
+        self.input_handle.set_for_all(Vec::new());
+    }
+}
+
+pub trait HashFunc<K>: Fn(&K) -> u32 + Send + Sync {}
+
+impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
+
+/// A handle used to write data to an input stream created by
+/// [`add_input_set`](`Circuit::add_input_set`) and
+/// [`add_input_map`](`Circuit::add_input_map`)
+/// methods.
+///
+/// The handle provides an API to push updates to the stream in
+/// the form of `(key, value)` tuples.  See
+/// [`add_input_set`](`Circuit::add_input_set`) and
 /// [`add_input_map`](`Circuit::add_input_map`)
 /// documentation for the exact semantics of these updates.
 ///
@@ -569,15 +768,21 @@ impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
 /// each worker thread. It automatically partitions updates across
 /// mailboxes based on the hash of the key.
 /// At the start of each clock cycle, the
-/// circuit consumed updates buffered in each mailbox, leaving
+/// circuit consumes updates buffered in each mailbox, leaving
 /// the mailbox empty.
-pub struct CollectionHandle<K, V> {
+pub struct UpsertHandle<K, V> {
     buffers: Vec<Vec<(K, V)>>,
     input_handle: InputHandle<Vec<(K, V)>>,
+    // Sharding the input collection based on the hash of the key is more
+    // expensive than simple round robin partitioning used by
+    // `CollectionHandle`; however it is necessary here, since the `Upsert`
+    // operator requires that all updates to the same key are processed
+    // by the same worker thread and in the same order they were pushed
+    // by the client.
     hash_func: Arc<dyn HashFunc<K>>,
 }
 
-impl<K, V> Clone for CollectionHandle<K, V>
+impl<K, V> Clone for UpsertHandle<K, V>
 where
     K: Clone + Send + 'static,
     V: Clone + Send + 'static,
@@ -588,7 +793,7 @@ where
     }
 }
 
-impl<K, V> CollectionHandle<K, V>
+impl<K, V> UpsertHandle<K, V>
 where
     K: Clone + Send + 'static,
     V: Clone + Send + 'static,
@@ -646,10 +851,10 @@ where
     /// all updates in an `append` at the same logical time.  However the
     /// operation is not atomic as a whole: concurrent `append` and
     /// `clear_input` calls (performed via clones of the
-    /// same `CollectionHandle`) may apply in different orders in different
+    /// same `UpsertHandle`) may apply in different orders in different
     /// worker threads.  This method is also not atomic with respect to
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)) methods: a
+    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
     /// `DBSPHandle::step` call performed concurrently with `append` may
     /// result in only a subset of the workers observing updates from this
     /// `append` operation.  The remaining updates will appear
@@ -690,10 +895,10 @@ where
     /// of the updates buffered before the call to `clear_input`; however the
     /// operation is not atomic as a whole: concurrent `append` and
     /// `clear_input` calls (performed via clones of the
-    /// same `CollectionHandle`) may apply in different orders in different
+    /// same `UpsertHandle`) may apply in different orders in different
     /// worker threads.  This method is also not atomic with respect to
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)) methods: a
+    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
     /// `DBSPHandle::step` call performed concurrently with `clear_input` may
     /// result in only a subset of the workers observing empty inputs, while
     /// other workers observe updates buffered prior to the `clear_input` call.
@@ -771,6 +976,7 @@ mod test {
         indexed_zset,
         trace::{cursor::Cursor, BatchReader},
         zset, Circuit, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, Runtime,
+        UpsertHandle,
     };
     use std::iter::once;
 
@@ -1065,7 +1271,7 @@ mod test {
         ]
     }
 
-    fn set_test_circuit(circuit: &Circuit<()>) -> CollectionHandle<usize, bool> {
+    fn set_test_circuit(circuit: &Circuit<()>) -> UpsertHandle<usize, bool> {
         let (stream, handle) = circuit.add_input_set::<usize, isize>();
 
         let mut expected_batches = output_set_updates().into_iter();
@@ -1158,7 +1364,7 @@ mod test {
         ]
     }
 
-    fn map_test_circuit(circuit: &Circuit<()>) -> CollectionHandle<usize, Option<usize>> {
+    fn map_test_circuit(circuit: &Circuit<()>) -> UpsertHandle<usize, Option<usize>> {
         let (stream, handle) = circuit.add_input_map::<usize, usize, isize>();
 
         let mut expected_batches = output_map_updates().into_iter();
