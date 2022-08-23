@@ -15,14 +15,13 @@ use self::model::Event;
 use crate::{
     algebra::{ZRingValue, ZSet},
     circuit::{
-        operator_traits::{Data, Operator, SourceOperator},
+        operator_traits::{Data, Operator},
         Scope,
     },
     OrdZSet,
 };
 use rand::prelude::ThreadRng;
 use rand::{thread_rng, Rng};
-use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{borrow::Cow, marker::PhantomData};
@@ -38,13 +37,9 @@ pub struct NexmarkSource<R: Rng, W, C> {
     // completely separate the generator and allow the generator to be used with other languages
     // etc.
     generator: Box<dyn EventGenerator<R>>,
-    // next_event stores the next event during `eval` when `next_event()` is called but returns an
-    // event in the future, so that we can include it in the next call to eval.
+    // next_event stores the next event during `next` when `next_event()` is called but returns an
+    // event in the future, so that we can include it in the next call to next.
     next_event: Option<NextEvent>,
-    // fixedpoint_sync stores a channel transmitter so that when the source reaches its fixed
-    // point, it can communicate this by sending the number of events that have been generated,
-    // without sharing memory.
-    fixedpoint_sync: Sender<u64>,
 
     _t: PhantomData<(C, W)>,
 }
@@ -53,22 +48,15 @@ impl<R, W, C> NexmarkSource<R, W, C>
 where
     R: Rng + 'static,
 {
-    pub fn from_generator<G: EventGenerator<R> + 'static>(
-        generator: G,
-        fixedpoint_sync: Sender<u64>,
-    ) -> Self {
+    pub fn from_generator<G: EventGenerator<R> + 'static>(generator: G) -> Self {
         NexmarkSource {
             generator: Box::new(generator),
             next_event: None,
-            fixedpoint_sync,
             _t: PhantomData,
         }
     }
-    pub fn new(
-        config: Config,
-        fixedpoint_sync: Sender<u64>,
-    ) -> NexmarkSource<ThreadRng, isize, OrdZSet<Event, isize>> {
-        NexmarkSource::from_generator(NexmarkGenerator::new(config, thread_rng()), fixedpoint_sync)
+    pub fn new(config: Config) -> NexmarkSource<ThreadRng, isize, OrdZSet<Event, isize>> {
+        NexmarkSource::from_generator(NexmarkGenerator::new(config, thread_rng()))
     }
 }
 
@@ -96,35 +84,25 @@ where
     }
 }
 
-impl<R, W, C> SourceOperator<C> for NexmarkSource<R, W, C>
+impl<R, W, C> Iterator for NexmarkSource<R, W, C>
 where
     R: Rng + 'static,
     W: ZRingValue + 'static,
     C: Data + ZSet<Key = Event, R = W>,
 {
-    fn eval(&mut self) -> C {
+    type Item = Vec<(Event, W)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         // Grab a next event, either the last event from the previous call that
         // was saved because it couldn't yet be emitted, or the next generated
         // event.
         let next_event = self
             .next_event
             .clone()
-            .or_else(|| self.generator.next_event().unwrap());
-
-        if self.fixedpoint(1) {
-            self.fixedpoint_sync
-                .send(self.generator.event_count())
-                .unwrap();
-        }
-
-        // If there are no more events, we return an empty set.
-        if next_event.is_none() {
-            return C::empty(());
-        }
+            .or_else(|| self.generator.next_event().unwrap())?;
 
         // Otherwise we want to emit at least one event, so if the next event
         // is still in the future, we sleep until we can emit it.
-        let next_event = next_event.unwrap();
         let mut wallclock_time_now = self.generator.wallclock_time();
         if next_event.wallclock_timestamp > wallclock_time_now {
             let millis_to_sleep = next_event.wallclock_timestamp - wallclock_time_now;
@@ -135,8 +113,9 @@ where
         // Collect as many next events as are ready.
         let mut next_events = vec![next_event];
         let mut next_event = self.generator.next_event().unwrap();
-        while next_event
-            .is_some_and(|next_event| next_event.wallclock_timestamp <= wallclock_time_now)
+        while next_events.len() < 1000
+            && next_event
+                .is_some_and(|next_event| next_event.wallclock_timestamp <= wallclock_time_now)
         {
             next_events.push(next_event.unwrap());
             next_event = self.generator.next_event().unwrap();
@@ -146,8 +125,7 @@ where
         // next call.
         self.next_event = next_event;
 
-        C::from_keys(
-            (),
+        Some(
             next_events
                 .into_iter()
                 .map(|next_event| (next_event.event, W::one()))
@@ -163,22 +141,14 @@ pub mod tests {
     use crate::{trace::Batch, Circuit, OrdZSet};
     use core::ops::Range;
     use rand::rngs::mock::StepRng;
-    use std::sync::{mpsc, mpsc::Receiver};
 
     /// Returns a source that generates the default events/s with the specified
     /// range of wallclock time ticks.
     pub fn make_source_with_wallclock_times(
         times: Range<u64>,
         max_events: u64,
-    ) -> (
-        NexmarkSource<StepRng, isize, OrdZSet<Event, isize>>,
-        Receiver<u64>,
-    ) {
-        let (tx, rx) = mpsc::channel();
-        (
-            NexmarkSource::from_generator(RangedTimeGenerator::new(times, max_events), tx),
-            rx,
-        )
+    ) -> NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> {
+        NexmarkSource::from_generator(RangedTimeGenerator::new(times, max_events))
     }
 
     pub fn generate_expected_zset_tuples(
@@ -207,94 +177,82 @@ pub mod tests {
 
     #[test]
     fn test_start_clock() {
-        let expected_zset = generate_expected_zset(0, 2);
+        let expected_zset = generate_expected_zset_tuples(0, 2);
 
-        let (mut source, _) = make_source_with_wallclock_times(0..2, 2);
+        let mut source = make_source_with_wallclock_times(0..2, 2);
 
-        assert_eq!(source.eval(), expected_zset);
+        assert_eq!(source.next().unwrap(), expected_zset);
 
         // Calling start_clock begins the events again (manually setting the
         // wallclock base time again for the test).
         source.clock_start(1);
 
-        assert_eq!(source.eval(), expected_zset);
+        assert_eq!(source.next().unwrap(), expected_zset);
     }
 
     // After exhausting events, the source indicates a fixed point.
     #[test]
     fn test_fixed_point() {
-        let (mut source, _rx) = make_source_with_wallclock_times(0..1, 1);
+        let mut source = make_source_with_wallclock_times(0..1, 1);
         assert!(!source.fixedpoint(1));
 
-        source.eval();
+        source.next();
 
         assert!(source.fixedpoint(1));
     }
 
-    // After exhausting events, the source sends a message on the fixedpoint_sync
-    // channel.
+    // After exhausting events, the source returns None
     #[test]
-    fn test_fixed_point_sync_channel() {
-        let (mut source, rx) = make_source_with_wallclock_times(0..3, 3);
-        assert!(rx.try_recv().is_err());
+    fn test_next_empty_none() {
+        let mut source = make_source_with_wallclock_times(0..2, 1);
 
-        source.eval();
-        source.eval();
-        source.eval();
+        source.next();
 
-        assert_eq!(rx.try_recv().unwrap(), 3);
-    }
-
-    // After exhausting events, the source returns empty ZSets.
-    #[test]
-    fn test_eval_empty_zset() {
-        let (mut source, _rx) = make_source_with_wallclock_times(0..2, 1);
-
-        source.eval();
-
-        assert_eq!(source.eval(), OrdZSet::empty(()));
+        assert_eq!(source.next(), None);
     }
 
     #[test]
     fn test_nexmark_dbsp_source_full_batch() {
-        let root = Circuit::build(move |circuit| {
-            let (source, _) = make_source_with_wallclock_times(0..9, 10);
+        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset();
+
             let expected_zset = generate_expected_zset(0, 10);
 
-            circuit
-                .add_source(source)
-                .inspect(move |data: &OrdZSet<Event, isize>| {
-                    assert_eq!(data, &expected_zset);
-                });
+            stream.inspect(move |data: &OrdZSet<Event, isize>| {
+                assert_eq!(data, &expected_zset);
+            });
+            input_handle
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
-        root.step().unwrap();
+        let mut source = make_source_with_wallclock_times(0..9, 10);
+        input_handle.append(&mut source.next().unwrap());
+
+        circuit.step().unwrap();
     }
 
     // With the default rate of 10_000 events per second, or 10 per millisecond,
     // and then using canned milliseconds for the wallclock time, we can expect
-    // batches of 10 events per call to eval.
+    // batches of 10 events per call to next.
     #[test]
-    fn test_eval_batched() {
+    fn test_next_batched() {
         let wallclock_time = 0;
-        let (mut source, _) = make_source_with_wallclock_times(0..3, 60);
+        let mut source = make_source_with_wallclock_times(0..3, 60);
         let expected_zset_tuples = generate_expected_zset_tuples(wallclock_time, 60);
 
         assert_eq!(
-            source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[0..10]))
+            source.next().unwrap(),
+            Vec::from(&expected_zset_tuples[0..10])
         );
 
         assert_eq!(
-            source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[10..20]))
+            source.next().unwrap(),
+            Vec::from(&expected_zset_tuples[10..20])
         );
 
         assert_eq!(
-            source.eval(),
-            OrdZSet::from_tuples((), Vec::from(&expected_zset_tuples[20..30]))
+            source.next().unwrap(),
+            Vec::from(&expected_zset_tuples[20..30])
         );
     }
 }

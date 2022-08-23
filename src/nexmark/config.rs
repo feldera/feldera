@@ -35,6 +35,10 @@ pub struct Config {
     #[clap(long, default_value = "200", env = "NEXMARK_AVG_PERSON_BYTE_SIZE")]
     pub avg_person_byte_size: usize,
 
+    /// Number of CPU cores to be available.
+    #[clap(long, default_value = "1", env = "NEXMARK_CPU_CORES")]
+    pub cpu_cores: usize,
+
     /// Specify the proportion of events that will be new bids.
     #[clap(long, default_value = "46", env = "NEXMARK_BID_PROPORTION")]
     pub bid_proportion: usize,
@@ -106,6 +110,7 @@ impl Default for Config {
             avg_bid_byte_size: 100,
             avg_person_byte_size: 200,
             bid_proportion: 46,
+            cpu_cores: 1,
             first_event_rate: 10_000,
             hot_auction_ratio: 2,
             hot_bidders_ratio: 4,
