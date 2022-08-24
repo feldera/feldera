@@ -1,7 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
-    utils::assume,
 };
 use std::fmt::{self, Display};
 
@@ -89,7 +88,8 @@ where
     #[inline]
     fn key(&self) -> Self::Key<'s> {
         // Elide extra bounds checking
-        unsafe { assume(self.storage.keys.len() == self.storage.diffs.len()) }
+        unsafe { self.storage.assume_invariants() }
+
         if self.pos >= self.storage.keys.len() {
             cursor_position_oob(self.pos, self.storage.keys.len());
         }

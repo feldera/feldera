@@ -3,6 +3,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+    utils::assume,
     NumEntries, SharedRef,
 };
 use deepsize::DeepSizeOf;
@@ -66,17 +67,21 @@ where
     pub vals: L,
 }
 
-impl<K, L, O> Display for OrderedLayer<K, L, O>
+impl<K, L, O> OrderedLayer<K, L, O>
 where
-    K: Ord + Clone + Display,
-    L: Trie,
-    for<'a> L::Cursor<'a>: Clone + Display,
+    K: Ord,
     O: OrdOffset,
     <O as TryFrom<usize>>::Error: Debug,
     <O as TryInto<usize>>::Error: Debug,
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        self.cursor().fmt(f)
+    /// Assume the invariants of the current builder
+    ///
+    /// # Safety
+    ///
+    /// Requires that `offs` has a length of `keys + 1`
+    #[inline]
+    unsafe fn assume_invariants(&self) {
+        unsafe { assume(self.offs.len() == self.keys.len() + 1) }
     }
 }
 
@@ -245,16 +250,20 @@ where
 
     #[inline]
     fn keys(&self) -> usize {
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
     #[inline]
     fn tuples(&self) -> usize {
+        unsafe { self.assume_invariants() }
         self.vals.tuples()
     }
 
     #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
+        unsafe { self.assume_invariants() }
+
         if lower < upper {
             let child_lower = self.offs[lower];
             let child_upper = self.offs[lower + 1];
@@ -276,6 +285,20 @@ where
                 pos: 0,
             }
         }
+    }
+}
+
+impl<K, L, O> Display for OrderedLayer<K, L, O>
+where
+    K: Ord + Clone + Display,
+    L: Trie,
+    for<'a> L::Cursor<'a>: Clone + Display,
+    O: OrdOffset,
+    <O as TryFrom<usize>>::Error: Debug,
+    <O as TryInto<usize>>::Error: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        self.cursor().fmt(f)
     }
 }
 
