@@ -57,34 +57,34 @@ pub type CircuitCache = TypedMap<CircuitStoreMarker>;
 /// `Stream<C, D>`.
 #[macro_export]
 macro_rules! circuit_cache_key {
-    ($constructor:ident<$($typearg:ident),*>($key_type:ty => $val_type:ty)) => {
+    ($constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
         #[repr(transparent)]
-        pub struct $constructor<$($typearg: 'static),*>(pub $key_type, std::marker::PhantomData<($($typearg),*)>);
+        pub struct $constructor$(<$($typearg: 'static),*>)?(pub $key_type, $(std::marker::PhantomData<($($typearg),*)>)?);
 
-        impl<$($typearg),*> $constructor<$($typearg),*> {
+        impl$(<$($typearg),*>)? $constructor$(<$($typearg),*>)? {
             pub fn new(key: $key_type) -> Self {
-                Self(key, std::marker::PhantomData)
+                Self(key, $(std::marker::PhantomData::<($($typearg),*)>)?)
             }
         }
 
-        impl<$($typearg),*> std::hash::Hash for $constructor<$($typearg),*> {
+        impl$(<$($typearg),*>)? std::hash::Hash for $constructor$(<$($typearg),*>)? {
             fn hash<H>(&self, state: &mut H)
             where
-                H: std::hash::Hasher
+                H: std::hash::Hasher,
             {
                 self.0.hash(state);
             }
         }
 
-        impl<$($typearg),*> PartialEq for $constructor<$($typearg),*> {
+        impl$(<$($typearg),*>)? PartialEq for $constructor$(<$($typearg),*>)? {
             fn eq(&self, other: &Self) -> bool {
                 self.0.eq(&other.0)
             }
         }
 
-        impl<$($typearg),*> Eq for $constructor<$($typearg),*> {}
+        impl$(<$($typearg),*>)? Eq for $constructor$(<$($typearg),*>)? {}
 
-        impl<$($typearg: 'static),*> typedmap::TypedMapKey<$crate::circuit::cache::CircuitStoreMarker> for $constructor<$($typearg),*> {
+        impl$(<$($typearg: 'static),*>)? typedmap::TypedMapKey<$crate::circuit::cache::CircuitStoreMarker> for $constructor$(<$($typearg),*>)? {
             type Value = $val_type;
         }
     }

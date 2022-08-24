@@ -168,8 +168,15 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> bool + 'static,
     {
-        self.circuit()
-            .add_unary_operator(FilterKeys::new(filter_func), self)
+        let filtered = self
+            .circuit()
+            .add_unary_operator(FilterKeys::new(filter_func), &self.try_sharded_version());
+
+        if self.has_sharded_version() {
+            filtered.mark_sharded();
+        }
+
+        filtered
     }
 
     fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
@@ -236,8 +243,15 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> bool + 'static,
     {
-        self.circuit()
-            .add_unary_operator(FilterVals::new(filter_func), self)
+        let filtered = self
+            .circuit()
+            .add_unary_operator(FilterVals::new(filter_func), &self.try_sharded_version());
+
+        if self.has_sharded_version() {
+            filtered.mark_sharded();
+        }
+
+        filtered
     }
 
     fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>

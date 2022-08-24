@@ -42,6 +42,7 @@ where
             .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
                 self.circuit()
                     .add_unary_operator(Distinct::new(), &self.shard())
+                    .mark_sharded()
             })
             .clone()
     }
@@ -56,7 +57,7 @@ where
         Z::Key: Clone + PartialEq + Ord + Hash,
         Z::R: ZRingValue,
     {
-        self.shard().distinct_incremental_inner()
+        self.shard().distinct_incremental_inner().mark_sharded()
     }
 
     fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
@@ -91,6 +92,7 @@ where
             .integrate_nested()
             .distinct_incremental_inner()
             .differentiate_nested()
+            .mark_sharded()
     }
 }
 
@@ -116,13 +118,16 @@ where
             .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
                 let stream = self.shard();
 
-                self.circuit().add_binary_operator(
-                    DistinctTrace::new(),
-                    &stream,
-                    &stream
-                        .trace::<OrdKeySpine<Z::Key, NestedTimestamp32, Z::R>>()
-                        .delay_trace(),
-                )
+                self.circuit()
+                    .add_binary_operator(
+                        DistinctTrace::new(),
+                        &stream,
+                        &stream
+                            .trace::<OrdKeySpine<Z::Key, NestedTimestamp32, Z::R>>()
+                            .delay_trace(),
+                    )
+                    // We shard the input stream so the output is sharded
+                    .mark_sharded()
             })
             .clone()
     }
@@ -152,6 +157,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Distinct")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -200,6 +206,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("DistinctIncremental")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }

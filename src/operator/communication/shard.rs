@@ -133,9 +133,20 @@ where
 
                             // Is `consolidate` always necessary? Some (all?) consumers may be happy
                             // working with traces.
-                            self.circuit()
+                            let output = self
+                                .circuit()
                                 .add_exchange(sender, receiver, self)
-                                .consolidate()
+                                .consolidate();
+
+                            self.circuit().cache_insert(
+                                ShardId::new((
+                                    output.origin_node_id().clone(),
+                                    sharding_policy(self.circuit()),
+                                )),
+                                output.clone(),
+                            );
+
+                            output
                         },
                     )
                     .clone();
@@ -227,6 +238,46 @@ where
         for builder in builders.drain(..) {
             outputs.push(builder.done());
         }
+    }
+}
+
+impl<P, T> Stream<Circuit<P>, T>
+where
+    P: Clone + 'static,
+    T: 'static,
+{
+    /// Marks the data within the current stream as sharded, meaning that all
+    /// further calls to `.shard()` will have no effect.
+    ///
+    /// This must only be used on streams of values that are properly sharded
+    /// across workers, otherwise this will cause the dataflow to yield
+    /// incorrect results
+    pub fn mark_sharded(&self) -> Self {
+        self.circuit().cache_insert(
+            ShardId::new((
+                self.origin_node_id().clone(),
+                sharding_policy(self.circuit()),
+            )),
+            self.clone(),
+        );
+        self.clone()
+    }
+
+    pub fn has_sharded_version(&self) -> bool {
+        self.circuit()
+            .cache_contains(&ShardId::<Circuit<P>, T>::new((
+                self.origin_node_id().clone(),
+                sharding_policy(self.circuit()),
+            )))
+    }
+
+    pub fn try_sharded_version(&self) -> Self {
+        self.circuit()
+            .cache_get(&ShardId::new((
+                self.origin_node_id().clone(),
+                sharding_policy(self.circuit()),
+            )))
+            .unwrap_or_else(|| self.clone())
     }
 }
 

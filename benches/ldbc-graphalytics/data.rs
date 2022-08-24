@@ -40,6 +40,13 @@ pub type Ranks<P> = Streamed<P, RankSet>;
 pub type RankPairs<P> = Streamed<P, RankMap>;
 pub type Vertices<P, D = Present> = Streamed<P, VertexSet<D>>;
 
+type LoadedDataset<R> = (
+    Properties,
+    Vec<EdgeMap>,
+    Vec<VertexSet>,
+    <R as ResultParser>::Parsed,
+);
+
 const DATA_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/benches/ldbc-graphalytics-data",
@@ -147,7 +154,7 @@ impl DataSet {
         Path::new(DATA_PATH).join(self.name)
     }
 
-    pub fn load<R: ResultParser>(&self) -> io::Result<(Properties, EdgeMap, VertexSet, R::Parsed)> {
+    pub fn load<R: ResultParser>(&self, workers: usize) -> io::Result<LoadedDataset<R>> {
         let dataset_dir = self.dataset_dir()?;
 
         // Open & parse the properties file
@@ -169,12 +176,12 @@ impl DataSet {
 
         // Load the edges and vertices in parallel
         let edges_handle = thread::spawn(move || {
-            EdgeParser::new(edges, properties.directed).load(properties.edges as usize)
+            EdgeParser::new(edges, properties.directed).load(properties.edges as usize, workers)
         });
 
         let (vertices, results) = if let Some(suffix) = R::file_suffix() {
             let vertices_handle = thread::spawn(move || {
-                VertexParser::new(vertices).load(properties.vertices as usize)
+                VertexParser::new(vertices).load(properties.vertices as usize, workers)
             });
 
             // Open the results file
@@ -191,7 +198,7 @@ impl DataSet {
 
         // Otherwise parse the vertices file on this thread
         } else {
-            let vertices = VertexParser::new(vertices).load(properties.vertices as usize);
+            let vertices = VertexParser::new(vertices).load(properties.vertices as usize, workers);
             (vertices, R::Parsed::default())
         };
 
@@ -613,27 +620,43 @@ impl EdgeParser {
         }
     }
 
-    pub fn load(self, approx_edges: usize) -> EdgeMap {
+    pub fn load(self, approx_edges: usize, workers: usize) -> Vec<EdgeMap> {
         // Directed graphs can use an ordered builder
         if self.directed {
-            let mut edges = <EdgeMap as Batch>::Builder::with_capacity((), approx_edges);
-            self.parse(|src, dest| edges.push(((src, dest), Present)));
-            edges.done()
+            let mut edges: Vec<_> = (0..workers)
+                .map(|_| <EdgeMap as Batch>::Builder::with_capacity((), approx_edges / workers))
+                .collect();
+
+            self.parse(|src, dest| {
+                edges[fxhash::hash(&src) % workers].push(((src, dest), Present));
+            });
+
+            edges.into_iter().map(Builder::done).collect()
 
         // Undirected graphs must use an unordered builder
         } else {
-            let mut forward_batch = Vec::with_capacity(approx_edges);
-            let mut reverse_batch = Vec::with_capacity(approx_edges);
+            let mut forward_batches: Vec<_> = (0..workers)
+                .map(|_| Vec::with_capacity(approx_edges / workers / 2))
+                .collect();
+            let mut reverse_batches: Vec<_> = (0..workers)
+                .map(|_| Vec::with_capacity(approx_edges / workers / 2))
+                .collect();
 
             self.parse(|src, dest| {
-                forward_batch.push(((src, dest), Present));
-                reverse_batch.push(((dest, src), Present));
+                forward_batches[fxhash::hash(&src) % workers].push(((src, dest), Present));
+                reverse_batches[fxhash::hash(&src) % workers].push(((dest, src), Present));
             });
 
-            let mut edges = <EdgeMap as Batch>::Batcher::new(());
-            edges.push_consolidated_batch(&mut forward_batch);
-            edges.push_batch(&mut reverse_batch);
-            edges.seal()
+            forward_batches
+                .into_iter()
+                .zip(reverse_batches)
+                .map(|(mut forward, mut reverse)| {
+                    let mut edges = <EdgeMap as Batch>::Batcher::new(());
+                    edges.push_consolidated_batch(&mut forward);
+                    edges.push_batch(&mut reverse);
+                    edges.seal()
+                })
+                .collect()
         }
     }
 
@@ -671,11 +694,15 @@ impl VertexParser {
         }
     }
 
-    pub fn load(self, approx_vertices: usize) -> VertexSet {
+    pub fn load(self, approx_vertices: usize, workers: usize) -> Vec<VertexSet> {
         // The vertices file is ordered so we can use an ordered builder
-        let mut vertices = <VertexSet as Batch>::Builder::with_capacity((), approx_vertices);
-        self.parse(|vertex| vertices.push((vertex, Present)));
-        vertices.done()
+        let mut vertices: Vec<_> = (0..workers)
+            .map(|_| <VertexSet as Batch>::Builder::with_capacity((), approx_vertices / workers))
+            .collect();
+
+        self.parse(|vertex| vertices[fxhash::hash(&vertex) % workers].push((vertex, Present)));
+
+        vertices.into_iter().map(Builder::done).collect()
     }
 
     fn parse<F>(mut self, mut append: F)
