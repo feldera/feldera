@@ -16,7 +16,7 @@ use crate::{
     },
     circuit::{
         operator_traits::{Operator, TernaryOperator, UnaryOperator},
-        Circuit, ExportId, OwnershipPreference, Scope, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
     lattice::Lattice,
     operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
@@ -134,6 +134,7 @@ where
     {
         self.circuit()
             .add_unary_operator(Aggregate::new(aggregator), &self.shard())
+            .mark_sharded()
     }
 
     /// Incremental aggregation operator.
@@ -198,33 +199,32 @@ where
             self.circuit().root_scope(),
         ));
 
-        let output_trace_delayed = export_stream.local;
-        let output_trace_export = export_stream.export;
+        let output_trace_delayed = export_stream.local.mark_sharded();
 
-        let output = circuit.add_ternary_operator(
-            AggregateIncremental::new(aggregator),
-            &stream,
-            &stream.trace::<Spine<TS::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
-            &output_trace_delayed,
-        );
+        let output = circuit
+            .add_ternary_operator(
+                AggregateIncremental::new(aggregator),
+                &stream,
+                &stream.trace::<Spine<TS::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
+                &output_trace_delayed,
+            )
+            .mark_sharded();
 
-        let output_trace = circuit.add_binary_operator_with_preference(
-            <TraceAppend<Spine<_>, _>>::new(),
-            &output_trace_delayed,
-            &output,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
+        let output_trace = circuit
+            .add_binary_operator_with_preference(
+                <TraceAppend<Spine<_>, _>>::new(),
+                &output_trace_delayed,
+                &output,
+                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                OwnershipPreference::PREFER_OWNED,
+            )
+            .mark_sharded();
         z1feedback
             .connect_with_preference(&output_trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
         circuit.cache_insert(
             DelayedTraceId::new(output_trace.origin_node_id().clone()),
             output_trace_delayed,
-        );
-        circuit.cache_insert(
-            ExportId::new(output_trace.origin_node_id().clone()),
-            output_trace_export,
         );
         circuit.cache_insert(TraceId::new(output.origin_node_id().clone()), output_trace);
 
@@ -301,7 +301,7 @@ where
         O: Clone + Batch<Key = Z::Key, Val = (), Time = ()> + 'static,
         O::R: MulByRef<Z::R, Output = O::R>,
     {
-        self.apply(move |batch| {
+        let output = self.try_sharded_version().apply(move |batch| {
             let mut delta = <O::Builder>::with_capacity((), batch.key_count());
             let mut cursor = batch.cursor();
             while cursor.key_valid() {
@@ -314,7 +314,12 @@ where
                 cursor.step_key();
             }
             delta.done()
-        })
+        });
+
+        if self.has_sharded_version() {
+            output.mark_sharded();
+        }
+        output
     }
 }
 

@@ -31,10 +31,15 @@ where
     /// preference on the input stream with `input_preference`.
     pub fn delta0_with_preference(
         &self,
-        circuit: &Circuit<Circuit<P>>,
+        subcircuit: &Circuit<Circuit<P>>,
         input_preference: OwnershipPreference,
     ) -> Stream<Circuit<Circuit<P>>, D> {
-        let delta = circuit.import_stream_with_preference(Delta0::new(), self, input_preference);
+        let delta = subcircuit.import_stream_with_preference(
+            Delta0::new(),
+            &self.try_sharded_version(),
+            input_preference,
+        );
+
         if self.has_sharded_version() {
             delta.mark_sharded();
         }

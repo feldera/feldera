@@ -72,25 +72,30 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
-                self.circuit().region("trace", || {
-                    let (ExportStream { local, export }, z1feedback) = self
-                        .circuit()
-                        .add_feedback_with_export(Z1Trace::new(false, self.circuit().root_scope()));
-                    let trace = self.circuit().add_binary_operator_with_preference(
+                let circuit = self.circuit();
+
+                circuit.region("trace", || {
+                    let (ExportStream { local, export }, z1feedback) =
+                        circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
+                    let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<T, B>>::new(),
                         &local,
-                        self,
+                        &self.try_sharded_version(),
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                         OwnershipPreference::PREFER_OWNED,
                     );
+                    if self.has_sharded_version() {
+                        local.mark_sharded();
+                        trace.mark_sharded();
+                    }
                     z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
-                    self.circuit()
+
+                    circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-                    self.circuit()
-                        .cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+                    circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
                     trace
                 })
             })
@@ -107,25 +112,29 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(IntegrateTraceId::new(self.origin_node_id().clone()), || {
-                self.circuit().region("integrate_trace", || {
-                    let (ExportStream { local, export }, z1feedback) = self
-                        .circuit()
-                        .add_feedback_with_export(Z1Trace::new(true, self.circuit().root_scope()));
-                    let trace = self.circuit().add_binary_operator_with_preference(
+                let circuit = self.circuit();
+
+                circuit.region("integrate_trace", || {
+                    let (ExportStream { local, export }, z1feedback) =
+                        circuit.add_feedback_with_export(Z1Trace::new(true, circuit.root_scope()));
+                    let trace = circuit.add_binary_operator_with_preference(
                         <UntimedTraceAppend<Spine<B>>>::new(),
                         &local,
-                        self,
+                        &self.try_sharded_version(),
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                         OwnershipPreference::PREFER_OWNED,
                     );
+                    if self.has_sharded_version() {
+                        local.mark_sharded();
+                        trace.mark_sharded();
+                    }
                     z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
-                    self.circuit()
+                    circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-                    self.circuit()
-                        .cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+                    circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
                     trace
                 })
             })
