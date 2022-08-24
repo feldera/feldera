@@ -33,6 +33,16 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     pub fn diffs_mut(&mut self) -> &mut [R] {
         &mut self.diffs
     }
+
+    /// Assume the invariants of the current builder
+    ///
+    /// # Safety
+    ///
+    /// Requires that `keys` and `diffs` have the exact same length
+    #[inline]
+    unsafe fn assume_invariants(&self) {
+        unsafe { assume(self.keys.len() == self.diffs.len()) }
+    }
 }
 
 impl<K, R> Trie for OrderedColumnLeaf<K, R>
@@ -47,19 +57,19 @@ where
 
     #[inline]
     fn keys(&self) -> usize {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
     #[inline]
     fn tuples(&self) -> usize {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
     #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         OrderedColumnLeafCursor::new(lower, self, (lower, upper))
     }
 }

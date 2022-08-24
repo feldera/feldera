@@ -21,6 +21,18 @@ pub struct OrderedColumnLeafBuilder<K, R> {
     diffs: Vec<R>,
 }
 
+impl<K, R> OrderedColumnLeafBuilder<K, R> {
+    /// Assume the invariants of the current builder
+    ///
+    /// # Safety
+    ///
+    /// Requires that `keys` and `diffs` have the exact same length
+    #[inline]
+    unsafe fn assume_invariants(&self) {
+        unsafe { assume(self.keys.len() == self.diffs.len()) }
+    }
+}
+
 impl<K, R> Builder for OrderedColumnLeafBuilder<K, R>
 where
     K: Ord + Clone,
@@ -30,13 +42,13 @@ where
 
     #[inline]
     fn boundary(&mut self) -> usize {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
     #[inline]
     fn done(self) -> Self::Trie {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
 
         // TODO: Should we call `.shrink_to_fit()` here?
         OrderedColumnLeaf {
@@ -74,8 +86,8 @@ where
     #[inline]
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         unsafe {
-            assume(self.keys.len() == self.diffs.len());
-            assume(other.keys.len() == other.diffs.len());
+            self.assume_invariants();
+            other.assume_invariants();
         }
 
         assert!(lower <= other.keys.len() && upper <= other.keys.len());
@@ -88,12 +100,12 @@ where
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
 
         let (trie1, trie2) = (cursor1.storage(), cursor2.storage());
         unsafe {
-            assume(trie1.keys.len() == trie1.diffs.len());
-            assume(trie2.keys.len() == trie2.diffs.len());
+            trie1.assume_invariants();
+            trie2.assume_invariants();
         }
 
         let (mut lower1, upper1) = cursor1.bounds();
@@ -102,7 +114,7 @@ where
         let reserved = (upper1 - lower1) + (upper2 - lower2);
         self.keys.reserve(reserved);
         self.diffs.reserve(reserved);
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
 
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
@@ -129,8 +141,7 @@ where
                     sum.add_assign_by_ref(&trie2.diffs[lower2]);
 
                     if !sum.is_zero() {
-                        self.keys.push(trie1.keys[lower1].clone());
-                        self.diffs.push(sum);
+                        self.push_tuple((trie1.keys[lower1].clone(), sum));
                     }
 
                     lower1 += 1;
@@ -167,7 +178,7 @@ where
             );
         }
 
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 }
@@ -197,14 +208,12 @@ where
 
     #[inline]
     fn tuples(&self) -> usize {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
     #[inline]
     fn push_tuple(&mut self, (key, diff): (K, R)) {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
-
         // if cfg!(debug_assertions) && !self.keys.is_empty() {
         //     debug_assert!(
         //         self.keys.last().unwrap() <= &key,
@@ -213,8 +222,10 @@ where
         //      );
         // }
 
+        unsafe { self.assume_invariants() }
         self.keys.push(key);
         self.diffs.push(diff);
+        unsafe { self.assume_invariants() }
     }
 }
 
@@ -242,7 +253,9 @@ where
         self.boundary();
 
         // TODO: Can we reuse the `values` buffer somehow?
-        let (keys, diffs) = self.values.into_iter().unzip();
+        let (keys, diffs): (Vec<_>, Vec<_>) = self.values.into_iter().unzip();
+        unsafe { assume(keys.len() == diffs.len()) }
+
         OrderedColumnLeaf { keys, diffs }
     }
 }

@@ -21,6 +21,7 @@ use std::{
     fmt::Write,
     hash::Hash,
     marker::PhantomData,
+    mem::{needs_drop, MaybeUninit},
 };
 use timely::PartialOrder;
 
@@ -522,6 +523,8 @@ where
         // One allocation per clock tick is acceptable; however the actual output can be
         // larger than `index.len()`.  If re-allocations becomes a problem, we
         // may need to do something smarter, like a chain of buffers.
+        // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
+        //       actually could be significant
         let mut output_tuples = Vec::with_capacity(index.len());
 
         let mut index_cursor = index.cursor();
@@ -549,7 +552,10 @@ where
                             trace_cursor.map_times(|ts, w2| {
                                 output_tuples.push((
                                     ts.join(&self.time),
-                                    (Z::item_from(output.clone(), ()), w1.mul_by_ref(w2)),
+                                    MaybeUninit::new((
+                                        Z::item_from(output.clone(), ()),
+                                        w1.mul_by_ref(w2),
+                                    )),
                                 ));
                                 //println!("  tuple@{}: ({:?}, {})", off,
                                 // output, w1.clone() * w2.clone());
@@ -570,12 +576,56 @@ where
         // timestamp to the appropriate batcher.
         output_tuples.sort_by(|(t1, _), (t2, _)| t1.cmp(t2));
 
-        let mut batch = Vec::new();
-        while !output_tuples.is_empty() {
-            let batch_time = output_tuples[0].0.clone();
+        /// Ensures that we don't leak any values if we panic while creating
+        /// output batches
+        struct BatchPusher<T, U> {
+            // Invariant: `tuples[start..]` are all initialized
+            start: usize,
+            tuples: Vec<(T, MaybeUninit<U>)>,
+        }
 
-            let end = output_tuples.partition_point(|(time, _)| *time == batch_time);
-            batch.extend(output_tuples.drain(..end).map(|(_, tuple)| tuple));
+        impl<T, U> BatchPusher<T, U> {
+            const fn new(tuples: Vec<(T, MaybeUninit<U>)>) -> Self {
+                Self { start: 0, tuples }
+            }
+
+            fn is_empty(&self) -> bool {
+                self.start >= self.tuples.len()
+            }
+
+            fn current_time(&self) -> &T {
+                &self.tuples[self.start].0
+            }
+        }
+
+        impl<T, U> Drop for BatchPusher<T, U> {
+            fn drop(&mut self) {
+                if needs_drop::<U>() {
+                    for (_, tuple) in &mut self.tuples[self.start..] {
+                        // Safety: `tuples[start..]` are all initialized
+                        unsafe { tuple.assume_init_drop() };
+                    }
+                }
+            }
+        }
+
+        let mut batch = Vec::new();
+        let mut pusher = BatchPusher::new(output_tuples);
+
+        while !pusher.is_empty() {
+            let batch_time = pusher.current_time().clone();
+
+            let run_length =
+                pusher.tuples[pusher.start..].partition_point(|(time, _)| *time == batch_time);
+            batch.reserve(run_length);
+
+            let run = pusher.tuples[pusher.start..pusher.start + run_length]
+                .iter_mut()
+                // Safety: All values in `pusher.tuples[pusher.start..]` are initialized and we
+                //         mark the values we take from it by incrementing `pusher.start`
+                .map(|(_, tuple)| unsafe { tuple.assume_init_read() });
+            pusher.start += run_length;
+            batch.extend(run);
 
             self.output_batchers
                 .entry(batch_time)

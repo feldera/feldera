@@ -26,6 +26,7 @@ deepsize_derive = "0.1.2"
 textwrap = "0.15.0"
 fxhash = "0.2"
 ordered-float = "3.0.0"
+
 # TODO: Remove these dependencies
 rand = { version = "0.8", optional = true }
 clap = { version = "3.2", optional = true, features = ["derive", "env"] }

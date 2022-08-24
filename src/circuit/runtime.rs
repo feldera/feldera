@@ -129,9 +129,6 @@ impl Runtime {
     {
         let runtime = Self(Arc::new(RuntimeInner::new(workers)));
 
-        println!("started spawning workers");
-        let start = std::time::Instant::now();
-
         let mut handles = Vec::with_capacity(workers);
         handles.extend((0..workers).map(|worker_index| {
             let runtime = runtime.clone();
@@ -169,9 +166,6 @@ impl Runtime {
             let (unparker, kill_signal) = recv.recv().unwrap();
             WorkerHandle::new(handle, unparker, kill_signal)
         }));
-
-        let elapsed = start.elapsed();
-        println!("finished spawning workers in {elapsed:#?}");
 
         RuntimeHandle::new(runtime, workers)
     }
