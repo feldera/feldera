@@ -70,15 +70,14 @@ impl Circuit<()> {
     /// client invokes `[CollectionHandle::push]` and
     /// [`CollectionHandle::append`] any number of times to add values to
     /// the input Z-set. These values are distributed across all worker
-    /// threads (when running in a multithreaded [`Runtime`]) based on the
-    /// hash of the value and buffered until the start of the next clock
+    /// threads (when running in a multithreaded [`Runtime`]) in a round-robin
+    /// faction and buffered until the start of the next clock
     /// cycle.  At the start of a clock cycle (triggered by
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
     /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)), the circuit
     /// reads all buffered values and assembles them into an `OrdZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
-    // TODO: Add a version that takes a custom hash function.
     pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
     where
         K: Clone + Send + Ord + 'static,
@@ -102,7 +101,7 @@ impl Circuit<()> {
     /// and [`CollectionHandle::append`] any number of times to add
     /// `key/value/weight` triples the indexed Z-set. These triples are
     /// distributed across all worker threads (when running in a
-    /// multithreaded [`Runtime`]) based on the hash of the key, and
+    /// multithreaded [`Runtime`]) in a round-robin fashion, and
     /// buffered until the start of the next clock cycle.  At the start of a
     /// clock cycle (triggered by
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
@@ -110,7 +109,6 @@ impl Circuit<()> {
     /// reads all buffered values and assembles them into an `OrdIndexedZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
-    // TODO: Add a version that takes a custom hash function.
     #[allow(clippy::type_complexity)]
     pub fn add_input_indexed_zset<K, V, R>(
         &self,
@@ -166,20 +164,29 @@ impl Circuit<()> {
         //                    z1trace             └───────┘
         // ```
         let (z1trace, z1feedback) = self.add_feedback(Z1Trace::new(true, self.root_scope()));
-        let upsert = self.add_binary_operator_with_preference(
-            Upsert::new(upsert_func),
-            &z1trace,
-            &input_stream,
-            OwnershipPreference::PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
-        let trace = self.add_binary_operator_with_preference(
-            <UntimedTraceAppend<Spine<_>>>::new(),
-            &z1trace,
-            &upsert,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::PREFER_OWNED,
-        );
+
+        // `UpsertHandle` shards its outputs, so we can mark all streams as sharded.
+        z1trace.mark_sharded();
+
+        let upsert = self
+            .add_binary_operator_with_preference(
+                Upsert::new(upsert_func),
+                &z1trace,
+                &input_stream,
+                OwnershipPreference::PREFER_OWNED,
+                OwnershipPreference::PREFER_OWNED,
+            )
+            .mark_sharded();
+
+        let trace = self
+            .add_binary_operator_with_preference(
+                <UntimedTraceAppend<Spine<_>>>::new(),
+                &z1trace,
+                &upsert,
+                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                OwnershipPreference::PREFER_OWNED,
+            )
+            .mark_sharded();
 
         z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
         self.cache_insert(

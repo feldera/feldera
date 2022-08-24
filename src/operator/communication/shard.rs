@@ -271,6 +271,9 @@ where
             )))
     }
 
+    /// Returns the sharded version of the stream if it exists
+    /// (which may be the stream itself or the result of applying
+    /// the `shard` operator to it).  Otherwise, returns `self`.
     pub fn try_sharded_version(&self) -> Self {
         self.circuit()
             .cache_get(&ShardId::new((
