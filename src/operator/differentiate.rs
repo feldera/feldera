@@ -24,8 +24,17 @@ where
     pub fn differentiate(&self) -> Stream<Circuit<P>, D> {
         self.circuit()
             .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
-                self.circuit()
-                    .add_binary_operator(Minus::new(), self, &self.delay())
+                let differentiated = self.circuit().add_binary_operator(
+                    Minus::new(),
+                    &self.try_sharded_version(),
+                    &self.try_sharded_version().delay(),
+                );
+
+                if self.has_sharded_version() {
+                    differentiated.mark_sharded();
+                }
+
+                differentiated
             })
             .clone()
     }
@@ -36,8 +45,17 @@ where
             .cache_get_or_insert_with(
                 NestedDifferentiateId::new(self.origin_node_id().clone()),
                 || {
-                    self.circuit()
-                        .add_binary_operator(Minus::new(), self, &self.delay_nested())
+                    let differentiated = self.circuit().add_binary_operator(
+                        Minus::new(),
+                        &self.try_sharded_version(),
+                        &self.try_sharded_version().delay_nested(),
+                    );
+
+                    if self.has_sharded_version() {
+                        differentiated.mark_sharded();
+                    }
+
+                    differentiated
                 },
             )
             .clone()

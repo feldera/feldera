@@ -45,7 +45,7 @@ where
         // TODO: Allow non-unit timestamps
         Pairs: Batch<Time = ()> + Data + Send,
         Pairs::Key: Hash + Ord + Clone,
-        Pairs::Val: Ord + Clone,
+        Pairs::Val: Ord + Hash + Clone,
         Keys: Batch<Key = Pairs::Key, Val = (), Time = ()> + Data + Send,
         // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
         Out: ZSet<Key = (Pairs::Key, Pairs::Val)> + 'static,
@@ -56,11 +56,13 @@ where
             .cache_get_or_insert_with(
                 SemijoinId::new((self.origin_node_id().clone(), keys.origin_node_id().clone())),
                 move || {
-                    self.circuit().add_binary_operator(
-                        SemiJoinStream::new(),
-                        &self.shard(),
-                        &keys.shard(),
-                    )
+                    self.circuit()
+                        .add_binary_operator(SemiJoinStream::new(), &self.shard(), &keys.shard())
+                        // This is valid because both of the input streams are sharded. Since this
+                        // operator doesn't transform the keys of the inputs
+                        // any, the stream they produce is automatically
+                        // sharded by the same metric that the inputs are
+                        .mark_sharded()
                 },
             )
             .clone()

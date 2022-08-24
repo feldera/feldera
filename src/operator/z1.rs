@@ -158,7 +158,7 @@ impl<P, D> Stream<Circuit<P>, D> {
 pub struct Z1<T> {
     zero: T,
     empty_output: bool,
-    val: T,
+    values: T,
 }
 
 impl<T> Z1<T>
@@ -169,7 +169,7 @@ where
         Self {
             zero: zero.clone(),
             empty_output: false,
-            val: zero,
+            values: zero,
         }
     }
 }
@@ -185,23 +185,20 @@ where
     fn clock_start(&mut self, _scope: Scope) {}
     fn clock_end(&mut self, _scope: Scope) {
         self.empty_output = false;
-        self.val = self.zero.clone();
+        self.values = self.zero.clone();
     }
 
     fn summary(&self, summary: &mut String) {
-        writeln!(summary, "size: {}", self.val.num_entries_deep()).unwrap();
+        writeln!(summary, "size: {}", self.values.num_entries_deep()).unwrap();
 
-        let bytes = self.val.deep_size_of();
+        let bytes = self.values.deep_size_of();
         writeln!(summary, "bytes: {}", bytes).unwrap();
         //println!("zbytes:{}", bytes);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         if scope == 0 {
-            (self.val.num_entries_shallow() == 0) && self.empty_output
-            /*if res == false {
-                eprintln!("num_entries_shallow: {}", self.val.num_entries_shallow());
-            }*/
+            self.values.num_entries_shallow() == 0 && self.empty_output
         } else {
             true
         }
@@ -213,11 +210,11 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
-        replace(&mut self.val, i.clone())
+        replace(&mut self.values, i.clone())
     }
 
     fn eval_owned(&mut self, i: T) -> T {
-        replace(&mut self.val, i)
+        replace(&mut self.values, i)
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -230,8 +227,8 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
-        self.empty_output = self.val.num_entries_shallow() == 0;
-        replace(&mut self.val, self.zero.clone())
+        self.empty_output = self.values.num_entries_shallow() == 0;
+        replace(&mut self.values, self.zero.clone())
     }
 
     fn get_final_output(&mut self) -> T {
@@ -244,11 +241,11 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
-        self.val = i.clone();
+        self.values = i.clone();
     }
 
     fn eval_strict_owned(&mut self, i: T) {
-        self.val = i;
+        self.values = i;
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -293,7 +290,7 @@ where
 pub struct Z1Nested<T> {
     zero: T,
     timestamp: usize,
-    val: Vec<T>,
+    values: Vec<T>,
 }
 
 impl<T> Z1Nested<T> {
@@ -301,13 +298,13 @@ impl<T> Z1Nested<T> {
         Self {
             zero,
             timestamp: 0,
-            val: vec![],
+            values: Vec::new(),
         }
     }
 
     fn reset(&mut self) {
         self.timestamp = 0;
-        self.val = vec![];
+        self.values.clear();
     }
 }
 
@@ -321,7 +318,7 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.val.truncate(self.timestamp);
+            self.values.truncate(self.timestamp);
         }
         self.timestamp = 0;
     }
@@ -335,10 +332,10 @@ where
     fn summary(&self, summary: &mut String) {
         let mut total = 0;
         write!(summary, "sizes: [").unwrap();
-        for (i, v) in self.val.iter().enumerate() {
+        for (i, v) in self.values.iter().enumerate() {
             let nentries = v.num_entries_deep();
             total += nentries;
-            if i == self.val.len() - 1 {
+            if i == self.values.len() - 1 {
                 write!(summary, "{}", nentries).unwrap();
             } else {
                 write!(summary, "{},", nentries).unwrap();
@@ -349,10 +346,10 @@ where
 
         let mut total_bytes = 0;
         write!(summary, "byte sizes: [").unwrap();
-        for (i, v) in self.val.iter().enumerate() {
+        for (i, v) in self.values.iter().enumerate() {
             let bytes = v.deep_size_of();
             total_bytes += bytes;
-            if i == self.val.len() - 1 {
+            if i == self.values.len() - 1 {
                 write!(summary, "{}", bytes).unwrap();
             } else {
                 write!(summary, "{},", bytes).unwrap();
@@ -365,7 +362,7 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         if scope == 0 {
-            self.val
+            self.values
                 .iter()
                 .skip(self.timestamp - 1)
                 .all(|v| *v == self.zero)
@@ -380,30 +377,30 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
-        debug_assert!(self.timestamp <= self.val.len());
+        debug_assert!(self.timestamp <= self.values.len());
 
-        if self.timestamp == self.val.len() {
-            self.val.push(self.zero.clone());
-        } else if self.timestamp == self.val.len() - 1 {
-            self.val.push(self.val.last().unwrap().clone());
+        if self.timestamp == self.values.len() {
+            self.values.push(self.zero.clone());
+        } else if self.timestamp == self.values.len() - 1 {
+            self.values.push(self.values.last().unwrap().clone());
         }
 
-        let result = replace(&mut self.val[self.timestamp], i.clone());
+        let result = replace(&mut self.values[self.timestamp], i.clone());
 
         self.timestamp += 1;
         result
     }
 
     fn eval_owned(&mut self, i: T) -> T {
-        debug_assert!(self.timestamp <= self.val.len());
+        debug_assert!(self.timestamp <= self.values.len());
 
-        if self.timestamp == self.val.len() {
-            self.val.push(self.zero.clone());
-        } else if self.timestamp == self.val.len() - 1 {
-            self.val.push(self.val.last().unwrap().clone());
+        if self.timestamp == self.values.len() {
+            self.values.push(self.zero.clone());
+        } else if self.timestamp == self.values.len() - 1 {
+            self.values.push(self.values.last().unwrap().clone());
         }
 
-        let result = replace(&mut self.val[self.timestamp], i);
+        let result = replace(&mut self.values[self.timestamp], i);
         self.timestamp += 1;
 
         result
@@ -419,16 +416,16 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
-        if self.timestamp >= self.val.len() {
-            assert_eq!(self.timestamp, self.val.len());
-            self.val.push(self.zero.clone());
-        } else if self.timestamp == self.val.len() - 1 {
-            self.val.push(self.val.last().unwrap().clone())
+        if self.timestamp >= self.values.len() {
+            assert_eq!(self.timestamp, self.values.len());
+            self.values.push(self.zero.clone());
+        } else if self.timestamp == self.values.len() - 1 {
+            self.values.push(self.values.last().unwrap().clone())
         }
 
         replace(
             // Safe due to the check above.
-            unsafe { self.val.get_unchecked_mut(self.timestamp) },
+            unsafe { self.values.get_unchecked_mut(self.timestamp) },
             self.zero.clone(),
         )
     }
@@ -443,16 +440,16 @@ where
     T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
-        debug_assert!(self.timestamp < self.val.len());
+        debug_assert!(self.timestamp < self.values.len());
 
-        self.val[self.timestamp] = i.clone();
+        self.values[self.timestamp] = i.clone();
         self.timestamp += 1;
     }
 
     fn eval_strict_owned(&mut self, i: T) {
-        debug_assert!(self.timestamp < self.val.len());
+        debug_assert!(self.timestamp < self.values.len());
 
-        self.val[self.timestamp] = i;
+        self.values[self.timestamp] = i;
         self.timestamp += 1;
     }
 

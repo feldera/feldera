@@ -1,11 +1,13 @@
 //! Defines an operator which negates the input value
 
-use crate::algebra::NegByRef;
-use crate::circuit::operator_traits::UnaryOperator;
-use crate::circuit::{operator_traits::Operator, Circuit, OwnershipPreference, Scope, Stream};
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::ops::Neg;
+use crate::{
+    algebra::NegByRef,
+    circuit::{
+        operator_traits::{Operator, UnaryOperator},
+        Circuit, OwnershipPreference, Scope, Stream,
+    },
+};
+use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 impl<P, D> Stream<Circuit<P>, D>
 where
@@ -13,7 +15,16 @@ where
     P: Clone + 'static,
 {
     pub fn neg(&self) -> Stream<Circuit<P>, D> {
-        self.circuit().add_unary_operator(UnaryMinus::new(), self)
+        let negated = self
+            .circuit()
+            .add_unary_operator(UnaryMinus::new(), &self.try_sharded_version());
+
+        // If the input stream is sharded then the negated stream is sharded
+        if self.has_sharded_version() {
+            negated.mark_sharded();
+        }
+
+        negated
     }
 }
 
@@ -36,6 +47,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UnaryMinus")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }

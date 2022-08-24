@@ -88,6 +88,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("delta0")
     }
+
     fn fixedpoint(&self, scope: Scope) -> bool {
         if scope == 0 {
             // Output becomes stable (all zeros) after the first clock cycle.
@@ -107,6 +108,7 @@ where
         self.val = Some(val.clone());
         self.fixedpoint = false;
     }
+
     fn import_owned(&mut self, val: D) {
         self.val = Some(val);
         self.fixedpoint = false;

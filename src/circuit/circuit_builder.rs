@@ -501,13 +501,20 @@ impl OwnershipPreference {
     }
 }
 
+impl Default for OwnershipPreference {
+    #[inline]
+    fn default() -> Self {
+        Self::INDIFFERENT
+    }
+}
+
 impl Display for OwnershipPreference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::INDIFFERENT => f.write_str("Indifferent"),
             Self::PREFER_OWNED => f.write_str("PreferOwned"),
             Self::STRONGLY_PREFER_OWNED => f.write_str("StronglyPreferOwned"),
-            _ => write!(f, "Preference({})", self.raw()),
+            Self(preference) => write!(f, "Preference({preference})"),
         }
     }
 }
@@ -1024,9 +1031,24 @@ where
     /// See [`cache`] module documentation for details.
     pub(crate) fn cache_insert<K>(&self, key: K, val: K::Value)
     where
-        K: 'static + TypedMapKey<CircuitStoreMarker>,
+        K: TypedMapKey<CircuitStoreMarker> + 'static,
     {
         self.inner_mut().store.insert(key, val);
+    }
+
+    pub(crate) fn cache_contains<K>(&self, key: &K) -> bool
+    where
+        K: TypedMapKey<CircuitStoreMarker> + 'static,
+    {
+        self.inner_mut().store.contains_key(key)
+    }
+
+    pub(crate) fn cache_get<K>(&self, key: &K) -> Option<K::Value>
+    where
+        K: TypedMapKey<CircuitStoreMarker> + 'static,
+        K::Value: Clone,
+    {
+        self.inner_mut().store.get(key).cloned()
     }
 
     pub(crate) fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {

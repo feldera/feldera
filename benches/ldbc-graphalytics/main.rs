@@ -8,13 +8,12 @@ use crate::data::{
 };
 use clap::Parser;
 use dbsp::{
-    algebra::{NegByRef, Present},
     circuit::{trace::SchedulerEvent, Runtime},
     monitor::TraceMonitor,
     operator::Generator,
     profile::CPUProfiler,
     trace::{BatchReader, Cursor},
-    zset, Circuit,
+    Circuit,
 };
 use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
@@ -29,10 +28,11 @@ use std::{
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},
-    mem::size_of,
+    mem::{replace, size_of, take},
     num::{NonZeroU8, NonZeroUsize},
-    ops::Add,
+    ops::{Add, Neg},
     rc::Rc,
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -83,15 +83,22 @@ fn main() {
     io::stdout().flush().unwrap();
     let start = Instant::now();
 
-    let (properties, edges, vertices, _) = dataset.load::<NoopResults>().unwrap();
+    let (properties, edge_data, vertex_data, _) =
+        dataset.load::<NoopResults>(threads.get()).unwrap();
     let elapsed = start.elapsed();
 
     // Calculate the amount of data that we've loaded in, including weights
-    let actual_size = edges.deep_size_of() + vertices.deep_size_of();
+    let actual_size = edge_data.deep_size_of() + vertex_data.deep_size_of();
     let theoretical_size = {
         let node = size_of::<Node>() as u64;
-        let edges = edges.len() as u64;
-        let vertices = vertices.len() as u64;
+        let edges = edge_data
+            .iter()
+            .map(|edges| edges.len() as u64)
+            .sum::<u64>();
+        let vertices = vertex_data
+            .iter()
+            .map(|vertices| vertices.len() as u64)
+            .sum::<u64>();
 
         let vertex_bytes = vertices * node;
         let edge_bytes = edges * node * 2;
@@ -114,12 +121,14 @@ fn main() {
         properties.edges,
     );
 
-    let mut root_data = Some(zset! { properties.source_vertex => Present });
-    let mut vertex_data = Some(vertices);
-    let mut edge_data = Some(edges);
+    let edge_data = Arc::new(edge_data.into_iter().map(Mutex::new).collect::<Vec<_>>());
+    let vertex_data = Arc::new(vertex_data.into_iter().map(Mutex::new).collect::<Vec<_>>());
 
     Runtime::run(threads.get(), move || {
-        let init_stats = if Runtime::worker_index() == 0 {
+        let worker_idx = Runtime::worker_index();
+        let is_leader = worker_idx == 0;
+
+        let init_stats = if is_leader {
             print!(
                 "building dataflow{}... ",
                 if config.profile { " with profiling" } else { "" },
@@ -136,38 +145,32 @@ fn main() {
 
         let output_inner = output.clone();
         let root = Circuit::build(move |circuit| {
-            if config.profile && Runtime::worker_index() == 0 {
+            if config.profile && is_leader {
                 attach_profiling(dataset, circuit);
             }
 
             let roots = circuit.region("roots", || {
-                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
-                    root_data.take().unwrap()
-                } else {
-                    Default::default()
-                }))
+                let (roots, root_handle) = circuit.add_input_set();
+                root_handle.push(properties.source_vertex, true);
+                roots
             });
+
             let vertices = circuit.region("vertices", || {
-                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
-                    vertex_data.take().unwrap()
-                } else {
-                    Default::default()
-                }))
-            });
+                circuit.add_source(Generator::new(move || take(&mut *vertex_data[worker_idx].lock().unwrap())))
+            })
+            .mark_sharded();
+
             let edges = circuit.region("edges", || {
-                circuit.add_source(Generator::new(move || if Runtime::worker_index() == 0 {
-                    edge_data.take().unwrap()
-                } else {
-                    Default::default()
-                }))
-            });
+                circuit.add_source(Generator::new(move || take(&mut *edge_data[worker_idx].lock().unwrap())))
+            })
+            .mark_sharded();
 
             match args {
                 Args::Bfs { .. } => {
                     bfs::bfs(roots, vertices, edges)
                         .gather(0)
                         .inspect(move |results| {
-                            if Runtime::worker_index() == 0 {
+                            if is_leader {
                                 *output_inner.borrow_mut() = OutputData::Bfs(results.clone());
                             } else {
                                 assert!(results.is_empty());
@@ -184,7 +187,7 @@ fn main() {
                     )
                     .gather(0)
                     .inspect(move |results| {
-                        if Runtime::worker_index() == 0 {
+                        if is_leader {
                             *output_inner.borrow_mut() = OutputData::PageRank(results.clone());
                         } else {
                             assert!(results.is_empty());
@@ -197,7 +200,7 @@ fn main() {
         })
         .unwrap().0;
 
-        if Runtime::worker_index() == 0 {
+        if is_leader {
             let elapsed = start.elapsed();
             print!("finished in {elapsed:#?}\nrunning benchmark... ");
             io::stdout().flush().unwrap();
@@ -207,7 +210,7 @@ fn main() {
         root.step().unwrap();
         let elapsed = start.elapsed();
 
-        if Runtime::worker_index() == 0 {
+        if is_leader {
             let stats = ALLOC.stats();
             println!(
                 "finished in {elapsed:#?}\ntime: {:#?}, user: {:#?}, system: {:#?}\nrss: {}, peak: {}\ncommit: {}, peak: {}\npage faults: {}",
@@ -231,19 +234,36 @@ fn main() {
             let kevps = evps / 1000.0;
             println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
 
-            let output = output.borrow();
-            match &*output {
+            let output = replace(&mut *output.borrow_mut(), OutputData::None);
+            match output {
                 OutputData::None => println!("no output was produced"),
 
                 OutputData::Bfs(result) => {
                     let expected = dataset.load_results::<BfsResults>(&properties).unwrap();
-                    // TODO: Better diff function
-                    assert_eq!(result, &expected);
+                    let difference = expected.add(result.neg());
+
+                    if !difference.is_empty() {
+                        let mut stdout = io::stdout().lock();
+                        let mut cursor = difference.cursor();
+
+                        while cursor.key_valid() {
+                            let (node, distance) = *cursor.key();
+                            let weight = cursor.weight();
+                            writeln!(stdout, "{node}, {distance} ({weight:+})").unwrap();
+                            cursor.step_key();
+                        }
+                    }
+
+                    println!(
+                        "bfs had {} incorrect result{}",
+                        difference.len(),
+                        if difference.len() == 1 { "" } else { "s" },
+                    );
                 }
 
                 OutputData::PageRank(result) => {
                     let expected = dataset.load_results::<PageRankResults>(&properties).unwrap();
-                    let difference = expected.add(result.neg_by_ref());
+                    let difference = expected.add(result.neg());
 
                     let mut incorrect = 0;
                     if !difference.is_empty() {

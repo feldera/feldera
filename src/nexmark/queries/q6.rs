@@ -200,7 +200,7 @@ mod tests {
         })
         .unwrap();
 
-        for mut vec in input_vecs.into_iter() {
+        for mut vec in input_vecs {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }
@@ -274,7 +274,7 @@ mod tests {
         })
         .unwrap();
 
-        for mut vec in input_vecs.into_iter() {
+        for mut vec in input_vecs {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }
@@ -516,7 +516,7 @@ mod tests {
         })
         .unwrap();
 
-        for mut vec in input_vecs.into_iter() {
+        for mut vec in input_vecs {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }
@@ -634,7 +634,7 @@ mod tests {
         })
         .unwrap();
 
-        for mut vec in input_vecs.into_iter() {
+        for mut vec in input_vecs {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }
