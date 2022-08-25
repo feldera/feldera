@@ -1,6 +1,8 @@
 //! Intermediate representation of a circuit graph suitable for
 //! conversion to a visual format like dot.
 
+use std::fmt::{self, Write};
+
 type Id = String;
 
 /// Visual representation of a circuit graph.
@@ -18,13 +20,20 @@ impl Graph {
 
     /// Convert graph to dot format.
     pub fn to_dot(&self) -> String {
-        let mut lines: Vec<String> = vec!["digraph {".to_string(), "node [shape=box]".to_string()];
-        lines.append(&mut self.nodes.to_dot());
+        let mut output = String::with_capacity((self.nodes.nodes.len() + self.edges.len()) * 50);
+        output.push_str("digraph {\nnode [shape=box]\n");
+
+        self.nodes
+            .to_dot(&mut output)
+            .expect("writing to a string should never fail");
+
         for edge in self.edges.iter() {
-            lines.push(edge.to_dot());
+            edge.to_dot(&mut output)
+                .expect("writing to a string should never fail");
         }
-        lines.push("}".to_string());
-        lines.join("\n")
+
+        output.push_str("}\n");
+        output
     }
 }
 
@@ -38,8 +47,8 @@ impl SimpleNode {
         Self { id, label }
     }
 
-    fn to_dot(&self) -> Vec<String> {
-        vec![format!("{}[label=\"{}\"]", self.id, self.label)]
+    fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
+        writeln!(output, "{}[label=\"{}\"]", self.id, self.label)
     }
 }
 
@@ -63,17 +72,17 @@ impl ClusterNode {
     // these nodes.  This does not look great.  We should instead connect each
     // edge to a specific simple node, which requires extending the circuit
     // builder API.
-    fn to_dot(&self) -> Vec<String> {
-        let mut lines: Vec<String> = Vec::new();
-        lines.push(format!("subgraph cluster_{} {{", &self.id));
-        lines.push(format!("label=\"{}\"", self.label));
-        lines.push(format!("enter_{}[style=invis]", self.id));
-        lines.push(format!("exit_{}[style=invis]", self.id));
+    fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
+        writeln!(output, "subgraph cluster_{} {{", &self.id)?;
+        writeln!(output, "label=\"{}\"", self.label)?;
+        writeln!(output, "enter_{}[style=invis]", self.id)?;
+        writeln!(output, "exit_{}[style=invis]", self.id)?;
         for node in self.nodes.iter() {
-            lines.append(&mut node.to_dot());
+            node.to_dot(output)?;
         }
-        lines.push("}".to_string());
-        lines
+        writeln!(output, "}}")?;
+
+        Ok(())
     }
 }
 
@@ -83,10 +92,10 @@ pub(super) enum Node {
 }
 
 impl Node {
-    fn to_dot(&self) -> Vec<String> {
+    fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
         match self {
-            Self::Simple(simple_node) => simple_node.to_dot(),
-            Self::Cluster(cluster_node) => cluster_node.to_dot(),
+            Self::Simple(simple_node) => simple_node.to_dot(output),
+            Self::Cluster(cluster_node) => cluster_node.to_dot(output),
         }
     }
 }
@@ -110,17 +119,15 @@ impl Edge {
         }
     }
 
-    fn to_dot(&self) -> String {
-        let start = if self.from_cluster {
-            format!("exit_{}", self.from_node)
-        } else {
-            self.from_node.clone()
-        };
-        let end = if self.to_cluster {
-            format!("enter_{}", self.to_node)
-        } else {
-            self.to_node.clone()
-        };
-        format!("{} -> {}", start, end)
+    fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
+        if self.from_cluster {
+            write!(output, "exit_")?;
+        }
+        write!(output, "{} -> ", self.from_node)?;
+
+        if self.to_cluster {
+            write!(output, "enter_")?;
+        }
+        writeln!(output, "{}", self.to_node)
     }
 }

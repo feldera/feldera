@@ -4,7 +4,7 @@ use crate::circuit::{
     operator_traits::{Operator, UnaryOperator},
     Circuit, OwnershipPreference, Scope, Stream,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, panic::Location};
 
 impl<P, T1> Stream<Circuit<P>, T1>
 where
@@ -12,22 +12,25 @@ where
     T1: Clone + 'static,
 {
     /// Apply  the `Apply` operator to `self`.
+    #[track_caller]
     pub fn apply<F, T2>(&self, func: F) -> Stream<Circuit<P>, T2>
     where
         F: FnMut(&T1) -> T2 + 'static,
         T2: Clone + 'static,
     {
-        self.circuit().add_unary_operator(Apply::new(func), self)
+        self.circuit()
+            .add_unary_operator(Apply::new(func, Location::caller()), self)
     }
 
     /// Apply  the `Apply` operator to `self`.
+    #[track_caller]
     pub fn apply_owned<F, T2>(&self, func: F) -> Stream<Circuit<P>, T2>
     where
         F: FnMut(T1) -> T2 + 'static,
         T2: Clone + 'static,
     {
         self.circuit()
-            .add_unary_operator(ApplyOwned::new(func), self)
+            .add_unary_operator(ApplyOwned::new(func, Location::caller()), self)
     }
 }
 
@@ -35,14 +38,15 @@ where
 /// timestamp.
 pub struct Apply<F> {
     func: F,
+    location: &'static Location<'static>,
 }
 
 impl<F> Apply<F> {
-    pub const fn new(func: F) -> Self
+    pub const fn new(func: F, location: &'static Location<'static>) -> Self
     where
         F: 'static,
     {
-        Self { func }
+        Self { func, location }
     }
 }
 
@@ -51,7 +55,11 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Apply")
+        Cow::Borrowed("Apply")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -72,14 +80,15 @@ where
 
 pub struct ApplyOwned<F> {
     func: F,
+    location: &'static Location<'static>,
 }
 
 impl<F> ApplyOwned<F> {
-    pub const fn new(func: F) -> Self
+    pub const fn new(func: F, location: &'static Location<'static>) -> Self
     where
         F: 'static,
     {
-        Self { func }
+        Self { func, location }
     }
 }
 
@@ -88,7 +97,11 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("ApplyOwned")
+        Cow::Borrowed("ApplyOwned")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {

@@ -1,46 +1,34 @@
-use crate::data::{Edges, Node, Rank, RankPairs, RankSet, Ranks, Streamed, Vertices};
+use crate::data::{Edges, Node, Rank, RankMap, Ranks, Streamed, Vertices};
 use dbsp::{
     algebra::HasOne,
     circuit::operator_traits::Data,
     operator::{DelayedFeedback, FilterMap, Generator},
-    trace::{Batch, BatchReader, Batcher, Builder, Cursor},
-    OrdIndexedZSet, OrdZSet,
+    trace::{Batch, BatchReader, Builder, Cursor},
+    OrdIndexedZSet, OrdZSet, Runtime,
 };
 use std::{
     cmp::{min, Ordering},
     hash::Hash,
 };
 
+type Weights = OrdZSet<Node, Rank>;
+type Weighted<S> = Streamed<S, Weights>;
+
 /// Specified in the [LDBC Spec][0] ([Pseudo-code][1])
 ///
 /// [0]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.2
 /// [1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.2
-pub fn pagerank<P>(
+pub fn pagerank(
     pagerank_iters: usize,
     damping_factor: f64,
-    vertices: Vertices<P>,
-    edges: Edges<P>,
-) -> RankPairs<P>
-where
-    P: Clone + 'static,
-{
+    vertices: Vertices<()>,
+    edges: Edges<()>,
+) -> Ranks<()> {
     assert_ne!(pagerank_iters, 0);
     assert!((0.0..=1.0).contains(&damping_factor));
 
-    pagerank_differential(pagerank_iters, damping_factor, vertices, edges).index()
-}
-
-fn pagerank_differential<P>(
-    pagerank_iters: usize,
-    damping_factor: f64,
-    vertices: Vertices<P>,
-    edges: Edges<P>,
-) -> Ranks<P>
-where
-    P: Clone + 'static,
-{
-    type Weights = OrdZSet<Node, Rank>;
-    type Weighted<S> = Streamed<S, Weights>;
+    // Count the total number of vertices within the graph
+    let total_vertices = count_vertices(&vertices);
 
     // Vertices weighted by F64s instead of isizes
     let weighted_vertices = vertices
@@ -62,12 +50,11 @@ where
     // Vertices weighted by the damping factor divided by the total number of
     // vertices
     let damped_div_total_vertices = vertices
-        .apply(move |vertices| {
-            let total_vertices = vertices.len();
+        .apply2(&total_vertices, move |vertices, &total_vertices| {
             let weight = Rank::new(damping_factor) / total_vertices as f64;
             let mut builder = <OrdIndexedZSet<(), Node, Rank> as Batch>::Builder::with_capacity(
                 (),
-                total_vertices,
+                vertices.len(),
             );
 
             let mut cursor = vertices.cursor();
@@ -84,12 +71,11 @@ where
     // Initially each vertex is assigned a value so that the sum of all vertexes is
     // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
     let initial_weights = vertices
-        .apply(|vertices| {
-            let total_vertices = vertices.len();
+        .apply2(&total_vertices, move |vertices, &total_vertices| {
             let initial_weight = Rank::one() / total_vertices as f64;
 
             // We can use a builder here since the cursor yields ordered values
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
@@ -104,12 +90,11 @@ where
 
     // Calculate the teleport, `(1 - d) ÷ |𝑉|`
     let teleport = vertices
-        .apply(move |vertices| {
-            let total_vertices = vertices.len();
+        .apply2(&total_vertices, move |vertices, &total_vertices| {
             let teleport = (Rank::one() - damping_factor) / total_vertices as f64;
 
             // We can use a builder here since the cursor yields ordered values
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), total_vertices);
+            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
@@ -233,17 +218,40 @@ where
 
     // Hoist the weights out of the weight and into the value
     weights.shard().apply(|weights| {
-        let mut batch = Vec::with_capacity(weights.len());
+        let mut builder = <RankMap as Batch>::Builder::with_capacity((), weights.len());
+
         let mut weights = weights.cursor();
         while weights.key_valid() {
-            batch.push(((*weights.key(), weights.weight()), 1));
+            builder.push(((*weights.key(), weights.weight()), 1));
             weights.step_key();
         }
 
-        let mut batcher = <RankSet as Batch>::Batcher::new(());
-        batcher.push_batch(&mut batch);
-        batcher.seal()
+        builder.done()
     })
+}
+
+fn count_vertices(vertices: &Vertices<()>) -> Streamed<(), u64> {
+    let local_count = vertices.stream_fold(0, move |_, batch| batch.len() as u64);
+
+    if let Some(runtime) = Runtime::runtime() {
+        let num_workers = runtime.num_workers();
+        if num_workers == 1 {
+            return local_count;
+        }
+
+        let (sender, receiver) = vertices.circuit().new_exchange_operators(
+            &runtime,
+            Runtime::worker_index(),
+            move |count: u64, counts: &mut Vec<u64>| counts.extend((0..num_workers).map(|_| count)),
+            |result, count| *result += count,
+        );
+
+        vertices
+            .circuit()
+            .add_exchange(sender, receiver, &local_count)
+    } else {
+        local_count
+    }
 }
 
 // This code implements a join with weight division instead of multiplication

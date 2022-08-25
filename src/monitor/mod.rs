@@ -6,6 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt,
     fmt::Display,
+    panic::Location,
     sync::{Arc, Mutex},
 };
 
@@ -231,13 +232,18 @@ impl TraceMonitorInternal {
         )
     }
 
-    fn push_region(&mut self, name: Cow<'static, str>) {
+    fn push_region(
+        &mut self,
+        name: Cow<'static, str>,
+        location: Option<&'static Location<'static>>,
+    ) {
         let mut current_region = self.current_region();
         let circuit_node = self.circuit.node_mut(&self.current_scope).unwrap();
-        current_region = circuit_node
-            .region_mut()
-            .unwrap()
-            .add_region(&current_region, name);
+        current_region =
+            circuit_node
+                .region_mut()
+                .unwrap()
+                .add_region(&current_region, name, location);
         self.set_current_region(current_region);
     }
 
@@ -287,17 +293,20 @@ impl TraceMonitorInternal {
                         if children.get(&local_node_id).is_some() {
                             return Err(TraceError::NodeExists(node_id.clone()));
                         }
+
                         let new_node = if event.is_operator_event() {
                             Node::new(
                                 node_id.clone(),
-                                event.node_name().unwrap(),
+                                event.node_name().unwrap().clone(),
+                                event.location(),
                                 current_region.clone(),
                                 NodeKind::Operator,
                             )
                         } else if event.is_strict_output_event() {
                             Node::new(
                                 node_id.clone(),
-                                event.node_name().unwrap(),
+                                event.node_name().unwrap().clone(),
+                                event.location(),
                                 current_region.clone(),
                                 NodeKind::StrictOutput,
                             )
@@ -314,7 +323,8 @@ impl TraceMonitorInternal {
 
                             Node::new(
                                 node_id.clone(),
-                                &output_node.name,
+                                output_node.name.clone(),
+                                output_node.location,
                                 current_region.clone(),
                                 NodeKind::StrictInput { output },
                             )
@@ -323,12 +333,13 @@ impl TraceMonitorInternal {
                             self.region_stack.push(RegionId::root());
                             Node::new(
                                 node_id.clone(),
-                                "",
+                                Cow::Borrowed(""),
+                                None,
                                 current_region.clone(),
                                 NodeKind::Circuit {
                                     iterative: event.is_iterative_subcircuit_event(),
                                     children: HashMap::new(),
-                                    region: Region::new(RegionId::root(), Cow::Borrowed("")),
+                                    region: Region::new(RegionId::root(), Cow::Borrowed(""), None),
                                 },
                             )
                         };
@@ -361,10 +372,11 @@ impl TraceMonitorInternal {
             Ok(())
         } else {
             match event {
-                CircuitEvent::PushRegion { name } => {
-                    self.push_region(name.clone());
+                CircuitEvent::PushRegion { name, location } => {
+                    self.push_region(name.clone(), *location);
                     Ok(())
                 }
+
                 CircuitEvent::PopRegion => self.pop_region(),
                 _ => panic!("unknown event"),
             }

@@ -27,7 +27,6 @@ pub type Weight = isize;
 pub type Distance = u64;
 
 pub type VertexSet<D = Present> = OrdZSet<Node, D>;
-pub type RankSet = OrdZSet<(Node, Rank), Weight>;
 pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
 pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
 pub type DistanceSet<D = Present> = OrdZSet<(Node, Distance), D>;
@@ -35,9 +34,8 @@ pub type DistanceMap<D = Present> = OrdIndexedZSet<Node, Distance, D>;
 
 pub type Streamed<P, T> = Stream<Circuit<P>, T>;
 
+pub type Ranks<P> = Streamed<P, RankMap>;
 pub type Edges<P, D = Present> = Streamed<P, EdgeMap<D>>;
-pub type Ranks<P> = Streamed<P, RankSet>;
-pub type RankPairs<P> = Streamed<P, RankMap>;
 pub type Vertices<P, D = Present> = Streamed<P, VertexSet<D>>;
 
 type LoadedDataset<R> = (
@@ -644,7 +642,7 @@ impl EdgeParser {
 
             self.parse(|src, dest| {
                 forward_batches[fxhash::hash(&src) % workers].push(((src, dest), Present));
-                reverse_batches[fxhash::hash(&src) % workers].push(((dest, src), Present));
+                reverse_batches[fxhash::hash(&dest) % workers].push(((dest, src), Present));
             });
 
             forward_batches

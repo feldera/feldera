@@ -19,7 +19,12 @@ where
     ///
     /// See [`Delta0`] operator documentation.
     pub fn delta0(&self, subcircuit: &Circuit<Circuit<P>>) -> Stream<Circuit<Circuit<P>>, D> {
-        subcircuit.import_stream(Delta0::new(), self)
+        let delta = subcircuit.import_stream(Delta0::new(), &self.try_sharded_version());
+        if self.has_sharded_version() {
+            delta.mark_sharded();
+        }
+
+        delta
     }
 
     /// Like [`Self::delta0`], but overrides the ownership
@@ -29,7 +34,12 @@ where
         circuit: &Circuit<Circuit<P>>,
         input_preference: OwnershipPreference,
     ) -> Stream<Circuit<Circuit<P>>, D> {
-        circuit.import_stream_with_preference(Delta0::new(), self, input_preference)
+        let delta = circuit.import_stream_with_preference(Delta0::new(), self, input_preference);
+        if self.has_sharded_version() {
+            delta.mark_sharded();
+        }
+
+        delta
     }
 }
 

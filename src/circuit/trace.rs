@@ -15,9 +15,10 @@
 //! Event handlers are invoked synchronously and therefore must complete
 //! quickly, with any expensive processing completed asynchronously.
 
-use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
-
 use super::{circuit_builder::Node, GlobalNodeId, NodeId, OwnershipPreference};
+use std::{borrow::Cow, fmt, fmt::Display, hash::Hash, panic::Location};
+
+pub(crate) type OperatorLocation = Option<&'static Location<'static>>;
 
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -45,16 +46,23 @@ pub enum CircuitEvent {
     PushRegion {
         /// Sub-region name.
         name: Cow<'static, str>,
+        /// The region's source location
+        location: OperatorLocation,
     },
+
     /// Subregion complete.
     PopRegion,
+
     /// A new regular (non-strict) operator is added to the circuit.
     Operator {
         /// Global id of the new operator.
         node_id: GlobalNodeId,
         /// Operator name.
         name: Cow<'static, str>,
+        /// The operator's source location
+        location: OperatorLocation,
     },
+
     /// The output half of a
     /// [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`).
     /// A strict operator is activated twice in each clock cycle: first, its
@@ -67,7 +75,10 @@ pub enum CircuitEvent {
         node_id: GlobalNodeId,
         /// Operator name.
         name: Cow<'static, str>,
+        /// The operator's source location
+        location: OperatorLocation,
     },
+
     /// The input half of a strict operator is added to the circuit.  This event
     /// is triggered when the circuit builder connects an input stream to
     /// the strict operator.  The output node already exists at this point.
@@ -78,6 +89,7 @@ pub enum CircuitEvent {
         /// circuit.
         output_node_id: NodeId,
     },
+
     /// A new nested circuit is added to the circuit.
     Subcircuit {
         /// Global id of the nested circuit.
@@ -86,11 +98,13 @@ pub enum CircuitEvent {
         /// times for each parent clock tick.
         iterative: bool,
     },
+
     /// Nested circuit has been fully populated.
     SubcircuitComplete {
         /// Global id of the nested circuit.
         node_id: GlobalNodeId,
     },
+
     /// A new edge between nodes connected as producer and consumer to the same
     /// stream. Producer and consumer nodes can be located in different
     /// subcircuits.
@@ -106,16 +120,18 @@ pub enum CircuitEvent {
 
 impl CircuitEvent {
     /// Create a [`CircuitEvent::PushRegion`] event instance.
-    pub fn push_region_static(name: &'static str) -> Self {
+    pub fn push_region_static(name: &'static str, location: OperatorLocation) -> Self {
         Self::PushRegion {
             name: Cow::Borrowed(name),
+            location,
         }
     }
 
     /// Create a [`CircuitEvent::PushRegion`] event instance.
-    pub fn push_region(name: &str) -> Self {
+    pub fn push_region(name: &str, location: OperatorLocation) -> Self {
         Self::PushRegion {
             name: Cow::Owned(name.to_string()),
+            location,
         }
     }
 
@@ -125,13 +141,31 @@ impl CircuitEvent {
     }
 
     /// Create a [`CircuitEvent::Operator`] event instance.
-    pub fn operator(node_id: GlobalNodeId, name: Cow<'static, str>) -> Self {
-        Self::Operator { node_id, name }
+    pub fn operator(
+        node_id: GlobalNodeId,
+        name: Cow<'static, str>,
+        location: OperatorLocation,
+    ) -> Self {
+        Self::Operator {
+            node_id,
+            name,
+            location,
+        }
     }
+
     /// Create a [`CircuitEvent::StrictOperatorOutput`] event instance.
-    pub fn strict_operator_output(node_id: GlobalNodeId, name: Cow<'static, str>) -> Self {
-        Self::StrictOperatorOutput { node_id, name }
+    pub fn strict_operator_output(
+        node_id: GlobalNodeId,
+        name: Cow<'static, str>,
+        location: OperatorLocation,
+    ) -> Self {
+        Self::StrictOperatorOutput {
+            node_id,
+            name,
+            location,
+        }
     }
+
     /// Create a [`CircuitEvent::StrictOperatorInput`] event instance.
     pub fn strict_operator_input(node_id: GlobalNodeId, output_node_id: NodeId) -> Self {
         Self::StrictOperatorInput {
@@ -251,9 +285,18 @@ impl CircuitEvent {
 
     /// If `self` is a [`CircuitEvent::Operator`] or
     /// [`CircuitEvent::StrictOperatorOutput`], returns `self.name`.
-    pub fn node_name(&self) -> Option<&str> {
+    pub fn node_name(&self) -> Option<&Cow<'static, str>> {
         match self {
             Self::Operator { name, .. } | Self::StrictOperatorOutput { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    pub fn location(&self) -> OperatorLocation {
+        match *self {
+            Self::PushRegion { location, .. }
+            | Self::Operator { location, .. }
+            | Self::StrictOperatorOutput { location, .. } => location,
             _ => None,
         }
     }
@@ -299,22 +342,68 @@ impl CircuitEvent {
 impl Display for CircuitEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PushRegion { name } => {
-                write!(f, "PushRegion(\"{}\")", name)
+            Self::PushRegion { name, location } => {
+                write!(f, "PushRegion(\"{name}\"")?;
+                if let Some(location) = location {
+                    write!(
+                        f,
+                        " @ {}:{}:{}",
+                        location.file(),
+                        location.line(),
+                        location.column()
+                    )?;
+                }
+
+                write!(f, ")")
             }
+
             Self::PopRegion => f.write_str("PopRegion"),
-            Self::Operator { node_id, name } => {
-                write!(f, "Operator(\"{}\", {})", name, node_id)
+
+            Self::Operator {
+                node_id,
+                name,
+                location,
+            } => {
+                write!(f, "Operator(\"{name}\", {node_id}")?;
+                if let Some(location) = location {
+                    write!(
+                        f,
+                        " @ {}:{}:{}",
+                        location.file(),
+                        location.line(),
+                        location.column()
+                    )?;
+                }
+
+                write!(f, ")")
             }
-            Self::StrictOperatorOutput { node_id, name } => {
-                write!(f, "StrictOperatorOutput(\"{}\", {})", name, node_id)
+
+            Self::StrictOperatorOutput {
+                node_id,
+                name,
+                location,
+            } => {
+                write!(f, "StrictOperatorOutput(\"{name}\", {node_id}")?;
+                if let Some(location) = location {
+                    write!(
+                        f,
+                        " @ {}:{}:{}",
+                        location.file(),
+                        location.line(),
+                        location.column()
+                    )?;
+                }
+
+                write!(f, ")")
             }
+
             Self::StrictOperatorInput {
                 node_id,
                 output_node_id,
             } => {
                 write!(f, "StrictOperatorInput({} -> {})", node_id, output_node_id)
             }
+
             Self::Subcircuit { node_id, iterative } => {
                 write!(
                     f,
@@ -323,9 +412,11 @@ impl Display for CircuitEvent {
                     node_id,
                 )
             }
+
             Self::SubcircuitComplete { node_id } => {
                 write!(f, "SubcircuitComplete({})", node_id,)
             }
+
             Self::Edge {
                 kind: EdgeKind::Stream(preference),
                 from,
@@ -333,6 +424,7 @@ impl Display for CircuitEvent {
             } => {
                 write!(f, "Stream({} -> [{}]{})", from, preference, to)
             }
+
             Self::Edge {
                 kind: EdgeKind::Dependency,
                 from,

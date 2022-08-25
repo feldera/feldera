@@ -98,6 +98,7 @@ where
     }
 
     // TODO: this method should replace `Stream::integrate()`.
+    #[track_caller]
     pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<B>>
     where
         B: Batch + DeepSizeOf,
