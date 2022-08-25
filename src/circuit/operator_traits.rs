@@ -4,7 +4,7 @@
 //! consumes one or more input streams and produces an output stream.
 
 use crate::circuit::{OwnershipPreference, Scope};
-use std::borrow::Cow;
+use std::{borrow::Cow, panic::Location};
 
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
@@ -15,6 +15,11 @@ impl<T: Clone + 'static> Data for T {}
 pub trait Operator: 'static {
     /// Human-readable operator name for debugging purposes.
     fn name(&self) -> Cow<'static, str>;
+
+    /// The location the operator was created at
+    fn location(&self) -> Option<&'static Location<'static>> {
+        None
+    }
 
     /// Notify the operator about the start of a new clock epoch.
     ///

@@ -22,6 +22,7 @@ use std::{
     hash::Hash,
     marker::PhantomData,
     mem::{needs_drop, MaybeUninit},
+    panic::Location,
 };
 use timely::PartialOrder;
 
@@ -47,10 +48,11 @@ where
     /// * `I2` - batch type in the second input stream.
     /// * `Z` - output Z-set type.
     // TODO: Allow taking two different `R` types for each collection
+    #[track_caller]
     pub fn stream_join<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
-        f: F,
+        join: F,
     ) -> Stream<Circuit<P>, Z>
     where
         I1: Batch<Time = ()> + Clone + Send + 'static,
@@ -62,14 +64,18 @@ where
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
-        self.circuit()
-            .add_binary_operator(Join::new(f), &self.shard(), &other.shard())
+        self.circuit().add_binary_operator(
+            Join::new(join, Location::caller()),
+            &self.shard(),
+            &other.shard(),
+        )
     }
 
+    #[track_caller]
     pub fn monotonic_stream_join<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
-        f: F,
+        join: F,
     ) -> Stream<Circuit<P>, Z>
     where
         I1: Batch<Time = ()> + Clone + Send + 'static,
@@ -81,14 +87,18 @@ where
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
-        self.circuit()
-            .add_binary_operator(MonotonicJoin::new(f), &self.shard(), &other.shard())
+        self.circuit().add_binary_operator(
+            MonotonicJoin::new(join, Location::caller()),
+            &self.shard(),
+            &other.shard(),
+        )
     }
 
     fn stream_join_inner<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
-        f: F,
+        join: F,
+        location: &'static Location<'static>,
     ) -> Stream<Circuit<P>, Z>
     where
         I1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
@@ -99,7 +109,7 @@ where
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
-            .add_binary_operator(Join::new(f), self, other)
+            .add_binary_operator(Join::new(join, location), self, other)
     }
 }
 
@@ -118,6 +128,7 @@ impl<I1> Stream<Circuit<()>, I1> {
     /// [`join`](`crate::circuit::Stream::join`), which works in arbitrary
     /// nested scopes.  We keep this implementation for testing and
     /// benchmarking purposes.
+    #[track_caller]
     pub fn join_incremental<F, I2, Z>(
         &self,
         other: &Stream<Circuit<()>, I2>,
@@ -136,10 +147,11 @@ impl<I1> Stream<Circuit<()>, I1> {
     {
         let left = self.shard();
         let right = other.shard();
+
         left.integrate_trace()
             .delay_trace()
-            .stream_join_inner(&right, join_func.clone())
-            .plus(&left.stream_join_inner(&right.integrate_trace(), join_func))
+            .stream_join_inner(&right, join_func.clone(), Location::caller())
+            .plus(&left.stream_join_inner(&right.integrate_trace(), join_func, Location::caller()))
     }
 }
 
@@ -162,6 +174,7 @@ where
     /// * `F` - join function type: maps key and a pair of values from input
     ///   batches to an output value.
     /// * `Z` - output Z-set type.
+    #[track_caller]
     pub fn join<TS, I2, F, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
@@ -229,13 +242,16 @@ where
         let right_trace = right.trace::<Spine<TS::OrdValBatch<I1::Key, I2::Val, I1::R>>>();
 
         let left = self.circuit().add_binary_operator(
-            JoinTrace::new(join_func.clone()),
+            JoinTrace::new(join_func.clone(), Location::caller()),
             &left,
             &right_trace,
         );
 
         let right = self.circuit().add_binary_operator(
-            JoinTrace::new(move |k: &I1::Key, v2: &I2::Val, v1: &I1::Val| join_func(k, v1, v2)),
+            JoinTrace::new(
+                move |k: &I1::Key, v2: &I2::Val, v1: &I1::Val| join_func(k, v1, v2),
+                Location::caller(),
+            ),
             &right,
             &left_trace.delay_trace(),
         );
@@ -249,13 +265,15 @@ where
 /// See [`Stream::join`](`crate::circuit::Stream::join`).
 pub struct Join<F, I1, I2, Z> {
     join_func: F,
+    location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
 
 impl<F, I1, I2, Z> Join<F, I1, I2, Z> {
-    pub fn new(join_func: F) -> Self {
+    pub fn new(join_func: F, location: &'static Location<'static>) -> Self {
         Self {
             join_func,
+            location,
             _types: PhantomData,
         }
     }
@@ -269,7 +287,11 @@ where
     Z: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Join")
+        Cow::Borrowed("Join")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -328,13 +350,15 @@ where
 
 pub struct MonotonicJoin<F, I1, I2, Z> {
     join_func: F,
+    location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
 
 impl<F, I1, I2, Z> MonotonicJoin<F, I1, I2, Z> {
-    pub fn new(join_func: F) -> Self {
+    pub fn new(join_func: F, location: &'static Location<'static>) -> Self {
         Self {
             join_func,
+            location,
             _types: PhantomData,
         }
     }
@@ -348,7 +372,11 @@ where
     Z: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("MonotonicJoin")
+        Cow::Borrowed("MonotonicJoin")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -411,6 +439,7 @@ where
     Z: ZSet,
 {
     join_func: F,
+    location: &'static Location<'static>,
     // TODO: not needed once timekeeping is handled by the circuit.
     time: T::Time,
     // Future update batches computed ahead of time, indexed by time
@@ -428,9 +457,10 @@ where
     T: TraceReader,
     Z: ZSet,
 {
-    pub fn new(join_func: F) -> Self {
+    pub fn new(join_func: F, location: &'static Location<'static>) -> Self {
         Self {
             join_func,
+            location,
             time: T::Time::clock_start(),
             output_batchers: HashMap::new(),
             empty_input: false,
@@ -449,14 +479,20 @@ where
     Z::Batcher: DeepSizeOf,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("JoinTrace")
+        Cow::Borrowed("JoinTrace")
     }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
             self.empty_input = false;
             self.empty_output = false;
         }
     }
+
     fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self
             .output_batchers

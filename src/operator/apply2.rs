@@ -4,7 +4,7 @@ use crate::circuit::{
     operator_traits::{BinaryOperator, Operator},
     Circuit, OwnershipPreference, Scope, Stream,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, panic::Location};
 
 impl<P, T1> Stream<Circuit<P>, T1>
 where
@@ -12,6 +12,7 @@ where
     T1: Clone + 'static,
 {
     /// Apply a user-provided binary function to its inputs at each timestamp.
+    #[track_caller]
     pub fn apply2<F, T2, T3>(
         &self,
         other: &Stream<Circuit<P>, T2>,
@@ -23,11 +24,12 @@ where
         F: Fn(&T1, &T2) -> T3 + 'static,
     {
         self.circuit()
-            .add_binary_operator(Apply2::new(func), self, other)
+            .add_binary_operator(Apply2::new(func, Location::caller()), self, other)
     }
 
     /// Apply a user-provided binary function to its inputs at each timestamp,
     /// consuming the first input.
+    #[track_caller]
     pub fn apply2_owned<F, T2, T3>(
         &self,
         other: &Stream<Circuit<P>, T2>,
@@ -39,7 +41,7 @@ where
         F: Fn(T1, &T2) -> T3 + 'static,
     {
         self.circuit().add_binary_operator_with_preference(
-            Apply2Owned::new(func),
+            Apply2Owned::new(func, Location::caller()),
             self,
             other,
             OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -51,14 +53,15 @@ where
 /// Applies a user-provided binary function to its inputs at each timestamp.
 pub struct Apply2<F> {
     func: F,
+    location: &'static Location<'static>,
 }
 
 impl<F> Apply2<F> {
-    pub const fn new(func: F) -> Self
+    pub const fn new(func: F, location: &'static Location<'static>) -> Self
     where
         F: 'static,
     {
-        Self { func }
+        Self { func, location }
     }
 }
 
@@ -68,6 +71,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Apply2")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -90,14 +97,15 @@ where
 /// consuming the first input.
 pub struct Apply2Owned<F> {
     func: F,
+    location: &'static Location<'static>,
 }
 
 impl<F> Apply2Owned<F> {
-    pub const fn new(func: F) -> Self
+    pub const fn new(func: F, location: &'static Location<'static>) -> Self
     where
         F: 'static,
     {
-        Self { func }
+        Self { func, location }
     }
 }
 
@@ -107,6 +115,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Apply2Owned")
+    }
+
+    fn location(&self) -> Option<&'static Location<'static>> {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
