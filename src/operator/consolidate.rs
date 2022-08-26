@@ -38,10 +38,7 @@ where
                     &self.try_sharded_version(),
                     OwnershipPreference::STRONGLY_PREFER_OWNED,
                 );
-
-                if self.has_sharded_version() {
-                    consolidated.mark_sharded();
-                }
+                consolidated.mark_sharded_if(self);
 
                 consolidated
             })

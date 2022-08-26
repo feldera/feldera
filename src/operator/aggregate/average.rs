@@ -10,19 +10,28 @@ use std::{
 };
 
 /// Intermediate representation of an average as a `(sum, count)` pair.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, DeepSizeOf)]
-pub struct Avg<T>(T, isize);
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, DeepSizeOf)]
+pub struct Avg<T> {
+    sum: T,
+    count: isize,
+}
+
+impl<T> Avg<T> {
+    pub const fn new(sum: T, count: isize) -> Self {
+        Self { sum, count }
+    }
+}
 
 impl<T> HasZero for Avg<T>
 where
     T: HasZero,
 {
     fn is_zero(&self) -> bool {
-        self.0.is_zero() && self.1.is_zero()
+        self.sum.is_zero() && self.count.is_zero()
     }
 
     fn zero() -> Self {
-        Self(T::zero(), 0)
+        Self::new(T::zero(), 0)
     }
 }
 
@@ -33,7 +42,7 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0, self.1 + rhs.1)
+        Self::new(self.sum + rhs.sum, self.count + rhs.count)
     }
 }
 
@@ -42,7 +51,7 @@ where
     T: AddByRef,
 {
     fn add_by_ref(&self, other: &Self) -> Self {
-        Self(self.0.add_by_ref(&other.0), self.1 + other.1)
+        Self::new(self.sum.add_by_ref(&other.sum), self.count + other.count)
     }
 }
 
@@ -51,8 +60,8 @@ where
     T: AddAssign,
 {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-        self.1 += rhs.1;
+        self.sum += rhs.sum;
+        self.count += rhs.count;
     }
 }
 
@@ -61,8 +70,8 @@ where
     T: AddAssignByRef,
 {
     fn add_assign_by_ref(&mut self, rhs: &Self) {
-        self.0.add_assign_by_ref(&rhs.0);
-        self.1 += rhs.1;
+        self.sum.add_assign_by_ref(&rhs.sum);
+        self.count += rhs.count;
     }
 }
 
@@ -73,7 +82,7 @@ where
     type Output = Self;
 
     fn neg(self) -> Self {
-        Self(self.0.neg(), self.1.neg())
+        Self::new(self.sum.neg(), self.count.neg())
     }
 }
 
@@ -82,7 +91,7 @@ where
     T: NegByRef,
 {
     fn neg_by_ref(&self) -> Self {
-        Self(self.0.neg_by_ref(), self.1.neg())
+        Self::new(self.sum.neg_by_ref(), self.count.neg())
     }
 }
 
@@ -96,7 +105,7 @@ where
     type Output = Avg<T>;
 
     fn mul_by_ref(&self, rhs: &Rhs) -> Avg<T> {
-        Avg(self.0.mul_by_ref(rhs), self.1.mul_by_ref(rhs))
+        Self::new(self.sum.mul_by_ref(rhs), self.count.mul_by_ref(rhs))
     }
 }
 
@@ -128,6 +137,7 @@ where
     /// [`Stream::aggregate_linear`] operator. The actual average is
     /// computed by applying the `(sum, count) -> sum / count`
     /// transformation to its output.
+    #[track_caller]
     pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
         TS: Timestamp + DeepSizeOf,
@@ -140,7 +150,19 @@ where
         isize: MulByRef<Z::R, Output = isize>,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
     {
-        self.aggregate_linear::<TS, _, _>(move |key, val| Avg(f(key, val), 1isize))
-            .map_index(|(k, avg)| (k.clone(), (avg.0.clone()) / avg.1))
+        let aggregate =
+            self.aggregate_linear::<TS, _, _>(move |key, val| Avg::new(f(key, val), 1isize));
+
+        // TODO: We can probably use some sort of `.map_index_owned()` here since in all
+        // likelihood we'll be the only consumer of the aggregated value
+        // (meaning we wouldn't need to clone the average's sum and would be
+        // able to elide one clone of the key value)
+        let average = aggregate.map_index(|(k, avg)| (k.clone(), (avg.sum.clone()) / avg.count));
+
+        // Note: Currently `.aggregate_linear()` is always sharded, but we just do this
+        // check so that we don't get any unpleasant surprises if that ever changes
+        average.mark_sharded_if(&aggregate);
+
+        average
     }
 }
