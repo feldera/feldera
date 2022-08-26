@@ -29,11 +29,7 @@ where
                     &self.try_sharded_version(),
                     &self.try_sharded_version().delay(),
                 );
-
-                if self.has_sharded_version() {
-                    differentiated.mark_sharded();
-                }
-
+                differentiated.mark_sharded_if(self);
                 differentiated
             })
             .clone()
@@ -50,11 +46,7 @@ where
                         &self.try_sharded_version(),
                         &self.try_sharded_version().delay_nested(),
                     );
-
-                    if self.has_sharded_version() {
-                        differentiated.mark_sharded();
-                    }
-
+                    differentiated.mark_sharded_if(self);
                     differentiated
                 },
             )

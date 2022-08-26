@@ -316,9 +316,7 @@ where
             delta.done()
         });
 
-        if self.has_sharded_version() {
-            output.mark_sharded();
-        }
+        output.mark_sharded_if(self);
         output
     }
 }

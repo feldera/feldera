@@ -20,10 +20,7 @@ where
             .add_unary_operator(UnaryMinus::new(), &self.try_sharded_version());
 
         // If the input stream is sharded then the negated stream is sharded
-        if self.has_sharded_version() {
-            negated.mark_sharded();
-        }
-
+        negated.mark_sharded_if(self);
         negated
     }
 }

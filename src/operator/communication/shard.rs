@@ -263,6 +263,7 @@ where
         self.clone()
     }
 
+    /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
         self.circuit()
             .cache_contains(&ShardId::<Circuit<P>, T>::new((
@@ -281,6 +282,17 @@ where
                 sharding_policy(self.circuit()),
             )))
             .unwrap_or_else(|| self.clone())
+    }
+
+    /// Marks `self` as sharded if `input` has a sharded version of itself
+    pub fn mark_sharded_if<P2, U>(&self, input: &Stream<Circuit<P2>, U>)
+    where
+        P2: Clone + 'static,
+        U: 'static,
+    {
+        if input.has_sharded_version() {
+            self.mark_sharded();
+        }
     }
 }
 

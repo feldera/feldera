@@ -20,9 +20,7 @@ where
     /// See [`Delta0`] operator documentation.
     pub fn delta0(&self, subcircuit: &Circuit<Circuit<P>>) -> Stream<Circuit<Circuit<P>>, D> {
         let delta = subcircuit.import_stream(Delta0::new(), &self.try_sharded_version());
-        if self.has_sharded_version() {
-            delta.mark_sharded();
-        }
+        delta.mark_sharded_if(self);
 
         delta
     }
@@ -39,10 +37,7 @@ where
             &self.try_sharded_version(),
             input_preference,
         );
-
-        if self.has_sharded_version() {
-            delta.mark_sharded();
-        }
+        delta.mark_sharded_if(self);
 
         delta
     }
