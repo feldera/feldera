@@ -19,7 +19,6 @@ use clap::Parser;
 use dbsp::{
     nexmark::{
         config::Config as NexmarkConfig,
-        generator::config::Config as GeneratorConfig,
         model::Event,
         queries::{q0, q1, q2, q3, q4, q6},
         NexmarkSource,
@@ -29,7 +28,6 @@ use dbsp::{
 };
 use num_format::{Locale, ToFormattedString};
 use pbr::ProgressBar;
-use rand::prelude::ThreadRng;
 
 // TODO: Ideally these macros would be in a separate `lib.rs` in this benchmark
 // crate, but benchmark binaries don't appear to work like that (in that, I
@@ -60,15 +58,11 @@ struct NexmarkResult {
     elapsed: Duration,
     total_usr_cpu: Duration,
     total_sys_cpu: Duration,
-    input_usr_cpu: Duration,
-    input_sys_cpu: Duration,
     max_rss: Option<u64>,
 }
 
 struct InputStats {
     num_events: u64,
-    usr_cpu: Duration,
-    sys_cpu: Duration,
 }
 
 enum StepCompleted {
@@ -93,14 +87,14 @@ fn spawn_dbsp_consumer(
 }
 
 fn spawn_source_producer(
-    generator_config: GeneratorConfig,
+    nexmark_config: NexmarkConfig,
     mut input_handle: CollectionHandle<Event, isize>,
     step_do_rx: mpsc::Receiver<usize>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
     source_exhausted_tx: mpsc::SyncSender<InputStats>,
 ) {
     thread::spawn(move || {
-        let source = NexmarkSource::<isize, OrdZSet<Event, isize>>::new(generator_config);
+        let source = NexmarkSource::<isize, OrdZSet<Event, isize>>::new(nexmark_config);
         let mut num_events: u64 = 0;
 
         // Start iterating by loading up the first batch of input ready for processing,
@@ -120,14 +114,7 @@ fn spawn_source_producer(
             batch_count = 0;
             num_batches = step_do_rx.recv().unwrap();
         }
-        let (input_usr_cpu, input_sys_cpu, _) = unsafe { rusage(libc::RUSAGE_THREAD) };
-        source_exhausted_tx
-            .send(InputStats {
-                num_events,
-                usr_cpu: input_usr_cpu,
-                sys_cpu: input_sys_cpu,
-            })
-            .unwrap();
+        source_exhausted_tx.send(InputStats { num_events }).unwrap();
         step_done_tx.send(StepCompleted::Source).unwrap();
     });
 }
@@ -170,11 +157,11 @@ fn coordinate_input_and_steps(
 }
 
 macro_rules! run_query {
-    ( $q:expr, $generator_config:expr) => {{
+    ( $q:expr, $nexmark_config:expr) => {{
         let circuit_closure = nexmark_circuit!($q);
 
-        let num_cores = $generator_config.nexmark_config.cpu_cores;
-        let expected_num_events = $generator_config.nexmark_config.max_events;
+        let num_cores = $nexmark_config.cpu_cores;
+        let expected_num_events = $nexmark_config.max_events;
         let (dbsp, input_handle) = Runtime::init_circuit(num_cores, circuit_closure).unwrap();
 
         // Create a channel for the coordinating thread to determine whether the
@@ -194,7 +181,7 @@ macro_rules! run_query {
             mpsc::sync_channel(1);
         let (source_exhausted_tx, source_exhausted_rx) = mpsc::sync_channel(1);
         spawn_source_producer(
-            $generator_config,
+            $nexmark_config,
             input_handle,
             source_step_rx,
             step_done_tx,
@@ -215,15 +202,13 @@ macro_rules! run_query {
         // Return the user/system CPU overhead from the generator/input thread.
         NexmarkResult {
             num_events: input_stats.num_events,
-            input_usr_cpu: input_stats.usr_cpu,
-            input_sys_cpu: input_stats.sys_cpu,
             ..NexmarkResult::default()
         }
     }};
 }
 
 macro_rules! run_queries {
-    ( $generator_config:expr, $max_events:expr, $queries_to_run:expr, $( ($q_name:expr, $q:expr) ),+ ) => {{
+    ( $nexmark_config:expr, $max_events:expr, $queries_to_run:expr, $( ($q_name:expr, $q:expr) ),+ ) => {{
         let mut results: Vec<NexmarkResult> = Vec::new();
         // We have no way (currently) of finding the max memory usage for each
         // subsequent query as the value is for the process. So only the first
@@ -237,8 +222,8 @@ macro_rules! run_queries {
             let start = Instant::now();
             let (before_usr_cpu, before_sys_cpu, before_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
 
-            let thread_generator_config = $generator_config.clone();
-            let result = run_query!($q, thread_generator_config);
+            let thread_nexmark_config = $nexmark_config.clone();
+            let result = run_query!($q, thread_nexmark_config);
             let (after_usr_cpu, after_sys_cpu, after_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
             results.push(NexmarkResult {
                 name: $q_name.to_string(),
@@ -263,11 +248,9 @@ fn create_ascii_table() -> AsciiTable {
     ascii_table.column(3).set_header("Elapsed");
     ascii_table.column(4).set_header("Cores * Elapsed");
     ascii_table.column(5).set_header("Throughput/Cores");
-    ascii_table.column(6).set_header("Input Usr CPU");
-    ascii_table.column(7).set_header("Input Sys CPU");
-    ascii_table.column(8).set_header("DBSP Usr CPU");
-    ascii_table.column(9).set_header("DBSP Sys CPU");
-    ascii_table.column(10).set_header("Max RSS(Kb)");
+    ascii_table.column(6).set_header("Total Usr CPU");
+    ascii_table.column(7).set_header("Total Sys CPU");
+    ascii_table.column(8).set_header("Max RSS(Kb)");
     ascii_table
 }
 
@@ -293,10 +276,9 @@ fn main() -> Result<()> {
     let max_events = nexmark_config.max_events;
     let queries_to_run = nexmark_config.query.clone();
     let cpu_cores = nexmark_config.cpu_cores;
-    let generator_config = GeneratorConfig::new(nexmark_config, 0, 0, 0);
 
     let results = run_queries!(
-        generator_config,
+        nexmark_config,
         max_events,
         queries_to_run,
         ("q0", q0),
@@ -319,10 +301,8 @@ fn main() -> Result<()> {
                 "{0:.3} K/s",
                 r.num_events as f32 / r.elapsed.as_secs_f32() / cpu_cores as f32 / 1000.0
             ),
-            format!("{0:.3}s", r.input_usr_cpu.as_secs_f32()),
-            format!("{0:.3}s", r.input_sys_cpu.as_secs_f32()),
-            format!("{0:.3}s", (r.total_usr_cpu - r.input_usr_cpu).as_secs_f32()),
-            format!("{0:.3}s", (r.total_sys_cpu - r.input_sys_cpu).as_secs_f32()),
+            format!("{0:.3}s", (r.total_usr_cpu).as_secs_f32()),
+            format!("{0:.3}s", (r.total_sys_cpu).as_secs_f32()),
             format!(
                 "{}",
                 if let Some(max_rss) = r.max_rss {
