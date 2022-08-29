@@ -93,7 +93,7 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        <Self::Merger as Merger<_, _, _, _, _>>::new(self, other)
+        Self::Merger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -196,7 +196,7 @@ where
     R: MonoidValue,
     O: OrdOffset,
 {
-    fn new(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
+    fn new_merger(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert!(batch1.upper() == batch2.lower());
 
@@ -210,6 +210,7 @@ where
             upper: batch2.upper().join(batch2.upper()),
         }
     }
+
     fn done(self) -> OrdKeyBatch<K, T, R, O> {
         assert!(self.lower1 == self.upper1);
         assert!(self.lower2 == self.upper2);
@@ -385,7 +386,7 @@ where
     O: OrdOffset,
 {
     #[inline]
-    fn new(time: T) -> Self {
+    fn new_builder(time: T) -> Self {
         Self {
             time,
             builder: <OrderedBuilder<K, OrderedLeafBuilder<T, R>, O> as TupleBuilder>::new(),

@@ -32,7 +32,7 @@ where
     R: MonoidValue,
     B: Batch<Item = I, Time = T, R = R>,
 {
-    fn new(time: T) -> Self {
+    fn new_batcher(time: T) -> Self {
         Self {
             sorter: MergeSorter::new(),
             time,

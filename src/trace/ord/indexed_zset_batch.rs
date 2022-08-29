@@ -312,10 +312,22 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdIndexedZSetMerger::new(self, other)
+        OrdIndexedZSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
+
+    fn empty(_time: Self::Time) -> Self {
+        Self {
+            layer: OrderedLayer {
+                keys: Vec::new(),
+                offs: Vec::new(),
+                vals: OrderedColumnLeaf::empty(),
+            },
+            lower: Antichain::from_elem(()),
+            upper: Antichain::new(),
+        }
+    }
 }
 
 /// State for an in-progress merge.
@@ -339,7 +351,10 @@ where
     O: OrdOffset,
 {
     #[inline]
-    fn new(batch1: &OrdIndexedZSet<K, V, R, O>, batch2: &OrdIndexedZSet<K, V, R, O>) -> Self {
+    fn new_merger(
+        batch1: &OrdIndexedZSet<K, V, R, O>,
+        batch2: &OrdIndexedZSet<K, V, R, O>,
+    ) -> Self {
         Self {
             result: <<Layers<K, V, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,
@@ -486,7 +501,7 @@ where
     O: OrdOffset,
 {
     #[inline]
-    fn new(_time: ()) -> Self {
+    fn new_builder(_time: ()) -> Self {
         Self {
             builder: IndexBuilder::<K, V, R, O>::new(),
         }

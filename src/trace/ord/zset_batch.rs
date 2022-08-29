@@ -252,10 +252,18 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdZSetMerger::new(self, other)
+        OrdZSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
+
+    fn empty(_time: Self::Time) -> Self {
+        Self {
+            layer: OrderedColumnLeaf::empty(),
+            lower: Antichain::from_elem(()),
+            upper: Antichain::new(),
+        }
+    }
 }
 
 /// State for an in-progress merge.
@@ -273,7 +281,7 @@ where
     K: Ord + Clone + 'static,
     R: MonoidValue,
 {
-    fn new(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
+    fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
             result:
                 <<OrderedColumnLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
@@ -405,7 +413,7 @@ where
     R: MonoidValue,
 {
     #[inline]
-    fn new(_time: ()) -> Self {
+    fn new_builder(_time: ()) -> Self {
         Self {
             builder: OrderedColumnLeafBuilder::new(),
         }

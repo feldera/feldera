@@ -194,7 +194,7 @@ where
     /// Assemble an unordered vector of weighted items into a batch.
     #[allow(clippy::type_complexity)]
     fn from_tuples(time: Self::Time, mut tuples: Vec<(Self::Item, Self::R)>) -> Self {
-        let mut batcher = Self::Batcher::new(time);
+        let mut batcher = Self::Batcher::new_batcher(time);
         batcher.push_batch(&mut tuples);
         batcher.seal()
     }
@@ -213,20 +213,20 @@ where
     /// can be done in a measured fashion. This can help to avoid latency
     /// spikes where a large merge needs to happen.
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        Self::Merger::new(self, other)
+        Self::Merger::new_merger(self, other)
     }
 
     /// Merges `self` with `other` by running merger to completion.
     fn merge(&self, other: &Self) -> Self {
         let mut fuel = isize::max_value();
-        let mut merger = Self::Merger::new(self, other);
+        let mut merger = Self::Merger::new_merger(self, other);
         merger.work(self, other, &mut fuel);
         merger.done()
     }
 
     /// Creates an empty batch.
     fn empty(time: Self::Time) -> Self {
-        <Self::Builder>::new(time).done()
+        <Self::Builder>::new_builder(time).done()
     }
 
     /// Push all timestamps in the batch back to `frontier`.
@@ -253,7 +253,7 @@ where
 pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
-    fn new(time: T) -> Self;
+    fn new_batcher(time: T) -> Self;
 
     /// Adds an unordered batch of elements to the batcher.
     fn push_batch(&mut self, batch: &mut Vec<(I, R)>);
@@ -272,7 +272,7 @@ pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
 pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
-    fn new(time: T) -> Self;
+    fn new_builder(time: T) -> Self;
 
     /// Allocates an empty builder with some capacity.  All tuples in the
     /// builder (and its output batch) will have timestamp `time`.
@@ -302,12 +302,14 @@ pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
 pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
     /// Creates a new merger to merge the supplied batches, optionally
     /// compacting up to the supplied frontier.
-    fn new(source1: &Output, source2: &Output) -> Self;
+    fn new_merger(source1: &Output, source2: &Output) -> Self;
+
     /// Perform some amount of work, decrementing `fuel`.
     ///
     /// If `fuel` is non-zero after the call, the merging is complete and
     /// one should call `done` to extract the merged results.
     fn work(&mut self, source1: &Output, source2: &Output, fuel: &mut isize);
+
     /// Extracts merged results.
     ///
     /// This method should only be called after `work` has been called and
@@ -462,6 +464,14 @@ pub mod rc_blanket_impls {
         fn recede_to(&mut self, frontier: &B::Time) {
             Rc::get_mut(self).unwrap().recede_to(frontier);
         }
+
+        fn from_tuples(time: Self::Time, tuples: Vec<(Self::Item, Self::R)>) -> Self {
+            Rc::new(B::from_tuples(time, tuples))
+        }
+
+        fn empty(time: Self::Time) -> Self {
+            Rc::new(B::empty(time))
+        }
     }
 
     /// Wrapper type for batching reference counted batches.
@@ -472,9 +482,9 @@ pub mod rc_blanket_impls {
     /// Functionality for collecting and batching updates.
     impl<B: Batch> Batcher<B::Item, B::Time, B::R, Rc<B>> for RcBatcher<B> {
         #[inline]
-        fn new(time: B::Time) -> Self {
+        fn new_batcher(time: B::Time) -> Self {
             Self {
-                batcher: <B::Batcher as Batcher<B::Item, B::Time, B::R, B>>::new(time),
+                batcher: <B::Batcher as Batcher<B::Item, B::Time, B::R, B>>::new_batcher(time),
             }
         }
 
@@ -507,9 +517,9 @@ pub mod rc_blanket_impls {
     /// Functionality for building batches from ordered update sequences.
     impl<B: Batch> Builder<B::Item, B::Time, B::R, Rc<B>> for RcBuilder<B> {
         #[inline]
-        fn new(time: B::Time) -> Self {
+        fn new_builder(time: B::Time) -> Self {
             Self {
-                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::new(time),
+                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::new_builder(time),
             }
         }
 
@@ -546,7 +556,7 @@ pub mod rc_blanket_impls {
     /// Represents a merge in progress.
     impl<B: Batch> Merger<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcMerger<B> {
         #[inline]
-        fn new(source1: &Rc<B>, source2: &Rc<B>) -> Self {
+        fn new_merger(source1: &Rc<B>, source2: &Rc<B>) -> Self {
             Self {
                 merger: B::begin_merge(source1, source2),
             }

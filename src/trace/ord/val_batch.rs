@@ -15,7 +15,6 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 use std::{
-    convert::{TryFrom, TryInto},
     fmt::{Debug, Display, Formatter},
     ops::AddAssign,
 };
@@ -33,8 +32,6 @@ where
     V: Ord,
     T: Lattice,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     /// Where all the dataz is.
     pub layer: OrdValBatchLayer<K, V, T, R, O>,
@@ -49,8 +46,6 @@ where
     T: Lattice + Clone + Ord + Display + Debug + 'static,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset + 'static,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         writeln!(
@@ -70,8 +65,6 @@ where
     T: DeepSizeOf + Lattice,
     R: DeepSizeOf,
     O: DeepSizeOf + OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
         self.layer.deep_size_of()
@@ -85,8 +78,6 @@ where
     T: Timestamp + Lattice,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Key = K;
     type Val = V;
@@ -117,11 +108,9 @@ impl<K, V, T, R, O> Batch for OrdValBatch<K, V, T, R, O>
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + ::std::fmt::Debug + 'static,
+    T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, V);
     type Batcher = MergeBatcher<(K, V), T, R, Self>;
@@ -145,7 +134,7 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdValMerger::new(self, other)
+        OrdValMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -160,11 +149,9 @@ impl<K, V, T, R, O> OrdValBatch<K, V, T, R, O>
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Ord + Clone + ::std::fmt::Debug + 'static,
+    T: Lattice + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn do_recede_to(&mut self, frontier: &T) {
         // We have unique ownership of the batch, and can advance times in place.
@@ -187,10 +174,10 @@ where
             // changed.     we will change batch.layer.vals.offs[i] in this
             // iteration, from `write_position`'s     initial value.
 
-            let lower: usize = self.layer.vals.offs[i].try_into().unwrap();
-            let upper: usize = self.layer.vals.offs[i + 1].try_into().unwrap();
+            let lower: usize = self.layer.vals.offs[i].into_usize();
+            let upper: usize = self.layer.vals.offs[i + 1].into_usize();
 
-            self.layer.vals.offs[i] = O::try_from(write_position).unwrap();
+            self.layer.vals.offs[i] = O::from_usize(write_position);
 
             let updates = &mut self.layer.vals.vals.vals[..];
 
@@ -203,7 +190,7 @@ where
             }
         }
         self.layer.vals.vals.vals.truncate(write_position);
-        self.layer.vals.offs[self.layer.vals.keys.len()] = O::try_from(write_position).unwrap();
+        self.layer.vals.offs[self.layer.vals.keys.len()] = O::from_usize(write_position);
 
         // 3. For each `(key, off)` pair, (values already sorted), filter vals, and
         // rewrite `off`.    This may leave `key` with an empty range. Filtering
@@ -213,15 +200,15 @@ where
             // NB: batch.layer.offs[i+1] must remain as is for the next iteration.
             //     instead, we update batch.layer.offs[i]
 
-            let lower: usize = self.layer.offs[i].try_into().unwrap();
-            let upper: usize = self.layer.offs[i + 1].try_into().unwrap();
+            let lower: usize = self.layer.offs[i].into_usize();
+            let upper: usize = self.layer.offs[i + 1].into_usize();
 
-            self.layer.offs[i] = O::try_from(write_position).unwrap();
+            self.layer.offs[i] = O::from_usize(write_position);
 
             // values should already be sorted, but some might now be empty.
             for index in lower..upper {
-                let val_lower: usize = self.layer.vals.offs[index].try_into().unwrap();
-                let val_upper: usize = self.layer.vals.offs[index + 1].try_into().unwrap();
+                let val_lower: usize = self.layer.vals.offs[index].into_usize();
+                let val_upper: usize = self.layer.vals.offs[index + 1].into_usize();
                 if val_lower < val_upper {
                     self.layer.vals.keys.swap(write_position, index);
                     self.layer.vals.offs[write_position + 1] = self.layer.vals.offs[index + 1];
@@ -232,13 +219,13 @@ where
         }
         self.layer.vals.keys.truncate(write_position);
         self.layer.vals.offs.truncate(write_position + 1);
-        self.layer.offs[self.layer.keys.len()] = O::try_from(write_position).unwrap();
+        self.layer.offs[self.layer.keys.len()] = O::from_usize(write_position);
 
         // 4. Remove empty keys.
         let mut write_position = 0;
         for i in 0..self.layer.keys.len() {
-            let lower: usize = self.layer.offs[i].try_into().unwrap();
-            let upper: usize = self.layer.offs[i + 1].try_into().unwrap();
+            let lower: usize = self.layer.offs[i].into_usize();
+            let upper: usize = self.layer.offs[i + 1].into_usize();
 
             if lower < upper {
                 self.layer.keys.swap(write_position, i);
@@ -260,8 +247,6 @@ where
     T: Lattice + Ord + Clone + Debug + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     // first batch, and position therein.
     lower1: usize,
@@ -279,13 +264,14 @@ impl<K, V, T, R, O> Merger<K, V, T, R, OrdValBatch<K, V, T, R, O>> for OrdValMer
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + Debug + 'static,
+    T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
-    fn new(batch1: &OrdValBatch<K, V, T, R, O>, batch2: &OrdValBatch<K, V, T, R, O>) -> Self {
+    fn new_merger(
+        batch1: &OrdValBatch<K, V, T, R, O>,
+        batch2: &OrdValBatch<K, V, T, R, O>,
+    ) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         // assert!(batch1.upper() == batch2.lower());
 
@@ -299,6 +285,7 @@ where
             upper: batch1.upper().join(batch2.upper()),
         }
     }
+
     fn done(self) -> OrdValBatch<K, V, T, R, O> {
         assert!(self.lower1 == self.upper1);
         assert!(self.lower2 == self.upper2);
@@ -379,8 +366,6 @@ where
     T: Lattice + Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     cursor: OrderedCursor<'s, K, O, OrderedLayer<V, OrderedLeaf<T, R>, O>>,
 }
@@ -392,8 +377,6 @@ where
     T: Lattice + Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn key(&self) -> &K {
         self.cursor.key()
@@ -468,8 +451,6 @@ where
     T: Ord + Lattice,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     time: T,
     builder: OrderedBuilder<K, OrderedBuilder<V, OrderedLeafBuilder<T, R>, O>, O>,
@@ -480,14 +461,12 @@ impl<K, V, T, R, O> Builder<(K, V), T, R, OrdValBatch<K, V, T, R, O>>
 where
     K: Ord + Clone + 'static,
     V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + ::std::fmt::Debug + 'static,
+    T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
-    fn new(time: T) -> Self {
+    fn new_builder(time: T) -> Self {
         Self {
             time,
             builder: OrderedBuilder::<K, OrderedBuilder<V, OrderedLeafBuilder<T, R>, O>, O>::new(),

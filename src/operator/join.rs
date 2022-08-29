@@ -665,7 +665,7 @@ where
 
             self.output_batchers
                 .entry(batch_time)
-                .or_insert_with(|| Z::Batcher::new(()))
+                .or_insert_with(|| Z::Batcher::new_batcher(()))
                 .push_batch(&mut batch);
             batch.clear();
         }
@@ -674,7 +674,7 @@ where
         let batcher = self
             .output_batchers
             .remove(&self.time)
-            .unwrap_or_else(|| Z::Batcher::new(()));
+            .unwrap_or_else(|| Z::Batcher::new_batcher(()));
         self.time = self.time.advance(0);
         let result = batcher.seal();
         //println!("JoinTrace output:\n{}", result);
