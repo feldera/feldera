@@ -3,7 +3,7 @@ use crate::{
     lattice::Lattice,
     trace::{
         layers::{
-            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder, OrderedColumnLeafCursor},
+            column_leaf::{ColumnLeafCursor, OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
@@ -307,7 +307,7 @@ where
     R: MonoidValue,
 {
     valid: bool,
-    cursor: OrderedColumnLeafCursor<'s, K, R>,
+    cursor: ColumnLeafCursor<'s, K, R>,
 }
 
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>

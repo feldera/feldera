@@ -8,6 +8,7 @@
 use crate::{
     circuit::{
         operator_traits::{Operator, SinkOperator, SourceOperator},
+        trace::OperatorLocation,
         LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     Circuit,
@@ -410,6 +411,7 @@ where
 /// ```
 pub struct ExchangeSender<D, T, L> {
     worker_index: usize,
+    location: OperatorLocation,
     partition: L,
     outputs: Vec<T>,
     exchange: Arc<Exchange<T>>,
@@ -420,10 +422,17 @@ impl<D, T, L> ExchangeSender<D, T, L>
 where
     T: Send + 'static,
 {
-    fn new(runtime: &Runtime, worker_index: usize, exchange_id: usize, partition: L) -> Self {
+    fn new(
+        runtime: &Runtime,
+        worker_index: usize,
+        location: OperatorLocation,
+        exchange_id: usize,
+        partition: L,
+    ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
         Self {
             worker_index,
+            location,
             partition,
             outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
@@ -440,6 +449,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeSender")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        self.location
     }
 
     fn clock_start(&mut self, _scope: Scope) {}
@@ -504,6 +517,7 @@ where
 /// operator becomes schedulable.
 pub struct ExchangeReceiver<T, L> {
     worker_index: usize,
+    location: OperatorLocation,
     combine: L,
     exchange: Arc<Exchange<T>>,
 }
@@ -512,10 +526,18 @@ impl<T, L> ExchangeReceiver<T, L>
 where
     T: Send + 'static,
 {
-    fn new(runtime: &Runtime, worker_index: usize, exchange_id: usize, combine: L) -> Self {
+    fn new(
+        runtime: &Runtime,
+        worker_index: usize,
+        location: OperatorLocation,
+        exchange_id: usize,
+        combine: L,
+    ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
+
         Self {
             worker_index,
+            location,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
         }
@@ -529,6 +551,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeReceiver")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        self.location
     }
 
     fn is_async(&self) -> bool {
@@ -604,6 +630,7 @@ where
         &self,
         runtime: &Runtime,
         worker_index: usize,
+        location: OperatorLocation,
         partition: PL,
         combine: CL,
     ) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
@@ -614,8 +641,8 @@ where
         CL: Fn(&mut TO, TE) + 'static,
     {
         let exchange_id = runtime.sequence_next(worker_index);
-        let sender = ExchangeSender::new(runtime, worker_index, exchange_id, partition);
-        let receiver = ExchangeReceiver::new(runtime, worker_index, exchange_id, combine);
+        let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
+        let receiver = ExchangeReceiver::new(runtime, worker_index, location, exchange_id, combine);
         (sender, receiver)
     }
 }
@@ -715,6 +742,7 @@ mod tests {
                     let (sender, receiver) = circuit.new_exchange_operators(
                         &Runtime::runtime().unwrap(),
                         Runtime::worker_index(),
+                        None,
                         move |n, vals| {
                             for _ in 0..workers {
                                 vals.push(n)

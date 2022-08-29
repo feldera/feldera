@@ -445,7 +445,7 @@ where
     pub fn new(aggregator: A) -> Self {
         Self {
             aggregator,
-            time: IT::Time::clock_start(),
+            time: <IT::Time as Timestamp>::clock_start(),
             empty_input: false,
             empty_output: false,
             keys_of_interest: BTreeMap::new(),

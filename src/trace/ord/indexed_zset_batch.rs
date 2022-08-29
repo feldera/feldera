@@ -4,9 +4,10 @@ use crate::{
     trace::{
         layers::{
             column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
-            ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::OrderedLeaf,
-            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
+            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
+            TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Cursor, Merger,
@@ -16,7 +17,6 @@ use crate::{
 use deepsize::DeepSizeOf;
 use std::{
     cmp::max,
-    convert::{TryFrom, TryInto},
     fmt::{self, Debug, Display},
     ops::{Add, AddAssign, Neg},
     rc::Rc,
@@ -33,8 +33,6 @@ where
     V: Ord,
     R: Clone,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     /// Where all the data is.
     pub layer: Layers<K, V, R, O>,
@@ -48,8 +46,6 @@ where
     V: Ord + Clone + Display + 'static,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
     OrderedLayer<K, OrderedLeaf<V, R>, O>: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -69,8 +65,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn default() -> Self {
@@ -84,8 +78,6 @@ where
     V: Ord,
     R: Clone,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn from(layer: Layers<K, V, R, O>) -> Self {
@@ -103,8 +95,6 @@ where
     V: Ord,
     R: Clone,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn from(layer: Layers<K, V, R, O>) -> Self {
@@ -118,8 +108,6 @@ where
     V: DeepSizeOf + Ord,
     R: DeepSizeOf + Clone,
     O: DeepSizeOf + OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
@@ -133,8 +121,6 @@ where
     V: Clone + Ord,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     const CONST_NUM_ENTRIES: Option<usize> =
         <OrderedLayer<K, OrderedLeaf<V, R>, O>>::CONST_NUM_ENTRIES;
@@ -156,8 +142,6 @@ where
     V: Ord + Clone,
     R: MonoidValue + NegByRef,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn neg_by_ref(&self) -> Self {
@@ -175,8 +159,6 @@ where
     V: Ord + Clone,
     R: MonoidValue + Neg<Output = R>,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Output = Self;
 
@@ -197,8 +179,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Output = Self;
     #[inline]
@@ -221,8 +201,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
@@ -238,8 +216,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
@@ -255,8 +231,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
@@ -274,8 +248,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Key = K;
     type Val = V;
@@ -317,8 +289,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, V);
     type Batcher = MergeBatcher<(K, V), (), R, Self>;
@@ -355,8 +325,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     // result that we are currently assembling.
     result: <Layers<K, V, R, O> as Trie>::MergeBuilder,
@@ -369,8 +337,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn new(batch1: &OrdIndexedZSet<K, V, R, O>, batch2: &OrdIndexedZSet<K, V, R, O>) -> Self {
@@ -413,8 +379,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset + PartialEq,
-    <O as TryInto<usize>>::Error: Debug,
-    <O as TryFrom<usize>>::Error: Debug,
 {
     cursor: OrderedCursor<'s, K, O, OrderedColumnLeaf<V, R>>,
 }
@@ -425,8 +389,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn key(&self) -> &K {
@@ -511,8 +473,6 @@ where
     V: Ord,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     builder: IndexBuilder<K, V, R, O>,
 }
@@ -524,8 +484,6 @@ where
     V: Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn new(_time: ()) -> Self {

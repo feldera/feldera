@@ -11,6 +11,13 @@ pub mod ordered_leaf;
 // pub mod weighted;
 // pub mod unordered;
 
+use crate::algebra::HasZero;
+use std::{
+    cmp::min,
+    fmt::Debug,
+    ops::{Add, Sub},
+};
+
 /// A collection of tuples, and types for building and enumerating them.
 ///
 /// There are some implicit assumptions about the elements in trie-structured
@@ -20,12 +27,15 @@ pub mod ordered_leaf;
 pub trait Trie: Sized {
     /// The type of item from which the type is constructed.
     type Item;
+
     /// The type of cursor used to navigate the type.
     type Cursor<'s>: Cursor<'s>
     where
         Self: 's;
+
     /// The type used to merge instances of the type together.
     type MergeBuilder: MergeBuilder<Trie = Self>;
+
     /// The type used to assemble instances of the type from its `Item`s.
     type TupleBuilder: TupleBuilder<Trie = Self, Item = Self::Item>;
 
@@ -40,10 +50,12 @@ pub trait Trie: Sized {
 
     /// The total number of tuples in the collection.
     fn tuples(&self) -> usize;
+
     /// Returns a cursor capable of navigating the collection.
     fn cursor(&self) -> Self::Cursor<'_> {
         self.cursor_from(0, self.keys())
     }
+
     /// Returns a cursor over a range of data, commonly used by others to
     /// restrict navigation to sub-collections.
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_>;
@@ -155,16 +167,61 @@ pub trait Cursor<'s> {
     fn reposition(&mut self, lower: usize, upper: usize);
 }
 
+/// Trait for types used as offsets into an ordered layer.
+/// This is usually `usize`, but `u32` can also be used in applications
+/// where huge batches do not occur to reduce metadata size.
+pub trait OrdOffset:
+    Copy
+    + PartialEq
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + TryFrom<usize>
+    + TryInto<usize>
+    + HasZero
+    + Sized
+{
+    fn from_usize(offset: usize) -> Self;
+
+    fn into_usize(self) -> usize;
+}
+
+impl<O> OrdOffset for O
+where
+    O: Copy
+        + PartialEq
+        + Add<Output = Self>
+        + Sub<Output = Self>
+        + TryFrom<usize>
+        + TryInto<usize>
+        + HasZero
+        + Sized,
+    <O as TryInto<usize>>::Error: Debug,
+    <O as TryFrom<usize>>::Error: Debug,
+{
+    #[inline]
+    fn from_usize(offset: usize) -> Self {
+        offset.try_into().unwrap()
+    }
+
+    #[inline]
+    fn into_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
+}
+
 /// Reports the number of elements satisfying the predicate.
 ///
 /// This methods *relies strongly* on the assumption that the predicate
 /// stays false once it becomes false, a joint property of the predicate
 /// and the slice. This allows `advance` to use exponential search to
 /// count the number of elements in time logarithmic in the result.
-pub fn advance<T, F: Fn(&T) -> bool>(slice: &[T], function: F) -> usize {
+pub fn advance<T, F>(slice: &[T], function: F) -> usize
+where
+    F: Fn(&T) -> bool,
+{
     let small_limit = 8;
 
-    // Exponential seach if the answer isn't within `small_limit`.
+    // Exponential search if the answer isn't within `small_limit`.
     if slice.len() > small_limit && function(&slice[small_limit]) {
         // start with no advance
         let mut index = small_limit + 1;
@@ -190,7 +247,7 @@ pub fn advance<T, F: Fn(&T) -> bool>(slice: &[T], function: F) -> usize {
 
         index
     } else {
-        let limit = std::cmp::min(slice.len(), small_limit);
+        let limit = min(slice.len(), small_limit);
         slice[..limit].iter().filter(|x| function(*x)).count()
     }
 }

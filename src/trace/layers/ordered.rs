@@ -1,45 +1,19 @@
 //! Implementation using ordered keys and exponential search.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+    algebra::{AddAssignByRef, AddByRef, NegByRef},
+    trace::layers::{advance, Builder, Cursor, MergeBuilder, OrdOffset, Trie, TupleBuilder},
     utils::assume,
     NumEntries,
 };
 use deepsize::DeepSizeOf;
 use std::{
     cmp::{min, Ordering},
-    convert::{TryFrom, TryInto},
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
-    ops::{Add, AddAssign, Neg, Sub},
+    ops::{Add, AddAssign, Neg},
 };
 use textwrap::indent;
-
-/// Trait for types used as offsets into an ordered layer.
-/// This is usually `usize`, but `u32` can also be used in applications
-/// where huge batches do not occur to reduce metadata size.
-pub trait OrdOffset:
-    Copy
-    + PartialEq
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + TryFrom<usize>
-    + TryInto<usize>
-    + HasZero
-{
-}
-
-impl<O> OrdOffset for O where
-    O: Copy
-        + PartialEq
-        + Add<Output = Self>
-        + Sub<Output = Self>
-        + TryFrom<usize>
-        + TryInto<usize>
-        + HasZero
-{
-}
 
 /// A level of the trie, with keys and offsets into a lower layer.
 ///
@@ -48,13 +22,7 @@ impl<O> OrdOffset for O where
 // False positive from clippy
 #[allow(unknown_lints, clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, DeepSizeOf, PartialEq, Eq, Clone)]
-pub struct OrderedLayer<K, L, O = usize>
-where
-    K: Ord,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
+pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
     pub keys: Vec<K>,
     /// The offsets associate with each key.
@@ -67,13 +35,7 @@ where
     pub vals: L,
 }
 
-impl<K, L, O> OrderedLayer<K, L, O>
-where
-    K: Ord,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
+impl<K, L, O> OrderedLayer<K, L, O> {
     /// Assume the invariants of the current builder
     ///
     /// # Safety
@@ -90,8 +52,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
@@ -111,8 +71,6 @@ where
     K: Ord + Clone,
     L: Trie + NegByRef,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn neg_by_ref(&self) -> Self {
@@ -131,8 +89,6 @@ where
     K: Ord + Clone,
     L: Trie + Neg<Output = L>,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Output = Self;
 
@@ -154,8 +110,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Output = Self;
 
@@ -176,8 +130,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
@@ -194,8 +146,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_assign_by_ref(&mut self, other: &Self) {
@@ -210,8 +160,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
@@ -224,8 +172,6 @@ where
     K: Ord + Clone,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
     type Cursor<'s> = OrderedCursor<'s, K, O, L> where K: 's, O: 's, L: 's;
@@ -255,10 +201,9 @@ where
             OrderedCursor {
                 bounds: (lower, upper),
                 storage: self,
-                child: self.vals.cursor_from(
-                    child_lower.try_into().unwrap(),
-                    child_upper.try_into().unwrap(),
-                ),
+                child: self
+                    .vals
+                    .cursor_from(child_lower.into_usize(), child_upper.into_usize()),
                 pos: lower,
             }
         } else {
@@ -278,8 +223,6 @@ where
     L: Trie,
     for<'a> L::Cursor<'a>: Clone + Display,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.cursor().fmt(f)
@@ -291,8 +234,6 @@ pub struct OrderedBuilder<K, L, O = usize>
 where
     K: Ord,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     /// Keys
     pub keys: Vec<K>,
@@ -307,21 +248,19 @@ where
     K: Ord + Clone,
     L: Builder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
 
     #[inline]
     fn boundary(&mut self) -> usize {
-        self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
+        self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
         self.keys.len()
     }
 
     #[inline]
     fn done(mut self) -> Self::Trie {
         if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
-            self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
+            self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
         }
 
         OrderedLayer {
@@ -337,8 +276,6 @@ where
     K: Ord + Clone,
     L: MergeBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self {
@@ -385,8 +322,8 @@ where
 
         self.vals.copy_range(
             &other.vals,
-            other_basis.try_into().unwrap(),
-            other.offs[upper].try_into().unwrap(),
+            other_basis.into_usize(),
+            other.offs[upper].into_usize(),
         );
     }
 
@@ -426,8 +363,6 @@ where
     K: Ord + Clone,
     L: MergeBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     /// Performs one step of merging.
     #[inline]
@@ -449,27 +384,29 @@ where
                 self.copy_range(trie1, *lower1, *lower1 + step);
                 *lower1 += step;
             }
+
             Ordering::Equal => {
                 let lower = self.vals.boundary();
                 // record vals_length so we can tell if anything was pushed.
                 let upper = self.vals.push_merge(
                     trie1.vals.cursor_from(
-                        trie1.offs[*lower1].try_into().unwrap(),
-                        trie1.offs[*lower1 + 1].try_into().unwrap(),
+                        trie1.offs[*lower1].into_usize(),
+                        trie1.offs[*lower1 + 1].into_usize(),
                     ),
                     trie2.vals.cursor_from(
-                        trie2.offs[*lower2].try_into().unwrap(),
-                        trie2.offs[*lower2 + 1].try_into().unwrap(),
+                        trie2.offs[*lower2].into_usize(),
+                        trie2.offs[*lower2 + 1].into_usize(),
                     ),
                 );
                 if upper > lower {
                     self.keys.push(trie1.keys[*lower1].clone());
-                    self.offs.push(O::try_from(upper).unwrap());
+                    self.offs.push(O::from_usize(upper));
                 }
 
                 *lower1 += 1;
                 *lower2 += 1;
             }
+
             Ordering::Greater => {
                 // determine how far we can advance lower2 until we reach/pass lower1
                 let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
@@ -488,8 +425,6 @@ where
     K: Ord + Clone,
     L: TupleBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
 
@@ -528,11 +463,10 @@ where
             || self.keys[self.keys.len() - 1] != key
         {
             if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
-                self.offs[self.keys.len()] = O::try_from(self.vals.boundary()).unwrap();
+                self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
             }
             self.keys.push(key);
-            self.offs.push(O::zero()); // <-- indicates
-                                       // "unfinished".
+            self.offs.push(O::zero()); // <-- indicates "unfinished".
         }
         self.vals.push_tuple(val);
     }
@@ -543,8 +477,6 @@ where
     K: Ord,
     L: TupleBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     pub vals: Vec<(K, L::Item)>,
     _phantom: PhantomData<O>,
@@ -555,8 +487,6 @@ where
     K: Ord + Clone,
     L: TupleBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
 
@@ -584,8 +514,6 @@ where
     K: Ord + Clone,
     L: TupleBuilder,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = (K, L::Item);
 
@@ -620,11 +548,7 @@ where
 #[derive(Debug)]
 pub struct OrderedCursor<'s, K, O, L>
 where
-    K: Ord,
     L: Trie,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     storage: &'s OrderedLayer<K, L, O>,
     pos: usize,
@@ -639,8 +563,6 @@ where
     L: Trie,
     O: OrdOffset,
     L::Cursor<'s>: Clone,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn clone(&self) -> Self {
@@ -667,8 +589,6 @@ where
     L: Trie,
     L::Cursor<'a>: Clone + Display,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut cursor: OrderedCursor<'_, K, O, L> = self.clone();
@@ -691,8 +611,6 @@ where
     K: Ord,
     L: Trie,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Key<'k> = &'k K
     where
@@ -712,8 +630,8 @@ where
     fn values(&self) -> L::Cursor<'s> {
         if self.valid() {
             self.storage.vals.cursor_from(
-                self.storage.offs[self.pos].try_into().unwrap(),
-                self.storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
             )
         } else {
             self.storage.vals.cursor_from(0, 0)
@@ -725,8 +643,8 @@ where
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].try_into().unwrap(),
-                self.storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
             );
         } else {
             self.pos = self.bounds.1;
@@ -741,8 +659,8 @@ where
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].try_into().unwrap(),
-                self.storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
             );
         }
     }
@@ -768,8 +686,8 @@ where
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].try_into().unwrap(),
-                self.storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
             );
         }
     }
@@ -780,8 +698,8 @@ where
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].try_into().unwrap(),
-                self.storage.offs[self.pos + 1].try_into().unwrap(),
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
             );
         }
     }

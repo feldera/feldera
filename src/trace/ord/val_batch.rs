@@ -3,9 +3,10 @@ use crate::{
     lattice::Lattice,
     trace::{
         layers::{
-            ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
-            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
+            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
+            TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Cursor, Merger,

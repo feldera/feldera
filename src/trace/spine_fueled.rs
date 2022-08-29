@@ -382,7 +382,7 @@ where
     B::Val: Ord,
 {
     fn default() -> Self {
-        Self::new(None)
+        <Self as Trace>::new(None)
     }
 }
 
@@ -794,12 +794,8 @@ where
                             for (index, batch) in self.merging[..(length - 2)].iter().enumerate() {
                                 match batch {
                                     MergeState::Vacant => {}
-                                    MergeState::Single(_) => {
-                                        smaller += 1 << index;
-                                    }
-                                    MergeState::Double(_) => {
-                                        smaller += 2 << index;
-                                    }
+                                    MergeState::Single(_) => smaller += 1 << index,
+                                    MergeState::Double(_) => smaller += 2 << index,
                                 }
                             }
 

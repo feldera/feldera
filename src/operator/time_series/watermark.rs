@@ -3,7 +3,7 @@ use crate::{
     Circuit, NumEntries, Runtime, Stream,
 };
 use deepsize::DeepSizeOf;
-use std::cmp::max;
+use std::{cmp::max, panic::Location};
 
 impl<B> Stream<Circuit<()>, B>
 where
@@ -28,6 +28,7 @@ where
     /// values).  Its output at each timestamp is computed as the maximum of
     /// the previous watermark and the largest watermark in the new
     /// input batch.
+    #[track_caller]
     pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<Circuit<()>, TS>
     where
         W: Fn(&B::Key) -> TS + 'static,
@@ -50,6 +51,7 @@ where
             let (sender, receiver) = self.circuit().new_exchange_operators(
                 &runtime,
                 Runtime::worker_index(),
+                Some(Location::caller()),
                 move |watermark: TS, watermarks: &mut Vec<TS>| {
                     for _ in 0..num_workers {
                         watermarks.push(watermark.clone());
@@ -61,6 +63,7 @@ where
                     }
                 },
             );
+
             self.circuit()
                 .add_exchange(sender, receiver, &local_watermark)
         } else {

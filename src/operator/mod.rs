@@ -5,7 +5,6 @@ pub mod communication;
 pub mod recursive;
 
 pub(crate) mod apply;
-mod input;
 pub(crate) mod inspect;
 pub(crate) mod upsert;
 
@@ -20,6 +19,7 @@ mod distinct;
 mod filter_map;
 mod generator;
 mod index;
+mod input;
 mod integrate;
 mod join;
 mod join_range;

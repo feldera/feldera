@@ -124,9 +124,7 @@ pub trait CursorDebug<'s, K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<'s, K,
         while self.key_valid() {
             while self.val_valid() {
                 let mut kv_out = Vec::new();
-                self.map_times(|ts, r| {
-                    kv_out.push((ts.clone(), r.clone()));
-                });
+                self.map_times(|ts, r| kv_out.push((ts.clone(), r.clone())));
                 out.push(((self.key().clone(), self.val().clone()), kv_out));
                 self.step_val();
             }

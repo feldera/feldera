@@ -153,8 +153,10 @@ where
 
     /// The number of keys in the batch.
     fn key_count(&self) -> usize;
+
     /// The number of updates in the batch.
     fn len(&self) -> usize;
+
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -162,6 +164,7 @@ where
 
     /// All times in the batch are greater or equal to an element of `lower`.
     fn lower(&self) -> &Antichain<Self::Time>;
+
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
     fn upper(&self) -> &Antichain<Self::Time>;
