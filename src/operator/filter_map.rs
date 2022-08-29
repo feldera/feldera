@@ -6,7 +6,7 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream,
     },
-    trace::{cursor::Cursor, Batch, BatchReader, Builder},
+    trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
     OrdIndexedZSet, OrdZSet,
 };
 use size_of::SizeOf;
@@ -484,25 +484,17 @@ where
 }
 
 /// Internal implementation of `OrdZSet::map`.
-pub struct MapKeys<CI, CO, FB, FO>
-where
-    FB: 'static,
-    FO: 'static,
-{
+pub struct MapKeys<CI, CO, FB, FO> {
     map_borrowed: FB,
-    _map_owned: FO,
+    map_owned: FO,
     _type: PhantomData<(CI, CO)>,
 }
 
-impl<CI, CO, FB, FO> MapKeys<CI, CO, FB, FO>
-where
-    FB: 'static,
-    FO: 'static,
-{
-    pub fn new(map_borrowed: FB, _map_owned: FO) -> Self {
+impl<CI, CO, FB, FO> MapKeys<CI, CO, FB, FO> {
+    pub fn new(map_borrowed: FB, map_owned: FO) -> Self {
         Self {
             map_borrowed,
-            _map_owned,
+            map_owned,
             _type: PhantomData,
         }
     }
@@ -516,8 +508,9 @@ where
     FO: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("MapKeys")
+        Cow::Borrowed("MapKeys")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -531,10 +524,10 @@ where
     FB: Fn(&CI::Key) -> CO::Key + 'static,
     FO: Fn(CI::Key) -> CO::Key + 'static,
 {
-    fn eval(&mut self, i: &CI) -> CO {
-        let mut batch = Vec::with_capacity(i.len());
+    fn eval(&mut self, input: &CI) -> CO {
+        let mut batch = Vec::with_capacity(input.len());
 
-        let mut cursor = i.cursor();
+        let mut cursor = input.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
                 let w = cursor.weight();
@@ -545,12 +538,23 @@ where
             }
             cursor.step_key();
         }
+
         CO::from_tuples((), batch)
     }
 
-    fn eval_owned(&mut self, i: CI) -> CO {
-        // TODO: owned implementation.
-        self.eval(&i)
+    fn eval_owned(&mut self, input: CI) -> CO {
+        let mut batch = Vec::with_capacity(input.len());
+
+        let mut consumer = input.consumer();
+        while consumer.key_valid() {
+            let (key, mut values) = consumer.next_key();
+            if values.value_valid() {
+                let (value, weight) = values.next_value();
+                batch.push((CO::item_from((self.map_owned)(key), value), weight));
+            }
+        }
+
+        CO::from_tuples((), batch)
     }
 }
 
@@ -583,8 +587,9 @@ where
     I: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("FlatMap")
+        Cow::Borrowed("FlatMap")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -604,12 +609,20 @@ where
 
         while cursor.key_valid() {
             while cursor.val_valid() {
-                let w = cursor.weight();
-                for (x, y) in (self.map_func)((cursor.key(), cursor.val())).into_iter() {
-                    batch.push((CO::item_from(x, y), w.clone()));
+                let weight = cursor.weight();
+                let values = (self.map_func)((cursor.key(), cursor.val())).into_iter();
+
+                // Reserve capacity for the given elements
+                let (low, high) = values.size_hint();
+                batch.reserve(high.unwrap_or(low));
+
+                for (x, y) in values {
+                    batch.push((CO::item_from(x, y), weight.clone()));
                 }
+
                 cursor.step_val();
             }
+
             cursor.step_key();
         }
 

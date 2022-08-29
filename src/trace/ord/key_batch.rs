@@ -9,12 +9,12 @@ use crate::{
             TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Cursor, Merger,
+        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
     Timestamp,
 };
 use size_of::SizeOf;
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
 pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, OrderedColumnLeaf<T, R>, O>;
 
@@ -40,12 +40,17 @@ where
     type Time = T;
     type R = R;
     type Cursor<'s> = OrdKeyCursor<'s, K, T, R, O> where O: 's;
+    type Consumer = OrdKeyConsumer<K, T, R, O>;
 
     fn cursor(&self) -> Self::Cursor<'_> {
         OrdKeyCursor {
             valid: true,
             cursor: self.layer.cursor(),
         }
+    }
+
+    fn consumer(self) -> Self::Consumer {
+        todo!()
     }
 
     fn key_count(&self) -> usize {
@@ -381,6 +386,45 @@ where
 
     fn rewind_vals(&mut self) {
         self.valid = true;
+    }
+}
+
+pub struct OrdKeyConsumer<K, T, R, O> {
+    __type: PhantomData<(K, T, R, O)>,
+}
+
+impl<K, T, R, O> Consumer<K, (), R> for OrdKeyConsumer<K, T, R, O> {
+    type ValueConsumer<'a> = OrdKeyValueConsumer<'a, K, T, R, O>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        todo!()
+    }
+
+    fn seek_key(&mut self, _key: &K)
+    where
+        K: Ord,
+    {
+        todo!()
+    }
+}
+
+pub struct OrdKeyValueConsumer<'a, K, T, R, O> {
+    __type: PhantomData<&'a (K, T, R, O)>,
+}
+
+impl<'a, K, T, R, O> ValueConsumer<'a, (), R> for OrdKeyValueConsumer<'a, K, T, R, O> {
+    fn value_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_value(&mut self) -> ((), R) {
+        todo!()
     }
 }
 

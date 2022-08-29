@@ -113,6 +113,28 @@ pub trait Cursor<'s, K, V, T, R> {
     fn rewind_vals(&mut self);
 }
 
+pub trait Consumer<K, V, R> {
+    type ValueConsumer<'a>: ValueConsumer<'a, V, R>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool;
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>);
+
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord;
+}
+
+pub trait ValueConsumer<'a, V, R> {
+    fn value_valid(&self) -> bool;
+
+    fn next_value(&mut self) -> (V, R);
+
+    // TODO: Seek value method?
+}
+
 /// Debugging and testing utilities for Cursor.
 pub trait CursorDebug<'s, K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<'s, K, V, T, R> {
     /// Rewinds the cursor and outputs its contents to a Vec

@@ -5,7 +5,7 @@ mod builders;
 mod cursor;
 
 pub use builders::{OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder};
-pub use cursor::ColumnLeafCursor;
+pub use cursor::{ColumnLeafConsumer, ColumnLeafCursor, ColumnLeafValues};
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -16,6 +16,7 @@ use crate::{
 use size_of::SizeOf;
 use std::{
     fmt::{self, Display},
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Add, AddAssign, Neg},
 };
 
@@ -86,20 +87,22 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         assume(self.keys.len() == self.diffs.len())
     }
 
-    // fn into_uninit(self) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
-    //     unsafe { self.assume_invariants() }
-    //
-    //     let mut keys = ManuallyDrop::new(self.keys);
-    //     let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
-    //     let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
-    //
-    //     let mut diffs = ManuallyDrop::new(self.diffs);
-    //     let (len, cap, ptr) = (diffs.len(), diffs.capacity(),
-    // diffs.as_mut_ptr());     let diffs = unsafe {
-    // Vec::from_raw_parts(ptr.cast(), len, cap) };
-    //
-    //     OrderedColumnLeaf { keys, diffs }
-    // }
+    /// Turns the current `OrderedColumnLeaf<K, V>` into a leaf of
+    /// [`MaybeUninit`] values
+    #[inline]
+    fn into_uninit(self) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+        unsafe { self.assume_invariants() }
+
+        let mut keys = ManuallyDrop::new(self.keys);
+        let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
+        let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
+
+        let mut diffs = ManuallyDrop::new(self.diffs);
+        let (len, cap, ptr) = (diffs.len(), diffs.capacity(), diffs.as_mut_ptr());
+        let diffs = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
+
+        OrderedColumnLeaf { keys, diffs }
+    }
 }
 
 impl<K, R> Trie for OrderedColumnLeaf<K, R>
@@ -114,14 +117,12 @@ where
 
     #[inline]
     fn keys(&self) -> usize {
-        unsafe { self.assume_invariants() }
-        self.keys.len()
+        self.len()
     }
 
     #[inline]
     fn tuples(&self) -> usize {
-        unsafe { self.assume_invariants() }
-        self.keys.len()
+        self.len()
     }
 
     #[inline]
@@ -245,6 +246,7 @@ where
 }
 
 impl<K, R> Default for OrderedColumnLeaf<K, R> {
+    #[inline]
     fn default() -> Self {
         Self::empty()
     }
