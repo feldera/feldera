@@ -1,9 +1,16 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
-    trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
+    trace::{
+        layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
+        Consumer, ValueConsumer,
+    },
 };
 use size_of::SizeOf;
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    mem::{needs_drop, MaybeUninit},
+    ptr,
+};
 
 /// A cursor for walking through an [`OrderedColumnLeaf`].
 #[derive(Debug, Clone, SizeOf)]
@@ -159,71 +166,153 @@ where
     }
 }
 
-// #[derive(Debug)]
-// pub struct LinearColumnLeafConsumer<K, R> {
-//     // Invariant: `storage.len <= self.position`, if `storage.len ==
-// self.position` the cursor is     // exhausted
-//     position: usize,
-//     // Invariant: `storage.keys[position..]` and `storage.diffs[position..]`
-// are all valid     storage: OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>>,
-// }
+#[derive(Debug)]
+pub struct ColumnLeafConsumer<K, R> {
+    // Invariant: `storage.len <= self.position`, if `storage.len ==self.position` the cursor is
+    // // exhausted
+    position: usize,
+    // Invariant: `storage.keys[position..]` and `storage.diffs[position..]` are all valid
+    storage: OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>>,
+}
 
-// impl<K, R> LinearConsumer<(K, R), (), ()> for LinearColumnLeafConsumer<K, R>
-// {     #[inline]
-//     fn key_valid(&self) -> bool {
-//         self.position < self.storage.len()
-//     }
+impl<K, R> Consumer<K, (), R> for ColumnLeafConsumer<K, R> {
+    type ValueConsumer<'a> = ColumnLeafValues<'a, K, R>
+    where
+        Self: 'a;
 
-//     fn next_key(&mut self) -> (K, R) {
-//         let idx = self.position;
-//         if idx >= self.storage.len() {
-//             cursor_position_oob(idx, self.storage.len());
-//         }
+    #[inline]
+    fn key_valid(&self) -> bool {
+        self.position < self.storage.len()
+    }
 
-//         // We increment position before reading out the key and diff values
-//         self.position += 1;
+    #[inline]
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let idx = self.position;
+        if idx >= self.storage.len() {
+            cursor_position_oob(idx, self.storage.len());
+        }
 
-//         // Copy out the key and diff
-//         let key = unsafe { self.storage.keys[idx].assume_init_read() };
-//         let diff = unsafe { self.storage.diffs[idx].assume_init_read() };
+        // We increment position before reading out the key and diff values
+        self.position += 1;
 
-//         (key, diff)
-//     }
+        // Copy out the key and diff
+        let key = unsafe { self.storage.keys[idx].assume_init_read() };
 
-//     fn value_valid(&self) -> bool {
-//         false
-//     }
+        (key, ColumnLeafValues::new(self))
+    }
 
-//     fn next_value(&self) {}
+    #[inline]
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        let start_position = self.position;
 
-//     fn weight(&self) {}
-// }
+        // Search for the given key
+        let offset = advance(&self.storage.keys[start_position..], |k| unsafe {
+            k.assume_init_ref().lt(key)
+        });
 
-// impl<K, R> From<OrderedColumnLeaf<K, R>> for LinearColumnLeafConsumer<K, R> {
-//     #[inline]
-//     fn from(leaf: OrderedColumnLeaf<K, R>) -> Self {
-//         Self {
-//             position: 0,
-//             storage: leaf.into_uninit(),
-//         }
-//     }
-// }
+        // Increment the offset before we drop the elements for panic safety
+        self.position += offset;
 
-// impl<K, R> Drop for LinearColumnLeafConsumer<K, R> {
-//     fn drop(&mut self) {
-//         unsafe {
-//             // Drop all remaining keys
-//             ptr::drop_in_place(&mut self.storage.keys[self.position..] as
-// *mut [_] as *mut [K]);
+        unsafe {
+            self.storage.assume_invariants();
 
-//             // Drop all remaining values
-//             ptr::drop_in_place(&mut self.storage.diffs[self.position..] as
-// *mut [_] as *mut [K]);         }
-//     }
-// }
+            // Drop all the skipped keys
+            ptr::drop_in_place(
+                &mut self.storage.keys[start_position..start_position + offset] as *mut [_]
+                    as *mut [K],
+            );
+
+            // Drop all the skipped diffs
+            ptr::drop_in_place(
+                &mut self.storage.keys[start_position..start_position + offset] as *mut [_]
+                    as *mut [K],
+            );
+        }
+    }
+}
+
+impl<K, R> From<OrderedColumnLeaf<K, R>> for ColumnLeafConsumer<K, R> {
+    #[inline]
+    fn from(leaf: OrderedColumnLeaf<K, R>) -> Self {
+        Self {
+            position: 0,
+            storage: leaf.into_uninit(),
+        }
+    }
+}
+
+impl<K, R> Drop for ColumnLeafConsumer<K, R> {
+    fn drop(&mut self) {
+        unsafe {
+            // Drop all remaining keys
+            ptr::drop_in_place(&mut self.storage.keys[self.position..] as *mut [_] as *mut [K]);
+
+            // Drop all remaining values
+            ptr::drop_in_place(&mut self.storage.diffs[self.position..] as *mut [_] as *mut [K]);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ColumnLeafValues<'a, K, R> {
+    done: bool,
+    consumer: &'a mut ColumnLeafConsumer<K, R>,
+}
+
+impl<'a, K, R> ColumnLeafValues<'a, K, R> {
+    #[inline]
+    fn new(consumer: &'a mut ColumnLeafConsumer<K, R>) -> Self {
+        Self {
+            done: false,
+            consumer,
+        }
+    }
+}
+
+impl<'a, K, R> ValueConsumer<'a, (), R> for ColumnLeafValues<'a, K, R> {
+    #[inline]
+    fn value_valid(&self) -> bool {
+        !self.done
+    }
+
+    #[inline]
+    fn next_value(&mut self) -> ((), R) {
+        if self.done {
+            value_already_consumed();
+        }
+        self.done = true;
+
+        // The consumer increments `position` before creating the value consumer
+        let idx = self.consumer.position - 1;
+        let diff = unsafe { self.consumer.storage.diffs[idx].assume_init_read() };
+
+        ((), diff)
+    }
+}
+
+impl<'a, K, R> Drop for ColumnLeafValues<'a, K, R> {
+    fn drop(&mut self) {
+        // If the value consumer was never used, drop the difference value
+        if needs_drop::<R>() && !self.done {
+            // The consumer increments `position` before creating the value consumer
+            let idx = self.consumer.position - 1;
+            // Drop the unused difference value
+            unsafe { self.consumer.storage.diffs[idx].assume_init_drop() };
+        }
+    }
+}
 
 #[cold]
 #[inline(never)]
 fn cursor_position_oob(position: usize, length: usize) -> ! {
     panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
+}
+
+#[cold]
+#[inline(never)]
+fn value_already_consumed() -> ! {
+    panic!("attempted to consume a value that was already consumed")
 }

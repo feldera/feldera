@@ -9,7 +9,7 @@ use crate::{
             TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Cursor, Merger,
+        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
     NumEntries,
 };
@@ -17,6 +17,7 @@ use size_of::SizeOf;
 use std::{
     cmp::max,
     fmt::{self, Debug, Display},
+    marker::PhantomData,
     ops::{Add, AddAssign, Neg},
     rc::Rc,
 };
@@ -215,12 +216,17 @@ where
     type Time = ();
     type R = R;
     type Cursor<'s> = OrdIndexedZSetCursor<'s, K, V, R, O> where V: 's, O: 's;
+    type Consumer = OrdIndexedZSetConsumer<K, V, R, O>;
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         OrdIndexedZSetCursor {
             cursor: self.layer.cursor(),
         }
+    }
+
+    fn consumer(self) -> Self::Consumer {
+        todo!()
     }
 
     #[inline]
@@ -431,6 +437,45 @@ where
     #[inline]
     fn rewind_vals(&mut self) {
         self.cursor.child.rewind();
+    }
+}
+
+pub struct OrdIndexedZSetConsumer<K, V, R, O> {
+    __type: PhantomData<(K, V, R, O)>,
+}
+
+impl<K, V, R, O> Consumer<K, V, R> for OrdIndexedZSetConsumer<K, V, R, O> {
+    type ValueConsumer<'a> = OrdIndexedZSetValueConsumer<'a, K, V,  R, O>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        todo!()
+    }
+
+    fn seek_key(&mut self, _key: &K)
+    where
+        K: Ord,
+    {
+        todo!()
+    }
+}
+
+pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+    __type: PhantomData<&'a (K, V, R, O)>,
+}
+
+impl<'a, K, V, R, O> ValueConsumer<'a, V, R> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+    fn value_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_value(&mut self) -> (V, R) {
+        todo!()
     }
 }
 

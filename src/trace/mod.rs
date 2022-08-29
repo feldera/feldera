@@ -16,7 +16,7 @@ pub mod layers;
 pub mod ord;
 pub mod spine_fueled;
 
-pub use cursor::Cursor;
+pub use cursor::{Consumer, Cursor, ValueConsumer};
 
 use crate::{
     algebra::{HasZero, Lattice, MonoidValue},
@@ -80,10 +80,10 @@ pub trait Trace: TraceReader {
     ///
     /// The downside of the 1-bit clock is that it requires rewriting timestamps
     /// and rearranging batches in the trace at the end of every clock epoch.
-    /// Unlike merging of batches, which can be done in the backgound, this work
-    /// must be completed synchronously before the start of the next epoch.
-    /// This cost should be roughly proportional to the number of updates
-    /// added to the trace during the last epoch.
+    /// Unlike merging of batches, which can be done in the background, this
+    /// work must be completed synchronously before the start of the next
+    /// epoch. This cost should be roughly proportional to the number of
+    /// updates added to the trace during the last epoch.
     ///
     /// See [`NestedTimestamp32`](`crate::time::NestedTimestamp32`) for an
     /// example of a timestamp type that takes advantage of the 1-bit
@@ -148,8 +148,12 @@ where
     where
         Self: 's;
 
+    type Consumer: Consumer<Self::Key, Self::Val, Self::R>;
+
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
+
+    fn consumer(self) -> Self::Consumer;
 
     /// The number of keys in the batch.
     fn key_count(&self) -> usize;
@@ -199,7 +203,7 @@ where
         batcher.seal()
     }
 
-    /// Assemble an unodered vector of keys into a batch.
+    /// Assemble an unordered vector of keys into a batch.
     ///
     /// This method is only defined for batches whose `Val` type is `()`.
     fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
@@ -320,10 +324,12 @@ pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>>: 
 
 /// Blanket implementations for reference counted batches.
 pub mod rc_blanket_impls {
-    use super::{Batch, BatchReader, Batcher, Builder, Cursor, Merger};
-    use crate::time::AntichainRef;
+    use crate::{
+        time::AntichainRef,
+        trace::{Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, ValueConsumer},
+    };
     use size_of::SizeOf;
-    use std::{marker::PhantomData, rc::Rc};
+    use std::rc::Rc;
 
     impl<B: BatchReader> BatchReader for Rc<B> {
         type Key = B::Key;
@@ -333,9 +339,16 @@ pub mod rc_blanket_impls {
 
         /// The type used to enumerate the batch's contents.
         type Cursor<'s> = RcBatchCursor<'s, B> where B: 's;
+
+        type Consumer = RcBatchConsumer<B>;
+
         /// Acquires a cursor to the batch's contents.
         fn cursor(&self) -> Self::Cursor<'_> {
-            RcBatchCursor::new((**self).cursor())
+            RcBatchCursor::new(B::cursor(self))
+        }
+
+        fn consumer(self) -> Self::Consumer {
+            todo!()
         }
 
         /// The number of updates in the batch.
@@ -344,36 +357,34 @@ pub mod rc_blanket_impls {
         // can compute the number of keys precisely.  Same for
         // `len()`.
         fn key_count(&self) -> usize {
-            (**self).key_count()
+            B::key_count(self)
         }
 
         /// The number of updates in the batch.
         fn len(&self) -> usize {
-            (**self).len()
+            B::len(self)
         }
 
         fn lower(&self) -> AntichainRef<'_, Self::Time> {
-            (**self).lower()
+            B::lower(self)
         }
 
         fn upper(&self) -> AntichainRef<'_, Self::Time> {
-            (**self).upper()
+            B::upper(self)
         }
     }
 
     /// Wrapper to provide cursor to nested scope.
-    #[derive(SizeOf)]
-    pub struct RcBatchCursor<'s, B: BatchReader + 's> {
-        phantom: PhantomData<B>,
+    pub struct RcBatchCursor<'s, B>
+    where
+        B: BatchReader + 's,
+    {
         cursor: B::Cursor<'s>,
     }
 
     impl<'s, B: BatchReader> RcBatchCursor<'s, B> {
-        fn new(cursor: B::Cursor<'s>) -> Self {
-            RcBatchCursor {
-                cursor,
-                phantom: PhantomData,
-            }
+        const fn new(cursor: B::Cursor<'s>) -> Self {
+            RcBatchCursor { cursor }
         }
     }
 
@@ -420,18 +431,22 @@ pub mod rc_blanket_impls {
         fn step_key(&mut self) {
             self.cursor.step_key()
         }
+
         #[inline]
         fn seek_key(&mut self, key: &B::Key) {
             self.cursor.seek_key(key)
         }
+
         #[inline]
         fn last_key(&mut self) -> Option<&B::Key> {
             self.cursor.last_key()
         }
+
         #[inline]
         fn step_val(&mut self) {
             self.cursor.step_val()
         }
+
         #[inline]
         fn seek_val(&mut self, val: &B::Val) {
             self.cursor.seek_val(val)
@@ -441,9 +456,61 @@ pub mod rc_blanket_impls {
         fn rewind_keys(&mut self) {
             self.cursor.rewind_keys()
         }
+
         #[inline]
         fn rewind_vals(&mut self) {
             self.cursor.rewind_vals()
+        }
+    }
+
+    pub struct RcBatchConsumer<B>
+    where
+        B: BatchReader,
+    {
+        consumer: B::Consumer,
+    }
+
+    impl<B> Consumer<B::Key, B::Val, B::R> for RcBatchConsumer<B>
+    where
+        B: BatchReader,
+    {
+        type ValueConsumer<'a> = RcBatchValueConsumer<'a, B>
+        where
+            Self: 'a;
+
+        fn key_valid(&self) -> bool {
+            self.consumer.key_valid()
+        }
+
+        fn next_key(&mut self) -> (B::Key, Self::ValueConsumer<'_>) {
+            todo!()
+        }
+
+        fn seek_key(&mut self, key: &B::Key)
+        where
+            B::Key: Ord,
+        {
+            self.consumer.seek_key(key);
+        }
+    }
+
+    pub struct RcBatchValueConsumer<'a, B>
+    where
+        B: BatchReader + 'a,
+    {
+        _values: <B::Consumer as Consumer<B::Key, B::Val, B::R>>::ValueConsumer<'a>,
+    }
+
+    impl<'a, B> ValueConsumer<'a, B::Val, B::R> for RcBatchValueConsumer<'a, B>
+    where
+        B: BatchReader + 'a,
+    {
+        fn value_valid(&self) -> bool {
+            todo!()
+        }
+
+        fn next_value(&mut self) -> (B::Val, B::R) {
+            todo!()
         }
     }
 

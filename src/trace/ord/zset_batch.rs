@@ -3,12 +3,15 @@ use crate::{
     time::AntichainRef,
     trace::{
         layers::{
-            column_leaf::{ColumnLeafCursor, OrderedColumnLeaf, OrderedColumnLeafBuilder},
+            column_leaf::{
+                ColumnLeafConsumer, ColumnLeafCursor, ColumnLeafValues, OrderedColumnLeaf,
+                OrderedColumnLeafBuilder,
+            },
             ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Cursor, Merger,
+        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
     NumEntries,
 };
@@ -160,12 +163,20 @@ where
     type Time = ();
     type R = R;
     type Cursor<'s> = OrdZSetCursor<'s, K, R>;
+    type Consumer = OrdZSetConsumer<K, R>;
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         OrdZSetCursor {
             valid: true,
             cursor: self.layer.cursor(),
+        }
+    }
+
+    #[inline]
+    fn consumer(self) -> Self::Consumer {
+        OrdZSetConsumer {
+            consumer: ColumnLeafConsumer::from(self.layer),
         }
     }
 
@@ -350,6 +361,53 @@ where
     #[inline]
     fn rewind_vals(&mut self) {
         self.valid = true;
+    }
+}
+
+#[derive(Debug)]
+pub struct OrdZSetConsumer<K, R> {
+    consumer: ColumnLeafConsumer<K, R>,
+}
+
+impl<K, R> Consumer<K, (), R> for OrdZSetConsumer<K, R> {
+    type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn key_valid(&self) -> bool {
+        self.consumer.key_valid()
+    }
+
+    #[inline]
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let (key, values) = self.consumer.next_key();
+        (key, OrdZSetValueConsumer { values })
+    }
+
+    #[inline]
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        self.consumer.seek_key(key);
+    }
+}
+
+#[derive(Debug)]
+pub struct OrdZSetValueConsumer<'a, K, R> {
+    values: ColumnLeafValues<'a, K, R>,
+}
+
+impl<'a, K, R> ValueConsumer<'a, (), R> for OrdZSetValueConsumer<'a, K, R> {
+    #[inline]
+    fn value_valid(&self) -> bool {
+        self.values.value_valid()
+    }
+
+    #[inline]
+    fn next_value(&mut self) -> ((), R) {
+        self.values.next_value()
     }
 }
 

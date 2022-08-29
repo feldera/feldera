@@ -85,7 +85,7 @@ use crate::{
     trace::{
         cursor::{Cursor, CursorList},
         rc_blanket_impls::RcBatchCursor,
-        Batch, BatchReader, Merger, Trace, TraceReader,
+        Batch, BatchReader, Consumer, Merger, Trace, TraceReader, ValueConsumer,
     },
     NumEntries,
 };
@@ -93,6 +93,7 @@ use size_of::SizeOf;
 use std::{
     cell::RefCell,
     fmt::{self, Display},
+    marker::PhantomData,
     mem::replace,
     rc::Rc,
 };
@@ -181,6 +182,7 @@ where
     type R = B::R;
 
     type Cursor<'s> = SpineCursor<'s, B>;
+    type Consumer = SpineConsumer<B>;
 
     fn key_count(&self) -> usize {
         let mut result = 0;
@@ -240,6 +242,10 @@ where
 
         *self.cursor_storage.borrow_mut() = storage;
         SpineCursor::new(cursors)
+    }
+
+    fn consumer(self) -> Self::Consumer {
+        todo!()
     }
 }
 
@@ -359,6 +365,54 @@ where
     #[inline]
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
+    }
+}
+
+pub struct SpineConsumer<B>
+where
+    B: Batch,
+{
+    __type: PhantomData<B>,
+}
+
+impl<B> Consumer<B::Key, B::Val, B::R> for SpineConsumer<B>
+where
+    B: Batch,
+{
+    type ValueConsumer<'a> = SpineValueConsumer<'a, B>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_key(&mut self) -> (B::Key, Self::ValueConsumer<'_>) {
+        todo!()
+    }
+
+    fn seek_key(&mut self, _key: &B::Key)
+    where
+        B::Key: Ord,
+    {
+        todo!()
+    }
+}
+
+pub struct SpineValueConsumer<'a, B> {
+    __type: PhantomData<&'a B>,
+}
+
+impl<'a, B> ValueConsumer<'a, B::Val, B::R> for SpineValueConsumer<'a, B>
+where
+    B: Batch,
+{
+    fn value_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_value(&mut self) -> (B::Val, B::R) {
+        todo!()
     }
 }
 
