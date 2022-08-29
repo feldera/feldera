@@ -164,6 +164,7 @@ where
     /// Fails if at least one of the sender's outgoing mailboxes is not empty.
     ///
     /// # Panics
+    ///
     /// Panics if `data` yields fewer than `self.npeers` items.
     pub(crate) fn try_send_all<I>(&self, sender: usize, data: &mut I) -> bool
     where
@@ -374,6 +375,7 @@ where
 ///         let (sender, receiver) = circuit.new_exchange_operators(
 ///             &Runtime::runtime().unwrap(),
 ///             Runtime::worker_index(),
+///             None,
 ///             // Partitioning function sends a copy of the input `n` to each peer.
 ///             |n, output| {
 ///                 for _ in 0..WORKERS {

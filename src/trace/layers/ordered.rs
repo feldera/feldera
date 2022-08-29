@@ -217,6 +217,21 @@ where
     }
 }
 
+impl<K, L, O> Default for OrderedLayer<K, L, O>
+where
+    O: OrdOffset,
+    L: Default,
+{
+    fn default() -> Self {
+        Self {
+            keys: Vec::new(),
+            // `offs.len()` **must** be `keys.len() + 1`
+            offs: vec![O::zero()],
+            vals: L::default(),
+        }
+    }
+}
+
 impl<K, L, O> Display for OrderedLayer<K, L, O>
 where
     K: Ord + Clone + Display,

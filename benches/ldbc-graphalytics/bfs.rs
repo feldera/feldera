@@ -25,8 +25,6 @@ where
     P: Clone + 'static,
     Distances<Circuit<P>>: RecursiveStreams<Circuit<Circuit<P>>, Output = Distances<P>>,
 {
-    let (vertices, edges) = (vertices.mark_sharded(), edges.mark_sharded());
-
     // Initialize the roots to have a distance of zero
     let roots = roots
         .apply(|roots| {

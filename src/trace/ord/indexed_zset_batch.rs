@@ -319,11 +319,7 @@ where
 
     fn empty(_time: Self::Time) -> Self {
         Self {
-            layer: OrderedLayer {
-                keys: Vec::new(),
-                offs: Vec::new(),
-                vals: OrderedColumnLeaf::empty(),
-            },
+            layer: OrderedLayer::default(),
             lower: Antichain::from_elem(()),
             upper: Antichain::new(),
         }
