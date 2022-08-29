@@ -20,7 +20,7 @@ use std::{
 };
 
 /// A layer of unordered values.
-#[derive(Debug, Clone, Eq, PartialEq, Default, DeepSizeOf)]
+#[derive(Debug, Clone, Eq, PartialEq, DeepSizeOf)]
 pub struct OrderedColumnLeaf<K, R> {
     // Invariant: keys.len == diffs.len
     keys: Vec<K>,
@@ -28,6 +28,7 @@ pub struct OrderedColumnLeaf<K, R> {
 }
 
 impl<K, R> OrderedColumnLeaf<K, R> {
+    /// Create an empty `OrderedColumnLeaf`
     pub const fn empty() -> Self {
         Self {
             keys: Vec::new(),
@@ -35,6 +36,7 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         }
     }
 
+    /// Get a mutable reference to the current leaf's difference values
     #[inline]
     #[doc(hidden)]
     pub fn diffs_mut(&mut self) -> &mut [R] {
@@ -212,5 +214,11 @@ where
     fn num_entries_deep(&self) -> usize {
         // FIXME: Doesn't take element sizes into account
         self.keys()
+    }
+}
+
+impl<K, R> Default for OrderedColumnLeaf<K, R> {
+    fn default() -> Self {
+        Self::empty()
     }
 }
