@@ -226,7 +226,7 @@ where
 
     /// Creates an empty batch.
     fn empty(time: Self::Time) -> Self {
-        <Self::Builder>::new_builder(time).done()
+        Self::Builder::new_builder(time).done()
     }
 
     /// Push all timestamps in the batch back to `frontier`.
@@ -484,7 +484,7 @@ pub mod rc_blanket_impls {
         #[inline]
         fn new_batcher(time: B::Time) -> Self {
             Self {
-                batcher: <B::Batcher as Batcher<B::Item, B::Time, B::R, B>>::new_batcher(time),
+                batcher: B::Batcher::new_batcher(time),
             }
         }
 
@@ -519,7 +519,7 @@ pub mod rc_blanket_impls {
         #[inline]
         fn new_builder(time: B::Time) -> Self {
             Self {
-                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::new_builder(time),
+                builder: B::Builder::new_builder(time),
             }
         }
 
