@@ -1,11 +1,10 @@
 use super::NexmarkStream;
-use crate::operator::FilterMap;
 /// Passthrough
 ///
 /// Measures the monitoring overhead including the source generator.
 /// See [Nexmark q0.sql](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q0.sql)
 pub fn q0(input: NexmarkStream) -> NexmarkStream {
-    input.map(|event| event.clone())
+    input
 }
 
 #[cfg(test)]

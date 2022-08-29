@@ -17,6 +17,12 @@ pub struct Config {
 
     /// Event id of first event to be generated. Event ids are unique over all
     /// generators, and are used as a seed to generate each event's data.
+    /// The event id is what is used to determine whether an event is a person,
+    /// auction or bid in the generator's `next_event` function, based on the
+    /// remainder of `new_event_id % total_proportion`. Note that the event_id
+    /// is based on the event number (see `get_next_event_id`). The first event
+    /// id will nearly always be zero, unless different generators are
+    /// generating different regions of the event space.
     pub first_event_id: u64,
 
     /// Maximum number of events to generate.
@@ -24,6 +30,10 @@ pub struct Config {
 
     /// Generators running in parallel time may share the same event number, and
     /// the event number is used to determine the event timestamp
+    /// TODO: Cannot yet make sense of the above (original) comment. Generators
+    /// running in parallel may share the same event space, but should still be
+    /// generating different event numbers (using `first_event_number +
+    /// events_count_so_far*num_generators`, for example).
     pub first_event_number: usize,
 
     /// Delay between events, in microseconds. If the array has more than one
@@ -74,7 +84,8 @@ impl Config {
     /// Return the next event number for a generator which has so far emitted
     /// `num_events`.
     pub fn next_event_number(&self, num_events: u64) -> u64 {
-        self.first_event_number as u64 + num_events
+        self.first_event_number as u64
+            + num_events * self.nexmark_config.num_event_generators as u64
     }
 
     /// Return the next event number for a generator which has so far emitted
@@ -88,7 +99,7 @@ impl Config {
     }
 
     /// Return the event number whose event time will be a suitable watermark
-    /// for a generator which has so far emitted `num_events`.
+    /// for a generator which has so far emitted nts`.
     pub fn next_event_number_for_watermark(&self, num_events: u64) -> u64 {
         let n = self.nexmark_config.out_of_order_group_size as u64;
         let event_number = self.next_event_number(num_events);
@@ -125,10 +136,32 @@ pub mod tests {
     use super::super::super::config::Config as NexmarkConfig;
     use super::*;
     use rstest::rstest;
+    use std::iter::zip;
 
-    #[test]
-    fn test_next_event_number() {
-        assert_eq!(Config::default().next_event_number(4), 4);
+    #[rstest]
+    #[case::single_generator(1, 0, vec![0, 1, 2])]
+    #[case::first_of_two_generators(2, 0, vec![0, 2, 4])]
+    #[case::second_of_two_generators(2, 1, vec![1, 3, 5])]
+    #[case::third_of_five_generators(5, 2, vec![2, 7, 12])]
+    fn test_next_event_number(
+        #[case] num_event_generators: usize,
+        #[case] first_event_number: usize,
+        #[case] expected_next_event_numbers: Vec<u64>,
+    ) {
+        let config = Config {
+            nexmark_config: NexmarkConfig {
+                num_event_generators,
+                ..NexmarkConfig::default()
+            },
+            first_event_number,
+            ..Config::default()
+        };
+        for (event_num, expected) in zip(
+            0..expected_next_event_numbers.len(),
+            expected_next_event_numbers.into_iter(),
+        ) {
+            assert_eq!(config.next_event_number(event_num as u64), expected);
+        }
     }
 
     #[rstest]

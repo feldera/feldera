@@ -10,14 +10,17 @@
 //! it will allow us later to extend it to support multiple data sources in
 //! parallel when DBSP can be scaled.
 
-use self::generator::{config::Config, NexmarkGenerator, NextEvent};
-use self::model::Event;
+use self::{
+    config::Config as NexmarkConfig,
+    generator::{config::Config as GeneratorConfig, NexmarkGenerator, NextEvent},
+    model::Event,
+};
 use crate::{
     algebra::{ZRingValue, ZSet},
     circuit::operator_traits::Data,
     OrdZSet,
 };
-use rand::thread_rng;
+use rand::{rngs::ThreadRng, Rng};
 use std::{
     marker::PhantomData,
     ops::Range,
@@ -32,7 +35,16 @@ pub mod generator;
 pub mod model;
 pub mod queries;
 
+const NEXMARK_BATCH_SIZE: usize = 1000;
+const SOURCE_CHANNEL_BUFFER_SIZE: usize = 2 * NEXMARK_BATCH_SIZE;
+
 pub struct NexmarkSource<W, C> {
+    // TODO(absoludity): Longer-term, it'd be great to extract this to a separate gRPC service that
+    // generates and streams the events, so that user benchmarks, such as DBSP, will only need the
+    // gRPC client (and their process will only be receiving the stream, so no need to measure the
+    // CPU usage of the source). This could additionally allow the NexmarkSource to be used by
+    // other projects (in other languages).
+
     // Channel on which the source receives next events.
     next_event_rx: mpsc::Receiver<Option<NextEvent>>,
 
@@ -47,6 +59,66 @@ pub struct NexmarkSource<W, C> {
     _t: PhantomData<(C, W)>,
 }
 
+// Creates and spawns the generators according to the nexmark config, returning
+// the receiver to listen on for next events.
+fn create_generators_for_config<R: Rng + Default>(
+    nexmark_config: NexmarkConfig,
+    // TODO: I originally planned for this function to be generic for Rng, so I could test
+    // it with a StepRng, but was unable to because although `R::default()` can be used to
+    // instantiate a ThreadRng, `Default` is not supported for `StepRng`. Not sure if it's
+    // worth writing a wrapper around `StepRng` with a `Default` implementation (or if there's
+    // a better way).
+) -> mpsc::Receiver<Option<NextEvent>> {
+    let wallclock_base_time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let next_event_rxs: Vec<mpsc::Receiver<Option<NextEvent>>> = (0..nexmark_config
+        .num_event_generators)
+        .map(|generator_num| {
+            GeneratorConfig::new(
+                nexmark_config.clone(),
+                wallclock_base_time,
+                0,
+                generator_num,
+            )
+        })
+        .map(|generator_config| {
+            let (tx, rx) = mpsc::sync_channel(SOURCE_CHANNEL_BUFFER_SIZE);
+            thread::spawn(move || {
+                let mut generator =
+                    NexmarkGenerator::new(generator_config, R::default(), wallclock_base_time);
+                while let Ok(Some(event)) = generator.next_event() {
+                    tx.send(Some(event)).unwrap();
+                }
+            });
+            rx
+        })
+        .collect();
+
+    // Finally, read from the generators round-robin, sending the ordered
+    // events down a single channel buffered.
+    let (next_event_tx, next_event_rx) = mpsc::sync_channel(SOURCE_CHANNEL_BUFFER_SIZE);
+    thread::spawn(move || {
+        let mut num_completed_receivers = 0;
+        while num_completed_receivers < next_event_rxs.len() {
+            for rx in &next_event_rxs {
+                next_event_tx
+                    .send(match rx.recv() {
+                        Ok(e) => e,
+                        Err(_) => {
+                            num_completed_receivers += 1;
+                            continue;
+                        }
+                    })
+                    .unwrap();
+            }
+        }
+    });
+
+    next_event_rx
+}
+
 impl<W, C> NexmarkSource<W, C> {
     pub fn from_next_events(next_event_rx: mpsc::Receiver<Option<NextEvent>>) -> Self {
         NexmarkSource {
@@ -56,16 +128,9 @@ impl<W, C> NexmarkSource<W, C> {
             _t: PhantomData,
         }
     }
-    pub fn new(config: Config) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
-        let (next_event_tx, next_event_rx) = mpsc::sync_channel(5);
-        thread::spawn(move || {
-            let mut gen = NexmarkGenerator::new(config, thread_rng(), 0);
-            while gen.has_next() {
-                next_event_tx.send(gen.next_event().unwrap()).unwrap();
-            }
-        });
 
-        NexmarkSource::from_next_events(next_event_rx)
+    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
+        NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(nexmark_config))
     }
 
     fn wallclock_time(&mut self) -> u64 {
@@ -105,8 +170,8 @@ where
 
         // Collect as many next events as are ready.
         let mut next_events = vec![next_event];
-        let mut next_event = self.next_event_rx.recv().unwrap();
-        while next_events.len() < 1000
+        let mut next_event = self.next_event_rx.recv().unwrap_or(None);
+        while next_events.len() < NEXMARK_BATCH_SIZE
             && next_event
                 .is_some_and(|next_event| next_event.wallclock_timestamp <= wallclock_time_now)
         {
@@ -130,7 +195,12 @@ where
 
 #[cfg(test)]
 pub mod tests {
-    use self::generator::tests::generate_expected_next_events;
+    use self::generator::{
+        config::Config as GeneratorConfig, tests::generate_expected_next_events,
+    };
+    use self::model::Event;
+    use core::iter::zip;
+
     use super::*;
     use crate::{trace::Batch, Circuit, OrdZSet};
     use core::ops::Range;
@@ -143,8 +213,14 @@ pub mod tests {
         max_events: u64,
     ) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
-        let mut generator =
-            NexmarkGenerator::new(Config::default(), StepRng::new(0, 1), times.start);
+        let mut generator = NexmarkGenerator::new(
+            GeneratorConfig {
+                base_time: times.start,
+                ..GeneratorConfig::default()
+            },
+            StepRng::new(0, 1),
+            0,
+        );
         for _ in 0..max_events {
             next_event_tx.send(generator.next_event().unwrap()).unwrap();
         }
@@ -223,5 +299,38 @@ pub mod tests {
             source.next().unwrap(),
             Vec::from(&expected_zset_tuples[20..30])
         );
+    }
+
+    #[test]
+    fn test_source_with_multiple_generators() {
+        let nexmark_config = NexmarkConfig {
+            num_event_generators: 3,
+            first_event_rate: 1_000_000,
+            max_events: 10,
+            ..NexmarkConfig::default()
+        };
+        let receiver = create_generators_for_config::<ThreadRng>(nexmark_config);
+        let mut source = NexmarkSource::<isize, OrdZSet<Event, isize>>::from_next_events(receiver);
+
+        let expected_zset_tuple = generate_expected_zset_tuples(0, 10);
+
+        // Until I can use the multi-threaded generators with the StepRng, just compare
+        // the event types (effectively the same).
+        for (got, want) in zip(source.next().unwrap(), expected_zset_tuple.into_iter()) {
+            match want.0 {
+                Event::Person(_) => match got.0 {
+                    Event::Person(_) => (),
+                    _ => panic!("expected person, got {got:?}"),
+                },
+                Event::Auction(_) => match got.0 {
+                    Event::Auction(_) => (),
+                    _ => panic!("expected auction, got {got:?}"),
+                },
+                Event::Bid(_) => match got.0 {
+                    Event::Bid(_) => (),
+                    _ => panic!("expected bid, got {got:?}"),
+                },
+            }
+        }
     }
 }
