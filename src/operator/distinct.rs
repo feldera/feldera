@@ -1,15 +1,5 @@
 //! Distinct operator.
 
-use std::{
-    borrow::Cow,
-    cmp::{max, Ordering},
-    collections::BTreeSet,
-    fmt::Write,
-    hash::Hash,
-    marker::PhantomData,
-    mem::take,
-    ops::{Add, Neg},
-};
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, ZRingValue, ZSet},
     circuit::{
@@ -22,6 +12,16 @@ use crate::{
     NumEntries, Timestamp,
 };
 use deepsize::DeepSizeOf;
+use std::{
+    borrow::Cow,
+    cmp::{max, Ordering},
+    collections::BTreeSet,
+    fmt::Write,
+    hash::Hash,
+    marker::PhantomData,
+    mem::take,
+    ops::{Add, Neg},
+};
 
 circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
