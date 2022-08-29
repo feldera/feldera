@@ -28,6 +28,13 @@ pub struct OrderedColumnLeaf<K, R> {
 }
 
 impl<K, R> OrderedColumnLeaf<K, R> {
+    pub const fn empty() -> Self {
+        Self {
+            keys: Vec::new(),
+            diffs: Vec::new(),
+        }
+    }
+
     #[inline]
     #[doc(hidden)]
     pub fn diffs_mut(&mut self) -> &mut [R] {

@@ -649,7 +649,7 @@ impl EdgeParser {
                 .into_iter()
                 .zip(reverse_batches)
                 .map(|(mut forward, mut reverse)| {
-                    let mut edges = <EdgeMap as Batch>::Batcher::new(());
+                    let mut edges = <EdgeMap as Batch>::Batcher::new_batcher(());
                     edges.push_consolidated_batch(&mut forward);
                     edges.push_batch(&mut reverse);
                     edges.seal()

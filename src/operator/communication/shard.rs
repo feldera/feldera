@@ -215,7 +215,7 @@ where
     // Partitions the batch into `nshards` partitions based on the hash of the key.
     fn shard_batch<OB>(
         batch: &IB,
-        nshards: usize,
+        shards: usize,
         builders: &mut Vec<OB::Builder>,
         outputs: &mut Vec<OB>,
     ) where
@@ -223,17 +223,17 @@ where
     {
         builders.clear();
 
-        for _ in 0..nshards {
+        for _ in 0..shards {
             // We iterate over tuples in the batch in order; hence tuples added
             // to each shard are also ordered, so we can use the more efficient
             // `Builder` API (instead of `Batcher`) to construct output batches.
-            builders.push(OB::Builder::with_capacity((), batch.len() / nshards));
+            builders.push(OB::Builder::with_capacity((), batch.len() / shards));
         }
 
         let mut cursor = batch.cursor();
 
         while cursor.key_valid() {
-            let batch_index = fxhash::hash(cursor.key()) % nshards;
+            let batch_index = fxhash::hash(cursor.key()) % shards;
             while cursor.val_valid() {
                 builders[batch_index].push((
                     OB::item_from(cursor.key().clone(), cursor.val().clone()),
