@@ -22,8 +22,10 @@ pub struct OrderedLeaf<K, R> {
     pub vals: Vec<(K, R)>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Trie
-    for OrderedLeaf<K, R>
+impl<K, R> Trie for OrderedLeaf<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     type Item = (K, R);
     type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;

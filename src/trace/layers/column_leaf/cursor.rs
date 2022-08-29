@@ -4,12 +4,9 @@ use crate::{
 };
 use std::fmt::{self, Display};
 
-/// A cursor for walking through an unordered sequence of values.
-///
-/// This cursor does not support `seek`, though I'm not certain how to expose
-/// this.
-#[derive(Clone, Debug)]
-pub struct OrderedColumnLeafCursor<'s, K, R>
+/// A cursor for walking through an [`OrderedColumnLeaf`].
+#[derive(Debug, Clone)]
+pub struct ColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -19,7 +16,7 @@ where
     bounds: (usize, usize),
 }
 
-impl<'s, K, R> OrderedColumnLeafCursor<'s, K, R>
+impl<'s, K, R> ColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -46,15 +43,10 @@ where
     pub(super) const fn bounds(&self) -> (usize, usize) {
         self.bounds
     }
-}
 
-impl<'s, K, R> OrderedColumnLeafCursor<'s, K, R>
-where
-    K: Ord + Clone,
-    R: Clone,
-{
     #[inline]
     pub fn seek_key(&mut self, key: &K) {
+        unsafe { self.storage.assume_invariants() }
         self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
     }
 
@@ -69,7 +61,7 @@ where
     }
 }
 
-impl<'s, K, R> Cursor<'s> for OrderedColumnLeafCursor<'s, K, R>
+impl<'s, K, R> Cursor<'s> for ColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -119,6 +111,8 @@ where
 
     #[inline]
     fn last_key(&mut self) -> Option<Self::Key<'s>> {
+        unsafe { self.storage.assume_invariants() }
+
         if self.bounds.1 > self.bounds.0 {
             Some((
                 &self.storage.keys[self.bounds.1 - 1],
@@ -146,13 +140,13 @@ where
     }
 }
 
-impl<'a, K, R> Display for OrderedColumnLeafCursor<'a, K, R>
+impl<'a, K, R> Display for ColumnLeafCursor<'a, K, R>
 where
     K: Ord + Clone + Display,
     R: Eq + HasZero + AddAssignByRef + Clone + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut cursor: OrderedColumnLeafCursor<K, R> = self.clone();
+        let mut cursor: ColumnLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.key();
@@ -163,6 +157,69 @@ where
         Ok(())
     }
 }
+
+// #[derive(Debug)]
+// pub struct LinearColumnLeafConsumer<K, R> {
+//     // Invariant: `storage.len <= self.position`, if `storage.len ==
+// self.position` the cursor is     // exhausted
+//     position: usize,
+//     // Invariant: `storage.keys[position..]` and `storage.diffs[position..]`
+// are all valid     storage: OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>>,
+// }
+
+// impl<K, R> LinearConsumer<(K, R), (), ()> for LinearColumnLeafConsumer<K, R>
+// {     #[inline]
+//     fn key_valid(&self) -> bool {
+//         self.position < self.storage.len()
+//     }
+
+//     fn next_key(&mut self) -> (K, R) {
+//         let idx = self.position;
+//         if idx >= self.storage.len() {
+//             cursor_position_oob(idx, self.storage.len());
+//         }
+
+//         // We increment position before reading out the key and diff values
+//         self.position += 1;
+
+//         // Copy out the key and diff
+//         let key = unsafe { self.storage.keys[idx].assume_init_read() };
+//         let diff = unsafe { self.storage.diffs[idx].assume_init_read() };
+
+//         (key, diff)
+//     }
+
+//     fn value_valid(&self) -> bool {
+//         false
+//     }
+
+//     fn next_value(&self) {}
+
+//     fn weight(&self) {}
+// }
+
+// impl<K, R> From<OrderedColumnLeaf<K, R>> for LinearColumnLeafConsumer<K, R> {
+//     #[inline]
+//     fn from(leaf: OrderedColumnLeaf<K, R>) -> Self {
+//         Self {
+//             position: 0,
+//             storage: leaf.into_uninit(),
+//         }
+//     }
+// }
+
+// impl<K, R> Drop for LinearColumnLeafConsumer<K, R> {
+//     fn drop(&mut self) {
+//         unsafe {
+//             // Drop all remaining keys
+//             ptr::drop_in_place(&mut self.storage.keys[self.position..] as
+// *mut [_] as *mut [K]);
+
+//             // Drop all remaining values
+//             ptr::drop_in_place(&mut self.storage.diffs[self.position..] as
+// *mut [_] as *mut [K]);         }
+//     }
+// }
 
 #[cold]
 #[inline(never)]

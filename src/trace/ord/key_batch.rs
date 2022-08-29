@@ -1,38 +1,26 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Debug,
-};
-
-use timely::progress::Antichain;
-
 use crate::{
     algebra::MonoidValue,
     lattice::Lattice,
     trace::{
         layers::{
-            ordered::{OrdOffset, OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
             ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
-            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
+            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
+            TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Cursor, Merger,
     },
     Timestamp,
 };
-
 use deepsize::DeepSizeOf;
+use std::fmt::Debug;
+use timely::progress::Antichain;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
 #[derive(Debug, Clone)]
-pub struct OrdKeyBatch<K, T, R, O = usize>
-where
-    K: Ord,
-    T: Lattice,
-    O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
-{
+pub struct OrdKeyBatch<K, T, R, O = usize> {
     /// Where all the dataz is.
     pub layer: OrderedLayer<K, OrderedLeaf<T, R>, O>,
     pub lower: Antichain<T>,
@@ -45,8 +33,6 @@ where
     T: DeepSizeOf + Lattice,
     R: DeepSizeOf,
     O: DeepSizeOf + OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
         self.layer.deep_size_of()
@@ -59,8 +45,6 @@ where
     T: Timestamp + Lattice,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Key = K;
     type Val = ();
@@ -94,8 +78,6 @@ where
     T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     type Item = K;
     type Batcher = MergeBatcher<K, T, R, Self>;
@@ -111,7 +93,7 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdKeyMerger::new(self, other)
+        <Self::Merger as Merger<_, _, _, _, _>>::new(self, other)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -129,8 +111,6 @@ where
     T: Lattice + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn do_recede_to(&mut self, frontier: &T) {
         // We will zip through the time leaves, calling advance on each,
@@ -153,10 +133,10 @@ where
             // changed.     we will change batch.layer.vals.offs[i] in this
             // iteration, from `write_position`'s     initial value.
 
-            let lower: usize = self.layer.offs[i].try_into().unwrap();
-            let upper: usize = self.layer.offs[i + 1].try_into().unwrap();
+            let lower: usize = self.layer.offs[i].into_usize();
+            let upper: usize = self.layer.offs[i + 1].into_usize();
 
-            self.layer.offs[i] = O::try_from(write_position).unwrap();
+            self.layer.offs[i] = O::from_usize(write_position);
 
             let updates = &mut self.layer.vals.vals[..];
 
@@ -169,13 +149,13 @@ where
             }
         }
         self.layer.vals.vals.truncate(write_position);
-        self.layer.offs[self.layer.keys.len()] = O::try_from(write_position).unwrap();
+        self.layer.offs[self.layer.keys.len()] = O::from_usize(write_position);
 
         // 4. Remove empty keys.
         let mut write_position = 0;
         for i in 0..self.layer.keys.len() {
-            let lower: usize = self.layer.offs[i].try_into().unwrap();
-            let upper: usize = self.layer.offs[i + 1].try_into().unwrap();
+            let lower: usize = self.layer.offs[i].into_usize();
+            let upper: usize = self.layer.offs[i + 1].into_usize();
 
             if lower < upper {
                 self.layer.keys.swap(write_position, i);
@@ -196,8 +176,6 @@ where
     T: Lattice + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     // first batch, and position therein.
     lower1: usize,
@@ -217,8 +195,6 @@ where
     T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn new(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
@@ -313,11 +289,12 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug)]
-pub struct OrdKeyCursor<'s, K: Ord + Clone, T: Lattice + Ord + Clone, R: MonoidValue, O = usize>
+pub struct OrdKeyCursor<'s, K, T, R, O = usize>
 where
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
+    K: Ord + Clone,
+    T: Lattice + Ord + Clone,
+    R: MonoidValue,
 {
     valid: bool,
     cursor: OrderedCursor<'s, K, O, OrderedLeaf<T, R>>,
@@ -329,8 +306,6 @@ where
     T: Lattice + Ord + Clone,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     fn key(&self) -> &K {
         self.cursor.key()
@@ -397,8 +372,6 @@ where
     T: Ord + Lattice,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     time: T,
     builder: OrderedBuilder<K, OrderedLeafBuilder<T, R>, O>,
@@ -410,14 +383,12 @@ where
     T: Lattice + Timestamp + Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset,
-    <O as TryFrom<usize>>::Error: Debug,
-    <O as TryInto<usize>>::Error: Debug,
 {
     #[inline]
     fn new(time: T) -> Self {
         Self {
             time,
-            builder: OrderedBuilder::<K, OrderedLeafBuilder<T, R>, O>::new(),
+            builder: <OrderedBuilder<K, OrderedLeafBuilder<T, R>, O> as TupleBuilder>::new(),
         }
     }
 
@@ -448,6 +419,7 @@ where
         } else {
             Antichain::from_elem(time_next)
         };
+
         OrdKeyBatch {
             layer: self.builder.done(),
             lower: Antichain::from_elem(self.time),

@@ -10,7 +10,6 @@ use std::{
     mem::take,
     ops::{Add, Neg},
 };
-
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, ZRingValue, ZSet},
     circuit::{

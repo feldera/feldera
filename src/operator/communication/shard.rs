@@ -10,7 +10,7 @@ use crate::{
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
     Circuit, Runtime, Stream,
 };
-use std::hash::Hash;
+use std::{hash::Hash, panic::Location};
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
 circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
@@ -85,6 +85,7 @@ where
     /// on a busy CPU core or sharing the core with other workers) or uneven
     /// sharding can slow down the whole system and reduce gains from
     /// parallelization.
+    #[track_caller]
     pub fn shard(&self) -> Stream<Circuit<P>, IB>
     where
         IB: Batch + Send,
@@ -101,10 +102,13 @@ where
     ///
     /// Returns `None` when the circuit is not running inside a multithreaded
     /// rutime or is running in a runtime with a single worker thread.
+    #[track_caller]
     pub fn shard_generic<OB>(&self) -> Option<Stream<Circuit<P>, OB>>
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Clone + Send + 'static,
     {
+        let location = Location::caller();
+
         Runtime::runtime().and_then(|runtime| {
             let num_workers = runtime.num_workers();
 
@@ -125,6 +129,7 @@ where
                             let (sender, receiver) = self.circuit().new_exchange_operators(
                                 &runtime,
                                 Runtime::worker_index(),
+                                Some(location),
                                 move |batch: IB, batches: &mut Vec<OB>| {
                                     Self::shard_batch(&batch, num_workers, &mut builders, batches);
                                 },
@@ -161,10 +166,13 @@ where
     /// The output stream in `receiver_worker` will contain a union of all
     /// input batches across all workers.  The output streams in all other
     /// workers will contain empty batches.
+    #[track_caller]
     pub fn gather(&self, receiver_worker: usize) -> Stream<Circuit<P>, IB>
     where
         IB: Batch + Send,
     {
+        let location = Location::caller();
+
         match Runtime::runtime() {
             None => self.clone(),
             Some(runtime) => {
@@ -181,6 +189,7 @@ where
                                 let (sender, receiver) = self.circuit().new_exchange_operators(
                                     &runtime,
                                     Runtime::worker_index(),
+                                    Some(location),
                                     move |batch: IB, batches: &mut Vec<IB>| {
                                         for _ in 0..num_workers {
                                             batches.push(IB::empty(()));

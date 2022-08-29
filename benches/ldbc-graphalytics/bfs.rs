@@ -25,7 +25,7 @@ where
     P: Clone + 'static,
     Distances<Circuit<P>>: RecursiveStreams<Circuit<Circuit<P>>, Output = Distances<P>>,
 {
-    let (vertices, edges) = (vertices.shard(), edges.shard());
+    let (vertices, edges) = (vertices.mark_sharded(), edges.mark_sharded());
 
     // Initialize the roots to have a distance of zero
     let roots = roots
@@ -74,31 +74,37 @@ where
     // TODO: Could probably be optimized to use `.apply_owned()` and take the key
     //       vector from the input
     // TODO: Ideally we'd use a bitset instead of a `Vec<i8>` here
-    let distances = distances.shard().apply(|distances| {
-        let mut builder = <DistanceSet<i8> as Batch>::Builder::with_capacity((), distances.len());
+    let distances = distances
+        .shard()
+        .apply(|distances| {
+            let mut builder =
+                <DistanceSet<i8> as Batch>::Builder::with_capacity((), distances.len());
 
-        let mut cursor = distances.cursor();
-        while cursor.key_valid() {
-            builder.push((*cursor.key(), 1));
-            cursor.step_key();
-        }
+            let mut cursor = distances.cursor();
+            while cursor.key_valid() {
+                builder.push((*cursor.key(), 1));
+                cursor.step_key();
+            }
 
-        builder.done()
-    });
+            builder.done()
+        })
+        .mark_sharded();
 
     // Add weights to each vertex
     // TODO: Ideally we could actually just use `Present` weights for this too
-    let vertices = vertices.apply(|vertices| {
-        let mut builder = <VertexSet<i8> as Batch>::Builder::with_capacity((), vertices.len());
+    let vertices = vertices
+        .apply(|vertices| {
+            let mut builder = <VertexSet<i8> as Batch>::Builder::with_capacity((), vertices.len());
 
-        let mut cursor = vertices.cursor();
-        while cursor.key_valid() {
-            builder.push((*cursor.key(), 1));
-            cursor.step_key();
-        }
+            let mut cursor = vertices.cursor();
+            while cursor.key_valid() {
+                builder.push((*cursor.key(), 1));
+                cursor.step_key();
+            }
 
-        builder.done()
-    });
+            builder.done()
+        })
+        .mark_sharded();
 
     // Collect all reachable nodes
     let reachable_nodes = distances.map(|&(node, _)| node);

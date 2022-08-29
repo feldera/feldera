@@ -9,6 +9,7 @@ use dbsp::{
 use std::{
     cmp::{min, Ordering},
     hash::Hash,
+    panic::Location,
 };
 
 type Weights = OrdZSet<Node, Rank>;
@@ -32,7 +33,6 @@ pub fn pagerank(
 
     // Vertices weighted by F64s instead of isizes
     let weighted_vertices = vertices
-        .shard()
         .apply(|vertices| {
             let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
 
@@ -45,7 +45,7 @@ pub fn pagerank(
 
             builder.done()
         })
-        .shard();
+        .mark_sharded();
 
     // Vertices weighted by the damping factor divided by the total number of
     // vertices
@@ -66,7 +66,7 @@ pub fn pagerank(
 
             builder.done()
         })
-        .shard();
+        .mark_sharded();
 
     // Initially each vertex is assigned a value so that the sum of all vertexes is
     // one, `PR(𝑣)₀ = 1 ÷ |𝑉|`
@@ -86,7 +86,7 @@ pub fn pagerank(
 
             builder.done()
         })
-        .shard();
+        .mark_sharded();
 
     // Calculate the teleport, `(1 - d) ÷ |𝑉|`
     let teleport = vertices
@@ -105,7 +105,7 @@ pub fn pagerank(
 
             builder.done()
         })
-        .shard();
+        .mark_sharded();
 
     // Count the number of outgoing edges for each node
     let outgoing_edge_counts = edges
@@ -130,7 +130,7 @@ pub fn pagerank(
 
             builder.done()
         })
-        .shard();
+        .mark_sharded();
 
     // Find all dangling nodes (nodes without outgoing edges)
     let dangling_nodes = weighted_vertices.minus(
@@ -242,6 +242,7 @@ fn count_vertices(vertices: &Vertices<()>) -> Streamed<(), u64> {
         let (sender, receiver) = vertices.circuit().new_exchange_operators(
             &runtime,
             Runtime::worker_index(),
+            Some(Location::caller()),
             move |count: u64, counts: &mut Vec<u64>| counts.extend((0..num_workers).map(|_| count)),
             |result, count| *result += count,
         );

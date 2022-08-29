@@ -5,7 +5,7 @@ mod builders;
 mod cursor;
 
 pub use builders::{OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder};
-pub use cursor::OrderedColumnLeafCursor;
+pub use cursor::ColumnLeafCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -20,7 +20,7 @@ use std::{
 };
 
 /// A layer of unordered values.
-#[derive(Debug, Eq, PartialEq, Clone, Default, DeepSizeOf)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, DeepSizeOf)]
 pub struct OrderedColumnLeaf<K, R> {
     // Invariant: keys.len == diffs.len
     keys: Vec<K>,
@@ -31,8 +31,14 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     #[inline]
     #[doc(hidden)]
     pub fn diffs_mut(&mut self) -> &mut [R] {
+        unsafe { self.assume_invariants() }
         &mut self.diffs
     }
+
+    // fn len(&self) -> usize {
+    //     unsafe { self.assume_invariants() }
+    //     self.keys.len()
+    // }
 
     /// Assume the invariants of the current builder
     ///
@@ -43,6 +49,21 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     unsafe fn assume_invariants(&self) {
         unsafe { assume(self.keys.len() == self.diffs.len()) }
     }
+
+    // fn into_uninit(self) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+    //     unsafe { self.assume_invariants() }
+    //
+    //     let mut keys = ManuallyDrop::new(self.keys);
+    //     let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
+    //     let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
+    //
+    //     let mut diffs = ManuallyDrop::new(self.diffs);
+    //     let (len, cap, ptr) = (diffs.len(), diffs.capacity(),
+    // diffs.as_mut_ptr());     let diffs = unsafe {
+    // Vec::from_raw_parts(ptr.cast(), len, cap) };
+    //
+    //     OrderedColumnLeaf { keys, diffs }
+    // }
 }
 
 impl<K, R> Trie for OrderedColumnLeaf<K, R>
@@ -51,7 +72,7 @@ where
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     type Item = (K, R);
-    type Cursor<'s> = OrderedColumnLeafCursor<'s, K, R> where K: 's, R: 's;
+    type Cursor<'s> = ColumnLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedColumnLeafBuilder<K, R>;
     type TupleBuilder = UnorderedColumnLeafBuilder<K, R>;
 
@@ -70,7 +91,7 @@ where
     #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         unsafe { self.assume_invariants() }
-        OrderedColumnLeafCursor::new(lower, self, (lower, upper))
+        ColumnLeafCursor::new(lower, self, (lower, upper))
     }
 }
 

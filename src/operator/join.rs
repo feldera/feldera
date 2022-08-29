@@ -461,7 +461,7 @@ where
         Self {
             join_func,
             location,
-            time: T::Time::clock_start(),
+            time: <T::Time as Timestamp>::clock_start(),
             output_batchers: HashMap::new(),
             empty_input: false,
             empty_output: false,
