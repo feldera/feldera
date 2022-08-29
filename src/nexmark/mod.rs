@@ -10,83 +10,77 @@
 //! it will allow us later to extend it to support multiple data sources in
 //! parallel when DBSP can be scaled.
 
-use self::generator::{config::Config, EventGenerator, NexmarkGenerator, NextEvent};
+use self::generator::{config::Config, NexmarkGenerator, NextEvent};
 use self::model::Event;
 use crate::{
     algebra::{ZRingValue, ZSet},
-    circuit::{
-        operator_traits::{Data, Operator},
-        Scope,
-    },
+    circuit::operator_traits::Data,
     OrdZSet,
 };
-use rand::prelude::ThreadRng;
-use rand::{thread_rng, Rng};
-use std::thread::sleep;
-use std::time::Duration;
-use std::{borrow::Cow, marker::PhantomData};
+use rand::thread_rng;
+use std::{
+    marker::PhantomData,
+    ops::Range,
+    sync::mpsc,
+    thread::{self, sleep},
+    time::Duration,
+    time::SystemTime,
+};
 
 pub mod config;
 pub mod generator;
 pub mod model;
 pub mod queries;
 
-pub struct NexmarkSource<R: Rng, W, C> {
-    /// The generator for events emitted by this source.
-    // TODO(absoludity): Longer-term, it'd be great to use a client (such as a gRPC client) here to
-    // completely separate the generator and allow the generator to be used with other languages
-    // etc.
-    generator: Box<dyn EventGenerator<R>>,
+pub struct NexmarkSource<W, C> {
+    // Channel on which the source receives next events.
+    next_event_rx: mpsc::Receiver<Option<NextEvent>>,
+
     // next_event stores the next event during `next` when `next_event()` is called but returns an
     // event in the future, so that we can include it in the next call to next.
     next_event: Option<NextEvent>,
 
+    /// An optional iterator that provides wallclock timestamps in tests.
+    /// This is set to None by default.
+    wallclock_iterator: Option<Range<u64>>,
+
     _t: PhantomData<(C, W)>,
 }
 
-impl<R, W, C> NexmarkSource<R, W, C>
-where
-    R: Rng + 'static,
-{
-    pub fn from_generator<G: EventGenerator<R> + 'static>(generator: G) -> Self {
+impl<W, C> NexmarkSource<W, C> {
+    pub fn from_next_events(next_event_rx: mpsc::Receiver<Option<NextEvent>>) -> Self {
         NexmarkSource {
-            generator: Box::new(generator),
             next_event: None,
+            next_event_rx,
+            wallclock_iterator: None,
             _t: PhantomData,
         }
     }
-    pub fn new(config: Config) -> NexmarkSource<ThreadRng, isize, OrdZSet<Event, isize>> {
-        NexmarkSource::from_generator(NexmarkGenerator::new(config, thread_rng()))
+    pub fn new(config: Config) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
+        let (next_event_tx, next_event_rx) = mpsc::sync_channel(5);
+        thread::spawn(move || {
+            let mut gen = NexmarkGenerator::new(config, thread_rng(), 0);
+            while gen.has_next() {
+                next_event_tx.send(gen.next_event().unwrap()).unwrap();
+            }
+        });
+
+        NexmarkSource::from_next_events(next_event_rx)
+    }
+
+    fn wallclock_time(&mut self) -> u64 {
+        match &mut self.wallclock_iterator {
+            Some(i) => i.next().unwrap(),
+            None => SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        }
     }
 }
 
-impl<R, W, C> Operator for NexmarkSource<R, W, C>
+impl<W, C> Iterator for NexmarkSource<W, C>
 where
-    C: Data,
-    R: Rng + 'static,
-    W: 'static,
-{
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("NexmarkSource")
-    }
-
-    // For the ability to reset the circuit and run it from clean state without
-    // rebuilding it, then clock_start resets the generator to the beginning of the
-    // sequence.
-    fn clock_start(&mut self, _scope: Scope) {
-        self.generator.reset();
-    }
-
-    // Returns true if the generator has no more data (and so this source will
-    // return empty zsets from now on).
-    fn fixedpoint(&self, _scope: Scope) -> bool {
-        !self.generator.has_next()
-    }
-}
-
-impl<R, W, C> Iterator for NexmarkSource<R, W, C>
-where
-    R: Rng + 'static,
     W: ZRingValue + 'static,
     C: Data + ZSet<Key = Event, R = W>,
 {
@@ -99,11 +93,10 @@ where
         let next_event = self
             .next_event
             .clone()
-            .or_else(|| self.generator.next_event().unwrap())?;
-
+            .or_else(|| self.next_event_rx.recv().unwrap_or(None))?;
         // Otherwise we want to emit at least one event, so if the next event
         // is still in the future, we sleep until we can emit it.
-        let mut wallclock_time_now = self.generator.wallclock_time();
+        let mut wallclock_time_now = self.wallclock_time();
         if next_event.wallclock_timestamp > wallclock_time_now {
             let millis_to_sleep = next_event.wallclock_timestamp - wallclock_time_now;
             sleep(Duration::from_millis(millis_to_sleep));
@@ -112,13 +105,14 @@ where
 
         // Collect as many next events as are ready.
         let mut next_events = vec![next_event];
-        let mut next_event = self.generator.next_event().unwrap();
+        let mut next_event = self.next_event_rx.recv().unwrap();
         while next_events.len() < 1000
             && next_event
                 .is_some_and(|next_event| next_event.wallclock_timestamp <= wallclock_time_now)
         {
             next_events.push(next_event.unwrap());
-            next_event = self.generator.next_event().unwrap();
+            // recv can only error if the sending half of a channel is disconnected.
+            next_event = self.next_event_rx.recv().unwrap_or(None);
         }
 
         // Ensure we remember the last event that was generated but not emitted for the
@@ -136,7 +130,7 @@ where
 
 #[cfg(test)]
 pub mod tests {
-    use self::generator::tests::{generate_expected_next_events, RangedTimeGenerator};
+    use self::generator::tests::generate_expected_next_events;
     use super::*;
     use crate::{trace::Batch, Circuit, OrdZSet};
     use core::ops::Range;
@@ -147,8 +141,19 @@ pub mod tests {
     pub fn make_source_with_wallclock_times(
         times: Range<u64>,
         max_events: u64,
-    ) -> NexmarkSource<StepRng, isize, OrdZSet<Event, isize>> {
-        NexmarkSource::from_generator(RangedTimeGenerator::new(times, max_events))
+    ) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
+        let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
+        let mut generator =
+            NexmarkGenerator::new(Config::default(), StepRng::new(0, 1), times.start);
+        for _ in 0..max_events {
+            next_event_tx.send(generator.next_event().unwrap()).unwrap();
+        }
+        next_event_tx.send(None).unwrap();
+
+        // Create a source using the pre-generated next events.
+        let mut source = NexmarkSource::from_next_events(next_event_rx);
+        source.wallclock_iterator = Some(times);
+        source
     }
 
     pub fn generate_expected_zset_tuples(
@@ -173,42 +178,6 @@ pub mod tests {
             (),
             generate_expected_zset_tuples(wallclock_base_time, num_events),
         )
-    }
-
-    #[test]
-    fn test_start_clock() {
-        let expected_zset = generate_expected_zset_tuples(0, 2);
-
-        let mut source = make_source_with_wallclock_times(0..2, 2);
-
-        assert_eq!(source.next().unwrap(), expected_zset);
-
-        // Calling start_clock begins the events again (manually setting the
-        // wallclock base time again for the test).
-        source.clock_start(1);
-
-        assert_eq!(source.next().unwrap(), expected_zset);
-    }
-
-    // After exhausting events, the source indicates a fixed point.
-    #[test]
-    fn test_fixed_point() {
-        let mut source = make_source_with_wallclock_times(0..1, 1);
-        assert!(!source.fixedpoint(1));
-
-        source.next();
-
-        assert!(source.fixedpoint(1));
-    }
-
-    // After exhausting events, the source returns None
-    #[test]
-    fn test_next_empty_none() {
-        let mut source = make_source_with_wallclock_times(0..2, 1);
-
-        source.next();
-
-        assert_eq!(source.next(), None);
     }
 
     #[test]

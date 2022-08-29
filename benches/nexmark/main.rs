@@ -100,8 +100,7 @@ fn spawn_source_producer(
     source_exhausted_tx: mpsc::SyncSender<InputStats>,
 ) {
     thread::spawn(move || {
-        let source =
-            NexmarkSource::<ThreadRng, isize, OrdZSet<Event, isize>>::new(generator_config);
+        let source = NexmarkSource::<isize, OrdZSet<Event, isize>>::new(generator_config);
         let mut num_events: u64 = 0;
 
         // Start iterating by loading up the first batch of input ready for processing,
