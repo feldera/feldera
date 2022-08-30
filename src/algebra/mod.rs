@@ -315,6 +315,24 @@ impl MulByRef<isize> for f64 {
     }
 }
 
+impl MulByRef<isize> for F32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<isize> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        *self * ((*w) as f64)
+    }
+}
+
 impl MulByRef<isize> for Option<i32> {
     type Output = Self;
 
