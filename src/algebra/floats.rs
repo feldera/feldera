@@ -389,3 +389,17 @@ float! {
     F32(f32),
     F64(f64),
 }
+
+impl From<F32> for F64 {
+    #[inline]
+    fn from(float: F32) -> Self {
+        Self::new(float.into_inner() as f64)
+    }
+}
+
+impl From<F64> for F32 {
+    #[inline]
+    fn from(float: F64) -> Self {
+        Self::new(float.into_inner() as f32)
+    }
+}
