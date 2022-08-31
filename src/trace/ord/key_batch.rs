@@ -1,6 +1,5 @@
 use crate::{
-    algebra::MonoidValue,
-    lattice::Lattice,
+    algebra::{Lattice, MonoidValue},
     time::{Antichain, AntichainRef},
     trace::{
         layers::{

@@ -12,14 +12,13 @@ use std::{
 
 use crate::{
     algebra::{
-        AddAssignByRef, GroupValue, HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef,
+        AddAssignByRef, GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef,
         PartialOrder, ZRingValue,
     },
     circuit::{
         operator_traits::{Operator, TernaryOperator, UnaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    lattice::Lattice,
     operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
     time::Timestamp,
     trace::{

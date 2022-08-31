@@ -1,8 +1,7 @@
 //! A general purpose `Batcher` implementation based on radix sort.
 
 use crate::{
-    algebra::MonoidValue,
-    lattice::Lattice,
+    algebra::{Lattice, MonoidValue},
     trace::{consolidation, Batch, Batcher, Builder},
     utils::VecExt,
     Timestamp,
