@@ -16,14 +16,14 @@ pub mod layers;
 pub mod ord;
 pub mod spine_fueled;
 
+pub use cursor::Cursor;
+
 use crate::{
     algebra::{HasZero, MonoidValue},
+    circuit::Activator,
     lattice::Lattice,
-    time::Timestamp,
+    time::{AntichainRef, Timestamp},
 };
-use timely::progress::Antichain;
-
-pub use cursor::Cursor;
 
 /// A trace whose contents may be read.
 ///
@@ -60,7 +60,7 @@ pub trait TraceReader: BatchReader {
 /// `Time` types, but does not need to return them.
 pub trait Trace: TraceReader {
     /// Allocates a new empty trace.
-    fn new(activator: Option<timely::scheduling::activate::Activator>) -> Self;
+    fn new(activator: Option<Activator>) -> Self;
 
     /// Push all timestamps in the trace back to `frontier`.
     ///
@@ -163,11 +163,11 @@ where
     }
 
     /// All times in the batch are greater or equal to an element of `lower`.
-    fn lower(&self) -> &Antichain<Self::Time>;
+    fn lower(&self) -> AntichainRef<'_, Self::Time>;
 
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
-    fn upper(&self) -> &Antichain<Self::Time>;
+    fn upper(&self) -> AntichainRef<'_, Self::Time>;
 }
 
 /// An immutable collection of updates.
@@ -320,11 +320,9 @@ pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
 
 /// Blanket implementations for reference counted batches.
 pub mod rc_blanket_impls {
-
-    use std::{marker::PhantomData, rc::Rc};
-
     use super::{Batch, BatchReader, Batcher, Builder, Cursor, Merger};
-    use timely::progress::Antichain;
+    use crate::time::AntichainRef;
+    use std::{marker::PhantomData, rc::Rc};
 
     impl<B: BatchReader> BatchReader for Rc<B> {
         type Key = B::Key;
@@ -352,10 +350,12 @@ pub mod rc_blanket_impls {
         fn len(&self) -> usize {
             (**self).len()
         }
-        fn lower(&self) -> &Antichain<Self::Time> {
+
+        fn lower(&self) -> AntichainRef<'_, Self::Time> {
             (**self).lower()
         }
-        fn upper(&self) -> &Antichain<Self::Time> {
+
+        fn upper(&self) -> AntichainRef<'_, Self::Time> {
             (**self).upper()
         }
     }

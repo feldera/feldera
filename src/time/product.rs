@@ -1,10 +1,12 @@
 use crate::{
-    algebra::MonoidValue, circuit::Scope, lattice::Lattice, time::Timestamp,
+    algebra::{MonoidValue, PartialOrder},
+    circuit::Scope,
+    lattice::Lattice,
+    time::Timestamp,
     trace::ord::OrdValBatch,
 };
 use deepsize::DeepSizeOf;
 use std::fmt::{Debug, Display, Formatter};
-use timely::PartialOrder;
 
 /// A nested pair of timestamps, one outer and one inner.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Default, Ord, PartialOrd, DeepSizeOf)]

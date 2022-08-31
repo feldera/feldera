@@ -1,7 +1,7 @@
 //! Relational join operator.
 
 use crate::{
-    algebra::{IndexedZSet, MulByRef, ZSet},
+    algebra::{IndexedZSet, MulByRef, PartialOrder, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
@@ -24,7 +24,6 @@ use std::{
     mem::{needs_drop, MaybeUninit},
     panic::Location,
 };
-use timely::PartialOrder;
 
 impl<P, I1> Stream<Circuit<P>, I1>
 where

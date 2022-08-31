@@ -1,19 +1,20 @@
 //! Types that represent logical time in DBSP.
 
+mod antichain;
 mod nested_ts32;
 mod product;
 
 use crate::{
-    algebra::MonoidValue,
+    algebra::{MonoidValue, PartialOrder},
     circuit::Scope,
     lattice::Lattice,
     trace::{ord::OrdValBatch, Batch},
     OrdIndexedZSet,
 };
-use std::{fmt::Debug, hash::Hash};
-use timely::PartialOrder;
-
 use deepsize::DeepSizeOf;
+use std::{fmt::Debug, hash::Hash};
+
+pub use antichain::{Antichain, AntichainRef};
 pub use nested_ts32::NestedTimestamp32;
 pub use product::Product;
 

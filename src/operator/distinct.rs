@@ -503,7 +503,7 @@ where
         // need to worry about growing `future_updates` later on.
         let mut new_len: u32 = self.time + 1;
         trace.map_batches(|batch| {
-            for ts in batch.upper().elements().iter() {
+            for ts in batch.upper() {
                 new_len = max(new_len, ts.inner() + 1);
             }
         });

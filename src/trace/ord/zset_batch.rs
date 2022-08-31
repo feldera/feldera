@@ -1,6 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
-    lattice::Lattice,
+    time::AntichainRef,
     trace::{
         layers::{
             column_leaf::{ColumnLeafCursor, OrderedColumnLeaf, OrderedColumnLeafBuilder},
@@ -19,7 +19,6 @@ use std::{
     ops::{Add, AddAssign, Neg},
     rc::Rc,
 };
-use timely::progress::Antichain;
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -29,8 +28,6 @@ where
 {
     /// Where all the dataz is.
     pub layer: OrderedColumnLeaf<K, R>,
-    pub lower: Antichain<()>,
-    pub upper: Antichain<()>,
 }
 
 impl<K, R> Display for OrdZSet<K, R>
@@ -52,11 +49,7 @@ where
     K: Ord,
 {
     fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
-        Self {
-            layer,
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
-        }
+        Self { layer }
     }
 }
 
@@ -113,8 +106,6 @@ where
     fn neg_by_ref(&self) -> Self {
         Self {
             layer: self.layer.neg_by_ref(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
         }
     }
 }
@@ -129,8 +120,6 @@ where
     fn neg(self) -> Self {
         Self {
             layer: self.layer.neg(),
-            lower: self.lower,
-            upper: self.upper,
         }
     }
 }
@@ -144,13 +133,8 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let lower = self.lower().meet(rhs.lower());
-        let upper = self.upper().join(rhs.upper());
-
         Self {
             layer: self.layer.add(rhs.layer),
-            lower,
-            upper,
         }
     }
 }
@@ -161,8 +145,6 @@ where
     R: MonoidValue,
 {
     fn add_assign(&mut self, rhs: Self) {
-        self.lower = self.lower().meet(rhs.lower());
-        self.upper = self.upper().join(rhs.upper());
         self.layer.add_assign(rhs.layer);
     }
 }
@@ -174,8 +156,6 @@ where
 {
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         self.layer.add_assign_by_ref(&rhs.layer);
-        self.lower = self.lower().meet(rhs.lower());
-        self.upper = self.upper().join(rhs.upper());
     }
 }
 
@@ -187,8 +167,6 @@ where
     fn add_by_ref(&self, rhs: &Self) -> Self {
         Self {
             layer: self.layer.add_by_ref(&rhs.layer),
-            lower: self.lower().meet(rhs.lower()),
-            upper: self.upper().join(rhs.upper()),
         }
     }
 }
@@ -223,13 +201,13 @@ where
     }
 
     #[inline]
-    fn lower(&self) -> &Antichain<()> {
-        &self.lower
+    fn lower(&self) -> AntichainRef<'_, ()> {
+        AntichainRef::new(&[()])
     }
 
     #[inline]
-    fn upper(&self) -> &Antichain<()> {
-        &self.upper
+    fn upper(&self) -> AntichainRef<'_, ()> {
+        AntichainRef::empty()
     }
 }
 
@@ -260,8 +238,6 @@ where
     fn empty(_time: Self::Time) -> Self {
         Self {
             layer: OrderedColumnLeaf::empty(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 }
@@ -294,8 +270,6 @@ where
     fn done(self) -> OrdZSet<K, R> {
         OrdZSet {
             layer: self.result.done(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 
@@ -440,8 +414,6 @@ where
     fn done(self) -> OrdZSet<K, R> {
         OrdZSet {
             layer: self.builder.done(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 }

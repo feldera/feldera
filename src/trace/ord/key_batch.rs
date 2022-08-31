@@ -1,6 +1,7 @@
 use crate::{
     algebra::MonoidValue,
     lattice::Lattice,
+    time::{Antichain, AntichainRef},
     trace::{
         layers::{
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
@@ -15,7 +16,6 @@ use crate::{
 };
 use deepsize::DeepSizeOf;
 use std::fmt::Debug;
-use timely::progress::Antichain;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
@@ -58,17 +58,21 @@ where
             cursor: self.layer.cursor(),
         }
     }
+
     fn key_count(&self) -> usize {
         <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::keys(&self.layer)
     }
+
     fn len(&self) -> usize {
         <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::tuples(&self.layer)
     }
-    fn lower(&self) -> &Antichain<T> {
-        &self.lower
+
+    fn lower(&self) -> AntichainRef<'_, T> {
+        self.lower.as_ref()
     }
-    fn upper(&self) -> &Antichain<T> {
-        &self.upper
+
+    fn upper(&self) -> AntichainRef<'_, T> {
+        self.upper.as_ref()
     }
 }
 

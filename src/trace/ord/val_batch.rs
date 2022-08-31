@@ -1,6 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero, MonoidValue},
     lattice::Lattice,
+    time::{Antichain, AntichainRef},
     trace::{
         layers::{
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
@@ -18,7 +19,6 @@ use std::{
     fmt::{Debug, Display, Formatter},
     ops::AddAssign,
 };
-use timely::progress::Antichain;
 
 pub type OrdValBatchLayer<K, V, T, R, O> =
     OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, O>, O>;
@@ -85,22 +85,27 @@ where
     type R = R;
 
     type Cursor<'s> = OrdValCursor<'s, K, V, T, R, O> where O: 's;
+
     fn cursor(&self) -> Self::Cursor<'_> {
         OrdValCursor {
             cursor: self.layer.cursor(),
         }
     }
+
     fn key_count(&self) -> usize {
         <OrdValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
     }
+
     fn len(&self) -> usize {
         <OrdValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
-    fn lower(&self) -> &Antichain<T> {
-        &self.lower
+
+    fn lower(&self) -> AntichainRef<'_, T> {
+        self.lower.as_ref()
     }
-    fn upper(&self) -> &Antichain<T> {
-        &self.upper
+
+    fn upper(&self) -> AntichainRef<'_, T> {
+        self.upper.as_ref()
     }
 }
 
