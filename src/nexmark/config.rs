@@ -91,6 +91,15 @@ pub struct Config {
     /// Queries to run, all by default.
     #[clap(long, env = "NEXMARK_QUERIES", multiple = true)]
     pub query: Vec<String>,
+
+    /// The size of the buffer (channel) to use in the Nexmark Source.
+    #[clap(long, default_value = "1000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
+    pub source_buffer_size: usize,
+
+    /// DBSP-specific configuration options.
+    /// The size of the batches to be inputted to DBSP per step.
+    #[clap(long, default_value = "1000", env = "DBSP_INPUT_BATCH_SIZE")]
+    pub input_batch_size: usize,
 }
 
 /// Implementation of config methods based on the Java implementation at
@@ -122,6 +131,8 @@ impl Default for Config {
             out_of_order_group_size: 1,
             person_proportion: 1,
             query: vec![],
+            source_buffer_size: 1000,
+            input_batch_size: 1000,
         }
     }
 }

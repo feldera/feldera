@@ -9,7 +9,7 @@ use std::{
     io::Error,
     mem::MaybeUninit,
     sync::mpsc,
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -67,66 +67,82 @@ struct InputStats {
 
 enum StepCompleted {
     DBSP,
-    Source,
+    Source(usize),
 }
 
 fn spawn_dbsp_consumer(
     mut dbsp: DBSPHandle,
     step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
-    done_tx: mpsc::SyncSender<()>,
-) {
-    thread::spawn(move || {
-        while let Ok(()) = step_do_rx.recv() {
-            dbsp.step().unwrap();
-            step_done_tx.send(StepCompleted::DBSP).unwrap();
-        }
-
-        done_tx.send(()).unwrap();
-    });
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name("benchmark_consumer".into())
+        .spawn(move || {
+            while let Ok(()) = step_do_rx.recv() {
+                dbsp.step().unwrap();
+                step_done_tx.send(StepCompleted::DBSP).unwrap();
+            }
+        })
+        .unwrap()
 }
 
 fn spawn_source_producer(
     nexmark_config: NexmarkConfig,
     mut input_handle: CollectionHandle<Event, isize>,
-    step_do_rx: mpsc::Receiver<usize>,
+    step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
     source_exhausted_tx: mpsc::SyncSender<InputStats>,
 ) {
-    thread::spawn(move || {
-        let source = NexmarkSource::<isize, OrdZSet<Event, isize>>::new(nexmark_config);
-        let mut num_events: u64 = 0;
+    thread::Builder::new()
+        .name("benchmark producer".into())
+        .spawn(move || {
+            let batch_size = nexmark_config.input_batch_size;
+            let mut source = NexmarkSource::<isize, OrdZSet<Event, isize>>::new(nexmark_config);
+            let mut num_events: u64 = 0;
 
-        // Start iterating by loading up the first batch of input ready for processing,
-        // then waiting for further instructions.
-        let mut num_batches = 1;
-        let mut batch_count = 0;
-        for mut batch in source {
-            num_events += batch.len() as u64;
-            input_handle.append(&mut batch);
-            batch_count += 1;
-            if batch_count < num_batches {
-                continue;
-            }
-            step_done_tx.send(StepCompleted::Source).unwrap();
+            // Start iterating by loading up the first batch of input ready for processing,
+            // then waiting for further instructions.
+            let last_batch_count = loop {
+                // TODO: Cannot see any way to preallocate this outside the loop
+                // and reuse, since ownership is passed in to the input's `append`.
+                let mut events: Vec<(Event, isize)> = Vec::with_capacity(batch_size);
+                let mut batch_count = 0;
+                while let Some(event) = source.next() {
+                    events.push((event, 1));
+                    batch_count += 1;
+                    if batch_count == batch_size {
+                        break;
+                    }
+                }
 
-            // Wait for the next batch.
-            batch_count = 0;
-            num_batches = step_do_rx.recv().unwrap();
-        }
-        source_exhausted_tx.send(InputStats { num_events }).unwrap();
-        step_done_tx.send(StepCompleted::Source).unwrap();
-    });
+                input_handle.append(&mut events);
+                num_events += batch_count as u64;
+
+                step_done_tx
+                    .send(StepCompleted::Source(batch_count))
+                    .unwrap();
+                // If we're unable to fetch a full batch, then we're done.
+                if batch_count < batch_size {
+                    break batch_count;
+                }
+                step_do_rx.recv().unwrap();
+            };
+
+            source_exhausted_tx.send(InputStats { num_events }).unwrap();
+            step_done_tx
+                .send(StepCompleted::Source(last_batch_count))
+                .unwrap();
+        })
+        .unwrap();
 }
 
 fn coordinate_input_and_steps(
     expected_num_events: u64,
     dbsp_step_tx: mpsc::SyncSender<()>,
-    source_step_tx: mpsc::SyncSender<usize>,
+    source_step_tx: mpsc::SyncSender<()>,
     step_done_rx: mpsc::Receiver<StepCompleted>,
     source_exhausted_rx: mpsc::Receiver<InputStats>,
 ) -> Result<InputStats> {
-    let mut num_input_batches = 1;
     // The producer should have already loaded up the first batch ready for
     // consumption before we start the loop.
     let mut progress_bar = ProgressBar::new(expected_num_events);
@@ -139,20 +155,21 @@ fn coordinate_input_and_steps(
     loop {
         if let Ok(input_stats) = source_exhausted_rx.try_recv() {
             progress_bar.finish_print("Done");
+            // Wait for the last processing step to complete before returning.
+            step_done_rx.recv()?;
             return Ok(input_stats);
         }
 
         // Trigger the step and the input of the next batch.
         dbsp_step_tx.send(())?;
-        source_step_tx.send(num_input_batches)?;
-        progress_bar.add(num_input_batches as u64 * 1000);
+        source_step_tx.send(())?;
 
-        // If the consumer finished first, increase the input batches.
-        if let Ok(StepCompleted::DBSP) = step_done_rx.recv() {
-            num_input_batches += 1;
+        // Ensure both the dbsp and source finish before continuing.
+        for _ in 0..2 {
+            if let Ok(StepCompleted::Source(num_events)) = step_done_rx.recv() {
+                progress_bar.add(num_events as u64);
+            }
         }
-        // Consume the other input/dbsp step.
-        step_done_rx.recv()?;
     }
 }
 
@@ -172,12 +189,11 @@ macro_rules! run_query {
         // so. The DBSP processing happens in its own thread where the resource usage
         // calculation can also happen.
         let (dbsp_step_tx, dbsp_step_rx) = mpsc::sync_channel(1);
-        let (dbsp_done_tx, dbsp_done_rx) = mpsc::sync_channel(0);
-        spawn_dbsp_consumer(dbsp, dbsp_step_rx, step_done_tx.clone(), dbsp_done_tx);
+        let dbsp_join_handle = spawn_dbsp_consumer(dbsp, dbsp_step_rx, step_done_tx.clone());
 
         // Start the generator inputting the specified number of batches to the circuit
         // whenever it receives a message.
-        let (source_step_tx, source_step_rx): (mpsc::SyncSender<usize>, mpsc::Receiver<usize>) =
+        let (source_step_tx, source_step_rx): (mpsc::SyncSender<()>, mpsc::Receiver<()>) =
             mpsc::sync_channel(1);
         let (source_exhausted_tx, source_exhausted_rx) = mpsc::sync_channel(1);
         spawn_source_producer(
@@ -197,7 +213,10 @@ macro_rules! run_query {
         )
         .unwrap();
 
-        dbsp_done_rx.recv().unwrap();
+        // Wait for the consumer to complete.
+        dbsp_join_handle
+            .join()
+            .expect("DBSP consumer thread panicked");
 
         // Return the user/system CPU overhead from the generator/input thread.
         NexmarkResult {
