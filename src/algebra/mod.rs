@@ -10,12 +10,14 @@ use std::{
 #[macro_use]
 mod checked_int;
 mod floats;
+mod order;
 mod present;
 
 pub mod zset;
 
 pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
+pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
 pub use zset::{IndexedZSet, ZSet};
 

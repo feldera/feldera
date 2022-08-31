@@ -2,13 +2,13 @@
 //!
 //! All logical times in DBSP must implement the `Lattice` trait.
 
+use crate::{
+    algebra::PartialOrder,
+    time::{Antichain, AntichainRef},
+};
 use std::{
     cmp::{max, min},
     time::Duration,
-};
-use timely::{
-    order::PartialOrder,
-    progress::{frontier::AntichainRef, Antichain},
 };
 
 /// A bounded partially ordered type supporting joins and meets.
@@ -18,10 +18,9 @@ pub trait Lattice: PartialOrder {
     /// # Examples
     ///
     /// ```
-    /// # use timely::PartialOrder;
-    /// # use dbsp::time::Product;
-    /// # use dbsp::lattice::Lattice;
     /// # fn main() {
+    ///
+    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
     ///
     /// let time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -38,10 +37,9 @@ pub trait Lattice: PartialOrder {
     /// # Examples
     ///
     /// ```
-    /// # use timely::PartialOrder;
-    /// # use dbsp::time::Product;
-    /// # use dbsp::lattice::Lattice;
     /// # fn main() {
+    ///
+    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
     ///
     /// let mut time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -63,10 +61,9 @@ pub trait Lattice: PartialOrder {
     /// # Examples
     ///
     /// ```
-    /// # use timely::PartialOrder;
-    /// # use dbsp::time::Product;
-    /// # use dbsp::lattice::Lattice;
     /// # fn main() {
+    ///
+    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
     ///
     /// let time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -83,10 +80,9 @@ pub trait Lattice: PartialOrder {
     /// # Examples
     ///
     /// ```
-    /// # use timely::PartialOrder;
-    /// # use dbsp::time::Product;
-    /// # use dbsp::lattice::Lattice;
     /// # fn main() {
+    ///
+    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
     ///
     /// let mut time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -118,17 +114,18 @@ pub trait Lattice: PartialOrder {
     /// # Examples
     ///
     /// ```
-    /// # use timely::PartialOrder;
-    /// # use dbsp::time::Product;
-    /// # use dbsp::lattice::Lattice;
     /// # fn main() {
     ///
-    /// use timely::progress::frontier::{Antichain, AntichainRef};
+    /// use dbsp::{
+    ///     algebra::PartialOrder,
+    ///     lattice::Lattice,
+    ///     time::{Antichain, AntichainRef, Product},
+    /// };
     ///
     /// let time = Product::new(3, 7);
     /// let mut advanced = Product::new(3, 7);
     /// let frontier = Antichain::from(vec![Product::new(4, 8), Product::new(5, 3)]);
-    /// advanced.advance_by(frontier.borrow());
+    /// advanced.advance_by(frontier.as_ref());
     ///
     /// // `time` and `advanced` are indistinguishable to elements >= an element of `frontier`
     /// for i in 0..10 {
@@ -193,12 +190,15 @@ implement_lattice!((), ());
 
 // TODO: Manually implement `.join_assign()`, `.meet_assign()` and
 // `.advance_by()` to reuse buffers
-impl<T: Lattice + Clone> Lattice for Antichain<T> {
+impl<T> Lattice for Antichain<T>
+where
+    T: Lattice + Clone,
+{
     #[inline]
     fn join(&self, other: &Self) -> Self {
         let mut upper = Antichain::new();
-        for time1 in self.elements() {
-            for time2 in other.elements() {
+        for time1 in self {
+            for time2 in other {
                 upper.insert(time1.join(time2));
             }
         }
@@ -209,11 +209,42 @@ impl<T: Lattice + Clone> Lattice for Antichain<T> {
     #[inline]
     fn meet(&self, other: &Self) -> Self {
         let mut upper = Antichain::new();
-        for time1 in self.elements() {
+        for time1 in self {
             upper.insert(time1.clone());
         }
 
-        for time2 in other.elements() {
+        for time2 in other {
+            upper.insert(time2.clone());
+        }
+
+        upper
+    }
+}
+
+impl<'a, T> AntichainRef<'a, T>
+where
+    T: Lattice + Clone,
+{
+    #[inline]
+    pub fn join(self, other: Self) -> Antichain<T> {
+        let mut upper = Antichain::new();
+        for time1 in self {
+            for time2 in other {
+                upper.insert(time1.join(time2));
+            }
+        }
+
+        upper
+    }
+
+    #[inline]
+    pub fn meet(self, other: Self) -> Antichain<T> {
+        let mut upper = Antichain::new();
+        for time1 in self {
+            upper.insert(time1.clone());
+        }
+
+        for time2 in other {
             upper.insert(time2.clone());
         }
 

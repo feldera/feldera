@@ -1,6 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
-    lattice::Lattice,
+    time::{Antichain, AntichainRef},
     trace::{
         layers::{
             column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
@@ -21,7 +21,6 @@ use std::{
     ops::{Add, AddAssign, Neg},
     rc::Rc,
 };
-use timely::progress::Antichain;
 
 type Layers<K, V, R, O> = OrderedLayer<K, OrderedColumnLeaf<V, R>, O>;
 
@@ -273,13 +272,13 @@ where
     }
 
     #[inline]
-    fn lower(&self) -> &Antichain<()> {
-        &self.lower
+    fn lower(&self) -> AntichainRef<'_, ()> {
+        self.lower.as_ref()
     }
 
     #[inline]
-    fn upper(&self) -> &Antichain<()> {
-        &self.upper
+    fn upper(&self) -> AntichainRef<'_, ()> {
+        self.upper.as_ref()
     }
 }
 

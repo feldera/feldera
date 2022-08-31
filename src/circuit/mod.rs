@@ -1,10 +1,3 @@
-/*
-MIT License
-SPDX-License-Identifier: MIT
-
-Copyright (c) $CURRENT_YEAR VMware, Inc
-*/
-
 //! Synchronous circuits over streams.
 //!
 //! A circuit consists of [operators](`operator_traits::Operator`) connected by
@@ -13,6 +6,7 @@ Copyright (c) $CURRENT_YEAR VMware, Inc
 //! streams and emitting a single value to the output stream.
 
 mod dbsp_handle;
+mod activations;
 
 pub(crate) mod runtime;
 
@@ -22,6 +16,7 @@ pub mod operator_traits;
 pub mod schedule;
 pub mod trace;
 
+pub use activations::{Activator, Activations};
 pub use circuit_builder::{
     Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId,
     OwnershipPreference, Scope, Stream,

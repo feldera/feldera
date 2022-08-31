@@ -12,7 +12,8 @@ use std::{
 
 use crate::{
     algebra::{
-        AddAssignByRef, GroupValue, HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef, ZRingValue,
+        AddAssignByRef, GroupValue, HasOne, HasZero, IndexedZSet, MonoidValue, MulByRef,
+        PartialOrder, ZRingValue,
     },
     circuit::{
         operator_traits::{Operator, TernaryOperator, UnaryOperator},
@@ -30,7 +31,6 @@ use crate::{
     NumEntries, OrdIndexedZSet, OrdZSet,
 };
 use deepsize::DeepSizeOf;
-use timely::PartialOrder;
 
 // Some standard aggregators.
 mod average;

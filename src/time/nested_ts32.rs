@@ -1,10 +1,12 @@
 use crate::{
-    algebra::MonoidValue, circuit::Scope, lattice::Lattice, time::Timestamp,
+    algebra::{MonoidValue, PartialOrder},
+    circuit::Scope,
+    lattice::Lattice,
+    time::Timestamp,
     trace::ord::OrdValBatch,
 };
 use deepsize::DeepSizeOf;
 use std::fmt::{Debug, Display, Formatter};
-use timely::PartialOrder;
 
 const INNER_MASK: u32 = 0x7fffffff;
 const EPOCH_MASK: u32 = 0x80000000;

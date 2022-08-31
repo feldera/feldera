@@ -79,24 +79,23 @@
 //! they have completed, at least until they have paid back any "debt" to higher
 //! layers by continuing to provide fuel as updates arrive.
 
-use std::{
-    cell::RefCell,
-    fmt::{Display, Formatter},
-    mem::replace,
-    rc::Rc,
-};
-
 use crate::{
-    lattice::Lattice,
-    time::Timestamp,
+    circuit::Activator,
+    time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::{Cursor, CursorList},
         rc_blanket_impls::RcBatchCursor,
-        Antichain, Batch, BatchReader, Merger, Trace, TraceReader,
+        Batch, BatchReader, Merger, Trace, TraceReader,
     },
     NumEntries,
 };
 use deepsize::DeepSizeOf;
+use std::{
+    cell::RefCell,
+    fmt::{self, Display},
+    mem::replace,
+    rc::Rc,
+};
 use textwrap::indent;
 
 /// An append-only collection of update tuples.
@@ -117,7 +116,7 @@ where
     // cursor, if any).
     cursor_storage: RefCell<Vec<Rc<B>>>,
     effort: usize,
-    activator: Option<timely::scheduling::activate::Activator>,
+    activator: Option<Activator>,
     dirty: bool,
 }
 
@@ -127,7 +126,7 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = Vec::new();
         self.map_batches(|batch| {
             res.push(writeln!(
@@ -207,12 +206,12 @@ where
         result
     }
 
-    fn lower(&self) -> &Antichain<Self::Time> {
-        &self.lower
+    fn lower(&self) -> AntichainRef<'_, Self::Time> {
+        self.lower.as_ref()
     }
 
-    fn upper(&self) -> &Antichain<Self::Time> {
-        &self.upper
+    fn upper(&self) -> AntichainRef<'_, Self::Time> {
+        self.upper.as_ref()
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
@@ -392,7 +391,7 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    fn new(activator: Option<timely::scheduling::activate::Activator>) -> Self {
+    fn new(activator: Option<Activator>) -> Self {
         Self::with_effort(1, activator)
     }
 
@@ -477,8 +476,8 @@ where
         }
 
         self.dirty = true;
-        self.lower = self.lower.meet(batch.lower());
-        self.upper = self.upper.join(batch.upper());
+        self.lower = self.lower.as_ref().meet(batch.lower());
+        self.upper = self.upper.as_ref().join(batch.upper());
 
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert_eq!(batch.lower(), &self.upper);
@@ -551,10 +550,7 @@ where
     /// applying a multiple of the batch's length in effort to each merge.
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
-    pub fn with_effort(
-        mut effort: usize,
-        activator: Option<timely::scheduling::activate::Activator>,
-    ) -> Self {
+    pub fn with_effort(mut effort: usize, activator: Option<Activator>) -> Self {
         // Zero effort is .. not smart.
         if effort == 0 {
             effort = 1;
