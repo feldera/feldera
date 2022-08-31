@@ -5,9 +5,8 @@ mod nested_ts32;
 mod product;
 
 use crate::{
-    algebra::{MonoidValue, PartialOrder},
+    algebra::{Lattice, MonoidValue, PartialOrder},
     circuit::Scope,
-    lattice::Lattice,
     trace::{ord::OrdValBatch, Batch},
     OrdIndexedZSet,
 };

@@ -1,12 +1,11 @@
 //! Relational join operator.
 
 use crate::{
-    algebra::{IndexedZSet, MulByRef, PartialOrder, ZSet},
+    algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
-    lattice::Lattice,
     time::Timestamp,
     trace::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,

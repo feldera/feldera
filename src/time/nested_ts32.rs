@@ -1,7 +1,6 @@
 use crate::{
-    algebra::{MonoidValue, PartialOrder},
+    algebra::{Lattice, MonoidValue, PartialOrder},
     circuit::Scope,
-    lattice::Lattice,
     time::Timestamp,
     trace::ord::OrdValBatch,
 };

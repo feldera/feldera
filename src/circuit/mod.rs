@@ -5,8 +5,8 @@
 //! the circuit is triggered, consuming a single value from each of its input
 //! streams and emitting a single value to the output stream.
 
-mod dbsp_handle;
 mod activations;
+mod dbsp_handle;
 
 pub(crate) mod runtime;
 
@@ -16,7 +16,7 @@ pub mod operator_traits;
 pub mod schedule;
 pub mod trace;
 
-pub use activations::{Activator, Activations};
+pub use activations::{Activations, Activator};
 pub use circuit_builder::{
     Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId,
     OwnershipPreference, Scope, Stream,

@@ -8,7 +8,6 @@ mod utils;
 
 pub mod algebra;
 pub mod circuit;
-pub mod lattice;
 pub mod monitor;
 pub mod operator;
 pub mod profile;

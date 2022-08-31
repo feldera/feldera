@@ -19,9 +19,8 @@ pub mod spine_fueled;
 pub use cursor::Cursor;
 
 use crate::{
-    algebra::{HasZero, MonoidValue},
+    algebra::{HasZero, Lattice, MonoidValue},
     circuit::Activator,
-    lattice::Lattice,
     time::{AntichainRef, Timestamp},
 };
 

@@ -20,7 +20,10 @@ pub trait Lattice: PartialOrder {
     /// ```
     /// # fn main() {
     ///
-    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
+    /// use dbsp::{
+    ///     algebra::{Lattice, PartialOrder},
+    ///     time::Product,
+    /// };
     ///
     /// let time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -39,7 +42,10 @@ pub trait Lattice: PartialOrder {
     /// ```
     /// # fn main() {
     ///
-    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
+    /// use dbsp::{
+    ///     algebra::{Lattice, PartialOrder},
+    ///     time::Product,
+    /// };
     ///
     /// let mut time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -63,7 +69,10 @@ pub trait Lattice: PartialOrder {
     /// ```
     /// # fn main() {
     ///
-    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
+    /// use dbsp::{
+    ///     algebra::{Lattice, PartialOrder},
+    ///     time::Product,
+    /// };
     ///
     /// let time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -82,7 +91,10 @@ pub trait Lattice: PartialOrder {
     /// ```
     /// # fn main() {
     ///
-    /// use dbsp::{algebra::PartialOrder, lattice::Lattice, time::Product};
+    /// use dbsp::{
+    ///     algebra::{Lattice, PartialOrder},
+    ///     time::Product,
+    /// };
     ///
     /// let mut time1 = Product::new(3, 7);
     /// let time2 = Product::new(4, 6);
@@ -117,8 +129,7 @@ pub trait Lattice: PartialOrder {
     /// # fn main() {
     ///
     /// use dbsp::{
-    ///     algebra::PartialOrder,
-    ///     lattice::Lattice,
+    ///     algebra::{Lattice, PartialOrder},
     ///     time::{Antichain, AntichainRef, Product},
     /// };
     ///
