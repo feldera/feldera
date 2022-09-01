@@ -36,6 +36,72 @@ pub mod generator;
 pub mod model;
 pub mod queries;
 
+/// BatchedReceiver abstracts the Receiver interface for channels of VecDeque's.
+pub struct BatchedReceiver<T> {
+    rx: mpsc::Receiver<VecDeque<T>>,
+    current_queue: VecDeque<T>,
+}
+
+impl<T> BatchedReceiver<T> {
+    fn new(rx: mpsc::Receiver<VecDeque<T>>) -> Self {
+        Self {
+            rx,
+            current_queue: VecDeque::new(),
+        }
+    }
+
+    fn recv(&mut self) -> Result<T, mpsc::RecvError> {
+        match self.current_queue.pop_front() {
+            Some(t) => Ok(t),
+            None => {
+                self.current_queue = self.rx.recv()?;
+                Ok(self.current_queue.pop_front().unwrap())
+            }
+        }
+    }
+}
+
+/// BatchedSender abstracts the Sender interface for channels of VecDeque's.
+pub struct BatchedSender<T> {
+    batch_size: usize,
+    current_queue: VecDeque<T>,
+    tx: mpsc::SyncSender<VecDeque<T>>,
+}
+
+fn batched_channel<T>(batch_size: usize) -> (BatchedSender<T>, BatchedReceiver<T>) {
+    let (tx, rx) = mpsc::sync_channel(3);
+    (
+        BatchedSender {
+            batch_size,
+            current_queue: VecDeque::<T>::with_capacity(batch_size),
+            tx,
+        },
+        BatchedReceiver::new(rx),
+    )
+}
+
+impl<T> BatchedSender<T> {
+    pub fn send(&mut self, t: T) -> Result<(), mpsc::SendError<VecDeque<T>>> {
+        // The order here ensures that we never end up sending an empty
+        // vector.
+        if self.current_queue.len() == self.batch_size {
+            self.tx.send(std::mem::replace(
+                &mut self.current_queue,
+                VecDeque::with_capacity(self.batch_size),
+            ))?;
+        }
+        self.current_queue.push_back(t);
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<(), mpsc::SendError<VecDeque<T>>> {
+        self.tx.send(std::mem::replace(
+            &mut self.current_queue,
+            VecDeque::with_capacity(self.batch_size),
+        ))
+    }
+}
+
 pub struct NexmarkSource<W, C> {
     // TODO(absoludity): Longer-term, it'd be great to extract this to a separate gRPC service that
     // generates and streams the events, so that user benchmarks, such as DBSP, will only need the
@@ -44,10 +110,7 @@ pub struct NexmarkSource<W, C> {
     // other projects (in other languages).
 
     // Channel on which the source receives vectors of next events.
-    next_events_rx: mpsc::Receiver<VecDeque<NextEvent>>,
-
-    // next_events stores any remaining future events that should not be emitted yet.
-    next_events: VecDeque<NextEvent>,
+    next_events_rx: BatchedReceiver<NextEvent>,
 
     /// An optional iterator that provides wallclock timestamps in tests.
     /// This is set to None by default.
@@ -65,13 +128,13 @@ fn create_generators_for_config<R: Rng + Default>(
     // instantiate a ThreadRng, `Default` is not supported for `StepRng`. Not sure if it's
     // worth writing a wrapper around `StepRng` with a `Default` implementation (or if there's
     // a better way).
-) -> mpsc::Receiver<VecDeque<NextEvent>> {
+) -> BatchedReceiver<NextEvent> {
     let wallclock_base_time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
     let buffer_size = nexmark_config.source_buffer_size;
-    let next_event_rxs: Vec<mpsc::Receiver<Option<NextEvent>>> = (0..nexmark_config
+    let mut next_event_rxs: Vec<BatchedReceiver<NextEvent>> = (0..nexmark_config
         .num_event_generators)
         .map(|generator_num| {
             GeneratorConfig::new(
@@ -82,15 +145,16 @@ fn create_generators_for_config<R: Rng + Default>(
             )
         })
         .map(|generator_config| {
-            let (tx, rx) = mpsc::sync_channel(generator_config.nexmark_config.source_buffer_size);
+            let (mut tx, rx) = batched_channel(buffer_size);
             thread::Builder::new()
                 .name(format!("generator-{}", generator_config.first_event_number))
                 .spawn(move || {
                     let mut generator =
                         NexmarkGenerator::new(generator_config, R::default(), wallclock_base_time);
                     while let Ok(Some(event)) = generator.next_event() {
-                        tx.send(Some(event)).unwrap();
+                        tx.send(event).unwrap();
                     }
+                    tx.flush().unwrap();
                 })
                 .unwrap();
             rx
@@ -99,31 +163,22 @@ fn create_generators_for_config<R: Rng + Default>(
 
     // Finally, read from the generators round-robin, sending the ordered
     // events down a single channel buffered.
-    let (next_events_tx, next_events_rx) = mpsc::sync_channel(buffer_size);
+    let (mut next_events_tx, next_events_rx) = batched_channel(buffer_size);
     thread::Builder::new()
         .name("nexmark collector".into())
         .spawn(move || {
             let mut num_completed_receivers = 0;
-            let mut events = VecDeque::<NextEvent>::with_capacity(buffer_size);
             while num_completed_receivers < next_event_rxs.len() {
-                for rx in &next_event_rxs {
-                    // Update this loop so that we always receive, but append to
-                    // a vec before sending...
+                for rx in &mut next_event_rxs {
                     match rx.recv() {
-                        Ok(Some(e)) => {
-                            events.push_back(e);
-                            if events.len() == buffer_size {
-                                next_events_tx.send(events).unwrap();
-                                events = VecDeque::<NextEvent>::with_capacity(buffer_size);
-                            }
-                        }
+                        Ok(e) => next_events_tx.send(e).unwrap(),
                         _ => {
                             num_completed_receivers += 1;
                         }
                     }
                 }
             }
-            next_events_tx.send(events).unwrap();
+            next_events_tx.flush().unwrap();
         })
         .unwrap();
 
@@ -131,10 +186,9 @@ fn create_generators_for_config<R: Rng + Default>(
 }
 
 impl<W, C> NexmarkSource<W, C> {
-    pub fn from_next_events(next_events_rx: mpsc::Receiver<VecDeque<NextEvent>>) -> Self {
+    pub fn from_next_events(next_events_rx: BatchedReceiver<NextEvent>) -> Self {
         NexmarkSource {
             next_events_rx,
-            next_events: VecDeque::new(),
             wallclock_iterator: None,
             _t: PhantomData,
         }
@@ -163,16 +217,7 @@ where
     type Item = Event;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next_event = match self.next_events.pop_front() {
-            Some(ne) => ne,
-            None => {
-                self.next_events = match self.next_events_rx.recv() {
-                    Ok(next_events) => next_events,
-                    _ => return None,
-                };
-                self.next_events.pop_front().unwrap()
-            }
-        };
+        let next_event = self.next_events_rx.recv().ok()?;
         // If the next event is still in the future then we're getting ahead of
         // ourselves, so we sleep until we can emit it.
         let wallclock_time_now = self.wallclock_time();
@@ -197,6 +242,7 @@ pub mod tests {
     use crate::{trace::Batch, Circuit, OrdZSet};
     use core::ops::Range;
     use rand::rngs::mock::StepRng;
+    use rstest::rstest;
 
     /// Returns a source that generates the default events/s with the specified
     /// range of wallclock time ticks.
@@ -220,7 +266,7 @@ pub mod tests {
         next_event_tx.send(v).unwrap();
 
         // Create a source using the pre-generated next events.
-        let mut source = NexmarkSource::from_next_events(next_event_rx);
+        let mut source = NexmarkSource::from_next_events(BatchedReceiver::new(next_event_rx));
         source.wallclock_iterator = Some(times);
         source
     }
@@ -303,5 +349,42 @@ pub mod tests {
                 },
             }
         }
+    }
+
+    #[rstest]
+    #[case::two_batches_of_4(vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7]])]
+    #[case::four_batches_of_2(vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]])]
+    fn test_batched_receiver(#[case] input_vecs: Vec<Vec<usize>>) {
+        let (tx, rx) = mpsc::channel();
+        let expected_output = input_vecs.concat();
+        for v in input_vecs {
+            tx.send(VecDeque::from(v)).unwrap();
+        }
+
+        let mut batched_receiver = BatchedReceiver::new(rx);
+
+        expected_output
+            .into_iter()
+            .for_each(|n| assert_eq!(n, batched_receiver.recv().unwrap()))
+    }
+
+    #[rstest]
+    #[case::nine_batched_by_4(4, vec![0, 1, 2, 3, 4, 5, 6, 7, 8], vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8]])]
+    #[case::nine_batched_by_3(3, vec![0, 1, 2, 3, 4, 5, 6, 7, 8], vec![vec![0, 1, 2], vec![3, 4, 5], vec![6, 7, 8]])]
+    fn test_batched_sender(
+        #[case] batch_size: usize,
+        #[case] input_vec: Vec<usize>,
+        #[case] expected_vecs: Vec<Vec<usize>>,
+    ) {
+        let (mut tx, rx) = batched_channel(batch_size);
+
+        input_vec.into_iter().for_each(|x| tx.send(x).unwrap());
+        tx.flush().unwrap();
+
+        // Get the non-batched receiver to check the batching.
+        let rx = rx.rx;
+        expected_vecs
+            .into_iter()
+            .for_each(|v| assert_eq!(VecDeque::from(v), rx.recv().unwrap()));
     }
 }

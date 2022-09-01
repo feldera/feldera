@@ -103,8 +103,6 @@ fn spawn_source_producer(
             // Start iterating by loading up the first batch of input ready for processing,
             // then waiting for further instructions.
             let last_batch_count = loop {
-                // TODO: Cannot see any way to preallocate this outside the loop
-                // and reuse, since ownership is passed in to the input's `append`.
                 let mut events: Vec<(Event, isize)> = Vec::with_capacity(batch_size);
                 let mut batch_count = 0;
                 while let Some(event) = source.next() {
@@ -114,7 +112,6 @@ fn spawn_source_producer(
                         break;
                     }
                 }
-
                 input_handle.append(&mut events);
                 num_events += batch_count as u64;
 
@@ -142,6 +139,7 @@ fn coordinate_input_and_steps(
     source_step_tx: mpsc::SyncSender<()>,
     step_done_rx: mpsc::Receiver<StepCompleted>,
     source_exhausted_rx: mpsc::Receiver<InputStats>,
+    dbsp_join_handle: JoinHandle<()>,
 ) -> Result<InputStats> {
     // The producer should have already loaded up the first batch ready for
     // consumption before we start the loop.
@@ -154,9 +152,16 @@ fn coordinate_input_and_steps(
     // Continue until the source is exhausted.
     loop {
         if let Ok(input_stats) = source_exhausted_rx.try_recv() {
-            progress_bar.finish_print("Done");
-            // Wait for the last processing step to complete before returning.
+            // Wait for the processing to complete. We explicitly do one more step
+            // to ensure the last input is processed, before dropping the dbsp_step_tx
+            // half of the channel to ensure the dbsp thread terminates.
+            dbsp_step_tx.send(())?;
             step_done_rx.recv()?;
+            drop(dbsp_step_tx);
+            dbsp_join_handle
+                .join()
+                .expect("DBSP consumer thread panicked");
+            progress_bar.finish_print("Done");
             return Ok(input_stats);
         }
 
@@ -210,13 +215,9 @@ macro_rules! run_query {
             source_step_tx,
             step_done_rx,
             source_exhausted_rx,
+            dbsp_join_handle,
         )
         .unwrap();
-
-        // Wait for the consumer to complete.
-        dbsp_join_handle
-            .join()
-            .expect("DBSP consumer thread panicked");
 
         // Return the user/system CPU overhead from the generator/input thread.
         NexmarkResult {
