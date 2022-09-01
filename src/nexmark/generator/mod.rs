@@ -43,7 +43,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 
     pub fn next_event(&mut self) -> Result<Option<NextEvent>> {
         let new_event_id = self.get_next_event_id();
-        if new_event_id > self.config.max_events {
+        if new_event_id >= self.config.max_events {
             return Ok(None);
         }
 
