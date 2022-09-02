@@ -61,6 +61,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             expires: timestamp + next_length_ms,
             seller,
             category,
+            extra: String::new(),
         })
     }
 
@@ -150,6 +151,7 @@ mod tests {
                 expires: 1,
                 seller: 1000,
                 category: 10,
+                extra: String::new(),
             },
             auction
         );
