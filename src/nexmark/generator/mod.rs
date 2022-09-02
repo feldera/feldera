@@ -183,6 +183,7 @@ pub mod tests {
             expires: 2000,
             seller: 1,
             category: 1,
+            extra: String::new(),
         }
     }
 

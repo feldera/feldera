@@ -33,6 +33,7 @@ pub struct Auction {
     pub expires: u64,
     pub seller: u64,
     pub category: usize,
+    pub extra: String,
 }
 
 /// The Nexmark Bid model based on the [Nexmark Java Bid class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Bid.java).

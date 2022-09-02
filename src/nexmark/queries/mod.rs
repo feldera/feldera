@@ -9,6 +9,8 @@ pub use q4::q4;
 
 pub use q6::q6;
 
+pub use q9::q9;
+
 type NexmarkStream = Stream<Circuit<()>, OrdZSet<Event, isize>>;
 
 mod q0;
@@ -18,3 +20,5 @@ mod q3;
 mod q4;
 
 mod q6;
+
+mod q9;
