@@ -7,7 +7,10 @@ use super::{
     config, NexmarkGenerator,
 };
 use rand::{seq::SliceRandom, Rng};
-use std::cmp::min;
+use std::{
+    cmp::min,
+    mem::{size_of, size_of_val},
+};
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
@@ -37,23 +40,32 @@ const LAST_NAMES: &[&str] = &[
 impl<R: Rng> NexmarkGenerator<R> {
     // Generate and return a random person with next available id.
     pub fn next_person(&mut self, next_event_id: u64, timestamp: u64) -> Person {
-        // TODO(absoludity): Figure out the purpose of the extra field - appears to be
-        // aiming to adjust the number of bytes for the record to be an average, which
-        // will need slightly different handling in Rust.
-        // int currentSize =
-        //     8 + name.length() + email.length() + creditCard.length() + city.length()
-        // + state.length(); String extra = nextExtra(random, currentSize,
-        // config.getAvgPersonByteSize());
-
+        let id = self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID as u64;
+        let name = self.next_person_name();
+        let email_address = self.next_email();
+        let credit_card = self.next_credit_card();
+        let city = self.next_us_city();
+        let state = self.next_us_state();
+        // Not sure why original doesn't include the date_time timestamp, but following
+        // the same calculation.
+        let current_size = size_of::<u64>()
+            + size_of_val(name.as_str())
+            + size_of_val(email_address.as_str())
+            + size_of_val(credit_card.as_str())
+            + size_of_val(city.as_str())
+            + size_of_val(state.as_str());
         Person {
-            id: self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID as u64,
-            name: self.next_person_name(),
-            email_address: self.next_email(),
-            credit_card: self.next_credit_card(),
-            city: self.next_us_city(),
-            state: self.next_us_state(),
+            id,
+            name,
+            email_address,
+            credit_card,
+            city,
+            state,
             date_time: timestamp,
-            extra: String::new(),
+            extra: self.next_extra(
+                current_size,
+                self.config.nexmark_config.avg_person_byte_size,
+            ),
         }
     }
 
@@ -154,7 +166,9 @@ mod tests {
                 city: "Phoenix".into(),
                 state: "AZ".into(),
                 date_time: 1_000_000_000_000,
-                extra: String::new(),
+                // Difference of 200 - 59 = 141, delta of 28 (141*0.2),
+                // so extra 113 chars (59 + 113 = 172 = 200 - delta)
+                extra: (0..113).map(|_| "A").collect::<String>(),
             }
         );
     }

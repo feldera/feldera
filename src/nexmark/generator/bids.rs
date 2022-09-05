@@ -9,6 +9,7 @@ use super::{
 };
 use cached::Cached;
 use rand::Rng;
+use std::mem::size_of;
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
@@ -89,6 +90,11 @@ impl<R: Rng> NexmarkGenerator<R> {
                 (HOT_CHANNELS[hot_index].into(), HOT_URLS[hot_index].into())
             }
         };
+        // Original Java implementation calculates the size of the bid as
+        // 8 * 4 - which can only be the auction, bidder, price and date_time (only 4
+        // numbers on the record). Not sure why the channel and url (Strings)
+        // are not included, but following suit.
+        let current_size = size_of::<u64>() * 3 + size_of::<usize>();
 
         Bid {
             auction,
@@ -97,7 +103,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             channel,
             url,
             date_time: timestamp,
-            extra: String::new(),
+            extra: self.next_extra(current_size, self.config.nexmark_config.avg_bid_byte_size),
         }
     }
 }
@@ -129,6 +135,12 @@ pub mod tests {
 
         let bid = ng.next_bid(event_id, 1_000_000_000_000);
 
+        // Note: due to usize differences on windows, need to calculate the
+        // size explicitly:
+        let current_size = size_of::<u64>() * 3 + size_of::<usize>();
+        let delta = ((100 - current_size) as f32 * 0.2).round() as usize;
+        let expected_size = 100 - delta - current_size;
+
         assert_eq!(
             Bid {
                 auction: expected_auction_id,
@@ -137,7 +149,9 @@ pub mod tests {
                 channel: "Google".into(),
                 url: "https://www.nexmark.com/googl/item.htm?query=1".into(),
                 date_time: 1_000_000_000_000,
-                extra: String::new(),
+                // Difference of 100 - 32 = 68, delta of 14 (68*0.2),
+                // so extra 54 chars (32 + 54 = 86 = 100 - delta)
+                extra: (0..expected_size).map(|_| "A").collect::<String>(),
             },
             bid
         );
