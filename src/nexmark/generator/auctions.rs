@@ -9,7 +9,10 @@ use super::{
 };
 use anyhow::Result;
 use rand::Rng;
-use std::cmp;
+use std::{
+    cmp,
+    mem::{size_of, size_of_val},
+};
 
 /// Keep the number of categories small so the example queries will find results
 /// even with a small batch of events.
@@ -50,7 +53,16 @@ impl<R: Rng> NexmarkGenerator<R> {
         let item_name = self.next_string(20);
         let description = self.next_string(100);
         let reserve = initial_bid + self.next_price();
-        // TODO(absoludity): add the extra bytes for models.
+
+        // Not sure why original Java implementation doesn't include date_time, but
+        // following the same.
+        let current_size = size_of::<u64>()
+            + size_of_val(item_name.as_str())
+            + size_of_val(description.as_str())
+            // (initial_bid, reserve, category)
+            + size_of::<usize>() * 3
+            // seller, expires
+            + size_of::<u64>() * 2;
         Ok(Auction {
             id,
             item_name,
@@ -61,7 +73,10 @@ impl<R: Rng> NexmarkGenerator<R> {
             expires: timestamp + next_length_ms,
             seller,
             category,
-            extra: String::new(),
+            extra: self.next_extra(
+                current_size,
+                self.config.nexmark_config.avg_auction_byte_size,
+            ),
         })
     }
 
@@ -140,6 +155,18 @@ mod tests {
 
         let auction = ng.next_auction(0, 0, 0).unwrap();
 
+        // Note: due to usize differences on windows, need to calculate the
+        // size explicitly:
+        let current_size = size_of::<u64>()
+            + 3
+            + 3
+            // (initial_bid, reserve, category)
+            + size_of::<usize>() * 3
+            // seller, expires
+            + size_of::<u64>() * 2;
+        let delta = ((500 - current_size) as f32 * 0.2).round() as usize;
+        let expected_size = 500 - delta - current_size;
+
         assert_eq!(
             Auction {
                 id: FIRST_AUCTION_ID as u64,
@@ -151,7 +178,7 @@ mod tests {
                 expires: 1,
                 seller: 1000,
                 category: 10,
-                extra: String::new(),
+                extra: (0..expected_size).map(|_| "A").collect::<String>(),
             },
             auction
         );

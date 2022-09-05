@@ -13,6 +13,24 @@ pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> String {
     Alphanumeric.sample_string(rng, len)
 }
 
+/// Return a random string such that the current_size + string length is on
+/// average the desired average size.
+fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: usize) -> String {
+    if current_size > desired_average_size {
+        return String::new();
+    }
+
+    let avg_extra_size = desired_average_size - current_size;
+    let delta = (avg_extra_size as f32 * 0.2).round() as usize;
+    if delta == 0 {
+        return String::new();
+    }
+
+    let desired_size =
+        rng.gen_range((avg_extra_size.saturating_sub(delta))..=(avg_extra_size + delta));
+    Alphanumeric.sample_string(rng, desired_size)
+}
+
 impl<R: Rng> NexmarkGenerator<R> {
     /// Return a random string of up to `max_length`.
     ///
@@ -23,11 +41,18 @@ impl<R: Rng> NexmarkGenerator<R> {
     pub fn next_string(&mut self, max_length: usize) -> String {
         next_string(&mut self.rng, max_length)
     }
+
+    /// Return a random string such that the current_size + string length is on
+    /// average the desired average size.
+    pub fn next_extra(&mut self, current_size: usize, desired_average_size: usize) -> String {
+        next_extra(&mut self.rng, current_size, desired_average_size)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::tests::make_test_generator;
+    use rstest::rstest;
 
     #[test]
     fn next_string_length() {
@@ -36,5 +61,28 @@ mod tests {
         let s = ng.next_string(5);
 
         assert_eq!(s, "AAA");
+    }
+
+    #[rstest]
+    // Difference of 100, delta of 20 (0.2 * 100), so gen_range(80..=120)
+    #[case::current_significantly_smaller_than_desired(100, 200, 80)]
+    // Difference of 9, delta of 2 (0.2 * 9 = 1.8) so gen_range(8..=12)
+    #[case::current_significantly_smaller_than_desired_round_up(6, 15, 7)]
+    // Difference of 7, delta of 1 (0.2 * 7 = 1.4) so gen_range(6..=8)
+    #[case::current_significantly_smaller_than_desired_round_down(8, 15, 6)]
+    #[case::current_marginally_smaller_than_desired(14, 15, 0)]
+    #[case::current_bigger_than_desired(20, 15, 0)]
+    #[case::current_is_equal_to_desired(15, 15, 0)]
+    #[case::current_greater_than_desired(20, 15, 0)]
+    fn test_next_extra(
+        #[case] current_size: usize,
+        #[case] desired_average_size: usize,
+        #[case] expected_size: usize,
+    ) {
+        let mut ng = make_test_generator();
+
+        let s = ng.next_extra(current_size, desired_average_size);
+
+        assert_eq!(s.len(), expected_size);
     }
 }
