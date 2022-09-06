@@ -5,9 +5,9 @@
 
 #[cfg(unix)]
 use libc::{getrusage, rusage, timeval};
+#[cfg(unix)]
+use std::{io::Error, mem::MaybeUninit};
 use std::{
-    io::Error,
-    mem::MaybeUninit,
     sync::mpsc,
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -365,4 +365,10 @@ pub unsafe fn rusage(target: i32) -> (Duration, Duration, u64) {
         duration_for_timeval(ru.ru_stime),
         ru.ru_maxrss as u64,
     )
+}
+
+/// Define for non-unix so that bench can still run reporting on time etc.
+#[cfg(not(unix))]
+pub unsafe fn rusage(_target: i32) -> (Duration, Duration, u64) {
+    (Duration::from_millis(0), Duration::from_millis(0), 0)
 }
