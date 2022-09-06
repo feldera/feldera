@@ -53,10 +53,6 @@ num-format = "0.4.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2.127"
-# The latest release of pbr (1.0.4) depends on an old version of time (0.1.44) with
-# a vulnerability. The dependency has been removed but a new version is yet
-# to be released https://github.com/a8m/pb/issues/113
-pbr = { git = "https://github.com/a8m/pb", rev = "09a8e592c1bb0aa1d6215e35c5c8b49b7a5ad6bd" }
 
 [profile.bench]
 debug = true
