@@ -26,8 +26,8 @@ use dbsp::{
     trace::ord::OrdZSet,
     Circuit, CollectionHandle, DBSPHandle, Runtime,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use num_format::{Locale, ToFormattedString};
-use pbr::ProgressBar;
 
 // TODO: Ideally these macros would be in a separate `lib.rs` in this benchmark
 // crate, but benchmark binaries don't appear to work like that (in that, I
@@ -143,7 +143,15 @@ fn coordinate_input_and_steps(
 ) -> Result<InputStats> {
     // The producer should have already loaded up the first batch ready for
     // consumption before we start the loop.
-    let mut progress_bar = ProgressBar::new(expected_num_events);
+    // let progress_bar = ProgressBar::new(expected_num_events);
+    let progress_bar = ProgressBar::new(expected_num_events);
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{human_pos} / {human_len} [{wide_bar}] {percent:.2} % {per_sec:.2} {eta}",
+        )
+        .unwrap()
+        .progress_chars("=>-"),
+    );
 
     if let Ok(StepCompleted::DBSP) = step_done_rx.recv() {
         return Err(anyhow!("Expected initial source step, got DBSP step"));
@@ -161,7 +169,7 @@ fn coordinate_input_and_steps(
             dbsp_join_handle
                 .join()
                 .expect("DBSP consumer thread panicked");
-            progress_bar.finish_print("Done");
+            progress_bar.finish_with_message("Done");
             return Ok(input_stats);
         }
 
@@ -172,7 +180,7 @@ fn coordinate_input_and_steps(
         // Ensure both the dbsp and source finish before continuing.
         for _ in 0..2 {
             if let Ok(StepCompleted::Source(num_events)) = step_done_rx.recv() {
-                progress_bar.add(num_events as u64);
+                progress_bar.inc(num_events as u64);
             }
         }
     }
