@@ -20,7 +20,7 @@ use dbsp::{
     nexmark::{
         config::Config as NexmarkConfig,
         model::Event,
-        queries::{q0, q1, q14, q2, q3, q4, q6, q9},
+        queries::{q0, q1, q13, q13_side_input, q14, q2, q3, q4, q6, q9},
         NexmarkSource,
     },
     trace::ord::OrdZSet,
@@ -37,7 +37,24 @@ use num_format::{Locale, ToFormattedString};
 /// Returns a closure for a circuit with the nexmark source that returns
 /// the input handle.
 macro_rules! nexmark_circuit {
-    ( $q:expr ) => {
+    ( "q13", $q:expr ) => {
+        |circuit: &mut Circuit<()>| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (side_stream, mut side_input_handle) =
+                circuit.add_input_zset::<(usize, String, u64), isize>();
+
+            let output = $q(stream, side_stream);
+
+            output.inspect(move |_zs| ());
+
+            // Ensure the side-input is loaded here so we can return a single input
+            // handle like the other queries.
+            side_input_handle.append(&mut q13_side_input());
+
+            input_handle
+        }
+    };
+    ( $q_name:expr, $q:expr ) => {
         |circuit: &mut Circuit<()>| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
@@ -187,8 +204,9 @@ fn coordinate_input_and_steps(
 }
 
 macro_rules! run_query {
-    ( $q:expr, $nexmark_config:expr) => {{
-        let circuit_closure = nexmark_circuit!($q);
+    ( $q_name:tt, $q:expr, $nexmark_config:expr) => {{
+        // let circuit_closure = nexmark_circuit!($q_name, $q);
+        let circuit_closure = nexmark_circuit!($q_name, $q);
 
         let num_cores = $nexmark_config.cpu_cores;
         let expected_num_events = $nexmark_config.max_events;
@@ -236,7 +254,7 @@ macro_rules! run_query {
 }
 
 macro_rules! run_queries {
-    ( $nexmark_config:expr, $max_events:expr, $queries_to_run:expr, $( ($q_name:expr, $q:expr) ),+ ) => {{
+    ( $nexmark_config:expr, $max_events:expr, $queries_to_run:expr, $( ($q_name:tt, $q:expr) ),+ ) => {{
         let mut results: Vec<NexmarkResult> = Vec::new();
         // We have no way (currently) of finding the max memory usage for each
         // subsequent query as the value is for the process. So only the first
@@ -251,7 +269,7 @@ macro_rules! run_queries {
             let (before_usr_cpu, before_sys_cpu, before_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
 
             let thread_nexmark_config = $nexmark_config.clone();
-            let result = run_query!($q, thread_nexmark_config);
+            let result = run_query!($q_name, $q, thread_nexmark_config);
             let (after_usr_cpu, after_sys_cpu, after_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
             results.push(NexmarkResult {
                 name: $q_name.to_string(),
@@ -316,6 +334,7 @@ fn main() -> Result<()> {
         ("q4", q4),
         ("q6", q6),
         ("q9", q9),
+        ("q13", q13),
         ("q14", q14)
     );
 
