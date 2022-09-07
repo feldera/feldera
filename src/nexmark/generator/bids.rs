@@ -149,8 +149,6 @@ pub mod tests {
                 channel: "Google".into(),
                 url: "https://www.nexmark.com/googl/item.htm?query=1".into(),
                 date_time: 1_000_000_000_000,
-                // Difference of 100 - 32 = 68, delta of 14 (68*0.2),
-                // so extra 54 chars (32 + 54 = 86 = 100 - delta)
                 extra: (0..expected_size).map(|_| "A").collect::<String>(),
             },
             bid

@@ -7,7 +7,7 @@ edition = "2021"
 default = ["with-serde"]
 with-serde = ["serde"]
 with-csv = ["csv"]
-with-nexmark = ["cached", "clap", "rust_decimal", "rand"]
+with-nexmark = ["cached", "clap", "csv", "rust_decimal", "rand"]
 
 [dependencies]
 anyhow = "1.0.57"
