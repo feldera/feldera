@@ -43,7 +43,7 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     /// Requires that `offs` has a length of `keys + 1`
     #[inline]
     unsafe fn assume_invariants(&self) {
-        unsafe { assume(self.offs.len() == self.keys.len() + 1) }
+        assume(self.offs.len() == self.keys.len() + 1)
     }
 }
 

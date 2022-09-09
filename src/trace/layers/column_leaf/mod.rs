@@ -56,7 +56,7 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     /// Requires that `keys` and `diffs` have the exact same length
     #[inline]
     unsafe fn assume_invariants(&self) {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        assume(self.keys.len() == self.diffs.len())
     }
 
     // fn into_uninit(self) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {

@@ -223,7 +223,7 @@ impl<T> GroupValue for T where
 }
 
 /// A Group with a multiplication operation is a Ring.
-pub trait RingValue: GroupValue + Mul<Output = Self> + MulByRef + HasOne {}
+pub trait RingValue: GroupValue + Mul<Output = Self> + MulByRef<Output = Self> + HasOne {}
 
 /// Default implementation of RingValue for all types that have the required
 /// traits.
@@ -239,7 +239,7 @@ impl<T> RingValue for T where
         + Neg<Output = Self>
         + NegByRef
         + Mul<Output = Self>
-        + MulByRef
+        + MulByRef<Output = Self>
         + HasOne
 {
 }
@@ -268,7 +268,7 @@ where
         + Neg<Output = Self>
         + NegByRef
         + Mul<Output = Self>
-        + MulByRef
+        + MulByRef<Output = Self>
         + HasOne
         + Ord,
 {
@@ -365,6 +365,24 @@ impl MulByRef<isize> for Option<f32> {
 }
 
 impl MulByRef<isize> for Option<f64> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f64))
+    }
+}
+
+impl MulByRef<isize> for Option<F32> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f32))
+    }
+}
+
+impl MulByRef<isize> for Option<F64> {
     type Output = Self;
 
     #[inline]

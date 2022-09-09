@@ -115,7 +115,7 @@ pub trait FilterMap<C> {
     /// Applies `func` to each record in the input stream.  Assembles output
     /// records into `OrdZSet` batches.
     ///
-    /// The output of `func` can be any type that impplements `trait
+    /// The output of `func` can be any type that implements `trait
     /// IntoIterator`, e.v., `Option<>` or `Vec<>`.
     fn flat_map<F, I>(&self, func: F) -> Stream<C, OrdZSet<I::Item, Self::R>>
     where
@@ -126,7 +126,7 @@ pub trait FilterMap<C> {
         self.flat_map_generic(func)
     }
 
-    /// Like [`Self::flat_map`], ubt can return any batch type.
+    /// Like [`Self::flat_map`], but can return any batch type.
     fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
