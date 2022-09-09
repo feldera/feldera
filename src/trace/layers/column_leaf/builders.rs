@@ -29,7 +29,7 @@ impl<K, R> OrderedColumnLeafBuilder<K, R> {
     /// Requires that `keys` and `diffs` have the exact same length
     #[inline]
     unsafe fn assume_invariants(&self) {
-        unsafe { assume(self.keys.len() == self.diffs.len()) }
+        assume(self.keys.len() == self.diffs.len())
     }
 }
 
