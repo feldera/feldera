@@ -1,7 +1,7 @@
 //! Relational join operator.
 
 use crate::{
-    algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZSet},
+    algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
@@ -11,6 +11,7 @@ use crate::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
         Trace, TraceReader,
     },
+    OrdIndexedZSet, OrdZSet,
 };
 use deepsize::DeepSizeOf;
 use std::{
@@ -19,6 +20,7 @@ use std::{
     collections::HashMap,
     fmt::Write,
     hash::Hash,
+    iter::once,
     marker::PhantomData,
     mem::{needs_drop, MaybeUninit},
     panic::Location,
@@ -44,10 +46,32 @@ where
     ///   batches to an output value.
     /// * `I1` - batch type in the first input stream.
     /// * `I2` - batch type in the second input stream.
-    /// * `Z` - output Z-set type.
+    /// * `V` - output value type.
+    #[track_caller]
+    #[allow(clippy::type_complexity)]
+    pub fn stream_join<F, I2, V>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        join: F,
+    ) -> Stream<Circuit<P>, OrdZSet<V, <I1::R as MulByRef<I2::R>>::Output>>
+    where
+        I1: Batch<Time = ()> + Clone + Send + 'static,
+        I1::Key: Ord + Hash + Clone,
+        I1::Val: Ord + Clone,
+        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
+        I2::Val: Ord + Clone,
+        I1::R: MulByRef<I2::R>,
+        <I1::R as MulByRef<I2::R>>::Output: ZRingValue,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + 'static,
+        V: Ord + Clone + 'static,
+    {
+        self.stream_join_generic(other, join)
+    }
+
+    /// Like [`Self::stream_join`], but can return any batch type.
     // TODO: Allow taking two different `R` types for each collection
     #[track_caller]
-    pub fn stream_join<F, I2, Z>(
+    pub fn stream_join_generic<F, I2, Z>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         join: F,
@@ -157,9 +181,12 @@ impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
     I1: IndexedZSet + Send,
+    I1::Key: DeepSizeOf + Clone + Ord + Hash, /* + ::std::fmt::Display */
+    I1::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
+    I1::R: ZRingValue + Default + DeepSizeOf,
 {
     // TODO: Derive `TS` type from circuit.
-    /// Incremental join two streams of batches.
+    /// Incrementally join two streams of batches.
     ///
     /// Given streams `self` and `other` of batches that represent changes to
     /// relations `A` and `B` respectively, computes a stream of changes to
@@ -171,27 +198,68 @@ where
     /// * `I2` - batch type in the second input stream.
     /// * `F` - join function type: maps key and a pair of values from input
     ///   batches to an output value.
-    /// * `Z` - output Z-set type.
+    /// * `V` - output value type.
     #[track_caller]
-    pub fn join<TS, I2, F, Z>(
+    pub fn join<TS, I2, F, V>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        join_func: F,
+    ) -> Stream<Circuit<P>, OrdZSet<V, I1::R>>
+    where
+        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
+        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
+        V: Ord + Clone + Default + DeepSizeOf + 'static,
+    {
+        self.join_generic::<TS, _, _, _, _>(other, move |k, v1, v2| {
+            once((join_func(k, v1, v2), ()))
+        })
+    }
+
+    /// Incrementally join two streams of batches, producing an indexed output
+    /// stream.
+    ///
+    /// This method generalizes [`Self::join`].  It takes a join function that
+    /// returns an iterable collection of `(key, value)` pairs, used to
+    /// construct an indexed output Z-set.
+    #[track_caller]
+    pub fn join_index<TS, I2, F, K, V, It>(
+        &self,
+        other: &Stream<Circuit<P>, I2>,
+        join_func: F,
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
+    where
+        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
+        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
+        K: Ord + Clone + Default + DeepSizeOf + 'static,
+        V: Ord + Clone + Default + DeepSizeOf + 'static,
+        It: IntoIterator<Item = (K, V)> + 'static,
+    {
+        self.join_generic::<TS, _, _, _, _>(other, join_func)
+    }
+
+    /// Like [`Self::join_index`], but can return any indexed Z-set type.
+    #[track_caller]
+    pub fn join_generic<TS, I2, F, Z, It>(
         &self,
         other: &Stream<Circuit<P>, I2>,
         join_func: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        TS: Timestamp + DeepSizeOf, /* + ::std::fmt::Display */
-        //I1: ::std::fmt::Display,
-        I1::Key: DeepSizeOf + Clone + Ord + Hash, /* + ::std::fmt::Display */
-        I1::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
-        I1::R: DeepSizeOf,                        /* + ::std::fmt::Display */
-        I2::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
+        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
+        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
-        Z: ZSet<R = I1::R>,                       /* + ::std::fmt::Display */
+        Z: IndexedZSet<R = I1::R>,         /* + ::std::fmt::Display */
         Z::Batcher: DeepSizeOf,
         Z::Key: Clone + Default,
+        Z::Val: Clone + Default,
         Z::R: MulByRef<Output = Z::R> + Default,
         Z::Item: Default,
-        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
+        It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
     {
         // TODO: I think this is correct, but we need a proper proof.
 
@@ -255,6 +323,32 @@ where
         );
 
         left.plus(&right)
+    }
+
+    /// Incremental anti-join operator.
+    ///
+    /// Returns indexed Z-set consisting of the contents of `self`,
+    /// excluding keys that are not present in `other`.
+    pub fn antijoin<TS, I2>(&self, other: &Stream<Circuit<P>, I2>) -> Stream<Circuit<P>, I1>
+    where
+        TS: Timestamp + DeepSizeOf,
+        I1::Key: Default,
+        I1::Val: Default,
+        I1::Item: Default,
+        I1::Batcher: DeepSizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + DeepSizeOf,
+        I2::Val: DeepSizeOf + Clone + Ord + Hash,
+    {
+        let stream1 = self.shard();
+        let stream2 = other.distinct_incremental().shard();
+
+        stream1
+            .minus(
+                &stream1.join_generic::<TS, _, _, _, _>(&stream2, |k, v1, _v2| {
+                    std::iter::once((k.clone(), v1.clone()))
+                }),
+            )
+            .mark_sharded()
     }
 }
 
@@ -431,10 +525,10 @@ where
     }
 }
 
-pub struct JoinTrace<F, I, T, Z>
+pub struct JoinTrace<F, I, T, Z, It>
 where
     T: TraceReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     join_func: F,
     location: &'static Location<'static>,
@@ -447,13 +541,13 @@ where
     empty_input: bool,
     // True if empty output was produced at the current clock cycle.
     empty_output: bool,
-    _types: PhantomData<(I, T, Z)>,
+    _types: PhantomData<(I, T, Z, It)>,
 }
 
-impl<F, I, T, Z> JoinTrace<F, I, T, Z>
+impl<F, I, T, Z, It> JoinTrace<F, I, T, Z, It>
 where
     T: TraceReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     pub fn new(join_func: F, location: &'static Location<'static>) -> Self {
         Self {
@@ -468,13 +562,14 @@ where
     }
 }
 
-impl<F, I, T, Z> Operator for JoinTrace<F, I, T, Z>
+impl<F, I, T, Z, It> Operator for JoinTrace<F, I, T, Z, It>
 where
     F: 'static,
     I: 'static,
     T: TraceReader + 'static,
-    Z: ZSet,
+    Z: IndexedZSet,
     Z::Batcher: DeepSizeOf,
+    It: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("JoinTrace")
@@ -532,18 +627,20 @@ where
     }
 }
 
-impl<F, I, T, Z> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z>
+impl<F, I, T, Z, It> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z, It>
 where
     I: IndexedZSet, /* + ::std::fmt::Display */
     I::Key: Ord + Clone,
     T: Trace<Key = I::Key, R = I::R> + 'static, /* + ::std::fmt::Display */
     //T::Time: ::std::fmt::Display,
-    F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> Z::Key + 'static,
-    Z: ZSet<R = I::R>, /* + ::std::fmt::Display */
+    F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> It + 'static,
+    Z: IndexedZSet<R = I::R>, /* + ::std::fmt::Display */
     Z::Key: Clone + Default,
+    Z::Val: Clone + Default,
     Z::Batcher: DeepSizeOf,
     Z::R: MulByRef<Output = Z::R> + Default,
     Z::Item: Default,
+    It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
         /*println!("JoinTrace::eval@{}:\n  index:\n{}\n  trace:\n{}",
@@ -583,17 +680,19 @@ where
                         while trace_cursor.val_valid() {
                             let output =
                                 (self.join_func)(index_cursor.key(), v1, trace_cursor.val());
-                            trace_cursor.map_times(|ts, w2| {
-                                output_tuples.push((
-                                    ts.join(&self.time),
-                                    MaybeUninit::new((
-                                        Z::item_from(output.clone(), ()),
-                                        w1.mul_by_ref(w2),
-                                    )),
-                                ));
-                                //println!("  tuple@{}: ({:?}, {})", off,
-                                // output, w1.clone() * w2.clone());
-                            });
+                            for (k, v) in output {
+                                trace_cursor.map_times(|ts, w2| {
+                                    output_tuples.push((
+                                        ts.join(&self.time),
+                                        MaybeUninit::new((
+                                            Z::item_from(k.clone(), v.clone()),
+                                            w1.mul_by_ref(w2),
+                                        )),
+                                    ));
+                                    //println!("  tuple@{}: ({:?}, {})", off,
+                                    // output, w1.clone() * w2.clone());
+                                });
+                            }
                             trace_cursor.step_val();
                         }
                         trace_cursor.rewind_vals();
@@ -685,6 +784,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        indexed_zset,
         operator::{DelayedFeedback, FilterMap, Generator},
         time::{NestedTimestamp32, Product, Timestamp},
         trace::{
@@ -696,6 +796,7 @@ mod test {
     use deepsize::DeepSizeOf;
     use std::{
         fmt::{Display, Formatter},
+        sync::{Arc, Mutex},
         vec,
     };
 
@@ -1125,5 +1226,61 @@ mod test {
             //eprintln!("{}", i);
             circuit.step().unwrap();
         }
+    }
+
+    #[test]
+    fn antijoin_test() {
+        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output_clone = output.clone();
+
+        let (mut circuit, (mut input1, mut input2)) = Runtime::init_circuit(4, move |circuit| {
+            let (input1, input_handle1) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+            let (input2, input_handle2) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+
+            input1
+                .antijoin::<(), _>(&input2)
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *output_clone.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            (input_handle1, input_handle2)
+        })
+        .unwrap();
+
+        input1.append(&mut vec![
+            (1, (0, 1)),
+            (1, (1, 2)),
+            (2, (0, 1)),
+            (2, (1, 1)),
+        ]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
+        );
+
+        input1.append(&mut vec![(3, (1, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
+
+        input2.append(&mut vec![(1, (1, 3))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
+        );
+
+        input2.append(&mut vec![(2, (5, 1))]);
+        input1.append(&mut vec![(2, (2, 1)), (4, (1, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
+        );
+
+        circuit.kill().unwrap();
     }
 }

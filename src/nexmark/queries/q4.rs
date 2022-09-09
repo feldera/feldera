@@ -53,25 +53,11 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
         _ => None,
     });
 
-    type BidsAuctionsJoin =
-        Stream<Circuit<()>, OrdZSet<((u64, usize, u64, u64), (usize, u64)), isize>>;
-
     // Join to get bids for each auction.
-    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join::<(), _, _, _>(
+    // Filter out the invalid bids while indexing.
+    let bids_for_auctions_indexed = auctions_by_id.join_index::<(), _, _, _, _, _>(
         &bids_by_auction,
         |&auction_id, &(category, a_date_time, a_expires), &(bid_price, bid_date_time)| {
-            (
-                (auction_id, category, a_date_time, a_expires),
-                (bid_price, bid_date_time),
-            )
-        },
-    );
-
-    // Filter out the invalid bids while indexing.
-    // TODO: update to use incremental version of `join_range` once implemented
-    // (#137).
-    let bids_for_auctions_indexed = bids_for_auctions.flat_map_index(
-        |&((auction_id, category, a_date_time, a_expires), (bid_price, bid_date_time))| {
             if bid_date_time >= a_date_time && bid_date_time <= a_expires {
                 Some(((auction_id, category), bid_price))
             } else {

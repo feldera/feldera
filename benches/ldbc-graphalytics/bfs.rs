@@ -13,6 +13,7 @@ use dbsp::{
     trace::{Batch, BatchReader, Builder, Cursor},
     Circuit, Stream,
 };
+use std::iter::once;
 
 type Distances<P, D = Present> = Stream<Circuit<P>, DistanceSet<D>>;
 
@@ -53,9 +54,10 @@ where
             let distances = nodes
                 .index()
                 // Iterate over each edge within the graph, increasing the distance on each step
-                .join::<NestedTimestamp32, _, _, DistanceSet<Present>>(&edges, |_, &dist, &dest| {
-                    (dest, dist + 1)
-                })
+                .join_generic::<NestedTimestamp32, _, _, DistanceSet<Present>, _>(
+                    &edges,
+                    |_, &dist, &dest| once(((dest, dist + 1), ())),
+                )
                 // Add in the root nodes
                 .plus(&roots)
                 .index::<Node, Distance>()
