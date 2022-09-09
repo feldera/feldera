@@ -1,7 +1,7 @@
 //! Distinct operator.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, ZRingValue, ZSet},
+    algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, GlobalNodeId, Scope, Stream,
@@ -34,8 +34,10 @@ where
     /// Apply [`Distinct`] operator to `self`.
     pub fn distinct(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: ZSet + Send,
+        Z: IndexedZSet + Send,
+        Z::R: ZRingValue,
         Z::Key: Ord + Clone + Hash,
+        Z::Val: Ord + Clone + Hash,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
@@ -52,8 +54,9 @@ where
     /// is more efficient.
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + ZSet + Send,
+        Z: DeepSizeOf + NumEntries + IndexedZSet + Send,
         Z::Key: Clone + PartialEq + Ord + Hash,
+        Z::Val: Clone + Ord + Hash,
         Z::R: ZRingValue,
     {
         self.shard().distinct_incremental_inner().mark_sharded()
@@ -61,8 +64,9 @@ where
 
     fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + ZSet,
+        Z: DeepSizeOf + NumEntries + IndexedZSet,
         Z::Key: Clone + PartialEq + Ord,
+        Z::Val: Clone + Ord,
         Z::R: ZRingValue,
     {
         self.circuit()
@@ -164,7 +168,10 @@ where
 
 impl<Z> UnaryOperator<Z, Z> for Distinct<Z>
 where
-    Z: ZSet,
+    Z: IndexedZSet,
+    Z::R: ZRingValue,
+    Z::Key: Clone,
+    Z::Val: Clone,
 {
     fn eval(&mut self, i: &Z) -> Z {
         i.distinct()
@@ -213,10 +220,11 @@ where
 
 impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncremental<Z, I>
 where
-    Z: ZSet,
+    Z: IndexedZSet,
     Z::Key: Clone + PartialEq,
+    Z::Val: Clone + PartialEq,
     Z::R: ZRingValue,
-    I: BatchReader<Key = Z::Key, Val = (), Time = (), R = Z::R> + 'static,
+    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + 'static,
 {
     fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         let mut builder = Z::Builder::with_capacity((), delta.len());
@@ -224,26 +232,54 @@ where
         let mut integral_cursor = delayed_integral.cursor();
 
         while delta_cursor.key_valid() {
-            let w = delta_cursor.weight();
-            let v = delta_cursor.key();
-            integral_cursor.seek_key(v);
-            let old_weight = if integral_cursor.key_valid() && integral_cursor.key() == v {
-                integral_cursor.weight().clone()
+            integral_cursor.seek_key(delta_cursor.key());
+
+            if integral_cursor.key_valid() && integral_cursor.key() == delta_cursor.key() {
+                while delta_cursor.val_valid() {
+                    let w = delta_cursor.weight();
+                    let v = delta_cursor.val();
+
+                    integral_cursor.seek_val(v);
+                    let old_weight = if integral_cursor.val_valid() && integral_cursor.val() == v {
+                        integral_cursor.weight()
+                    } else {
+                        HasZero::zero()
+                    };
+
+                    let new_weight = old_weight.add_by_ref(&w);
+
+                    if old_weight.le0() {
+                        // Weight changes from non-positive to positive.
+                        if new_weight.ge0() && !new_weight.is_zero() {
+                            builder.push((
+                                Z::item_from(delta_cursor.key().clone(), v.clone()),
+                                HasOne::one(),
+                            ));
+                        }
+                    } else if new_weight.le0() {
+                        // Weight changes from positive to non-positive.
+                        builder.push((
+                            Z::item_from(delta_cursor.key().clone(), v.clone()),
+                            Z::R::one().neg(),
+                        ));
+                    }
+
+                    delta_cursor.step_val();
+                }
             } else {
-                HasZero::zero()
+                while delta_cursor.val_valid() {
+                    let new_weight = delta_cursor.weight();
+
+                    if new_weight.ge0() && !new_weight.is_zero() {
+                        builder.push((
+                            Z::item_from(delta_cursor.key().clone(), delta_cursor.val().clone()),
+                            HasOne::one(),
+                        ));
+                    }
+                    delta_cursor.step_val();
+                }
             };
 
-            let new_weight = old_weight.add_by_ref(&w);
-
-            if old_weight.le0() {
-                // Weight changes from non-positive to positive.
-                if new_weight.ge0() && !new_weight.is_zero() {
-                    builder.push((Z::item_from(v.clone(), ()), HasOne::one()));
-                }
-            } else if new_weight.le0() {
-                // Weight changes from positive to non-positive.
-                builder.push((Z::item_from(v.clone(), ()), Z::R::one().neg()));
-            }
             delta_cursor.step_key();
         }
 
@@ -585,9 +621,16 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, Mutex},
+    };
 
-    use crate::{operator::GeneratorNested, zset, Circuit, OrdZSet, Runtime};
+    use crate::{
+        indexed_zset, operator::GeneratorNested, trace::Batch, zset, Circuit, OrdIndexedZSet,
+        OrdZSet, Runtime,
+    };
 
     fn do_distinct_incremental_nested_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
@@ -751,5 +794,72 @@ mod test {
         for _ in 0..3 {
             circuit.step().unwrap();
         }
+    }
+
+    #[test]
+    fn distinct_indexed_test() {
+        let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output1_clone = output1.clone();
+
+        let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output2_clone = output2.clone();
+
+        let (mut circuit, mut input) = Runtime::init_circuit(4, move |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+
+            input
+                .integrate()
+                .distinct()
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *output2_clone.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input
+                .distinct_incremental()
+                .integrate()
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *output1_clone.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_handle
+        })
+        .unwrap();
+
+        input.append(&mut vec![
+            (1, (0, 1)),
+            (1, (1, 2)),
+            (2, (0, 1)),
+            (2, (1, 1)),
+        ]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output1.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } }
+        );
+        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+
+        input.append(&mut vec![(3, (1, 1)), (2, (1, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output1.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } }
+        );
+        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+
+        input.append(&mut vec![(1, (1, 3)), (2, (1, -3))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output1.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } }
+        );
+        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+
+        circuit.kill().unwrap();
     }
 }
