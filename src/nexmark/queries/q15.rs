@@ -1,24 +1,19 @@
 use super::NexmarkStream;
-use crate::{
-    nexmark::model::Event,
-    operator::{FilterMap, Fold},
-    Circuit, OrdZSet, Stream,
-};
+use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdIndexedZSet, OrdZSet, Stream};
 use deepsize::DeepSizeOf;
 use std::{
-    collections::HashSet,
+    hash::Hash,
     time::{Duration, SystemTime},
 };
 use time::{
     format_description::well_known::{iso8601, iso8601::FormattedComponents, Iso8601},
-    OffsetDateTime,
+    Date, OffsetDateTime,
 };
 
 /// Query 15: Bidding Statistics Report (Not in original suite)
 ///
 /// How many distinct users join the bidding for different level of price?
 /// Illustrates multiple distinct aggregations with filters.
-///
 /// ```sql
 /// CREATE TABLE discard_sink (
 ///   `day` VARCHAR,
@@ -57,7 +52,7 @@ use time::{
 /// GROUP BY DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, DeepSizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Eq, Clone, DeepSizeOf, Debug, Default, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Q15Output {
     day: String,
     total_bids: usize,
@@ -74,7 +69,94 @@ pub struct Q15Output {
     rank3_auctions: usize,
 }
 
+type OrdinalDate = (i32, u16);
+
 type Q15Stream = Stream<Circuit<()>, OrdZSet<Q15Output, isize>>;
+
+/*
+fn dump_tuples<B>(batch: &B)
+where
+    B: BatchReader<Time=()>,
+    B::Key: std::fmt::Debug,
+    B::Val: std::fmt::Debug,
+    B::R: std::fmt::Debug,
+{
+    let mut cursor = batch.cursor();
+
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let w = cursor.weight();
+            println!("{:?} -> {:?} x {:?}", cursor.key(), cursor.val(), w);
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+}
+*/
+
+impl<P, K, V> Stream<Circuit<P>, OrdIndexedZSet<K, V, isize>>
+where
+    P: Clone + 'static,
+    K: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
+    V: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
+{
+    /// Outer join:
+    /// - returns the output of `join_func` for common keys.
+    /// - returns the output of `left_func` for keys only found in `self`, but
+    ///   not `other`.
+    /// - returns the output of `right_func` for keys only found in `other`, but
+    ///   not `self`.
+    fn outer_join<V2, F, FL, FR, O>(
+        &self,
+        other: &Stream<Circuit<P>, OrdIndexedZSet<K, V2, isize>>,
+        join_func: F,
+        left_func: FL,
+        right_func: FR,
+    ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
+    where
+        Self: FilterMap<Circuit<P>, R = isize>,
+        V2: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
+        O: Clone + Default + Ord + DeepSizeOf + 'static,
+        F: Fn(&K, &V, &V2) -> O + Clone + 'static,
+        for<'a> FL: Fn(<Self as FilterMap<Circuit<P>>>::ItemRef<'a>) -> O + Clone + 'static,
+        for<'a> FR: Fn(
+                <Stream<Circuit<P>, OrdIndexedZSet<K, V2, isize>> as FilterMap<Circuit<P>>>::ItemRef<
+                    'a,
+                >,
+            ) -> O
+            + Clone
+            + 'static,
+    {
+        let center = self.join_generic::<(), _, _, _, _>(other, move |k, v1, v2| {
+            std::iter::once((join_func(k, v1, v2), ()))
+        });
+        let left = self.antijoin::<(), _>(other).map_generic(left_func);
+        let right = other.antijoin::<(), _>(self).map_generic(right_func);
+        center.sum(&[left, right])
+    }
+
+    /// Like `outer_join`, but uses default value for the missing side of the
+    /// join.
+    fn outer_join_default<V2, F, O>(
+        &self,
+        other: &Stream<Circuit<P>, OrdIndexedZSet<K, V2, isize>>,
+        join_func: F,
+    ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
+    where
+        V2: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
+        O: Clone + Default + Ord + DeepSizeOf + 'static,
+        F: Fn(&K, &V, &V2) -> O + Clone + 'static,
+    {
+        let join_func_left = join_func.clone();
+        let join_func_right = join_func.clone();
+        self.outer_join(
+            other,
+            join_func,
+            move |(k, v1)| join_func_left(k, v1, &V2::default()),
+            move |(k, v2)| join_func_right(k, &V::default(), v2),
+        )
+    }
+}
 
 pub fn q15(input: NexmarkStream) -> Q15Stream {
     // Dug for a long time to figure out how to use the const generics
@@ -90,122 +172,339 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
     >;
 
     // Group/index and aggregate by day - keeping only the price, bidder, auction
-    let bids_indexed = input.flat_map_index(|event| match event {
+    let bids = input.flat_map(|event| match event {
         Event::Bid(b) => {
             let date_time = SystemTime::UNIX_EPOCH + Duration::from_millis(b.date_time);
 
             let day = <SystemTime as Into<OffsetDateTime>>::into(date_time)
-                .format(iso8601_day_format)
-                .unwrap();
+                .date()
+                .to_ordinal_date();
+            //.format(iso8601_day_format)
+            //.unwrap();
             Some((day, (b.auction, b.price, b.bidder)))
         }
         _ => None,
     });
 
-    // Not sure of the best way to calculate the various distinct bidders and
-    // auctions.
-    // I've initially use HashSets to count each while already dealing
-    // with the bids for the day, but probably should instead use filter operations
-    // like the original.
-    type Accumulator = (
-        usize,
-        usize,
-        usize,
-        usize,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-        HashSet<u64>,
-    );
+    // Partition bids based on price.
+    let rank1_bids = bids.filter(|(_day, (_auction, price, _bidder))| *price < 10_000);
+    let rank2_bids =
+        bids.filter(|(_day, (_auction, price, _bidder))| *price >= 10_000 && *price < 1_000_000);
+    let rank3_bids = bids.filter(|(_day, (_auction, price, _bidder))| *price >= 1_000_000);
 
-    let bids_per_day = bids_indexed.aggregate::<(), _>(Fold::with_output(
-        (
-            0,
-            0,
-            0,
-            0,
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-            HashSet::new(),
-        ),
-        |(
-            total_bids,
-            rank1_bids,
-            rank2_bids,
-            rank3_bids,
-            total_bidders,
-            rank1_bidders,
-            rank2_bidders,
-            rank3_bidders,
-            total_auctions,
-            rank1_auctions,
-            rank2_auctions,
-            rank3_auctions,
-        ): &mut Accumulator,
-         (auction, price, bidder): &(u64, usize, u64),
-         _w| {
-            *total_bids += 1;
-            total_bidders.insert(*bidder);
-            total_auctions.insert(*auction);
-            if *price < 10_000 {
-                *rank1_bids += 1;
-                rank1_bidders.insert(*bidder);
-                rank1_auctions.insert(*auction);
-            } else if *price < 1_000_000 {
-                *rank2_bids += 1;
-                rank2_bidders.insert(*bidder);
-                rank2_auctions.insert(*auction);
-            } else if *price >= 1_000_000 {
-                *rank3_bids += 1;
-                rank3_bidders.insert(*bidder);
-                rank3_auctions.insert(*auction);
-            }
-        },
-        |(
-            total_bids,
-            rank1_bids,
-            rank2_bids,
-            rank3_bids,
-            total_bidders,
-            rank1_bidders,
-            rank2_bidders,
-            rank3_bidders,
-            total_auctions,
-            rank1_auctions,
-            rank2_auctions,
-            rank3_auctions,
-        ): Accumulator| {
-            Q15Output {
-                day: String::new(),
+    // Compute unique bidders across all bids and for each price range.
+    let distinct_bidder = bids
+        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .distinct_incremental()
+        .index();
+    let rank1_distinct_bidder = rank1_bids
+        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .distinct_incremental()
+        .index();
+    let rank2_distinct_bidder = rank2_bids
+        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .distinct_incremental()
+        .index();
+    let rank3_distinct_bidder = rank3_bids
+        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .distinct_incremental()
+        .index();
+
+    // Compute unique auctions across all bids and for each price range.
+    let distinct_auction = bids
+        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .distinct_incremental()
+        .index();
+    let rank1_distinct_auction = rank1_bids
+        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .distinct_incremental()
+        .index();
+    let rank2_distinct_auction = rank2_bids
+        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .distinct_incremental()
+        .index();
+    let rank3_distinct_auction = rank3_bids
+        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .distinct_incremental()
+        .index();
+
+    // Compute bids per day.
+    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = bids
+        .index()
+        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank1_bids
+        .index()
+        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank2_bids
+        .index()
+        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank3_bids
+        .index()
+        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+
+    // Count unique bidders per day.
+    let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        distinct_bidder.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank1_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank1_distinct_bidder.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank2_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank2_distinct_bidder.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank3_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank3_distinct_bidder.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+
+    // Count unique auctions per day.
+    let count_total_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        distinct_auction.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank1_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank1_distinct_auction.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank2_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank2_distinct_auction.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+    let count_rank3_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank3_distinct_auction.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+
+    // The following abomination simply joins all aggregates computed above into a
+    // single output stream.
+    count_total_bids
+        .outer_join_default(&count_rank1_bids, |date, total_bids, rank1_bids| {
+            (*date, (*total_bids, *rank1_bids))
+        })
+        .index()
+        .outer_join_default(
+            &count_rank2_bids,
+            |date, (total_bids, rank1_bids), rank2_bids| {
+                (*date, (*total_bids, *rank1_bids, *rank2_bids))
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank3_bids,
+            |date, (total_bids, rank1_bids, rank2_bids), rank3_bids| {
+                (*date, (*total_bids, *rank1_bids, *rank2_bids, *rank3_bids))
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_total_bidders,
+            |date, (total_bids, rank1_bids, rank2_bids, rank3_bids), total_bidders| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank1_bidders,
+            |date,
+             (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders),
+             rank1_bidders| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                        *rank1_bidders,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank2_bidders,
+            |date,
+             (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders),
+             rank2_bidders| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                        *rank1_bidders,
+                        *rank2_bidders,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank3_bidders,
+            |date,
+             (
                 total_bids,
                 rank1_bids,
                 rank2_bids,
                 rank3_bids,
-                total_bidders: total_bidders.len(),
-                rank1_bidders: rank1_bidders.len(),
-                rank2_bidders: rank2_bidders.len(),
-                rank3_bidders: rank3_bidders.len(),
-                total_auctions: total_auctions.len(),
-                rank1_auctions: rank1_auctions.len(),
-                rank2_auctions: rank2_auctions.len(),
-                rank3_auctions: rank3_auctions.len(),
-            }
-        },
-    ));
-
-    bids_per_day.map(|(day, output)| Q15Output {
-        day: day.clone(),
-        ..*output
-    })
+                total_bidders,
+                rank1_bidders,
+                rank2_bidders,
+            ),
+             rank3_bidders| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                        *rank1_bidders,
+                        *rank2_bidders,
+                        *rank3_bidders,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_total_auctions,
+            |date,
+             (
+                total_bids,
+                rank1_bids,
+                rank2_bids,
+                rank3_bids,
+                total_bidders,
+                rank1_bidders,
+                rank2_bidders,
+                rank3_bidders,
+            ),
+             total_auctions| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                        *rank1_bidders,
+                        *rank2_bidders,
+                        *rank3_bidders,
+                        *total_auctions,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank1_auctions,
+            |date,
+             (
+                total_bids,
+                rank1_bids,
+                rank2_bids,
+                rank3_bids,
+                total_bidders,
+                rank1_bidders,
+                rank2_bidders,
+                rank3_bidders,
+                total_auctions,
+            ),
+             rank1_auctions| {
+                (
+                    *date,
+                    (
+                        *total_bids,
+                        *rank1_bids,
+                        *rank2_bids,
+                        *rank3_bids,
+                        *total_bidders,
+                        *rank1_bidders,
+                        *rank2_bidders,
+                        *rank3_bidders,
+                        *total_auctions,
+                        *rank1_auctions,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank2_auctions,
+            |date,
+             (
+                total_bids,
+                rank1_bids,
+                rank2_bids,
+                rank3_bids,
+                total_bidders,
+                rank1_bidders,
+                rank2_bidders,
+                rank3_bidders,
+                total_auctions,
+                rank1_auctions,
+            ),
+             rank2_auctions| {
+                (
+                    *date,
+                    (
+                        (
+                            *total_bids,
+                            *rank1_bids,
+                            *rank2_bids,
+                            *rank3_bids,
+                            *total_bidders,
+                            *rank1_bidders,
+                            *rank2_bidders,
+                            *rank3_bidders,
+                            *total_auctions,
+                            *rank1_auctions,
+                        ),
+                        *rank2_auctions,
+                    ),
+                )
+            },
+        )
+        .index()
+        .outer_join_default(
+            &count_rank3_auctions,
+            |date,
+             (
+                (
+                    total_bids,
+                    rank1_bids,
+                    rank2_bids,
+                    rank3_bids,
+                    total_bidders,
+                    rank1_bidders,
+                    rank2_bidders,
+                    rank3_bidders,
+                    total_auctions,
+                    rank1_auctions,
+                ),
+                rank2_auctions,
+            ),
+             rank3_auctions| Q15Output {
+                day: Date::from_ordinal_date(date.0, date.1)
+                    .unwrap()
+                    .format(iso8601_day_format)
+                    .unwrap(),
+                total_bids: *total_bids as usize,
+                rank1_bids: *rank1_bids as usize,
+                rank2_bids: *rank2_bids as usize,
+                rank3_bids: *rank3_bids as usize,
+                total_bidders: *total_bidders as usize,
+                rank1_bidders: *rank1_bidders as usize,
+                rank2_bidders: *rank2_bidders as usize,
+                rank3_bidders: *rank3_bidders as usize,
+                total_auctions: *total_auctions as usize,
+                rank1_auctions: *rank1_auctions as usize,
+                rank2_auctions: *rank2_auctions as usize,
+                rank3_auctions: *rank3_auctions as usize,
+            },
+        )
 }
 
 #[cfg(test)]
