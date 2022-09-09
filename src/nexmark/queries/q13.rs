@@ -106,7 +106,7 @@ pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
 
     // Join on the key from the side input
     bids_by_auction_mod
-        .join::<(), _, _, OrdZSet<(u64, u64, usize, u64, String, u64, u64), isize>>(
+        .join::<(), _, _, _>(
             &side_input_indexed,
             |&_, &(auction, bidder, price, date_time, b_p_time), (input_value, input_p_time)| {
                 (

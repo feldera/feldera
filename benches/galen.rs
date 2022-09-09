@@ -4,15 +4,13 @@
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use dbsp::{
-    monitor::TraceMonitor,
-    operator::CsvSource,
-    time::NestedTimestamp32,
-    trace::{ord::OrdZSet, BatchReader},
-    Circuit, Runtime, Stream,
+    monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, trace::BatchReader,
+    Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use std::{
     fs::{self, File},
     io::BufReader,
+    iter::once,
     path::Path,
 };
 use zip::ZipArchive;
@@ -192,11 +190,10 @@ fn main() -> Result<()> {
                         // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
                         let ir3 = child.region("IR3", || {
                             p_by_2
-                                .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                                .join_index::<NestedTimestamp32, _, _, _, _, _>(
                                     &u_by_1,
-                                    |&_w, &y, &(r, z)| ((r, y), z),
+                                    |&_w, &y, &(r, z)| once(((r, y), z)),
                                 )
-                                .index()
                                 .join::<NestedTimestamp32, _, _, _>(
                                     &q_by_23,
                                     |&(_r, _y), &z, &x| (x, z),
@@ -208,17 +205,17 @@ fn main() -> Result<()> {
 
                         // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
                         let ir4_1 = child.region("IR4-1", || {
-                            c_by_2.join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
+                            c_by_2.join_index::<NestedTimestamp32, _, _, _, _, _>(
                                 &p_by_2,
-                                |&_w, &(y, z), &x| ((x, y), z),
+                                |&_w, &(y, z), &x| once(((x, y), z)),
                             )
                         });
-                        ir4_1.inspect(|zs: &OrdZSet<_, _>| {
+                        ir4_1.inspect(|zs: &OrdIndexedZSet<_, _, _>| {
                             println!("{}: ir4_1: {}", Runtime::worker_index(), zs.len())
                         });
 
                         let ir4 = child.region("IR4-2", || {
-                            ir4_1.index().join::<NestedTimestamp32, _, _, _>(
+                            ir4_1.join::<NestedTimestamp32, _, _, _>(
                                 &p_by_12,
                                 |&(x, _y), &z, &()| (x, z),
                             )
@@ -240,12 +237,10 @@ fn main() -> Result<()> {
 
                         // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
                         let ir6_1 = child.region("IR6_1", || {
-                            q_by_2
-                                .join::<NestedTimestamp32, _, _, OrdZSet<_, _>>(
-                                    &r_by_1,
-                                    |&_y, &(x, z), &(u, e)| ((z, u), (x, e)),
-                                )
-                                .index()
+                            q_by_2.join_index::<NestedTimestamp32, _, _, _, _, _>(
+                                &r_by_1,
+                                |&_y, &(x, z), &(u, e)| once(((z, u), (x, e))),
+                            )
                         });
                         let ir6 = child.region("IR6", || {
                             ir6_1.join::<NestedTimestamp32, _, _, _>(

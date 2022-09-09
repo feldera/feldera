@@ -178,7 +178,7 @@ pub fn pagerank(
                 // (214 seconds out of 221 seconds, for example) is spent here, most of which
                 // is spent consolidating the join's outputs
                 weight_per_edge
-                    .stream_join::<_, _, Weights>(&edges, |_, _, &dest| dest)
+                    .stream_join(&edges, |_, _, &dest| dest)
                     .apply_owned(move |mut importance| {
                         // TODO: Try using the `std::simd` api
                         for weight in importance.layer.diffs_mut() {
@@ -191,12 +191,10 @@ pub fn pagerank(
 
             let redistributed = scope.region("redistributed", || {
                 // Sum up the weights of all dangling nodes, `sum(dangling_nodes)`
-                let dangling_sum =
-                    dangling_nodes.stream_join::<_, _, OrdZSet<_, _>>(&weights, |_, _, _| ());
+                let dangling_sum = dangling_nodes.stream_join(&weights, |_, _, _| ());
 
                 // (damping_factor / total_vertices) * sum(dangling_nodes)
-                damped_div_total_vertices
-                    .stream_join::<_, _, OrdZSet<_, _>>(&dangling_sum, |_, &node, _| node)
+                damped_div_total_vertices.stream_join(&dangling_sum, |_, &node, _| node)
             });
 
             let page_rank = teleport.sum([&importance, &redistributed]);
