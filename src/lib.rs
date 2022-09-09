@@ -17,10 +17,10 @@ pub mod trace;
 #[cfg(feature = "with-nexmark")]
 pub mod nexmark;
 
-pub use error::Error;
-pub use num_entries::NumEntries;
-pub use ref_pair::RefPair;
-pub use time::Timestamp;
+pub use crate::error::Error;
+pub use crate::num_entries::NumEntries;
+pub use crate::ref_pair::RefPair;
+pub use crate::time::Timestamp;
 
 pub use circuit::{
     Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
