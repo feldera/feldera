@@ -6,7 +6,7 @@ pub use q1::q1;
 pub use q2::q2;
 pub use q3::q3;
 pub use q4::q4;
-
+pub use q5::q5;
 pub use q6::q6;
 
 pub use q9::q9;
@@ -22,7 +22,7 @@ mod q1;
 mod q2;
 mod q3;
 mod q4;
-
+mod q5;
 mod q6;
 
 mod q9;
