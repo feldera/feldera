@@ -89,7 +89,7 @@ use crate::{
     },
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cell::RefCell,
     fmt::{self, Display},
@@ -104,6 +104,7 @@ use textwrap::indent;
 /// merging the collections when two have similar sizes. In this way, it allows
 /// the addition of more tuples, which may then be merged with other immutable
 /// collections.
+#[derive(SizeOf)]
 pub struct Spine<B>
 where
     B: Batch,
@@ -149,22 +150,9 @@ where
     }
 }
 
-impl<B> DeepSizeOf for Spine<B>
-where
-    B: Batch + DeepSizeOf + 'static,
-    B::Key: Ord,
-    B::Val: Ord,
-{
-    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
-        let mut result = 0;
-        self.map_batches(|batch| result += batch.deep_size_of_children(context));
-        result
-    }
-}
-
 impl<B> NumEntries for Spine<B>
 where
-    B: Batch + DeepSizeOf + 'static,
+    B: Batch + SizeOf + 'static,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -849,6 +837,7 @@ where
 ///
 /// A layer can be empty, contain a single batch, or contain a pair of batches
 /// that are in the process of merging into a batch for the next layer.
+#[derive(SizeOf)]
 enum MergeState<B: Batch> {
     /// An empty layer, containing no updates.
     Vacant,
@@ -959,6 +948,7 @@ impl<B: Batch> MergeState<B> {
     }
 }
 
+#[derive(SizeOf)]
 enum MergeVariant<B: Batch> {
     /// Describes an actual in-progress merge between two non-trivial batches.
     InProgress(B, B, <B as Batch>::Merger),

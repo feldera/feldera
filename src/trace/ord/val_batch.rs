@@ -13,7 +13,7 @@ use crate::{
     },
     Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     fmt::{Debug, Display, Formatter},
     ops::AddAssign,
@@ -24,7 +24,7 @@ pub type OrdValBatchLayer<K, V, T, R, O> =
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SizeOf)]
 pub struct OrdValBatch<K, V, T, R, O = usize>
 where
     K: Ord,
@@ -54,19 +54,6 @@ where
             self.upper,
             textwrap::indent(&self.layer.to_string(), "    ")
         )
-    }
-}
-
-impl<K, V, T, R, O> DeepSizeOf for OrdValBatch<K, V, T, R, O>
-where
-    K: DeepSizeOf + Ord,
-    V: DeepSizeOf + Ord,
-    T: DeepSizeOf + Lattice,
-    R: DeepSizeOf,
-    O: DeepSizeOf + OrdOffset,
-{
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-        self.layer.deep_size_of()
     }
 }
 
@@ -110,10 +97,10 @@ where
 
 impl<K, V, T, R, O> Batch for OrdValBatch<K, V, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -244,6 +231,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct OrdValMerger<K, V, T, R, O = usize>
 where
     K: Ord + Clone + 'static,
@@ -266,10 +254,11 @@ where
 
 impl<K, V, T, R, O> Merger<K, V, T, R, OrdValBatch<K, V, T, R, O>> for OrdValMerger<K, V, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + SizeOf + Ord + Clone + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     fn new_merger(
@@ -362,7 +351,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 pub struct OrdValCursor<'s, K, V, T, R, O = usize>
 where
     K: Ord + Clone,
@@ -448,6 +437,7 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct OrdValBuilder<K, V, T, R, O = usize>
 where
     K: Ord,
@@ -463,10 +453,11 @@ where
 impl<K, V, T, R, O> Builder<(K, V), T, R, OrdValBatch<K, V, T, R, O>>
     for OrdValBuilder<K, V, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     #[inline]

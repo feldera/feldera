@@ -6,6 +6,7 @@ use dbsp::{
     trace::{Batch, BatchReader, Builder, Cursor},
     OrdIndexedZSet, OrdZSet, Runtime,
 };
+use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     hash::Hash,
@@ -260,7 +261,7 @@ fn div_join_stream<S, K>(
 ) -> Streamed<S, OrdZSet<K, Rank>>
 where
     S: Clone + 'static,
-    K: Hash + Ord + Copy + Data + Send,
+    K: Hash + Ord + Copy + Data + SizeOf + Send,
 {
     lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {
         let capacity = min(lhs.len(), rhs.len());

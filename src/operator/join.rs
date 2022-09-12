@@ -13,7 +13,7 @@ use crate::{
     },
     OrdIndexedZSet, OrdZSet,
 };
-use deepsize::DeepSizeOf;
+use size_of::{Context, HumanBytes, SizeOf};
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -63,7 +63,7 @@ where
         I1::R: MulByRef<I2::R>,
         <I1::R as MulByRef<I2::R>>::Output: ZRingValue,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + 'static,
-        V: Ord + Clone + 'static,
+        V: Ord + SizeOf + Clone + 'static,
     {
         self.stream_join_generic(other, join)
     }
@@ -157,11 +157,11 @@ impl<I1> Stream<Circuit<()>, I1> {
         join_func: F,
     ) -> Stream<Circuit<()>, Z>
     where
-        I1: IndexedZSet + DeepSizeOf + Send,
-        I1::Key: Ord + Clone + Hash + DeepSizeOf,
+        I1: IndexedZSet + SizeOf + Send,
+        I1::Key: Ord + Clone + Hash + SizeOf,
         I1::Val: Ord + Clone,
-        I1::R: DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + DeepSizeOf + Send,
+        I1::R: SizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + SizeOf + Send,
         I2::Val: Ord + Clone,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
@@ -181,9 +181,9 @@ impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
     I1: IndexedZSet + Send,
-    I1::Key: DeepSizeOf + Clone + Ord + Hash, /* + ::std::fmt::Display */
-    I1::Val: DeepSizeOf + Clone + Ord,        /* + ::std::fmt::Display */
-    I1::R: ZRingValue + Default + DeepSizeOf,
+    I1::Key: SizeOf + Clone + Ord + Hash,
+    I1::Val: SizeOf + Clone + Ord,
+    I1::R: ZRingValue + Default + SizeOf,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incrementally join two streams of batches.
@@ -206,11 +206,11 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdZSet<V, I1::R>>
     where
-        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
-        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
+        TS: Timestamp + SizeOf,
+        I2::Val: SizeOf + Clone + Ord,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
-        V: Ord + Clone + Default + DeepSizeOf + 'static,
+        V: Ord + Clone + Default + SizeOf + 'static,
     {
         self.join_generic::<TS, _, _, _, _>(other, move |k, v1, v2| {
             once((join_func(k, v1, v2), ()))
@@ -230,12 +230,12 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
-        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
-        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
+        TS: Timestamp + SizeOf,
+        I2::Val: SizeOf + Clone + Ord,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
-        K: Ord + Clone + Default + DeepSizeOf + 'static,
-        V: Ord + Clone + Default + DeepSizeOf + 'static,
+        K: Ord + Clone + Default + SizeOf + 'static,
+        V: Ord + Clone + Default + SizeOf + 'static,
         It: IntoIterator<Item = (K, V)> + 'static,
     {
         self.join_generic::<TS, _, _, _, _>(other, join_func)
@@ -249,11 +249,12 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        TS: Timestamp + DeepSizeOf,        /* + ::std::fmt::Display */
-        I2::Val: DeepSizeOf + Clone + Ord, /* + ::std::fmt::Display */
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send, /* + ::std::fmt::Display */
-        Z: IndexedZSet<R = I1::R>,         /* + ::std::fmt::Display */
-        Z::Batcher: DeepSizeOf,
+        TS: Timestamp + SizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
+        I2::Key: SizeOf,
+        I2::Val: SizeOf + Clone + Ord,
+        Z: IndexedZSet<R = I1::R>,
+        Z::Batcher: SizeOf,
         Z::Key: Clone + Default,
         Z::Val: Clone + Default,
         Z::R: MulByRef<Output = Z::R> + Default,
@@ -331,13 +332,13 @@ where
     /// excluding keys that are not present in `other`.
     pub fn antijoin<TS, I2>(&self, other: &Stream<Circuit<P>, I2>) -> Stream<Circuit<P>, I1>
     where
-        TS: Timestamp + DeepSizeOf,
+        TS: Timestamp + SizeOf,
         I1::Key: Default,
         I1::Val: Default,
         I1::Item: Default,
-        I1::Batcher: DeepSizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + DeepSizeOf,
-        I2::Val: DeepSizeOf + Clone + Ord + Hash,
+        I1::Batcher: SizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + SizeOf,
+        I2::Val: SizeOf + Clone + Ord + Hash,
     {
         let stream1 = self.shard();
         let stream2 = other.distinct_incremental().shard();
@@ -568,7 +569,7 @@ where
     I: 'static,
     T: TraceReader + 'static,
     Z: IndexedZSet,
-    Z::Batcher: DeepSizeOf,
+    Z::Batcher: SizeOf,
     It: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -603,14 +604,21 @@ where
         writeln!(summary, "sizes: {:?}", sizes).unwrap();
         writeln!(summary, "total size: {}", sizes.iter().sum::<usize>()).unwrap();
 
-        let bytes: Vec<usize> = self
-            .output_batchers
-            .iter()
-            .map(|(_, batcher)| batcher.deep_size_of())
-            .collect();
-        writeln!(summary, "bytes: {:?}", bytes).unwrap();
-        writeln!(summary, "total bytes: {}", bytes.iter().sum::<usize>()).unwrap();
-        //println!("zbytes:{}", bytes);
+        let mut context = Context::new();
+        for batcher in self.output_batchers.values() {
+            batcher.size_of_with_context(&mut context);
+        }
+
+        let bytes = context.size_of();
+        writeln!(
+            summary,
+            "allocated: {}, used: {}, allocations: {}, shared: {}",
+            HumanBytes::from(bytes.total_bytes()),
+            HumanBytes::from(bytes.used_bytes()),
+            bytes.distinct_allocations(),
+            HumanBytes::from(bytes.shared_bytes()),
+        )
+        .unwrap();
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -637,7 +645,7 @@ where
     Z: IndexedZSet<R = I::R>, /* + ::std::fmt::Display */
     Z::Key: Clone + Default,
     Z::Val: Clone + Default,
-    Z::Batcher: DeepSizeOf,
+    Z::Batcher: SizeOf,
     Z::R: MulByRef<Output = Z::R> + Default,
     Z::Item: Default,
     It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
@@ -793,7 +801,7 @@ mod test {
         },
         zset, Circuit, Runtime, Stream,
     };
-    use deepsize::DeepSizeOf;
+    use size_of::SizeOf;
     use std::{
         fmt::{Display, Formatter},
         sync::{Arc, Mutex},
@@ -1029,7 +1037,7 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, DeepSizeOf)]
+    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
     struct Label(pub usize, pub u16);
 
     impl Display for Label {
@@ -1038,7 +1046,7 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, DeepSizeOf)]
+    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
     struct Edge(pub usize, pub usize);
 
     impl Display for Edge {
@@ -1056,7 +1064,7 @@ mod test {
     ) -> Stream<Circuit<P>, OrdZSet<Label, isize>>
     where
         P: Clone + 'static,
-        TS: Timestamp + DeepSizeOf + ::std::fmt::Display,
+        TS: Timestamp + SizeOf + ::std::fmt::Display,
     {
         let computed_labels = circuit
             .fixedpoint(|child| {

@@ -1,3 +1,4 @@
+use size_of::SizeOf;
 use std::{
     cell::RefCell,
     cmp::Reverse,
@@ -8,7 +9,7 @@ use std::{
 };
 
 /// A capability to activate a specific path.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SizeOf)]
 pub struct Activator {
     path: Vec<usize>,
     queue: Rc<RefCell<Activations>>,
@@ -39,7 +40,7 @@ impl Activator {
 }
 
 /// Minimally allocating activation tracker.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 pub struct Activations {
     clean: usize,
 

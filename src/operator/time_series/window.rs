@@ -8,16 +8,16 @@ use crate::{
     },
     trace::{cursor::Cursor, ord::OrdZSet, spine_fueled::Spine, Batch, BatchReader},
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
 impl<P, B> Stream<Circuit<P>, B>
 where
     P: Clone + 'static,
-    B: IndexedZSet + DeepSizeOf,
-    B::Key: Ord + Clone,
-    B::Val: Ord + Clone,
-    B::R: NegByRef,
+    B: IndexedZSet + SizeOf,
+    B::Key: Ord + SizeOf + Clone,
+    B::Val: Ord + SizeOf + Clone,
+    B::R: NegByRef + SizeOf,
 {
     /// Extract a subset of values that fall within a moving window from a
     /// stream of time-indexed values.
@@ -108,9 +108,11 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Window")
     }
+
     fn clock_start(&mut self, _scope: Scope) {
         self.window = None;
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         // Windows can currently only be used in top-level circuits.
         // Do we have meaningful examples of using windows inside nested scopes?
@@ -121,9 +123,9 @@ where
 impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), OrdZSet<B::Val, B::R>> for Window<B>
 where
     B: IndexedZSet,
-    B::Val: Ord + Clone,
-    B::Key: Ord + Clone,
-    B::R: NegByRef,
+    B::Val: Ord + SizeOf + Clone,
+    B::Key: Ord + SizeOf + Clone,
+    B::R: NegByRef + SizeOf,
 {
     /// * `batch` - input stream containing new time series data points indexed
     ///   by time.

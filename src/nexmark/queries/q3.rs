@@ -173,18 +173,18 @@ mod tests {
                     vec![
                         (
                             (
-                                String::from("CA Seller").into(),
-                                String::from("Phoenix").into(),
-                                String::from("CA").into(),
+                                String::from("CA Seller"),
+                                String::from("Phoenix"),
+                                String::from("CA"),
                                 999,
                             ),
                             1,
                         ),
                         (
                             (
-                                String::from("ID Seller").into(),
-                                String::from("Phoenix").into(),
-                                String::from("ID").into(),
+                                String::from("ID Seller"),
+                                String::from("Phoenix"),
+                                String::from("ID"),
                                 452,
                             ),
                             1,
@@ -195,9 +195,9 @@ mod tests {
                     (),
                     vec![(
                         (
-                            String::from("OR Seller").into(),
-                            String::from("Phoenix").into(),
-                            String::from("OR").into(),
+                            String::from("OR Seller"),
+                            String::from("Phoenix"),
+                            String::from("OR"),
                             333,
                         ),
                         1,

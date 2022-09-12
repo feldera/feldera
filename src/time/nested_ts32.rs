@@ -4,7 +4,7 @@ use crate::{
     time::Timestamp,
     trace::ord::OrdValBatch,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
 
 const INNER_MASK: u32 = 0x7fffffff;
@@ -16,7 +16,7 @@ const EPOCH_MASK: u32 = 0x80000000;
 /// This representation precisely captures the nested clock value, but only
 /// distinguishes the latest parent clock cycle, or "epoch", (higher-order bit
 /// set to `1`) from all previous epochs (higher order bit is `0`).
-#[derive(Clone, DeepSizeOf, Default, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
+#[derive(Clone, SizeOf, Default, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
 pub struct NestedTimestamp32(u32);
 
 impl Display for NestedTimestamp32 {
@@ -59,9 +59,9 @@ impl PartialOrder for NestedTimestamp32 {
 
 impl Timestamp for NestedTimestamp32 {
     type OrdValBatch<
-        K: Ord + Clone + DeepSizeOf + 'static,
-        V: Ord + Clone + DeepSizeOf + 'static,
-        R: MonoidValue + DeepSizeOf,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
+        R: MonoidValue + SizeOf,
     > = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {

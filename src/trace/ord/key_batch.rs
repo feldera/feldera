@@ -13,29 +13,19 @@ use crate::{
     },
     Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::fmt::Debug;
+
+pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, OrderedLeaf<T, R>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SizeOf)]
 pub struct OrdKeyBatch<K, T, R, O = usize> {
     /// Where all the dataz is.
-    pub layer: OrderedLayer<K, OrderedLeaf<T, R>, O>,
+    pub layer: OrdKeyBatchLayer<K, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
-}
-
-impl<K, T, R, O> DeepSizeOf for OrdKeyBatch<K, T, R, O>
-where
-    K: DeepSizeOf + Ord,
-    T: DeepSizeOf + Lattice,
-    R: DeepSizeOf,
-    O: DeepSizeOf + OrdOffset,
-{
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-        self.layer.deep_size_of()
-    }
 }
 
 impl<K, T, R, O> BatchReader for OrdKeyBatch<K, T, R, O>
@@ -59,11 +49,11 @@ where
     }
 
     fn key_count(&self) -> usize {
-        <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::keys(&self.layer)
+        <OrdKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
     }
 
     fn len(&self) -> usize {
-        <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::tuples(&self.layer)
+        <OrdKeyBatchLayer<K, T, R, O> as Trie>::tuples(&self.layer)
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {
@@ -77,9 +67,9 @@ where
 
 impl<K, T, R, O> Batch for OrdKeyBatch<K, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    K: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     type Item = K;
@@ -173,6 +163,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct OrdKeyMerger<K, T, R, O = usize>
 where
     K: Ord + Clone + 'static,
@@ -187,16 +178,17 @@ where
     lower2: usize,
     upper2: usize,
     // result that we are currently assembling.
-    result: <OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::MergeBuilder,
+    result: <OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
     lower: Antichain<T>,
     upper: Antichain<T>,
 }
 
 impl<K, T, R, O> Merger<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyMerger<K, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     fn new_merger(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
@@ -208,7 +200,7 @@ where
             upper1: batch1.layer.keys(),
             lower2: 0,
             upper2: batch2.layer.keys(),
-            result: <<OrderedLayer<K, OrderedLeaf<T, R>, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
+            result: <<OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch2.upper().join(batch2.upper()),
         }
@@ -292,7 +284,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 pub struct OrdKeyCursor<'s, K, T, R, O = usize>
 where
     O: OrdOffset,
@@ -370,6 +362,7 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct OrdKeyBuilder<K, T, R, O = usize>
 where
     K: Ord,
@@ -383,9 +376,10 @@ where
 
 impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    T: Lattice + Timestamp + Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     #[inline]

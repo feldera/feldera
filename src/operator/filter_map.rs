@@ -9,6 +9,7 @@ use crate::{
     trace::{cursor::Cursor, Batch, BatchReader, Builder},
     OrdIndexedZSet, OrdZSet,
 };
+use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 /// This trait abstracts away a stream of records that can be filtered
@@ -70,7 +71,7 @@ pub trait FilterMap<C> {
     type ItemRef<'a>;
 
     /// Type of the `weight` component of the `(key, value, weight)` tuple.
-    type R: MonoidValue;
+    type R: MonoidValue + SizeOf;
 
     /// Filter input stream only retaining records that satisfy the
     /// `filter_func` predicate.
@@ -82,7 +83,7 @@ pub trait FilterMap<C> {
     /// record into `OrdZSet` batches.
     fn map<F, V>(&self, map_func: F) -> Stream<C, OrdZSet<V, Self::R>>
     where
-        V: Ord + Clone + 'static,
+        V: Ord + Clone + SizeOf + 'static,
         F: Fn(Self::ItemRef<'_>) -> V + Clone + 'static,
     {
         self.map_generic(map_func)
@@ -99,8 +100,8 @@ pub trait FilterMap<C> {
     /// `OrdIndexedZSet` batches.
     fn map_index<F, K, V>(&self, map_func: F) -> Stream<C, OrdIndexedZSet<K, V, Self::R>>
     where
-        K: Ord + Clone + 'static,
-        V: Ord + Clone + 'static,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
         F: Fn(Self::ItemRef<'_>) -> (K, V) + 'static,
     {
         self.map_index_generic(map_func)
@@ -121,7 +122,7 @@ pub trait FilterMap<C> {
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
-        I::Item: Ord + Clone + 'static,
+        I::Item: Ord + Clone + SizeOf + 'static,
     {
         self.flat_map_generic(func)
     }
@@ -140,8 +141,8 @@ pub trait FilterMap<C> {
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (K, V)> + 'static,
-        K: Ord + Clone + 'static,
-        V: Ord + Clone + 'static,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
     {
         self.flat_map_index_generic(func)
     }
@@ -157,8 +158,8 @@ pub trait FilterMap<C> {
 impl<P, K, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdZSet<K, R>>
 where
     P: Clone + 'static,
-    R: MonoidValue,
-    K: Ord + Clone + 'static,
+    R: MonoidValue + SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
 {
     type Item = K;
     type ItemRef<'a> = &'a K;
@@ -227,9 +228,9 @@ where
 impl<P, K, V, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdIndexedZSet<K, V, R>>
 where
     P: Clone + 'static,
-    R: MonoidValue,
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
+    R: MonoidValue + SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf + 'static,
 {
     type Item = (K, V);
     type ItemRef<'a> = (&'a K, &'a V);

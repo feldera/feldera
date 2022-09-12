@@ -3,14 +3,14 @@ use crate::{
     operator::FilterMap,
     Circuit, OrdIndexedZSet, Stream, Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     hash::Hash,
     ops::{Add, AddAssign, Div, Neg},
 };
 
 /// Intermediate representation of an average as a `(sum, count)` pair.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, DeepSizeOf)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, SizeOf)]
 pub struct Avg<T> {
     sum: T,
     count: isize,
@@ -140,12 +140,12 @@ where
     #[track_caller]
     pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
-        TS: Timestamp + DeepSizeOf,
+        TS: Timestamp + SizeOf,
         Z: IndexedZSet,
-        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf + Send,
-        Z::Val: Ord + Clone,
+        Z::Key: PartialEq + Ord + SizeOf + Hash + Clone + SizeOf + Send,
+        Z::Val: Ord + SizeOf + Clone,
         Avg<A>: MulByRef<Z::R, Output = Avg<A>>,
-        A: GroupValue + DeepSizeOf + Ord + Send + Clone,
+        A: GroupValue + SizeOf + Ord + Send + Clone,
         A: Div<isize, Output = A>,
         isize: MulByRef<Z::R, Output = isize>,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,

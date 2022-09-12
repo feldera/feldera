@@ -7,7 +7,7 @@ use crate::{
     operator::Minus,
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 
 circuit_cache_key!(DifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(NestedDifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -15,7 +15,7 @@ circuit_cache_key!(NestedDifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
 impl<P, D> Stream<Circuit<P>, D>
 where
     P: Clone + 'static,
-    D: DeepSizeOf + NumEntries + GroupValue,
+    D: SizeOf + NumEntries + GroupValue,
 {
     /// Stream differentiation.
     ///

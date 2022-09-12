@@ -14,7 +14,7 @@ use crate::{
     },
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::max,
     fmt::{self, Debug, Display},
@@ -25,7 +25,7 @@ use std::{
 type Layers<K, V, R, O> = OrderedLayer<K, OrderedColumnLeaf<V, R>, O>;
 
 /// An immutable collection of update tuples.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct OrdIndexedZSet<K, V, R, O = usize>
 where
     K: Ord,
@@ -60,9 +60,9 @@ where
 
 impl<K, V, R, O> Default for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     #[inline]
@@ -98,19 +98,6 @@ where
     #[inline]
     fn from(layer: Layers<K, V, R, O>) -> Self {
         Rc::new(From::from(layer))
-    }
-}
-
-impl<K, V, R, O> DeepSizeOf for OrdIndexedZSet<K, V, R, O>
-where
-    K: DeepSizeOf + Ord,
-    V: DeepSizeOf + Ord,
-    R: DeepSizeOf + Clone,
-    O: DeepSizeOf + OrdOffset,
-{
-    #[inline]
-    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
-        self.layer.deep_size_of_children(context)
     }
 }
 
@@ -284,9 +271,9 @@ where
 
 impl<K, V, R, O> Batch for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -326,6 +313,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct OrdIndexedZSetMerger<K, V, R, O>
 where
     K: Ord + Clone + 'static,
@@ -340,9 +328,10 @@ where
 impl<K, V, R, O> Merger<K, V, (), R, OrdIndexedZSet<K, V, R, O>>
     for OrdIndexedZSetMerger<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     #[inline]
@@ -382,7 +371,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 pub struct OrdIndexedZSetCursor<'s, K, V, R, O>
 where
     K: Ord + Clone,
@@ -477,6 +466,7 @@ where
 type IndexBuilder<K, V, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct OrdIndexedZSetBuilder<K, V, R, O>
 where
     K: Ord,
@@ -490,9 +480,10 @@ where
 impl<K, V, R, O> Builder<(K, V), (), R, OrdIndexedZSet<K, V, R, O>>
     for OrdIndexedZSetBuilder<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    V: Ord + Clone + SizeOf,
+    R: MonoidValue + SizeOf,
     O: OrdOffset,
 {
     #[inline]

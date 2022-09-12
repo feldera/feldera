@@ -1,9 +1,6 @@
 use super::NexmarkStream;
-use crate::{
-    nexmark::model::{Event, ImmString},
-    operator::FilterMap,
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
-};
+use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdIndexedZSet, OrdZSet, Stream};
+use arcstr::ArcStr;
 
 ///
 /// Query 8: Monitor New Users
@@ -43,7 +40,7 @@ use crate::{
 /// ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime;
 /// ```
 
-type Q8Stream = Stream<Circuit<()>, OrdZSet<(u64, ImmString, u64), isize>>;
+type Q8Stream = Stream<Circuit<()>, OrdZSet<(u64, ArcStr, u64), isize>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -102,6 +99,7 @@ mod tests {
         },
         zset, Circuit,
     };
+    use arcstr::ArcStr;
     use rstest::rstest;
 
     #[rstest]
@@ -111,10 +109,10 @@ mod tests {
     // in the next.
     #[case::people_with_auction(
         vec![vec![
-            (1, ImmString::from("James Potter".to_string()), 9_000),
-            (2, ImmString::from("Lily Potter".to_string()), 12_000),
-            (3, ImmString::from("Harry Potter".to_string()), 15_000),
-            (4, ImmString::from("Albus D".to_string()), 18_000)]],
+            (1, arcstr::literal!("James Potter"), 9_000),
+            (2, arcstr::literal!("Lily Potter"), 12_000),
+            (3, arcstr::literal!("Harry Potter"), 15_000),
+            (4, arcstr::literal!("Albus D"), 18_000)]],
         vec![vec![
             (1, 11_000),
             (2, 15_000),
@@ -157,9 +155,9 @@ mod tests {
         }]
     )]
     fn test_q8(
-        #[case] input_people_batches: Vec<Vec<(u64, ImmString, u64)>>,
+        #[case] input_people_batches: Vec<Vec<(u64, ArcStr, u64)>>,
         #[case] input_auction_batches: Vec<Vec<(u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, ImmString, u64), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<(u64, ArcStr, u64), isize>>,
     ) {
         // Just ensure we don't get a false positive with zip only including
         // part of the input data. We could instead directly import zip_eq?

@@ -2,7 +2,7 @@ use crate::{
     trace::{cursor::Cursor, BatchReader},
     Circuit, NumEntries, Runtime, Stream,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{cmp::max, panic::Location};
 
 impl<B> Stream<Circuit<()>, B>
@@ -32,7 +32,7 @@ where
     pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<Circuit<()>, TS>
     where
         W: Fn(&B::Key) -> TS + 'static,
-        TS: Ord + Clone + Default + DeepSizeOf + NumEntries + Send + 'static,
+        TS: Ord + Clone + Default + SizeOf + NumEntries + Send + 'static,
     {
         let local_watermark = self.stream_fold(TS::default(), move |old_watermark, batch| {
             let mut cursor = batch.cursor();

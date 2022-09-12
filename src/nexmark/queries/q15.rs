@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdIndexedZSet, OrdZSet, Stream};
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     hash::Hash,
     time::{Duration, SystemTime},
@@ -52,7 +52,7 @@ use time::{
 /// GROUP BY DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, DeepSizeOf, Debug, Default, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord)]
 pub struct Q15Output {
     day: String,
     total_bids: usize,
@@ -97,8 +97,8 @@ where
 impl<P, K, V> Stream<Circuit<P>, OrdIndexedZSet<K, V, isize>>
 where
     P: Clone + 'static,
-    K: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
-    V: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
+    K: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
+    V: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
 {
     /// Outer join:
     /// - returns the output of `join_func` for common keys.
@@ -115,8 +115,8 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
     where
         Self: FilterMap<Circuit<P>, R = isize>,
-        V2: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
-        O: Clone + Default + Ord + DeepSizeOf + 'static,
+        V2: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
+        O: Clone + Default + Ord + SizeOf + 'static,
         F: Fn(&K, &V, &V2) -> O + Clone + 'static,
         for<'a> FL: Fn(<Self as FilterMap<Circuit<P>>>::ItemRef<'a>) -> O + Clone + 'static,
         for<'a> FR: Fn(
@@ -143,8 +143,8 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
     where
-        V2: Default + DeepSizeOf + Clone + Ord + Hash + Send + 'static,
-        O: Clone + Default + Ord + DeepSizeOf + 'static,
+        V2: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
+        O: Clone + Default + Ord + SizeOf + 'static,
         F: Fn(&K, &V, &V2) -> O + Clone + 'static,
     {
         let join_func_left = join_func.clone();
@@ -662,7 +662,6 @@ mod tests {
                         rank1_auctions: 1,
                         rank2_auctions: 1,
                         rank3_auctions: 1,
-                        ..Q15Output::default()
                     } => 1,
                     Q15Output {
                         day: String::from("1970-01-02"),

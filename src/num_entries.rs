@@ -1,7 +1,13 @@
 //! Trait to report object size as the number of entries.
 
 use impl_trait_for_tuples::impl_for_tuples;
-use std::rc::Rc;
+use std::{
+    num::{
+        NonZeroI128, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU128,
+        NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
+    },
+    rc::Rc,
+};
 
 /// Trait to report object size as the number of entries.
 pub trait NumEntries {
@@ -39,7 +45,6 @@ where
 }
 
 /// Macro to implement [`NumEntries`] for a scalar type whose size is 1.
-#[macro_export]
 macro_rules! num_entries_scalar {
     ($($type:ty),+ $(,)?) => {
         $(
@@ -57,7 +62,11 @@ macro_rules! num_entries_scalar {
                 }
             }
         )+
+    };
+}
 
+macro_rules! num_entries_scalar_test {
+    ($($type:ty),+ $(,)?) => {
         #[test]
         fn check_scalar_entries() {
             $(assert_eq!(<$type>::CONST_NUM_ENTRIES, Some(1));)+
@@ -95,6 +104,37 @@ num_entries_scalar! {
     i64,
     i128,
     isize,
+
+    NonZeroU8,
+    NonZeroI8,
+    NonZeroU16,
+    NonZeroI16,
+    NonZeroU32,
+    NonZeroI32,
+    NonZeroU64,
+    NonZeroI64,
+    NonZeroU128,
+    NonZeroI128,
+    NonZeroUsize,
+    NonZeroIsize,
+
+    String,
+}
+
+num_entries_scalar_test! {
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+
     String,
 }
 
@@ -206,6 +246,31 @@ where
     #[inline]
     fn num_entries_deep(&self) -> usize {
         self.as_ref().num_entries_deep()
+    }
+}
+
+impl<T> NumEntries for Option<T>
+where
+    T: NumEntries,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = None;
+
+    #[inline]
+    fn num_entries_shallow(&self) -> usize {
+        if let Some(inner) = self {
+            inner.num_entries_shallow()
+        } else {
+            1
+        }
+    }
+
+    #[inline]
+    fn num_entries_deep(&self) -> usize {
+        if let Some(inner) = self {
+            inner.num_entries_shallow()
+        } else {
+            1
+        }
     }
 }
 

@@ -3,7 +3,7 @@ use crate::{
     operator::{z1::DelayedId, Z1},
     Circuit, NumEntries, Stream,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 
 impl<T> Stream<Circuit<()>, T>
 where
@@ -21,7 +21,7 @@ where
     pub fn stream_fold<A, F>(&self, init: A, fold_func: F) -> Stream<Circuit<()>, A>
     where
         F: Fn(A, &T) -> A + 'static,
-        A: Eq + Clone + DeepSizeOf + NumEntries + 'static,
+        A: Eq + Clone + SizeOf + NumEntries + 'static,
     {
         let (prev_accumulator, feedback) = self.circuit().add_feedback(Z1::new(init));
         let new_accumulator = prev_accumulator.apply2_owned(self, fold_func);

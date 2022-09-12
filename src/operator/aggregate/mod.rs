@@ -29,7 +29,7 @@ use crate::{
     },
     NumEntries, OrdIndexedZSet, OrdZSet,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 
 // Some standard aggregators.
 mod average;
@@ -113,10 +113,10 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
         Z: IndexedZSet + Send + 'static,
-        Z::Key: Ord + Clone + Hash,
-        Z::Val: Ord + Clone,
+        Z::Key: Ord + SizeOf + Clone + Hash,
+        Z::Val: Ord + SizeOf + Clone,
         A: Aggregator<Z::Val, (), Z::R> + 'static,
-        A::Output: Ord + Clone,
+        A::Output: Ord + SizeOf + Clone,
     {
         self.stream_aggregate_generic(aggregator)
     }
@@ -147,13 +147,13 @@ where
         aggregator: A,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
-        TS: Timestamp + DeepSizeOf,
-        Z: IndexedZSet + DeepSizeOf + NumEntries + Send, /* + std::fmt::Display */
-        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf, /* + std::fmt::Display */
-        Z::Val: Ord + Clone + DeepSizeOf,                /* + std::fmt::Debug */
-        Z::R: DeepSizeOf,                                /* + std::fmt::Display */
+        TS: Timestamp + SizeOf,
+        Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
+        Z::Key: PartialEq + Ord + Hash + Clone + SizeOf, /* + std::fmt::Display */
+        Z::Val: Ord + Clone + SizeOf,                /* + std::fmt::Debug */
+        Z::R: SizeOf,                                /* + std::fmt::Display */
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
-        A::Output: Ord + Clone + DeepSizeOf + 'static,
+        A::Output: Ord + Clone + SizeOf + 'static,
     {
         self.aggregate_generic::<TS, A, OrdIndexedZSet<Z::Key, A::Output, isize>>(aggregator)
     }
@@ -161,15 +161,15 @@ where
     /// Like [`Self::aggregate`], but can return any batch type.
     pub fn aggregate_generic<TS, A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
     where
-        TS: Timestamp + DeepSizeOf,
-        Z: IndexedZSet + DeepSizeOf + NumEntries + Send, /* + std::fmt::Display */
-        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf, /* + std::fmt::Display */
-        Z::Val: Ord + Clone + DeepSizeOf,                /* + std::fmt::Debug */
-        Z::R: DeepSizeOf,                                /* + std::fmt::Display */
+        TS: Timestamp + SizeOf,
+        Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
+        Z::Key: PartialEq + Ord + Hash + Clone + SizeOf, /* + std::fmt::Display */
+        Z::Val: Ord + Clone + SizeOf,                /* + std::fmt::Debug */
+        Z::R: SizeOf,                                /* + std::fmt::Display */
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
-        A::Output: Ord + Clone + DeepSizeOf, /* + std::fmt::Display */
+        A::Output: Ord + Clone + SizeOf, /* + std::fmt::Display */
         O: Batch<Key = Z::Key, Val = A::Output, Time = ()> + Clone + 'static,
-        O::R: ZRingValue + DeepSizeOf, /* + std::fmt::Display */
+        O::R: ZRingValue + SizeOf, /* + std::fmt::Display */
     {
         let circuit = self.circuit();
         let stream = self.shard();
@@ -242,11 +242,11 @@ where
         f: F,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
-        TS: Timestamp + DeepSizeOf,
+        TS: Timestamp + SizeOf,
         Z: IndexedZSet,
-        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf + Send, /* + std::fmt::Display */
-        Z::Val: Ord + Clone,                                        /* + std::fmt::Display */
-        A: MulByRef<Z::R, Output = A> + GroupValue + DeepSizeOf + Ord + Send,
+        Z::Key: PartialEq + Ord + SizeOf + Hash + Clone + SizeOf + Send, /* + std::fmt::Display */
+        Z::Val: Ord + SizeOf + Clone,                                    /* + std::fmt::Display */
+        A: MulByRef<Z::R, Output = A> + GroupValue + SizeOf + Ord + Send,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
     {
         self.aggregate_linear_generic::<TS, _, _>(f)
@@ -255,14 +255,14 @@ where
     /// Like [`Self::aggregate_linear`], but can return any batch type.
     pub fn aggregate_linear_generic<TS, F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        TS: Timestamp + DeepSizeOf,
+        TS: Timestamp + SizeOf,
         Z: IndexedZSet,
-        Z::Key: PartialEq + Ord + Hash + Clone + DeepSizeOf + Send, /* + std::fmt::Display */
-        Z::Val: Ord + Clone,                                        /* + std::fmt::Display */
+        Z::Key: PartialEq + Ord + SizeOf + Hash + Clone + SizeOf + Send, /* + std::fmt::Display */
+        Z::Val: Ord + SizeOf + Clone,                                    /* + std::fmt::Display */
         F: Fn(&Z::Key, &Z::Val) -> O::Val + Clone + 'static,
         O: Clone + Batch<Key = Z::Key, Time = ()> + 'static,
-        O::R: ZRingValue + DeepSizeOf, /* + std::fmt::Display */
-        O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue + DeepSizeOf + Ord + Send, /* + std::fmt::Display */
+        O::R: ZRingValue + SizeOf, /* + std::fmt::Display */
+        O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue + SizeOf + Ord + Send, /* + std::fmt::Display */
     {
         self.weigh(f).aggregate_generic::<TS, _, _>(WeightedCount)
     }
@@ -282,10 +282,10 @@ where
     pub fn weigh<F, T>(&self, f: F) -> Stream<Circuit<P>, OrdZSet<Z::Key, T>>
     where
         Z: IndexedZSet,
-        Z::Key: Ord + Clone,
-        Z::Val: Ord + Clone,
+        Z::Key: Ord + SizeOf + Clone,
+        Z::Val: Ord + SizeOf + Clone,
         F: Fn(&Z::Key, &Z::Val) -> T + 'static,
-        T: MulByRef<Z::R, Output = T> + MonoidValue,
+        T: MulByRef<Z::R, Output = T> + MonoidValue + SizeOf,
     {
         self.weigh_generic::<_, OrdZSet<_, _>>(f)
     }

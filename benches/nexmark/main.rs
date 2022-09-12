@@ -83,7 +83,7 @@ struct InputStats {
 }
 
 enum StepCompleted {
-    DBSP,
+    Dbsp,
     Source(usize),
 }
 
@@ -97,7 +97,7 @@ fn spawn_dbsp_consumer(
         .spawn(move || {
             while let Ok(()) = step_do_rx.recv() {
                 dbsp.step().unwrap();
-                step_done_tx.send(StepCompleted::DBSP).unwrap();
+                step_done_tx.send(StepCompleted::Dbsp).unwrap();
             }
         })
         .unwrap()
@@ -122,7 +122,7 @@ fn spawn_source_producer(
             let last_batch_count = loop {
                 let mut events: Vec<(Event, isize)> = Vec::with_capacity(batch_size);
                 let mut batch_count = 0;
-                while let Some(event) = source.next() {
+                for event in &mut source {
                     events.push((event, 1));
                     batch_count += 1;
                     if batch_count == batch_size {
@@ -170,7 +170,7 @@ fn coordinate_input_and_steps(
         .progress_chars("=>-"),
     );
 
-    if let Ok(StepCompleted::DBSP) = step_done_rx.recv() {
+    if let Ok(StepCompleted::Dbsp) = step_done_rx.recv() {
         return Err(anyhow!("Expected initial source step, got DBSP step"));
     }
 
@@ -266,11 +266,11 @@ macro_rules! run_queries {
             println!("Starting {} bench of {} events...", $q_name, $max_events);
 
             let start = Instant::now();
-            let (before_usr_cpu, before_sys_cpu, before_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
+            let (before_usr_cpu, before_sys_cpu, before_max_rss) = unsafe { rusage(RUSAGE_SELF) };
 
             let thread_nexmark_config = $nexmark_config.clone();
             let result = run_query!($q_name, $q, thread_nexmark_config);
-            let (after_usr_cpu, after_sys_cpu, after_max_rss) = unsafe { rusage(libc::RUSAGE_SELF) };
+            let (after_usr_cpu, after_sys_cpu, after_max_rss) = unsafe { rusage(RUSAGE_SELF) };
             results.push(NexmarkResult {
                 name: $q_name.to_string(),
                 total_usr_cpu: after_usr_cpu - before_usr_cpu,
@@ -310,13 +310,6 @@ fn create_ascii_table() -> AsciiTable {
 // https://github.com/matklad/t-cmd/blob/master/src/main.rs Also CpuMonitor.java
 // in nexmark (binary that uses procfs to get cpu usage ever 100ms?)
 
-// TODO: Implement for non-unix platforms (mainly removing libc perf stuff)
-#[cfg(not(unix))]
-fn main() -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn main() -> Result<()> {
     let nexmark_config = NexmarkConfig::parse();
     let max_events = nexmark_config.max_events;
@@ -371,6 +364,12 @@ fn main() -> Result<()> {
 }
 
 #[cfg(unix)]
+const RUSAGE_SELF: i32 = libc::RUSAGE_SELF;
+
+#[cfg(not(unix))]
+const RUSAGE_SELF: i32 = 0;
+
+#[cfg(unix)]
 fn duration_for_timeval(tv: timeval) -> Duration {
     Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1_000)
 }
@@ -392,6 +391,10 @@ pub unsafe fn rusage(target: i32) -> (Duration, Duration, u64) {
 }
 
 /// Define for non-unix so that bench can still run reporting on time etc.
+///
+/// # Safety
+///
+/// N/A
 #[cfg(not(unix))]
 pub unsafe fn rusage(_target: i32) -> (Duration, Duration, u64) {
     (Duration::from_millis(0), Duration::from_millis(0), 0)

@@ -11,7 +11,7 @@ use crate::{
     trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace, TraceReader},
     NumEntries, Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::{HumanBytes, SizeOf};
 use std::{
     borrow::Cow,
     cmp::{max, Ordering},
@@ -54,7 +54,7 @@ where
     /// is more efficient.
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + IndexedZSet + Send,
+        Z: SizeOf + NumEntries + IndexedZSet + Send,
         Z::Key: Clone + PartialEq + Ord + Hash,
         Z::Val: Clone + Ord + Hash,
         Z::R: ZRingValue,
@@ -64,7 +64,7 @@ where
 
     fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + IndexedZSet,
+        Z: SizeOf + NumEntries + IndexedZSet,
         Z::Key: Clone + PartialEq + Ord,
         Z::Val: Clone + Ord,
         Z::R: ZRingValue,
@@ -87,7 +87,7 @@ where
     // TODO: remove this method.
     pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: DeepSizeOf + NumEntries + Send + ZSet,
+        Z: SizeOf + NumEntries + Send + ZSet,
         Z::Key: Clone + PartialEq + Ord + Hash,
         Z::R: ZRingValue,
     {
@@ -113,9 +113,9 @@ where
     /// [`Stream::distinct_incremental_nested`].
     pub fn distinct_trace(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: NumEntries + ZSet + DeepSizeOf + Send,
-        Z::Key: Clone + Ord + DeepSizeOf + Hash,
-        Z::R: ZRingValue + DeepSizeOf,
+        Z: NumEntries + ZSet + SizeOf + Send,
+        Z::Key: Clone + Ord + SizeOf + Hash,
+        Z::R: ZRingValue + SizeOf,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
@@ -173,12 +173,12 @@ where
     Z::Key: Clone,
     Z::Val: Clone,
 {
-    fn eval(&mut self, i: &Z) -> Z {
-        i.distinct()
+    fn eval(&mut self, input: &Z) -> Z {
+        input.distinct()
     }
 
-    fn eval_owned(&mut self, i: Z) -> Z {
-        i.distinct_owned()
+    fn eval_owned(&mut self, input: Z) -> Z {
+        input.distinct_owned()
     }
 }
 
@@ -457,7 +457,7 @@ where
 impl<Z, T> Operator for DistinctTrace<Z, T>
 where
     Z: ZSet,
-    Z::Key: DeepSizeOf + Clone + Ord + PartialEq,
+    Z::Key: SizeOf + Clone + Ord + PartialEq,
     T: TraceReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -491,15 +491,23 @@ where
         let size: usize = self.future_updates.iter().map(|vals| vals.len()).sum();
         writeln!(summary, "size: {}", size).unwrap();
 
-        let bytes = self.future_updates.deep_size_of();
-        writeln!(summary, "bytes: {}", bytes).unwrap();
+        let bytes = self.future_updates.size_of();
+        writeln!(
+            summary,
+            "allocated: {}, used: {}, allocations: {}, shared: {}",
+            HumanBytes::from(bytes.total_bytes()),
+            HumanBytes::from(bytes.used_bytes()),
+            bytes.distinct_allocations(),
+            HumanBytes::from(bytes.shared_bytes()),
+        )
+        .unwrap();
     }
 }
 
 impl<Z, T> BinaryOperator<Z, T, Z> for DistinctTrace<Z, T>
 where
     Z: ZSet,
-    Z::Key: Clone + Ord + PartialEq + DeepSizeOf,
+    Z::Key: Clone + Ord + PartialEq + SizeOf,
     Z::R: ZRingValue,
     T: Trace<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
 {

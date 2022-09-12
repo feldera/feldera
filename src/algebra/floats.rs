@@ -1,6 +1,6 @@
 use crate::algebra::{HasOne, HasZero};
-use deepsize::DeepSizeOf;
 use ordered_float::OrderedFloat;
+use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
     iter::{Product, Sum},
@@ -11,8 +11,9 @@ macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
             #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that allows using it as a DBSP weight")]
-            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
             #[repr(transparent)]
+            #[size_of(skip_all)]
             pub struct $outer(OrderedFloat<$inner>);
 
             impl $outer {
@@ -329,13 +330,6 @@ macro_rules! float {
                 #[inline]
                 fn one() -> Self {
                     Self::new(1.0)
-                }
-            }
-
-            impl DeepSizeOf for $outer {
-                #[inline]
-                fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-                    0
                 }
             }
 

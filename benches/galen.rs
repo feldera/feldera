@@ -72,60 +72,50 @@ fn main() -> Result<()> {
 
     let hruntime = Runtime::run(8, || {
         let monitor = TraceMonitor::new_panic_on_error();
-
         let circuit = Circuit::build(|circuit| {
             /*
-            use dbsp::{
-                circuit::GlobalNodeId,
-                profile::CPUProfiler,
-                circuit::trace::SchedulerEvent,
-            };
-            use std::{
-                collections::HashMap,
-                fmt::Write,
-            };
+            use dbsp::{circuit::trace::SchedulerEvent, profile::CPUProfiler};
+            use std::{collections::HashMap, fmt::Write};
 
             let cpu_profiler = CPUProfiler::new();
             cpu_profiler.attach(circuit, "cpu profiler");
 
             monitor.attach(circuit, "monitor");
 
-            let mut metadata = <HashMap<GlobalNodeId, String>>::new();
-            let mut nsteps = 0;
+            let mut metadata = HashMap::<_, String>::new();
+            let mut steps = 0;
             let monitor_clone = monitor.clone();
-            circuit.register_scheduler_event_handler("metadata", move |event: &SchedulerEvent| {
-                match event {
-                    SchedulerEvent::EvalEnd { node } => {
-                        let metadata_string = metadata
-                            .entry(node.global_id().clone())
-                            .or_insert_with(|| String::new());
-                        metadata_string.clear();
-                        node.summary(metadata_string);
-                    }
-                    SchedulerEvent::StepEnd => {
-                        let graph = monitor_clone.visualize_circuit_annotate(|node_id| {
-                            let mut metadata_string = metadata
-                                .get(node_id)
-                                .map(ToString::to_string)
-                                .unwrap_or_else(|| "".to_string());
-                            writeln!(metadata_string, "id: {}", node_id).unwrap();
-                            if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
-                                writeln!(
-                                    metadata_string,
-                                    "invocations: {}",
-                                    cpu_profile.invocations()
-                                )
-                                .unwrap();
-                                writeln!(metadata_string, "time: {:?}", cpu_profile.total_time())
-                                    .unwrap();
-                            };
-                            metadata_string
-                        });
-                        fs::write(format!("galen.{}.dot", nsteps), graph.to_dot()).unwrap();
-                        nsteps += 1;
-                    }
-                    _ => {}
+
+            circuit.register_scheduler_event_handler("metadata", move |event| match event {
+                SchedulerEvent::EvalEnd { node } => {
+                    let metadata_string = metadata.entry(node.global_id().clone()).or_default();
+                    metadata_string.clear();
+                    node.summary(metadata_string);
                 }
+
+                SchedulerEvent::StepEnd => {
+                    let graph = monitor_clone.visualize_circuit_annotate(|node_id| {
+                        let mut metadata_string =
+                            metadata.get(node_id).cloned().unwrap_or_default();
+
+                        if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
+                            writeln!(
+                                metadata_string,
+                                "invocations: {}\ntime: {:#?}",
+                                cpu_profile.invocations(),
+                                cpu_profile.total_time(),
+                            )
+                            .unwrap();
+                        };
+
+                        metadata_string
+                    });
+
+                    std::fs::write(format!("galen.{}.dot", steps), graph.to_dot()).unwrap();
+                    steps += 1;
+                }
+
+                _ => {}
             });
             */
 
@@ -292,7 +282,7 @@ fn main() {}
 fn unpack_galen_data() -> Result<()> {
     let galen_data = Path::new(GALEN_DATA);
     if !galen_data.exists() {
-        fs::create_dir(&galen_data).with_context(|| {
+        fs::create_dir(galen_data).with_context(|| {
             format!(
                 "failed to create directory '{}' for galen data",
                 galen_data.display(),
@@ -300,7 +290,7 @@ fn unpack_galen_data() -> Result<()> {
         })?;
 
         let archive_file = Path::new(GALEN_ARCHIVE);
-        let mut archive = ZipArchive::new(BufReader::new(File::open(&archive_file).with_context(
+        let mut archive = ZipArchive::new(BufReader::new(File::open(archive_file).with_context(
             || {
                 format!(
                     "failed to open galen archive file '{}'",
@@ -310,7 +300,7 @@ fn unpack_galen_data() -> Result<()> {
         )?))
         .with_context(|| format!("failed to read galen archive '{}'", archive_file.display()))?;
 
-        archive.extract(&galen_data).with_context(|| {
+        archive.extract(galen_data).with_context(|| {
             format!(
                 "failed to unzip '{}' into '{}'",
                 archive_file.display(),

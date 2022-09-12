@@ -12,7 +12,7 @@ use crate::{
     },
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::max,
     fmt::{self, Debug, Display},
@@ -21,11 +21,8 @@ use std::{
 };
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct OrdZSet<K, R>
-where
-    K: Ord,
-{
+#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
+pub struct OrdZSet<K, R> {
     /// Where all the dataz is.
     pub layer: OrderedColumnLeaf<K, R>,
 }
@@ -44,31 +41,15 @@ where
     }
 }
 
-impl<K, R> From<OrderedColumnLeaf<K, R>> for OrdZSet<K, R>
-where
-    K: Ord,
-{
+impl<K, R> From<OrderedColumnLeaf<K, R>> for OrdZSet<K, R> {
     fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
         Self { layer }
     }
 }
 
-impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>>
-where
-    K: Ord,
-{
+impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>> {
     fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
         Rc::new(From::from(layer))
-    }
-}
-
-impl<K, R> DeepSizeOf for OrdZSet<K, R>
-where
-    K: DeepSizeOf + Ord,
-    R: DeepSizeOf,
-{
-    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
-        self.layer.deep_size_of_children(context)
     }
 }
 
@@ -88,13 +69,11 @@ where
     }
 }
 
-impl<K, R> Default for OrdZSet<K, R>
-where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
-{
+impl<K, R> Default for OrdZSet<K, R> {
     fn default() -> Self {
-        OrdZSet::<K, R>::zero()
+        Self {
+            layer: OrderedColumnLeaf::empty(),
+        }
     }
 }
 
@@ -213,8 +192,8 @@ where
 
 impl<K, R> Batch for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
+    K: Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
 {
     type Item = K;
     type Batcher = MergeBatcher<K, (), R, Self>;
@@ -243,6 +222,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct OrdZSetMerger<K, R>
 where
     K: Ord + Clone + 'static,
@@ -254,8 +234,9 @@ where
 
 impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
 {
     fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
@@ -282,7 +263,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 pub struct OrdZSetCursor<'s, K, R>
 where
     K: Ord + Clone,
@@ -373,6 +354,7 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct OrdZSetBuilder<K, R>
 where
     K: Ord,
@@ -383,8 +365,9 @@ where
 
 impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
+    Self: SizeOf,
+    K: Ord + Clone + SizeOf + 'static,
+    R: MonoidValue + SizeOf,
 {
     #[inline]
     fn new_builder(_time: ()) -> Self {

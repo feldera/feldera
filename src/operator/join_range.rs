@@ -23,6 +23,7 @@ use crate::{
     trace::{cursor::Cursor, Batch, BatchReader},
     OrdIndexedZSet, OrdZSet,
 };
+use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 impl<P, I1> Stream<Circuit<P>, I1>
@@ -44,13 +45,13 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<It::Item, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef<Output = I1::R>,
+        I1::R: MulByRef<Output = I1::R> + SizeOf,
         I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
         I2::Key: Ord,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
         It: IntoIterator + 'static,
-        It::Item: Clone + Ord + 'static,
+        It::Item: Clone + Ord + SizeOf + 'static,
     {
         self.stream_join_range_generic(other, range_func, move |k1, v1, k2, v2| {
             join_func(k1, v1, k2, v2).into_iter().map(|k| (k, ()))
@@ -76,13 +77,13 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef<Output = I1::R>,
+        I1::R: MulByRef<Output = I1::R> + SizeOf,
         I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
         I2::Key: Ord,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
-        K: Clone + Ord + 'static,
-        V: Clone + Ord + 'static,
+        K: Clone + Ord + SizeOf + 'static,
+        V: Clone + Ord + SizeOf + 'static,
         It: IntoIterator<Item = (K, V)> + 'static,
     {
         self.stream_join_range_generic(other, range_func, join_func)

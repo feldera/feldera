@@ -8,13 +8,14 @@ use crate::{
     },
     utils::assume,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     ops::AddAssign,
 };
 
 /// A builder for ordered values
+#[derive(SizeOf)]
 pub struct OrderedColumnLeafBuilder<K, R> {
     // Invariant: `keys.len() == diffs.len`
     keys: Vec<K>,
@@ -230,7 +231,7 @@ where
 }
 
 /// A builder for unordered values
-#[derive(DeepSizeOf)]
+#[derive(SizeOf)]
 pub struct UnorderedColumnLeafBuilder<K, R> {
     values: Vec<(K, R)>,
     boundary: usize,
