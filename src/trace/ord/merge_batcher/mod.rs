@@ -6,7 +6,7 @@ use crate::{
     utils::VecExt,
     Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -18,6 +18,7 @@ use std::{
 mod tests;
 
 /// Creates batches from unordered tuples.
+#[derive(SizeOf)]
 pub struct MergeBatcher<I: Ord, T: Ord, R: MonoidValue, B: Batch<Item = I, Time = T, R = R>> {
     sorter: MergeSorter<I, R>,
     time: T,
@@ -26,6 +27,7 @@ pub struct MergeBatcher<I: Ord, T: Ord, R: MonoidValue, B: Batch<Item = I, Time 
 
 impl<I, T, R, B> Batcher<I, T, R, B> for MergeBatcher<I, T, R, B>
 where
+    Self: SizeOf,
     I: Ord + Clone,
     T: Lattice + Timestamp + Ord + Clone,
     R: MonoidValue,
@@ -78,20 +80,7 @@ where
     }
 }
 
-impl<I, T, R, B> DeepSizeOf for MergeBatcher<I, T, R, B>
-where
-    I: DeepSizeOf + Ord,
-    T: Ord,
-    R: DeepSizeOf + MonoidValue,
-    B: Batch<Item = I, Time = T, R = R>,
-{
-    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
-        // TODO: Should we get time's size too?
-        self.sorter.deep_size_of_children(context)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 struct MergeSorter<D: Ord, R: MonoidValue> {
     /// Queue's invariant is not that every `Vec<Vec<(D, R)>>` is sorted
     /// relative to each other but instead that within each `Vec<Vec<(D, R)>>`
@@ -421,15 +410,5 @@ impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
         // TODO: Why do we count the stash lengths, all stashes should be empty
         let stash_tuples: usize = self.stash.iter().map(|stash| stash.len()).sum();
         queue_tuples + stash_tuples
-    }
-}
-
-impl<D, R> DeepSizeOf for MergeSorter<D, R>
-where
-    D: DeepSizeOf + Ord,
-    R: DeepSizeOf + MonoidValue,
-{
-    fn deep_size_of_children(&self, context: &mut deepsize::Context) -> usize {
-        self.queue.deep_size_of_children(context) + self.stash.deep_size_of_children(context)
     }
 }

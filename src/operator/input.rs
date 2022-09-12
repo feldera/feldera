@@ -11,8 +11,8 @@ use crate::{
     trace::{spine_fueled::Spine, Batch},
     Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
-use deepsize::DeepSizeOf;
 use fxhash::hash32;
+use size_of::SizeOf;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -80,8 +80,8 @@ impl Circuit<()> {
     /// See [`CollectionHandle`] for more details.
     pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
     where
-        K: Clone + Send + Ord + 'static,
-        R: MonoidValue + Send,
+        K: Clone + SizeOf + Send + Ord + 'static,
+        R: MonoidValue + SizeOf + Send,
     {
         let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
         let stream = self.add_source(input);
@@ -114,9 +114,9 @@ impl Circuit<()> {
         &self,
     ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, (V, R)>)
     where
-        K: Ord + Clone + Send + 'static,
-        V: Ord + Clone + Send + 'static,
-        R: MonoidValue + Clone + Send,
+        K: Ord + Clone + SizeOf + Send + 'static,
+        V: Ord + Clone + SizeOf + Send + 'static,
+        R: MonoidValue + SizeOf + Clone + Send,
     {
         let (input, input_handle) = Input::new(|tuples: Vec<(K, (V, R))>| {
             OrdIndexedZSet::from_tuples(
@@ -137,10 +137,10 @@ impl Circuit<()> {
         upsert_func: F,
     ) -> Stream<Self, B>
     where
-        K: Clone + Ord + Send + DeepSizeOf + Hash + 'static,
+        K: Clone + Ord + Send + SizeOf + Hash + 'static,
         F: Fn(VI) -> Option<V> + 'static,
-        B: Batch<Key = K, Val = V, Time = ()> + DeepSizeOf + 'static,
-        B::R: MonoidValue + HasOne + Neg<Output = B::R> + DeepSizeOf,
+        B: Batch<Key = K, Val = V, Time = ()> + SizeOf + 'static,
+        B::R: MonoidValue + HasOne + Neg<Output = B::R> + SizeOf,
         V: Eq + Clone + Ord + 'static,
         VI: Eq + Clone + Send + 'static,
     {
@@ -265,8 +265,8 @@ impl Circuit<()> {
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
-        K: Clone + Ord + Send + DeepSizeOf + Hash + 'static,
-        R: MonoidValue + HasOne + Neg<Output = R> + DeepSizeOf,
+        K: Clone + Ord + Send + SizeOf + Hash + 'static,
+        R: MonoidValue + HasOne + Neg<Output = R> + SizeOf,
     {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, bool)>| tuples);
@@ -348,9 +348,9 @@ impl Circuit<()> {
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_map<K, V, R>(&self) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Option<V>>)
     where
-        K: Clone + Ord + Hash + Send + DeepSizeOf + 'static,
-        V: Ord + Clone + Send + DeepSizeOf + 'static,
-        R: MonoidValue + HasOne + Neg<Output = R> + DeepSizeOf,
+        K: Clone + Ord + Hash + Send + SizeOf + 'static,
+        V: Ord + Clone + Send + SizeOf + 'static,
+        R: MonoidValue + HasOne + Neg<Output = R> + SizeOf,
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);

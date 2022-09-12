@@ -15,7 +15,6 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     Circuit,
 };
-use deepsize::DeepSizeOf;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use mimalloc_rust_sys::{
@@ -79,7 +78,7 @@ fn main() {
         }
     }
 
-    print!("loading dataset {}...", dataset.name);
+    print!("loading dataset {}... ", dataset.name);
     io::stdout().flush().unwrap();
     let start = Instant::now();
 
@@ -88,7 +87,7 @@ fn main() {
     let elapsed = start.elapsed();
 
     // Calculate the amount of data that we've loaded in, including weights
-    let actual_size = edge_data.deep_size_of() + vertex_data.deep_size_of();
+    let actual_size = size_of::size_of_values([&edge_data as _, &vertex_data as _]);
     let theoretical_size = {
         let node = size_of::<Node>() as u64;
         let edges = edge_data
@@ -107,9 +106,10 @@ fn main() {
     };
 
     println!(
-        "finished in {elapsed:#?}, loaded {} of data (theoretical size of {})\n\
+        "finished in {elapsed:#?}, loaded {} of data (allocated {}, theoretical size of {})\n\
          using dataset {} which is {} graph with {} vertices and {} edges",
-        HumanBytes(actual_size as u64),
+        HumanBytes(actual_size.used_bytes() as u64),
+        HumanBytes(actual_size.total_bytes() as u64),
         HumanBytes(theoretical_size),
         dataset.name,
         if properties.directed {

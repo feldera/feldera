@@ -8,7 +8,7 @@ use crate::{
     },
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{Display, Formatter},
@@ -16,7 +16,7 @@ use std::{
 };
 
 /// A layer of unordered values.
-#[derive(Debug, DeepSizeOf, Eq, PartialEq, Clone)]
+#[derive(Debug, SizeOf, Eq, PartialEq, Clone)]
 pub struct OrderedLeaf<K, R> {
     /// Unordered values.
     pub vals: Vec<(K, R)>,
@@ -162,6 +162,7 @@ where
 }
 
 /// A builder for unordered values.
+#[derive(SizeOf)]
 pub struct OrderedLeafBuilder<K, R> {
     /// Unordered values.
     pub vals: Vec<(K, R)>,
@@ -296,7 +297,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Tuple
     }
 }
 
-#[derive(DeepSizeOf)]
+#[derive(SizeOf)]
 pub struct UnorderedLeafBuilder<K, R> {
     pub vals: Vec<(K, R)>,
     boundary: usize,
@@ -348,7 +349,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Tuple
 ///
 /// This cursor does not support `seek`, though I'm not certain how to expose
 /// this.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SizeOf)]
 pub struct OrderedLeafCursor<'s, K, R>
 where
     K: Eq + Ord + Clone,

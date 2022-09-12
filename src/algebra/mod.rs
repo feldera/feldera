@@ -1,12 +1,6 @@
 //! This module contains declarations of abstract algebraic concepts:
 //! monoids, groups, rings, etc.
 
-use std::{
-    num::Wrapping,
-    ops::{Add, AddAssign, Mul, Neg},
-    rc::Rc,
-};
-
 #[macro_use]
 mod checked_int;
 mod floats;
@@ -23,44 +17,68 @@ pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
 pub use zset::{IndexedZSet, ZSet};
 
+use size_of::SizeOf;
+use std::{
+    num::Wrapping,
+    ops::{Add, AddAssign, Mul, Neg},
+    rc::Rc,
+};
+
 /// A trait for types that have a zero value.
 ///
 /// This is similar to the standard Zero trait, but that
 /// trait depends on Add and HasZero doesn't.
 pub trait HasZero {
     fn is_zero(&self) -> bool;
+
     fn zero() -> Self;
 }
 
 /// Implement `HasZero` for types that already implement `Zero`.
 macro_rules! impl_has_zero {
-    ($type:ty) => {
-        impl $crate::algebra::HasZero for $type {
-            #[inline]
-            fn is_zero(&self) -> bool {
-                <Self as num::traits::Zero>::is_zero(self)
-            }
+    ($($type:ty),* $(,)?) => {
+        $(
+            impl $crate::algebra::HasZero for $type {
+                #[inline]
+                fn is_zero(&self) -> bool {
+                    *self == 0
+                }
 
-            #[inline]
-            fn zero() -> Self {
-                <Self as num::traits::Zero>::zero()
+                #[inline]
+                fn zero() -> Self {
+                    0
+                }
             }
-        }
+        )*
     };
 }
 
-impl_has_zero!(u8);
-impl_has_zero!(u16);
-impl_has_zero!(u32);
-impl_has_zero!(u64);
-impl_has_zero!(u128);
-impl_has_zero!(usize);
+impl_has_zero! {
+    u8,
+    i8,
+    u16,
+    i16,
+    u32,
+    i32,
+    u64,
+    i64,
+    u128,
+    i128,
+    usize,
+    isize,
+}
 
-impl_has_zero!(i8);
-impl_has_zero!(i16);
-impl_has_zero!(i32);
-impl_has_zero!(i64);
-impl_has_zero!(isize);
+impl<T> HasZero for Option<T> {
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.is_none()
+    }
+
+    #[inline]
+    fn zero() -> Self {
+        None
+    }
+}
 
 // TODO: Implement for `std::num::Saturating` once stable
 impl<T> HasZero for Wrapping<T>
@@ -87,28 +105,32 @@ pub trait HasOne {
 
 /// Implement `HasOne` for types that already implement `One`.
 macro_rules! impl_has_one {
-    ($type:ty) => {
-        impl $crate::algebra::HasOne for $type {
-            #[inline]
-            fn one() -> Self {
-                <Self as num::traits::One>::one()
+    ($($type:ty),* $(,)?) => {
+        $(
+            impl $crate::algebra::HasOne for $type {
+                #[inline]
+                fn one() -> Self {
+                    1
+                }
             }
-        }
+        )*
     };
 }
 
-impl_has_one!(u8);
-impl_has_one!(u16);
-impl_has_one!(u32);
-impl_has_one!(u64);
-impl_has_one!(u128);
-impl_has_one!(usize);
-
-impl_has_one!(i8);
-impl_has_one!(i16);
-impl_has_one!(i32);
-impl_has_one!(i64);
-impl_has_one!(isize);
+impl_has_one! {
+    u8,
+    i8,
+    u16,
+    i16,
+    u32,
+    i32,
+    u64,
+    i64,
+    u128,
+    i128,
+    usize,
+    isize,
+}
 
 impl<T> HasOne for Rc<T>
 where
@@ -192,13 +214,21 @@ where
 /// We trust the implementation to have an associative addition.
 /// (this cannot be checked statically).
 pub trait MonoidValue:
-    Clone + Eq + 'static + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef
+    Clone + Eq + SizeOf + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef + 'static
 {
 }
 
 /// Default implementation for all types that have an addition and a zero.
 impl<T> MonoidValue for T where
-    T: Clone + Eq + 'static + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef
+    T: Clone
+        + Eq
+        + SizeOf
+        + HasZero
+        + Add<Output = Self>
+        + AddByRef
+        + AddAssign
+        + AddAssignByRef
+        + 'static
 {
 }
 
@@ -208,41 +238,14 @@ pub trait GroupValue: MonoidValue + Neg<Output = Self> + NegByRef {}
 
 /// Default implementation of GroupValue for all types that have the required
 /// traits.
-impl<T> GroupValue for T where
-    T: Clone
-        + Eq
-        + 'static
-        + HasZero
-        + Add<Output = Self>
-        + AddByRef
-        + AddAssign
-        + AddAssignByRef
-        + Neg<Output = Self>
-        + NegByRef
-{
-}
+impl<T> GroupValue for T where T: MonoidValue + Neg<Output = Self> + NegByRef {}
 
 /// A Group with a multiplication operation is a Ring.
 pub trait RingValue: GroupValue + Mul<Output = Self> + MulByRef<Output = Self> + HasOne {}
 
 /// Default implementation of RingValue for all types that have the required
 /// traits.
-impl<T> RingValue for T where
-    T: Clone
-        + Eq
-        + 'static
-        + HasZero
-        + Add<Output = Self>
-        + AddByRef
-        + AddAssign
-        + AddAssignByRef
-        + Neg<Output = Self>
-        + NegByRef
-        + Mul<Output = Self>
-        + MulByRef<Output = Self>
-        + HasOne
-{
-}
+impl<T> RingValue for T where T: GroupValue + Mul<Output = Self> + MulByRef<Output = Self> + HasOne {}
 
 /// A ring where elements can be compared with zero
 pub trait ZRingValue: RingValue {
@@ -257,20 +260,7 @@ pub trait ZRingValue: RingValue {
 /// traits.
 impl<T> ZRingValue for T
 where
-    T: Clone
-        + Eq
-        + 'static
-        + HasZero
-        + Add<Output = Self>
-        + AddByRef
-        + AddAssign
-        + AddAssignByRef
-        + Neg<Output = Self>
-        + NegByRef
-        + Mul<Output = Self>
-        + MulByRef<Output = Self>
-        + HasOne
-        + Ord,
+    T: RingValue + Ord,
 {
     #[inline]
     fn ge0(&self) -> bool {

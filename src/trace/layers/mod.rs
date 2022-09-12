@@ -12,6 +12,7 @@ pub mod ordered_leaf;
 // pub mod unordered;
 
 use crate::algebra::HasZero;
+use size_of::SizeOf;
 use std::{
     cmp::min,
     fmt::Debug,
@@ -178,6 +179,7 @@ pub trait OrdOffset:
     + TryFrom<usize>
     + TryInto<usize>
     + HasZero
+    + SizeOf
     + Sized
 {
     fn from_usize(offset: usize) -> Self;
@@ -194,6 +196,7 @@ where
         + TryFrom<usize>
         + TryInto<usize>
         + HasZero
+        + SizeOf
         + Sized,
     <O as TryInto<usize>>::Error: Debug,
     <O as TryFrom<usize>>::Error: Debug,

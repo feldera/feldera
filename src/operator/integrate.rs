@@ -10,7 +10,7 @@ use crate::{
     },
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::ops::Add;
 
 circuit_cache_key!(IntegralId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -25,7 +25,7 @@ where
         + Clone
         + Eq
         + HasZero
-        + DeepSizeOf
+        + SizeOf
         + NumEntries
         + 'static,
 {

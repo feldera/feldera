@@ -6,7 +6,7 @@ use crate::{
     utils::assume,
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{Debug, Display, Formatter},
@@ -21,7 +21,7 @@ use textwrap::indent;
 /// .. offs[i+1]]`.
 // False positive from clippy
 #[allow(unknown_lints, clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Clone)]
+#[derive(Debug, SizeOf, PartialEq, Eq, Clone)]
 pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
     pub keys: Vec<K>,
@@ -245,6 +245,7 @@ where
 }
 
 /// Assembles a layer of this
+#[derive(SizeOf)]
 pub struct OrderedBuilder<K, L, O = usize>
 where
     K: Ord,

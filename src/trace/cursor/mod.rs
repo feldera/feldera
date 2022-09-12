@@ -16,8 +16,8 @@ pub mod cursor_group;
 pub mod cursor_list;
 pub mod cursor_pair;
 
-pub use self::cursor_group::CursorGroup;
-pub use self::cursor_list::CursorList;
+pub use cursor_group::CursorGroup;
+pub use cursor_list::CursorList;
 
 /// A cursor for navigating ordered `(key, val, time, diff)` tuples.
 pub trait Cursor<'s, K, V, T, R> {

@@ -10,7 +10,7 @@ use crate::{
     trace::{ord::OrdValBatch, Batch},
     OrdIndexedZSet,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
 pub use antichain::{Antichain, AntichainRef};
@@ -91,10 +91,10 @@ pub trait Timestamp:
     /// `trait Timestamp` -- not a very elegant solution, but I couldn't
     /// think of a better one.
     type OrdValBatch<
-        K: Ord + Clone + DeepSizeOf + 'static,
-        V: Ord + Clone + DeepSizeOf + 'static,
-        R: MonoidValue + DeepSizeOf>
-            : Batch<Key=K, Val=V, Time=Self, R=R> + DeepSizeOf;
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
+        R: MonoidValue + SizeOf>
+            : Batch<Key=K, Val=V, Time=Self, R=R> + SizeOf;
 
     fn minimum() -> Self;
 
@@ -161,9 +161,9 @@ pub trait Timestamp:
 
 impl Timestamp for () {
     type OrdValBatch<
-        K: Ord + Clone + DeepSizeOf + 'static,
-        V: Ord + Clone + DeepSizeOf + 'static,
-        R: MonoidValue + DeepSizeOf,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
+        R: MonoidValue + SizeOf,
     > = OrdIndexedZSet<K, V, R>;
 
     fn minimum() -> Self {}
@@ -175,9 +175,9 @@ impl Timestamp for () {
 
 impl Timestamp for u32 {
     type OrdValBatch<
-        K: Ord + Clone + DeepSizeOf + 'static,
-        V: Ord + Clone + DeepSizeOf + 'static,
-        R: MonoidValue + DeepSizeOf,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
+        R: MonoidValue + SizeOf,
     > = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {

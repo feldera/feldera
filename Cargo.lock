@@ -47,6 +47,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c794e162a5eff65c72ef524dfe393eb923c354e350bb78b9c7383df13f3bc142"
 
 [[package]]
+name = "arcstr"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d5ebd6061b8b70d59b36bc58d2337540bd7cc1f23ab2bea356f452bc7fe3505"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,6 +566,7 @@ name = "dbsp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arcstr",
  "ascii_table",
  "cached",
  "clap 3.2.16",
@@ -567,8 +574,6 @@ dependencies = [
  "crossbeam",
  "crossbeam-utils",
  "csv",
- "deepsize",
- "deepsize_derive",
  "fxhash",
  "hashbrown",
  "impl-trait-for-tuples",
@@ -588,32 +593,13 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "serde",
+ "size-of",
  "tar",
  "textwrap 0.15.0",
  "time",
  "typedmap",
  "zip",
  "zstd",
-]
-
-[[package]]
-name = "deepsize"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cdb987ec36f6bf7bfbea3f928b75590b736fc42af8e54d97592481351b2b96c"
-dependencies = [
- "deepsize_derive",
-]
-
-[[package]]
-name = "deepsize_derive"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "990101d41f3bc8c1a45641024377ee284ecc338e5ecf3ea0f0e236d897c72796"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1900,6 +1886,28 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "size-of"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9fbf48116903a57a14fd347683294fa2243ce0ce95e23d2383653da75b06321"
+dependencies = [
+ "arcstr",
+ "rust_decimal",
+ "size-of-derive",
+]
+
+[[package]]
+name = "size-of-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a15926c1c296ac124170d7f42a03f815286de1d4b8fe0525021eba09b5622ad6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

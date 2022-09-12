@@ -1,9 +1,9 @@
 use crate::algebra::{HasOne, HasZero, MulByRef};
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A zero-sized weight that indicates a value is present
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, Default)]
 pub struct Present;
 
 impl HasZero for Present {
@@ -20,12 +20,6 @@ impl HasZero for Present {
 impl HasOne for Present {
     fn one() -> Self {
         Self
-    }
-}
-
-impl DeepSizeOf for Present {
-    fn deep_size_of_children(&self, _context: &mut deepsize::Context) -> usize {
-        0
     }
 }
 

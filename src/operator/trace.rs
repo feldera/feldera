@@ -7,7 +7,7 @@ use crate::{
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
     NumEntries, Timestamp,
 };
-use deepsize::DeepSizeOf;
+use size_of::{HumanBytes, SizeOf};
 use std::{borrow::Cow, fmt::Write, marker::PhantomData};
 
 circuit_cache_key!(TraceId<B, D>(GlobalNodeId => Stream<B, D>));
@@ -68,7 +68,7 @@ where
         B: BatchReader<Time = ()>,
         B::Key: Clone,
         B::Val: Clone,
-        T: NumEntries + DeepSizeOf + Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone + 'static,
+        T: NumEntries + SizeOf + Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
@@ -106,9 +106,10 @@ where
     #[track_caller]
     pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<B>>
     where
-        B: Batch + DeepSizeOf,
+        B: Batch + SizeOf,
         B::Key: Ord,
         B::Val: Ord,
+        Spine<B>: SizeOf,
     {
         self.circuit()
             .cache_get_or_insert_with(IntegrateTraceId::new(self.origin_node_id().clone()), || {
@@ -117,24 +118,29 @@ where
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) =
                         circuit.add_feedback_with_export(Z1Trace::new(true, circuit.root_scope()));
+
                     let trace = circuit.add_binary_operator_with_preference(
-                        <UntimedTraceAppend<Spine<B>>>::new(),
+                        UntimedTraceAppend::<Spine<B>>::new(),
                         &local,
                         &self.try_sharded_version(),
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                         OwnershipPreference::PREFER_OWNED,
                     );
+
                     if self.has_sharded_version() {
                         local.mark_sharded();
                         trace.mark_sharded();
                     }
+
                     z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
+
                     circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+
                     trace
                 })
             })
@@ -343,7 +349,7 @@ where
 
 impl<T> Operator for Z1Trace<T>
 where
-    T: Trace + DeepSizeOf + NumEntries + 'static,
+    T: Trace + SizeOf + NumEntries + 'static,
     T::Time: Timestamp,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -358,6 +364,7 @@ where
             self.trace = Some(T::new(None));
         }
     }
+
     fn clock_end(&mut self, scope: Scope) {
         if scope + 1 == self.root_scope && !self.reset_on_clock_start {
             if let Some(tr) = self.trace.as_mut() {
@@ -381,10 +388,17 @@ where
         let bytes = self
             .trace
             .as_ref()
-            .map(|trace| trace.deep_size_of())
-            .unwrap_or(0);
-        writeln!(summary, "bytes: {}", bytes).unwrap();
-        //println!("zbytes:{}", bytes);
+            .map(|trace| trace.size_of())
+            .unwrap_or_default();
+        writeln!(
+            summary,
+            "allocated: {}, used: {}, allocations: {}, shared: {}",
+            HumanBytes::from(bytes.total_bytes()),
+            HumanBytes::from(bytes.used_bytes()),
+            bytes.distinct_allocations(),
+            HumanBytes::from(bytes.shared_bytes()),
+        )
+        .unwrap();
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -394,7 +408,7 @@ where
 
 impl<T> StrictOperator<T> for Z1Trace<T>
 where
-    T: DeepSizeOf + NumEntries + Trace + 'static,
+    T: SizeOf + NumEntries + Trace + 'static,
     T::Time: Timestamp,
 {
     fn get_output(&mut self) -> T {
@@ -414,7 +428,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
 where
-    T: DeepSizeOf + NumEntries + Trace + 'static,
+    T: SizeOf + NumEntries + Trace + 'static,
     T::Time: Timestamp,
 {
     fn eval_strict(&mut self, _i: &T) {

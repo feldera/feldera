@@ -1,4 +1,5 @@
 use crate::algebra::{PartialOrder, TotalOrder};
+use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
     hash::{Hash, Hasher},
@@ -19,7 +20,7 @@ use std::{
 /// Two antichains are equal if the contain the same set of elements, even if in
 /// different orders. This can make equality testing quadratic, though linear in
 /// the common case that the sequences are identical.
-#[derive(Default)]
+#[derive(Default, SizeOf)]
 pub struct Antichain<T> {
     // TODO: We can specialize containers based on the inner type, meaning we could give ourselves
     //       a more favorable memory footprint for things like `Antichain<()>`
@@ -379,6 +380,7 @@ where
 }
 
 /// A wrapper for the elements of an antichain
+#[derive(Default, SizeOf)]
 pub struct AntichainRef<'a, T: 'a> {
     /// Elements contained within the antichain
     frontier: &'a [T],

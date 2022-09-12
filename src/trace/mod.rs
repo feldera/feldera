@@ -23,6 +23,7 @@ use crate::{
     circuit::Activator,
     time::{AntichainRef, Timestamp},
 };
+use size_of::SizeOf;
 
 /// A trace whose contents may be read.
 ///
@@ -249,7 +250,7 @@ where
 }
 
 /// Functionality for collecting and batching updates.
-pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
+pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
     fn new_batcher(time: T) -> Self;
@@ -268,7 +269,7 @@ pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
 }
 
 /// Functionality for building batches from ordered update sequences.
-pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
+pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
     fn new_builder(time: T) -> Self;
@@ -298,7 +299,7 @@ pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>> {
 }
 
 /// Represents a merge in progress.
-pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
+pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>>: SizeOf {
     /// Creates a new merger to merge the supplied batches, optionally
     /// compacting up to the supplied frontier.
     fn new_merger(source1: &Output, source2: &Output) -> Self;
@@ -321,6 +322,7 @@ pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>> {
 pub mod rc_blanket_impls {
     use super::{Batch, BatchReader, Batcher, Builder, Cursor, Merger};
     use crate::time::AntichainRef;
+    use size_of::SizeOf;
     use std::{marker::PhantomData, rc::Rc};
 
     impl<B: BatchReader> BatchReader for Rc<B> {
@@ -360,6 +362,7 @@ pub mod rc_blanket_impls {
     }
 
     /// Wrapper to provide cursor to nested scope.
+    #[derive(SizeOf)]
     pub struct RcBatchCursor<'s, B: BatchReader + 's> {
         phantom: PhantomData<B>,
         cursor: B::Cursor<'s>,
@@ -379,6 +382,7 @@ pub mod rc_blanket_impls {
         fn key_valid(&self) -> bool {
             self.cursor.key_valid()
         }
+
         #[inline]
         fn val_valid(&self) -> bool {
             self.cursor.val_valid()
@@ -388,6 +392,7 @@ pub mod rc_blanket_impls {
         fn key(&self) -> &B::Key {
             self.cursor.key()
         }
+
         #[inline]
         fn val(&self) -> &B::Val {
             self.cursor.val()
@@ -474,6 +479,7 @@ pub mod rc_blanket_impls {
     }
 
     /// Wrapper type for batching reference counted batches.
+    #[derive(SizeOf)]
     pub struct RcBatcher<B: Batch> {
         batcher: B::Batcher,
     }
@@ -509,6 +515,7 @@ pub mod rc_blanket_impls {
     }
 
     /// Wrapper type for building reference counted batches.
+    #[derive(SizeOf)]
     pub struct RcBuilder<B: Batch> {
         builder: B::Builder,
     }
@@ -548,6 +555,7 @@ pub mod rc_blanket_impls {
     }
 
     /// Wrapper type for merging reference counted batches.
+    #[derive(SizeOf)]
     pub struct RcMerger<B: Batch> {
         merger: B::Merger,
     }

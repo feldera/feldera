@@ -6,8 +6,8 @@ use crate::{
     operator::DelayedFeedback,
     trace::spine_fueled::Spine,
 };
-use deepsize::DeepSizeOf;
 use impl_trait_for_tuples::impl_for_tuples;
+use size_of::SizeOf;
 use std::{hash::Hash, result::Result};
 
 /// Generalizes stream operators to groups of streams.
@@ -53,11 +53,10 @@ pub trait RecursiveStreams<C> {
 // batches, we can ditch the `B::Val = ()` constraint.
 impl<B> RecursiveStreams<Circuit<Circuit<()>>> for Stream<Circuit<Circuit<()>>, B>
 where
-    //P: Clone +
-    // 'static,
-    B: ZSet + DeepSizeOf + Send + 'static,
-    B::Key: Clone + Ord + Hash + DeepSizeOf,
-    B::R: DeepSizeOf + ZRingValue,
+    B: ZSet + SizeOf + Send + 'static,
+    B::Key: Clone + Ord + Hash + SizeOf,
+    B::R: SizeOf + ZRingValue,
+    Spine<B>: SizeOf,
 {
     type Feedback = DelayedFeedback<Circuit<()>, B>;
     type Export = Stream<Circuit<()>, Spine<B>>;

@@ -9,7 +9,7 @@ use crate::{
     },
     circuit_cache_key, NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::{HumanBytes, SizeOf, TotalSize};
 use std::{borrow::Cow, fmt::Write, mem::replace};
 
 circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -29,7 +29,7 @@ pub struct DelayedFeedback<P, D> {
 impl<P, D> DelayedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: Eq + DeepSizeOf + NumEntries + Clone + HasZero + 'static,
+    D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -78,7 +78,7 @@ pub struct DelayedNestedFeedback<P, D> {
 impl<P, D> DelayedNestedFeedback<P, D>
 where
     P: Clone + 'static,
-    D: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    D: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -110,7 +110,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: Eq + DeepSizeOf + NumEntries + Clone + HasZero + 'static,
+        D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
@@ -123,7 +123,7 @@ impl<P, D> Stream<Circuit<P>, D> {
     pub fn delay_nested(&self) -> Stream<Circuit<P>, D>
     where
         P: Clone + 'static,
-        D: Eq + Clone + HasZero + DeepSizeOf + NumEntries + 'static,
+        D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(NestedDelayedId::new(self.origin_node_id().clone()), || {
@@ -176,7 +176,7 @@ where
 
 impl<T> Operator for Z1<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -191,9 +191,16 @@ where
     fn summary(&self, summary: &mut String) {
         writeln!(summary, "size: {}", self.values.num_entries_deep()).unwrap();
 
-        let bytes = self.values.deep_size_of();
-        writeln!(summary, "bytes: {}", bytes).unwrap();
-        //println!("zbytes:{}", bytes);
+        let bytes = self.values.size_of();
+        writeln!(
+            summary,
+            "allocated: {}, used: {}, allocations: {}, shared: {}",
+            HumanBytes::from(bytes.total_bytes()),
+            HumanBytes::from(bytes.used_bytes()),
+            bytes.distinct_allocations(),
+            HumanBytes::from(bytes.shared_bytes()),
+        )
+        .unwrap();
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -207,7 +214,7 @@ where
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         replace(&mut self.values, i.clone())
@@ -224,7 +231,7 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         self.empty_output = self.values.num_entries_shallow() == 0;
@@ -238,7 +245,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();
@@ -310,7 +317,7 @@ impl<T> Z1Nested<T> {
 
 impl<T> Operator for Z1Nested<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1 (nested)")
@@ -344,20 +351,33 @@ where
         writeln!(summary, "]").unwrap();
         writeln!(summary, "total: {}", total).unwrap();
 
-        let mut total_bytes = 0;
+        let mut total_bytes = TotalSize::zero();
         write!(summary, "byte sizes: [").unwrap();
         for (i, v) in self.values.iter().enumerate() {
-            let bytes = v.deep_size_of();
+            let bytes = v.size_of();
             total_bytes += bytes;
-            if i == self.values.len() - 1 {
-                write!(summary, "{}", bytes).unwrap();
-            } else {
-                write!(summary, "{},", bytes).unwrap();
+            write!(
+                summary,
+                "(used: {}, allocated: {})",
+                HumanBytes::from(bytes.used_bytes()),
+                HumanBytes::from(bytes.total_bytes()),
+            )
+            .unwrap();
+
+            if i != self.values.len() - 1 {
+                write!(summary, ", ").unwrap();
             }
         }
-        writeln!(summary, "]").unwrap();
-        writeln!(summary, "total bytes: {}", total_bytes).unwrap();
-        //println!("bytes: {}", total_bytes);
+
+        writeln!(
+            summary,
+            "]\nallocated: {}, used: {}, allocations: {}, shared: {}",
+            HumanBytes::from(total_bytes.total_bytes()),
+            HumanBytes::from(total_bytes.used_bytes()),
+            total_bytes.distinct_allocations(),
+            HumanBytes::from(total_bytes.shared_bytes()),
+        )
+        .unwrap();
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -374,7 +394,7 @@ where
 
 impl<T> UnaryOperator<T, T> for Z1Nested<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         debug_assert!(self.timestamp <= self.values.len());
@@ -413,7 +433,7 @@ where
 
 impl<T> StrictOperator<T> for Z1Nested<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         if self.timestamp >= self.values.len() {
@@ -437,7 +457,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
 where
-    T: Eq + DeepSizeOf + NumEntries + Clone + 'static,
+    T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         debug_assert!(self.timestamp < self.values.len());

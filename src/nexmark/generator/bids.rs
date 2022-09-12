@@ -3,14 +3,14 @@
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/BidGenerator.java).
 use super::NexmarkGenerator;
 use super::{
-    super::model::{Bid, ImmString},
+    super::model::Bid,
     config::{FIRST_AUCTION_ID, FIRST_PERSON_ID},
     strings::next_string,
 };
+use arcstr::ArcStr;
 use cached::Cached;
-use once_cell::sync::Lazy;
 use rand::Rng;
-use std::{mem::size_of, sync::Arc};
+use std::mem::size_of;
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
@@ -20,35 +20,23 @@ const HOT_CHANNELS_RATIO: usize = 100;
 
 pub const CHANNELS_NUMBER: u32 = 10_000;
 
-static HOT_CHANNELS: Lazy<Arc<[ImmString; 4]>> = Lazy::new(|| {
-    Arc::new([
-        "Google".to_string().into(),
-        "Facebook".to_string().into(),
-        "Baidu".to_string().into(),
-        "Apple".to_string().into(),
-    ])
-});
-static HOT_URLS: Lazy<Arc<[ImmString; 4]>> = Lazy::new(|| {
-    Arc::new([
-        "https://www.nexmark.com/googl/item.htm?query=1"
-            .to_string()
-            .into(),
-        "https://www.nexmark.com/meta/item.htm?query=1"
-            .to_string()
-            .into(),
-        "https://www.nexmark.com/bidu/item.htm?query=1"
-            .to_string()
-            .into(),
-        "https://www.nexmark.com/aapl/item.htm?query=1"
-            .to_string()
-            .into(),
-    ])
-});
+static HOT_CHANNELS: [ArcStr; 4] = [
+    arcstr::literal!("Google"),
+    arcstr::literal!("Facebook"),
+    arcstr::literal!("Baidu"),
+    arcstr::literal!("Apple"),
+];
+static HOT_URLS: [ArcStr; 4] = [
+    arcstr::literal!("https://www.nexmark.com/googl/item.htm?query=1"),
+    arcstr::literal!("https://www.nexmark.com/meta/item.htm?query=1"),
+    arcstr::literal!("https://www.nexmark.com/bidu/item.htm?query=1"),
+    arcstr::literal!("https://www.nexmark.com/aapl/item.htm?query=1"),
+];
 
 const BASE_URL_PATH_LENGTH: usize = 5;
 
 impl<R: Rng> NexmarkGenerator<R> {
-    fn get_new_channel_instance(&mut self, channel_number: u32) -> (ImmString, ImmString) {
+    fn get_new_channel_instance(&mut self, channel_number: u32) -> (ArcStr, ArcStr) {
         // Manually check the cache. Note: using a manual SizedCache because the
         // `cached` library doesn't allow using the proc_macro `cached` with
         // `self`.
@@ -127,12 +115,11 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 }
 
-fn get_base_url<R: Rng>(rng: &mut R) -> ImmString {
-    format!(
+fn get_base_url<R: Rng>(rng: &mut R) -> ArcStr {
+    arcstr::format!(
         "https://www.nexmark.com/{}/item.htm?query=1",
         next_string(rng, BASE_URL_PATH_LENGTH)
     )
-    .into()
 }
 
 #[cfg(test)]
@@ -182,7 +169,7 @@ pub mod tests {
         let mut rng = StepRng::new(0, 1);
         assert_eq!(
             get_base_url(&mut rng),
-            String::from("https://www.nexmark.com/AAA/item.htm?query=1").into()
+            "https://www.nexmark.com/AAA/item.htm?query=1",
         );
     }
 
@@ -192,29 +179,22 @@ pub mod tests {
 
         let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
 
-        assert_eq!(channel_name, "channel-1234".to_string().into());
+        assert_eq!(channel_name, "channel-1234");
         assert_eq!(
             channel_url,
-            "https://www.nexmark.com/AAA/item.htm?query=1&channel_id=1260388352"
-                .to_string()
-                .into()
+            "https://www.nexmark.com/AAA/item.htm?query=1&channel_id=1260388352",
         );
     }
 
     #[test]
     fn test_get_new_channel_instance_cached() {
         let mut ng = make_test_generator();
-        ng.bid_channel_cache.cache_set(
-            1234,
-            (
-                "Google".to_string().into(),
-                "https://google.example.com".to_string().into(),
-            ),
-        );
+        ng.bid_channel_cache
+            .cache_set(1234, ("Google".into(), "https://google.example.com".into()));
 
         let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
 
-        assert_eq!(channel_name, "Google".to_string().into());
-        assert_eq!(channel_url, "https://google.example.com".to_string().into());
+        assert_eq!(channel_name, "Google");
+        assert_eq!(channel_url, "https://google.example.com");
     }
 }

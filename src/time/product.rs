@@ -4,11 +4,11 @@ use crate::{
     time::Timestamp,
     trace::ord::OrdValBatch,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
 
 /// A nested pair of timestamps, one outer and one inner.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Default, Ord, PartialOrd, DeepSizeOf)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Default, Ord, PartialOrd, SizeOf)]
 pub struct Product<TOuter, TInner> {
     /// Outer timestamp.
     pub outer: TOuter,
@@ -63,13 +63,13 @@ impl<TOuter: PartialOrder, TInner: PartialOrder> PartialOrder for Product<TOuter
 
 impl<TOuter, TInner> Timestamp for Product<TOuter, TInner>
 where
-    TOuter: Timestamp + DeepSizeOf,
-    TInner: Timestamp + DeepSizeOf,
+    TOuter: Timestamp + SizeOf,
+    TInner: Timestamp + SizeOf,
 {
     type OrdValBatch<
-        K: Ord + Clone + DeepSizeOf + 'static,
-        V: Ord + Clone + DeepSizeOf + 'static,
-        R: MonoidValue + DeepSizeOf,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
+        R: MonoidValue + SizeOf,
     > = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {

@@ -13,14 +13,14 @@ use crate::{
     utils::assume,
     NumEntries,
 };
-use deepsize::DeepSizeOf;
+use size_of::SizeOf;
 use std::{
     fmt::{self, Display},
     ops::{Add, AddAssign, Neg},
 };
 
 /// A layer of unordered values.
-#[derive(Debug, Clone, Eq, PartialEq, DeepSizeOf)]
+#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct OrderedColumnLeaf<K, R> {
     // Invariant: keys.len == diffs.len
     keys: Vec<K>,

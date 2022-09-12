@@ -1,9 +1,11 @@
 use super::NexmarkStream;
 use crate::{
-    nexmark::model::{Event, ImmString},
+    nexmark::model::Event,
     operator::{FilterMap, Max},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
+use arcstr::ArcStr;
+use size_of::SizeOf;
 
 /// Query 9: Winning Bids (Not in original suite)
 ///
@@ -54,23 +56,23 @@ use crate::{
 /// WHERE rownum <= 1;
 /// ```
 
-#[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord)]
+#[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord, SizeOf)]
 pub struct Q9Output(
     u64,
-    ImmString,
-    ImmString,
+    ArcStr,
+    ArcStr,
     usize,
     usize,
     u64,
     u64,
     u64,
     usize,
-    ImmString,
+    ArcStr,
     u64,
     u64,
     usize,
     u64,
-    ImmString,
+    ArcStr,
 );
 
 type Q9Stream = Stream<Circuit<()>, OrdZSet<Q9Output, isize>>;
@@ -107,17 +109,17 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
             (
                 (
                     u64,
-                    ImmString,
-                    ImmString,
+                    ArcStr,
+                    ArcStr,
                     usize,
                     usize,
                     u64,
                     u64,
                     u64,
                     usize,
-                    ImmString,
+                    ArcStr,
                 ),
-                (u64, usize, u64, ImmString),
+                (u64, usize, u64, ArcStr),
             ),
             isize,
         >,
@@ -207,17 +209,17 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
         OrdIndexedZSet<
             (
                 u64,
-                ImmString,
-                ImmString,
+                ArcStr,
+                ArcStr,
                 usize,
                 usize,
                 u64,
                 u64,
                 u64,
                 usize,
-                ImmString,
+                ArcStr,
             ),
-            (usize, u64, u64, ImmString),
+            (usize, u64, u64, ArcStr),
             isize,
         >,
     >;

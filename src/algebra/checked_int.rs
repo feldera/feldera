@@ -15,10 +15,12 @@ pub struct CheckedInt<T> {
 }
 
 impl<T> CheckedInt<T> {
+    #[inline]
     pub const fn new(value: T) -> Self {
         Self { value }
     }
 
+    #[inline]
     pub fn into_inner(self) -> T {
         self.value
     }
@@ -30,6 +32,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn add(self, other: Self) -> Self {
         // intentional panic on overflow
         Self {
@@ -45,6 +48,7 @@ impl<T> AddByRef for CheckedInt<T>
 where
     T: CheckedAdd,
 {
+    #[inline]
     fn add_by_ref(&self, other: &Self) -> Self {
         // intentional panic on overflow
         Self {
@@ -60,6 +64,7 @@ impl<T> AddAssign for CheckedInt<T>
 where
     T: CheckedAdd,
 {
+    #[inline]
     fn add_assign(&mut self, other: Self) {
         self.value = self
             .value
@@ -72,6 +77,7 @@ impl<T> AddAssignByRef for CheckedInt<T>
 where
     T: CheckedAdd,
 {
+    #[inline]
     fn add_assign_by_ref(&mut self, other: &Self) {
         self.value = self
             .value
@@ -86,6 +92,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn mul_by_ref(&self, rhs: &Self) -> Self::Output {
         // intentional panic on overflow
         Self {
@@ -101,6 +108,7 @@ impl<T> NegByRef for CheckedInt<T>
 where
     T: CheckedNeg,
 {
+    #[inline]
     fn neg_by_ref(&self) -> Self {
         Self {
             // intentional panic on overflow
@@ -118,6 +126,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn neg(self) -> Self {
         Self {
             // intentional panic on overflow
@@ -131,12 +140,14 @@ where
 
 impl<T> HasZero for CheckedInt<T>
 where
-    T: num::traits::Zero + CheckedAdd,
+    T: HasZero,
 {
+    #[inline]
     fn is_zero(&self) -> bool {
         T::is_zero(&self.value)
     }
 
+    #[inline]
     fn zero() -> Self {
         Self::new(T::zero())
     }
@@ -144,8 +155,9 @@ where
 
 impl<T> HasOne for CheckedInt<T>
 where
-    T: num::traits::One + CheckedMul,
+    T: HasOne,
 {
+    #[inline]
     fn one() -> Self {
         Self::new(T::one())
     }
@@ -155,6 +167,7 @@ impl<T> PartialEq<T> for CheckedInt<T>
 where
     T: PartialEq,
 {
+    #[inline]
     fn eq(&self, other: &T) -> bool {
         &self.value == other
     }
@@ -164,12 +177,14 @@ impl<T> PartialOrd<T> for CheckedInt<T>
 where
     T: PartialOrd,
 {
+    #[inline]
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
         self.value.partial_cmp(other)
     }
 }
 
 impl<T> From<T> for CheckedInt<T> {
+    #[inline]
     fn from(value: T) -> Self {
         Self { value }
     }
@@ -179,6 +194,7 @@ impl<T> Debug for CheckedInt<T>
 where
     T: Debug,
 {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         self.value.fmt(f)
     }

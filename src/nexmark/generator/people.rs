@@ -3,47 +3,39 @@
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/PersonGenerator.java).
 
 use super::{
-    super::{
-        config as nexmark_config,
-        model::{ImmString, Person},
-    },
+    super::{config as nexmark_config, model::Person},
     config, NexmarkGenerator,
 };
-use once_cell::sync::Lazy;
+use arcstr::ArcStr;
 use rand::{seq::SliceRandom, Rng};
 use std::{
     cmp::min,
     mem::{size_of, size_of_val},
-    sync::Arc,
 };
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
-static US_STATES: Lazy<Arc<[ImmString]>> = Lazy::new(|| {
-    Arc::new([
-        "AZ".to_string().into(),
-        "CA".to_string().into(),
-        "ID".to_string().into(),
-        "OR".to_string().into(),
-        "WA".to_string().into(),
-        "WY".to_string().into(),
-    ])
-});
+static US_STATES: [ArcStr; 6] = [
+    arcstr::literal!("AZ"),
+    arcstr::literal!("CA"),
+    arcstr::literal!("ID"),
+    arcstr::literal!("OR"),
+    arcstr::literal!("WA"),
+    arcstr::literal!("WY"),
+];
 
-static US_CITIES: Lazy<Arc<[ImmString]>> = Lazy::new(|| {
-    Arc::new([
-        "Phoenix".to_string().into(),
-        "Los Angeles".to_string().into(),
-        "San Francisco".to_string().into(),
-        "Boise".to_string().into(),
-        "Portland".to_string().into(),
-        "Bend".to_string().into(),
-        "Redmond".to_string().into(),
-        "Seattle".to_string().into(),
-        "Kent".to_string().into(),
-        "Cheyenne".to_string().into(),
-    ])
-});
+static US_CITIES: [ArcStr; 10] = [
+    arcstr::literal!("Phoenix"),
+    arcstr::literal!("Los Angeles"),
+    arcstr::literal!("San Francisco"),
+    arcstr::literal!("Boise"),
+    arcstr::literal!("Portland"),
+    arcstr::literal!("Bend"),
+    arcstr::literal!("Redmond"),
+    arcstr::literal!("Seattle"),
+    arcstr::literal!("Kent"),
+    arcstr::literal!("Cheyenne"),
+];
 
 const FIRST_NAMES: &[&str] = &[
     "Peter", "Paul", "Luke", "John", "Saul", "Vicky", "Kate", "Julie", "Sarah", "Deiter", "Walter",
@@ -126,17 +118,17 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     // Return a random US state.
-    fn next_us_state(&mut self) -> ImmString {
+    fn next_us_state(&mut self) -> ArcStr {
         US_STATES.choose(&mut self.rng).unwrap().clone()
     }
 
     // Return a random US city.
-    fn next_us_city(&mut self) -> ImmString {
+    fn next_us_city(&mut self) -> ArcStr {
         US_CITIES.choose(&mut self.rng).unwrap().clone()
     }
 
     // Return a random person name.
-    fn next_person_name(&mut self) -> ImmString {
+    fn next_person_name(&mut self) -> ArcStr {
         format!(
             "{} {}",
             FIRST_NAMES.choose(&mut self.rng).unwrap(),
@@ -146,12 +138,12 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     // Return a random email address.
-    fn next_email(&mut self) -> ImmString {
+    fn next_email(&mut self) -> ArcStr {
         format!("{}@{}.com", self.next_string(7), self.next_string(5)).into()
     }
 
     // Return a random credit card number.
-    fn next_credit_card(&mut self) -> ImmString {
+    fn next_credit_card(&mut self) -> ArcStr {
         format!(
             "{:04} {:04} {:04} {:04}",
             &mut self.rng.gen_range(0..10_000),
@@ -258,7 +250,7 @@ mod tests {
 
         let s = ng.next_us_state();
 
-        assert_eq!(s, "AZ".to_string().into());
+        assert_eq!(s, "AZ");
     }
 
     #[test]
@@ -267,7 +259,7 @@ mod tests {
 
         let c = ng.next_us_city();
 
-        assert_eq!(c, "Phoenix".to_string().into());
+        assert_eq!(c, "Phoenix");
     }
 
     #[test]
@@ -276,7 +268,7 @@ mod tests {
 
         let n = ng.next_person_name();
 
-        assert_eq!(n, "Peter Shultz".to_string().into());
+        assert_eq!(n, "Peter Shultz");
     }
 
     #[test]
@@ -285,7 +277,7 @@ mod tests {
 
         let e = ng.next_email();
 
-        assert_eq!(e, "AAA@AAA.com".to_string().into());
+        assert_eq!(e, "AAA@AAA.com");
     }
 
     #[test]
@@ -294,6 +286,6 @@ mod tests {
 
         let e = ng.next_credit_card();
 
-        assert_eq!(e, "0000 0000 0000 0000".to_string().into());
+        assert_eq!(e, "0000 0000 0000 0000");
     }
 }

@@ -8,6 +8,7 @@ use crate::{
     circuit_cache_key,
     trace::{cursor::Cursor, ord::OrdIndexedZSet, Batch, BatchReader, Builder},
 };
+use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -25,9 +26,10 @@ where
     /// used as input to various join and aggregation operators.
     pub fn index<K, V>(&self) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
     where
-        K: Ord + Clone + 'static,
-        V: Ord + Clone + 'static,
+        K: Ord + Clone + SizeOf + 'static,
+        V: Ord + Clone + SizeOf + 'static,
         CI: BatchReader<Key = (K, V), Val = (), Time = ()>,
+        CI::R: SizeOf,
     {
         self.index_generic()
     }
@@ -63,9 +65,10 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
     where
         CI: BatchReader<Time = (), Val = ()> + 'static,
+        CI::R: SizeOf,
         F: Fn(&CI::Key) -> (K, V) + Clone + 'static,
-        K: Ord + Clone + 'static,
-        V: Ord + Clone + 'static,
+        K: Ord + SizeOf + Clone + 'static,
+        V: Ord + SizeOf + Clone + 'static,
     {
         self.index_with_generic(index_func)
     }
@@ -188,6 +191,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("IndexWith")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -221,6 +225,7 @@ where
         self.eval(&i)
     }
 }
+
 #[cfg(test)]
 mod test {
     use crate::{indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit};
