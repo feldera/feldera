@@ -18,6 +18,9 @@ pub use q15::q15;
 
 type NexmarkStream = Stream<Circuit<()>, OrdZSet<Event, isize>>;
 
+// Based on the WATERMARK FOR definition in the original [ddl_gen.sql](https://github.com/nexmark/nexmark/blob/54974ef36a0d01ef8ebc0b4ba39cfc50136af0f6/nexmark-flink/src/main/resources/queries/ddl_gen.sql#L37)
+const WATERMARK_INTERVAL_SECONDS: u64 = 4;
+
 mod q0;
 mod q1;
 mod q2;

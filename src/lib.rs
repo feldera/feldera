@@ -1,4 +1,3 @@
-#![feature(generic_associated_types)]
 #![cfg_attr(feature = "with-nexmark", feature(is_some_with))]
 
 mod error;

@@ -1,4 +1,4 @@
-use super::NexmarkStream;
+use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::{
     nexmark::model::{Event, ImmString},
     operator::{FilterMap, Min},
@@ -55,8 +55,9 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // Similar to the sliding window of q5, we want to find the largest timestamp
     // from the input stream for the current time, with the window ending at the
     // previous 10 second multiple.
-    // Set the watermark to `TUMBLE_SECONDS` in the past.
-    let watermark = bids_by_time.watermark_monotonic(|date_time| date_time - TUMBLE_SECONDS * 1000);
+    // Set the watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
+    let watermark =
+        bids_by_time.watermark_monotonic(|date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000);
 
     // In this case we have a 10-second window with 10-second steps (tumbling).
     let window_bounds = watermark.apply(|watermark| {
