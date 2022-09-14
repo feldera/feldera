@@ -1,4 +1,4 @@
-use super::NexmarkStream;
+use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::{
     nexmark::model::Event,
     operator::{FilterMap, Max},
@@ -82,8 +82,9 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
         });
 
     // Extract the largest timestamp from the input stream. We will use it as
-    // current time. Set watermark to `TUMBLE_SECONDS` in the past.
-    let watermark = bids_by_time.watermark_monotonic(|date_time| date_time - TUMBLE_SECONDS * 1000);
+    // current time. Set watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
+    let watermark =
+        bids_by_time.watermark_monotonic(|date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000);
 
     // 10-second window with 2-second step.
     let window_bounds = watermark.apply(|watermark| {
@@ -129,28 +130,28 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    // Auction 2 has a single bid at t=18_000, so window is 6_000-16_000, which
+    // Auction 2 has a single bid at t=20_000, so window is 6_000-16_000, which
     // leaves auction 1 as the hottest with a single bid (11_000).
     #[case::latest_bid_determines_window(
         vec![vec![2_001, 4_000, 11_000]],
-        vec![vec![18_000]],
+        vec![vec![20_000]],
         vec![zset! { (1, 1) => 1}] )]
-    // Auction 2's single bid is at 17_000 which leaves the rounded window at
+    // Auction 2's single bid is at 19_000 which leaves the rounded window at
     // 4_000-14_000, capturing 2 bids from auction 1 only (4_000 and 11_000).
     #[case::windows_rounded_to_2_s_boundary(
         vec![vec![2_001, 4_000, 11_000, 15_000]],
-        vec![vec![17_000]],
+        vec![vec![19_000]],
         vec![zset! { (1, 2) => 1}] )]
     // Both auctions have the maximum two bids in the window (0 - 2000)
     #[case::multiple_auctions_have_same_hotness(
-        vec![vec![2_000, 3_999, 6_000]],
+        vec![vec![2_000, 3_999, 8_000]],
         vec![vec![2_000, 3_999]],
         vec![zset! { (1, 2) => 1, (2, 2) => 1}])]
     // A second batch arrives changing the window to 6_000-16_000, switching
     // the hottest auction from 1 to 2.
     #[case::batch_2_updates_hotness_to_new_window(
-        vec![vec![2_000, 4_000, 6_000], vec![18_000]],
-        vec![vec![2_000, 4_000, 8_000, 10_000], vec![]],
+        vec![vec![2_000, 4_000, 6_000], vec![20_000]],
+        vec![vec![2_000, 4_000, 8_000, 12_000], vec![]],
         vec![zset! {(1, 3) => 1}, zset! {(2, 2) => 1, (1, 3) => -1}])]
     fn test_q5(
         #[case] auction1_batches: Vec<Vec<u64>>,
