@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::{
-    nexmark::model::Event,
+    nexmark::model::{Event, ImmString},
     operator::{FilterMap, Max},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
@@ -57,20 +57,20 @@ use crate::{
 #[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord)]
 pub struct Q9Output(
     u64,
-    String,
-    String,
+    ImmString,
+    ImmString,
     usize,
     usize,
     u64,
     u64,
     u64,
     usize,
-    String,
+    ImmString,
     u64,
     u64,
     usize,
     u64,
-    String,
+    ImmString,
 );
 
 type Q9Stream = Stream<Circuit<()>, OrdZSet<Q9Output, isize>>;
@@ -107,17 +107,17 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
             (
                 (
                     u64,
-                    String,
-                    String,
+                    ImmString,
+                    ImmString,
                     usize,
                     usize,
                     u64,
                     u64,
                     u64,
                     usize,
-                    String,
+                    ImmString,
                 ),
-                (u64, usize, u64, String),
+                (u64, usize, u64, ImmString),
             ),
             isize,
         >,
@@ -207,17 +207,17 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
         OrdIndexedZSet<
             (
                 u64,
-                String,
-                String,
+                ImmString,
+                ImmString,
                 usize,
                 usize,
                 u64,
                 u64,
                 u64,
                 usize,
-                String,
+                ImmString,
             ),
-            (usize, u64, u64, String),
+            (usize, u64, u64, ImmString),
             isize,
         >,
     >;
@@ -371,13 +371,13 @@ mod tests {
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
-                zset! { Q9Output(1, "item-name".into(), "description".into(), 5, 10, 0, 10000, 99, 1, "".into(), 1, 1, 100, 2000, "".into()) => 1 },
+                zset! { Q9Output(1, "item-name".to_string().into(), "description".to_string().into(), 5, 10, 0, 10000, 99, 1, "".to_string().into(), 1, 1, 100, 2000, "".to_string().into()) => 1 },
                 // The second batch just updates the best bid for the single auction to 200.
-                zset! { Q9Output(1, "item-name".into(), "description".into(), 5, 10, 0, 10000, 99, 1, "".into(), 1, 1, 100, 2000, "".into()) => -1, Q9Output(1, "item-name".into(), "description".into(), 5, 10, 0, 10000, 99, 1, "".into(), 1, 1, 200, 9000, "".into()) => 1 },
+                zset! { Q9Output(1, "item-name".to_string().into(), "description".to_string().into(), 5, 10, 0, 10000, 99, 1, "".to_string().into(), 1, 1, 100, 2000, "".to_string().into()) => -1, Q9Output(1, "item-name".to_string().into(), "description".to_string().into(), 5, 10, 0, 10000, 99, 1, "".to_string().into(), 1, 1, 200, 9000, "".to_string().into()) => 1 },
                 // The third batch has a bid for the first auction that isn't
                 // higher than the existing bid, so no change there. A (first)
                 // bid for the second auction creates a new addition:
-                zset! { Q9Output(2, "item-name".into(), "description".into(), 5, 10, 0, 20_000, 101, 1, "".into(), 2, 1, 400, 19_000, "".into()) => 1 },
+                zset! { Q9Output(2, "item-name".to_string().into(), "description".to_string().into(), 5, 10, 0, 20_000, 101, 1, "".to_string().into(), 2, 1, 400, 19_000, "".to_string().into()) => 1 },
                 // The last batch just has an invalid (too late) winning bid for
                 // auction 2, so no change.
                 zset! {},

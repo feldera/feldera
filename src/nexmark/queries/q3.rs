@@ -77,8 +77,8 @@ mod tests {
                 (
                     Event::Person(Person {
                         id: 1,
-                        name: String::from("NL Seller"),
-                        state: String::from("NL"),
+                        name: String::from("NL Seller").into(),
+                        state: String::from("NL").into(),
                         ..make_person()
                     }),
                     1,
@@ -86,8 +86,8 @@ mod tests {
                 (
                     Event::Person(Person {
                         id: 2,
-                        name: String::from("CA Seller"),
-                        state: String::from("CA"),
+                        name: String::from("CA Seller").into(),
+                        state: String::from("CA").into(),
                         ..make_person()
                     }),
                     1,
@@ -95,8 +95,8 @@ mod tests {
                 (
                     Event::Person(Person {
                         id: 3,
-                        name: String::from("ID Seller"),
-                        state: String::from("ID"),
+                        name: String::from("ID Seller").into(),
+                        state: String::from("ID").into(),
                         ..make_person()
                     }),
                     1,
@@ -125,8 +125,8 @@ mod tests {
                 (
                     Event::Person(Person {
                         id: 4,
-                        name: String::from("OR Seller"),
-                        state: String::from("OR"),
+                        name: String::from("OR Seller").into(),
+                        state: String::from("OR").into(),
                         ..make_person()
                     }),
                     1,
@@ -144,8 +144,8 @@ mod tests {
                 (
                     Event::Person(Person {
                         id: 5,
-                        name: String::from("OR Seller"),
-                        state: String::from("OR"),
+                        name: String::from("OR Seller").into(),
+                        state: String::from("OR").into(),
                         ..make_person()
                     }),
                     1,
@@ -173,18 +173,18 @@ mod tests {
                     vec![
                         (
                             (
-                                String::from("CA Seller"),
-                                String::from("Phoenix"),
-                                String::from("CA"),
+                                String::from("CA Seller").into(),
+                                String::from("Phoenix").into(),
+                                String::from("CA").into(),
                                 999,
                             ),
                             1,
                         ),
                         (
                             (
-                                String::from("ID Seller"),
-                                String::from("Phoenix"),
-                                String::from("ID"),
+                                String::from("ID Seller").into(),
+                                String::from("Phoenix").into(),
+                                String::from("ID").into(),
                                 452,
                             ),
                             1,
@@ -195,9 +195,9 @@ mod tests {
                     (),
                     vec![(
                         (
-                            String::from("OR Seller"),
-                            String::from("Phoenix"),
-                            String::from("OR"),
+                            String::from("OR Seller").into(),
+                            String::from("Phoenix").into(),
+                            String::from("OR").into(),
                             333,
                         ),
                         1,

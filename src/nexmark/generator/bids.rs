@@ -3,13 +3,14 @@
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/BidGenerator.java).
 use super::NexmarkGenerator;
 use super::{
-    super::model::Bid,
+    super::model::{Bid, ImmString},
     config::{FIRST_AUCTION_ID, FIRST_PERSON_ID},
     strings::next_string,
 };
 use cached::Cached;
+use once_cell::sync::Lazy;
 use rand::Rng;
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
@@ -19,17 +20,35 @@ const HOT_CHANNELS_RATIO: usize = 100;
 
 pub const CHANNELS_NUMBER: u32 = 10_000;
 
-const HOT_CHANNELS: [&str; 4] = ["Google", "Facebook", "Baidu", "Apple"];
-const HOT_URLS: [&str; 4] = [
-    "https://www.nexmark.com/googl/item.htm?query=1",
-    "https://www.nexmark.com/meta/item.htm?query=1",
-    "https://www.nexmark.com/bidu/item.htm?query=1",
-    "https://www.nexmark.com/aapl/item.htm?query=1",
-];
+static HOT_CHANNELS: Lazy<Arc<[ImmString; 4]>> = Lazy::new(|| {
+    Arc::new([
+        "Google".to_string().into(),
+        "Facebook".to_string().into(),
+        "Baidu".to_string().into(),
+        "Apple".to_string().into(),
+    ])
+});
+static HOT_URLS: Lazy<Arc<[ImmString; 4]>> = Lazy::new(|| {
+    Arc::new([
+        "https://www.nexmark.com/googl/item.htm?query=1"
+            .to_string()
+            .into(),
+        "https://www.nexmark.com/meta/item.htm?query=1"
+            .to_string()
+            .into(),
+        "https://www.nexmark.com/bidu/item.htm?query=1"
+            .to_string()
+            .into(),
+        "https://www.nexmark.com/aapl/item.htm?query=1"
+            .to_string()
+            .into(),
+    ])
+});
+
 const BASE_URL_PATH_LENGTH: usize = 5;
 
 impl<R: Rng> NexmarkGenerator<R> {
-    fn get_new_channel_instance(&mut self, channel_number: u32) -> (String, String) {
+    fn get_new_channel_instance(&mut self, channel_number: u32) -> (ImmString, ImmString) {
         // Manually check the cache. Note: using a manual SizedCache because the
         // `cached` library doesn't allow using the proc_macro `cached` with
         // `self`.
@@ -42,10 +61,10 @@ impl<R: Rng> NexmarkGenerator<R> {
                 // which uses `Integer.reverse` to get a deterministic channel_id.
                 url = match self.rng.gen_range(0..10) {
                     9 => url,
-                    _ => format!("{}&channel_id={}", url, channel_number.reverse_bits()),
+                    _ => format!("{}&channel_id={}", url, channel_number.reverse_bits()).into(),
                 };
 
-                (format!("channel-{}", channel_number), url)
+                (format!("channel-{}", channel_number).into(), url)
             })
             .clone()
     }
@@ -87,7 +106,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             HOT_CHANNELS_RATIO => self.get_new_channel_instance(channel_number),
             _ => {
                 let hot_index = self.rng.gen_range(0..HOT_CHANNELS.len());
-                (HOT_CHANNELS[hot_index].into(), HOT_URLS[hot_index].into())
+                (HOT_CHANNELS[hot_index].clone(), HOT_URLS[hot_index].clone())
             }
         };
         // Original Java implementation calculates the size of the bid as
@@ -108,11 +127,12 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 }
 
-fn get_base_url<R: Rng>(rng: &mut R) -> String {
+fn get_base_url<R: Rng>(rng: &mut R) -> ImmString {
     format!(
         "https://www.nexmark.com/{}/item.htm?query=1",
         next_string(rng, BASE_URL_PATH_LENGTH)
     )
+    .into()
 }
 
 #[cfg(test)]
@@ -146,10 +166,12 @@ pub mod tests {
                 auction: expected_auction_id,
                 bidder: expected_bidder_id,
                 price: 100,
-                channel: "Google".into(),
-                url: "https://www.nexmark.com/googl/item.htm?query=1".into(),
+                channel: "Google".to_string().into(),
+                url: "https://www.nexmark.com/googl/item.htm?query=1"
+                    .to_string()
+                    .into(),
                 date_time: 1_000_000_000_000,
-                extra: (0..expected_size).map(|_| "A").collect::<String>(),
+                extra: (0..expected_size).map(|_| "A").collect::<String>().into(),
             },
             bid
         );
@@ -160,7 +182,7 @@ pub mod tests {
         let mut rng = StepRng::new(0, 1);
         assert_eq!(
             get_base_url(&mut rng),
-            String::from("https://www.nexmark.com/AAA/item.htm?query=1")
+            String::from("https://www.nexmark.com/AAA/item.htm?query=1").into()
         );
     }
 
@@ -170,22 +192,29 @@ pub mod tests {
 
         let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
 
-        assert_eq!(channel_name, "channel-1234");
+        assert_eq!(channel_name, "channel-1234".to_string().into());
         assert_eq!(
             channel_url,
             "https://www.nexmark.com/AAA/item.htm?query=1&channel_id=1260388352"
+                .to_string()
+                .into()
         );
     }
 
     #[test]
     fn test_get_new_channel_instance_cached() {
         let mut ng = make_test_generator();
-        ng.bid_channel_cache
-            .cache_set(1234, ("Google".into(), "https://google.example.com".into()));
+        ng.bid_channel_cache.cache_set(
+            1234,
+            (
+                "Google".to_string().into(),
+                "https://google.example.com".to_string().into(),
+            ),
+        );
 
         let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
 
-        assert_eq!(channel_name, "Google");
-        assert_eq!(channel_url, "https://google.example.com");
+        assert_eq!(channel_name, "Google".to_string().into());
+        assert_eq!(channel_url, "https://google.example.com".to_string().into());
     }
 }
