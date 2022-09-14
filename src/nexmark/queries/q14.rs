@@ -1,5 +1,9 @@
 use super::NexmarkStream;
-use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream};
+use crate::{
+    nexmark::model::{Event, ImmString},
+    operator::FilterMap,
+    Circuit, OrdZSet, Stream,
+};
 use rust_decimal::Decimal;
 
 /// Query 14: Calculation (Not in original suite)
@@ -47,7 +51,7 @@ enum BidTimeType {
 }
 
 #[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord)]
-pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, usize);
+pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, ImmString, usize);
 
 type Q14Stream = Stream<Circuit<()>, OrdZSet<Q14Output, isize>>;
 
@@ -95,14 +99,14 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from(""), 0) => 1])]
+    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, ImmString::default(), 0) => 1])]
     #[case::decimal_price_converted_outside_range(1_000_000, 0, "", zset![])]
     #[case::decimal_price_converted_on_exclusive_boundary(1_000_000, 0, "", zset![])]
-    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 20*60*60*1000 + 1, String::from(""), 0) => 1])]
-    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 8*60*60*1000 + 1, String::from(""), 0) => 1])]
-    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, String::from(""), 0) => 1])]
-    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, String::from(""), 0) => 1])]
-    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them."), 4) => 1])]
+    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 20*60*60*1000 + 1, ImmString::default(), 0) => 1])]
+    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 8*60*60*1000 + 1, ImmString::default(), 0) => 1])]
+    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, ImmString::default(), 0) => 1])]
+    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, ImmString::default(), 0) => 1])]
+    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them.").into(), 4) => 1])]
     fn test_q14(
         #[case] price: usize,
         #[case] date_time: u64,
@@ -113,7 +117,7 @@ mod tests {
             Event::Bid(Bid {
                 price,
                 date_time,
-                extra: String::from(extra),
+                extra: String::from(extra).into(),
                 ..make_bid()
             }),
             1,

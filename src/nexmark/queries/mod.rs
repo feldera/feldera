@@ -9,7 +9,7 @@ pub use q4::q4;
 pub use q5::q5;
 pub use q6::q6;
 pub use q7::q7;
-
+pub use q8::q8;
 pub use q9::q9;
 
 pub use q13::{q13, q13_side_input};
@@ -26,7 +26,7 @@ mod q4;
 mod q5;
 mod q6;
 mod q7;
-
+mod q8;
 mod q9;
 
 mod q13;

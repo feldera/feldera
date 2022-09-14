@@ -145,7 +145,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::make_test_generator;
+    use super::super::{super::model::ImmString, tests::make_test_generator};
     use super::*;
     use rstest::rstest;
 
@@ -170,15 +170,15 @@ mod tests {
         assert_eq!(
             Auction {
                 id: FIRST_AUCTION_ID as u64,
-                item_name: "AAA".into(),
-                description: "AAA".into(),
+                item_name: ImmString::from("AAA".to_string()),
+                description: ImmString::from("AAA".to_string()),
                 initial_bid: 100,
                 reserve: 200,
                 date_time: 0,
                 expires: 1,
                 seller: 1000,
                 category: 10,
-                extra: (0..expected_size).map(|_| "A").collect::<String>(),
+                extra: (0..expected_size).map(|_| "A").collect::<String>().into(),
             },
             auction
         );

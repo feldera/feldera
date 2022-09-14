@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::{
-    nexmark::model::Event,
+    nexmark::model::{Event, ImmString},
     operator::{FilterMap, Min},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
@@ -36,8 +36,8 @@ use crate::{
 /// WHERE B.dateTime BETWEEN B1.dateTime  - INTERVAL '10' SECOND AND B1.dateTime;
 /// ```
 
-type Q7Stream = Stream<Circuit<()>, OrdZSet<(u64, u64, usize, u64, String), isize>>;
-type Q7Output = (u64, u64, usize, u64, String);
+type Q7Output = (u64, u64, usize, u64, ImmString);
+type Q7Stream = Stream<Circuit<()>, OrdZSet<Q7Output, isize>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -108,7 +108,7 @@ mod tests {
     // and the tumbled window is from 10_000 - 20_000.
     #[case::latest_bid_determines_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 90, 14_000, String::new()) => 1}],
+        vec![zset! {(1, 1, 90, 14_000, ImmString::default()) => 1}],
     )]
     // The window is rounded to the 10 second boundary
     #[case::window_boundary_below(
@@ -117,11 +117,11 @@ mod tests {
     )]
     #[case::window_boundary_lower(
         vec![vec![(10_000, 50), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 50, 10_000, String::new()) => 1}],
+        vec![zset! {(1, 1, 50, 10_000, ImmString::default()) => 1}],
     )]
     #[case::window_boundary_upper(
         vec![vec![(19_999, 50), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 50, 19_999, String::new()) => 1}],
+        vec![zset! {(1, 1, 50, 19_999, ImmString::default()) => 1}],
     )]
     #[case::window_boundary_above(
         vec![vec![(20_000, 50), (32_000, 1_000_000)]],
@@ -130,23 +130,23 @@ mod tests {
     #[case::tumble_into_new_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000)], vec![(32_000, 10)], vec![(42_000, 10)]],
         vec![
-            zset! {(1, 1, 1_000_000, 9_000, String::new()) => 1},
+            zset! {(1, 1, 1_000_000, 9_000, ImmString::default()) => 1},
             zset! {
-                (1, 1, 1_000_000, 9_000, String::new()) => -1,
-                (1, 1, 90, 14_000, String::new()) => 1,
+                (1, 1, 1_000_000, 9_000, ImmString::default()) => -1,
+                (1, 1, 90, 14_000, ImmString::default()) => 1,
             },
             zset! {
-                (1, 1, 90, 14_000, String::new()) => -1,
-                (1, 1, 1_000_000, 21_000, String::new()) => 1,
+                (1, 1, 90, 14_000, ImmString::default()) => -1,
+                (1, 1, 1_000_000, 21_000, ImmString::default()) => 1,
             }],
     )]
     #[case::multiple_max_bids(
         vec![vec![(11_000, 90), (14_000, 90), (16_000, 90), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 90, 11_000, String::new()) => 1, (1, 1, 90, 14_000, String::new()) => 1, (1, 1, 90, 16_000, String::new()) => 1}],
+        vec![zset! {(1, 1, 90, 11_000, ImmString::default()) => 1, (1, 1, 90, 14_000, ImmString::default()) => 1, (1, 1, 90, 16_000, ImmString::default()) => 1}],
     )]
     fn test_q7(
         #[case] input_batches: Vec<Vec<(u64, usize)>>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, u64, usize, u64, String), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<(u64, u64, usize, u64, ImmString), isize>>,
     ) {
         let input_vecs = input_batches.into_iter().map(|batch| {
             batch
