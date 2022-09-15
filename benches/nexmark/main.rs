@@ -20,7 +20,7 @@ use dbsp::{
     nexmark::{
         config::Config as NexmarkConfig,
         model::Event,
-        queries::{q0, q1, q13, q13_side_input, q14, q15, q2, q3, q4, q5, q6, q7, q8, q9},
+        queries::{q0, q1, q12, q13, q13_side_input, q14, q15, q2, q3, q4, q5, q6, q7, q8, q9},
         NexmarkSource,
     },
     trace::ord::OrdZSet,
@@ -330,6 +330,7 @@ fn main() -> Result<()> {
         ("q7", q7),
         ("q8", q8),
         ("q9", q9),
+        ("q12", q12),
         ("q13", q13),
         ("q14", q14),
         ("q15", q15)

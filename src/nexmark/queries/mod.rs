@@ -1,6 +1,8 @@
 //! Nexmark Queries in DBSP.
 use super::model::Event;
 use crate::{Circuit, OrdZSet, Stream};
+use std::time::SystemTime;
+
 pub use q0::q0;
 pub use q1::q1;
 pub use q2::q2;
@@ -12,6 +14,7 @@ pub use q7::q7;
 pub use q8::q8;
 pub use q9::q9;
 
+pub use q12::q12;
 pub use q13::{q13, q13_side_input};
 pub use q14::q14;
 pub use q15::q15;
@@ -32,6 +35,14 @@ mod q7;
 mod q8;
 mod q9;
 
+mod q12;
 mod q13;
 mod q14;
 mod q15;
+
+fn process_time() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
