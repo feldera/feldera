@@ -1,140 +1,206 @@
 use crate::{
-    algebra::{HasOne, HasZero},
+    algebra::{AddAssignByRef, HasOne, HasZero, PartialOrder, ZRingValue},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
-        OwnershipPreference, Scope,
+        ExportId, ExportStream, OwnershipPreference, Scope,
     },
-    trace::{cursor::Cursor, Batch, Trace},
+    operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
+    trace::{
+        consolidation::consolidate, cursor::Cursor, spine_fueled::Spine, Batch, Builder, Trace,
+        TraceReader,
+    },
+    utils::VecExt,
+    Circuit, Stream, Timestamp,
 };
-use std::{borrow::Cow, marker::PhantomData, mem::swap, ops::Neg};
+use size_of::SizeOf;
+use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-pub struct Upsert<K, VI, F, V, T, B> {
-    val_func: F,
-    phantom: PhantomData<(K, VI, V, T, B)>,
+impl<P, K, V> Stream<Circuit<P>, Vec<(K, Option<V>)>>
+where
+    P: Clone + 'static,
+{
+    /// Convert a stream of upserts into a stream of updates.
+    ///
+    /// The input stream carries changes to a key/value map in the form of
+    /// _upserts_.  An upsert assigns a new value to a key (or `None` to
+    /// remove the key fro the map) without explicitly removing the old
+    /// value, if any.  Upserts are produced by some operators
+    /// or arrive from external data sources via
+    /// [`UpsertHandle`](`crate::UpsertHandle`)s.  The operator converts upserts
+    /// into batches of updates, which is the input format of most DBSP
+    /// operators.
+    ///
+    /// The operator assumes that the input vector is sorted by key and contains
+    /// exactly one value per key.
+    ///
+    /// This is a stateful operator that internaly maintains the trace of the
+    /// collection.
+    // TODO: Derive TS from circuit.
+    pub fn upsert<TS, B>(&self) -> Stream<Circuit<P>, B>
+    where
+        K: Ord + Clone + Eq + SizeOf + 'static,
+        V: Ord + Clone + Ord + SizeOf + 'static,
+        B::R: ZRingValue + SizeOf,
+        TS: Timestamp + SizeOf,
+        B: Batch<Key = K, Val = V, Time = ()> + 'static,
+    {
+        let circuit = self.circuit();
+
+        // We build the following circuit to implement the upsert semantics.
+        // The collection is accumulated into a trace using integrator
+        // (UntimedTraceAppend + Z1Trace = integrator).  The `Upsert` operator
+        // evaluates each upsert command in the input stream against the trace
+        // and computes a batch of updates to be added to the trace.
+        //
+        // ```text
+        //                          ┌────────────────────────────►
+        //                          │
+        //                          │
+        //  self        ┌──────┐    │        ┌───────────┐  trace
+        // ────────────►│Upsert├────┴───────►│TraceAppend├────┐
+        //              └──────┘   delta     └───────────┘    │
+        //                 ▲                  ▲               │
+        //                 │                  │               │
+        //                 │                  │   ┌───────┐   │
+        //                 └──────────────────┴───┤Z1Trace│◄──┘
+        //                    z1trace             └───────┘
+        // ```
+        circuit.region("upsert", || {
+            let (ExportStream { local, export }, z1feedback) =
+                circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
+            local.mark_sharded_if(self);
+
+            let delta = circuit.add_binary_operator(
+                <Upsert<Spine<TS::OrdValBatch<K, V, B::R>>, B>>::new(),
+                &local,
+                &self.try_sharded_version(),
+            );
+            delta.mark_sharded_if(self);
+
+            let trace = circuit.add_binary_operator_with_preference(
+                <TraceAppend<Spine<TS::OrdValBatch<K, V, B::R>>, B>>::new(),
+                &local,
+                &delta.try_sharded_version(),
+                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                OwnershipPreference::PREFER_OWNED,
+            );
+            trace.mark_sharded_if(self);
+
+            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+            circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
+            circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+            circuit.cache_insert(TraceId::new(delta.origin_node_id().clone()), trace);
+            delta
+        })
+    }
 }
 
-impl<K, VI, F, V, T, B> Upsert<K, VI, F, V, T, B> {
-    pub fn new(val_func: F) -> Self {
+pub struct Upsert<T, B>
+where
+    T: TraceReader,
+{
+    time: T::Time,
+    phantom: PhantomData<B>,
+}
+
+impl<T, B> Upsert<T, B>
+where
+    T: TraceReader,
+{
+    pub fn new() -> Self {
         Self {
-            val_func,
+            time: T::Time::clock_start(),
             phantom: PhantomData,
         }
     }
 }
 
-/// Internal implementation of `Circuit::add_set` and `Circuit::add_map`.
-///
-/// Applies a vector of upsert commands to a trace (an upsert inserts a
-/// key/value pair, replacing existing value for the given key, or deletes
-/// a key/value pair if it exists).  Outputs a batch of changes to the
-/// trace.
-impl<K, VI, F, V, T, B> Operator for Upsert<K, VI, F, V, T, B>
+impl<T, B> Default for Upsert<T, B>
 where
+    T: TraceReader,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, B> Operator for Upsert<T, B>
+where
+    T: TraceReader + 'static,
     B: 'static,
-    T: 'static,
-    V: 'static,
-    F: 'static,
-    VI: 'static,
-    K: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Upsert")
     }
-
+    fn clock_end(&mut self, scope: Scope) {
+        self.time = self.time.advance(scope + 1);
+    }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
 
-fn skip_zero_weights<'s, K, V: 's, R, C>(cursor: &mut C) -> bool
+impl<T, B> BinaryOperator<T, Vec<(T::Key, Option<T::Val>)>, B> for Upsert<T, B>
 where
-    C: Cursor<'s, K, V, (), R>,
-    R: HasZero,
+    T: Trace + 'static,
+    T::Key: Clone + Ord + Eq,
+    T::Val: Clone + Ord,
+    T::R: ZRingValue,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R> + 'static,
 {
-    while cursor.val_valid() && cursor.weight().is_zero() {
-        cursor.step_val();
-    }
-    cursor.val_valid()
-}
+    fn eval(&mut self, trace: &T, updates: &Vec<(T::Key, Option<T::Val>)>) -> B {
+        // Inputs must be sorted by key
+        debug_assert!(updates.is_sorted_by(|(k1, _), (k2, _)| k1.partial_cmp(k2)));
+        // ... and contain a single update per key.
+        debug_assert!(updates
+            .windows(2)
+            .all(|upserts| upserts[0].0 != upserts[1].0));
+        let mut trace_cursor = trace.cursor();
 
-impl<K, VI, F, V, T, B> BinaryOperator<T, Vec<(K, VI)>, B> for Upsert<K, VI, F, V, T, B>
-where
-    T: Trace<Key = K, Val = V, Batch = B, Time = (), R = B::R> + 'static,
-    B: Batch<Key = K, Val = V, Time = ()> + 'static,
-    F: Fn(VI) -> Option<V> + 'static,
-    K: Ord + Clone + 'static,
-    VI: Eq + 'static,
-    B::R: HasOne + Neg<Output = B::R> + 'static,
-    V: Eq + Clone + 'static,
-{
-    fn eval(&mut self, _trace: &T, _upserts: &Vec<(K, VI)>) -> B {
-        panic!("Upsert::eval(): cannot accept upserts by reference")
-    }
+        let mut builder = B::Builder::with_capacity((), updates.len() * 2);
+        let mut key_updates: Vec<(T::Val, T::R)> = Vec::new();
 
-    fn eval_owned_and_ref(&mut self, mut _trace: T, _upserts: &Vec<(K, VI)>) -> B {
-        panic!("Upsert::eval_owned_and_ref(): cannot accept upserts by reference")
-    }
-
-    fn eval_ref_and_owned(&mut self, trace: &T, mut upserts: Vec<(K, VI)>) -> B {
-        let mut updates = Vec::with_capacity(upserts.len());
-        let mut cursor = trace.cursor();
-
-        // Sort the vector by key, preserving the history of updates for each key.
-        // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-        upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-
-        // Find the last upsert for each key, that's the only one that matters.
-        upserts.dedup_by(|(k1, v1), (k2, v2)| {
-            if k1 == k2 {
-                swap(v1, v2);
-                true
-            } else {
-                false
+        for (key, val) in updates {
+            if let Some(val) = val {
+                key_updates.push((val.clone(), HasOne::one()));
             }
-        });
 
-        for (k, val) in upserts.into_iter() {
-            cursor.seek_key(&k);
-            let val = (self.val_func)(val);
+            trace_cursor.seek_key(key);
 
-            if cursor.key_valid() && cursor.key() == &k && skip_zero_weights(&mut cursor) {
-                // Key already present in the trace.
-                match val {
-                    // New value for existing key - delete old value, insert the new one.
-                    Some(val) if &val != cursor.val() => {
-                        updates.push((
-                            B::item_from(cursor.key().clone(), cursor.val().clone()),
-                            B::R::one().neg(),
-                        ));
-                        updates.push((B::item_from(k, val), B::R::one()));
+            if trace_cursor.key_valid() && trace_cursor.key() == key {
+                // println!("{}: found key in trace_cursor", Runtime::worker_index());
+                while trace_cursor.val_valid() {
+                    let mut weight = T::R::zero();
+                    trace_cursor.map_times(|t, w| {
+                        if t.less_equal(&self.time) {
+                            weight.add_assign_by_ref(w);
+                        };
+                    });
+
+                    if !weight.is_zero() {
+                        key_updates.push((trace_cursor.val().clone(), weight.neg()));
                     }
-                    // New value is `None` - remove existing key/value pair.
-                    None => {
-                        updates.push((B::item_from(k, cursor.val().clone()), B::R::one().neg()));
-                    }
-                    // Otherwise, the new value is the same as the old value - do nothing.
-                    _ => {}
-                }
-            } else {
-                // Key not in the trace.
 
-                if let Some(val) = val {
-                    updates.push((B::item_from(k, val), HasOne::one()));
+                    trace_cursor.step_val();
                 }
             }
+
+            consolidate(&mut key_updates);
+            builder.extend(
+                key_updates
+                    .drain(..)
+                    .map(|(val, w)| (B::item_from(key.clone(), val), w)),
+            )
         }
 
-        B::from_tuples((), updates)
-    }
-
-    fn eval_owned(&mut self, trace: T, upserts: Vec<(K, VI)>) -> B {
-        self.eval_ref_and_owned(&trace, upserts)
+        self.time = self.time.advance(0);
+        builder.done()
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
         (
             OwnershipPreference::PREFER_OWNED,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
+            OwnershipPreference::PREFER_OWNED,
         )
     }
 }
