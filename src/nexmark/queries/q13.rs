@@ -1,11 +1,10 @@
-use super::NexmarkStream;
+use super::{process_time, NexmarkStream};
 use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream};
 
 use csv;
 use std::{
     fs::File,
     io::{BufReader, Read, Result},
-    time::SystemTime,
 };
 
 /// Query 13: Bounded Side Input Join (Not in original suite)
@@ -82,13 +81,6 @@ pub fn q13_side_input() -> Vec<((usize, String, u64), isize)> {
         .into_iter()
         .map(|(k, v)| ((k, v, p_time), 1))
         .collect()
-}
-
-fn process_time() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
 }
 
 pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
