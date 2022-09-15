@@ -3,8 +3,8 @@ use crate::{
     time::{Antichain, AntichainRef},
     trace::{
         layers::{
+            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
-            ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
         },
@@ -20,7 +20,7 @@ use std::{
 };
 
 pub type OrdValBatchLayer<K, V, T, R, O> =
-    OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, O>, O>;
+    OrderedLayer<K, OrderedLayer<V, OrderedColumnLeaf<T, R>, O>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
@@ -153,13 +153,13 @@ where
         //    then zip through the key layer, collapsing each .. ?
 
         // 1. For each (time, diff) pair, advance the time.
-        for i in 0..self.layer.vals.vals.vals.len() {
-            self.layer.vals.vals.vals[i].0.meet_assign(frontier);
+        for time in self.layer.vals.vals.keys_mut() {
+            time.meet_assign(frontier);
         }
 
         // 2. For each `(val, off)` pair, sort the range, compact, and rewrite `off`.
         //    This may leave `val` with an empty range; filtering happens in step 3.
-        let mut write_position = 0;
+        let (mut write_position, mut indices_buf) = (0, Vec::new());
         for i in 0..self.layer.vals.keys.len() {
             // NB: batch.layer.vals.offs[i+1] will be used next iteration, and should not be
             // changed.     we will change batch.layer.vals.offs[i] in this
@@ -170,17 +170,22 @@ where
 
             self.layer.vals.offs[i] = O::from_usize(write_position);
 
-            let updates = &mut self.layer.vals.vals.vals[..];
+            let (times, diffs) = &mut self.layer.vals.vals.columns_mut();
 
             // sort the range by the times (ignore the diffs; they will collapse).
-            let count = crate::trace::consolidation::consolidate_slice(&mut updates[lower..upper]);
+            let count = crate::trace::consolidation::consolidate_paired_slices(
+                &mut times[lower..upper],
+                &mut diffs[lower..upper],
+                &mut indices_buf,
+            );
 
             for index in lower..(lower + count) {
-                updates.swap(write_position, index);
+                times.swap(write_position, index);
+                diffs.swap(write_position, index);
                 write_position += 1;
             }
         }
-        self.layer.vals.vals.vals.truncate(write_position);
+        self.layer.vals.vals.truncate(write_position);
         self.layer.vals.offs[self.layer.vals.keys.len()] = O::from_usize(write_position);
 
         // 3. For each `(key, off)` pair, (values already sorted), filter vals, and
@@ -295,7 +300,7 @@ where
         source2: &OrdValBatch<K, V, T, R, O>,
         fuel: &mut isize,
     ) {
-        let starting_updates = self.result.vals.vals.vals.len();
+        let starting_updates = self.result.vals.vals.len();
         let mut effort = 0isize;
 
         // while both mergees are still active
@@ -304,7 +309,7 @@ where
                 (&source1.layer, &mut self.lower1, self.upper1),
                 (&source2.layer, &mut self.lower2, self.upper2),
             );
-            effort = (self.result.vals.vals.vals.len() - starting_updates) as isize;
+            effort = (self.result.vals.vals.len() - starting_updates) as isize;
         }
 
         // Merging is complete; only copying remains. Copying is probably faster than
@@ -340,7 +345,7 @@ where
             }
         }
 
-        effort = (self.result.vals.vals.vals.len() - starting_updates) as isize;
+        effort = (self.result.vals.vals.len() - starting_updates) as isize;
 
         *fuel -= effort;
 
@@ -360,7 +365,7 @@ where
     R: MonoidValue,
     O: OrdOffset,
 {
-    cursor: OrderedCursor<'s, K, O, OrderedLayer<V, OrderedLeaf<T, R>, O>>,
+    cursor: OrderedCursor<'s, K, O, OrderedLayer<V, OrderedColumnLeaf<T, R>, O>>,
 }
 
 impl<'s, K, V, T, R, O> Cursor<'s, K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
@@ -381,8 +386,8 @@ where
         self.cursor.child.child.rewind();
         while self.cursor.child.child.valid() {
             logic(
-                &self.cursor.child.child.key().0,
-                &self.cursor.child.child.key().1,
+                self.cursor.child.child.current_key(),
+                self.cursor.child.child.current_diff(),
             );
             self.cursor.child.child.step();
         }
@@ -391,8 +396,8 @@ where
         self.cursor.child.child.rewind();
         while self.cursor.child.child.valid() && self.cursor.child.child.key().0.less_equal(upper) {
             logic(
-                &self.cursor.child.child.key().0,
-                &self.cursor.child.child.key().1,
+                self.cursor.child.child.current_key(),
+                self.cursor.child.child.current_diff(),
             );
             self.cursor.child.child.step();
         }
@@ -436,6 +441,9 @@ where
     }
 }
 
+type RawOrdValBuilder<K, V, T, R, O> =
+    OrderedBuilder<K, OrderedBuilder<V, OrderedColumnLeafBuilder<T, R>, O>, O>;
+
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct OrdValBuilder<K, V, T, R, O = usize>
@@ -447,7 +455,7 @@ where
     O: OrdOffset,
 {
     time: T,
-    builder: OrderedBuilder<K, OrderedBuilder<V, OrderedLeafBuilder<T, R>, O>, O>,
+    builder: RawOrdValBuilder<K, V, T, R, O>,
 }
 
 impl<K, V, T, R, O> Builder<(K, V), T, R, OrdValBatch<K, V, T, R, O>>
@@ -464,7 +472,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            builder: OrderedBuilder::<K, OrderedBuilder<V, OrderedLeafBuilder<T, R>, O>, O>::new(),
+            builder: RawOrdValBuilder::<K, V, T, R, O>::new(),
         }
     }
 
@@ -472,7 +480,7 @@ where
     fn with_capacity(time: T, cap: usize) -> Self {
         Self {
             time,
-            builder: <OrderedBuilder<K, OrderedBuilder<V, OrderedLeafBuilder<T, R>, O>, O> as TupleBuilder>::with_capacity(cap)
+            builder: <RawOrdValBuilder<K, V, T, R, O> as TupleBuilder>::with_capacity(cap),
         }
     }
 

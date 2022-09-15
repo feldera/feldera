@@ -23,6 +23,13 @@ pub struct OrderedColumnLeafBuilder<K, R> {
 }
 
 impl<K, R> OrderedColumnLeafBuilder<K, R> {
+    /// Get the length of the current builder
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        unsafe { self.assume_invariants() }
+        self.keys.len()
+    }
+
     /// Assume the invariants of the current builder
     ///
     /// # Safety

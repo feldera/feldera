@@ -35,7 +35,12 @@ where
     D: AddAssignByRef + HasZero,
 {
     slice.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
-    consolidation::consolidate_slice_inner(slice)
+    consolidation::consolidate_slice_inner(
+        slice,
+        |(key1, _), (key2, _)| key1 == key2,
+        |(_, diff1), (_, diff2)| diff1.add_assign_by_ref(diff2),
+        |(_, diff)| diff.is_zero(),
+    )
 }
 
 // Consolidation using stable sorting and native std functions

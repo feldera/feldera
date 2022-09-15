@@ -29,11 +29,34 @@ pub struct OrderedColumnLeaf<K, R> {
 
 impl<K, R> OrderedColumnLeaf<K, R> {
     /// Create an empty `OrderedColumnLeaf`
+    #[inline]
     pub const fn empty() -> Self {
         Self {
             keys: Vec::new(),
             diffs: Vec::new(),
         }
+    }
+
+    /// Get the length of the current leaf
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn len(&self) -> usize {
+        unsafe { self.assume_invariants() }
+        self.keys.len()
+    }
+
+    /// Get mutable references to the current leaf's keys and differences
+    #[inline]
+    pub(crate) fn columns_mut(&mut self) -> (&mut [K], &mut [R]) {
+        unsafe { self.assume_invariants() }
+        (&mut self.keys, &mut self.diffs)
+    }
+
+    /// Get a mutable reference to the current leaf's key values
+    #[inline]
+    pub(crate) fn keys_mut(&mut self) -> &mut [K] {
+        unsafe { self.assume_invariants() }
+        &mut self.keys
     }
 
     /// Get a mutable reference to the current leaf's difference values
@@ -44,10 +67,14 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         &mut self.diffs
     }
 
-    // fn len(&self) -> usize {
-    //     unsafe { self.assume_invariants() }
-    //     self.keys.len()
-    // }
+    /// Truncate the elements of the current leaf
+    #[inline]
+    pub(crate) fn truncate(&mut self, length: usize) {
+        unsafe { self.assume_invariants() }
+        self.keys.truncate(length);
+        self.diffs.truncate(length);
+        unsafe { self.assume_invariants() }
+    }
 
     /// Assume the invariants of the current builder
     ///

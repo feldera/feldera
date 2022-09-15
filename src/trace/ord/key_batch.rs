@@ -3,8 +3,8 @@ use crate::{
     time::{Antichain, AntichainRef},
     trace::{
         layers::{
+            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
-            ordered_leaf::{OrderedLeaf, OrderedLeafBuilder},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
         },
@@ -16,7 +16,7 @@ use crate::{
 use size_of::SizeOf;
 use std::fmt::Debug;
 
-pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, OrderedLeaf<T, R>, O>;
+pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, OrderedColumnLeaf<T, R>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
@@ -111,8 +111,8 @@ where
         //    then zip through the key layer, collapsing each .. ?
 
         // 1. For each (time, diff) pair, advance the time.
-        for i in 0..self.layer.vals.vals.len() {
-            self.layer.vals.vals[i].0.meet_assign(frontier);
+        for time in self.layer.vals.keys_mut() {
+            time.meet_assign(frontier);
         }
         // for time_diff in self.layer.vals.vals.iter_mut() {
         //     time_diff.0 = time_diff.0.advance_by(frontier);
@@ -120,7 +120,7 @@ where
 
         // 2. For each `(val, off)` pair, sort the range, compact, and rewrite `off`.
         //    This may leave `val` with an empty range; filtering happens in step 3.
-        let mut write_position = 0;
+        let (mut write_position, mut indices_buf) = (0, Vec::new());
         for i in 0..self.layer.keys.len() {
             // NB: batch.layer.vals.offs[i+1] will be used next iteration, and should not be
             // changed.     we will change batch.layer.vals.offs[i] in this
@@ -131,17 +131,22 @@ where
 
             self.layer.offs[i] = O::from_usize(write_position);
 
-            let updates = &mut self.layer.vals.vals[..];
+            let (times, diffs) = self.layer.vals.columns_mut();
 
             // sort the range by the times (ignore the diffs; they will collapse).
-            let count = crate::trace::consolidation::consolidate_slice(&mut updates[lower..upper]);
+            let count = crate::trace::consolidation::consolidate_paired_slices(
+                &mut times[lower..upper],
+                &mut diffs[lower..upper],
+                &mut indices_buf,
+            );
 
             for index in lower..(lower + count) {
-                updates.swap(write_position, index);
+                times.swap(write_position, index);
+                diffs.swap(write_position, index);
                 write_position += 1;
             }
         }
-        self.layer.vals.vals.truncate(write_position);
+        self.layer.vals.truncate(write_position);
         self.layer.offs[self.layer.keys.len()] = O::from_usize(write_position);
 
         // 4. Remove empty keys.
@@ -222,7 +227,7 @@ where
         source2: &OrdKeyBatch<K, T, R, O>,
         fuel: &mut isize,
     ) {
-        let starting_updates = self.result.vals.vals.len();
+        let starting_updates = self.result.vals.len();
         let mut effort = 0isize;
 
         // while both mergees are still active
@@ -231,7 +236,7 @@ where
                 (&source1.layer, &mut self.lower1, self.upper1),
                 (&source2.layer, &mut self.lower2, self.upper2),
             );
-            effort = (self.result.vals.vals.len() - starting_updates) as isize;
+            effort = (self.result.vals.len() - starting_updates) as isize;
         }
 
         // if self.lower1 == self.upper1 || self.lower2 == self.upper2 {
@@ -273,7 +278,7 @@ where
             }
         }
 
-        effort = (self.result.vals.vals.len() - starting_updates) as isize;
+        effort = (self.result.vals.len() - starting_updates) as isize;
 
         *fuel -= effort;
 
@@ -293,7 +298,7 @@ where
     R: MonoidValue,
 {
     valid: bool,
-    cursor: OrderedCursor<'s, K, O, OrderedLeaf<T, R>>,
+    cursor: OrderedCursor<'s, K, O, OrderedColumnLeaf<T, R>>,
 }
 
 impl<'s, K, T, R, O> Cursor<'s, K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
@@ -306,23 +311,33 @@ where
     fn key(&self) -> &K {
         self.cursor.key()
     }
+
     fn val(&self) -> &() {
         &()
     }
+
     fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {
-            logic(&self.cursor.child.key().0, &self.cursor.child.key().1);
+            logic(
+                self.cursor.child.current_key(),
+                self.cursor.child.current_diff(),
+            );
             self.cursor.child.step();
         }
     }
+
     fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() && self.cursor.child.key().0.less_equal(upper) {
-            logic(&self.cursor.child.key().0, &self.cursor.child.key().1);
+            logic(
+                self.cursor.child.current_key(),
+                self.cursor.child.current_diff(),
+            );
             self.cursor.child.step();
         }
     }
+
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
@@ -330,36 +345,46 @@ where
         debug_assert!(self.cursor.child.valid());
         self.cursor.child.key().1.clone()
     }
+
     fn key_valid(&self) -> bool {
         self.cursor.valid()
     }
+
     fn val_valid(&self) -> bool {
         self.valid
     }
+
     fn step_key(&mut self) {
         self.cursor.step();
         self.valid = true;
     }
+
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek(key);
         self.valid = true;
     }
+
     fn last_key(&mut self) -> Option<&K> {
         self.cursor.last_key()
     }
+
     fn step_val(&mut self) {
         self.valid = false;
     }
+
     fn seek_val(&mut self, _val: &()) {}
 
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
         self.valid = true;
     }
+
     fn rewind_vals(&mut self) {
         self.valid = true;
     }
 }
+
+type RawOrdKeyBuilder<K, T, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<T, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
@@ -371,7 +396,7 @@ where
     O: OrdOffset,
 {
     time: T,
-    builder: OrderedBuilder<K, OrderedLeafBuilder<T, R>, O>,
+    builder: RawOrdKeyBuilder<K, T, R, O>,
 }
 
 impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
@@ -386,7 +411,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            builder: <OrderedBuilder<K, OrderedLeafBuilder<T, R>, O> as TupleBuilder>::new(),
+            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::new(),
         }
     }
 
@@ -394,8 +419,7 @@ where
     fn with_capacity(time: T, cap: usize) -> Self {
         Self {
             time,
-            builder:
-                <OrderedBuilder<K, OrderedLeafBuilder<T, R>, O> as TupleBuilder>::with_capacity(cap),
+            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::with_capacity(cap),
         }
     }
 
