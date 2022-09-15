@@ -69,6 +69,59 @@ where
     retain_starting_at(vec, offset, |(_, data)| !data.is_zero());
 }
 
+/// Sorts and consolidate `vec[offset..]`.
+///
+/// This method will sort `vec[offset..]` and then consolidate runs of more than
+/// one entry with identical first elements by accumulating the second elements
+/// of the pairs. Should the final accumulation be zero, the element is
+/// discarded.
+pub fn consolidate_paired_vecs_from<T, R>(
+    keys: &mut Vec<T>,
+    diffs: &mut Vec<R>,
+    indices: &mut Vec<usize>,
+    offset: usize,
+) where
+    T: Ord,
+    R: HasZero + AddAssign,
+{
+    // Ensure that the paired slices are the same length
+    assert_eq!(keys.len(), diffs.len());
+
+    // Clear and pre-allocate the indices buffer
+    indices.clear();
+    indices.reserve(keys.len());
+    // TODO: We can do this in a vectorized manner, the assembly isn't ideal https://godbolt.org/z/4TbK6Mzec
+    indices.extend(0..keys.len());
+
+    // Ideally we'd combine the sorting and value merging portions
+    // This line right here is literally the hottest code within the entirety of the
+    // program. It makes up 90% of the work done while joining or merging anything
+    indices.sort_unstable_by(|&idx1, &idx2| {
+        // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
+        unsafe { keys.get_unchecked(idx1).cmp(keys.get_unchecked(idx2)) }
+    });
+
+    // Safety: All indices within `indices` are valid
+    let diffs_ptr = diffs.as_mut_ptr();
+    dedup_starting_at(indices, offset, |&mut idx1, &mut idx2| unsafe {
+        debug_assert!(idx1 < keys.len() && idx2 < keys.len());
+
+        if keys.get_unchecked(idx1) == keys.get_unchecked(idx2) {
+            debug_assert_ne!(idx1, idx2);
+            let data1 = replace(&mut *diffs_ptr.add(idx1), R::zero());
+            let data2 = &mut *diffs_ptr.add(idx2);
+            data2.add_assign(data1);
+
+            true
+        } else {
+            false
+        }
+    });
+    retain_starting_at(indices, offset, |&mut idx| unsafe {
+        !diffs.get_unchecked(idx).is_zero()
+    });
+}
+
 /// Sorts and consolidates a slice, returning the valid prefix length.
 // TODO: I'm pretty sure there's some improvements to be made here.
 //       We don't really need (pure) slice consolidation from what I've
@@ -112,7 +165,6 @@ where
     // Clear and pre-allocate the indices buffer
     indices.clear();
     indices.reserve(keys.len());
-
     // TODO: We can do this in a vectorized manner, the assembly isn't ideal https://godbolt.org/z/4TbK6Mzec
     indices.extend(0..keys.len());
 

@@ -1,7 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::{
-        consolidation::consolidate_from,
+        consolidation::consolidate_paired_vecs_from,
         layers::{
             advance, column_leaf::OrderedColumnLeaf, Builder, MergeBuilder, Trie, TupleBuilder,
         },
@@ -17,7 +17,7 @@ use std::{
 /// A builder for ordered values
 #[derive(SizeOf)]
 pub struct OrderedColumnLeafBuilder<K, R> {
-    // Invariant: `keys.len() == diffs.len`
+    // Invariant: `keys.len() == diffs.len()`
     keys: Vec<K>,
     diffs: Vec<R>,
 }
@@ -87,8 +87,10 @@ where
 
     #[inline]
     fn reserve(&mut self, additional: usize) {
+        unsafe { self.assume_invariants() }
         self.keys.reserve(additional);
         self.diffs.reserve(additional);
+        unsafe { self.assume_invariants() }
     }
 
     #[inline]
@@ -101,6 +103,8 @@ where
         assert!(lower <= other.keys.len() && upper <= other.keys.len());
         self.keys.extend_from_slice(&other.keys[lower..upper]);
         self.diffs.extend_from_slice(&other.diffs[lower..upper]);
+
+        unsafe { self.assume_invariants() }
     }
 
     fn push_merge<'a>(
@@ -120,9 +124,7 @@ where
         let (mut lower2, upper2) = cursor2.bounds();
 
         let reserved = (upper1 - lower1) + (upper2 - lower2);
-        self.keys.reserve(reserved);
-        self.diffs.reserve(reserved);
-        unsafe { self.assume_invariants() }
+        self.reserve(reserved);
 
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
@@ -134,12 +136,7 @@ where
                     });
 
                     let step = min(step, 1000);
-                    <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
-                        self,
-                        trie1,
-                        lower1,
-                        lower1 + step,
-                    );
+                    self.copy_range(trie1, lower1, lower1 + step);
 
                     lower1 += step;
                 }
@@ -163,12 +160,7 @@ where
                     });
 
                     let step = min(step, 1000);
-                    <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
-                        self,
-                        trie2,
-                        lower2,
-                        lower2 + step,
-                    );
+                    self.copy_range(trie2, lower2, lower2 + step);
 
                     lower2 += step;
                 }
@@ -176,14 +168,10 @@ where
         }
 
         if lower1 < upper1 {
-            <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
-                self, trie1, lower1, upper1,
-            );
+            self.copy_range(trie1, lower1, upper1);
         }
         if lower2 < upper2 {
-            <OrderedColumnLeafBuilder<K, R> as MergeBuilder>::copy_range(
-                self, trie2, lower2, upper2,
-            );
+            self.copy_range(trie2, lower2, upper2);
         }
 
         unsafe { self.assume_invariants() }
@@ -240,8 +228,31 @@ where
 /// A builder for unordered values
 #[derive(SizeOf)]
 pub struct UnorderedColumnLeafBuilder<K, R> {
-    values: Vec<(K, R)>,
+    // Invariant: `keys.len() == diffs.len()`
+    keys: Vec<K>,
+    diffs: Vec<R>,
+    /// A buffer to hold the indices used by `consolidate_paired_vecs_from()`
+    indices_buf: Vec<usize>,
     boundary: usize,
+}
+
+impl<K, R> UnorderedColumnLeafBuilder<K, R> {
+    /// Get the length of the current builder
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        unsafe { self.assume_invariants() }
+        self.keys.len()
+    }
+
+    /// Assume the invariants of the current builder
+    ///
+    /// # Safety
+    ///
+    /// Requires that `keys` and `diffs` have the exact same length
+    #[inline]
+    unsafe fn assume_invariants(&self) {
+        assume(self.keys.len() == self.diffs.len())
+    }
 }
 
 impl<K, R> Builder for UnorderedColumnLeafBuilder<K, R>
@@ -252,19 +263,27 @@ where
     type Trie = OrderedColumnLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
-        consolidate_from(&mut self.values, self.boundary);
-        self.boundary = self.values.len();
+        unsafe { self.assume_invariants() }
+        consolidate_paired_vecs_from(
+            &mut self.keys,
+            &mut self.diffs,
+            &mut self.indices_buf,
+            self.boundary,
+        );
+        unsafe { self.assume_invariants() }
+
+        self.boundary = self.len();
         self.boundary
     }
 
     fn done(mut self) -> Self::Trie {
         self.boundary();
 
-        // TODO: Can we reuse the `values` buffer somehow?
-        let (keys, diffs): (Vec<_>, Vec<_>) = self.values.into_iter().unzip();
-        unsafe { assume(keys.len() == diffs.len()) }
-
-        OrderedColumnLeaf { keys, diffs }
+        // TODO: The indices buffer is dropped here, can we reuse it for other builders?
+        OrderedColumnLeaf {
+            keys: self.keys,
+            diffs: self.diffs,
+        }
     }
 }
 
@@ -278,7 +297,9 @@ where
     #[inline]
     fn new() -> Self {
         Self {
-            values: Vec::new(),
+            keys: Vec::new(),
+            diffs: Vec::new(),
+            indices_buf: Vec::new(),
             boundary: 0,
         }
     }
@@ -286,18 +307,23 @@ where
     #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            values: Vec::with_capacity(capacity),
+            keys: Vec::with_capacity(capacity),
+            diffs: Vec::with_capacity(capacity),
+            indices_buf: Vec::with_capacity(capacity),
             boundary: 0,
         }
     }
 
     #[inline]
     fn tuples(&self) -> usize {
-        self.values.len()
+        self.len()
     }
 
     #[inline]
-    fn push_tuple(&mut self, tuple: (K, R)) {
-        self.values.push(tuple)
+    fn push_tuple(&mut self, (key, diff): (K, R)) {
+        unsafe { self.assume_invariants() }
+        self.keys.push(key);
+        self.diffs.push(diff);
+        unsafe { self.assume_invariants() }
     }
 }
