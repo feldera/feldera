@@ -1,11 +1,10 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
-    time::{Antichain, AntichainRef},
+    time::AntichainRef,
     trace::{
         layers::{
             column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
-            ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
         },
@@ -35,8 +34,6 @@ where
 {
     /// Where all the data is.
     pub layer: Layers<K, V, R, O>,
-    pub lower: Antichain<()>,
-    pub upper: Antichain<()>,
 }
 
 impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
@@ -45,14 +42,12 @@ where
     V: Ord + Clone + Display + 'static,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
     O: OrdOffset,
-    OrderedLayer<K, OrderedLeaf<V, R>, O>: Display,
+    Layers<K, V, R, O>: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "lower: {:?}, upper: {:?}\nlayer:\n{}",
-            self.lower,
-            self.upper,
+            "layer:\n{}",
             textwrap::indent(&self.layer.to_string(), "    ")
         )
     }
@@ -80,11 +75,7 @@ where
 {
     #[inline]
     fn from(layer: Layers<K, V, R, O>) -> Self {
-        Self {
-            layer,
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
-        }
+        Self { layer }
     }
 }
 
@@ -108,8 +99,7 @@ where
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
     O: OrdOffset,
 {
-    const CONST_NUM_ENTRIES: Option<usize> =
-        <OrderedLayer<K, OrderedLeaf<V, R>, O>>::CONST_NUM_ENTRIES;
+    const CONST_NUM_ENTRIES: Option<usize> = Layers::<K, V, R, O>::CONST_NUM_ENTRIES;
 
     #[inline]
     fn num_entries_shallow(&self) -> usize {
@@ -133,8 +123,6 @@ where
     fn neg_by_ref(&self) -> Self {
         Self {
             layer: self.layer.neg_by_ref(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
         }
     }
 }
@@ -152,8 +140,6 @@ where
     fn neg(self) -> Self {
         Self {
             layer: self.layer.neg(),
-            lower: self.lower,
-            upper: self.upper,
         }
     }
 }
@@ -170,13 +156,8 @@ where
     #[inline]
 
     fn add(self, rhs: Self) -> Self::Output {
-        let lower = self.lower().meet(rhs.lower());
-        let upper = self.upper().join(rhs.upper());
-
         Self {
             layer: self.layer.add(rhs.layer),
-            lower,
-            upper,
         }
     }
 }
@@ -190,8 +171,6 @@ where
 {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
-        self.lower = self.lower().meet(rhs.lower());
-        self.upper = self.upper().join(rhs.upper());
         self.layer.add_assign(rhs.layer);
     }
 }
@@ -206,8 +185,6 @@ where
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         self.layer.add_assign_by_ref(&rhs.layer);
-        self.lower = self.lower().meet(rhs.lower());
-        self.upper = self.upper().join(rhs.upper());
     }
 }
 
@@ -222,8 +199,6 @@ where
     fn add_by_ref(&self, rhs: &Self) -> Self {
         Self {
             layer: self.layer.add_by_ref(&rhs.layer),
-            lower: self.lower().meet(rhs.lower()),
-            upper: self.upper().join(rhs.upper()),
         }
     }
 }
@@ -260,12 +235,12 @@ where
 
     #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
-        self.lower.as_ref()
+        AntichainRef::new(&[()])
     }
 
     #[inline]
     fn upper(&self) -> AntichainRef<'_, ()> {
-        self.upper.as_ref()
+        AntichainRef::empty()
     }
 }
 
@@ -306,8 +281,6 @@ where
     fn empty(_time: Self::Time) -> Self {
         Self {
             layer: OrderedLayer::default(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 }
@@ -351,8 +324,6 @@ where
     fn done(self) -> OrdIndexedZSet<K, V, R, O> {
         OrdIndexedZSet {
             layer: self.result.done(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 
@@ -514,8 +485,6 @@ where
     fn done(self) -> OrdIndexedZSet<K, V, R, O> {
         OrdIndexedZSet {
             layer: self.builder.done(),
-            lower: Antichain::from_elem(()),
-            upper: Antichain::new(),
         }
     }
 }

@@ -5,7 +5,10 @@
 //! each record occurs at most once, with the accumulated weights. These methods
 //! supply that functionality.
 
-use crate::algebra::{AddAssignByRef, HasZero, MonoidValue};
+use crate::{
+    algebra::{AddAssignByRef, HasZero, MonoidValue},
+    utils::assume,
+};
 use std::{
     mem::{forget, replace},
     ops::AddAssign,
@@ -86,24 +89,150 @@ where
     // This line right here is literally the hottest code within the entirety of the
     // program. It makes up 90% of the work done while joining or merging anything
     slice.sort_unstable_by(|(key1, _), (key2, _)| key1.cmp(key2));
-    consolidate_slice_inner(slice)
+    consolidate_slice_inner(
+        slice,
+        |(key1, _), (key2, _)| key1 == key2,
+        |(_, diff1), (_, diff2)| diff1.add_assign_by_ref(diff2),
+        |(_, diff)| diff.is_zero(),
+    )
+}
+
+pub fn consolidate_paired_slices<T, R>(
+    keys: &mut [T],
+    diffs: &mut [R],
+    indices: &mut Vec<usize>,
+) -> usize
+where
+    T: Ord,
+    R: AddAssignByRef + HasZero,
+{
+    // Ensure that the paired slices are the same length
+    assert_eq!(keys.len(), diffs.len());
+
+    // Clear and pre-allocate the indices buffer
+    indices.clear();
+    indices.reserve(keys.len());
+
+    // TODO: We can do this in a vectorized manner, the assembly isn't ideal https://godbolt.org/z/4TbK6Mzec
+    indices.extend(0..keys.len());
+
+    // Ideally we'd combine the sorting and value merging portions
+    // This line right here is literally the hottest code within the entirety of the
+    // program. It makes up 90% of the work done while joining or merging anything
+    indices.sort_unstable_by(|&idx1, &idx2| {
+        // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
+        unsafe { keys.get_unchecked(idx1).cmp(keys.get_unchecked(idx2)) }
+    });
+
+    // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
+    let valid_prefix = unsafe {
+        let diffs_ptr = diffs.as_mut_ptr();
+
+        consolidate_slice_inner(
+            indices,
+            |&idx1, &idx2| keys.get_unchecked(idx1) == keys.get_unchecked(idx2),
+            |&mut idx1, &idx2| (*diffs_ptr.add(idx1)).add_assign_by_ref(&*diffs_ptr.add(idx2)),
+            |&idx| (*diffs_ptr.add(idx)).is_zero(),
+        )
+    };
+
+    // Safety: All indices within `indices` are valid and `keys`, `diffs` and
+    // `indices` all have the same length
+    unsafe {
+        shuffle_by_indices(keys, indices);
+        shuffle_by_indices_mut(diffs, indices);
+    }
+
+    valid_prefix
+}
+
+/// Shuffles all values within `values` to the position prescribed by `indices`
+///
+/// # Safety
+///
+/// - `values` and `indices` must have the same length
+/// - Every index within `indices` must be a valid index into `values`
+unsafe fn shuffle_by_indices<T>(values: &mut [T], indices: &[usize]) {
+    assume(values.len() == indices.len());
+
+    let values_ptr = values.as_mut_ptr();
+    for idx in 0..indices.len() {
+        debug_assert!(idx < indices.len());
+        let mut original = *indices.get_unchecked(idx);
+
+        while idx > original {
+            debug_assert!(original < indices.len());
+            original = *indices.get_unchecked(original);
+        }
+
+        debug_assert!(idx < indices.len() && original < indices.len());
+        ptr::swap(values_ptr.add(idx), values_ptr.add(original));
+    }
+}
+
+/// Shuffles all values within `values` to the position prescribed by `indices`
+/// while using `indices` as scratch space
+///
+/// The contents of `indices` are unspecified after the function is called
+///
+/// # Safety
+///
+/// - `values` and `indices` must have the same length
+/// - Every index within `indices` must be a valid index into `values`
+unsafe fn shuffle_by_indices_mut<T>(values: &mut [T], indices: &mut [usize]) {
+    assume(values.len() == indices.len());
+
+    let values_ptr = values.as_mut_ptr();
+    for i in 0..values.len() {
+        debug_assert!(i < indices.len());
+        debug_assert!(indices[i] < values.len());
+
+        if i != *indices.get_unchecked(i) {
+            let temp = values_ptr.add(i).read();
+            let mut j = i;
+
+            loop {
+                debug_assert!(j < indices.len());
+                let k = *indices.get_unchecked(j);
+                if i == k {
+                    break;
+                }
+
+                debug_assert!(k < indices.len());
+                values_ptr.add(j).write(values_ptr.add(k).read());
+                *indices.get_unchecked_mut(j) = j;
+                j = k;
+            }
+
+            debug_assert!(j < indices.len());
+            values_ptr.add(j).write(temp);
+            *indices.get_unchecked_mut(j) = j;
+        }
+    }
 }
 
 /// The innards of `consolidate_slice()`, not meant to be used directly
 ///
 /// Expects `slice` to be pre-sorted
 #[doc(hidden)]
-pub fn consolidate_slice_inner<T, R>(slice: &mut [(T, R)]) -> usize
+pub fn consolidate_slice_inner<T, E, M, Z>(
+    slice: &mut [T],
+    mut are_equal: E,
+    mut merge: M,
+    mut is_zero: Z,
+) -> usize
 where
-    T: Ord,
-    R: AddAssignByRef + HasZero,
+    E: FnMut(&T, &T) -> bool,
+    M: FnMut(&mut T, &T),
+    Z: FnMut(&T) -> bool,
 {
+    let slice_len = slice.len();
     let slice_ptr = slice.as_mut_ptr();
 
     // Counts the number of distinct known-non-zero accumulations. Indexes the write
     // location.
     let mut offset = 0;
-    for index in 1..slice.len() {
+    for index in 1..slice_len {
         // The following unsafe block elides various bounds checks, using the reasoning
         // that `offset` is always strictly less than `index` at the beginning
         // of each iteration. This is initially true, and in each iteration
@@ -115,15 +244,20 @@ where
         // prove disjointness using run-time tests.
         unsafe {
             debug_assert!(offset < index);
+            debug_assert!(index < slice_len);
+            debug_assert!(offset < slice_len);
 
             // LOOP INVARIANT: offset < index
             let ptr1 = slice_ptr.add(offset);
             let ptr2 = slice_ptr.add(index);
 
-            if (*ptr1).0 == (*ptr2).0 {
-                (*ptr1).1.add_assign_by_ref(&(*ptr2).1);
+            // If the values are equal, merge them
+            if are_equal(&*ptr1, &*ptr2) {
+                merge(&mut *ptr1, &*ptr2)
+
+            // Otherwise continue
             } else {
-                if !(*ptr1).1.is_zero() {
+                if !is_zero(&*ptr1) {
                     offset += 1;
                 }
 
@@ -133,7 +267,7 @@ where
         }
     }
 
-    if offset < slice.len() && !slice[offset].1.is_zero() {
+    if offset < slice_len && unsafe { !is_zero(&*slice_ptr.add(offset)) } {
         offset += 1;
     }
 
@@ -431,6 +565,29 @@ mod tests {
     }
 
     #[test]
+    fn test_consolidate_paired_slices() {
+        let test_cases = vec![
+            (
+                (vec!["a", "b", "a"], vec![-1, -2, 1]),
+                (vec!["b"], vec![-2]),
+            ),
+            ((vec!["a", "b", "a"], vec![-1, 0, 1]), (vec![], vec![])),
+            ((vec!["a"], vec![0]), (vec![], vec![])),
+            ((vec!["a", "b"], vec![0, 0]), (vec![], vec![])),
+            ((vec!["a", "b"], vec![1, 1]), (vec!["a", "b"], vec![1, 1])),
+        ];
+
+        let mut indices = Vec::with_capacity(10);
+        for ((mut keys, mut values), (output_keys, output_values)) in test_cases {
+            println!("{keys:?}\n{values:?}");
+            let length = consolidate_paired_slices(&mut keys, &mut values, &mut indices);
+            println!("{keys:?}\n{values:?}");
+            assert_eq!(keys[..length], output_keys);
+            assert_eq!(values[..length], output_values);
+        }
+    }
+
+    #[test]
     fn offset_dedup() {
         let test_cases = vec![
             (vec![], 0, vec![]),
@@ -504,7 +661,7 @@ mod tests {
         use crate::{
             trace::consolidation::{
                 consolidate, consolidate_from, consolidate_slice, dedup_starting_at,
-                retain_starting_at,
+                retain_starting_at, shuffle_by_indices, shuffle_by_indices_mut,
             },
             utils::VecExt,
         };
@@ -608,6 +765,33 @@ mod tests {
                 dedup_starting_at(&mut output, 0, |a, b| *a == *b);
                 expected.dedup_by(|a, b| *a == *b);
                 prop_assert_eq!(output, expected);
+            }
+
+            #[test]
+            fn shuffle_by_indices_equivalence(mut input in random_vec()) {
+                let mut expected_indices: Vec<_> = (0..input.len()).collect();
+                expected_indices.sort_by_key(|&idx| input[idx]);
+                let mut output = vec![0; input.len()];
+                for (current, &idx) in expected_indices.iter().enumerate() {
+                    output[current] = input[idx];
+                }
+
+                unsafe { shuffle_by_indices(&mut input, &expected_indices) };
+                prop_assert_eq!(input, output);
+            }
+
+
+            #[test]
+            fn shuffle_by_indices_mut_equivalence(mut input in random_vec()) {
+                let mut expected_indices: Vec<_> = (0..input.len()).collect();
+                expected_indices.sort_by_key(|&idx| input[idx]);
+                let mut output = vec![0; input.len()];
+                for (current, &idx) in expected_indices.iter().enumerate() {
+                    output[current] = input[idx];
+                }
+
+                unsafe { shuffle_by_indices_mut(&mut input, &mut expected_indices) };
+                prop_assert_eq!(input, output);
             }
         }
     }
