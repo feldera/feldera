@@ -7,22 +7,19 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     hash::Hash,
     marker::PhantomData,
-    ops::Neg,
 };
 
 use crate::{
     algebra::{
-        AddAssignByRef, GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef,
-        PartialOrder, ZRingValue,
+        GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef, PartialOrder,
+        ZRingValue,
     },
     circuit::{
-        operator_traits::{Operator, TernaryOperator, UnaryOperator},
-        Circuit, OwnershipPreference, Scope, Stream,
+        operator_traits::{BinaryOperator, Operator, UnaryOperator},
+        Circuit, Scope, Stream,
     },
-    operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
     time::Timestamp,
     trace::{
-        consolidation::consolidate,
         cursor::{Cursor, CursorGroup},
         spine_fueled::Spine,
         Batch, BatchReader, Builder,
@@ -178,56 +175,22 @@ where
         // for details.
         //
         // ```
-        //          ┌─────────────────────────────────────────┐
-        //          │                                         │                              output
-        //          │                                         │                    ┌─────────────────────────────────►
-        //          │                                         ▼                    │
-        //    stream│     ┌─────┐  stream.trace()   ┌─────────────────────────┐    │      ┌─────────────┐
-        // ─────────┴─────┤trace├─────────────────► │  AggregateIncremental   ├────┴─────►│AppendTrace  ├──┐
-        //                └─────┘                   └─────────────────────────┘           └─────────────┘  │
-        //                                                    ▲                                  ▲         │output_trace
-        //                                                    │                                  │         │
-        //                                                    │                              ┌───┴───┐     │
-        //                                                    └──────────────────────────────┤Z1Trace│◄────┘
-        //                                                     output_trace_delayed          └───────┘
+        //          ┌────────────────────────────────────────┐
+        //          │                                        │
+        //          │                                        ▼
+        //  stream  │     ┌─────┐  stream.trace()  ┌────────────────────┐      ┌──────┐
+        // ─────────┴─────┤trace├─────────────────►│AggregateIncremental├─────►│upsert├──────►
+        //                └─────┘                  └────────────────────┘      └──────┘
         // ```
-        let (export_stream, z1feedback) = circuit.add_feedback_with_export(<Z1Trace<
-            Spine<TS::OrdValBatch<O::Key, O::Val, O::R>>,
-        >>::new(
-            false,
-            self.circuit().root_scope(),
-        ));
 
-        let output_trace_delayed = export_stream.local.mark_sharded();
-
-        let output = circuit
-            .add_ternary_operator(
+        circuit
+            .add_binary_operator(
                 AggregateIncremental::new(aggregator),
                 &stream,
                 &stream.trace::<Spine<TS::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
-                &output_trace_delayed,
             )
-            .mark_sharded();
-
-        let output_trace = circuit
-            .add_binary_operator_with_preference(
-                <TraceAppend<Spine<_>, _>>::new(),
-                &output_trace_delayed,
-                &output,
-                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                OwnershipPreference::PREFER_OWNED,
-            )
-            .mark_sharded();
-        z1feedback
-            .connect_with_preference(&output_trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-
-        circuit.cache_insert(
-            DelayedTraceId::new(output_trace.origin_node_id().clone()),
-            output_trace_delayed,
-        );
-        circuit.cache_insert(TraceId::new(output.origin_node_id().clone()), output_trace);
-
-        output
+            .upsert::<TS, O>()
+            .mark_sharded()
     }
 
     /// A version of [`Self::aggregate`] optimized for linear
@@ -377,27 +340,24 @@ where
 /// Incremental version of the `Aggregate` operator that works
 /// in arbitrarily nested scopes.
 ///
-/// This is a ternary operator with three inputs:
+/// This is a binary operator with the following inputs:
 /// * `delta` - stream of changes to the input indexed Z-set, only used to
 ///   compute the set of affected keys.
 /// * `input_trace` - a trace of the input indexed Z-set.
-/// * `output_trace` - a trace of the output of the operator, used to retract
-///   old values of the aggregate without recomputing them every time.
 ///
 /// # Type arguments
 ///
 /// * `Z` - input batch type in the `delta` stream.
 /// * `IT` - input trace type.
-/// * `OT` - output trace type.
 /// * `A` - aggregator to apply to each input group.
-/// * `O` - output batch type.
 ///
 /// # Design
 ///
 /// There are two possible strategies for incremental implementation of
 /// non-linear operators like `distinct` and `aggregate`: (1) compute
 /// the value to retract for each updated key using the input trace,
-/// (2) read values to retract from the output trace.  We adopt the
+/// (2) compute new values of updated keys only and extract the old values
+/// to retract from the trace of the output collection. We adopt the
 /// second approach here, which avoids re-computation by using more
 /// memory.  This is based on two considerations.  First, computing
 /// an aggregate can be a relatively expensive operation, as it
@@ -407,10 +367,9 @@ where
 /// aggregate value.  Of course these are not always true, and we may
 /// want to one day build an alternative implementation using the
 /// other approach.
-struct AggregateIncremental<Z, IT, OT, A, O>
+struct AggregateIncremental<Z, IT, A>
 where
     IT: BatchReader,
-    O: Batch,
 {
     aggregator: A,
     // Current time.
@@ -424,22 +383,18 @@ where
     keys_of_interest: BTreeMap<IT::Time, BTreeSet<IT::Key>>,
     // Buffer used in computing per-key outputs.
     // Keep it here to reuse allocation across multiple operations.
-    output_delta: Vec<(O::Val, O::R)>,
-    _type: PhantomData<(Z, IT, OT, O)>,
+    _type: PhantomData<(Z, IT)>,
 }
 
-impl<Z, IT, OT, A, O> AggregateIncremental<Z, IT, OT, A, O>
+impl<Z, IT, A> AggregateIncremental<Z, IT, A>
 where
     Z: IndexedZSet,
     Z::Key: Ord + Clone, /* + std::fmt::Display */
     //Z::Val: std::fmt::Debug,
     //Z::R: std::fmt::Display,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
-    OT: BatchReader<Key = Z::Key, Val = O::Val, Time = IT::Time, R = O::R>,
     A: Aggregator<Z::Val, IT::Time, Z::R>,
     A::Output: Clone + Ord /* + std::fmt::Display */ + 'static,
-    O: Batch<Key = Z::Key, Val = A::Output>,
-    O::R: ZRingValue, /* + std::fmt::Display */
 {
     pub fn new(aggregator: A) -> Self {
         Self {
@@ -448,7 +403,6 @@ where
             empty_input: false,
             empty_output: false,
             keys_of_interest: BTreeMap::new(),
-            output_delta: Vec::new(),
             _type: PhantomData,
         }
     }
@@ -460,42 +414,16 @@ where
     /// * `input_cursor` - cursor over the input trace that contains all updates
     ///   to the indexed Z-set that we are aggregating, up to and including the
     ///   current timestamp.
-    /// * `output_cursor` - cursor over the output trace that contains all
-    ///   updates to the aggregated indexed Z-set, up to, but not including the
-    ///   current timestamp.
     /// * `builder` - builder that accumulates output tuples for the current
     ///   evalution of the operator.
     ///
     /// # Computing output
     ///
-    /// We first use the `input_cursor` to compute the current value of the
+    /// We use the `input_cursor` to compute the current value of the
     /// aggregate as:
     ///
     /// ```text
     /// (1) agg = aggregate({(v, w) | (v, t, w) ∈ input_cursor[key], t <= self.time})
-    /// ```
-    ///
-    /// Next, we use `output_cursor` to compute the delta to output for the
-    /// `key` based on the following equation:
-    ///
-    /// ```text
-    ///              __
-    ///              ╲
-    /// agg = d +    ╱ {(v,w)}
-    ///              ‾‾
-    ///     (v, t, w) ∈ output_cursor[key], t < self.time
-    /// ```
-    ///
-    /// Where `d` is the delta we want to compute for the current timestamp, and
-    /// the sum term is the sum of all deltas preceeding the current timestamp.
-    /// Hence:
-    ///
-    /// ```text
-    ///                  __
-    ///                  ╲
-    /// (2) d = agg -    ╱ {(v,w)}
-    ///                  ‾‾
-    ///         (v, t, w) ∈ output_cursor[key], t < self.time
     /// ```
     ///
     /// # Updating `keys_of_interest`
@@ -517,8 +445,7 @@ where
         &mut self,
         key: &Z::Key,
         input_cursor: &mut IT::Cursor<'s>,
-        output_cursor: &mut OT::Cursor<'_>,
-        builder: &mut O::Builder,
+        output: &mut Vec<(Z::Key, Option<A::Output>)>,
     ) {
         // println!(
         //     "{}: eval_key({key}) @ {:?}",
@@ -538,7 +465,9 @@ where
                 .aggregator
                 .aggregate(&mut CursorGroup::new(input_cursor, self.time.clone()))
             {
-                self.output_delta.push((aggregate, HasOne::one()))
+                output.push((key.clone(), Some(aggregate)));
+            } else {
+                output.push((key.clone(), None));
             }
 
             // Compute the closest future timestamp when we may need to reevaluate
@@ -584,66 +513,17 @@ where
                         .insert(key.clone());
                 }
             }
-        }
-
-        // Lookup key in `output_cursor`; if found, compute the sum term in
-        // formula (2) and add it to `self.output_delta` with negated weights.
-        output_cursor.seek_key(key);
-
-        if output_cursor.key_valid() && output_cursor.key() == key {
-            // println!("{}: found key in output_cursor", Runtime::worker_index());
-            while output_cursor.val_valid() {
-                let mut weight = OT::R::zero();
-                output_cursor.map_times(|t, w| {
-                    // This is equivalent to `t.less_than(&self.time)`, as required by (2),
-                    // since the output trace is delayed by one clock cycle, so we'll never
-                    // observe values with timestamp equal to `self.time`.  We cannot use
-                    // `less_than` here, because we use `()` as timestamp type in
-                    // the top scope, in which case `less_than` will always return `false`.
-                    if t.less_equal(&self.time) {
-                        weight.add_assign_by_ref(w);
-                    };
-                });
-
-                if !weight.is_zero() {
-                    // println!(
-                    //     "{}: old aggregate: {}=>{}",
-                    //     Runtime::worker_index(),
-                    //     output_cursor.val(),
-                    //     weight
-                    // );
-                    self.output_delta
-                        .push((output_cursor.val().clone(), weight.neg()));
-                }
-
-                output_cursor.step_val();
-            }
-        }
-
-        consolidate(&mut self.output_delta);
-        // println!(
-        //     "{}: output_delta.len() = {}",
-        //     Runtime::worker_index(),
-        //     self.output_delta.len()
-        // );
-        // for (v, w) in self.output_delta.iter() {
-        //     println!("{}: output_delta = ({}, {})", Runtime::worker_index(), v, w);
-        // }
-
-        // Push computed result to `builder`.
-        for (v, w) in self.output_delta.drain(..) {
-            builder.push((O::item_from(key.clone(), v), w));
+        } else {
+            output.push((key.clone(), None));
         }
     }
 }
 
-impl<Z, IT, OT, A, O> Operator for AggregateIncremental<Z, IT, OT, A, O>
+impl<Z, IT, A> Operator for AggregateIncremental<Z, IT, A>
 where
     Z: 'static,
     IT: BatchReader + 'static,
-    OT: 'static,
     A: 'static,
-    O: Batch + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("AggregateIncremental")
@@ -657,10 +537,12 @@ where
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        debug_assert!(self
-            .keys_of_interest
-            .keys()
-            .all(|ts| !ts.less_equal(&self.time.epoch_end(scope))));
+        debug_assert!(self.keys_of_interest.keys().all(|ts| {
+            if ts.less_equal(&self.time.epoch_end(scope)) {
+                println!("ts: {:?}, epoch_end: {:?}", ts, self.time.epoch_end(scope));
+            }
+            !ts.less_equal(&self.time.epoch_end(scope))
+        }));
 
         self.time = self.time.advance(scope + 1);
     }
@@ -677,25 +559,18 @@ where
     }
 }
 
-impl<Z, IT, OT, A, O> TernaryOperator<Z, IT, OT, O> for AggregateIncremental<Z, IT, OT, A, O>
+impl<Z, IT, A> BinaryOperator<Z, IT, Vec<(Z::Key, Option<A::Output>)>>
+    for AggregateIncremental<Z, IT, A>
 where
     Z: IndexedZSet /* + std::fmt::Display */ + 'static,
     Z::Key: PartialEq + Ord + Clone, /* + std::fmt::Display */
     // Z::Val: std::fmt::Debug,
     // Z::R: std::fmt::Display,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone + 'static,
-    OT: BatchReader<Key = Z::Key, Val = A::Output, Time = IT::Time, R = O::R> + Clone + 'static,
     A: Aggregator<Z::Val, IT::Time, Z::R> + 'static,
     A::Output: Clone + Ord, /* + std::fmt::Display */
-    O: Batch<Key = Z::Key, Time = (), Val = A::Output> + 'static,
-    O::R: ZRingValue, /* + std::fmt::Display */
 {
-    fn eval<'a>(
-        &mut self,
-        delta: Cow<'a, Z>,
-        input_trace: Cow<'a, IT>,
-        output_trace: Cow<'a, OT>,
-    ) -> O {
+    fn eval(&mut self, delta: &Z, input_trace: &IT) -> Vec<(Z::Key, Option<A::Output>)> {
         // println!(
         //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
         //     Runtime::worker_index(),
@@ -706,11 +581,10 @@ where
         // We iterate over keys in order, so it is safe to use `Builder`
         // as long as we are careful to add values in order for each key in
         // `eval_key` method.
-        let mut result_builder = O::Builder::with_capacity((), delta.len());
+        let mut result = Vec::with_capacity(delta.key_count());
 
         let mut delta_cursor = delta.cursor();
         let mut input_trace_cursor = input_trace.cursor();
-        let mut output_trace_cursor = output_trace.cursor();
 
         // Previously encountered keys that may affect output at the
         // current time.
@@ -727,32 +601,17 @@ where
             match delta_cursor.key().cmp(key_of_interest_ref) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    self.eval_key(
-                        delta_cursor.key(),
-                        &mut input_trace_cursor,
-                        &mut output_trace_cursor,
-                        &mut result_builder,
-                    );
+                    self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
                     delta_cursor.step_key();
                 }
                 // Key only appears in `keys_of_interest`.
                 Ordering::Greater => {
-                    self.eval_key(
-                        key_of_interest_ref,
-                        &mut input_trace_cursor,
-                        &mut output_trace_cursor,
-                        &mut result_builder,
-                    );
+                    self.eval_key(key_of_interest_ref, &mut input_trace_cursor, &mut result);
                     key_of_interest = keys_of_interest.next();
                 }
                 // Key appears in both `delta` and `keys_of_interest`.
                 Ordering::Equal => {
-                    self.eval_key(
-                        delta_cursor.key(),
-                        &mut input_trace_cursor,
-                        &mut output_trace_cursor,
-                        &mut result_builder,
-                    );
+                    self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
                     delta_cursor.step_key();
                     key_of_interest = keys_of_interest.next();
                 }
@@ -760,12 +619,7 @@ where
         }
 
         while delta_cursor.key_valid() {
-            self.eval_key(
-                delta_cursor.key(),
-                &mut input_trace_cursor,
-                &mut output_trace_cursor,
-                &mut result_builder,
-            );
+            self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
             delta_cursor.step_key();
         }
 
@@ -773,13 +627,11 @@ where
             self.eval_key(
                 key_of_interest.unwrap(),
                 &mut input_trace_cursor,
-                &mut output_trace_cursor,
-                &mut result_builder,
+                &mut result,
             );
             key_of_interest = keys_of_interest.next();
         }
 
-        let result = result_builder.done();
         self.empty_output = result.is_empty();
         self.time = self.time.advance(0);
         result

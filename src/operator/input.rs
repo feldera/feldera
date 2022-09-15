@@ -1,14 +1,10 @@
 use crate::{
-    algebra::{HasOne, MonoidValue},
+    algebra::{MonoidValue, ZRingValue},
     circuit::{
         operator_traits::{Operator, SourceOperator},
-        LocalStoreMarker, OwnershipPreference, Scope,
+        LocalStoreMarker, Scope,
     },
-    operator::{
-        trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
-        upsert::Upsert,
-    },
-    trace::{spine_fueled::Spine, Batch},
+    trace::Batch,
     Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use fxhash::hash32;
@@ -17,8 +13,8 @@ use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem::take,
-    ops::{DerefMut, Neg},
+    mem::{swap, take},
+    ops::DerefMut,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -140,65 +136,35 @@ impl Circuit<()> {
         K: Clone + Ord + Send + SizeOf + Hash + 'static,
         F: Fn(VI) -> Option<V> + 'static,
         B: Batch<Key = K, Val = V, Time = ()> + SizeOf + 'static,
-        B::R: MonoidValue + HasOne + Neg<Output = B::R> + SizeOf,
-        V: Eq + Clone + Ord + 'static,
+        B::R: ZRingValue + Ord + SizeOf,
+        V: Eq + Clone + Ord + SizeOf + 'static,
         VI: Eq + Clone + Send + 'static,
     {
-        // We build the following circuit to implement the upsert semantics.
-        // The collection is accumulated into a trace using integrator
-        // (UntimedTraceAppend + Z1Trace = integrator).  The `Upsert` operator
-        // evaluates each upsert command in the input stream against the trace
-        // and computes a batch of updates to be added to the trace.
-        //
-        // ```text
-        //                          ┌─────────────────────────────────────────►
-        //                          │
-        //                          │
-        // input_stream ┌──────┐    │        ┌──────────────────┐  trace
-        // ────────────►│Upsert├────┴───────►│UntimedTraceAppend├────┐
-        //              └──────┘   upsert    └──────────────────┘    │
-        //                 ▲                  ▲                      │
-        //                 │                  │                      │
-        //                 │                  │   ┌───────┐          │
-        //                 └──────────────────┴───┤Z1Trace│◄─────────┘
-        //                    z1trace             └───────┘
-        // ```
-        let (z1trace, z1feedback) = self.add_feedback(Z1Trace::new(true, self.root_scope()));
+        let sorted = input_stream
+            .apply_owned(move |mut upserts| {
+                // Sort the vector by key, preserving the history of updates for each key.
+                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+                upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
 
-        // `UpsertHandle` shards its outputs, so we can mark all streams as sharded.
-        z1trace.mark_sharded();
+                // Find the last upsert for each key, that's the only one that matters.
+                upserts.dedup_by(|(k1, v1), (k2, v2)| {
+                    if k1 == k2 {
+                        swap(v1, v2);
+                        true
+                    } else {
+                        false
+                    }
+                });
 
-        let upsert = self
-            .add_binary_operator_with_preference(
-                Upsert::new(upsert_func),
-                &z1trace,
-                &input_stream,
-                OwnershipPreference::PREFER_OWNED,
-                OwnershipPreference::PREFER_OWNED,
-            )
+                upserts
+                    .into_iter()
+                    .map(|(k, v)| (k, upsert_func(v)))
+                    .collect::<Vec<_>>()
+            })
+            // UpsertHandle shards its inputs.
             .mark_sharded();
 
-        let trace = self
-            .add_binary_operator_with_preference(
-                <UntimedTraceAppend<Spine<_>>>::new(),
-                &z1trace,
-                &upsert,
-                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                OwnershipPreference::PREFER_OWNED,
-            )
-            .mark_sharded();
-
-        z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        self.cache_insert(
-            DelayedTraceId::new(upsert.origin_node_id().clone()),
-            z1trace,
-        );
-        self.cache_insert(
-            IntegrateTraceId::new(upsert.origin_node_id().clone()),
-            trace,
-        );
-
-        upsert
+        sorted.upsert::<(), B>()
     }
 
     /// Create an input table with set semantics.
@@ -266,7 +232,7 @@ impl Circuit<()> {
     pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
         K: Clone + Ord + Send + SizeOf + Hash + 'static,
-        R: MonoidValue + HasOne + Neg<Output = R> + SizeOf,
+        R: ZRingValue + SizeOf + Ord,
     {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, bool)>| tuples);
@@ -350,7 +316,7 @@ impl Circuit<()> {
     where
         K: Clone + Ord + Hash + Send + SizeOf + 'static,
         V: Ord + Clone + Send + SizeOf + 'static,
-        R: MonoidValue + HasOne + Neg<Output = R> + SizeOf,
+        R: ZRingValue + SizeOf + Ord,
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);
