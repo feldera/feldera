@@ -202,7 +202,7 @@ where
             upper2: batch2.layer.keys(),
             result: <<OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
-            upper: batch2.upper().join(batch2.upper()),
+            upper: batch1.upper().join(batch2.upper()),
         }
     }
 
