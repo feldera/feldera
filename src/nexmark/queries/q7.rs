@@ -108,7 +108,7 @@ mod tests {
     type Q7Tuple = (u64, u64, usize, u64, ArcStr);
 
     #[rstest]
-    // The latest bid is at t=32_000, so the watermark as at t=22_000
+    // The latest bid is at t=32_000, so the watermark as at t=28_000
     // and the tumbled window is from 10_000 - 20_000.
     #[case::latest_bid_determines_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000), (32_000, 1_000_000)]],
