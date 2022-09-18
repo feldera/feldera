@@ -19,8 +19,11 @@ pub use q13::{q13, q13_side_input};
 pub use q14::q14;
 pub use q15::q15;
 pub use q16::q16;
+pub use q17::q17;
 
 type NexmarkStream = Stream<Circuit<()>, OrdZSet<Event, isize>>;
+
+type OrdinalDate = (i32, u16);
 
 // Based on the WATERMARK FOR definition in the original [ddl_gen.sql](https://github.com/nexmark/nexmark/blob/54974ef36a0d01ef8ebc0b4ba39cfc50136af0f6/nexmark-flink/src/main/resources/queries/ddl_gen.sql#L37)
 const WATERMARK_INTERVAL_SECONDS: u64 = 4;
@@ -41,6 +44,7 @@ mod q13;
 mod q14;
 mod q15;
 mod q16;
+mod q17;
 
 fn process_time() -> u64 {
     SystemTime::now()

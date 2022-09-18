@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::{
-    nexmark::model::Event,
+    nexmark::{model::Event, queries::OrdinalDate},
     operator::{FilterMap, Max},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
@@ -87,8 +87,6 @@ pub struct Q16Output {
     rank3_auctions: usize,
 }
 
-type OrdinalDate = (i32, u16);
-
 type Q16Stream = Stream<Circuit<()>, OrdZSet<Q16Output, isize>>;
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
@@ -120,27 +118,6 @@ pub struct Q16Intermediate2(
     isize,
     isize,
 );
-
-/*
-fn dump_tuples<B>(batch: &B)
-where
-    B: BatchReader<Time=()>,
-    B::Key: std::fmt::Debug,
-    B::Val: std::fmt::Debug,
-    B::R: std::fmt::Debug,
-{
-    let mut cursor = batch.cursor();
-
-    while cursor.key_valid() {
-        while cursor.val_valid() {
-            let w = cursor.weight();
-            println!("{:?} -> {:?} x {:?}", cursor.key(), cursor.val(), w);
-            cursor.step_val();
-        }
-        cursor.step_key();
-    }
-}
-*/
 
 pub fn q16(input: NexmarkStream) -> Q16Stream {
     // Dug for a long time to figure out how to use the const generics

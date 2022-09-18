@@ -21,7 +21,7 @@ use dbsp::{
         config::Config as NexmarkConfig,
         model::Event,
         queries::{
-            q0, q1, q12, q13, q13_side_input, q14, q15, q16, q2, q3, q4, q5, q6, q7, q8, q9,
+            q0, q1, q12, q13, q13_side_input, q14, q15, q16, q17, q2, q3, q4, q5, q6, q7, q8, q9,
         },
         NexmarkSource,
     },
@@ -336,7 +336,8 @@ fn main() -> Result<()> {
         ("q13", q13),
         ("q14", q14),
         ("q15", q15),
-        ("q16", q16)
+        ("q16", q16),
+        ("q17", q17)
     );
 
     let ascii_table = create_ascii_table();

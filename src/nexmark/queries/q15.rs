@@ -1,5 +1,9 @@
 use super::NexmarkStream;
-use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdIndexedZSet, OrdZSet, Stream};
+use crate::{
+    nexmark::{model::Event, queries::OrdinalDate},
+    operator::FilterMap,
+    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -69,30 +73,7 @@ pub struct Q15Output {
     rank3_auctions: usize,
 }
 
-type OrdinalDate = (i32, u16);
-
 type Q15Stream = Stream<Circuit<()>, OrdZSet<Q15Output, isize>>;
-
-/*
-fn dump_tuples<B>(batch: &B)
-where
-    B: BatchReader<Time=()>,
-    B::Key: std::fmt::Debug,
-    B::Val: std::fmt::Debug,
-    B::R: std::fmt::Debug,
-{
-    let mut cursor = batch.cursor();
-
-    while cursor.key_valid() {
-        while cursor.val_valid() {
-            let w = cursor.weight();
-            println!("{:?} -> {:?} x {:?}", cursor.key(), cursor.val(), w);
-            cursor.step_val();
-        }
-        cursor.step_key();
-    }
-}
-*/
 
 impl<P, K, V> Stream<Circuit<P>, OrdIndexedZSet<K, V, isize>>
 where
