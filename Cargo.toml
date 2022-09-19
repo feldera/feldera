@@ -94,3 +94,7 @@ harness = false
 [[bench]]
 name = "ldbc-graphalytics"
 harness = false
+
+[[bench]]
+name = "column_leaf"
+harness = false
