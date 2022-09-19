@@ -11,6 +11,7 @@ use crate::{
 use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
+    fmt::{self, Debug},
     ops::AddAssign,
 };
 
@@ -226,7 +227,7 @@ where
 }
 
 /// A builder for unordered values
-#[derive(SizeOf)]
+#[derive(Clone, SizeOf)]
 pub struct UnorderedColumnLeafBuilder<K, R> {
     // Invariant: `keys.len() == diffs.len()`
     keys: Vec<K>,
@@ -325,5 +326,19 @@ where
         self.keys.push(key);
         self.diffs.push(diff);
         unsafe { self.assume_invariants() }
+    }
+}
+
+impl<K, R> Debug for UnorderedColumnLeafBuilder<K, R>
+where
+    K: Debug,
+    R: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UnorderedColumnLeafBuilder")
+            .field("keys", &self.keys)
+            .field("diffs", &self.diffs)
+            .field("boundary", &self.boundary)
+            .finish()
     }
 }

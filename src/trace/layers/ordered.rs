@@ -519,7 +519,7 @@ where
         let mut builder = <OrderedBuilder<K, L, O> as TupleBuilder>::with_capacity(self.vals.len());
 
         for (k, v) in self.vals.into_iter() {
-            builder.push_tuple((k, v))
+            builder.push_tuple((k, v));
         }
         builder.done()
     }
