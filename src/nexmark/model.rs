@@ -25,7 +25,7 @@ pub struct Person {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
 pub struct Auction {
     pub id: u64,
     pub item_name: ArcStr,
