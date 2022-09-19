@@ -43,7 +43,7 @@ pub struct Auction {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
