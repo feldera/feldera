@@ -24,6 +24,7 @@ pub use q18::q18;
 pub use q19::q19;
 pub use q20::q20;
 pub use q21::q21;
+pub use q22::q22;
 
 type NexmarkStream = Stream<Circuit<()>, OrdZSet<Event, isize>>;
 
@@ -53,6 +54,7 @@ mod q18;
 mod q19;
 mod q20;
 mod q21;
+mod q22;
 
 fn process_time() -> u64 {
     SystemTime::now()
