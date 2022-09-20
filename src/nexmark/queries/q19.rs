@@ -38,18 +38,18 @@ const TOP_BIDS: usize = 10;
 
 pub fn q19(input: NexmarkStream) -> Q19Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
-        Event::Bid(b) => Some((b.auction, b.clone())),
+        Event::Bid(b) => Some((b.auction, (b.price, b.clone()))),
         _ => None,
     });
 
     bids_by_auction
         .aggregate::<(), _>(Fold::new(
             VecDeque::with_capacity(TOP_BIDS),
-            |top: &mut VecDeque<Bid>, val: &Bid, _w| {
+            |top: &mut VecDeque<Bid>, (_price, bid): &(usize, Bid), _w| {
                 if top.len() >= TOP_BIDS {
                     top.pop_front();
                 }
-                top.push_back(val.clone());
+                top.push_back(bid.clone());
             },
         ))
         .flat_map(|(_, vec)| -> VecDeque<Bid> { (*vec).clone() })
@@ -68,80 +68,91 @@ mod tests {
     #[case::top_bids_for_single_auction(
         vec![
             vec![
-                (1, 100),
-                (1, 1_200),
-                (1, 1_100),
-                (1, 1_000),
-                (1, 200),
-                (1, 300),
-                (1, 400),
-                (1, 500),
-                (1, 600),
-                (1, 700),
-                (1, 800),
-                (1, 900),
+                (1, 12, 100),
+                (1, 1, 1_200),
+                (1, 3, 1_100),
+                (1, 4, 1_000),
+                (1, 5, 200),
+                (1, 6, 300),
+                (1, 7, 400),
+                (1, 8, 500),
+                (1, 9, 600),
+                (1, 10, 700),
+                (1, 11, 800),
+                (1, 12, 900),
 
             ],
             vec![
-                (1, 1_300),
-                (1, 50),
+                (1, 1, 1_300),
+                (1, 1, 50),
             ]
         ],
         vec![zset![
             Bid {
                 auction: 1,
+                bidder: 6,
                 price: 300,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 400,
+                bidder: 7,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 500,
+                bidder: 8,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 600,
+                bidder: 9,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 700,
+                bidder: 10,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 800,
+                bidder: 11,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 900,
+                bidder: 12,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 1000,
+                bidder: 4,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 1100,
+                bidder: 3,
                 ..make_bid()
             } => 1,
             Bid {
                 auction: 1,
                 price: 1200,
+                bidder: 1,
                 ..make_bid()
             } => 1,
         ], zset![
             Bid {
                 auction: 1,
                 price: 300,
+                bidder: 6,
                 ..make_bid()
             } => -1,
             Bid {
@@ -154,25 +165,25 @@ mod tests {
     #[case::top_bids_for_multiple_auctions(
         vec![
             vec![
-                (1, 100),
-                (1, 200),
-                (7, 100),
-                (7, 1_200),
-                (7, 1_100),
-                (7, 1_000),
-                (7, 200),
-                (7, 300),
-                (7, 400),
-                (7, 500),
-                (7, 600),
-                (7, 700),
-                (7, 800),
-                (7, 900),
+                (1, 1, 100),
+                (1, 1, 200),
+                (7, 1, 100),
+                (7, 1, 1_200),
+                (7, 1, 1_100),
+                (7, 1, 1_000),
+                (7, 1, 200),
+                (7, 1, 300),
+                (7, 1, 400),
+                (7, 1, 500),
+                (7, 1, 600),
+                (7, 1, 700),
+                (7, 1, 800),
+                (7, 1, 900),
 
             ],
             vec![
-                (1, 1_300),
-                (1, 50),
+                (1, 1, 1_300),
+                (1, 1, 50),
             ]
         ],
         vec![zset![
@@ -250,16 +261,17 @@ mod tests {
         ]]
     )]
     pub fn test_q19(
-        #[case] input_bid_batches: Vec<Vec<(u64, usize)>>,
+        #[case] input_bid_batches: Vec<Vec<(u64, u64, usize)>>,
         #[case] expected_zsets: Vec<OrdZSet<Bid, isize>>,
     ) {
         let input_vecs = input_bid_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
-                .map(|(auction, price)| {
+                .map(|(auction, bidder, price)| {
                     (
                         Event::Bid(Bid {
                             auction,
+                            bidder,
                             price,
                             ..make_bid()
                         }),
