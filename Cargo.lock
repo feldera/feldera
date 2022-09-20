@@ -589,6 +589,7 @@ dependencies = [
  "proptest",
  "rand",
  "rand_xoshiro",
+ "regex",
  "reqwest",
  "rstest",
  "rust_decimal",
