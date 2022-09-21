@@ -9,6 +9,7 @@ use crate::{
     algebra::{AddAssignByRef, HasZero, MonoidValue},
     utils::assume,
 };
+use bitvec::slice::BitSlice;
 use std::{
     mem::{forget, replace},
     ops::AddAssign,
@@ -163,14 +164,13 @@ where
     assert_eq!(keys.len(), diffs.len());
 
     // Clear and pre-allocate the indices buffer
-    indices.clear();
-    indices.reserve(keys.len());
-    // TODO: We can do this in a vectorized manner, the assembly isn't ideal https://godbolt.org/z/4TbK6Mzec
-    indices.extend(0..keys.len());
+    fill_indices::fill_indices(keys.len(), indices);
+    debug_assert_eq!(indices.len(), keys.len());
 
     // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
+    // These lines right here are literally the hottest code within the entirety of
+    // the program. They make up 90% of the work done while joining or merging
+    // anything
     indices.sort_unstable_by(|&idx1, &idx2| {
         // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
         unsafe { keys.get_unchecked(idx1).cmp(keys.get_unchecked(idx2)) }
@@ -190,36 +190,9 @@ where
 
     // Safety: All indices within `indices` are valid and `keys`, `diffs` and
     // `indices` all have the same length
-    unsafe {
-        shuffle_by_indices(keys, indices);
-        shuffle_by_indices_mut(diffs, indices);
-    }
+    unsafe { shuffle_by_indices(diffs, keys, indices) };
 
     valid_prefix
-}
-
-/// Shuffles all values within `values` to the position prescribed by `indices`
-///
-/// # Safety
-///
-/// - `values` and `indices` must have the same length
-/// - Every index within `indices` must be a valid index into `values`
-unsafe fn shuffle_by_indices<T>(values: &mut [T], indices: &[usize]) {
-    assume(values.len() == indices.len());
-
-    let values_ptr = values.as_mut_ptr();
-    for idx in 0..indices.len() {
-        debug_assert!(idx < indices.len());
-        let mut original = *indices.get_unchecked(idx);
-
-        while idx > original {
-            debug_assert!(original < indices.len());
-            original = *indices.get_unchecked(original);
-        }
-
-        debug_assert!(idx < indices.len() && original < indices.len());
-        ptr::swap(values_ptr.add(idx), values_ptr.add(original));
-    }
 }
 
 /// Shuffles all values within `values` to the position prescribed by `indices`
@@ -229,18 +202,43 @@ unsafe fn shuffle_by_indices<T>(values: &mut [T], indices: &[usize]) {
 ///
 /// # Safety
 ///
-/// - `values` and `indices` must have the same length
-/// - Every index within `indices` must be a valid index into `values`
-unsafe fn shuffle_by_indices_mut<T>(values: &mut [T], indices: &mut [usize]) {
-    assume(values.len() == indices.len());
+/// - `values` and `diffs` must have the same length
+/// - `indices` must be the same length or longer than `values` and `diffs`
+///   (allows for over-alignment)
+/// - Every index within `indices` must be a valid index into `values` and
+///   `diffs`
+/// - Every index within `indices` must be unique
+/// - `indices` should contain the offset of every value/diff in the form of
+///   `0..length` (the most likely scenario is that `indices` is the product of
+///   `(0..len).collect()` or a similar invocation)
+#[doc(hidden)]
+pub unsafe fn shuffle_by_indices<T, R>(values: &mut [T], diffs: &mut [R], indices: &mut [usize]) {
+    // Validate our preconditions
+    if cfg!(debug_assertions) {
+        for &index in &indices[..values.len()] {
+            // Indices should be valid indices
+            assert!(index < diffs.len());
+            assert!(index < values.len());
+            assert!(index < indices.len());
 
-    let values_ptr = values.as_mut_ptr();
+            // All indices are unique
+            assert_eq!(indices.iter().filter(|&&idx| idx == index).count(), 1);
+        }
+    }
+
+    assume(
+        values.len() == diffs.len()
+            && values.len() <= indices.len()
+            && diffs.len() <= indices.len(),
+    );
+
+    let (values_ptr, diffs_ptr) = (values.as_mut_ptr(), diffs.as_mut_ptr());
     for i in 0..values.len() {
         debug_assert!(i < indices.len());
-        debug_assert!(indices[i] < values.len());
+        debug_assert!(indices[i] < values.len() && indices[i] < diffs.len());
 
         if i != *indices.get_unchecked(i) {
-            let temp = values_ptr.add(i).read();
+            let (temp_val, temp_diff) = (values_ptr.add(i).read(), diffs_ptr.add(i).read());
             let mut j = i;
 
             loop {
@@ -252,13 +250,68 @@ unsafe fn shuffle_by_indices_mut<T>(values: &mut [T], indices: &mut [usize]) {
 
                 debug_assert!(k < indices.len());
                 values_ptr.add(j).write(values_ptr.add(k).read());
+                diffs_ptr.add(j).write(diffs_ptr.add(k).read());
                 *indices.get_unchecked_mut(j) = j;
                 j = k;
             }
 
             debug_assert!(j < indices.len());
-            values_ptr.add(j).write(temp);
+            values_ptr.add(j).write(temp_val);
+            diffs_ptr.add(j).write(temp_diff);
             *indices.get_unchecked_mut(j) = j;
+        }
+    }
+}
+
+/// Shuffles all values within `values` to the position prescribed by `indices`
+/// while using `indices` as scratch space
+///
+/// The contents of `indices` are unspecified after the function is called
+///
+/// # Safety
+///
+/// - `values`, `diffs` and `indices` must have the same length
+/// - Every index within `indices` must be a valid index into `values` and
+///   `diffs`
+/// - Every index within `indices` must be unique
+/// - `indices` should contain the offset of every value/diff in the form of
+///   `0..length` (the most likely scenario is that `indices` is the product of
+///   `(0..len).collect()` or a similar invocation)
+#[doc(hidden)]
+pub unsafe fn shuffle_by_indices_bitvec<T, R>(
+    values: &mut [T],
+    diffs: &mut [R],
+    indices: &mut [usize],
+    visited: &mut BitSlice,
+) {
+    assume(
+        values.len() == diffs.len()
+            && values.len() <= indices.len()
+            && diffs.len() <= indices.len()
+            // Every bit within `visited` should be false
+            && visited.not_any(),
+    );
+
+    let (values_ptr, diffs_ptr) = (values.as_mut_ptr(), diffs.as_mut_ptr());
+    for idx in 0..values.len() {
+        debug_assert!(idx < visited.len());
+        if *visited.get_unchecked(idx) {
+            continue;
+        }
+        visited.set_unchecked(idx, true);
+
+        let mut previous = idx;
+        let mut current = *indices.get_unchecked(idx);
+
+        while current != idx {
+            debug_assert!(current < visited.len());
+            visited.set_unchecked(current, true);
+
+            ptr::swap(values_ptr.add(current), values_ptr.add(previous));
+            ptr::swap(diffs_ptr.add(current), diffs_ptr.add(previous));
+
+            previous = current;
+            current = *indices.get_unchecked(current);
         }
     }
 }
@@ -542,6 +595,239 @@ where
     drop(g);
 }
 
+// TODO: More arch support (mainly arm and aarch64)
+mod fill_indices {
+    use crate::utils::next_multiple_of;
+    use std::{
+        mem::transmute,
+        sync::atomic::{AtomicPtr, Ordering},
+    };
+
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64 as x86;
+
+    /// Memoizes feature selection so that it's not repeated on every invocation
+    static FILL_INDICES: AtomicPtr<()> = AtomicPtr::new(select_impl as *mut ());
+
+    pub fn fill_indices(length: usize, indices: &mut Vec<usize>) {
+        let implementation = unsafe {
+            transmute::<*mut (), fn(usize, &mut Vec<usize>)>(FILL_INDICES.load(Ordering::Relaxed))
+        };
+
+        implementation(length, indices);
+    }
+
+    /// Selects the filling implementation based on the current machine's
+    /// available features
+    fn select_impl(length: usize, indices: &mut Vec<usize>) {
+        let mut selected: unsafe fn(usize, &mut Vec<usize>) = fill_indices_naive;
+
+        // x86 and x86-64 feature selection
+        #[cfg(all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            any(target_pointer_width = "32", target_pointer_width = "64")
+        ))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                selected = fill_indices_x86_avx2;
+            } else if is_x86_feature_detected!("sse2") {
+                selected = fill_indices_x86_sse2;
+            }
+        }
+
+        // wasm32 feature selection
+        #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+        {
+            selected = fill_indices_wasm32_simd128;
+        }
+
+        FILL_INDICES.store(selected as *mut (), Ordering::Relaxed);
+
+        unsafe { selected(length, indices) }
+    }
+
+    /// Naive version of that uses `Vec::extend()`
+    unsafe fn fill_indices_naive(length: usize, indices: &mut Vec<usize>) {
+        if length == 0 {
+            return;
+        }
+
+        indices.clear();
+        indices.reserve(length);
+        indices.extend(0..length);
+    }
+
+    /// Fills indices using sse2 simd
+    #[target_feature(enable = "sse2")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe fn fill_indices_x86_sse2(original_length: usize, indices: &mut Vec<usize>) {
+        use x86::{
+            __m128i, _mm_add_epi32, _mm_add_epi64, _mm_set1_epi32, _mm_set1_epi64x, _mm_set_epi32,
+            _mm_set_epi64x, _mm_storeu_si128,
+        };
+
+        if original_length == 0 {
+            return;
+        }
+        indices.clear();
+
+        // If usize is 32 bits
+        if cfg!(target_pointer_width = "32") {
+            // Round up the next multiple of four since four u32s fit into a __m128i
+            let length = next_multiple_of(original_length, 4);
+            indices.reserve(length);
+
+            let mut index = _mm_set_epi32(3, 2, 1, 0);
+            let four = _mm_set1_epi32(4);
+
+            let mut indices_ptr = indices.as_mut_ptr().cast::<__m128i>();
+            let indices_end = indices_ptr.add(length / 4);
+
+            while indices_ptr < indices_end {
+                // Store the indices into the vec
+                _mm_storeu_si128(indices_ptr, index);
+
+                // Increment the indices
+                index = _mm_add_epi32(index, four);
+                // Increment the indices pointer
+                indices_ptr = indices_ptr.add(1);
+            }
+
+        // If usize is 64 bits
+        } else if cfg!(target_pointer_width = "64") {
+            // Round up the next multiple of two since two u64s fit into a __m128i
+            let length = next_multiple_of(original_length, 2);
+            indices.reserve(length);
+
+            let mut index = _mm_set_epi64x(1, 0);
+            let two = _mm_set1_epi64x(2);
+
+            let mut indices_ptr = indices.as_mut_ptr().cast::<__m128i>();
+            let indices_end = indices_ptr.add(length / 2);
+
+            while indices_ptr < indices_end {
+                // Store the indices into the vec
+                _mm_storeu_si128(indices_ptr, index);
+
+                // Increment the indices
+                index = _mm_add_epi64(index, two);
+                // Increment the indices pointer
+                indices_ptr = indices_ptr.add(1);
+            }
+
+        // Only 32bit and 64bit targets are supported for this function
+        } else {
+            unreachable!()
+        }
+
+        indices.set_len(original_length);
+    }
+
+    /// Fills indices using avx2 simd
+    #[target_feature(enable = "avx2")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>) {
+        use x86::{
+            __m256i, _mm256_add_epi32, _mm256_add_epi64, _mm256_set1_epi32, _mm256_set1_epi64x,
+            _mm256_set_epi32, _mm256_set_epi64x, _mm256_storeu_si256,
+        };
+
+        if original_length == 0 {
+            return;
+        }
+        indices.clear();
+
+        // If usize is 32 bits
+        if cfg!(target_pointer_width = "32") {
+            // Round up the next multiple of eight since eight u32s fit into a __m256i
+            let length = next_multiple_of(original_length, 8);
+            indices.reserve(length);
+
+            let mut index = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+            let eight = _mm256_set1_epi32(8);
+
+            let mut indices_ptr = indices.as_mut_ptr().cast::<__m256i>();
+            let indices_end = indices_ptr.add(length / 8);
+
+            while indices_ptr < indices_end {
+                // Store the indices into the vec
+                _mm256_storeu_si256(indices_ptr, index);
+
+                // Increment the indices
+                index = _mm256_add_epi32(index, eight);
+                // Increment the indices pointer
+                indices_ptr = indices_ptr.add(1);
+            }
+
+        // If usize is 64 bits
+        } else if cfg!(target_pointer_width = "64") {
+            // Round up the next multiple of four since four u64s fit into a __m256i
+            let length = next_multiple_of(original_length, 4);
+            indices.reserve(length);
+
+            let mut index = _mm256_set_epi64x(3, 2, 1, 0);
+            let four = _mm256_set1_epi64x(4);
+
+            let mut indices_ptr = indices.as_mut_ptr().cast::<__m256i>();
+            let indices_end = indices_ptr.add(length / 4);
+
+            while indices_ptr < indices_end {
+                // Store the indices into the vec
+                _mm256_storeu_si256(indices_ptr, index);
+
+                // Increment the indices
+                index = _mm256_add_epi64(index, four);
+                // Increment the indices pointer
+                indices_ptr = indices_ptr.add(1);
+            }
+
+        // Only 32bit and 64bit targets are supported for this function
+        } else {
+            unreachable!()
+        }
+
+        indices.set_len(original_length);
+    }
+
+    /// Fills indices using wasm simd
+    // FIXME: Add `target_family = "wasm"`/`target_arch = "wasm64"` support
+    #[cfg(target_family = "wasm32")]
+    #[target_feature(enable = "simd128")]
+    unsafe fn fill_indices_wasm32_simd128(original_length: usize, indices: &mut Vec<usize>) {
+        use std::arch::wasm32::{i32x4, i32x4_add, i32x4_splat, v128, v128_store};
+
+        if original_length == 0 {
+            return;
+        }
+        indices.clear();
+
+        // Round up the next multiple of four since four u32s fit into a v128
+        let length = next_multiple_of(original_length, 4);
+        indices.reserve(length);
+
+        let mut index = i32x4(3, 2, 1, 0);
+        let four = i32x4_splat(4);
+
+        let mut indices_ptr = indices.as_mut_ptr().cast::<v128>();
+        let indices_end = indices_ptr.add(length / 4);
+
+        while indices_ptr < indices_end {
+            // Store the indices into the vec
+            v128_store(indices_ptr, index);
+
+            // Increment the indices
+            index = i32x4_add(index, four);
+
+            // Increment the indices pointer
+            indices_ptr = indices_ptr.add(1);
+        }
+
+        indices.set_len(original_length);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,9 +917,7 @@ mod tests {
 
         let mut indices = Vec::with_capacity(10);
         for ((mut keys, mut values), (output_keys, output_values)) in test_cases {
-            println!("{keys:?}\n{values:?}");
             let length = consolidate_paired_slices(&mut keys, &mut values, &mut indices);
-            println!("{keys:?}\n{values:?}");
             assert_eq!(keys[..length], output_keys);
             assert_eq!(values[..length], output_values);
         }
@@ -713,10 +997,11 @@ mod tests {
         use crate::{
             trace::consolidation::{
                 consolidate, consolidate_from, consolidate_slice, dedup_starting_at,
-                retain_starting_at, shuffle_by_indices, shuffle_by_indices_mut,
+                retain_starting_at, shuffle_by_indices, shuffle_by_indices_bitvec,
             },
             utils::VecExt,
         };
+        use bitvec::vec::BitVec;
         use proptest::{collection::vec, prelude::*};
         use std::collections::BTreeMap;
 
@@ -729,20 +1014,24 @@ mod tests {
 
         prop_compose! {
             /// Generate a random batch of data
-            fn batch()
-                (length in 0..50_000)
-                (batch in vec(tuple(), 0..=length as usize))
-            -> Vec<((usize, usize), isize)> {
+            fn batch()(batch in vec(tuple(), 0..50_000)) -> Vec<((usize, usize), isize)> {
                 batch
             }
         }
 
         prop_compose! {
-            fn random_vec()
-                (length in 0..5000)
-                (batch in vec(any::<u16>(), 0..=length as usize))
-            -> Vec<u16> {
+            fn random_vec()(batch in vec(any::<u16>(), 0..5000)) -> Vec<u16> {
                 batch
+            }
+        }
+
+        prop_compose! {
+            fn random_paired_vecs()
+                (len in 0..5000usize)
+                (left in vec(any::<u16>(), len), right in vec(any::<i16>(), len))
+            -> (Vec<u16>, Vec<i16>) {
+                assert_eq!(left.len(), right.len());
+                (left, right)
             }
         }
 
@@ -820,30 +1109,36 @@ mod tests {
             }
 
             #[test]
-            fn shuffle_by_indices_equivalence(mut input in random_vec()) {
-                let mut expected_indices: Vec<_> = (0..input.len()).collect();
-                expected_indices.sort_by_key(|&idx| input[idx]);
-                let mut output = vec![0; input.len()];
+            fn shuffle_by_indices_equivalence((mut values, mut diffs) in random_paired_vecs()) {
+                let mut expected_indices: Vec<_> = (0..values.len()).collect();
+                expected_indices.sort_by_key(|&idx| values[idx]);
+
+                let (mut output_values, mut output_diffs) = (vec![0; values.len()], vec![0; values.len()]);
                 for (current, &idx) in expected_indices.iter().enumerate() {
-                    output[current] = input[idx];
+                    output_values[current] = values[idx];
+                    output_diffs[current] = diffs[idx];
                 }
 
-                unsafe { shuffle_by_indices(&mut input, &expected_indices) };
-                prop_assert_eq!(input, output);
+                unsafe { shuffle_by_indices(&mut values, &mut diffs, &mut expected_indices) };
+                prop_assert_eq!(values, output_values);
+                prop_assert_eq!(diffs, output_diffs);
             }
 
-
             #[test]
-            fn shuffle_by_indices_mut_equivalence(mut input in random_vec()) {
-                let mut expected_indices: Vec<_> = (0..input.len()).collect();
-                expected_indices.sort_by_key(|&idx| input[idx]);
-                let mut output = vec![0; input.len()];
+            fn shuffle_by_indices_bitvec_equivalence((mut values, mut diffs) in random_paired_vecs()) {
+                let mut visited = BitVec::repeat(false, values.len());
+                let mut expected_indices: Vec<_> = (0..values.len()).collect();
+                expected_indices.sort_by_key(|&idx| values[idx]);
+
+                let (mut output_values, mut output_diffs) = (vec![0; values.len()], vec![0; values.len()]);
                 for (current, &idx) in expected_indices.iter().enumerate() {
-                    output[current] = input[idx];
+                    output_values[current] = values[idx];
+                    output_diffs[current] = diffs[idx];
                 }
 
-                unsafe { shuffle_by_indices_mut(&mut input, &mut expected_indices) };
-                prop_assert_eq!(input, output);
+                unsafe { shuffle_by_indices_bitvec(&mut values, &mut diffs, &mut expected_indices, &mut visited) };
+                prop_assert_eq!(values, output_values);
+                prop_assert_eq!(diffs, output_diffs);
             }
         }
     }

@@ -99,6 +99,7 @@ macro_rules! leaf_benches {
 
 
             let mut group = c.benchmark_group("build-unordered-boundary");
+            group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
                     let builder = data_builder::<usize, isize>($size);
@@ -113,6 +114,7 @@ macro_rules! leaf_benches {
             group.finish();
 
             let mut group = c.benchmark_group("build-unordered-done");
+            group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
                     let builder = data_builder::<usize, isize>($size);
