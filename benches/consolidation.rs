@@ -182,7 +182,7 @@ macro_rules! consolidation_benches {
                     b.iter_batched(
                         || (keys.clone(), diffs.clone(), indices.clone()),
                         |(mut keys, mut diffs, mut indices)| {
-                            unsafe { consolidation::shuffle_by_indices(&mut keys, &mut diffs, &mut indices) };
+                            unsafe { consolidation::utils::shuffle_by_indices(&mut keys, &mut diffs, &mut indices) };
                         },
                         BatchSize::PerIteration,
                     );
@@ -205,7 +205,7 @@ macro_rules! consolidation_benches {
                     b.iter_batched(
                         || (keys.clone(), diffs.clone(), indices.clone(), BitVec::repeat(false, $size).into_boxed_bitslice()),
                         |(mut keys, mut diffs, mut indices, mut visited)| {
-                            unsafe { consolidation::shuffle_by_indices_bitvec(&mut keys, &mut diffs, &mut indices, &mut visited) };
+                            unsafe { consolidation::utils::shuffle_by_indices_bitvec(&mut keys, &mut diffs, &mut indices, &mut visited) };
                         },
                         BatchSize::PerIteration,
                     );
