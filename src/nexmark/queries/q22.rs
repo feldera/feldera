@@ -35,12 +35,13 @@ type Q22Stream = Stream<Circuit<()>, Q22Set>;
 pub fn q22(input: NexmarkStream) -> Q22Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {
-            // Just ensure the split vector has a length of at least 6 to index 5.
-            let mut split: Vec<&str> = b.channel.as_str().split('/').collect();
-            if split.len() < 6 {
-                split.extend(vec![""; 6 - split.len()])
-            }
-            let (dir1, dir2, dir3) = (split[3], split[4], split[5]);
+            let mut split = b.channel.as_str().split('/').skip(3);
+            let (dir1, dir2, dir3) = (
+                split.next().unwrap_or_default(),
+                split.next().unwrap_or_default(),
+                split.next().unwrap_or_default(),
+            );
+
             Some((
                 b.auction,
                 b.bidder,
