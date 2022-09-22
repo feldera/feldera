@@ -61,7 +61,7 @@ pub trait Aggregator<K, T, R> {
     ///
     /// * The method must return `None` if the total weight of each key is zero.
     ///   It must return `Some` otherwise.
-    fn aggregate<'s, C>(&mut self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
         C: Cursor<'s, K, (), T, R>;
 }
@@ -77,7 +77,7 @@ where
 {
     type Output = R;
 
-    fn aggregate<'s, C>(&mut self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
         C: Cursor<'s, (), (), T, R>,
     {
