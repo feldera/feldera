@@ -1,24 +1,23 @@
 ///! Trace monitor that validates event traces from a circuit.  It is
 ///! used to test both the tracing mechanism and the circuit engine
 ///! itself.
+mod circuit_graph;
+
+pub mod visual_graph;
+
+use crate::circuit::{
+    operator_traits::OperatorLocation,
+    trace::{CircuitEvent, SchedulerEvent},
+    Circuit, GlobalNodeId, NodeId,
+};
+use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     fmt,
     fmt::Display,
-    panic::Location,
     sync::{Arc, Mutex},
 };
-
-use crate::circuit::{
-    trace::{CircuitEvent, SchedulerEvent},
-    Circuit, GlobalNodeId, NodeId,
-};
-
-mod circuit_graph;
-use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
-
-pub mod visual_graph;
 use visual_graph::Graph as VisGraph;
 
 /// Callback function type signature for reporting an invalid `CircuitEvent`.
@@ -232,11 +231,7 @@ impl TraceMonitorInternal {
         )
     }
 
-    fn push_region(
-        &mut self,
-        name: Cow<'static, str>,
-        location: Option<&'static Location<'static>>,
-    ) {
+    fn push_region(&mut self, name: Cow<'static, str>, location: OperatorLocation) {
         let mut current_region = self.current_region();
         let circuit_node = self.circuit.node_mut(&self.current_scope).unwrap();
         current_region =

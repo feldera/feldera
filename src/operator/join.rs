@@ -3,7 +3,7 @@
 use crate::{
     algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZRingValue, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, Operator},
+        operator_traits::{BinaryOperator, Operator, OperatorLocation},
         Circuit, Scope, Stream,
     },
     time::Timestamp,
@@ -383,7 +383,7 @@ where
         Cow::Borrowed("Join")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 
@@ -468,7 +468,7 @@ where
         Cow::Borrowed("MonotonicJoin")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 
@@ -576,7 +576,7 @@ where
         Cow::Borrowed("JoinTrace")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 

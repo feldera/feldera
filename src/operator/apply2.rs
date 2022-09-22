@@ -1,7 +1,7 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
 use crate::circuit::{
-    operator_traits::{BinaryOperator, Operator},
+    operator_traits::{BinaryOperator, Operator, OperatorLocation},
     Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};
@@ -73,7 +73,7 @@ where
         Cow::from("Apply2")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 
@@ -117,7 +117,7 @@ where
         Cow::from("Apply2Owned")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 

@@ -11,13 +11,15 @@ pub trait Data: Clone + 'static {}
 
 impl<T: Clone + 'static> Data for T {}
 
+pub type OperatorLocation = Option<&'static Location<'static>>;
+
 /// Trait that must be implemented by all operators.
 pub trait Operator: 'static {
     /// Human-readable operator name for debugging purposes.
     fn name(&self) -> Cow<'static, str>;
 
     /// The location the operator was created at
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         None
     }
 
