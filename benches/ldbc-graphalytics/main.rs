@@ -13,13 +13,18 @@ use crate::{
 };
 use clap::Parser;
 use dbsp::{
-    circuit::{trace::SchedulerEvent, Runtime},
+    circuit::{
+        operator_traits::{MetaItem, OperatorMeta},
+        trace::SchedulerEvent,
+        Runtime,
+    },
     monitor::TraceMonitor,
     operator::Generator,
     profile::CPUProfiler,
     trace::{BatchReader, Cursor},
     Circuit,
 };
+use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use std::{
@@ -333,31 +338,45 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
     let _ = std::fs::remove_dir_all(&profile_path);
     std::fs::create_dir_all(&profile_path).expect("failed to create directory for profile");
 
-    let mut metadata = HashMap::<_, String>::new();
+    let mut metadata = HashMap::<_, OperatorMeta, FxBuildHasher>::default();
     let mut steps = 0;
 
     circuit.register_scheduler_event_handler("metadata", move |event| match event {
         SchedulerEvent::EvalEnd { node } => {
-            let metadata_string = metadata.entry(node.global_id().clone()).or_default();
-            metadata_string.clear();
-            node.summary(metadata_string);
+            let meta = metadata.entry(node.global_id().clone()).or_default();
+            meta.clear();
+            node.metadata(meta);
         }
 
         SchedulerEvent::StepEnd => {
             let graph = monitor.visualize_circuit_annotate(|node_id| {
-                let mut metadata_string = metadata.get(node_id).cloned().unwrap_or_default();
+                let mut output = String::with_capacity(1024);
+                let mut meta = metadata.get(node_id).cloned().unwrap_or_default();
 
-                if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
-                    writeln!(
-                        metadata_string,
-                        "invocations: {}\ntime: {:#?}",
-                        cpu_profile.invocations(),
-                        cpu_profile.total_time(),
-                    )
-                    .unwrap();
-                };
+                if let Some(profile) = cpu_profiler.operator_profile(node_id) {
+                    let default_meta = [
+                        (
+                            Cow::Borrowed("invocations"),
+                            MetaItem::Int(profile.invocations()),
+                        ),
+                        (
+                            Cow::Borrowed("time"),
+                            MetaItem::Duration(profile.total_time()),
+                        ),
+                    ];
 
-                metadata_string
+                    for item in default_meta {
+                        meta.insert(0, item);
+                    }
+                }
+
+                for (label, item) in &meta {
+                    write!(output, "{label}: ").unwrap();
+                    format_meta(item, &mut output);
+                    output.push_str("\\l");
+                }
+
+                output
             });
 
             std::fs::write(
@@ -371,6 +390,51 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
 
         _ => {}
     });
+}
+
+fn format_meta(item: &MetaItem, output: &mut String) {
+    match item {
+        MetaItem::Int(int) => write!(output, "{int}").unwrap(),
+        MetaItem::Percent(percent) => write!(output, "{percent:.02}%").unwrap(),
+        MetaItem::String(string) => output.push_str(string),
+        MetaItem::Bytes(bytes) => write!(output, "{bytes}").unwrap(),
+        MetaItem::Duration(duration) => {
+            write!(output, "{duration:#?}").unwrap();
+        }
+
+        MetaItem::Array(array) => {
+            if array.is_empty() {
+                output.push_str("[]");
+            } else {
+                output.push('[');
+                for (idx, item) in array.iter().enumerate() {
+                    format_meta(item, output);
+                    if idx != array.len() - 1 {
+                        output.push_str(", ");
+                    }
+                }
+                output.push(']');
+            }
+        }
+
+        MetaItem::Map(map) => {
+            if map.is_empty() {
+                output.push_str("{}");
+            } else {
+                output.push('{');
+                for (idx, (label, item)) in map.iter().enumerate() {
+                    output.push_str(label);
+                    output.push_str(": ");
+                    format_meta(item, output);
+
+                    if idx != map.len() - 1 {
+                        output.push_str(", ");
+                    }
+                }
+                output.push('}');
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Parser)]

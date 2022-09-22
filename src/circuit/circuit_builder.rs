@@ -42,8 +42,8 @@ use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
         operator_traits::{
-            BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
-            StrictUnaryOperator, TernaryOperator, UnaryOperator,
+            BinaryOperator, Data, ImportOperator, NaryOperator, OperatorMeta, SinkOperator,
+            SourceOperator, StrictUnaryOperator, TernaryOperator, UnaryOperator,
         },
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -321,7 +321,7 @@ pub trait Node {
     /// another node).
     unsafe fn clock_end(&mut self, scope: Scope);
 
-    fn summary(&self, output: &mut String);
+    fn metadata(&self, output: &mut OperatorMeta);
 
     fn fixedpoint(&self, scope: Scope) -> bool;
 }
@@ -1950,8 +1950,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2025,8 +2025,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2111,8 +2111,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2189,8 +2189,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2303,8 +2303,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2421,8 +2421,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2542,8 +2542,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        self.operator.summary(output);
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2624,23 +2624,19 @@ where
     }
 
     fn clock_start(&mut self, scope: Scope) {
-        unsafe {
-            (*self.operator.get()).clock_start(scope);
-        }
+        unsafe { (*self.operator.get()).clock_start(scope) }
     }
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
             self.export_stream
-                .put((*self.operator.get()).get_final_output())
+                .put((*self.operator.get()).get_final_output());
         }
         (*self.operator.get()).clock_end(scope);
     }
 
-    fn summary(&self, output: &mut String) {
-        unsafe {
-            (*self.operator.get()).summary(output);
-        }
+    fn metadata(&self, output: &mut OperatorMeta) {
+        unsafe { (*self.operator.get()).metadata(output) }
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2714,10 +2710,8 @@ where
 
     unsafe fn clock_end(&mut self, _scope: Scope) {}
 
-    fn summary(&self, output: &mut String) {
-        unsafe {
-            (*self.operator.get()).summary(output);
-        }
+    fn metadata(&self, output: &mut OperatorMeta) {
+        unsafe { (*self.operator.get()).metadata(output) }
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -2848,9 +2842,7 @@ where
         self.circuit.clock_end(scope + 1);
     }
 
-    fn summary(&self, output: &mut String) {
-        output.clear();
-    }
+    fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.circuit.inner().fixedpoint(scope + 1)
@@ -2867,9 +2859,8 @@ impl Drop for CircuitHandle {
     fn drop(&mut self) {
         self.circuit
             .log_scheduler_event(&SchedulerEvent::clock_end());
-        unsafe {
-            self.circuit.clock_end(0);
-        }
+        unsafe { self.circuit.clock_end(0) }
+
         // We must explicitly deallocate all nodes in the circuit to break
         // cyclic `Rc` references between circuits and streams.  Alternatively,
         // we could use weak references to break cycles, but we'd have to

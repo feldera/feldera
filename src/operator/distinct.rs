@@ -3,7 +3,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, Operator, UnaryOperator},
+        operator_traits::{BinaryOperator, MetaItem, Operator, OperatorMeta, UnaryOperator},
         Circuit, GlobalNodeId, Scope, Stream,
     },
     circuit_cache_key,
@@ -11,12 +11,11 @@ use crate::{
     trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace, TraceReader},
     NumEntries, Timestamp,
 };
-use size_of::{HumanBytes, SizeOf};
+use size_of::SizeOf;
 use std::{
     borrow::Cow,
     cmp::{max, Ordering},
     collections::BTreeSet,
-    fmt::Write,
     hash::Hash,
     marker::PhantomData,
     mem::take,
@@ -461,13 +460,40 @@ where
     T: TraceReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("DistinctTrace")
+        Cow::Borrowed("DistinctTrace")
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let size: usize = self.future_updates.iter().map(BTreeSet::len).sum();
+        let bytes = self.future_updates.size_of();
+
+        meta.extend([
+            (Cow::Borrowed("total updates"), MetaItem::Int(size)),
+            (
+                Cow::Borrowed("allocated bytes"),
+                MetaItem::bytes(bytes.total_bytes()),
+            ),
+            (
+                Cow::Borrowed("used bytes"),
+                MetaItem::bytes(bytes.used_bytes()),
+            ),
+            (
+                Cow::Borrowed("allocations"),
+                MetaItem::Int(bytes.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                MetaItem::bytes(bytes.shared_bytes()),
+            ),
+        ]);
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
             self.time = 0;
         }
     }
+
     fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
             self.future_updates.clear();
@@ -475,6 +501,7 @@ where
             self.empty_output = false;
         }
     }
+
     fn fixedpoint(&self, scope: Scope) -> bool {
         // TODO: generalize `DistinctTrace` to support arbitrarily nested scopes.
         assert_eq!(scope, 0);
@@ -485,22 +512,6 @@ where
                 .iter()
                 .skip(self.time as usize)
                 .all(|vals| vals.is_empty())
-    }
-
-    fn summary(&self, summary: &mut String) {
-        let size: usize = self.future_updates.iter().map(|vals| vals.len()).sum();
-        writeln!(summary, "size: {}", size).unwrap();
-
-        let bytes = self.future_updates.size_of();
-        writeln!(
-            summary,
-            "allocated: {}, used: {}, allocations: {}, shared: {}",
-            HumanBytes::from(bytes.total_bytes()),
-            HumanBytes::from(bytes.used_bytes()),
-            bytes.distinct_allocations(),
-            HumanBytes::from(bytes.shared_bytes()),
-        )
-        .unwrap();
     }
 }
 

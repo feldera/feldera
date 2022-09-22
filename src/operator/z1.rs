@@ -3,14 +3,16 @@
 use crate::{
     algebra::HasZero,
     circuit::{
-        operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
+        operator_traits::{
+            MetaItem, Operator, OperatorMeta, StrictOperator, StrictUnaryOperator, UnaryOperator,
+        },
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
     circuit_cache_key, NumEntries,
 };
-use size_of::{HumanBytes, SizeOf, TotalSize};
-use std::{borrow::Cow, fmt::Write, mem::replace};
+use size_of::{Context, SizeOf};
+use std::{borrow::Cow, mem::replace};
 
 circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -188,19 +190,30 @@ where
         self.values = self.zero.clone();
     }
 
-    fn summary(&self, summary: &mut String) {
-        writeln!(summary, "size: {}", self.values.num_entries_deep()).unwrap();
-
+    fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
-        writeln!(
-            summary,
-            "allocated: {}, used: {}, allocations: {}, shared: {}",
-            HumanBytes::from(bytes.total_bytes()),
-            HumanBytes::from(bytes.used_bytes()),
-            bytes.distinct_allocations(),
-            HumanBytes::from(bytes.shared_bytes()),
-        )
-        .unwrap();
+        meta.extend([
+            (
+                Cow::Borrowed("total size"),
+                MetaItem::Int(self.values.num_entries_deep()),
+            ),
+            (
+                Cow::Borrowed("allocated bytes"),
+                MetaItem::bytes(bytes.total_bytes()),
+            ),
+            (
+                Cow::Borrowed("used bytes"),
+                MetaItem::bytes(bytes.used_bytes()),
+            ),
+            (
+                Cow::Borrowed("allocations"),
+                MetaItem::Int(bytes.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                MetaItem::bytes(bytes.shared_bytes()),
+            ),
+        ]);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -336,48 +349,47 @@ where
         }
     }
 
-    fn summary(&self, summary: &mut String) {
-        let mut total = 0;
-        write!(summary, "sizes: [").unwrap();
-        for (i, v) in self.values.iter().enumerate() {
-            let nentries = v.num_entries_deep();
-            total += nentries;
-            if i == self.values.len() - 1 {
-                write!(summary, "{}", nentries).unwrap();
-            } else {
-                write!(summary, "{},", nentries).unwrap();
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let total_size: usize = self
+            .values
+            .iter()
+            .map(|batch| batch.num_entries_deep())
+            .sum();
+
+        let batch_sizes = self
+            .values
+            .iter()
+            .map(|batch| MetaItem::Int(batch.num_entries_deep()))
+            .collect();
+
+        let total_bytes = {
+            let mut context = Context::new();
+            for value in &self.values {
+                value.size_of_with_context(&mut context);
             }
-        }
-        writeln!(summary, "]").unwrap();
-        writeln!(summary, "total: {}", total).unwrap();
+            context.total_size()
+        };
 
-        let mut total_bytes = TotalSize::zero();
-        write!(summary, "byte sizes: [").unwrap();
-        for (i, v) in self.values.iter().enumerate() {
-            let bytes = v.size_of();
-            total_bytes += bytes;
-            write!(
-                summary,
-                "(used: {}, allocated: {})",
-                HumanBytes::from(bytes.used_bytes()),
-                HumanBytes::from(bytes.total_bytes()),
-            )
-            .unwrap();
-
-            if i != self.values.len() - 1 {
-                write!(summary, ", ").unwrap();
-            }
-        }
-
-        writeln!(
-            summary,
-            "]\nallocated: {}, used: {}, allocations: {}, shared: {}",
-            HumanBytes::from(total_bytes.total_bytes()),
-            HumanBytes::from(total_bytes.used_bytes()),
-            total_bytes.distinct_allocations(),
-            HumanBytes::from(total_bytes.shared_bytes()),
-        )
-        .unwrap();
+        meta.extend([
+            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
+            (Cow::Borrowed("batch sizes"), MetaItem::Array(batch_sizes)),
+            (
+                Cow::Borrowed("allocated bytes"),
+                MetaItem::bytes(total_bytes.total_bytes()),
+            ),
+            (
+                Cow::Borrowed("used bytes"),
+                MetaItem::bytes(total_bytes.used_bytes()),
+            ),
+            (
+                Cow::Borrowed("allocations"),
+                MetaItem::Int(total_bytes.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                MetaItem::bytes(total_bytes.shared_bytes()),
+            ),
+        ]);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

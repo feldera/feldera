@@ -3,7 +3,7 @@
 use crate::{
     algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZRingValue, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, Operator, OperatorLocation},
+        operator_traits::{BinaryOperator, MetaItem, Operator, OperatorLocation, OperatorMeta},
         Circuit, Scope, Stream,
     },
     time::Timestamp,
@@ -13,12 +13,11 @@ use crate::{
     },
     OrdIndexedZSet, OrdZSet,
 };
-use size_of::{Context, HumanBytes, SizeOf};
+use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
     collections::HashMap,
-    fmt::Write,
     hash::Hash,
     iter::once,
     marker::PhantomData,
@@ -526,6 +525,25 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+struct JoinStats {
+    lhs_tuples: usize,
+    rhs_tuples: usize,
+    output_tuples: usize,
+    produced_tuples: usize,
+}
+
+impl JoinStats {
+    pub const fn new() -> Self {
+        Self {
+            lhs_tuples: 0,
+            rhs_tuples: 0,
+            output_tuples: 0,
+            produced_tuples: 0,
+        }
+    }
+}
+
 pub struct JoinTrace<F, I, T, Z, It>
 where
     T: TraceReader,
@@ -542,6 +560,7 @@ where
     empty_input: bool,
     // True if empty output was produced at the current clock cycle.
     empty_output: bool,
+    stats: JoinStats,
     _types: PhantomData<(I, T, Z, It)>,
 }
 
@@ -558,6 +577,7 @@ where
             output_batchers: HashMap::new(),
             empty_input: false,
             empty_output: false,
+            stats: JoinStats::new(),
             _types: PhantomData,
         }
     }
@@ -595,30 +615,90 @@ where
         self.time = self.time.advance(scope + 1);
     }
 
-    fn summary(&self, summary: &mut String) {
-        let sizes: Vec<usize> = self
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let total_size: usize = self
             .output_batchers
-            .values()
-            .map(|batcher| batcher.tuples())
-            .collect();
-        writeln!(summary, "sizes: {:?}", sizes).unwrap();
-        writeln!(summary, "total size: {}", sizes.iter().sum::<usize>()).unwrap();
+            .iter()
+            .map(|(_, batcher)| batcher.tuples())
+            .sum();
 
-        let mut context = Context::new();
-        for batcher in self.output_batchers.values() {
-            batcher.size_of_with_context(&mut context);
+        let batch_sizes = MetaItem::Array(
+            self.output_batchers
+                .iter()
+                .map(|(_, batcher)| {
+                    let size = batcher.size_of();
+
+                    MetaItem::Map(vec![
+                        (
+                            Cow::Borrowed("allocated"),
+                            MetaItem::bytes(size.total_bytes()),
+                        ),
+                        (Cow::Borrowed("used"), MetaItem::bytes(size.used_bytes())),
+                    ])
+                })
+                .collect(),
+        );
+
+        let bytes = {
+            let mut context = Context::new();
+            for batcher in self.output_batchers.values() {
+                batcher.size_of_with_context(&mut context);
+            }
+
+            context.size_of()
+        };
+
+        // Find the percentage of consolidated outputs
+        let mut output_redundancy = ((self.stats.output_tuples as f64
+            - self.stats.produced_tuples as f64)
+            / self.stats.output_tuples as f64)
+            * 100.0;
+        if output_redundancy.is_nan() {
+            output_redundancy = 0.0;
+        } else if output_redundancy.is_infinite() {
+            output_redundancy = 100.0;
         }
 
-        let bytes = context.size_of();
-        writeln!(
-            summary,
-            "allocated: {}, used: {}, allocations: {}, shared: {}",
-            HumanBytes::from(bytes.total_bytes()),
-            HumanBytes::from(bytes.used_bytes()),
-            bytes.distinct_allocations(),
-            HumanBytes::from(bytes.shared_bytes()),
-        )
-        .unwrap();
+        meta.extend([
+            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
+            (Cow::Borrowed("batch sizes"), batch_sizes),
+            (
+                Cow::Borrowed("allocated bytes"),
+                MetaItem::bytes(bytes.total_bytes()),
+            ),
+            (
+                Cow::Borrowed("used bytes"),
+                MetaItem::bytes(bytes.used_bytes()),
+            ),
+            (
+                Cow::Borrowed("allocations"),
+                MetaItem::Int(bytes.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                MetaItem::bytes(bytes.shared_bytes()),
+            ),
+            (
+                Cow::Borrowed("left inputs"),
+                MetaItem::Int(self.stats.lhs_tuples),
+            ),
+            (
+                Cow::Borrowed("right inputs"),
+                MetaItem::Int(self.stats.rhs_tuples),
+            ),
+            (
+                Cow::Borrowed("raw outputs"),
+                MetaItem::Int(self.stats.output_tuples),
+            ),
+            (
+                Cow::Borrowed("produced outputs"),
+                MetaItem::Int(self.stats.produced_tuples),
+            ),
+            (
+                Cow::Borrowed("output redundancy"),
+                MetaItem::Percent(output_redundancy),
+            ),
+        ]);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -651,10 +731,8 @@ where
     It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
-        /*println!("JoinTrace::eval@{}:\n  index:\n{}\n  trace:\n{}",
-        self.time,
-        textwrap::indent(&index.to_string(), "    "),
-        textwrap::indent(&trace.to_string(), "    "));*/
+        self.stats.lhs_tuples += index.len();
+        self.stats.rhs_tuples += trace.len();
 
         self.empty_input = index.is_empty();
 
@@ -671,12 +749,8 @@ where
 
         while index_cursor.key_valid() && trace_cursor.key_valid() {
             match index_cursor.key().cmp(trace_cursor.key()) {
-                Ordering::Less => {
-                    index_cursor.seek_key(trace_cursor.key());
-                }
-                Ordering::Greater => {
-                    trace_cursor.seek_key(index_cursor.key());
-                }
+                Ordering::Less => index_cursor.seek_key(trace_cursor.key()),
+                Ordering::Greater => trace_cursor.seek_key(index_cursor.key()),
                 Ordering::Equal => {
                     //println!("key: {}", index_cursor.key(index));
 
@@ -713,6 +787,7 @@ where
             }
         }
 
+        self.stats.output_tuples += output_tuples.len();
         // Sort `output_tuples` by timestamp and push all tuples for each unique
         // timestamp to the appropriate batcher.
         output_tuples.sort_by(|(t1, _), (t2, _)| t1.cmp(t2));
@@ -781,10 +856,11 @@ where
             .remove(&self.time)
             .unwrap_or_else(|| Z::Batcher::new_batcher(()));
         self.time = self.time.advance(0);
-        let result = batcher.seal();
-        //println!("JoinTrace output:\n{}", result);
 
+        let result = batcher.seal();
+        self.stats.produced_tuples += result.len();
         self.empty_output = result.is_empty();
+
         result
     }
 }
