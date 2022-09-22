@@ -13,7 +13,7 @@ where
     type Output = V;
 
     // TODO: this can be more efficient with reverse iterator.
-    fn aggregate<'s, C>(&mut self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
         C: Cursor<'s, V, (), T, R>,
     {

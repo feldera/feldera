@@ -15,7 +15,7 @@ where
 {
     type Output = V;
 
-    fn aggregate<'s, C>(&mut self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
         C: Cursor<'s, V, (), T, R>,
     {
