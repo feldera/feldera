@@ -4,14 +4,42 @@
 //! consumes one or more input streams and produces an output stream.
 
 use crate::circuit::{OwnershipPreference, Scope};
-use std::{borrow::Cow, panic::Location};
+use size_of::HumanBytes;
+use std::{borrow::Cow, panic::Location, time::Duration};
 
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
 
 impl<T: Clone + 'static> Data for T {}
 
+/// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
+
+/// General metadata about an operator's execution
+pub type OperatorMeta = Vec<(Cow<'static, str>, MetaItem)>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MetaItem {
+    Int(usize),
+    Percent(f64),
+    String(String),
+    Array(Vec<Self>),
+    Map(OperatorMeta),
+    Bytes(HumanBytes),
+    Duration(Duration),
+}
+
+impl Default for MetaItem {
+    fn default() -> Self {
+        Self::String(String::new())
+    }
+}
+
+impl MetaItem {
+    pub fn bytes(bytes: usize) -> Self {
+        Self::Bytes(HumanBytes::from(bytes))
+    }
+}
 
 /// Trait that must be implemented by all operators.
 pub trait Operator: 'static {
@@ -22,6 +50,8 @@ pub trait Operator: 'static {
     fn location(&self) -> OperatorLocation {
         None
     }
+
+    fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     /// Notify the operator about the start of a new clock epoch.
     ///
@@ -190,14 +220,6 @@ pub trait Operator: 'static {
     /// of the fixed point computation, but not as part of an integrator circuit
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
     fn fixedpoint(&self, scope: Scope) -> bool;
-
-    /// Returns printable operator metadata, e.g., number of entries, heap
-    /// usage, etc.
-    // TODO: metadata is operator-specific, so we cannot use a pre-defined structure
-    // here.  A dynamic representation (e.g., JSON) may be the sweet spot.
-    fn summary(&self, output: &mut String) {
-        output.clear();
-    }
 }
 
 /// A source operator that injects data from the outside world or from the

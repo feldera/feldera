@@ -1,14 +1,16 @@
 use crate::{
     circuit::{
-        operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
+        operator_traits::{
+            BinaryOperator, MetaItem, Operator, OperatorMeta, StrictOperator, StrictUnaryOperator,
+        },
         Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
     NumEntries, Timestamp,
 };
-use size_of::{HumanBytes, SizeOf};
-use std::{borrow::Cow, fmt::Write, marker::PhantomData};
+use size_of::SizeOf;
+use std::{borrow::Cow, marker::PhantomData};
 
 circuit_cache_key!(TraceId<B, D>(GlobalNodeId => Stream<B, D>));
 circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
@@ -374,31 +376,38 @@ where
         self.time.advance(scope + 1);
     }
 
-    fn summary(&self, summary: &mut String) {
-        writeln!(
-            summary,
-            "size: {}",
-            self.trace
-                .as_ref()
-                .map(|trace| trace.num_entries_deep())
-                .unwrap_or(0)
-        )
-        .unwrap();
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let total_size = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.num_entries_deep())
+            .unwrap_or(0);
 
         let bytes = self
             .trace
             .as_ref()
             .map(|trace| trace.size_of())
             .unwrap_or_default();
-        writeln!(
-            summary,
-            "allocated: {}, used: {}, allocations: {}, shared: {}",
-            HumanBytes::from(bytes.total_bytes()),
-            HumanBytes::from(bytes.used_bytes()),
-            bytes.distinct_allocations(),
-            HumanBytes::from(bytes.shared_bytes()),
-        )
-        .unwrap();
+
+        meta.extend([
+            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
+            (
+                Cow::Borrowed("allocated bytes"),
+                MetaItem::bytes(bytes.total_bytes()),
+            ),
+            (
+                Cow::Borrowed("used bytes"),
+                MetaItem::bytes(bytes.used_bytes()),
+            ),
+            (
+                Cow::Borrowed("allocations"),
+                MetaItem::Int(bytes.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                MetaItem::bytes(bytes.shared_bytes()),
+            ),
+        ]);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
