@@ -1,8 +1,5 @@
 use crate::{
-    circuit::{
-        trace::{EdgeKind, OperatorLocation},
-        GlobalNodeId, NodeId,
-    },
+    circuit::{operator_traits::OperatorLocation, trace::EdgeKind, GlobalNodeId, NodeId},
     monitor::visual_graph::{
         ClusterNode, Edge as VisEdge, Graph as VisGraph, Node as VisNode, SimpleNode,
     },
@@ -10,7 +7,6 @@ use crate::{
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap},
-    panic::Location,
     slice,
 };
 
@@ -111,7 +107,7 @@ impl Region {
         &mut self,
         path: &[usize],
         name: Cow<'static, str>,
-        location: Option<&'static Location<'static>>,
+        location: OperatorLocation,
     ) -> RegionId {
         match path.split_first() {
             None => {

@@ -1,7 +1,7 @@
 //! Operator that applies an arbitrary function to its input.
 
 use crate::circuit::{
-    operator_traits::{Operator, UnaryOperator},
+    operator_traits::{Operator, OperatorLocation, UnaryOperator},
     Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};
@@ -58,7 +58,7 @@ where
         Cow::Borrowed("Apply")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 
@@ -100,7 +100,7 @@ where
         Cow::Borrowed("ApplyOwned")
     }
 
-    fn location(&self) -> Option<&'static Location<'static>> {
+    fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
 

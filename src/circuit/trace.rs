@@ -16,9 +16,8 @@
 //! quickly, with any expensive processing completed asynchronously.
 
 use super::{circuit_builder::Node, GlobalNodeId, NodeId, OwnershipPreference};
-use std::{borrow::Cow, fmt, fmt::Display, hash::Hash, panic::Location};
-
-pub(crate) type OperatorLocation = Option<&'static Location<'static>>;
+use crate::circuit::operator_traits::OperatorLocation;
+use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
