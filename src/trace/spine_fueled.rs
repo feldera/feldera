@@ -91,7 +91,6 @@ use crate::{
 };
 use size_of::SizeOf;
 use std::{
-    cell::RefCell,
     fmt::{self, Display},
     marker::PhantomData,
     mem::replace,
@@ -113,10 +112,6 @@ where
     merging: Vec<MergeState<Rc<B>>>,
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
-    // Batches from `merging` stored in a flat array, for use by `SpineCursor`.
-    // Any operation that modifies spine invalidates this vector (and the associated
-    // cursor, if any).
-    cursor_storage: RefCell<Vec<Rc<B>>>,
     effort: usize,
     activator: Option<Activator>,
     dirty: bool,
@@ -206,7 +201,6 @@ where
 
     fn cursor(&self) -> Self::Cursor<'_> {
         let mut cursors = Vec::new();
-        let mut storage = Vec::new();
 
         for merge_state in self.merging.iter().rev() {
             match merge_state {
@@ -214,17 +208,14 @@ where
                     MergeVariant::InProgress(batch1, batch2, _) => {
                         if !batch1.is_empty() {
                             cursors.push(batch1.cursor());
-                            storage.push(batch1.clone());
                         }
                         if !batch2.is_empty() {
                             cursors.push(batch2.cursor());
-                            storage.push(batch2.clone());
                         }
                     }
                     MergeVariant::Complete(Some(batch)) => {
                         if !batch.is_empty() {
                             cursors.push(batch.cursor());
-                            storage.push(batch.clone());
                         }
                     }
                     MergeVariant::Complete(None) => {}
@@ -232,7 +223,6 @@ where
                 MergeState::Single(Some(batch)) => {
                     if !batch.is_empty() {
                         cursors.push(batch.cursor());
-                        storage.push(batch.clone());
                     }
                 }
                 MergeState::Single(None) => {}
@@ -240,7 +230,6 @@ where
             }
         }
 
-        *self.cursor_storage.borrow_mut() = storage;
         SpineCursor::new(cursors)
     }
 
@@ -446,8 +435,6 @@ where
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
-        self.cursor_storage.borrow_mut().clear();
-
         // Complete all in-progress merges, as we don't have an easy way to update
         // timestamps in an ongoing merge.
         self.complete_merges();
@@ -461,8 +448,6 @@ where
     /// thought of as analogous to inserting as many empty updates,
     /// where the trace is permitted to perform proportionate work.
     fn exert(&mut self, effort: &mut isize) {
-        self.cursor_storage.borrow_mut().clear();
-
         // If there is work to be done, ...
         self.tidy_layers();
         if !self.reduced() {
@@ -484,8 +469,6 @@ where
     }
 
     fn consolidate(mut self) -> Option<Self::Batch> {
-        self.cursor_storage.borrow_mut().clear();
-
         // Merge batches until there is nothing left to merge.
         let mut fuel = isize::max_value();
         while !self.reduced() {
@@ -516,8 +499,6 @@ where
     // amortized work proportional to the size of batch.
     fn insert(&mut self, batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
-
-        self.cursor_storage.borrow_mut().clear();
 
         // Ignore empty batches.
         // Note: we may want to use empty batches to artificially force compaction.
@@ -607,7 +588,6 @@ where
         }
 
         Spine {
-            cursor_storage: RefCell::new(Vec::new()),
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
             merging: Vec::new(),
