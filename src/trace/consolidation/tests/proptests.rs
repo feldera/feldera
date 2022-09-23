@@ -57,6 +57,20 @@ fn batch_data(batch: &[((usize, usize), isize)]) -> BTreeMap<(usize, usize), i64
     values
 }
 
+// fn paired_batch_data(keys: &[(usize, usize)], diffs: &[isize]) ->
+// BTreeMap<(usize, usize), i64> {     let mut values = BTreeMap::new();
+//     for (&tuple, &diff) in keys.iter().zip(diffs) {
+//         values
+//             .entry(tuple)
+//             .and_modify(|acc| *acc += diff as i64)
+//             .or_insert(diff as i64);
+//     }
+//
+//     // Elements with a value of zero are removed in consolidation
+//     values.retain(|_, &mut diff| diff != 0);
+//     values
+// }
+
 proptest! {
     #[test]
     fn consolidate_batch(mut batch in batch()) {
@@ -80,25 +94,45 @@ proptest! {
         consolidate(&mut vec);
         prop_assert!(vec.iter().all(|&(_, diff)| diff != 0));
         prop_assert!(vec.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
-        prop_assert!(vec.iter().all(|&(_, diff)| diff != 0));
         prop_assert_eq!(&expected, &batch_data(&vec));
 
         let mut vec_offset = batch.clone();
         consolidate_from(&mut vec_offset, 0);
         prop_assert!(vec_offset.iter().all(|&(_, diff)| diff != 0));
         prop_assert!(vec_offset.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
-        prop_assert!(vec_offset.iter().all(|&(_, diff)| diff != 0));
         prop_assert_eq!(&expected, &batch_data(&vec));
         prop_assert_eq!(&vec, &vec_offset);
 
         let mut slice = batch;
         let len = consolidate_slice(&mut slice);
-        prop_assert!(slice[..len].iter().all(|&(_, diff)| diff != 0));
-        // prop_assert!(slice[..len].is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
-        prop_assert!(slice[..len].iter().all(|&(_, diff)| diff != 0));
-        prop_assert_eq!(&expected, &batch_data(&slice[..len]));
-        prop_assert_eq!(&vec, &slice[..len]);
+        slice.truncate(len);
+        prop_assert!(slice.iter().all(|&(_, diff)| diff != 0));
+        prop_assert!(slice.is_sorted_by(|(a, _), (b, _)| a.partial_cmp(b)));
+        prop_assert_eq!(&expected, &batch_data(&slice));
+        prop_assert_eq!(&vec, &slice);
     }
+
+    // #[test]
+    // fn consolidate_pair_is_equivalent(batch in batch()) {
+    //     let expected = batch_data(&batch);
+    //
+    //     let mut consolidated = batch.clone();
+    //     consolidate(&mut consolidated);
+    //
+    //     let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
+    //     let mut indices = Vec::new();
+    //     let len = consolidate_paired_slices(&mut keys, &mut diffs, &mut indices);
+    //     keys.truncate(len);
+    //     diffs.truncate(len);
+    //
+    //     prop_assert!(diffs.iter().all(|&diff| diff != 0));
+    //     prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
+    //     prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
+    //
+    //     let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.into_iter().unzip();
+    //     prop_assert_eq!(consolidated_keys, keys);
+    //     prop_assert_eq!(consolidated_diffs, diffs);
+    // }
 
     #[test]
     fn retain_equivalence(mut expected in random_vec()) {

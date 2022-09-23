@@ -199,7 +199,7 @@ where
 
     // Safety: All indices within `indices` are valid and `keys`, `diffs` and
     // `indices` all have the same length
-    unsafe { shuffle_by_indices(diffs, keys, indices) };
+    unsafe { shuffle_by_indices(keys, diffs, indices) };
 
     valid_prefix
 }

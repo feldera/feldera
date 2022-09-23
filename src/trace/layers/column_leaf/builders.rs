@@ -1,7 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::{
-        consolidation::consolidate_paired_vecs_from,
+        consolidation::consolidate_from,
         layers::{
             advance, column_leaf::OrderedColumnLeaf, Builder, MergeBuilder, Trie, TupleBuilder,
         },
@@ -11,7 +11,6 @@ use crate::{
 use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
-    fmt::{self, Debug},
     ops::AddAssign,
 };
 
@@ -227,32 +226,25 @@ where
 }
 
 /// A builder for unordered values
-#[derive(Clone, SizeOf)]
+#[derive(Debug, Clone, SizeOf)]
 pub struct UnorderedColumnLeafBuilder<K, R> {
-    // Invariant: `keys.len() == diffs.len()`
-    keys: Vec<K>,
-    diffs: Vec<R>,
-    /// A buffer to hold the indices used by `consolidate_paired_vecs_from()`
-    indices_buf: Vec<usize>,
+    tuples: Vec<(K, R)>,
     boundary: usize,
 }
 
 impl<K, R> UnorderedColumnLeafBuilder<K, R> {
+    /// Create a new `UnorderedColumnLeafBuilder`
+    pub const fn new() -> Self {
+        Self {
+            tuples: Vec::new(),
+            boundary: 0,
+        }
+    }
+
     /// Get the length of the current builder
     #[inline]
     pub(crate) fn len(&self) -> usize {
-        unsafe { self.assume_invariants() }
-        self.keys.len()
-    }
-
-    /// Assume the invariants of the current builder
-    ///
-    /// # Safety
-    ///
-    /// Requires that `keys` and `diffs` have the exact same length
-    #[inline]
-    unsafe fn assume_invariants(&self) {
-        assume(self.keys.len() == self.diffs.len())
+        self.tuples.len()
     }
 }
 
@@ -264,15 +256,7 @@ where
     type Trie = OrderedColumnLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
-        unsafe { self.assume_invariants() }
-        consolidate_paired_vecs_from(
-            &mut self.keys,
-            &mut self.diffs,
-            &mut self.indices_buf,
-            self.boundary,
-        );
-        unsafe { self.assume_invariants() }
-
+        consolidate_from(&mut self.tuples, self.boundary);
         self.boundary = self.len();
         self.boundary
     }
@@ -280,11 +264,9 @@ where
     fn done(mut self) -> Self::Trie {
         self.boundary();
 
+        let (keys, diffs) = self.tuples.into_iter().unzip();
         // TODO: The indices buffer is dropped here, can we reuse it for other builders?
-        OrderedColumnLeaf {
-            keys: self.keys,
-            diffs: self.diffs,
-        }
+        OrderedColumnLeaf { keys, diffs }
     }
 }
 
@@ -298,9 +280,7 @@ where
     #[inline]
     fn new() -> Self {
         Self {
-            keys: Vec::new(),
-            diffs: Vec::new(),
-            indices_buf: Vec::new(),
+            tuples: Vec::new(),
             boundary: 0,
         }
     }
@@ -308,9 +288,7 @@ where
     #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            keys: Vec::with_capacity(capacity),
-            diffs: Vec::with_capacity(capacity),
-            indices_buf: Vec::with_capacity(capacity),
+            tuples: Vec::with_capacity(capacity),
             boundary: 0,
         }
     }
@@ -321,24 +299,13 @@ where
     }
 
     #[inline]
-    fn push_tuple(&mut self, (key, diff): (K, R)) {
-        unsafe { self.assume_invariants() }
-        self.keys.push(key);
-        self.diffs.push(diff);
-        unsafe { self.assume_invariants() }
+    fn push_tuple(&mut self, tuple: (K, R)) {
+        self.tuples.push(tuple);
     }
 }
 
-impl<K, R> Debug for UnorderedColumnLeafBuilder<K, R>
-where
-    K: Debug,
-    R: Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UnorderedColumnLeafBuilder")
-            .field("keys", &self.keys)
-            .field("diffs", &self.diffs)
-            .field("boundary", &self.boundary)
-            .finish()
+impl<K, R> Default for UnorderedColumnLeafBuilder<K, R> {
+    fn default() -> Self {
+        Self::new()
     }
 }
