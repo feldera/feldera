@@ -32,12 +32,15 @@ fn select_impl(length: usize, indices: &mut Vec<usize>) {
         any(target_arch = "x86", target_arch = "x86_64"),
         any(target_pointer_width = "32", target_pointer_width = "64")
     ))]
-    {
-        if is_x86_feature_detected!("avx2") {
-            selected = fill_indices_x86_avx2;
-        } else if is_x86_feature_detected!("sse2") {
-            selected = fill_indices_x86_sse2;
-        }
+    if is_x86_feature_detected!("avx2") {
+        selected = fill_indices_x86_avx2;
+    } else if is_x86_feature_detected!("sse2") {
+        selected = fill_indices_x86_sse2;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    if is_aarch64_feature_detected!("neon") {
+        selected = fill_indices_aarch64_neon;
     }
 
     // wasm32 feature selection
@@ -67,8 +70,8 @@ unsafe fn fill_indices_naive(length: usize, indices: &mut Vec<usize>) {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn fill_indices_x86_sse2(original_length: usize, indices: &mut Vec<usize>) {
     use x86::{
-        __m128i, _mm_add_epi32, _mm_add_epi64, _mm_set1_epi32, _mm_set1_epi64x, _mm_set_epi32,
-        _mm_set_epi64x, _mm_storeu_si128,
+        __m128i, _mm_add_epi32, _mm_add_epi64, _mm_set1_epi32, _mm_set1_epi64x, _mm_set_epi64x,
+        _mm_setr_epi32, _mm_storeu_si128,
     };
 
     if original_length == 0 {
@@ -82,7 +85,7 @@ unsafe fn fill_indices_x86_sse2(original_length: usize, indices: &mut Vec<usize>
         let length = next_multiple_of(original_length, 4);
         indices.reserve(length);
 
-        let mut index = _mm_set_epi32(3, 2, 1, 0);
+        let mut index = _mm_setr_epi32(0, 1, 2, 3);
         let four = _mm_set1_epi32(4);
 
         let mut indices_ptr = indices.as_mut_ptr().cast::<__m128i>();
@@ -134,7 +137,7 @@ unsafe fn fill_indices_x86_sse2(original_length: usize, indices: &mut Vec<usize>
 unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>) {
     use x86::{
         __m256i, _mm256_add_epi32, _mm256_add_epi64, _mm256_set1_epi32, _mm256_set1_epi64x,
-        _mm256_set_epi32, _mm256_set_epi64x, _mm256_storeu_si256,
+        _mm256_setr_epi32, _mm256_setr_epi64x, _mm256_storeu_si256,
     };
 
     if original_length == 0 {
@@ -148,7 +151,7 @@ unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>
         let length = next_multiple_of(original_length, 8);
         indices.reserve(length);
 
-        let mut index = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+        let mut index = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
         let eight = _mm256_set1_epi32(8);
 
         let mut indices_ptr = indices.as_mut_ptr().cast::<__m256i>();
@@ -170,7 +173,7 @@ unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>
         let length = next_multiple_of(original_length, 4);
         indices.reserve(length);
 
-        let mut index = _mm256_set_epi64x(3, 2, 1, 0);
+        let mut index = _mm256_setr_epi64x(0, 1, 2, 3);
         let four = _mm256_set1_epi64x(4);
 
         let mut indices_ptr = indices.as_mut_ptr().cast::<__m256i>();
@@ -184,6 +187,72 @@ unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>
             index = _mm256_add_epi64(index, four);
             // Increment the indices pointer
             indices_ptr = indices_ptr.add(1);
+        }
+
+    // Only 32bit and 64bit targets are supported for this function
+    } else {
+        unreachable!()
+    }
+
+    indices.set_len(original_length);
+}
+
+#[cfg(target_family = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Vec<usize>) {
+    use std::{
+        arch::aarch64::{
+            uint32x4_t, uint64x2_t, vaddq_u32, vaddq_u64, vdupq_n_u32, vdupq_n_u64, vst1q_u32,
+            vst1q_u64,
+        },
+        mem::transmute,
+    };
+
+    if original_length == 0 {
+        return;
+    }
+    indices.clear();
+
+    // If usize is 32 bits
+    if cfg!(target_pointer_width = "32") {
+        let length = next_multiple_of(original_length, 4);
+        indices.reserve(length);
+
+        let mut index = transmute::<[u32; 4], uint32x4_t>([0, 1, 2, 3]);
+        let four = vdupq_n_u32(4);
+
+        let mut indices_ptr = indices.as_mut_ptr().cast::<u32>();
+        let indices_end = indices_ptr.add(length / 4);
+
+        while indices_ptr < indices_end {
+            // Store the indices into the vec
+            vst1q_u32(indices_ptr, index);
+
+            // Increment the indices
+            index = vaddq_u32(index, four);
+            // Increment the indices pointer
+            indices_ptr = indices_ptr.add(4);
+        }
+
+    // If usize is 64 bits
+    } else if cfg!(target_pointer_width = "64") {
+        let length = next_multiple_of(original_length, 2);
+        indices.reserve(length);
+
+        let mut index = transmute::<[u64; 2], uint64x2_t>([0, 1]);
+        let two = vdupq_n_u64(2);
+
+        let mut indices_ptr = indices.as_mut_ptr().cast::<u64>();
+        let indices_end = indices_ptr.add(length / 2);
+
+        while indices_ptr < indices_end {
+            // Store the indices into the vec
+            vst1q_u64(indices_ptr, index);
+
+            // Increment the indices
+            index = vaddq_u64(index, two);
+            // Increment the indices pointer
+            indices_ptr = indices_ptr.add(2);
         }
 
     // Only 32bit and 64bit targets are supported for this function
