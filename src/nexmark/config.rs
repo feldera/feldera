@@ -3,8 +3,9 @@
 //! API based on the equivalent [Nexmark Flink Configuration API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/NexmarkConfiguration.java)
 //! and the specific [Nexmark Flink Generator config](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/GeneratorConfig.java).
 
-pub use crate::nexmark::queries::Query;
 use clap::Parser;
+
+pub use crate::nexmark::queries::Query;
 
 // Number of yet-to-be-created people and auction ids allowed.
 pub const PERSON_ID_LEAD: usize = 10;

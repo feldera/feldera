@@ -37,11 +37,6 @@ use std::{
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
-// TODO: Ideally these macros would be in a separate `lib.rs` in this benchmark
-// crate, but benchmark binaries don't appear to work like that (in that, I
-// haven't yet found a way to import from a `lib.rs` in the same directory as
-// the benchmark's `main.rs`)
-
 /// Currently just the elapsed time, but later add CPU and Mem.
 #[derive(Default)]
 struct NexmarkResult {
