@@ -598,8 +598,8 @@ where
     fn summary(&self, summary: &mut String) {
         let sizes: Vec<usize> = self
             .output_batchers
-            .iter()
-            .map(|(_, batcher)| batcher.tuples())
+            .values()
+            .map(|batcher| batcher.tuples())
             .collect();
         writeln!(summary, "sizes: {:?}", sizes).unwrap();
         writeln!(summary, "total size: {}", sizes.iter().sum::<usize>()).unwrap();
