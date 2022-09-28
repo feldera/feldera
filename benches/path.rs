@@ -1,9 +1,15 @@
+mod mimalloc;
+
 use dbsp::{
     operator::{FilterMap, Generator},
     time::NestedTimestamp32,
     trace::{ord::OrdZSet, Batch, BatchReader},
     Circuit, Runtime, Stream,
 };
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static ALLOC: MiMalloc = MiMalloc;
 
 fn main() {
     let hruntime = Runtime::run(16, || {

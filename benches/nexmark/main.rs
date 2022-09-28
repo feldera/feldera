@@ -5,9 +5,9 @@
 
 #[macro_use]
 mod run_queries;
-mod allocation;
+#[path = "../mimalloc.rs"]
+mod mimalloc;
 
-use crate::allocation::{AllocStats, MiMalloc};
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
@@ -25,6 +25,7 @@ use dbsp::{
     Circuit, CollectionHandle, DBSPHandle, Runtime,
 };
 use indicatif::{ProgressBar, ProgressStyle};
+use mimalloc::{AllocStats, MiMalloc};
 use num_format::{Locale, ToFormattedString};
 use size_of::HumanBytes;
 use std::{

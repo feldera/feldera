@@ -1,10 +1,15 @@
 mod bfs;
 mod data;
+#[path = "../mimalloc.rs"]
+mod mimalloc;
 mod pagerank;
 
-use crate::data::{
-    list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node, NoopResults,
-    PageRankResults, Rank, RankMap,
+use crate::{
+    data::{
+        list_datasets, list_downloaded_benchmarks, BfsResults, DataSet, DistanceSet, Node,
+        NoopResults, PageRankResults, Rank, RankMap,
+    },
+    mimalloc::{AllocStats, MiMalloc},
 };
 use clap::Parser;
 use dbsp::{
@@ -17,13 +22,7 @@ use dbsp::{
 };
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
-use mimalloc_rust_sys::{
-    aligned_allocation::{mi_malloc_aligned, mi_realloc_aligned, mi_zalloc_aligned},
-    basic_allocation::mi_free,
-    extended_functions::{mi_process_info, mi_stats_reset},
-};
 use std::{
-    alloc::{GlobalAlloc, Layout},
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},
@@ -436,65 +435,4 @@ struct Config {
     #[doc(hidden)]
     #[clap(long = "bench", hide = true)]
     __bench: bool,
-}
-
-struct MiMalloc;
-
-impl MiMalloc {
-    /// Reset allocation statistics
-    pub fn reset_stats(&self) {
-        unsafe { mi_stats_reset() };
-    }
-
-    pub fn stats(&self) -> AllocStats {
-        let mut stats = AllocStats::default();
-        unsafe {
-            mi_process_info(
-                &mut stats.elapsed_ms,
-                &mut stats.user_ms,
-                &mut stats.system_ms,
-                &mut stats.current_rss,
-                &mut stats.peak_rss,
-                &mut stats.current_commit,
-                &mut stats.peak_commit,
-                &mut stats.page_faults,
-            );
-        }
-
-        stats
-    }
-}
-
-unsafe impl GlobalAlloc for MiMalloc {
-    #[inline]
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        mi_malloc_aligned(layout.size(), layout.align()).cast()
-    }
-
-    #[inline]
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        mi_zalloc_aligned(layout.size(), layout.align()).cast()
-    }
-
-    #[inline]
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        mi_realloc_aligned(ptr.cast(), new_size, layout.align()).cast()
-    }
-
-    #[inline]
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        mi_free(ptr.cast());
-    }
-}
-
-#[derive(Debug, Default)]
-struct AllocStats {
-    elapsed_ms: usize,
-    user_ms: usize,
-    system_ms: usize,
-    current_rss: usize,
-    peak_rss: usize,
-    current_commit: usize,
-    peak_commit: usize,
-    page_faults: usize,
 }
