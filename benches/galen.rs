@@ -1,6 +1,8 @@
 //! Galen benchmark from
 //! `https://github.com/frankmcsherry/dynamic-datalog/tree/master/problems/galen`
 
+mod mimalloc;
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use csv::ReaderBuilder;
@@ -8,6 +10,7 @@ use dbsp::{
     monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, trace::BatchReader,
     Circuit, OrdZSet, Runtime, Stream,
 };
+use mimalloc::MiMalloc;
 use std::{
     fs::{self, File},
     io::BufReader,
@@ -16,6 +19,9 @@ use std::{
     time::Instant,
 };
 use zip::ZipArchive;
+
+#[global_allocator]
+static ALLOC: MiMalloc = MiMalloc;
 
 /*
 .decl p(X: Number, Z: Number)
