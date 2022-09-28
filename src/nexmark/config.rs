@@ -2,6 +2,8 @@
 //!
 //! API based on the equivalent [Nexmark Flink Configuration API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/NexmarkConfiguration.java)
 //! and the specific [Nexmark Flink Generator config](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/GeneratorConfig.java).
+
+pub use crate::nexmark::queries::Query;
 use clap::Parser;
 
 // Number of yet-to-be-created people and auction ids allowed.
@@ -89,8 +91,8 @@ pub struct Config {
     pub person_proportion: usize,
 
     /// Queries to run, all by default.
-    #[clap(long, env = "NEXMARK_QUERIES", multiple = true)]
-    pub query: Vec<String>,
+    #[clap(long, env = "NEXMARK_QUERIES", value_enum)]
+    pub query: Vec<Query>,
 
     /// The size of the buffer (channel) to use in the Nexmark Source.
     #[clap(long, default_value = "1000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
@@ -130,7 +132,7 @@ impl Default for Config {
             num_in_flight_auctions: 100,
             out_of_order_group_size: 1,
             person_proportion: 1,
-            query: vec![],
+            query: Vec::new(),
             source_buffer_size: 1000,
             input_batch_size: 1000,
         }

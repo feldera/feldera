@@ -35,7 +35,8 @@ use regex::Regex;
 ///           lower(channel) in ('apple', 'google', 'facebook', 'baidu');
 /// ```
 
-type Q21Stream = Stream<Circuit<()>, OrdZSet<(u64, u64, usize, ArcStr, ArcStr), isize>>;
+type Q21Set = OrdZSet<(u64, u64, usize, ArcStr, ArcStr), isize>;
+type Q21Stream = Stream<Circuit<()>, Q21Set>;
 
 pub fn q21(input: NexmarkStream) -> Q21Stream {
     let channel_regex = Regex::new(r"channel_id=([^&]*)").unwrap();
@@ -43,10 +44,10 @@ pub fn q21(input: NexmarkStream) -> Q21Stream {
     input.flat_map(move |event| match event {
         Event::Bid(b) => {
             let channel_id = match b.channel.to_lowercase().as_str() {
-                "apple" => Some(ArcStr::from("0")),
-                "google" => Some(ArcStr::from("1")),
-                "facebook" => Some(ArcStr::from("2")),
-                "baidu" => Some(ArcStr::from("3")),
+                "apple" => Some(arcstr::literal!("0")),
+                "google" => Some(arcstr::literal!("1")),
+                "facebook" => Some(arcstr::literal!("2")),
+                "baidu" => Some(arcstr::literal!("3")),
                 _ => channel_regex
                     .captures(b.channel.as_str())
                     .and_then(|caps| match caps.len() {
@@ -73,51 +74,50 @@ mod tests {
     #[case::bids_with_known_channel_ids(
         vec![vec![
             Event::Bid(Bid {
-                channel: ArcStr::from("ApPlE"),
+                channel: arcstr::literal!("ApPlE"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: ArcStr::from("FaceBook"),
+                channel: arcstr::literal!("FaceBook"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: ArcStr::from("GooGle"),
+                channel: arcstr::literal!("GooGle"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: ArcStr::from("Baidu"),
+                channel: arcstr::literal!("Baidu"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, ArcStr::from("ApPlE"), ArcStr::from("0")) => 1,
-            (1, 1, 99, ArcStr::from("GooGle"), ArcStr::from("1")) => 1,
-            (1, 1, 99, ArcStr::from("FaceBook"), ArcStr::from("2")) => 1,
-            (1, 1, 99, ArcStr::from("Baidu"), ArcStr::from("3")) => 1,
-        }])]
+            (1, 1, 99, arcstr::literal!("ApPlE"), arcstr::literal!("0")) => 1,
+            (1, 1, 99, arcstr::literal!("GooGle"), arcstr::literal!("1")) => 1,
+            (1, 1, 99, arcstr::literal!("FaceBook"), arcstr::literal!("2")) => 1,
+            (1, 1, 99, arcstr::literal!("Baidu"), arcstr::literal!("3")) => 1,
+        }],
+    )]
     #[case::bids_with_unknown_channel_ids(
         vec![vec![
             Event::Bid(Bid {
-                channel: ArcStr::from("https://example.com/?channel_id=ubuntu"),
+                channel: arcstr::literal!("https://example.com/?channel_id=ubuntu"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: ArcStr::from("https://example.com/?channel_id=cherry-pie"),
+                channel: arcstr::literal!("https://example.com/?channel_id=cherry-pie"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: ArcStr::from("https://example.com/?not_channelid=should-not-appear"),
+                channel: arcstr::literal!("https://example.com/?not_channelid=should-not-appear"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, ArcStr::from("https://example.com/?channel_id=ubuntu"), ArcStr::from("ubuntu")) => 1,
-            (1, 1, 99, ArcStr::from("https://example.com/?channel_id=cherry-pie"), ArcStr::from("cherry-pie")) => 1,
-        }])]
-    fn test_q21(
-        #[case] input_event_batches: Vec<Vec<Event>>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, u64, usize, ArcStr, ArcStr), isize>>,
-    ) {
+            (1, 1, 99, arcstr::literal!("https://example.com/?channel_id=ubuntu"), arcstr::literal!("ubuntu")) => 1,
+            (1, 1, 99, arcstr::literal!("https://example.com/?channel_id=cherry-pie"), arcstr::literal!("cherry-pie")) => 1,
+        }],
+    )]
+    fn test_q21(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q21Set>) {
         let input_vecs = input_event_batches
             .into_iter()
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());

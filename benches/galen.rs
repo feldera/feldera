@@ -6,7 +6,7 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
     monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, trace::BatchReader,
-    Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    Circuit, OrdZSet, Runtime, Stream,
 };
 use std::{
     fs::{self, File},

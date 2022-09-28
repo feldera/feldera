@@ -714,7 +714,6 @@ mod tests {
                         rank1_auctions: 1,
                         rank2_auctions: 1,
                         rank3_auctions: 1,
-                        ..Q16Output::default()
                     } => 1,
                     Q16Output {
                         channel: String::from("channel-1").into(),
