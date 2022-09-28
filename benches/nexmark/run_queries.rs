@@ -30,6 +30,10 @@ macro_rules! run_queries {
             source_exhausted_tx,
         );
 
+        ALLOC.reset_stats();
+        let before_stats = ALLOC.stats();
+        let start = Instant::now();
+
         let input_stats = coordinate_input_and_steps(
             expected_num_events,
             dbsp_step_tx,
@@ -40,10 +44,16 @@ macro_rules! run_queries {
         )
         .unwrap();
 
+        let elapsed = start.elapsed();
+        let after_stats = ALLOC.stats();
+
         // Return the user/system CPU overhead from the generator/input thread.
         NexmarkResult {
+            name: stringify!($query).to_owned(),
+            before_stats,
+            after_stats,
+            elapsed,
             num_events: input_stats.num_events,
-            ..NexmarkResult::default()
         }
     }};
 
@@ -85,20 +95,8 @@ macro_rules! run_queries {
             if $queries_to_run.len() == 0 || $queries_to_run.contains(&paste::paste!(NexmarkQuery::[<$query:upper>])) {
                 println!("Starting {} bench of {} events...", stringify!($query), $max_events);
 
-                let before_stats = ALLOC.stats();
-                let start = Instant::now();
-
                 let thread_nexmark_config = $nexmark_config.clone();
-                let result = run_queries!(@single $query, thread_nexmark_config);
-                let after_stats = ALLOC.stats();
-
-                results.push(NexmarkResult {
-                    name: stringify!($query).to_owned(),
-                    before_stats,
-                    after_stats,
-                    elapsed: start.elapsed(),
-                    ..result
-                });
+                results.push(run_queries!(@single $query, thread_nexmark_config));
             }
         )+
 
