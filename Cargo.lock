@@ -591,7 +591,6 @@ dependencies = [
  "hashbrown",
  "impl-trait-for-tuples",
  "indicatif",
- "libc",
  "mimalloc-rust-sys",
  "num",
  "num-format",
