@@ -301,6 +301,40 @@ where
     }
 }
 
+/// A quaternary operator consumes four input streams carrying values
+/// of types `I1`, `I2`, `I3`, and `I4` and produces a stream of outputs of type
+/// `O`.
+pub trait QuaternaryOperator<I1, I2, I3, I4, O>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    I4: Clone,
+{
+    /// Consume inputs.
+    ///
+    /// The operator must be prepated to handle any combination of
+    /// owned and borrowed inputs.
+    fn eval<'a>(&mut self, i1: Cow<'a, I1>, i2: Cow<'a, I2>, i3: Cow<'a, I3>, i4: Cow<'a, I4>)
+        -> O;
+
+    fn input_preference(
+        &self,
+    ) -> (
+        OwnershipPreference,
+        OwnershipPreference,
+        OwnershipPreference,
+        OwnershipPreference,
+    ) {
+        (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+        )
+    }
+}
+
 /// An operator that consumes any number of streams carrying values
 /// of type `I` and produces a stream of outputs of type `O`.
 pub trait NaryOperator<I, O>: Operator

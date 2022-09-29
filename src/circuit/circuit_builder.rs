@@ -31,8 +31,8 @@ use crate::{
         cache::{CircuitCache, CircuitStoreMarker},
         metadata::OperatorMeta,
         operator_traits::{
-            BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
-            StrictUnaryOperator, TernaryOperator, UnaryOperator,
+            BinaryOperator, Data, ImportOperator, NaryOperator, QuaternaryOperator, SinkOperator,
+            SourceOperator, StrictUnaryOperator, TernaryOperator, UnaryOperator,
         },
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -1428,6 +1428,85 @@ where
         })
     }
 
+    /// Add a quaternary operator (see [`QuaternaryOperator`]).
+    pub fn add_quaternary_operator<I1, I2, I3, I4, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+        input_stream4: &Stream<Self, I4>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        I4: Data,
+        O: Data,
+        Op: QuaternaryOperator<I1, I2, I3, I4, O>,
+    {
+        let (pref1, pref2, pref3, pref4) = operator.input_preference();
+        self.add_quaternary_operator_with_preference(
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            input_stream4,
+            pref1,
+            pref2,
+            pref3,
+            pref4,
+        )
+    }
+
+    /// Like [`Self::add_quaternary_operator`], but overrides the ownership
+    /// preference on the input streams with specified values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_quaternary_operator_with_preference<I1, I2, I3, I4, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+        input_stream4: &Stream<Self, I4>,
+        input_preference1: OwnershipPreference,
+        input_preference2: OwnershipPreference,
+        input_preference3: OwnershipPreference,
+        input_preference4: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        I4: Data,
+        O: Data,
+        Op: QuaternaryOperator<I1, I2, I3, I4, O>,
+    {
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+                operator.location(),
+            ));
+
+            let node = QuaternaryNode::new(
+                operator,
+                input_stream1.clone(),
+                input_stream2.clone(),
+                input_stream3.clone(),
+                input_stream4.clone(),
+                self.clone(),
+                id,
+            );
+            let output_stream = node.output_stream();
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
+            self.connect_stream(input_stream3, id, input_preference3);
+            self.connect_stream(input_stream4, id, input_preference4);
+            (node, output_stream)
+        })
+    }
+
     /// Add a N-ary operator (see [`NaryOperator`]).
     pub fn add_nary_operator<'a, I, O, Op, Iter>(
         &'a self,
@@ -2418,6 +2497,142 @@ where
 
         self.output_stream
             .put(self.operator.eval(input1, input2, input3));
+        Ok(())
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    unsafe fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+}
+
+struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
+    id: GlobalNodeId,
+    operator: Op,
+    input_stream1: Stream<C, I1>,
+    input_stream2: Stream<C, I2>,
+    input_stream3: Stream<C, I3>,
+    input_stream4: Stream<C, I4>,
+    output_stream: Stream<C, O>,
+    // `true` if `input_stream1` is an alias to `input_stream2`, `input_stream3` or
+    // `input_stream4`.
+    is_alias1: bool,
+    // `true` if `input_stream2` is an alias to `input_stream3` or `input_stream4`.
+    is_alias2: bool,
+    // `true` if `input_stream3` is an alias to `input_stream4`.
+    is_alias3: bool,
+}
+
+impl<P, I1, I2, I3, I4, O, Op> QuaternaryNode<Circuit<P>, I1, I2, I3, I4, O, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    I4: Clone,
+    Op: QuaternaryOperator<I1, I2, I3, I4, O>,
+    P: Clone,
+{
+    fn new(
+        operator: Op,
+        input_stream1: Stream<Circuit<P>, I1>,
+        input_stream2: Stream<Circuit<P>, I2>,
+        input_stream3: Stream<Circuit<P>, I3>,
+        input_stream4: Stream<Circuit<P>, I4>,
+        circuit: Circuit<P>,
+        id: NodeId,
+    ) -> Self {
+        let is_alias1 = input_stream1.ptr_eq(&input_stream2)
+            || input_stream1.ptr_eq(&input_stream3)
+            || input_stream1.ptr_eq(&input_stream4);
+        let is_alias2 =
+            input_stream2.ptr_eq(&input_stream3) || input_stream2.ptr_eq(&input_stream4);
+        let is_alias3 = input_stream3.ptr_eq(&input_stream4);
+        Self {
+            id: circuit.global_node_id().child(id),
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            input_stream4,
+            is_alias1,
+            is_alias2,
+            is_alias3,
+            output_stream: Stream::new(circuit, id),
+        }
+    }
+
+    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+        self.output_stream.clone()
+    }
+}
+
+impl<C, I1, I2, I3, I4, O, Op> Node for QuaternaryNode<C, I1, I2, I3, I4, O, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    I4: Clone,
+    O: Clone,
+    Op: QuaternaryOperator<I1, I2, I3, I4, O>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
+        let input1 = if self.is_alias1 {
+            Cow::Borrowed(self.input_stream1.peek())
+        } else {
+            self.input_stream1.take()
+        };
+
+        let input2 = if self.is_alias2 {
+            Cow::Borrowed(self.input_stream2.peek())
+        } else {
+            self.input_stream2.take()
+        };
+
+        let input3 = if self.is_alias3 {
+            Cow::Borrowed(self.input_stream3.peek())
+        } else {
+            self.input_stream3.take()
+        };
+
+        let input4 = self.input_stream4.take();
+
+        self.output_stream
+            .put(self.operator.eval(input1, input2, input3, input4));
         Ok(())
     }
 
