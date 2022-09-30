@@ -89,3 +89,31 @@ Execute the following command to make `git commit` check the code before commit:
 GITDIR=$(git rev-parse --git-dir)
 ln -sf $(pwd)/tools/pre-push ${GITDIR}/hooks/pre-push
 ```
+
+## Running Benchmarks against DBSP
+
+The repository has a number of benchmarks available in the `benches` directory that provide a comparison of DBSP's performance against a known set of tests.
+
+Each benchmark has its own options and behavior, as outlined below.
+
+### Nexmark Benchmark
+
+You can run the complete set of Nexmark queries, with the default settings, with:
+
+```shell
+cargo bench --bench nexmark --features with-nexmark
+```
+
+By default this will run each query with a total of 100 million events emitted at 10M per second (by two event generator threads), using 2 CPU cores for processing the data.
+
+To run just the one query, q3, with only 10 million events, but using 8 CPU cores to process the data and 6 event generator threads, you can run:
+
+```shell
+cargo bench --bench nexmark --features with-nexmark -- --query q3 --max-events 10000000 --cpu-cores 8 --num-event-generators 6
+```
+
+For further options that you can use with the Nexmark benchmark,
+
+```shell
+cargo bench --bench nexmark --features with-nexmark -- --help
+```
