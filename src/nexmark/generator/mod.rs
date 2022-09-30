@@ -145,7 +145,17 @@ pub mod tests {
     use rstest::rstest;
 
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
-        NexmarkGenerator::new(Config::default(), StepRng::new(0, 1), 0)
+        NexmarkGenerator::new(
+            Config {
+                nexmark_config: NexmarkConfig {
+                    num_event_generators: 1,
+                    ..NexmarkConfig::default()
+                },
+                ..Config::default()
+            },
+            StepRng::new(0, 1),
+            0,
+        )
     }
 
     pub fn make_person() -> Person {
@@ -255,7 +265,17 @@ pub mod tests {
     // helper for the data.
     #[test]
     fn test_next_event() {
-        let mut ng = NexmarkGenerator::new(Config::default(), thread_rng(), 0);
+        let mut ng = NexmarkGenerator::new(
+            Config {
+                nexmark_config: NexmarkConfig {
+                    num_event_generators: 1,
+                    ..NexmarkConfig::default()
+                },
+                ..Config::default()
+            },
+            thread_rng(),
+            0,
+        );
 
         // The first event with the default config is the person
         let next_event = ng.next_event().unwrap();
@@ -284,7 +304,7 @@ pub mod tests {
         }
 
         // And the rest of the events in the first epoch are bids.
-        for event_num in 4..=49 {
+        for _ in 4..=49 {
             let next_event = ng.next_event().unwrap();
             assert!(next_event.is_some());
             let next_event = next_event.unwrap();
@@ -294,7 +314,6 @@ pub mod tests {
                 "got: {:?}, want: Event::NewBid(_)",
                 next_event.event
             );
-            assert_eq!(next_event.event_timestamp, event_num / 10);
         }
 
         // The next epoch begins with another person etc.
@@ -302,7 +321,6 @@ pub mod tests {
         assert!(next_event.is_some());
         let next_event = next_event.unwrap();
 
-        assert_eq!(next_event.event_timestamp, 5);
         assert!(
             matches!(next_event.event, Event::Person(_)),
             "got: {:?}, want: Event::NewPerson(_)",

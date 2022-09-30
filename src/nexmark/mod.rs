@@ -253,6 +253,10 @@ pub mod tests {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig {
+                nexmark_config: NexmarkConfig {
+                    num_event_generators: 1,
+                    ..NexmarkConfig::default()
+                },
                 base_time: times.start,
                 ..GeneratorConfig::default()
             },
