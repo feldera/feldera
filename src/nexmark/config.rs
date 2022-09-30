@@ -38,7 +38,7 @@ pub struct Config {
     pub avg_person_byte_size: usize,
 
     /// Number of CPU cores to be available.
-    #[clap(long, default_value = "1", env = "NEXMARK_CPU_CORES")]
+    #[clap(long, default_value = "2", env = "NEXMARK_CPU_CORES")]
     pub cpu_cores: usize,
 
     /// Specify the proportion of events that will be new bids.
@@ -46,7 +46,7 @@ pub struct Config {
     pub bid_proportion: usize,
 
     /// Initial overall event rate (per second).
-    #[clap(long, default_value = "10000", env = "NEXMARK_FIRST_EVENT_RATE")]
+    #[clap(long, default_value = "10000000", env = "NEXMARK_FIRST_EVENT_RATE")]
     pub first_event_rate: usize,
 
     /// Ratio of bids to 'hot' auctions compared to all other auctions.
@@ -62,7 +62,7 @@ pub struct Config {
     pub hot_sellers_ratio: usize,
 
     /// Max number of events to be generated. 0 is unlimited.
-    #[clap(long, default_value = "1000000", env = "NEXMARK_MAX_EVENTS")]
+    #[clap(long, default_value = "100000000", env = "NEXMARK_MAX_EVENTS")]
     pub max_events: u64,
 
     /// Maximum number of people to consider as active for placing auctions or
@@ -72,7 +72,7 @@ pub struct Config {
 
     /// Number of event generators to use. Each generates events in its own
     /// timeline.
-    #[clap(long, default_value = "1", env = "NEXMARK_NUM_EVENT_GENERATORS")]
+    #[clap(long, default_value = "2", env = "NEXMARK_NUM_EVENT_GENERATORS")]
     pub num_event_generators: usize,
 
     /// Average number of auctions which should be inflight at any time, per
@@ -95,12 +95,12 @@ pub struct Config {
     pub query: Vec<Query>,
 
     /// The size of the buffer (channel) to use in the Nexmark Source.
-    #[clap(long, default_value = "1000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
+    #[clap(long, default_value = "10000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
     pub source_buffer_size: usize,
 
     /// DBSP-specific configuration options.
     /// The size of the batches to be inputted to DBSP per step.
-    #[clap(long, default_value = "1000", env = "DBSP_INPUT_BATCH_SIZE")]
+    #[clap(long, default_value = "40000", env = "DBSP_INPUT_BATCH_SIZE")]
     pub input_batch_size: usize,
 }
 
@@ -121,20 +121,20 @@ impl Default for Config {
             avg_bid_byte_size: 100,
             avg_person_byte_size: 200,
             bid_proportion: 46,
-            cpu_cores: 1,
-            first_event_rate: 10_000,
+            cpu_cores: 2,
+            first_event_rate: 10_000_000,
             hot_auction_ratio: 2,
             hot_bidders_ratio: 4,
             hot_sellers_ratio: 4,
-            max_events: 1_000_000,
+            max_events: 100_000_000,
             num_active_people: 1000,
-            num_event_generators: 1,
+            num_event_generators: 2,
             num_in_flight_auctions: 100,
             out_of_order_group_size: 1,
             person_proportion: 1,
             query: Vec::new(),
-            source_buffer_size: 1000,
-            input_batch_size: 1000,
+            source_buffer_size: 10_000,
+            input_batch_size: 40_000,
         }
     }
 }
