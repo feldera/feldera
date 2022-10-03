@@ -611,31 +611,31 @@ where
     fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self
             .output_batchers
-            .iter()
-            .all(|(time, _)| !time.less_equal(&self.time)));
+            .keys()
+            .all(|time| !time.less_equal(&self.time)));
         self.time = self.time.advance(scope + 1);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         let total_size: usize = self
             .output_batchers
-            .iter()
-            .map(|(_, batcher)| batcher.tuples())
+            .values()
+            .map(|batcher| batcher.tuples())
             .sum();
 
         let batch_sizes = MetaItem::Array(
             self.output_batchers
-                .iter()
-                .map(|(_, batcher)| {
+                .values()
+                .map(|batcher| {
                     let size = batcher.size_of();
 
-                    MetaItem::Map(vec![
-                        (
-                            Cow::Borrowed("allocated"),
-                            MetaItem::bytes(size.total_bytes()),
-                        ),
-                        (Cow::Borrowed("used"), MetaItem::bytes(size.used_bytes())),
-                    ])
+                    MetaItem::Map(
+                        metadata! {
+                            "allocated" => MetaItem::bytes(size.total_bytes()),
+                            "used" => MetaItem::bytes(size.used_bytes()),
+                        }
+                        .to_vec(),
+                    )
                 })
                 .collect(),
         );
@@ -683,8 +683,8 @@ where
             && self.empty_output
             && self
                 .output_batchers
-                .iter()
-                .all(|(time, _)| !time.less_equal(&epoch_end))
+                .keys()
+                .all(|time| !time.less_equal(&epoch_end))
     }
 }
 
