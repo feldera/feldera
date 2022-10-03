@@ -3,43 +3,16 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
-use crate::circuit::{OwnershipPreference, Scope};
-use size_of::HumanBytes;
-use std::{borrow::Cow, panic::Location, time::Duration};
+use crate::circuit::{
+    metadata::{OperatorLocation, OperatorMeta},
+    OwnershipPreference, Scope,
+};
+use std::borrow::Cow;
 
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
 
 impl<T: Clone + 'static> Data for T {}
-
-/// An operator's location within the source program
-pub type OperatorLocation = Option<&'static Location<'static>>;
-
-/// General metadata about an operator's execution
-pub type OperatorMeta = Vec<(Cow<'static, str>, MetaItem)>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MetaItem {
-    Int(usize),
-    Percent(f64),
-    String(String),
-    Array(Vec<Self>),
-    Map(OperatorMeta),
-    Bytes(HumanBytes),
-    Duration(Duration),
-}
-
-impl Default for MetaItem {
-    fn default() -> Self {
-        Self::String(String::new())
-    }
-}
-
-impl MetaItem {
-    pub fn bytes(bytes: usize) -> Self {
-        Self::Bytes(HumanBytes::from(bytes))
-    }
-}
 
 /// Trait that must be implemented by all operators.
 pub trait Operator: 'static {
@@ -51,6 +24,7 @@ pub trait Operator: 'static {
         None
     }
 
+    /// Collects metadata about the current operator
     fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     /// Notify the operator about the start of a new clock epoch.

@@ -6,7 +6,7 @@ mod circuit_graph;
 pub mod visual_graph;
 
 use crate::circuit::{
-    operator_traits::OperatorLocation,
+    metadata::OperatorLocation,
     trace::{CircuitEvent, SchedulerEvent},
     Circuit, GlobalNodeId, NodeId,
 };

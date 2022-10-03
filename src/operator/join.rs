@@ -3,7 +3,8 @@
 use crate::{
     algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZRingValue, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, MetaItem, Operator, OperatorLocation, OperatorMeta},
+        metadata::{MetaItem, OperatorLocation, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
     },
     time::Timestamp,
@@ -659,46 +660,18 @@ where
             output_redundancy = 100.0;
         }
 
-        meta.extend([
-            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
-            (Cow::Borrowed("batch sizes"), batch_sizes),
-            (
-                Cow::Borrowed("allocated bytes"),
-                MetaItem::bytes(bytes.total_bytes()),
-            ),
-            (
-                Cow::Borrowed("used bytes"),
-                MetaItem::bytes(bytes.used_bytes()),
-            ),
-            (
-                Cow::Borrowed("allocations"),
-                MetaItem::Int(bytes.distinct_allocations()),
-            ),
-            (
-                Cow::Borrowed("shared bytes"),
-                MetaItem::bytes(bytes.shared_bytes()),
-            ),
-            (
-                Cow::Borrowed("left inputs"),
-                MetaItem::Int(self.stats.lhs_tuples),
-            ),
-            (
-                Cow::Borrowed("right inputs"),
-                MetaItem::Int(self.stats.rhs_tuples),
-            ),
-            (
-                Cow::Borrowed("raw outputs"),
-                MetaItem::Int(self.stats.output_tuples),
-            ),
-            (
-                Cow::Borrowed("produced outputs"),
-                MetaItem::Int(self.stats.produced_tuples),
-            ),
-            (
-                Cow::Borrowed("output redundancy"),
-                MetaItem::Percent(output_redundancy),
-            ),
-        ]);
+        meta.extend(metadata! {
+            "total size" => total_size,
+            "batch sizes" => batch_sizes,
+            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            "allocations" => bytes.distinct_allocations(),
+            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+            "left inputs" => self.stats.lhs_tuples,
+            "right inputs" => self.stats.rhs_tuples,
+            "raw outputs" => self.stats.output_tuples,
+            "produced outputs" => self.stats.produced_tuples,
+            "output redundancy" => MetaItem::Percent(output_redundancy),
+        });
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

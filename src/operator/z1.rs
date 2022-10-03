@@ -3,9 +3,8 @@
 use crate::{
     algebra::HasZero,
     circuit::{
-        operator_traits::{
-            MetaItem, Operator, OperatorMeta, StrictOperator, StrictUnaryOperator, UnaryOperator,
-        },
+        metadata::{MetaItem, OperatorMeta},
+        operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
@@ -370,26 +369,14 @@ where
             context.total_size()
         };
 
-        meta.extend([
-            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
-            (Cow::Borrowed("batch sizes"), MetaItem::Array(batch_sizes)),
-            (
-                Cow::Borrowed("allocated bytes"),
-                MetaItem::bytes(total_bytes.total_bytes()),
-            ),
-            (
-                Cow::Borrowed("used bytes"),
-                MetaItem::bytes(total_bytes.used_bytes()),
-            ),
-            (
-                Cow::Borrowed("allocations"),
-                MetaItem::Int(total_bytes.distinct_allocations()),
-            ),
-            (
-                Cow::Borrowed("shared bytes"),
-                MetaItem::bytes(total_bytes.shared_bytes()),
-            ),
-        ]);
+        meta.extend(metadata! {
+            "total size" => total_size,
+            "batch sizes" => MetaItem::Array(batch_sizes),
+            "allocated bytes" => MetaItem::bytes(total_bytes.total_bytes()),
+            "used bytes" => MetaItem::bytes(total_bytes.used_bytes()),
+            "allocations" => total_bytes.distinct_allocations(),
+            "shared bytes" => MetaItem::bytes(total_bytes.shared_bytes()),
+        });
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

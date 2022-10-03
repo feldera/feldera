@@ -7,7 +7,8 @@
 
 use crate::{
     circuit::{
-        operator_traits::{Operator, OperatorLocation, SinkOperator, SourceOperator},
+        metadata::OperatorLocation,
+        operator_traits::{Operator, SinkOperator, SourceOperator},
         LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     Circuit,

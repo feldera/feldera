@@ -26,24 +26,13 @@
 //! });
 //! ```
 
-use std::{
-    borrow::Cow,
-    cell::{Ref, RefCell, RefMut, UnsafeCell},
-    collections::HashMap,
-    fmt,
-    fmt::{Debug, Display, Write},
-    iter::repeat,
-    marker::PhantomData,
-    panic::Location,
-    rc::Rc,
-};
-
 use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
+        metadata::OperatorMeta,
         operator_traits::{
-            BinaryOperator, Data, ImportOperator, NaryOperator, OperatorMeta, SinkOperator,
-            SourceOperator, StrictUnaryOperator, TernaryOperator, UnaryOperator,
+            BinaryOperator, Data, ImportOperator, NaryOperator, SinkOperator, SourceOperator,
+            StrictUnaryOperator, TernaryOperator, UnaryOperator,
         },
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -54,6 +43,17 @@ use crate::{
     circuit_cache_key,
     operator::communication::Exchange,
     Runtime,
+};
+use std::{
+    borrow::Cow,
+    cell::{Ref, RefCell, RefMut, UnsafeCell},
+    collections::HashMap,
+    fmt,
+    fmt::{Debug, Display, Write},
+    iter::repeat,
+    marker::PhantomData,
+    panic::Location,
+    rc::Rc,
 };
 use typedmap::{TypedMap, TypedMapKey};
 

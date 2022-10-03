@@ -1,7 +1,8 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
 use crate::circuit::{
-    operator_traits::{BinaryOperator, Operator, OperatorLocation},
+    metadata::OperatorLocation,
+    operator_traits::{BinaryOperator, Operator},
     Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};

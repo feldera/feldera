@@ -14,7 +14,7 @@ use crate::{
 use clap::Parser;
 use dbsp::{
     circuit::{
-        operator_traits::{MetaItem, OperatorMeta},
+        metadata::{MetaItem, OperatorMeta},
         trace::SchedulerEvent,
         Runtime,
     },
@@ -28,6 +28,7 @@ use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use std::{
+    borrow::Cow,
     cell::RefCell,
     fmt::Write as _,
     io::{self, Write},

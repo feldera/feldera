@@ -1,7 +1,8 @@
 //! Operator that applies an arbitrary function to its input.
 
 use crate::circuit::{
-    operator_traits::{Operator, OperatorLocation, UnaryOperator},
+    metadata::OperatorLocation,
+    operator_traits::{Operator, UnaryOperator},
     Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};

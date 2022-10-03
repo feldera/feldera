@@ -3,7 +3,8 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, MetaItem, Operator, OperatorMeta, UnaryOperator},
+        metadata::{MetaItem, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, GlobalNodeId, Scope, Stream,
     },
     circuit_cache_key,
@@ -467,25 +468,12 @@ where
         let size: usize = self.future_updates.iter().map(BTreeSet::len).sum();
         let bytes = self.future_updates.size_of();
 
-        meta.extend([
-            (Cow::Borrowed("total updates"), MetaItem::Int(size)),
-            (
-                Cow::Borrowed("allocated bytes"),
-                MetaItem::bytes(bytes.total_bytes()),
-            ),
-            (
-                Cow::Borrowed("used bytes"),
-                MetaItem::bytes(bytes.used_bytes()),
-            ),
-            (
-                Cow::Borrowed("allocations"),
-                MetaItem::Int(bytes.distinct_allocations()),
-            ),
-            (
-                Cow::Borrowed("shared bytes"),
-                MetaItem::bytes(bytes.shared_bytes()),
-            ),
-        ]);
+        meta.extend(metadata! {
+            "total updates" => MetaItem::bytes(size),
+            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            "allocations" => bytes.distinct_allocations(),
+            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+        });
     }
 
     fn clock_start(&mut self, scope: Scope) {
