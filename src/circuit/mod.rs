@@ -10,6 +10,8 @@ mod dbsp_handle;
 
 pub(crate) mod runtime;
 
+#[macro_use]
+pub mod metadata;
 pub mod cache;
 pub mod circuit_builder;
 pub mod operator_traits;

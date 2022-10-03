@@ -16,7 +16,7 @@
 //! quickly, with any expensive processing completed asynchronously.
 
 use super::{circuit_builder::Node, GlobalNodeId, NodeId, OwnershipPreference};
-use crate::circuit::operator_traits::OperatorLocation;
+use crate::circuit::metadata::OperatorLocation;
 use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 
 /// Type of edge in a circuit graph.

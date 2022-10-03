@@ -1,8 +1,7 @@
 use crate::{
     circuit::{
-        operator_traits::{
-            BinaryOperator, MetaItem, Operator, OperatorMeta, StrictOperator, StrictUnaryOperator,
-        },
+        metadata::{MetaItem, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
         Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
@@ -389,25 +388,13 @@ where
             .map(|trace| trace.size_of())
             .unwrap_or_default();
 
-        meta.extend([
-            (Cow::Borrowed("total size"), MetaItem::Int(total_size)),
-            (
-                Cow::Borrowed("allocated bytes"),
-                MetaItem::bytes(bytes.total_bytes()),
-            ),
-            (
-                Cow::Borrowed("used bytes"),
-                MetaItem::bytes(bytes.used_bytes()),
-            ),
-            (
-                Cow::Borrowed("allocations"),
-                MetaItem::Int(bytes.distinct_allocations()),
-            ),
-            (
-                Cow::Borrowed("shared bytes"),
-                MetaItem::bytes(bytes.shared_bytes()),
-            ),
-        ]);
+        meta.extend(metadata! {
+            "total size" => total_size,
+            "allocated bytes" => MetaItem::bytes(bytes.total_bytes()),
+            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            "allocations" => bytes.distinct_allocations(),
+            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+        });
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

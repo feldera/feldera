@@ -1,5 +1,5 @@
 use crate::{
-    circuit::{operator_traits::OperatorLocation, trace::EdgeKind, GlobalNodeId, NodeId},
+    circuit::{metadata::OperatorLocation, trace::EdgeKind, GlobalNodeId, NodeId},
     monitor::visual_graph::{
         ClusterNode, Edge as VisEdge, Graph as VisGraph, Node as VisNode, SimpleNode,
     },

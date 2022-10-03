@@ -5,8 +5,9 @@ mod num_entries;
 mod ref_pair;
 mod utils;
 
-pub mod algebra;
+#[macro_use]
 pub mod circuit;
+pub mod algebra;
 pub mod monitor;
 pub mod operator;
 pub mod profile;
