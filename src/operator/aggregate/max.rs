@@ -1,16 +1,34 @@
-use crate::{algebra::MonoidValue, operator::aggregate::Aggregator, trace::Cursor, Timestamp};
+use crate::{
+    algebra::{MonoidValue, Semigroup},
+    operator::aggregate::Aggregator,
+    trace::Cursor,
+    Timestamp,
+};
+use std::{cmp::max, marker::PhantomData};
 
 /// An [aggregator](`crate::operator::Aggregator`) that returns the
 /// largest value with non-zero weight.
 pub struct Max;
 
+pub struct MaxSemigroup<V>(PhantomData<V>);
+
+impl<V> Semigroup<V> for MaxSemigroup<V>
+where
+    V: Ord + Clone,
+{
+    fn combine(left: &V, right: &V) -> V {
+        max(left, right).clone()
+    }
+}
+
 impl<V, T, R> Aggregator<V, T, R> for Max
 where
-    V: Clone,
+    V: Ord + Clone,
     T: Timestamp,
     R: MonoidValue,
 {
     type Output = V;
+    type Semigroup = MaxSemigroup<V>;
 
     // TODO: this can be more efficient with reverse iterator.
     fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>

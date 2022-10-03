@@ -11,8 +11,8 @@ use std::{
 
 use crate::{
     algebra::{
-        GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef, PartialOrder,
-        ZRingValue,
+        DefaultSemigroup, GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef,
+        PartialOrder, Semigroup, ZRingValue,
     },
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
@@ -49,6 +49,22 @@ pub trait Aggregator<K, T, R> {
     /// Aggregate type output by this aggregator.
     type Output;
 
+    /// Semigroup structure over aggregate values.
+    ///
+    /// Can be used to separately aggregate subsets of values (e.g., in
+    /// different worker threads) and combine the results.  This
+    /// `Semigroup` implementation must be consistent with `Self::aggregate`,
+    /// meaning that computing the aggregate piecewise and combining
+    /// the results using `Self::Semigroup` should yield the same value as
+    /// aggregating the entire input using `Self::aggregate`.
+    // TODO: We currently only use this with `radix_tree`, which only
+    // requires the semigroup structure (i.e., associativity).  In the future
+    // we will also use this in computing regular aggregates by combining
+    // per-worker aggregates computes over arbitrary subsets of values,
+    // which additionally requires commutativity.  Do we want to introduce
+    // the `CommutativeSemigroup` trait?
+    type Semigroup: Semigroup<Self::Output>;
+
     /// Compute an aggregate over a Z-set.
     ///
     /// Takes a cursor pointing to the first key of a Z-set and outputs
@@ -76,6 +92,7 @@ where
     R: MonoidValue,
 {
     type Output = R;
+    type Semigroup = DefaultSemigroup<R>;
 
     fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
@@ -650,6 +667,7 @@ mod test {
     };
 
     use crate::{
+        algebra::DefaultSemigroup,
         indexed_zset,
         operator::GeneratorNested,
         operator::{Fold, Min},
@@ -707,9 +725,10 @@ mod test {
                         .index();
 
                     // Weighted sum aggregate.
-                    let sum = Fold::new(0, |acc: &mut isize, v: &usize, w: isize| {
-                        *acc += (*v as isize) * w
-                    });
+                    let sum = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                        0,
+                        |acc: &mut isize, v: &usize, w: isize| *acc += (*v as isize) * w,
+                    );
 
                     // Weighted sum aggregate that returns only the weighted sum
                     // value and is therefore linear.
@@ -827,7 +846,10 @@ mod test {
                 });
 
             input_stream
-                .aggregate::<(), _>(Fold::new(0, |sum: &mut usize, _v: &usize, _w| *sum += 1))
+                .aggregate::<(), _>(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                    0,
+                    |sum: &mut usize, _v: &usize, _w| *sum += 1,
+                ))
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
@@ -836,7 +858,10 @@ mod test {
                 });
 
             input_stream
-                .aggregate::<(), _>(Fold::new(0, |sum: &mut usize, v: &usize, _w| *sum += v))
+                .aggregate::<(), _>(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                    0,
+                    |sum: &mut usize, v: &usize, _w| *sum += v,
+                ))
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {

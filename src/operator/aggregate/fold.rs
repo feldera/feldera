@@ -1,5 +1,10 @@
-use crate::{algebra::MonoidValue, operator::aggregate::Aggregator, trace::Cursor, Timestamp};
-use std::convert::identity;
+use crate::{
+    algebra::{MonoidValue, Semigroup},
+    operator::aggregate::Aggregator,
+    trace::Cursor,
+    Timestamp,
+};
+use std::{convert::identity, marker::PhantomData};
 
 /// An [aggregator](`crate::operator::Aggregator`) that can be expressed
 /// as a fold of the input Z-set.
@@ -16,13 +21,14 @@ use std::convert::identity;
 /// * `SF` - step function
 /// * `OF` - output function
 #[derive(Clone)]
-pub struct Fold<A, SF, OF> {
+pub struct Fold<A, S, SF, OF> {
     init: A,
     step: SF,
     output: OF,
+    phantom: PhantomData<S>,
 }
 
-impl<A, SF> Fold<A, SF, fn(A) -> A> {
+impl<A, S, SF> Fold<A, S, SF, fn(A) -> A> {
     /// Create a `Fold` aggregator with initial accumulator value `init`,
     /// step function `step`, and identity output function.
     ///
@@ -34,27 +40,35 @@ impl<A, SF> Fold<A, SF, fn(A) -> A> {
             init,
             step,
             output: identity,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<A, SF, OF> Fold<A, SF, OF> {
+impl<A, S, SF, OF> Fold<A, S, SF, OF> {
     /// Create a `Fold` aggregator with initial accumulator value `init`,
     /// step function `step`, and output function `output`.
     pub fn with_output(init: A, step: SF, output: OF) -> Self {
-        Self { init, step, output }
+        Self {
+            init,
+            step,
+            output,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<V, T, R, A, O, SF, OF> Aggregator<V, T, R> for Fold<A, SF, OF>
+impl<V, T, R, A, S, O, SF, OF> Aggregator<V, T, R> for Fold<A, S, SF, OF>
 where
     T: Timestamp,
     R: MonoidValue,
     A: Clone,
     SF: Fn(&mut A, &V, R),
     OF: Fn(A) -> O,
+    S: Semigroup<O>,
 {
     type Output = O;
+    type Semigroup = S;
 
     fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where

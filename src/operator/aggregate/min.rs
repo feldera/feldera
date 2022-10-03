@@ -1,4 +1,10 @@
-use crate::{algebra::MonoidValue, operator::aggregate::Aggregator, trace::Cursor, Timestamp};
+use crate::{
+    algebra::{MonoidValue, Semigroup},
+    operator::aggregate::Aggregator,
+    trace::Cursor,
+    Timestamp,
+};
+use std::{cmp::min, marker::PhantomData};
 
 /// An [aggregator](`crate::operator::Aggregator`) that returns the
 /// smallest value with non-zero weight.
@@ -7,13 +13,24 @@ use crate::{algebra::MonoidValue, operator::aggregate::Aggregator, trace::Cursor
 /// Z-set until hitting the first non-zero weight.
 pub struct Min;
 
+pub struct MinSemigroup<V>(PhantomData<V>);
+
+impl<V> Semigroup<V> for MinSemigroup<V>
+where
+    V: Ord + Clone,
+{
+    fn combine(left: &V, right: &V) -> V {
+        min(left, right).clone()
+    }
+}
 impl<V, T, R> Aggregator<V, T, R> for Min
 where
-    V: Clone,
+    V: Ord + Clone,
     T: Timestamp,
     R: MonoidValue,
 {
     type Output = V;
+    type Semigroup = MinSemigroup<V>;
 
     fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
