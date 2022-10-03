@@ -1,5 +1,6 @@
 use super::NexmarkStream;
 use crate::{
+    algebra::UnimplementedSemigroup,
     nexmark::model::{Bid, Event},
     operator::{FilterMap, Fold},
     Circuit, OrdZSet, Stream,
@@ -40,7 +41,7 @@ pub fn q18(input: NexmarkStream) -> Q18Stream {
     });
 
     bids_by_auction_bidder
-        .aggregate::<(), _>(Fold::new(Bid::default(), |top: &mut Bid, val: &Bid, _w| {
+        .aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(Bid::default(), |top: &mut Bid, val: &Bid, _w| {
             if val.date_time > top.date_time {
                 *top = val.clone();
             }

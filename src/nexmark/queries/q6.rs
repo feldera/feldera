@@ -1,5 +1,6 @@
 use super::NexmarkStream;
 use crate::{
+    algebra::UnimplementedSemigroup,
     nexmark::model::Event,
     operator::{FilterMap, Fold, Max},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
@@ -93,7 +94,7 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // Finally, calculate the average winning bid per seller, using the last
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_seller_indexed.aggregate::<(), _>(Fold::with_output(
+    winning_bids_by_seller_indexed.aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
         VecDeque::with_capacity(NUM_AUCTIONS_PER_SELLER),
         |top: &mut VecDeque<usize>, val: &(u64, usize), _w| {
             if top.len() >= NUM_AUCTIONS_PER_SELLER {

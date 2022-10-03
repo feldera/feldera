@@ -1,5 +1,6 @@
 use super::NexmarkStream;
 use crate::{
+    algebra::UnimplementedSemigroup,
     nexmark::model::{Bid, Event},
     operator::{FilterMap, Fold},
     Circuit, OrdZSet, Stream,
@@ -43,7 +44,7 @@ pub fn q19(input: NexmarkStream) -> Q19Stream {
     });
 
     bids_by_auction
-        .aggregate::<(), _>(Fold::new(
+        .aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
             VecDeque::with_capacity(TOP_BIDS),
             |top: &mut VecDeque<Bid>, (_price, bid): &(usize, Bid), _w| {
                 if top.len() >= TOP_BIDS {

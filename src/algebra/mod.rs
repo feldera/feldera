@@ -19,6 +19,7 @@ pub use zset::{IndexedZSet, ZSet};
 
 use size_of::SizeOf;
 use std::{
+    marker::PhantomData,
     num::Wrapping,
     ops::{Add, AddAssign, Mul, Neg},
     rc::Rc,
@@ -210,27 +211,24 @@ where
     }
 }
 
-/// A type with an associative addition and a zero.
+/// A type with an associative addition.
 /// We trust the implementation to have an associative addition.
 /// (this cannot be checked statically).
-pub trait MonoidValue:
-    Clone + Eq + SizeOf + HasZero + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef + 'static
+pub trait SemigroupValue:
+    Clone + Eq + SizeOf + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef + 'static
 {
 }
 
-/// Default implementation for all types that have an addition and a zero.
-impl<T> MonoidValue for T where
-    T: Clone
-        + Eq
-        + SizeOf
-        + HasZero
-        + Add<Output = Self>
-        + AddByRef
-        + AddAssign
-        + AddAssignByRef
-        + 'static
+impl<T> SemigroupValue for T where
+    T: Clone + Eq + SizeOf + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef + 'static
 {
 }
+
+/// A type with an associative addition and a zero.
+pub trait MonoidValue: SemigroupValue + HasZero {}
+
+/// Default implementation for all types that have an addition and a zero.
+impl<T> MonoidValue for T where T: SemigroupValue + HasZero {}
 
 /// A Group is a Monoid with a with negation operation.
 /// We expect all our groups to be commutative.
@@ -378,6 +376,74 @@ impl MulByRef<isize> for Option<F64> {
     #[inline]
     fn mul_by_ref(&self, w: &isize) -> Self::Output {
         self.as_ref().map(|x| *x * (*w as f64))
+    }
+}
+
+/// Semigroup over values of type `V`.
+///
+/// This trait defines an associative binary operation
+/// over values of type `V`.  Unlike [`SemigroupValue`],
+/// which can only be implemented once per type, it allows
+/// creating multiple semigroup structures over the same type.
+/// For example, integers form semigroups with addition,
+/// multiplication, min, and max operations, among others.
+// TODO: add optimized methods that take arguments by value,
+// and that combine more than two elements.
+pub trait Semigroup<V> {
+    /// Apply the semigroup operation to `left` and `right`.
+    fn combine(left: &V, right: &V) -> V;
+
+    /// Apply the semigroup operation to values of type `Option<V>`.
+    ///
+    /// This method defines a monoid over values of type `Option<V>` with
+    /// `None` as the neutral element.  It returns:
+    /// * `None`, if both arguments are `None`,
+    /// * `left` (`right`), if `right` (`left`) is `None`,
+    /// * `combine(left.unwrap(), right.unwrap())` otherwise.
+    fn combine_opt(left: &Option<V>, right: &Option<V>) -> Option<V>
+    where
+        V: Clone,
+    {
+        if let Some(left) = left {
+            if let Some(right) = right {
+                Some(Self::combine(left, right))
+            } else {
+                Some(left.clone())
+            }
+        } else {
+            right.clone()
+        }
+    }
+}
+
+/// Trait [`Semigroup`] implementation for types that
+/// implement [`SemigroupValue`].
+///
+/// Implements `Semigroup<V>` using `V`'s natural plus
+/// operation.
+#[derive(Clone)]
+pub struct DefaultSemigroup<V>(PhantomData<V>);
+
+impl<V> Semigroup<V> for DefaultSemigroup<V>
+where
+    V: SemigroupValue,
+{
+    fn combine(left: &V, right: &V) -> V {
+        left.add_by_ref(right)
+    }
+}
+
+/// [`Semigroup`] implementation that panics with "not implemented"
+/// message.
+// TODO: this is a temporary thing that can be used with aggregation operators,
+// which currently don't invoke the `Semigroup` trait (but this will change
+// in the future).
+#[derive(Clone)]
+pub struct UnimplementedSemigroup<V>(PhantomData<V>);
+
+impl<V> Semigroup<V> for UnimplementedSemigroup<V> {
+    fn combine(_left: &V, _right: &V) -> V {
+        unimplemented!()
     }
 }
 
