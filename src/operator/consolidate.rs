@@ -67,7 +67,7 @@ where
     T: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Consolidate")
+        Cow::Borrowed("Consolidate")
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {

@@ -2,8 +2,14 @@
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
-    trace::layers::{advance, Builder, Cursor, MergeBuilder, OrdOffset, Trie, TupleBuilder},
-    utils::assume,
+    trace::{
+        layers::{
+            advance, column_leaf::OrderedColumnLeaf, Builder, Cursor, MergeBuilder, OrdOffset,
+            Trie, TupleBuilder,
+        },
+        Consumer, ValueConsumer,
+    },
+    utils::{assume, cursor_position_oob},
     NumEntries,
 };
 use size_of::SizeOf;
@@ -11,7 +17,9 @@ use std::{
     cmp::{min, Ordering},
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Add, AddAssign, Neg},
+    ptr,
 };
 use textwrap::indent;
 
@@ -44,6 +52,30 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     #[inline]
     unsafe fn assume_invariants(&self) {
         assume(self.offs.len() == self.keys.len() + 1)
+    }
+}
+
+impl<K, V, R, O> OrderedLayer<K, OrderedColumnLeaf<V, R>, O> {
+    /// Turns the current `OrderedLayer<K, OrderedColumnLeaf<V, R>, O>` into a
+    /// layer of [`MaybeUninit`] values
+    #[inline]
+    fn into_uninit(
+        self,
+    ) -> OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O> {
+        unsafe {
+            self.assume_invariants();
+            self.vals.assume_invariants();
+        }
+
+        let mut keys = ManuallyDrop::new(self.keys);
+        let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
+        let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
+
+        OrderedLayer {
+            keys,
+            offs: self.offs,
+            vals: self.vals.into_uninit(),
+        }
     }
 }
 
@@ -719,4 +751,173 @@ where
             );
         }
     }
+}
+
+// TODO: Drop impl
+// TODO: SizeOf impl
+#[derive(Debug)]
+pub struct OrderedLayerConsumer<K, V, R, O> {
+    key_position: usize,
+    value_position: usize,
+    storage: OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O>,
+}
+
+impl<K, V, R, O> Consumer<K, V, R> for OrderedLayerConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
+    type ValueConsumer<'a> = OrderedLayerValues<'a, V, R>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn key_valid(&self) -> bool {
+        self.key_position < self.storage.keys.len()
+    }
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let idx = self.key_position;
+        if idx >= self.storage.keys.len() {
+            cursor_position_oob(idx, self.storage.keys.len());
+        }
+
+        // We increment position before reading out the key and diff values
+        self.key_position += 1;
+
+        // Copy out the key and diff
+        let key = unsafe { self.storage.keys[idx].assume_init_read() };
+
+        (key, OrderedLayerValues::new(self))
+    }
+
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        let start_position = self.key_position;
+
+        // Search for the given key
+        let offset = advance(&self.storage.keys[start_position..], |k| unsafe {
+            k.assume_init_ref().lt(key)
+        });
+
+        // Increment the offset before we drop the elements for panic safety
+        self.key_position += offset;
+
+        // We set the value position to the end of the last key's value range
+        let value_start = self.value_position;
+        self.value_position = self.storage.offs[self.key_position + 1].into_usize();
+
+        // Drop the skipped elements
+        unsafe {
+            // Drop the skipped keys
+            ptr::drop_in_place(
+                &mut self.storage.keys[start_position..self.key_position] as *mut [MaybeUninit<K>]
+                    as *mut [K],
+            );
+
+            // Drop the skipped values and diffs
+            self.storage
+                .vals
+                .drop_range(value_start..self.value_position);
+        }
+    }
+}
+
+impl<K, V, R, O> From<OrderedLayer<K, OrderedColumnLeaf<V, R>, O>>
+    for OrderedLayerConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
+    fn from(layer: OrderedLayer<K, OrderedColumnLeaf<V, R>, O>) -> Self {
+        Self {
+            key_position: 0,
+            value_position: layer.offs[0].into_usize(),
+            storage: layer.into_uninit(),
+        }
+    }
+}
+
+impl<K, V, R, O> Drop for OrderedLayerConsumer<K, V, R, O> {
+    fn drop(&mut self) {
+        unsafe {
+            // Drop any remaining keys
+            ptr::drop_in_place(
+                &mut self.storage.keys[self.key_position..] as *mut [MaybeUninit<K>] as *mut [K],
+            );
+
+            // Drop any remaining values & diffs
+            self.storage.vals.drop_range(self.value_position..);
+        }
+    }
+}
+
+// TODO: Drop impl
+#[derive(Debug)]
+pub struct OrderedLayerValues<'a, V, R> {
+    // Invariant: `current < end`
+    // Invariant: `current` will always be a valid index into `consumer`
+    current: usize,
+    end: usize,
+    consumer: &'a mut OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>,
+}
+
+impl<'a, V, R> OrderedLayerValues<'a, V, R> {
+    pub fn new<K, O>(consumer: &'a mut OrderedLayerConsumer<K, V, R, O>) -> Self
+    where
+        O: OrdOffset,
+    {
+        unsafe { consumer.storage.assume_invariants() };
+
+        Self {
+            // The consumer increments `value_position` before creating the value consumer so we
+            // look at `value_position` for the value range's start
+            current: consumer.storage.offs[consumer.value_position.into_usize() - 1].into_usize(),
+            end: consumer.storage.offs[consumer.value_position.into_usize()].into_usize(),
+            consumer: &mut consumer.storage.vals,
+        }
+    }
+}
+
+impl<'a, V, R> ValueConsumer<'a, V, R> for OrderedLayerValues<'a, V, R> {
+    #[inline]
+    fn value_valid(&self) -> bool {
+        self.current < self.end
+    }
+
+    #[inline]
+    fn next_value(&mut self) -> (V, R) {
+        if !self.value_valid() {
+            invalid_value();
+        }
+
+        // Increment the current index before doing anything else
+        let idx = self.current;
+        self.current += 1;
+
+        unsafe {
+            // Elide bounds checking
+            assume(idx < self.consumer.len());
+            self.consumer.assume_invariants();
+
+            // Read out the value and diff
+            let value = self.consumer.keys[idx].assume_init_read();
+            let diff = self.consumer.diffs[idx].assume_init_read();
+
+            (value, diff)
+        }
+    }
+}
+
+impl<V, R> Drop for OrderedLayerValues<'_, V, R> {
+    fn drop(&mut self) {
+        // Drop any unconsumed diffs and values
+        unsafe { self.consumer.drop_range(self.current..self.end) }
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn invalid_value() -> ! {
+    panic!("called `ValueConsumer::next_value()` on invalid value")
 }

@@ -29,3 +29,9 @@ pub(crate) const fn next_multiple_of(n: usize, rhs: usize) -> usize {
         r => n + (rhs - r),
     }
 }
+
+#[cold]
+#[inline(never)]
+pub(crate) fn cursor_position_oob(position: usize, length: usize) -> ! {
+    panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
+}

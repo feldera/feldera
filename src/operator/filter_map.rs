@@ -4,7 +4,7 @@ use crate::{
     algebra::MonoidValue,
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
     trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
     OrdIndexedZSet, OrdZSet,
@@ -294,10 +294,7 @@ pub struct FilterKeys<CI, CO, F> {
     _type: PhantomData<(CI, CO)>,
 }
 
-impl<CI, CO, F> FilterKeys<CI, CO, F>
-where
-    F: 'static,
-{
+impl<CI, CO, F> FilterKeys<CI, CO, F> {
     pub fn new(filter: F) -> Self {
         Self {
             filter,
@@ -313,8 +310,9 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("FilterKeys")
+        Cow::Borrowed("FilterKeys")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -328,19 +326,18 @@ where
     CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
     F: Fn(&CI::Key) -> bool + 'static,
 {
-    fn eval(&mut self, i: &CI) -> CO {
-        let mut cursor = i.cursor();
-
+    fn eval(&mut self, input: &CI) -> CO {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
-
-        // This will create waste if most tuples get filtered out, since
+        //
+        // Pre-allocating will create waste if most tuples get filtered out, since
         // the buffers allocated here can make it all the way to the output batch.
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = CO::Builder::with_capacity((), i.len());
+        let mut builder = CO::Builder::with_capacity((), input.len());
 
+        let mut cursor = input.cursor();
         while cursor.key_valid() {
             if (self.filter)(cursor.key()) {
                 while cursor.val_valid() {
@@ -352,7 +349,41 @@ where
             }
             cursor.step_key();
         }
+
         builder.done()
+    }
+
+    // TODO: We could honestly specialize this to be in-place for OrdZSet
+    fn eval_owned(&mut self, input: CI) -> CO {
+        // We can use Builder because cursor yields ordered values.  This
+        // is a nice property of the filter operation.
+        //
+        // Pre-allocating will create waste if most tuples get filtered out, since
+        // the buffers allocated here can make it all the way to the output batch.
+        // This is probably ok, because the batch will either get freed at the end
+        // of the current clock tick or get added to the trace, where it will likely
+        // get merged with other batches soon, at which point the waste is gone.
+        let mut builder = CO::Builder::with_capacity((), input.len());
+
+        let mut consumer = input.consumer();
+        while consumer.key_valid() {
+            let (key, mut values) = consumer.next_key();
+
+            // FIXME: We assume that this operator will only be used with `OrdZSet` and that
+            // it has either zero or one values, meaning that it'll skip any additional
+            // values
+            if (self.filter)(&key) && values.value_valid() {
+                let (value, weight) = values.next_value();
+                builder.push((CO::item_from(key, value), weight));
+            }
+        }
+
+        builder.done()
+    }
+
+    // Filtering *wants* owned values, but it's not critical to performance
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::WEAKLY_PREFER_OWNED
     }
 }
 
@@ -384,8 +415,9 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("FilterVals")
+        Cow::Borrowed("FilterVals")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -399,9 +431,7 @@ where
     CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> bool + 'static,
 {
-    fn eval(&mut self, i: &CI) -> CO {
-        let mut cursor = i.cursor();
-
+    fn eval(&mut self, input: &CI) -> CO {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
 
@@ -410,8 +440,9 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = CO::Builder::with_capacity((), i.len());
+        let mut builder = CO::Builder::with_capacity((), input.len());
 
+        let mut cursor = input.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
                 if (self.filter)((cursor.key(), cursor.val())) {
@@ -423,7 +454,31 @@ where
             }
             cursor.step_key();
         }
+
         builder.done()
+    }
+
+    fn eval_owned(&mut self, input: CI) -> CO {
+        let mut builder = CO::Builder::with_capacity((), input.len());
+
+        let mut consumer = input.consumer();
+        while consumer.key_valid() {
+            let (key, mut values) = consumer.next_key();
+
+            while values.value_valid() {
+                let (value, diff) = values.next_value();
+
+                if (self.filter)((&key, &value)) {
+                    builder.push((CO::item_from(key.clone(), value), diff));
+                }
+            }
+        }
+
+        builder.done()
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::WEAKLY_PREFER_OWNED
     }
 }
 
@@ -453,8 +508,9 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Map")
+        Cow::Borrowed("Map")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -479,6 +535,7 @@ where
             }
             cursor.step_key();
         }
+
         CO::from_tuples((), batch)
     }
 }
@@ -548,6 +605,10 @@ where
         let mut consumer = input.consumer();
         while consumer.key_valid() {
             let (key, mut values) = consumer.next_key();
+
+            // FIXME: We assume that this operator will only be used with `OrdZSet` and that
+            // it has either zero or one values, meaning that it'll skip any additional
+            // values
             if values.value_valid() {
                 let (value, weight) = values.next_value();
                 batch.push((CO::item_from((self.map_owned)(key), value), weight));
@@ -556,21 +617,19 @@ where
 
         CO::from_tuples((), batch)
     }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
+    }
 }
 
 /// Internal implementation of `flat_map` methods.
-pub struct FlatMap<CI, CO, F, I>
-where
-    F: 'static,
-{
+pub struct FlatMap<CI, CO, F, I> {
     map_func: F,
     _type: PhantomData<(CI, CO, I)>,
 }
 
-impl<CI, CO, F, I> FlatMap<CI, CO, F, I>
-where
-    F: 'static,
-{
+impl<CI, CO, F, I> FlatMap<CI, CO, F, I> {
     pub fn new(map_func: F) -> Self {
         Self {
             map_func,

@@ -2,10 +2,12 @@
 //! struct-of-array container
 
 mod builders;
+mod consumer;
 mod cursor;
 
 pub use builders::{OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder};
-pub use cursor::{ColumnLeafConsumer, ColumnLeafCursor, ColumnLeafValues};
+pub use consumer::{ColumnLeafConsumer, ColumnLeafValues};
+pub use cursor::ColumnLeafCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -18,14 +20,16 @@ use std::{
     fmt::{self, Display},
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Add, AddAssign, Neg},
+    ptr,
+    slice::SliceIndex,
 };
 
 /// A layer of unordered values.
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct OrderedColumnLeaf<K, R> {
     // Invariant: keys.len == diffs.len
-    keys: Vec<K>,
-    diffs: Vec<R>,
+    pub(super) keys: Vec<K>,
+    pub(super) diffs: Vec<R>,
 }
 
 impl<K, R> OrderedColumnLeaf<K, R> {
@@ -83,14 +87,16 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     ///
     /// Requires that `keys` and `diffs` have the exact same length
     #[inline]
-    unsafe fn assume_invariants(&self) {
+    pub(in crate::trace::layers) unsafe fn assume_invariants(&self) {
         assume(self.keys.len() == self.diffs.len())
     }
 
     /// Turns the current `OrderedColumnLeaf<K, V>` into a leaf of
     /// [`MaybeUninit`] values
     #[inline]
-    fn into_uninit(self) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+    pub(in crate::trace::layers) fn into_uninit(
+        self,
+    ) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
         unsafe { self.assume_invariants() }
 
         let mut keys = ManuallyDrop::new(self.keys);
@@ -102,6 +108,36 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         let diffs = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
 
         OrderedColumnLeaf { keys, diffs }
+    }
+}
+
+impl<K, R> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+    /// Drops all keys and diffs within the given range
+    ///
+    /// # Safety
+    ///
+    /// `range` must be a valid index into `self.keys` and `self.values` and all
+    /// values within that range must be valid, initialized and have not been
+    /// previously dropped
+    pub(crate) unsafe fn drop_range<T>(&mut self, range: T)
+    where
+        T: SliceIndex<[MaybeUninit<K>], Output = [MaybeUninit<K>]>
+            + SliceIndex<[MaybeUninit<R>], Output = [MaybeUninit<R>]>
+            + Clone,
+    {
+        self.assume_invariants();
+        if cfg!(debug_assertions) {
+            let _ = &self.keys[range.clone()];
+            let _ = &self.diffs[range.clone()];
+        }
+
+        // Drop keys within the given range
+        ptr::drop_in_place(
+            self.keys.get_unchecked_mut(range.clone()) as *mut [MaybeUninit<K>] as *mut [K],
+        );
+
+        // Drop diffs within the given range
+        ptr::drop_in_place(self.diffs.get_unchecked_mut(range) as *mut [MaybeUninit<R>] as *mut [R]);
     }
 }
 

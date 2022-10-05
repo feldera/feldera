@@ -485,10 +485,17 @@ impl OwnershipPreference {
     /// The operator does not gain any speed up from consuming an owned value.
     pub const INDIFFERENT: Self = Self::new(0);
 
+    /// The operator is likely to run faster provided an owned input, but
+    /// shouldn't be prioritized over more impactful operators
+    ///
+    /// This gives a lower priority than [`Self::PREFER_OWNED`] so that
+    /// operators who need ownership can get it when available
+    pub const WEAKLY_PREFER_OWNED: Self = Self::new(40);
+
     /// The operator is likely to run faster provided an owned input.
     ///
     /// Preference levels above `prefer_owned` should not be used by operators
-    /// and are reserved for use by circuit builders through the `Circuit`
+    /// and are reserved for use by circuit builders through the [`Circuit`]
     /// API.
     pub const PREFER_OWNED: Self = Self::new(50);
 
@@ -513,6 +520,7 @@ impl Display for OwnershipPreference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::INDIFFERENT => f.write_str("Indifferent"),
+            Self::WEAKLY_PREFER_OWNED => f.write_str("WeaklyPreferOwned"),
             Self::PREFER_OWNED => f.write_str("PreferOwned"),
             Self::STRONGLY_PREFER_OWNED => f.write_str("StronglyPreferOwned"),
             Self(preference) => write!(f, "Preference({preference})"),
