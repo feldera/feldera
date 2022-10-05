@@ -1,4 +1,5 @@
-#![cfg_attr(feature = "with-nexmark", feature(is_some_with))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![doc = include_str!("../README.md")]
 
 mod error;
 mod num_entries;

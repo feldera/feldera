@@ -705,7 +705,7 @@ where
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
         self.stats.lhs_tuples += index.len();
-        self.stats.rhs_tuples += trace.len();
+        self.stats.rhs_tuples = trace.len();
 
         self.empty_input = index.is_empty();
 

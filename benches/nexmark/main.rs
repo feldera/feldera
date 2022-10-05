@@ -1,7 +1,6 @@
 //! Nexmark benchmarks for DBSP
 //!
 //! CLI for running Nexmark benchmarks with DBSP.
-#![feature(is_some_with)]
 
 #[macro_use]
 mod run_queries;
