@@ -85,7 +85,7 @@ coming soon.
 
 Execute the following command to make `git commit` check the code before commit:
 
-```
+```shell
 GITDIR=$(git rev-parse --git-dir)
 ln -sf $(pwd)/tools/pre-push ${GITDIR}/hooks/pre-push
 ```
