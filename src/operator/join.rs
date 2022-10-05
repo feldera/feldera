@@ -634,7 +634,7 @@ where
                             "allocated" => MetaItem::bytes(size.total_bytes()),
                             "used" => MetaItem::bytes(size.used_bytes()),
                         }
-                        .to_vec(),
+                        .into(),
                     )
                 })
                 .collect(),
