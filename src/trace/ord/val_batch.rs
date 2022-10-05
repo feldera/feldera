@@ -450,45 +450,6 @@ where
     }
 }
 
-pub struct OrdValConsumer<K, V, T, R, O> {
-    __type: PhantomData<(K, V, T, R, O)>,
-}
-
-impl<K, V, T, R, O> Consumer<K, V, R> for OrdValConsumer<K, V, T, R, O> {
-    type ValueConsumer<'a> = OrdValValueConsumer<'a, K, V, T, R, O>
-    where
-        Self: 'a;
-
-    fn key_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        todo!()
-    }
-
-    fn seek_key(&mut self, _key: &K)
-    where
-        K: Ord,
-    {
-        todo!()
-    }
-}
-
-pub struct OrdValValueConsumer<'a, K, V, T, R, O> {
-    __type: PhantomData<&'a (K, V, T, R, O)>,
-}
-
-impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R> for OrdValValueConsumer<'a, K, V, T, R, O> {
-    fn value_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_value(&mut self) -> (V, R) {
-        todo!()
-    }
-}
-
 type RawOrdValBuilder<K, V, T, R, O> =
     OrderedBuilder<K, OrderedBuilder<V, OrderedColumnLeafBuilder<T, R>, O>, O>;
 
@@ -556,5 +517,44 @@ where
             lower: Antichain::from_elem(self.time),
             upper,
         }
+    }
+}
+
+pub struct OrdValConsumer<K, V, T, R, O> {
+    __type: PhantomData<(K, V, T, R, O)>,
+}
+
+impl<K, V, T, R, O> Consumer<K, V, R> for OrdValConsumer<K, V, T, R, O> {
+    type ValueConsumer<'a> = OrdValValueConsumer<'a, K, V, T, R, O>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        todo!()
+    }
+
+    fn seek_key(&mut self, _key: &K)
+    where
+        K: Ord,
+    {
+        todo!()
+    }
+}
+
+pub struct OrdValValueConsumer<'a, K, V, T, R, O> {
+    __type: PhantomData<&'a (K, V, T, R, O)>,
+}
+
+impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R> for OrdValValueConsumer<'a, K, V, T, R, O> {
+    fn value_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn next_value(&mut self) -> (V, R) {
+        todo!()
     }
 }

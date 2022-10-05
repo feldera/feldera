@@ -71,7 +71,7 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Apply2")
+        Cow::Borrowed("Apply2")
     }
 
     fn location(&self) -> OperatorLocation {
@@ -115,7 +115,7 @@ where
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Apply2Owned")
+        Cow::Borrowed("Apply2Owned")
     }
 
     fn location(&self) -> OperatorLocation {

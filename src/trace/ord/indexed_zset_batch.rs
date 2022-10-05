@@ -4,7 +4,10 @@ use crate::{
     trace::{
         layers::{
             column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
-            ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered::{
+                OrderedBuilder, OrderedCursor, OrderedLayer, OrderedLayerConsumer,
+                OrderedLayerValues,
+            },
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
         },
@@ -215,7 +218,10 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = OrdIndexedZSetCursor<'s, K, V, R, O> where V: 's, O: 's;
+    type Cursor<'s> = OrdIndexedZSetCursor<'s, K, V, R, O>
+    where
+        V: 's,
+        O: 's;
     type Consumer = OrdIndexedZSetConsumer<K, V, R, O>;
 
     #[inline]
@@ -225,8 +231,11 @@ where
         }
     }
 
+    #[inline]
     fn consumer(self) -> Self::Consumer {
-        todo!()
+        OrdIndexedZSetConsumer {
+            consumer: OrderedLayerConsumer::from(self.layer),
+        }
     }
 
     #[inline]
@@ -440,45 +449,6 @@ where
     }
 }
 
-pub struct OrdIndexedZSetConsumer<K, V, R, O> {
-    __type: PhantomData<(K, V, R, O)>,
-}
-
-impl<K, V, R, O> Consumer<K, V, R> for OrdIndexedZSetConsumer<K, V, R, O> {
-    type ValueConsumer<'a> = OrdIndexedZSetValueConsumer<'a, K, V,  R, O>
-    where
-        Self: 'a;
-
-    fn key_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        todo!()
-    }
-
-    fn seek_key(&mut self, _key: &K)
-    where
-        K: Ord,
-    {
-        todo!()
-    }
-}
-
-pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
-    __type: PhantomData<&'a (K, V, R, O)>,
-}
-
-impl<'a, K, V, R, O> ValueConsumer<'a, V, R> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
-    fn value_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_value(&mut self) -> (V, R) {
-        todo!()
-    }
-}
-
 type IndexBuilder<K, V, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
@@ -531,5 +501,64 @@ where
         OrdIndexedZSet {
             layer: self.builder.done(),
         }
+    }
+}
+
+pub struct OrdIndexedZSetConsumer<K, V, R, O> {
+    consumer: OrderedLayerConsumer<K, V, R, O>,
+}
+
+impl<K, V, R, O> Consumer<K, V, R> for OrdIndexedZSetConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
+    type ValueConsumer<'a> = OrdIndexedZSetValueConsumer<'a, K, V,  R, O>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn key_valid(&self) -> bool {
+        self.consumer.key_valid()
+    }
+
+    #[inline]
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let (key, consumer) = self.consumer.next_key();
+        (key, OrdIndexedZSetValueConsumer::new(consumer))
+    }
+
+    #[inline]
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        self.consumer.seek_key(key)
+    }
+}
+
+pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+    consumer: OrderedLayerValues<'a, V, R>,
+    __type: PhantomData<(K, O)>,
+}
+
+impl<'a, K, V, R, O> OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+    #[inline]
+    const fn new(consumer: OrderedLayerValues<'a, V, R>) -> Self {
+        Self {
+            consumer,
+            __type: PhantomData,
+        }
+    }
+}
+
+impl<'a, K, V, R, O> ValueConsumer<'a, V, R> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+    #[inline]
+    fn value_valid(&self) -> bool {
+        self.consumer.value_valid()
+    }
+
+    #[inline]
+    fn next_value(&mut self) -> (V, R) {
+        self.consumer.next_value()
     }
 }

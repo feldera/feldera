@@ -7,7 +7,6 @@ use crate::{
                 ColumnLeafConsumer, ColumnLeafCursor, ColumnLeafValues, OrderedColumnLeaf,
                 OrderedColumnLeafBuilder,
             },
-            ordered_leaf::OrderedLeaf,
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
@@ -61,7 +60,7 @@ where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
-    const CONST_NUM_ENTRIES: Option<usize> = <OrderedLeaf<K, R>>::CONST_NUM_ENTRIES;
+    const CONST_NUM_ENTRIES: Option<usize> = <OrderedColumnLeaf<K, R>>::CONST_NUM_ENTRIES;
 
     fn num_entries_shallow(&self) -> usize {
         self.layer.num_entries_shallow()
@@ -364,53 +363,6 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct OrdZSetConsumer<K, R> {
-    consumer: ColumnLeafConsumer<K, R>,
-}
-
-impl<K, R> Consumer<K, (), R> for OrdZSetConsumer<K, R> {
-    type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
-    where
-        Self: 'a;
-
-    #[inline]
-    fn key_valid(&self) -> bool {
-        self.consumer.key_valid()
-    }
-
-    #[inline]
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        let (key, values) = self.consumer.next_key();
-        (key, OrdZSetValueConsumer { values })
-    }
-
-    #[inline]
-    fn seek_key(&mut self, key: &K)
-    where
-        K: Ord,
-    {
-        self.consumer.seek_key(key);
-    }
-}
-
-#[derive(Debug)]
-pub struct OrdZSetValueConsumer<'a, K, R> {
-    values: ColumnLeafValues<'a, K, R>,
-}
-
-impl<'a, K, R> ValueConsumer<'a, (), R> for OrdZSetValueConsumer<'a, K, R> {
-    #[inline]
-    fn value_valid(&self) -> bool {
-        self.values.value_valid()
-    }
-
-    #[inline]
-    fn next_value(&mut self) -> ((), R) {
-        self.values.next_value()
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct OrdZSetBuilder<K, R>
@@ -456,5 +408,52 @@ where
         OrdZSet {
             layer: self.builder.done(),
         }
+    }
+}
+
+#[derive(Debug, SizeOf)]
+pub struct OrdZSetConsumer<K, R> {
+    consumer: ColumnLeafConsumer<K, R>,
+}
+
+impl<K, R> Consumer<K, (), R> for OrdZSetConsumer<K, R> {
+    type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn key_valid(&self) -> bool {
+        self.consumer.key_valid()
+    }
+
+    #[inline]
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let (key, values) = self.consumer.next_key();
+        (key, OrdZSetValueConsumer { values })
+    }
+
+    #[inline]
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        self.consumer.seek_key(key);
+    }
+}
+
+#[derive(Debug)]
+pub struct OrdZSetValueConsumer<'a, K, R> {
+    values: ColumnLeafValues<'a, K, R>,
+}
+
+impl<'a, K, R> ValueConsumer<'a, (), R> for OrdZSetValueConsumer<'a, K, R> {
+    #[inline]
+    fn value_valid(&self) -> bool {
+        self.values.value_valid()
+    }
+
+    #[inline]
+    fn next_value(&mut self) -> ((), R) {
+        self.values.next_value()
     }
 }
