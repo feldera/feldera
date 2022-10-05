@@ -371,7 +371,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
                     }
                 }
 
-                for (label, item) in &meta {
+                for (label, item) in meta.iter() {
                     write!(output, "{label}: ").unwrap();
                     item.format(&mut output).unwrap();
                     output.push_str("\\l");
