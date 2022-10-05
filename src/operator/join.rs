@@ -668,7 +668,7 @@ where
             "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
             "left inputs" => self.stats.lhs_tuples,
             "right inputs" => self.stats.rhs_tuples,
-            "raw outputs" => self.stats.output_tuples,
+            "computed outputs" => self.stats.output_tuples,
             "produced outputs" => self.stats.produced_tuples,
             "output redundancy" => MetaItem::Percent(output_redundancy),
         });
