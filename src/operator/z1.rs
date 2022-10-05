@@ -191,28 +191,13 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
-        meta.extend([
-            (
-                Cow::Borrowed("total size"),
-                MetaItem::Int(self.values.num_entries_deep()),
-            ),
-            (
-                Cow::Borrowed("allocated bytes"),
-                MetaItem::bytes(bytes.total_bytes()),
-            ),
-            (
-                Cow::Borrowed("used bytes"),
-                MetaItem::bytes(bytes.used_bytes()),
-            ),
-            (
-                Cow::Borrowed("allocations"),
-                MetaItem::Int(bytes.distinct_allocations()),
-            ),
-            (
-                Cow::Borrowed("shared bytes"),
-                MetaItem::bytes(bytes.shared_bytes()),
-            ),
-        ]);
+        meta.extend(metadata! {
+            "total size" => self.values.num_entries_deep(),
+            "allocated bytes" => MetaItem::bytes(bytes.total_bytes()),
+            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            "allocations" => bytes.distinct_allocations(),
+            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+        });
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

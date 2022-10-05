@@ -1,5 +1,10 @@
-use size_of::HumanBytes;
-use std::{borrow::Cow, panic::Location, time::Duration};
+use size_of::{HumanBytes, TotalSize};
+use std::{
+    borrow::Cow,
+    fmt::{self, Write},
+    panic::Location,
+    time::Duration,
+};
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
@@ -22,6 +27,41 @@ pub enum MetaItem {
 impl MetaItem {
     pub fn bytes(bytes: usize) -> Self {
         Self::Bytes(HumanBytes::from(bytes))
+    }
+
+    pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
+        match self {
+            Self::Int(int) => write!(output, "{int}"),
+            Self::Percent(percent) => write!(output, "{percent:.02}%"),
+            Self::String(string) => output.write_str(string),
+            Self::Bytes(bytes) => write!(output, "{bytes}"),
+            Self::Duration(duration) => write!(output, "{duration:#?}"),
+
+            Self::Array(array) => {
+                output.write_char('[')?;
+                for (idx, item) in array.iter().enumerate() {
+                    item.format(output)?;
+                    if idx != array.len() - 1 {
+                        output.write_str(", ")?
+                    }
+                }
+                output.write_char(']')
+            }
+
+            Self::Map(map) => {
+                output.write_char('{')?;
+                for (idx, (label, item)) in map.iter().enumerate() {
+                    output.write_str(label)?;
+                    output.write_str(": ")?;
+                    item.format(output)?;
+
+                    if idx != map.len() - 1 {
+                        output.write_str(", ")?;
+                    }
+                }
+                output.write_char('}')
+            }
+        }
     }
 }
 
@@ -60,4 +100,18 @@ macro_rules! metadata {
     ($($name:expr => $value:expr),* $(,)?) => {
         [$((::std::borrow::Cow::from($name), $crate::circuit::metadata::MetaItem::from($value)),)*]
     };
+}
+
+impl From<TotalSize> for MetaItem {
+    fn from(size: TotalSize) -> Self {
+        Self::Map(
+            metadata! {
+                "allocated bytes" => Self::bytes(size.total_bytes()),
+                "used bytes" => Self::bytes(size.used_bytes()),
+                "allocations" => size.distinct_allocations(),
+                "shared bytes" => Self::bytes(size.shared_bytes()),
+            }
+            .to_vec(),
+        )
+    }
 }

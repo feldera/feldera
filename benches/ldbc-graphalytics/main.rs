@@ -373,7 +373,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
 
                 for (label, item) in &meta {
                     write!(output, "{label}: ").unwrap();
-                    format_meta(item, &mut output);
+                    item.format(&mut output).unwrap();
                     output.push_str("\\l");
                 }
 
@@ -391,51 +391,6 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
 
         _ => {}
     });
-}
-
-fn format_meta(item: &MetaItem, output: &mut String) {
-    match item {
-        MetaItem::Int(int) => write!(output, "{int}").unwrap(),
-        MetaItem::Percent(percent) => write!(output, "{percent:.02}%").unwrap(),
-        MetaItem::String(string) => output.push_str(string),
-        MetaItem::Bytes(bytes) => write!(output, "{bytes}").unwrap(),
-        MetaItem::Duration(duration) => {
-            write!(output, "{duration:#?}").unwrap();
-        }
-
-        MetaItem::Array(array) => {
-            if array.is_empty() {
-                output.push_str("[]");
-            } else {
-                output.push('[');
-                for (idx, item) in array.iter().enumerate() {
-                    format_meta(item, output);
-                    if idx != array.len() - 1 {
-                        output.push_str(", ");
-                    }
-                }
-                output.push(']');
-            }
-        }
-
-        MetaItem::Map(map) => {
-            if map.is_empty() {
-                output.push_str("{}");
-            } else {
-                output.push('{');
-                for (idx, (label, item)) in map.iter().enumerate() {
-                    output.push_str(label);
-                    output.push_str(": ");
-                    format_meta(item, output);
-
-                    if idx != map.len() - 1 {
-                        output.push_str(", ");
-                    }
-                }
-                output.push('}');
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Parser)]
