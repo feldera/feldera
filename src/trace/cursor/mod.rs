@@ -113,15 +113,18 @@ pub trait Cursor<'s, K, V, T, R> {
     fn rewind_vals(&mut self);
 }
 
-/// A cursor for taking ownership of ordered `(K, V, R)` tuples
-pub trait Consumer<K, V, R> {
+/// A cursor for taking ownership of ordered `(K, V, R, T)` tuples
+pub trait Consumer<K, V, R, T> {
     /// The consumer for the values and diffs associated with a particular key
-    type ValueConsumer<'a>: ValueConsumer<'a, V, R>
+    type ValueConsumer<'a>: ValueConsumer<'a, V, R, T>
     where
         Self: 'a;
 
     /// Returns `true` if the current key is valid
     fn key_valid(&self) -> bool;
+
+    /// Returns a reference to the current key
+    fn peek_key(&self) -> &K;
 
     /// Takes ownership of the current key and gets the consumer for its
     /// associated values
@@ -135,12 +138,13 @@ pub trait Consumer<K, V, R> {
 
 /// A cursor for taking ownership of the values and diffs associated with a
 /// given key
-pub trait ValueConsumer<'a, V, R> {
+pub trait ValueConsumer<'a, V, R, T> {
     /// Returns `true` if the current value is valid
     fn value_valid(&self) -> bool;
 
     /// Takes ownership of the current value & diff pair
-    fn next_value(&mut self) -> (V, R);
+    // TODO: Maybe this should yield another consumer for `(R, T)` pairs
+    fn next_value(&mut self) -> (V, R, T);
 
     // TODO: Seek value method?
 }

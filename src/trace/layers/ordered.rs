@@ -762,7 +762,7 @@ pub struct OrderedLayerConsumer<K, V, R, O> {
     storage: OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O>,
 }
 
-impl<K, V, R, O> Consumer<K, V, R> for OrderedLayerConsumer<K, V, R, O>
+impl<K, V, R, O> Consumer<K, V, R, ()> for OrderedLayerConsumer<K, V, R, O>
 where
     O: OrdOffset,
 {
@@ -770,14 +770,22 @@ where
     where
         Self: 'a;
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.key_position < self.storage.keys.len()
     }
 
+    fn peek_key(&self) -> &K {
+        if !self.key_valid() {
+            cursor_position_oob(self.key_position, self.storage.keys.len());
+        }
+
+        // Safety: The current key is valid
+        unsafe { self.storage.keys[self.key_position].assume_init_ref() }
+    }
+
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let idx = self.key_position;
-        if idx >= self.storage.keys.len() {
+        if !self.key_valid() {
             cursor_position_oob(idx, self.storage.keys.len());
         }
 
@@ -879,14 +887,12 @@ impl<'a, V, R> OrderedLayerValues<'a, V, R> {
     }
 }
 
-impl<'a, V, R> ValueConsumer<'a, V, R> for OrderedLayerValues<'a, V, R> {
-    #[inline]
+impl<'a, V, R> ValueConsumer<'a, V, R, ()> for OrderedLayerValues<'a, V, R> {
     fn value_valid(&self) -> bool {
         self.current < self.end
     }
 
-    #[inline]
-    fn next_value(&mut self) -> (V, R) {
+    fn next_value(&mut self) -> (V, R, ()) {
         if !self.value_valid() {
             invalid_value();
         }
@@ -904,7 +910,7 @@ impl<'a, V, R> ValueConsumer<'a, V, R> for OrderedLayerValues<'a, V, R> {
             let value = self.consumer.keys[idx].assume_init_read();
             let diff = self.consumer.diffs[idx].assume_init_read();
 
-            (value, diff)
+            (value, diff, ())
         }
     }
 }

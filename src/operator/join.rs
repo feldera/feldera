@@ -439,6 +439,8 @@ where
 
         Z::from_keys((), batch)
     }
+
+    // TODO: Impls using consumers
 }
 
 pub struct MonotonicJoin<F, I1, I2, Z> {

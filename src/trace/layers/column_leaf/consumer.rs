@@ -8,6 +8,10 @@ use crate::{
 use size_of::SizeOf;
 use std::mem::{size_of, MaybeUninit};
 
+// TODO: Fuzz for correctness and equivalence to Cursor
+// TODO: Fuzz `.seek_key()`
+// TODO: Fuzz for panic and drop safety
+
 #[derive(Debug)]
 pub struct ColumnLeafConsumer<K, R> {
     // Invariant: `storage.len <= self.position`, if `storage.len == self.position` the cursor is
@@ -18,8 +22,7 @@ pub struct ColumnLeafConsumer<K, R> {
 }
 
 impl<K, R> ColumnLeafConsumer<K, R> {
-    // Get a reference to all valid keys in the leaf
-    #[inline]
+    /// Get a reference to all valid keys in the leaf
     fn keys(&self) -> &[K] {
         // FIXME: MaybeUninit::slice_assume_init_ref()
         // Safety: We're just casting the valid part of the `MaybeUninit<K>` slice into
@@ -27,8 +30,7 @@ impl<K, R> ColumnLeafConsumer<K, R> {
         unsafe { &*(&self.storage.keys[self.position..] as *const [MaybeUninit<K>] as *const [K]) }
     }
 
-    // Get a reference to all valid differences in the leaf
-    #[inline]
+    /// Get a reference to all valid differences in the leaf
     fn diffs(&self) -> &[R] {
         // FIXME: MaybeUninit::slice_assume_init_ref()
         // Safety: We're just casting the valid part of the `MaybeUninit<R>` slice into
@@ -37,34 +39,39 @@ impl<K, R> ColumnLeafConsumer<K, R> {
     }
 }
 
-impl<K, R> Consumer<K, (), R> for ColumnLeafConsumer<K, R> {
+impl<K, R> Consumer<K, (), R, ()> for ColumnLeafConsumer<K, R> {
     type ValueConsumer<'a> = ColumnLeafValues<'a, K, R>
     where
         Self: 'a;
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.position < self.storage.len()
     }
 
-    #[inline]
+    fn peek_key(&self) -> &K {
+        if !self.key_valid() {
+            cursor_position_oob(self.position, self.storage.keys.len());
+        }
+
+        // Safety: The current key is valid
+        unsafe { self.storage.keys[self.position].assume_init_ref() }
+    }
+
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let idx = self.position;
-        if idx >= self.storage.len() {
+        if !self.key_valid() {
             cursor_position_oob(idx, self.storage.len());
         }
 
         // We increment position before reading out the key and diff values
         self.position += 1;
 
-        println!("yielding value {idx}");
         // Copy out the key and diff
         let key = unsafe { self.storage.keys[idx].assume_init_read() };
 
         (key, ColumnLeafValues::new(self))
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &K)
     where
         K: Ord,
@@ -81,7 +88,6 @@ impl<K, R> Consumer<K, (), R> for ColumnLeafConsumer<K, R> {
 
         // Drop the skipped elements
         unsafe {
-            println!("dropping {:?}", start_position..start_position + offset);
             self.storage
                 .drop_range(start_position..start_position + offset);
         }
@@ -120,8 +126,6 @@ where
 
 impl<K, R> Drop for ColumnLeafConsumer<K, R> {
     fn drop(&mut self) {
-        println!("dropping {:?}", self.position..);
-
         // Drop all remaining elements
         unsafe { self.storage.drop_range(self.position..) }
     }
@@ -143,14 +147,12 @@ impl<'a, K, R> ColumnLeafValues<'a, K, R> {
     }
 }
 
-impl<'a, K, R> ValueConsumer<'a, (), R> for ColumnLeafValues<'a, K, R> {
-    #[inline]
+impl<'a, K, R> ValueConsumer<'a, (), R, ()> for ColumnLeafValues<'a, K, R> {
     fn value_valid(&self) -> bool {
         !self.done
     }
 
-    #[inline]
-    fn next_value(&mut self) -> ((), R) {
+    fn next_value(&mut self) -> ((), R, ()) {
         if self.done {
             value_already_consumed();
         }
@@ -158,10 +160,9 @@ impl<'a, K, R> ValueConsumer<'a, (), R> for ColumnLeafValues<'a, K, R> {
 
         // The consumer increments `position` before creating the value consumer
         let idx = self.consumer.position - 1;
-        println!("yielding diff {idx}");
         let diff = unsafe { self.consumer.storage.diffs[idx].assume_init_read() };
 
-        ((), diff)
+        ((), diff, ())
     }
 }
 
@@ -318,7 +319,7 @@ mod tests {
             while consumer.key_valid() {
                 let (_key, mut values) = consumer.next_key();
                 while values.value_valid() {
-                    let ((), _diff) = values.next_value();
+                    let ((), _diff, ()) = values.next_value();
                 }
             }
         }

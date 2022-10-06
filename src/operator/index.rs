@@ -3,10 +3,12 @@
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, GlobalNodeId, Scope, Stream,
+        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
-    trace::{cursor::Cursor, ord::OrdIndexedZSet, Batch, BatchReader, Builder},
+    trace::{
+        cursor::Cursor, ord::OrdIndexedZSet, Batch, BatchReader, Builder, Consumer, ValueConsumer,
+    },
 };
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
@@ -134,10 +136,10 @@ where
     CO::Key: Clone,
     CO::Val: Clone,
 {
-    fn eval(&mut self, i: &CI) -> CO {
-        let mut builder = <CO as Batch>::Builder::with_capacity((), i.len());
+    fn eval(&mut self, input: &CI) -> CO {
+        let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
 
-        let mut cursor = i.cursor();
+        let mut cursor = input.cursor();
         while cursor.key_valid() {
             let (k, v) = cursor.key().clone();
             // TODO: pass key (and value?) by reference
@@ -145,12 +147,28 @@ where
             builder.push((CO::item_from(k, v), w));
             cursor.step_key();
         }
+
         builder.done()
     }
 
-    fn eval_owned(&mut self, i: CI) -> CO {
-        // TODO: owned implementation.
-        self.eval(&i)
+    fn eval_owned(&mut self, input: CI) -> CO {
+        let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
+
+        let mut consumer = input.consumer();
+        while consumer.key_valid() {
+            let ((key, value), mut values) = consumer.next_key();
+
+            debug_assert!(values.value_valid(), "found zst value with no weight");
+            let ((), weight, ()) = values.next_value();
+
+            builder.push((CO::item_from(key, value), weight));
+        }
+
+        builder.done()
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
     }
 }
 

@@ -4,7 +4,10 @@ use crate::{
     trace::{
         layers::{
             column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
-            ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
+            ordered::{
+                OrderedBuilder, OrderedCursor, OrderedLayer, OrderedLayerConsumer,
+                OrderedLayerValues,
+            },
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
         },
@@ -389,45 +392,6 @@ where
     }
 }
 
-pub struct OrdKeyConsumer<K, T, R, O> {
-    __type: PhantomData<(K, T, R, O)>,
-}
-
-impl<K, T, R, O> Consumer<K, (), R> for OrdKeyConsumer<K, T, R, O> {
-    type ValueConsumer<'a> = OrdKeyValueConsumer<'a, K, T, R, O>
-    where
-        Self: 'a;
-
-    fn key_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        todo!()
-    }
-
-    fn seek_key(&mut self, _key: &K)
-    where
-        K: Ord,
-    {
-        todo!()
-    }
-}
-
-pub struct OrdKeyValueConsumer<'a, K, T, R, O> {
-    __type: PhantomData<&'a (K, T, R, O)>,
-}
-
-impl<'a, K, T, R, O> ValueConsumer<'a, (), R> for OrdKeyValueConsumer<'a, K, T, R, O> {
-    fn value_valid(&self) -> bool {
-        todo!()
-    }
-
-    fn next_value(&mut self) -> ((), R) {
-        todo!()
-    }
-}
-
 type RawOrdKeyBuilder<K, T, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<T, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
@@ -491,5 +455,63 @@ where
             lower: Antichain::from_elem(self.time),
             upper,
         }
+    }
+}
+
+pub struct OrdKeyConsumer<K, T, R, O> {
+    consumer: OrderedLayerConsumer<K, T, R, O>,
+}
+
+impl<K, T, R, O> Consumer<K, (), R, T> for OrdKeyConsumer<K, T, R, O>
+where
+    O: OrdOffset,
+{
+    type ValueConsumer<'a> = OrdKeyValueConsumer<'a, K, T, R, O>
+    where
+        Self: 'a;
+
+    fn key_valid(&self) -> bool {
+        self.consumer.key_valid()
+    }
+
+    fn peek_key(&self) -> &K {
+        self.consumer.peek_key()
+    }
+
+    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
+        let (key, values) = self.consumer.next_key();
+        (key, OrdKeyValueConsumer::new(values))
+    }
+
+    fn seek_key(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        self.consumer.seek_key(key);
+    }
+}
+
+pub struct OrdKeyValueConsumer<'a, K, T, R, O> {
+    consumer: OrderedLayerValues<'a, T, R>,
+    __type: PhantomData<(K, O)>,
+}
+
+impl<'a, K, T, R, O> OrdKeyValueConsumer<'a, K, T, R, O> {
+    const fn new(consumer: OrderedLayerValues<'a, T, R>) -> Self {
+        Self {
+            consumer,
+            __type: PhantomData,
+        }
+    }
+}
+
+impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for OrdKeyValueConsumer<'a, K, T, R, O> {
+    fn value_valid(&self) -> bool {
+        self.consumer.value_valid()
+    }
+
+    fn next_value(&mut self) -> ((), R, T) {
+        let (time, diff, ()) = self.consumer.next_value();
+        ((), diff, time)
     }
 }

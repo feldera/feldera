@@ -148,7 +148,7 @@ where
     where
         Self: 's;
 
-    type Consumer: Consumer<Self::Key, Self::Val, Self::R>;
+    type Consumer: Consumer<Self::Key, Self::Val, Self::R, Self::Time>;
 
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
@@ -470,7 +470,7 @@ pub mod rc_blanket_impls {
         consumer: B::Consumer,
     }
 
-    impl<B> Consumer<B::Key, B::Val, B::R> for RcBatchConsumer<B>
+    impl<B> Consumer<B::Key, B::Val, B::R, B::Time> for RcBatchConsumer<B>
     where
         B: BatchReader,
     {
@@ -482,8 +482,13 @@ pub mod rc_blanket_impls {
             self.consumer.key_valid()
         }
 
+        fn peek_key(&self) -> &B::Key {
+            self.consumer.peek_key()
+        }
+
         fn next_key(&mut self) -> (B::Key, Self::ValueConsumer<'_>) {
-            todo!()
+            let (key, values) = self.consumer.next_key();
+            (key, RcBatchValueConsumer { values })
         }
 
         fn seek_key(&mut self, key: &B::Key)
@@ -498,19 +503,20 @@ pub mod rc_blanket_impls {
     where
         B: BatchReader + 'a,
     {
-        _values: <B::Consumer as Consumer<B::Key, B::Val, B::R>>::ValueConsumer<'a>,
+        #[allow(clippy::type_complexity)]
+        values: <B::Consumer as Consumer<B::Key, B::Val, B::R, B::Time>>::ValueConsumer<'a>,
     }
 
-    impl<'a, B> ValueConsumer<'a, B::Val, B::R> for RcBatchValueConsumer<'a, B>
+    impl<'a, B> ValueConsumer<'a, B::Val, B::R, B::Time> for RcBatchValueConsumer<'a, B>
     where
         B: BatchReader + 'a,
     {
         fn value_valid(&self) -> bool {
-            todo!()
+            self.values.value_valid()
         }
 
-        fn next_value(&mut self) -> (B::Val, B::R) {
-            todo!()
+        fn next_value(&mut self) -> (B::Val, B::R, B::Time) {
+            self.values.next_value()
         }
     }
 
