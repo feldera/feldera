@@ -148,7 +148,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         sanitizer: [address, thread, memory, leak]
-        target: [x86_64-unknown-linux-gnu, x86_64-apple-darwin]
+        target: [x86_64-unknown-linux-gnu] # x86_64-apple-darwin
         exclude:
           # Exclude ubuntu runs with darwin targets
           - { os: ubuntu-latest, target: x86_64-apple-darwin }
@@ -256,7 +256,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: rustdoc
-          args: --all-features -- -D warnings
+          args: --all-features --cfg docsrs -- -D warnings
 
   udeps:
     name: Unused Dependencies
