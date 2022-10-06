@@ -13,10 +13,11 @@ jobs:
   tests:
     name: Tests
 
+    needs: [clippy, fmt]
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
-      max-parallel: 3
+      fail-fast: true
+      max-parallel: 4
 
       matrix:
         # We test the following targets:
@@ -120,10 +121,10 @@ jobs:
   test-sanitizers:
     name: Sanitizer Tests
 
-    needs: tests
+    needs: [clippy, fmt]
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       max-parallel: 3
 
       # Note: We use this really sketchy matrix because msan doesn't work on macos,
