@@ -256,7 +256,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: rustdoc
-          args: --all-features --cfg docsrs -- -D warnings
+          args: --all-features -- -D warnings --cfg docsrs
 
   udeps:
     name: Unused Dependencies
