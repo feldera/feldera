@@ -1,12 +1,12 @@
 use crate::{
     algebra::{HasZero, MulByRef, ZSet},
-    circuit::GlobalNodeId,
     circuit::{
         operator_traits::{BinaryOperator, Data, Operator},
         Scope,
     },
+    circuit::{GlobalNodeId, OwnershipPreference},
     circuit_cache_key,
-    trace::{Batch, BatchReader, Builder, Cursor},
+    trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
     Circuit, Stream,
 };
 use std::{
@@ -115,9 +115,6 @@ where
         let mut builder = Out::Builder::with_capacity((), min(pairs.len(), keys.len()));
 
         // While both keys are valid
-        // TODO: Is there a better way to iterate here? `keys_cursor` is the
-        //       thing really driving this, so can we just use it as the
-        //       source of iteration to do the least work possible?
         while key_cursor.key_valid() && pair_cursor.key_valid() {
             match key_cursor.key().cmp(pair_cursor.key()) {
                 // Match up both the cursors
@@ -152,5 +149,94 @@ where
 
         // Create the output stream
         builder.done()
+    }
+
+    fn eval_owned(&mut self, pairs: Pairs, keys: Keys) -> Out {
+        // Choose capacity heuristically.
+        let mut builder = Out::Builder::with_capacity((), min(pairs.len(), keys.len()));
+
+        let mut pairs = pairs.consumer();
+        let mut keys = keys.consumer();
+
+        // While both keys are valid
+        while keys.key_valid() && pairs.key_valid() {
+            match keys.peek_key().cmp(pairs.peek_key()) {
+                // Match up both the cursors
+                Ordering::Less => keys.seek_key(pairs.peek_key()),
+                Ordering::Greater => pairs.seek_key(keys.peek_key()),
+
+                Ordering::Equal => {
+                    // Get the key's weight
+                    let (_, mut key_value) = keys.next_key();
+                    debug_assert!(key_value.value_valid());
+                    let ((), key_weight, ()) = key_value.next_value();
+
+                    // TODO: We could specialize for when pairs has a single value to add the
+                    // weights by value and to not clone pair_key
+
+                    let (pair_key, mut pair_values) = pairs.next_key();
+                    while pair_values.value_valid() {
+                        // Get the weight of the output kv pair by multiplying them together
+                        let (pair_value, pair_weight, ()) = pair_values.next_value();
+                        let kv_weight = pair_weight.mul_by_ref(&key_weight);
+
+                        // Add to our output batch
+                        builder.push((
+                            Out::item_from((pair_key.clone(), pair_value), ()),
+                            kv_weight,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Create the output stream
+        builder.done()
+    }
+
+    fn eval_owned_and_ref(&mut self, pairs: Pairs, keys: &Keys) -> Out {
+        // Choose capacity heuristically.
+        let mut builder = Out::Builder::with_capacity((), min(pairs.len(), keys.len()));
+
+        let mut pairs = pairs.consumer();
+        let mut keys = keys.cursor();
+
+        // While both keys are valid
+        while keys.key_valid() && pairs.key_valid() {
+            match keys.key().cmp(pairs.peek_key()) {
+                // Match up both the cursors
+                Ordering::Less => keys.seek_key(pairs.peek_key()),
+                Ordering::Greater => pairs.seek_key(keys.key()),
+
+                Ordering::Equal => {
+                    // Get the key's weight and its weight
+                    let key_weight = keys.weight();
+
+                    let (pair_key, mut pair_values) = pairs.next_key();
+                    while pair_values.value_valid() {
+                        // Get the weight of the output kv pair by multiplying them together
+                        let (pair_value, pair_weight, ()) = pair_values.next_value();
+                        let kv_weight = pair_weight.mul_by_ref(&key_weight);
+
+                        // Add to our output batch
+                        builder.push((
+                            Out::item_from((pair_key.clone(), pair_value), ()),
+                            kv_weight,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Create the output stream
+        builder.done()
+    }
+
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        // We get bigger gains from pairs being owned than from keys being owned
+        (
+            OwnershipPreference::WEAKLY_PREFER_OWNED,
+            OwnershipPreference::PREFER_OWNED,
+        )
     }
 }

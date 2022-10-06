@@ -3,11 +3,10 @@ use crate::{
     trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
     utils::cursor_position_oob,
 };
-use size_of::SizeOf;
 use std::fmt::{self, Display};
 
 /// A cursor for walking through an [`OrderedColumnLeaf`].
-#[derive(Debug, Clone, SizeOf)]
+#[derive(Debug, Clone)]
 pub struct ColumnLeafCursor<'s, K, R>
 where
     K: Ord + Clone,
