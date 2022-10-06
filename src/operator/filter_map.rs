@@ -373,7 +373,7 @@ where
             // it has either zero or one values, meaning that it'll skip any additional
             // values
             if (self.filter)(&key) && values.value_valid() {
-                let (value, weight) = values.next_value();
+                let (value, weight, ()) = values.next_value();
                 builder.push((CO::item_from(key, value), weight));
             }
         }
@@ -466,7 +466,7 @@ where
             let (key, mut values) = consumer.next_key();
 
             while values.value_valid() {
-                let (value, diff) = values.next_value();
+                let (value, diff, ()) = values.next_value();
 
                 if (self.filter)((&key, &value)) {
                     builder.push((CO::item_from(key.clone(), value), diff));
@@ -610,7 +610,7 @@ where
             // it has either zero or one values, meaning that it'll skip any additional
             // values
             if values.value_valid() {
-                let (value, weight) = values.next_value();
+                let (value, weight, ()) = values.next_value();
                 batch.push((CO::item_from((self.map_owned)(key), value), weight));
             }
         }

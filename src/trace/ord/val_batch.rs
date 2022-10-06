@@ -524,12 +524,16 @@ pub struct OrdValConsumer<K, V, T, R, O> {
     __type: PhantomData<(K, V, T, R, O)>,
 }
 
-impl<K, V, T, R, O> Consumer<K, V, R> for OrdValConsumer<K, V, T, R, O> {
+impl<K, V, T, R, O> Consumer<K, V, R, T> for OrdValConsumer<K, V, T, R, O> {
     type ValueConsumer<'a> = OrdValValueConsumer<'a, K, V, T, R, O>
     where
         Self: 'a;
 
     fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn peek_key(&self) -> &K {
         todo!()
     }
 
@@ -549,12 +553,12 @@ pub struct OrdValValueConsumer<'a, K, V, T, R, O> {
     __type: PhantomData<&'a (K, V, T, R, O)>,
 }
 
-impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R> for OrdValValueConsumer<'a, K, V, T, R, O> {
+impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R, T> for OrdValValueConsumer<'a, K, V, T, R, O> {
     fn value_valid(&self) -> bool {
         todo!()
     }
 
-    fn next_value(&mut self) -> (V, R) {
+    fn next_value(&mut self) -> (V, R, T) {
         todo!()
     }
 }

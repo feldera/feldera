@@ -34,7 +34,6 @@ pub struct OrderedColumnLeaf<K, R> {
 
 impl<K, R> OrderedColumnLeaf<K, R> {
     /// Create an empty `OrderedColumnLeaf`
-    #[inline]
     pub const fn empty() -> Self {
         Self {
             keys: Vec::new(),
@@ -43,7 +42,6 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     }
 
     /// Get the length of the current leaf
-    #[inline]
     #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         unsafe { self.assume_invariants() }
@@ -51,21 +49,18 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     }
 
     /// Get mutable references to the current leaf's keys and differences
-    #[inline]
     pub(crate) fn columns_mut(&mut self) -> (&mut [K], &mut [R]) {
         unsafe { self.assume_invariants() }
         (&mut self.keys, &mut self.diffs)
     }
 
     /// Get a mutable reference to the current leaf's key values
-    #[inline]
     pub(crate) fn keys_mut(&mut self) -> &mut [K] {
         unsafe { self.assume_invariants() }
         &mut self.keys
     }
 
     /// Get a mutable reference to the current leaf's difference values
-    #[inline]
     #[doc(hidden)]
     pub fn diffs_mut(&mut self) -> &mut [R] {
         unsafe { self.assume_invariants() }
@@ -73,7 +68,6 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     }
 
     /// Truncate the elements of the current leaf
-    #[inline]
     pub(crate) fn truncate(&mut self, length: usize) {
         unsafe { self.assume_invariants() }
         self.keys.truncate(length);
@@ -86,14 +80,12 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     /// # Safety
     ///
     /// Requires that `keys` and `diffs` have the exact same length
-    #[inline]
     pub(in crate::trace::layers) unsafe fn assume_invariants(&self) {
         assume(self.keys.len() == self.diffs.len())
     }
 
     /// Turns the current `OrderedColumnLeaf<K, V>` into a leaf of
     /// [`MaybeUninit`] values
-    #[inline]
     pub(in crate::trace::layers) fn into_uninit(
         self,
     ) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {

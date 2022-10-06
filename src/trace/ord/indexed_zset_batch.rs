@@ -508,7 +508,7 @@ pub struct OrdIndexedZSetConsumer<K, V, R, O> {
     consumer: OrderedLayerConsumer<K, V, R, O>,
 }
 
-impl<K, V, R, O> Consumer<K, V, R> for OrdIndexedZSetConsumer<K, V, R, O>
+impl<K, V, R, O> Consumer<K, V, R, ()> for OrdIndexedZSetConsumer<K, V, R, O>
 where
     O: OrdOffset,
 {
@@ -516,18 +516,19 @@ where
     where
         Self: 'a;
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.consumer.key_valid()
     }
 
-    #[inline]
+    fn peek_key(&self) -> &K {
+        self.consumer.peek_key()
+    }
+
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, consumer) = self.consumer.next_key();
         (key, OrdIndexedZSetValueConsumer::new(consumer))
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &K)
     where
         K: Ord,
@@ -551,14 +552,12 @@ impl<'a, K, V, R, O> OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
     }
 }
 
-impl<'a, K, V, R, O> ValueConsumer<'a, V, R> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
-    #[inline]
+impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
     }
 
-    #[inline]
-    fn next_value(&mut self) -> (V, R) {
+    fn next_value(&mut self) -> (V, R, ()) {
         self.consumer.next_value()
     }
 }

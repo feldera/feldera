@@ -375,7 +375,7 @@ where
     __type: PhantomData<B>,
 }
 
-impl<B> Consumer<B::Key, B::Val, B::R> for SpineConsumer<B>
+impl<B> Consumer<B::Key, B::Val, B::R, B::Time> for SpineConsumer<B>
 where
     B: Batch,
 {
@@ -384,6 +384,10 @@ where
         Self: 'a;
 
     fn key_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn peek_key(&self) -> &B::Key {
         todo!()
     }
 
@@ -403,7 +407,7 @@ pub struct SpineValueConsumer<'a, B> {
     __type: PhantomData<&'a B>,
 }
 
-impl<'a, B> ValueConsumer<'a, B::Val, B::R> for SpineValueConsumer<'a, B>
+impl<'a, B> ValueConsumer<'a, B::Val, B::R, B::Time> for SpineValueConsumer<'a, B>
 where
     B: Batch,
 {
@@ -411,7 +415,7 @@ where
         todo!()
     }
 
-    fn next_value(&mut self) -> (B::Val, B::R) {
+    fn next_value(&mut self) -> (B::Val, B::R, B::Time) {
         todo!()
     }
 }

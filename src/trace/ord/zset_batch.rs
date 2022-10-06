@@ -416,23 +416,24 @@ pub struct OrdZSetConsumer<K, R> {
     consumer: ColumnLeafConsumer<K, R>,
 }
 
-impl<K, R> Consumer<K, (), R> for OrdZSetConsumer<K, R> {
+impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
     type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
     where
         Self: 'a;
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.consumer.key_valid()
     }
 
-    #[inline]
+    fn peek_key(&self) -> &K {
+        self.consumer.peek_key()
+    }
+
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, values) = self.consumer.next_key();
         (key, OrdZSetValueConsumer { values })
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &K)
     where
         K: Ord,
@@ -446,14 +447,12 @@ pub struct OrdZSetValueConsumer<'a, K, R> {
     values: ColumnLeafValues<'a, K, R>,
 }
 
-impl<'a, K, R> ValueConsumer<'a, (), R> for OrdZSetValueConsumer<'a, K, R> {
-    #[inline]
+impl<'a, K, R> ValueConsumer<'a, (), R, ()> for OrdZSetValueConsumer<'a, K, R> {
     fn value_valid(&self) -> bool {
         self.values.value_valid()
     }
 
-    #[inline]
-    fn next_value(&mut self) -> ((), R) {
+    fn next_value(&mut self) -> ((), R, ()) {
         self.values.next_value()
     }
 }
