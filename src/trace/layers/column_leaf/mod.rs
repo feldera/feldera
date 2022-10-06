@@ -4,6 +4,7 @@
 mod builders;
 mod consumer;
 mod cursor;
+mod tests;
 
 pub use builders::{OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder};
 pub use consumer::{ColumnLeafConsumer, ColumnLeafValues};
