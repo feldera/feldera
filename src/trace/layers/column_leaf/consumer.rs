@@ -5,8 +5,7 @@ use crate::{
     },
     utils::cursor_position_oob,
 };
-use size_of::SizeOf;
-use std::mem::{size_of, MaybeUninit};
+use std::mem::MaybeUninit;
 
 // TODO: Fuzz for correctness and equivalence to Cursor
 // TODO: Fuzz `.seek_key()`
@@ -19,24 +18,6 @@ pub struct ColumnLeafConsumer<K, R> {
     position: usize,
     // Invariant: `storage.keys[position..]` and `storage.diffs[position..]` are all valid
     storage: OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>>,
-}
-
-impl<K, R> ColumnLeafConsumer<K, R> {
-    /// Get a reference to all valid keys in the leaf
-    fn keys(&self) -> &[K] {
-        // FIXME: MaybeUninit::slice_assume_init_ref()
-        // Safety: We're just casting the valid part of the `MaybeUninit<K>` slice into
-        // a slice of `K`
-        unsafe { &*(&self.storage.keys[self.position..] as *const [MaybeUninit<K>] as *const [K]) }
-    }
-
-    /// Get a reference to all valid differences in the leaf
-    fn diffs(&self) -> &[R] {
-        // FIXME: MaybeUninit::slice_assume_init_ref()
-        // Safety: We're just casting the valid part of the `MaybeUninit<R>` slice into
-        // a slice of `R`
-        unsafe { &*(&self.storage.diffs[self.position..] as *const [MaybeUninit<R>] as *const [R]) }
-    }
 }
 
 impl<K, R> Consumer<K, (), R, ()> for ColumnLeafConsumer<K, R> {
@@ -104,26 +85,6 @@ impl<K, R> From<OrderedColumnLeaf<K, R>> for ColumnLeafConsumer<K, R> {
     }
 }
 
-// We use a custom SizeOf impl to properly
-// FIXME: Doesn't take into account excess capacity allocated by vecs
-impl<K, R> SizeOf for ColumnLeafConsumer<K, R>
-where
-    K: SizeOf,
-    R: SizeOf,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        // We incur two allocations from the two vecs within `OrderedColumnLeaf`
-        context.add_distinct_allocations(2);
-
-        // We count the invalid prefix as excess space
-        context.add_excess((size_of::<K>() + size_of::<R>()) * self.position);
-
-        // Then we get the sizes of all valid elements
-        self.keys().size_of_children(context);
-        self.diffs().size_of_children(context);
-    }
-}
-
 impl<K, R> Drop for ColumnLeafConsumer<K, R> {
     fn drop(&mut self) {
         // Drop all remaining elements
@@ -131,7 +92,7 @@ impl<K, R> Drop for ColumnLeafConsumer<K, R> {
     }
 }
 
-#[derive(Debug, SizeOf)]
+#[derive(Debug)]
 pub struct ColumnLeafValues<'a, K, R> {
     done: bool,
     consumer: &'a mut ColumnLeafConsumer<K, R>,

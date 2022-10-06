@@ -349,7 +349,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Tuple
 ///
 /// This cursor does not support `seek`, though I'm not certain how to expose
 /// this.
-#[derive(Clone, Debug, SizeOf)]
+#[derive(Clone, Debug)]
 pub struct OrderedLeafCursor<'s, K, R>
 where
     K: Eq + Ord + Clone,
