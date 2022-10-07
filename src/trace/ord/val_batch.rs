@@ -403,11 +403,13 @@ where
     }
     fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
         self.cursor.child.child.rewind();
-        while self.cursor.child.child.valid() && self.cursor.child.child.key().0.less_equal(upper) {
-            logic(
-                self.cursor.child.child.current_key(),
-                self.cursor.child.child.current_diff(),
-            );
+        while self.cursor.child.child.valid() {
+            if self.cursor.child.child.key().0.less_equal(upper) {
+                logic(
+                    self.cursor.child.child.current_key(),
+                    self.cursor.child.child.current_diff(),
+                );
+            }
             self.cursor.child.child.step();
         }
     }

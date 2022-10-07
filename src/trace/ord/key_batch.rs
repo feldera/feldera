@@ -337,11 +337,13 @@ where
 
     fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
         self.cursor.child.rewind();
-        while self.cursor.child.valid() && self.cursor.child.key().0.less_equal(upper) {
-            logic(
-                self.cursor.child.current_key(),
-                self.cursor.child.current_diff(),
-            );
+        while self.cursor.child.valid() {
+            if self.cursor.child.key().0.less_equal(upper) {
+                logic(
+                    self.cursor.child.current_key(),
+                    self.cursor.child.current_diff(),
+                );
+            }
             self.cursor.child.step();
         }
     }
