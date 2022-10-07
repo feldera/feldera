@@ -673,141 +673,182 @@ mod test {
         operator::GeneratorNested,
         operator::{Fold, Min},
         time::NestedTimestamp32,
-        zset, zset_set, Circuit, OrdIndexedZSet, Runtime, Stream,
+        trace::{cursor::Cursor, Batch, BatchReader},
+        zset, Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
     };
 
-    fn do_aggregate_test_mt(workers: usize) {
-        let hruntime = Runtime::run(workers, || {
-            aggregate_test_st();
-        });
+    type TestZSet = OrdZSet<(usize, isize), isize>;
 
-        hruntime.join().unwrap();
-    }
+    fn aggregate_test_circuit(circuit: &mut Circuit<()>, inputs: Vec<Vec<TestZSet>>) {
+        let mut inputs = inputs.into_iter();
 
-    #[test]
-    fn aggregate_test_mt() {
-        do_aggregate_test_mt(1);
-        do_aggregate_test_mt(2);
-        do_aggregate_test_mt(4);
-        do_aggregate_test_mt(16);
-    }
+        circuit
+            .iterate(|child| {
+                let counter = Rc::new(RefCell::new(0));
+                let counter_clone = counter.clone();
 
-    #[test]
-    fn aggregate_test_st() {
-        let root = Circuit::build(move |circuit| {
-            let mut inputs = vec![
-                vec![
-                    zset_set! { (1, 10), (1, 20), (5, 1) },
-                    zset! { (2, 10) => 1, (1, 10) => -1, (1, 20) => 1, (3, 10) => 1, (5, 1) => 1 },
-                ],
-                vec![
-                    zset! { (4, 20) => 1, (2, 10) => -1 },
-                    zset_set! { (5, 10), (6, 10) },
-                ],
-                vec![],
-            ]
-            .into_iter();
+                let input = child
+                    .add_source(GeneratorNested::new(Box::new(move || {
+                        *counter_clone.borrow_mut() = 0;
+                        if Runtime::worker_index() == 0 {
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                        } else {
+                            Box::new(|| zset! {})
+                        }
+                    })))
+                    .index();
 
-            circuit
-                .iterate(|child| {
-                    let counter = Rc::new(RefCell::new(0));
-                    let counter_clone = counter.clone();
+                // Weighted sum aggregate.
+                let sum = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                    0,
+                    |acc: &mut isize, v: &isize, w: isize| *acc += *v * w,
+                );
 
-                    let input = child
-                        .add_source(GeneratorNested::new(Box::new(move || {
-                            *counter_clone.borrow_mut() = 0;
-                            if Runtime::worker_index() == 0 {
-                                let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                                Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
-                            } else {
-                                Box::new(|| zset! {})
-                            }
-                        })))
-                        .index();
+                // Weighted sum aggregate that returns only the weighted sum
+                // value and is therefore linear.
+                let sum_linear = |_key: &usize, val: &isize| -> isize { *val };
 
-                    // Weighted sum aggregate.
-                    let sum = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
-                        0,
-                        |acc: &mut isize, v: &usize, w: isize| *acc += (*v as isize) * w,
-                    );
+                let sum_inc = input
+                    .aggregate::<NestedTimestamp32, _>(sum.clone())
+                    .gather(0);
+                let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> = input
+                    .aggregate_linear::<NestedTimestamp32, _, _>(sum_linear)
+                    .gather(0);
+                let sum_noninc = input
+                    .integrate_nested()
+                    .integrate()
+                    .stream_aggregate(sum)
+                    .differentiate()
+                    .differentiate_nested()
+                    .gather(0);
 
-                    // Weighted sum aggregate that returns only the weighted sum
-                    // value and is therefore linear.
-                    let sum_linear = |_key: &usize, val: &usize| -> isize { *val as isize };
-
-                    let sum_inc = input
-                        .aggregate::<NestedTimestamp32, _>(sum.clone())
-                        .gather(0);
-                    let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> = input
-                        .aggregate_linear::<NestedTimestamp32, _, _>(sum_linear)
-                        .gather(0);
-                    let sum_noninc = input
-                        .integrate_nested()
-                        .integrate()
-                        .stream_aggregate(sum)
-                        .differentiate()
-                        .differentiate_nested()
-                        .gather(0);
-
-                    // Compare outputs of all three implementations.
-                    sum_inc
-                        .apply2(
-                            &sum_noninc,
-                            |d1: &OrdIndexedZSet<usize, isize, isize>,
-                             d2: &OrdIndexedZSet<usize, isize, isize>| {
-                                (d1.clone(), d2.clone())
-                            },
-                        )
-                        .inspect(|(d1, d2)| {
-                            //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
-                            //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
-                            assert_eq!(d1, d2);
-                        });
-
-                    sum_inc.apply2(
-                        &sum_inc_linear,
+                // Compare outputs of all three implementations.
+                sum_inc
+                    .apply2(
+                        &sum_noninc,
                         |d1: &OrdIndexedZSet<usize, isize, isize>,
                          d2: &OrdIndexedZSet<usize, isize, isize>| {
-                            assert_eq!(d1, d2);
+                            (d1.clone(), d2.clone())
                         },
-                    );
+                    )
+                    .inspect(|(d1, d2)| {
+                        //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
+                        //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
+                        assert_eq!(d1, d2);
+                    });
 
-                    let min_inc = input.aggregate::<NestedTimestamp32, _>(Min).gather(0);
-                    let min_noninc = input
-                        .integrate_nested()
-                        .integrate()
-                        .stream_aggregate(Min)
-                        .differentiate()
-                        .differentiate_nested()
-                        .gather(0);
+                sum_inc.apply2(
+                    &sum_inc_linear,
+                    |d1: &OrdIndexedZSet<usize, isize, isize>,
+                     d2: &OrdIndexedZSet<usize, isize, isize>| {
+                        // println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
+                        // println!("{}: linear: {:?}", Runtime::worker_index(), d2);
 
-                    min_inc
-                        .apply2(
-                            &min_noninc,
-                            |d1: &OrdIndexedZSet<usize, usize, isize>,
-                             d2: &OrdIndexedZSet<usize, usize, isize>| {
-                                (d1.clone(), d2.clone())
-                            },
-                        )
-                        .inspect(|(d1, d2)| {
-                            assert_eq!(d1, d2);
-                        });
+                        // Compare d1 and d2 modulo 0 values (linear aggregation removes them
+                        // from the collection).
+                        let mut cursor1 = d1.cursor();
+                        let mut cursor2 = d2.cursor();
 
-                    Ok((
-                        move || {
-                            *counter.borrow_mut() += 1;
-                            Ok(*counter.borrow() == 4)
+                        while cursor1.key_valid() {
+                            while cursor1.val_valid() {
+                                if *cursor1.val() != 0 {
+                                    assert!(cursor2.key_valid());
+                                    assert_eq!(cursor2.key(), cursor1.key());
+                                    assert!(cursor2.val_valid());
+                                    assert_eq!(cursor2.val(), cursor1.val());
+                                    assert_eq!(cursor2.weight(), cursor1.weight());
+                                    cursor2.step_val();
+                                }
+
+                                cursor1.step_val();
+                            }
+
+                            if cursor2.key_valid() && cursor2.key() == cursor1.key() {
+                                cursor2.step_key();
+                            }
+
+                            cursor1.step_key();
+                        }
+                        assert!(!cursor2.key_valid());
+                    },
+                );
+
+                let min_inc = input.aggregate::<NestedTimestamp32, _>(Min).gather(0);
+                let min_noninc = input
+                    .integrate_nested()
+                    .integrate()
+                    .stream_aggregate(Min)
+                    .differentiate()
+                    .differentiate_nested()
+                    .gather(0);
+
+                min_inc
+                    .apply2(
+                        &min_noninc,
+                        |d1: &OrdIndexedZSet<usize, isize, isize>,
+                         d2: &OrdIndexedZSet<usize, isize, isize>| {
+                            (d1.clone(), d2.clone())
                         },
-                        (),
-                    ))
-                })
-                .unwrap();
-        })
-        .unwrap()
-        .0;
+                    )
+                    .inspect(|(d1, d2)| {
+                        assert_eq!(d1, d2);
+                    });
 
-        for _ in 0..3 {
-            root.step().unwrap();
+                Ok((
+                    move || {
+                        *counter.borrow_mut() += 1;
+                        Ok(*counter.borrow() == 4)
+                    },
+                    (),
+                ))
+            })
+            .unwrap();
+    }
+
+    use proptest::{collection, prelude::*};
+
+    const MAX_ROUNDS: usize = 15;
+    const MAX_ITERATIONS: usize = 15;
+    const NUM_KEYS: usize = 5;
+    const MAX_VAL: isize = 3;
+    const MAX_TUPLES: usize = 10;
+
+    fn test_zset() -> impl Strategy<Value = TestZSet> {
+        collection::vec(
+            ((0..NUM_KEYS, -MAX_VAL..MAX_VAL), -1..=1isize),
+            0..MAX_TUPLES,
+        )
+        .prop_map(|tuples| OrdZSet::from_tuples((), tuples))
+    }
+    fn test_input() -> impl Strategy<Value = Vec<Vec<TestZSet>>> {
+        collection::vec(
+            collection::vec(test_zset(), 0..MAX_ITERATIONS),
+            0..MAX_ROUNDS,
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_aggregate_test_st(inputs in test_input()) {
+            let iterations = inputs.len();
+            let circuit = Circuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+            }
+        }
+
+        #[test]
+        fn proptest_aggregate_test_mt(inputs in test_input(), workers in (2..=16usize)) {
+            let iterations = inputs.len();
+            let mut circuit = Runtime::init_circuit(workers, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+            }
+
+            circuit.kill().unwrap();
         }
     }
 

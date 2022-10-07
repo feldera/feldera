@@ -3077,8 +3077,8 @@ impl Drop for CircuitHandle {
     fn drop(&mut self) {
         self.circuit
             .log_scheduler_event(&SchedulerEvent::clock_end());
-        
-        // Prevent nested panic when `drop` is invoked while panicing
+
+        // Prevent nested panic when `drop` is invoked while panicking
         // and `clock_end` triggers another panic due to violated invariants
         // since the original panic interrupted normal execution.
         if !panicking() {
