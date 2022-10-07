@@ -1,6 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, GroupValue, HasZero, IndexedZSet, MulByRef, NegByRef},
-    operator::FilterMap,
+    trace::layers::{column_leaf::OrderedColumnLeaf, ordered::OrderedLayer},
+    utils::VecExt,
     Circuit, OrdIndexedZSet, Stream, Timestamp,
 };
 use size_of::SizeOf;
@@ -131,7 +132,7 @@ where
     /// # Design
     ///
     /// Average is a quasi-linear aggregate, meaning that it can be efficiently
-    /// computed as a compositon of two linear aggregates: sum and count.
+    /// computed as a composition of two linear aggregates: sum and count.
     /// The `(sum, count)` pair with pair-wise operations is also a linear
     /// aggregate and can be computed with a single
     /// [`Stream::aggregate_linear`] operator. The actual average is
@@ -153,11 +154,58 @@ where
         let aggregate =
             self.aggregate_linear::<TS, _, _>(move |key, val| Avg::new(f(key, val), 1isize));
 
-        // TODO: We can probably use some sort of `.map_index_owned()` here since in all
-        // likelihood we'll be the only consumer of the aggregated value
-        // (meaning we wouldn't need to clone the average's sum and would be
-        // able to elide one clone of the key value)
-        let average = aggregate.map_index(|(k, avg)| (k.clone(), (avg.sum.clone()) / avg.count));
+        // We're the only possible consumer of the aggregated stream so we can use an
+        // owned consumer to skip any cloning
+        let average = aggregate.apply_owned_named("MapAverage", |aggregate| {
+            /* The boring, semi-naive way to do this
+
+            // Create a builder with the proper capacity, we don't alter the keys so we can
+            // take advantage of a builder instead of a batcher
+            let mut builder = <OrdIndexedZSet<Z::Key, A, isize> as Batch>::Builder::with_capacity(
+                (),
+                aggregate.len(),
+            );
+
+            // We use a consumer to avoid any clones
+            let mut consumer = aggregate.consumer();
+            while consumer.key_valid() {
+                let (key, mut values) = consumer.next_key();
+
+                // Each key should have a single value
+                debug_assert_eq!(values.remaining_values(), 1);
+                let (average, weight, ()) = values.next_value();
+
+                builder.push(((key, average.sum / average.count), weight));
+            }
+
+            builder.done()
+            */
+
+            // Break the given `OrdIndexedZSet` into its components
+            let OrderedLayer { keys, offs, vals } = aggregate.layer;
+            let (aggregates, diffs) = vals.into_parts();
+
+            // Average out the aggregated values
+            // TODO: If we stored `Avg<A>` as two columns (one of `sum: A` and one of
+            // `count: isize`) we could even reuse the `sum` vec by doing the division in
+            // place (and we even could do it with simd depending on `A`'s type)
+            let mut averages = Vec::with_capacity(aggregates.len());
+            for Avg { sum, count } in aggregates {
+                // Safety: We allocated the correct capacity for `aggregate_values`
+                unsafe { averages.push_unchecked(sum / count) };
+            }
+
+            // Safety: `averages.len() == diffs.len()`
+            let averages = unsafe { OrderedColumnLeaf::from_parts(averages, diffs) };
+
+            // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
+            // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them
+            // or even touch their memory
+            OrdIndexedZSet {
+                // Safety: `keys.len() + 1 == offs.len()`
+                layer: unsafe { OrderedLayer::from_parts(keys, offs, averages) },
+            }
+        });
 
         // Note: Currently `.aggregate_linear()` is always sharded, but we just do this
         // check so that we don't get any unpleasant surprises if that ever changes

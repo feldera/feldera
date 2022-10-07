@@ -37,7 +37,7 @@ where
     O: OrdOffset,
 {
     /// Where all the data is.
-    pub layer: Layers<K, V, R, O>,
+    pub(crate) layer: Layers<K, V, R, O>,
 }
 
 impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
@@ -559,5 +559,9 @@ impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for OrdIndexedZSetValueConsumer
 
     fn next_value(&mut self) -> (V, R, ()) {
         self.consumer.next_value()
+    }
+
+    fn remaining_values(&self) -> usize {
+        self.consumer.remaining_values()
     }
 }

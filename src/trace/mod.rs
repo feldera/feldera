@@ -518,6 +518,10 @@ pub mod rc_blanket_impls {
         fn next_value(&mut self) -> (B::Val, B::R, B::Time) {
             self.values.next_value()
         }
+
+        fn remaining_values(&self) -> usize {
+            self.values.remaining_values()
+        }
     }
 
     /// An immutable collection of updates.

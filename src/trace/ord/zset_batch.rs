@@ -455,4 +455,8 @@ impl<'a, K, R> ValueConsumer<'a, (), R, ()> for OrdZSetValueConsumer<'a, K, R> {
     fn next_value(&mut self) -> ((), R, ()) {
         self.values.next_value()
     }
+
+    fn remaining_values(&self) -> usize {
+        self.values.remaining_values()
+    }
 }

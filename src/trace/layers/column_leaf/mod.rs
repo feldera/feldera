@@ -42,6 +42,21 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         }
     }
 
+    /// Breaks an `OrderedColumnLeaf` into its component parts
+    pub fn into_parts(self) -> (Vec<K>, Vec<R>) {
+        (self.keys, self.diffs)
+    }
+
+    /// Creates a new `OrderedColumnLeaf` from the given keys and diffs
+    ///
+    /// # Safety
+    ///
+    /// `keys` and `diffs` must have the same length
+    pub unsafe fn from_parts(keys: Vec<K>, diffs: Vec<R>) -> Self {
+        debug_assert_eq!(keys.len(), diffs.len());
+        Self { keys, diffs }
+    }
+
     /// Get the length of the current leaf
     #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
