@@ -54,6 +54,7 @@ use std::{
     marker::PhantomData,
     panic::Location,
     rc::Rc,
+    thread::panicking,
 };
 use typedmap::{TypedMap, TypedMapKey};
 
@@ -3076,7 +3077,13 @@ impl Drop for CircuitHandle {
     fn drop(&mut self) {
         self.circuit
             .log_scheduler_event(&SchedulerEvent::clock_end());
-        unsafe { self.circuit.clock_end(0) }
+        
+        // Prevent nested panic when `drop` is invoked while panicing
+        // and `clock_end` triggers another panic due to violated invariants
+        // since the original panic interrupted normal execution.
+        if !panicking() {
+            unsafe { self.circuit.clock_end(0) }
+        }
 
         // We must explicitly deallocate all nodes in the circuit to break
         // cyclic `Rc` references between circuits and streams.  Alternatively,
