@@ -418,6 +418,10 @@ where
     fn next_value(&mut self) -> (B::Val, B::R, B::Time) {
         todo!()
     }
+
+    fn remaining_values(&self) -> usize {
+        todo!()
+    }
 }
 
 impl<B> Default for Spine<B>

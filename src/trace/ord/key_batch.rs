@@ -514,4 +514,8 @@ impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for OrdKeyValueConsumer<'a, K, 
         let (time, diff, ()) = self.consumer.next_value();
         ((), diff, time)
     }
+
+    fn remaining_values(&self) -> usize {
+        self.consumer.remaining_values()
+    }
 }

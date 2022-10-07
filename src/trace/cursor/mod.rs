@@ -146,6 +146,9 @@ pub trait ValueConsumer<'a, V, R, T> {
     // TODO: Maybe this should yield another consumer for `(R, T)` pairs
     fn next_value(&mut self) -> (V, R, T);
 
+    /// Provides the number of remaining values
+    fn remaining_values(&self) -> usize;
+
     // TODO: Seek value method?
 }
 

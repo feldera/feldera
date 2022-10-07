@@ -125,6 +125,10 @@ impl<'a, K, R> ValueConsumer<'a, (), R, ()> for ColumnLeafValues<'a, K, R> {
 
         ((), diff, ())
     }
+
+    fn remaining_values(&self) -> usize {
+        !self.done as usize
+    }
 }
 
 impl<'a, K, R> Drop for ColumnLeafValues<'a, K, R> {

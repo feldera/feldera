@@ -32,18 +32,28 @@ use textwrap::indent;
 #[derive(Debug, SizeOf, PartialEq, Eq, Clone)]
 pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
-    pub keys: Vec<K>,
+    pub(crate) keys: Vec<K>,
     /// The offsets associate with each key.
     ///
     /// The bounds for `keys[i]` are `(offs[i], offs[i+1]`). The offset array is
     /// guaranteed to be one element longer than the keys array, ensuring
     /// that these accesses do not panic.
-    pub offs: Vec<O>,
+    pub(crate) offs: Vec<O>,
     /// The ranges of values associated with the keys.
-    pub vals: L,
+    pub(crate) vals: L,
 }
 
 impl<K, L, O> OrderedLayer<K, L, O> {
+    /// Create a new `OrderedLayer` from its component parts
+    ///
+    /// # Safety
+    ///
+    /// `keys` must have a length of `offs.len() + 1`
+    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L) -> Self {
+        debug_assert_eq!(keys.len() + 1, offs.len());
+        Self { keys, offs, vals }
+    }
+
     /// Assume the invariants of the current builder
     ///
     /// # Safety
@@ -912,6 +922,10 @@ impl<'a, V, R> ValueConsumer<'a, V, R, ()> for OrderedLayerValues<'a, V, R> {
 
             (value, diff, ())
         }
+    }
+
+    fn remaining_values(&self) -> usize {
+        self.end - self.current
     }
 }
 

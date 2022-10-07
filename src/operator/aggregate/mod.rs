@@ -44,6 +44,7 @@ pub use min::Min;
 /// This is a low-level trait that is mostly used to build libraries of
 /// aggregators.  Users will typicaly work with ready-made implementations
 /// like [`Min`] and [`Fold`].
+// TODO: Owned aggregation using `Consumer`
 pub trait Aggregator<K, T, R> {
     /// Aggregate type output by this aggregator.
     type Output;

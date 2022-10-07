@@ -561,4 +561,8 @@ impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R, T> for OrdValValueConsumer<'a, K
     fn next_value(&mut self) -> (V, R, T) {
         todo!()
     }
+
+    fn remaining_values(&self) -> usize {
+        todo!()
+    }
 }
