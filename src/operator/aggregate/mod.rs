@@ -264,20 +264,22 @@ where
         O: Clone + Batch<Key = Z::Key, Val = (), Time = ()> + 'static,
         O::R: MulByRef<Z::R, Output = O::R>,
     {
-        let output = self.try_sharded_version().apply(move |batch| {
-            let mut delta = <O::Builder>::with_capacity((), batch.key_count());
-            let mut cursor = batch.cursor();
-            while cursor.key_valid() {
-                let mut agg = HasZero::zero();
-                while cursor.val_valid() {
-                    agg += f(cursor.key(), cursor.val()).mul_by_ref(&cursor.weight());
-                    cursor.step_val();
+        let output = self
+            .try_sharded_version()
+            .apply_named("Weigh", move |batch| {
+                let mut delta = <O::Builder>::with_capacity((), batch.key_count());
+                let mut cursor = batch.cursor();
+                while cursor.key_valid() {
+                    let mut agg = HasZero::zero();
+                    while cursor.val_valid() {
+                        agg += f(cursor.key(), cursor.val()).mul_by_ref(&cursor.weight());
+                        cursor.step_val();
+                    }
+                    delta.push((O::item_from(cursor.key().clone(), ()), agg));
+                    cursor.step_key();
                 }
-                delta.push((O::item_from(cursor.key().clone(), ()), agg));
-                cursor.step_key();
-            }
-            delta.done()
-        });
+                delta.done()
+            });
 
         output.mark_sharded_if(self);
         output
