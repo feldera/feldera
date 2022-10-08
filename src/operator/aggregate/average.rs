@@ -155,61 +155,90 @@ where
 
         // We're the only possible consumer of the aggregated stream so we can use an
         // owned consumer to skip any cloning
-        let average = aggregate.apply_owned_named("MapAverage", |aggregate| {
-            /* The boring, semi-naive way to do this
-
-            // Create a builder with the proper capacity, we don't alter the keys so we can
-            // take advantage of a builder instead of a batcher
-            let mut builder = <OrdIndexedZSet<Z::Key, A, isize> as Batch>::Builder::with_capacity(
-                (),
-                aggregate.len(),
-            );
-
-            // We use a consumer to avoid any clones
-            let mut consumer = aggregate.consumer();
-            while consumer.key_valid() {
-                let (key, mut values) = consumer.next_key();
-
-                // Each key should have a single value
-                debug_assert_eq!(values.remaining_values(), 1);
-                let (average, weight, ()) = values.next_value();
-
-                builder.push(((key, average.sum / average.count), weight));
-            }
-
-            builder.done()
-            */
-
-            // Break the given `OrdIndexedZSet` into its components
-            let OrderedLayer { keys, offs, vals } = aggregate.layer;
-            let (aggregates, diffs) = vals.into_parts();
-
-            // Average out the aggregated values
-            // TODO: If we stored `Avg<A>` as two columns (one of `sum: A` and one of
-            // `count: isize`) we could even reuse the `sum` vec by doing the division in
-            // place (and we even could do it with simd depending on `A`'s type)
-            let mut averages = Vec::with_capacity(aggregates.len());
-            for Avg { sum, count } in aggregates {
-                // Safety: We allocated the correct capacity for `aggregate_values`
-                unsafe { averages.push_unchecked(sum / count) };
-            }
-
-            // Safety: `averages.len() == diffs.len()`
-            let averages = unsafe { OrderedColumnLeaf::from_parts(averages, diffs) };
-
-            // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
-            // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them
-            // or even touch their memory
-            OrdIndexedZSet {
-                // Safety: `keys.len() + 1 == offs.len()`
-                layer: unsafe { OrderedLayer::from_parts(keys, offs, averages) },
-            }
-        });
+        let average = aggregate.apply_owned_named("ApplyAverage", apply_average);
 
         // Note: Currently `.aggregate_linear()` is always sharded, but we just do this
         // check so that we don't get any unpleasant surprises if that ever changes
         average.mark_sharded_if(&aggregate);
 
         average
+    }
+}
+
+/// The gist of what we're doing here is this:
+///
+/// - We receive an owned `OrdIndexedZSet` so we can do whatever we want with it
+/// - `OrdIndexedZSet` consists of four discrete vectors of values, a `Vec<K>`
+///   of keys, a `Vec<usize>` of value offsets, a `Vec<Avg<A>>` of average
+///   aggregates and a `Vec<isize>` of differences
+/// - Of these only one vector needs to be changed in *any* way: The
+///   `Vec<Avg<A>>` needs to be transformed into a `Vec<A>`
+/// - So following this fact, the other three vectors never need to be touched
+/// - Ergo, we simply reuse those three untouched vectors in our output
+///   `OrdIndexedZSet`, requiring us to do the minimum of work: dividing all of
+///   our sums by all of our counts within the `Vec<Avg<A>>` to produce our
+///   output `Vec<A>`
+///
+/// Note that unfortunately we can't reuse the `Vec<Avg<A>>`'s allocation here
+/// since an `Avg<A>` will never have the same size as an `A` due to `Avg<A>`
+/// containing an extra `isize` field
+fn apply_average<K, A>(aggregate: OrdIndexedZSet<K, Avg<A>, isize>) -> OrdIndexedZSet<K, A, isize>
+where
+    K: Ord,
+    A: Div<isize, Output = A> + Ord,
+{
+    // Break the given `OrdIndexedZSet` into its components
+    let OrderedLayer { keys, offs, vals } = aggregate.layer;
+    let (aggregates, diffs) = vals.into_parts();
+
+    // Average out the aggregated values
+    // TODO: If we stored `Avg<A>` as two columns (one of `sum: A` and one of
+    // `count: isize`) we could even reuse the `sum` vec by doing the division in
+    // place (and we even could do it with simd depending on `A`'s type)
+    let mut averages = Vec::with_capacity(aggregates.len());
+    for Avg { sum, count } in aggregates {
+        // TODO: This can technically use an unchecked division (or an
+        // `assume(count != 0)` call since `.div_unchecked()` is unstable) since `count`
+        // should never be zero since zeroed elements are removed from zsets
+        debug_assert_ne!(count, 0);
+
+        // Safety: We allocated the correct capacity for `aggregate_values`
+        unsafe { averages.push_unchecked(sum / count) };
+    }
+
+    // Safety: `averages.len() == diffs.len()`
+    let averages = unsafe { OrderedColumnLeaf::from_parts(averages, diffs) };
+
+    // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
+    // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them
+    // or even touch their memory
+    OrdIndexedZSet {
+        // Safety: `keys.len() + 1 == offs.len()`
+        layer: unsafe { OrderedLayer::from_parts(keys, offs, averages) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        indexed_zset,
+        operator::aggregate::average::{apply_average, Avg},
+    };
+
+    #[test]
+    fn apply_average_smoke() {
+        let input = indexed_zset! {
+            0 => { Avg::new(1000, 10) => 1 },
+            1 => { Avg::new(1, 1) => -12 },
+            1000 => { Avg::new(200, 20) => 544 },
+        };
+        let expected = indexed_zset! {
+            0 => { 100 => 1 },
+            1 => { 1 => -12 },
+            1000 => { 10 => 544 },
+        };
+
+        let output = apply_average(input);
+        assert_eq!(output, expected);
     }
 }
