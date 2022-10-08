@@ -802,10 +802,10 @@ where
         let num_partitions = self.num_partitions();
 
         if num_partitions > 1 {
-            self.input_handle.update_for_worker(
-                (((self.hash_func)(&k) as usize) % num_partitions) as usize,
-                |tuples| tuples.push((k, v)),
-            );
+            self.input_handle
+                .update_for_worker(((self.hash_func)(&k) as usize) % num_partitions, |tuples| {
+                    tuples.push((k, v))
+                });
         } else {
             self.input_handle
                 .update_for_worker(0, |tuples| tuples.push((k, v)));
