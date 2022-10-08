@@ -143,11 +143,10 @@ where
     where
         TS: Timestamp + SizeOf,
         Z: IndexedZSet,
-        Z::Key: PartialEq + Ord + SizeOf + Hash + Clone + SizeOf + Send,
+        Z::Key: PartialEq + Ord + Hash + SizeOf + Clone + Send,
         Z::Val: Ord + SizeOf + Clone,
         Avg<A>: MulByRef<Z::R, Output = Avg<A>>,
-        A: GroupValue + SizeOf + Ord + Send + Clone,
-        A: Div<isize, Output = A>,
+        A: Div<isize, Output = A> + Ord + GroupValue + SizeOf + Clone + Send,
         isize: MulByRef<Z::R, Output = isize>,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
     {
