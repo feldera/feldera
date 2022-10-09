@@ -120,10 +120,11 @@ where
 
                         let output_trace = circuit.add_binary_operator_with_preference(
                             <UntimedTraceAppend<Spine<O>>>::new(),
-                            &output_trace_delayed,
-                            &output,
-                            OwnershipPreference::STRONGLY_PREFER_OWNED,
-                            OwnershipPreference::PREFER_OWNED,
+                            (
+                                &output_trace_delayed,
+                                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                            ),
+                            (&output, OwnershipPreference::PREFER_OWNED),
                         );
                         z1feedback.connect_with_preference(
                             &output_trace,

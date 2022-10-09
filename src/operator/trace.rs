@@ -80,10 +80,11 @@ where
                         circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<T, B>>::new(),
-                        &local,
-                        &self.try_sharded_version(),
-                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                        OwnershipPreference::PREFER_OWNED,
+                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (
+                            &self.try_sharded_version(),
+                            OwnershipPreference::PREFER_OWNED,
+                        ),
                     );
                     if self.has_sharded_version() {
                         local.mark_sharded();
@@ -122,10 +123,11 @@ where
 
                     let trace = circuit.add_binary_operator_with_preference(
                         UntimedTraceAppend::<Spine<B>>::new(),
-                        &local,
-                        &self.try_sharded_version(),
-                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                        OwnershipPreference::PREFER_OWNED,
+                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (
+                            &self.try_sharded_version(),
+                            OwnershipPreference::PREFER_OWNED,
+                        ),
                     );
 
                     if self.has_sharded_version() {

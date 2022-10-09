@@ -1313,10 +1313,8 @@ where
         let (pref1, pref2) = operator.input_preference();
         self.add_binary_operator_with_preference(
             operator,
-            input_stream1,
-            input_stream2,
-            pref1,
-            pref2,
+            (input_stream1, pref1),
+            (input_stream2, pref2),
         )
     }
 
@@ -1326,10 +1324,8 @@ where
     pub fn add_binary_operator_with_preference<I1, I2, O, Op>(
         &self,
         operator: Op,
-        input_stream1: &Stream<Self, I1>,
-        input_stream2: &Stream<Self, I2>,
-        input_preference1: OwnershipPreference,
-        input_preference2: OwnershipPreference,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
     ) -> Stream<Self, O>
     where
         I1: Data,
@@ -1337,6 +1333,9 @@ where
         O: Data,
         Op: BinaryOperator<I1, I2, O>,
     {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
@@ -1376,12 +1375,9 @@ where
         let (pref1, pref2, pref3) = operator.input_preference();
         self.add_ternary_operator_with_preference(
             operator,
-            input_stream1,
-            input_stream2,
-            input_stream3,
-            pref1,
-            pref2,
-            pref3,
+            (input_stream1, pref1),
+            (input_stream2, pref2),
+            (input_stream3, pref3),
         )
     }
 
@@ -1391,12 +1387,9 @@ where
     pub fn add_ternary_operator_with_preference<I1, I2, I3, O, Op>(
         &self,
         operator: Op,
-        input_stream1: &Stream<Self, I1>,
-        input_stream2: &Stream<Self, I2>,
-        input_stream3: &Stream<Self, I3>,
-        input_preference1: OwnershipPreference,
-        input_preference2: OwnershipPreference,
-        input_preference3: OwnershipPreference,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
     ) -> Stream<Self, O>
     where
         I1: Data,
@@ -1405,6 +1398,10 @@ where
         O: Data,
         Op: TernaryOperator<I1, I2, I3, O>,
     {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+        let (input_stream3, input_preference3) = input_stream3;
+
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),
@@ -1448,14 +1445,10 @@ where
         let (pref1, pref2, pref3, pref4) = operator.input_preference();
         self.add_quaternary_operator_with_preference(
             operator,
-            input_stream1,
-            input_stream2,
-            input_stream3,
-            input_stream4,
-            pref1,
-            pref2,
-            pref3,
-            pref4,
+            (input_stream1, pref1),
+            (input_stream2, pref2),
+            (input_stream3, pref3),
+            (input_stream4, pref4),
         )
     }
 
@@ -1465,14 +1458,10 @@ where
     pub fn add_quaternary_operator_with_preference<I1, I2, I3, I4, O, Op>(
         &self,
         operator: Op,
-        input_stream1: &Stream<Self, I1>,
-        input_stream2: &Stream<Self, I2>,
-        input_stream3: &Stream<Self, I3>,
-        input_stream4: &Stream<Self, I4>,
-        input_preference1: OwnershipPreference,
-        input_preference2: OwnershipPreference,
-        input_preference3: OwnershipPreference,
-        input_preference4: OwnershipPreference,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+        input_stream4: (&Stream<Self, I4>, OwnershipPreference),
     ) -> Stream<Self, O>
     where
         I1: Data,
@@ -1482,6 +1471,11 @@ where
         O: Data,
         Op: QuaternaryOperator<I1, I2, I3, I4, O>,
     {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+        let (input_stream3, input_preference3) = input_stream3;
+        let (input_stream4, input_preference4) = input_stream4;
+
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 GlobalNodeId::child_of(self, id),

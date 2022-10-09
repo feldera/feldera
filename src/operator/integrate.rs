@@ -90,10 +90,11 @@ where
                     let feedback = DelayedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(
                         <Plus<D>>::new(),
-                        feedback.stream(),
-                        self,
-                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                        OwnershipPreference::PREFER_OWNED,
+                        (
+                            feedback.stream(),
+                            OwnershipPreference::STRONGLY_PREFER_OWNED,
+                        ),
+                        (self, OwnershipPreference::PREFER_OWNED),
                     );
                     feedback.connect(&integral);
                     integral
@@ -139,10 +140,11 @@ where
                     let feedback = DelayedNestedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(
                         Plus::new(),
-                        feedback.stream(),
-                        self,
-                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                        OwnershipPreference::PREFER_OWNED,
+                        (
+                            feedback.stream(),
+                            OwnershipPreference::STRONGLY_PREFER_OWNED,
+                        ),
+                        (self, OwnershipPreference::PREFER_OWNED),
                     );
                     feedback.connect(&integral);
                     integral
