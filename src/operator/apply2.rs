@@ -43,10 +43,8 @@ where
     {
         self.circuit().add_binary_operator_with_preference(
             Apply2Owned::new(func, Location::caller()),
-            self,
-            other,
-            OwnershipPreference::STRONGLY_PREFER_OWNED,
-            OwnershipPreference::INDIFFERENT,
+            (self, OwnershipPreference::STRONGLY_PREFER_OWNED),
+            (other, OwnershipPreference::INDIFFERENT),
         )
     }
 }

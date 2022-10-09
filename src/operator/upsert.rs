@@ -79,10 +79,11 @@ where
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<Spine<TS::OrdValBatch<K, V, B::R>>, B>>::new(),
-                &local,
-                &delta.try_sharded_version(),
-                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                OwnershipPreference::PREFER_OWNED,
+                (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                (
+                    &delta.try_sharded_version(),
+                    OwnershipPreference::PREFER_OWNED,
+                ),
             );
             trace.mark_sharded_if(self);
 
