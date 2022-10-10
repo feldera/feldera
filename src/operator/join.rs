@@ -10,7 +10,7 @@ use crate::{
     time::Timestamp,
     trace::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
-        Trace, TraceReader,
+        Trace,
     },
     OrdIndexedZSet, OrdZSet,
 };
@@ -549,7 +549,7 @@ impl JoinStats {
 
 pub struct JoinTrace<F, I, T, Z, It>
 where
-    T: TraceReader,
+    T: BatchReader,
     Z: IndexedZSet,
 {
     join_func: F,
@@ -569,7 +569,7 @@ where
 
 impl<F, I, T, Z, It> JoinTrace<F, I, T, Z, It>
 where
-    T: TraceReader,
+    T: BatchReader,
     Z: IndexedZSet,
 {
     pub fn new(join_func: F, location: &'static Location<'static>) -> Self {
@@ -590,7 +590,7 @@ impl<F, I, T, Z, It> Operator for JoinTrace<F, I, T, Z, It>
 where
     F: 'static,
     I: 'static,
-    T: TraceReader + 'static,
+    T: BatchReader + 'static,
     Z: IndexedZSet,
     Z::Batcher: SizeOf,
     It: 'static,

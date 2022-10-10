@@ -25,40 +25,14 @@ use crate::{
 };
 use size_of::SizeOf;
 
-/// A trace whose contents may be read.
-///
-/// This is a restricted interface to the more general `Trace` trait, which
-/// extends this trait with further methods to update the contents of the trace.
-/// These methods are used to examine the contents, and to update the reader's
-/// capabilities (which may release restrictions on the mutations to the
-/// underlying trace and cause work to happen).
-pub trait TraceReader: BatchReader {
-    /// The type of an immutable collection of updates.
-    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R> + 'static;
-
-    // TODO: Do we want a version of `cursor` with an upper bound on time?  E.g., it
-    // could help in `distinct` to avoid iterating into the future (and then
-    // drop future timestamps anyway).
-    /*
-    /// Acquires a cursor to the restriction of the collection's contents to updates at times not greater or
-    /// equal to an element of `upper`.
-    ///
-    /// This method is expected to work if called with an `upper` that (i) was an observed bound in batches from
-    /// the trace, and (ii) the trace has not been advanced beyond `upper`. Practically, the implementation should
-    /// be expected to look for a "clean cut" using `upper`, and if it finds such a cut can return a cursor. This
-    /// should allow `upper` such as `&[]` as used by `self.cursor()`, though it is difficult to imagine other uses.
-    fn cursor_through(&self, upper: AntichainRef<Self::Time>) -> Option<(Self::Cursor, <Self::Cursor as Cursor<Self::Key, Self::Val, Self::Time, Self::R>>::Storage)>;
-    */
-
-    /// Maps logic across the non-empty sequence of batches in the trace.
-    fn map_batches<F: FnMut(&Self::Batch)>(&self, f: F);
-}
-
 /// An append-only collection of `(key, val, time, diff)` tuples.
 ///
 /// The trace must be constructable from, and navigable by the `Key`, `Val`,
 /// `Time` types, but does not need to return them.
-pub trait Trace: TraceReader {
+pub trait Trace: BatchReader {
+    /// The type of an immutable collection of updates.
+    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R> + 'static;
+
     /// Allocates a new empty trace.
     fn new(activator: Option<Activator>) -> Self;
 

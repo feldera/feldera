@@ -5,7 +5,7 @@ use crate::{
         Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
-    trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace, TraceReader},
+    trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
     NumEntries, Timestamp,
 };
 use size_of::SizeOf;
@@ -154,7 +154,7 @@ where
 impl<P, T> Stream<Circuit<P>, T>
 where
     P: Clone + 'static,
-    T: TraceReader + 'static,
+    T: Trace + 'static,
 {
     pub fn delay_trace(&self) -> Stream<Circuit<P>, T> {
         self.circuit()
@@ -168,14 +168,14 @@ where
 
 pub struct UntimedTraceAppend<T>
 where
-    T: TraceReader,
+    T: Trace,
 {
     _phantom: PhantomData<T>,
 }
 
 impl<T> UntimedTraceAppend<T>
 where
-    T: TraceReader,
+    T: Trace,
 {
     pub fn new() -> Self {
         Self {
@@ -186,7 +186,7 @@ where
 
 impl<T> Default for UntimedTraceAppend<T>
 where
-    T: TraceReader,
+    T: Trace,
 {
     fn default() -> Self {
         Self::new()
@@ -195,7 +195,7 @@ where
 
 impl<T> Operator for UntimedTraceAppend<T>
 where
-    T: TraceReader + 'static,
+    T: Trace + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
@@ -241,7 +241,7 @@ where
 
 pub struct TraceAppend<T, B>
 where
-    T: TraceReader,
+    T: Trace,
 {
     time: T::Time,
     _phantom: PhantomData<B>,
@@ -249,7 +249,7 @@ where
 
 impl<T, B> TraceAppend<T, B>
 where
-    T: TraceReader,
+    T: Trace,
 {
     pub fn new() -> Self {
         Self {
@@ -261,7 +261,7 @@ where
 
 impl<T, B> Default for TraceAppend<T, B>
 where
-    T: TraceReader,
+    T: Trace,
 {
     fn default() -> Self {
         Self::new()
@@ -270,7 +270,7 @@ where
 
 impl<T, B> Operator for TraceAppend<T, B>
 where
-    T: TraceReader + 'static,
+    T: Trace + 'static,
     B: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -325,7 +325,7 @@ where
     }
 }
 
-pub struct Z1Trace<T: TraceReader> {
+pub struct Z1Trace<T: Trace> {
     time: T::Time,
     trace: Option<T>,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
