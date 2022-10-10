@@ -70,7 +70,6 @@ pub use product::Product;
 /// (i.e., the current parent clock cycle) from older values.  They therefore
 /// take advantage of the lossy timestamp representation implemented by the
 /// `NestedTimestamp32` type.
-// TODO: Eliminate timely dependency.
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp:
@@ -133,7 +132,7 @@ pub trait Timestamp:
     ///
     /// Push `self` back by one clock cycle by decrementing the clock at the
     /// specified nesting level by one.  `scope` identifies the nesting
-    /// level of the circuit whoce clock is ticking. `0` refers to the
+    /// level of the circuit whose clock is ticking. `0` refers to the
     /// innermost circuit.  `1` is its parent circuit, etc.
     ///
     /// While time does not normally flow backward in DBSP, it is sometimes
