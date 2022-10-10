@@ -6,8 +6,8 @@ use crate::{
     },
     operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
     trace::{
-        consolidation::consolidate, cursor::Cursor, spine_fueled::Spine, Batch, Builder, Trace,
-        TraceReader,
+        consolidation::consolidate, cursor::Cursor, spine_fueled::Spine, Batch, BatchReader,
+        Builder, Trace,
     },
     utils::VecExt,
     Circuit, Stream, Timestamp,
@@ -98,7 +98,7 @@ where
 
 pub struct Upsert<T, B>
 where
-    T: TraceReader,
+    T: BatchReader,
 {
     time: T::Time,
     phantom: PhantomData<B>,
@@ -106,7 +106,7 @@ where
 
 impl<T, B> Upsert<T, B>
 where
-    T: TraceReader,
+    T: BatchReader,
 {
     pub fn new() -> Self {
         Self {
@@ -118,7 +118,7 @@ where
 
 impl<T, B> Default for Upsert<T, B>
 where
-    T: TraceReader,
+    T: BatchReader,
 {
     fn default() -> Self {
         Self::new()
@@ -127,7 +127,7 @@ where
 
 impl<T, B> Operator for Upsert<T, B>
 where
-    T: TraceReader + 'static,
+    T: BatchReader + 'static,
     B: 'static,
 {
     fn name(&self) -> Cow<'static, str> {

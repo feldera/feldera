@@ -85,7 +85,7 @@ use crate::{
     trace::{
         cursor::{Cursor, CursorList},
         rc_blanket_impls::RcBatchCursor,
-        Batch, BatchReader, Consumer, Merger, Trace, TraceReader, ValueConsumer,
+        Batch, BatchReader, Consumer, Merger, Trace, ValueConsumer,
     },
     NumEntries,
 };
@@ -238,15 +238,11 @@ where
     }
 }
 
-impl<B> TraceReader for Spine<B>
+impl<B> Spine<B>
 where
     B: Batch + 'static,
-    B::Key: Ord,
-    B::Val: Ord,
 {
-    type Batch = B;
-
-    fn map_batches<F: FnMut(&Self::Batch)>(&self, mut f: F) {
+    fn map_batches<F: FnMut(&B)>(&self, mut f: F) {
         for batch in self.merging.iter().rev() {
             match batch {
                 MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
@@ -438,6 +434,8 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
+    type Batch = B;
+
     fn new(activator: Option<Activator>) -> Self {
         Self::with_effort(1, activator)
     }
@@ -476,7 +474,7 @@ where
         }
     }
 
-    fn consolidate(mut self) -> Option<Self::Batch> {
+    fn consolidate(mut self) -> Option<B> {
         // Merge batches until there is nothing left to merge.
         let mut fuel = isize::max_value();
         while !self.reduced() {
@@ -865,7 +863,7 @@ where
 
     /// Mutate all batches.  Can only be invoked when there are no in-progress
     /// matches in the trait.
-    fn map_batches_mut<F: FnMut(&mut <Self as TraceReader>::Batch)>(&mut self, mut f: F) {
+    fn map_batches_mut<F: FnMut(&mut <Self as Trace>::Batch)>(&mut self, mut f: F) {
         for batch in self.merging.iter_mut().rev() {
             match batch {
                 MergeState::Double(MergeVariant::InProgress(_batch1, _batch2, _)) => {

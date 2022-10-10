@@ -9,17 +9,16 @@ use crate::{
     },
     circuit_cache_key,
     time::NestedTimestamp32,
-    trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace, TraceReader},
+    trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace},
     NumEntries, Timestamp,
 };
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
-    cmp::{max, Ordering},
-    collections::BTreeSet,
+    cmp::Ordering,
+    collections::{BTreeSet, HashMap},
     hash::Hash,
     marker::PhantomData,
-    mem::take,
     ops::{Add, Neg},
 };
 
@@ -299,12 +298,12 @@ where
 pub struct DistinctTrace<Z, T>
 where
     Z: ZSet,
-    T: TraceReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
 {
     // Keeps track of keys that need to be considered at future times.
     // Specifically, `future_updates[i]` accumulates all keys observed during
     // the current epoch whose weight can change at time `i`.
-    future_updates: Vec<BTreeSet<Z::Key>>,
+    future_updates: HashMap<u32, BTreeSet<Z::Key>>,
     // TODO: not needed once timekeeping is handled by the circuit.
     time: u32,
     empty_input: bool,
@@ -315,12 +314,12 @@ where
 impl<Z, T> DistinctTrace<Z, T>
 where
     Z: ZSet,
-    T: TraceReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
     T::Time: Timestamp,
 {
     fn new() -> Self {
         Self {
-            future_updates: Vec::new(),
+            future_updates: HashMap::new(),
             time: HasZero::zero(),
             empty_input: false,
             empty_output: false,
@@ -334,7 +333,7 @@ where
     Z: ZSet,
     Z::Key: Clone + Ord + PartialEq,
     Z::R: ZRingValue,
-    T: TraceReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
 {
     // Evaluate nested incremental distinct for a single value.
     //
@@ -446,7 +445,10 @@ where
             // Record next_ts in `self.future_updates`.
             if let Some(next_ts) = next_ts {
                 let idx: usize = next_ts.inner() as usize;
-                self.future_updates[idx].insert(value.clone());
+                self.future_updates
+                    .entry(idx as u32)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(value.clone());
             }
         } else if weight.ge0() && !weight.is_zero() {
             builder.push((Z::item_from(value.clone(), ()), HasOne::one()));
@@ -458,14 +460,14 @@ impl<Z, T> Operator for DistinctTrace<Z, T>
 where
     Z: ZSet,
     Z::Key: SizeOf + Clone + Ord + PartialEq,
-    T: TraceReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctTrace")
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let size: usize = self.future_updates.iter().map(BTreeSet::len).sum();
+        let size: usize = self.future_updates.values().map(BTreeSet::len).sum();
         let bytes = self.future_updates.size_of();
 
         meta.extend(metadata! {
@@ -495,11 +497,7 @@ where
         assert_eq!(scope, 0);
         self.empty_input
             && self.empty_output
-            && self
-                .future_updates
-                .iter()
-                .skip(self.time as usize)
-                .all(|vals| vals.is_empty())
+            && self.future_updates.values().all(|vals| vals.is_empty())
     }
 }
 
@@ -527,7 +525,7 @@ where
     //   appeared in one of the previous epochs at time `t`.
     //
     // To efficiently compute keys that satisfy the second condition, we use the
-    // `future_updates` vector, where for each key observed in the current epoch
+    // `future_updates` map, where for each key observed in the current epoch
     // at time `t1` we lookup the smallest time `t2 > t1` (if any) at which we saw
     // the key during any previous epochs and record this key in
     // `future_updates[t2]`. Then when evaluating an operatpr at time `t` we
@@ -541,26 +539,13 @@ where
 
         self.empty_input = delta.is_zero();
 
-        // Make sure we have enough room in `future_updates` to
-        // accommodate the largest timestamp in the trace, so we don't
-        // need to worry about growing `future_updates` later on.
-        let mut new_len: u32 = self.time + 1;
-        trace.map_batches(|batch| {
-            for ts in batch.upper() {
-                new_len = max(new_len, ts.inner() + 1);
-            }
-        });
-
-        self.future_updates
-            .resize(new_len as usize, BTreeSet::new());
-
         let mut builder = Z::Builder::with_capacity((), delta.len());
 
         let mut trace_cursor = trace.cursor();
 
         // For all keys in delta, for all keys in future_updates[time].
         let mut delta_cursor = delta.cursor();
-        let candidates = take(&mut self.future_updates[self.time as usize]);
+        let candidates = self.future_updates.remove(&self.time).unwrap_or_default();
         let mut cand_iterator = candidates.iter();
 
         let mut candidate = cand_iterator.next();
