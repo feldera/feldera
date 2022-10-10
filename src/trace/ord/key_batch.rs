@@ -381,7 +381,14 @@ where
     }
 
     fn seek_val(&mut self, _val: &()) {}
-
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&()) -> bool + Clone,
+    {
+        if !predicate(&()) {
+            self.valid = false;
+        }
+    }
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
         self.valid = true;

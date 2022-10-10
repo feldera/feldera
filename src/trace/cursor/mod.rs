@@ -106,6 +106,12 @@ pub trait Cursor<'s, K, V, T, R> {
     /// Advances the cursor to the specified value.
     fn seek_val(&mut self, val: &V);
 
+    /// Move the cursor to the first value (for the current key) that satisfies
+    /// `predicate`.  Assumes that `predicate` remains true once it turns true.
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone;
+
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self);
 

@@ -28,7 +28,7 @@ mod plus;
 mod semijoin;
 mod stream_fold;
 mod sum;
-mod time_series;
+pub mod time_series;
 mod trace;
 mod z1;
 
