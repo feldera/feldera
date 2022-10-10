@@ -165,6 +165,25 @@ where
         }
     }
 
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        match self.key_order {
+            Ordering::Less => self.cursor1.seek_val_with(predicate),
+            Ordering::Equal => {
+                self.cursor1.seek_val_with(predicate.clone());
+                self.cursor2.seek_val_with(predicate);
+                self.val_order = match (self.cursor1.val_valid(), self.cursor2.val_valid()) {
+                    (false, _) => Ordering::Greater,
+                    (_, false) => Ordering::Less,
+                    (true, true) => self.cursor1.val().cmp(self.cursor2.val()),
+                };
+            }
+            Ordering::Greater => self.cursor2.seek_val_with(predicate),
+        }
+    }
+
     // rewinding methods
     fn rewind_keys(&mut self) {
         self.cursor1.rewind_keys();

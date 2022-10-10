@@ -52,6 +52,15 @@ where
     }
 
     #[inline]
+    pub fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool,
+    {
+        unsafe { self.storage.assume_invariants() }
+        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], predicate);
+    }
+
+    #[inline]
     pub fn current_key(&self) -> &K {
         &self.storage.keys[self.pos]
     }

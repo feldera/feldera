@@ -11,6 +11,7 @@ use std::{cmp::min, marker::PhantomData};
 ///
 /// This is a highly efficient aggregator, as it only scans the input
 /// Z-set until hitting the first non-zero weight.
+#[derive(Clone)]
 pub struct Min;
 
 pub struct MinSemigroup<V>(PhantomData<V>);

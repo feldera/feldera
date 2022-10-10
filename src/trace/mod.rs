@@ -451,6 +451,13 @@ pub mod rc_blanket_impls {
         fn seek_val(&mut self, val: &B::Val) {
             self.cursor.seek_val(val)
         }
+        #[inline]
+        fn seek_val_with<P>(&mut self, predicate: P)
+        where
+            P: Fn(&B::Val) -> bool + Clone,
+        {
+            self.cursor.seek_val_with(predicate)
+        }
 
         #[inline]
         fn rewind_keys(&mut self) {

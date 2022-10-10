@@ -439,6 +439,14 @@ where
     }
 
     #[inline]
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        self.cursor.child.seek_key_with(predicate);
+    }
+
+    #[inline]
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
     }

@@ -18,6 +18,7 @@ use std::{convert::identity, marker::PhantomData};
 /// # Type arguments
 ///
 /// * `A` - accumulator
+/// * `S` - semigroup structure used to compute aggregates piecewise
 /// * `SF` - step function
 /// * `OF` - output function
 #[derive(Clone)]
@@ -63,9 +64,9 @@ where
     T: Timestamp,
     R: MonoidValue,
     A: Clone,
-    SF: Fn(&mut A, &V, R),
-    OF: Fn(A) -> O,
-    S: Semigroup<O>,
+    SF: Fn(&mut A, &V, R) + Clone,
+    OF: Fn(A) -> O + Clone,
+    S: Semigroup<O> + Clone,
 {
     type Output = O;
     type Semigroup = S;

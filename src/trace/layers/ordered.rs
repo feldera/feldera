@@ -664,6 +664,27 @@ where
     }
 }
 
+impl<'s, K, L, O> OrderedCursor<'s, K, O, L>
+where
+    K: Ord,
+    L: Trie,
+    O: OrdOffset,
+{
+    pub fn seek_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool,
+    {
+        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], predicate);
+
+        if self.valid() {
+            self.child.reposition(
+                self.storage.offs[self.pos].into_usize(),
+                self.storage.offs[self.pos + 1].into_usize(),
+            );
+        }
+    }
+}
+
 impl<'s, K, L, O> Cursor<'s> for OrderedCursor<'s, K, O, L>
 where
     K: Ord,

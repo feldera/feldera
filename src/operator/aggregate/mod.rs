@@ -45,7 +45,7 @@ pub use min::Min;
 /// aggregators.  Users will typicaly work with ready-made implementations
 /// like [`Min`] and [`Fold`].
 // TODO: Owned aggregation using `Consumer`
-pub trait Aggregator<K, T, R> {
+pub trait Aggregator<K, T, R>: Clone {
     /// Aggregate type output by this aggregator.
     type Output;
 
@@ -84,6 +84,7 @@ pub trait Aggregator<K, T, R> {
 
 /// Aggregator used internally by [`Stream::aggregate_linear`].  Computes
 /// the total sum of weights.
+#[derive(Clone)]
 struct WeightedCount;
 
 impl<T, R> Aggregator<(), T, R> for WeightedCount

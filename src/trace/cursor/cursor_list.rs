@@ -192,6 +192,16 @@ where
         self.minimize_vals();
     }
 
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        for &index in self.min_key.iter() {
+            self.cursors[index].seek_val_with(predicate.clone());
+        }
+        self.minimize_vals();
+    }
+
     // rewinding methods
     #[inline]
     fn rewind_keys(&mut self) {

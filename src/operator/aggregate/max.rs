@@ -8,6 +8,7 @@ use std::{cmp::max, marker::PhantomData};
 
 /// An [aggregator](`crate::operator::Aggregator`) that returns the
 /// largest value with non-zero weight.
+#[derive(Clone)]
 pub struct Max;
 
 pub struct MaxSemigroup<V>(PhantomData<V>);

@@ -93,6 +93,16 @@ where
     fn seek_val(&mut self, _val: &()) {}
 
     #[inline]
+    fn seek_val_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&()) -> bool + Clone,
+    {
+        if !predicate(&()) {
+            self.val_valid = false;
+        }
+    }
+
+    #[inline]
     fn rewind_keys(&mut self) {
         self.base.rewind_vals();
     }
