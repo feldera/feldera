@@ -117,3 +117,6 @@ For further options that you can use with the Nexmark benchmark,
 ```shell
 cargo bench --bench nexmark --features with-nexmark -- --help
 ```
+
+An extensive blog post about the implementation of Nexmark in DBSP:
+<https://liveandletlearn.net/post/vmware-take-3-experience-with-rust-and-dbsp/>
