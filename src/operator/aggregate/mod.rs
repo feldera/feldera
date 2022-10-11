@@ -23,9 +23,8 @@ use crate::{
         spine_fueled::Spine,
         Batch, BatchReader, Builder,
     },
-    DBData, DBTimestamp, DBWeight, NumEntries, OrdIndexedZSet, OrdZSet,
+    DBData, DBTimestamp, DBWeight, OrdIndexedZSet, OrdZSet,
 };
-use size_of::SizeOf;
 
 // Some standard aggregators.
 mod average;
@@ -127,7 +126,7 @@ where
         aggregator: A,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
-        Z: IndexedZSet + Send + 'static,
+        Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R> + 'static,
         A::Output: DBData,
     {
@@ -137,10 +136,10 @@ where
     /// Like [`Self::stream_aggregate`], but can return any batch type.
     pub fn stream_aggregate_generic<A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
     where
-        Z: IndexedZSet + Send + 'static,
+        Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R> + 'static,
-        O: Clone + IndexedZSet<Key = Z::Key, Val = A::Output> + 'static,
-        O::R: DBData + ZRingValue,
+        O: IndexedZSet<Key = Z::Key, Val = A::Output>,
+        O::R: ZRingValue,
     {
         self.circuit()
             .add_unary_operator(Aggregate::new(aggregator), &self.shard())
@@ -159,7 +158,7 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
         TS: DBTimestamp,
-        Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
+        Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
         A::Output: DBData,
     {
@@ -170,12 +169,11 @@ where
     pub fn aggregate_generic<TS, A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
     where
         TS: DBTimestamp,
-        Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
-        Z::R: DBData,                                /* + std::fmt::Display */
+        Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
-        A::Output: DBData, /* + std::fmt::Display */
-        O: Batch<Key = Z::Key, Val = A::Output, Time = ()> + Clone + 'static,
-        O::R: DBData + ZRingValue, /* + std::fmt::Display */
+        A::Output: DBData,
+        O: Batch<Key = Z::Key, Val = A::Output, Time = ()>,
+        O::R: ZRingValue,
     {
         let circuit = self.circuit();
         let stream = self.shard();
@@ -228,9 +226,9 @@ where
         TS: DBTimestamp,
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> O::Val + Clone + 'static,
-        O: Clone + Batch<Key = Z::Key, Time = ()> + 'static,
-        O::R: DBData + ZRingValue, /* + std::fmt::Display */
-        O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue, /* + std::fmt::Display */
+        O: Batch<Key = Z::Key, Time = ()>,
+        O::R: ZRingValue,
+        O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue,
     {
         self.weigh(f).aggregate_generic::<TS, _, _>(WeightedCount)
     }
@@ -261,7 +259,7 @@ where
     where
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> O::R + 'static,
-        O: Clone + Batch<Key = Z::Key, Val = (), Time = ()> + 'static,
+        O: Batch<Key = Z::Key, Val = (), Time = ()>,
         O::R: MulByRef<Z::R, Output = O::R>,
     {
         let output = self
@@ -317,9 +315,9 @@ where
 
 impl<Z, A, O> UnaryOperator<Z, O> for Aggregate<Z, A, O>
 where
-    Z: IndexedZSet + 'static,
+    Z: IndexedZSet,
     A: Aggregator<Z::Val, (), Z::R> + 'static,
-    O: Clone + IndexedZSet<Key = Z::Key, Val = A::Output> + 'static,
+    O: IndexedZSet<Key = Z::Key, Val = A::Output>,
     O::R: ZRingValue,
 {
     fn eval(&mut self, i: &Z) -> O {
@@ -561,8 +559,8 @@ where
 impl<Z, IT, A> BinaryOperator<Z, IT, Vec<(Z::Key, Option<A::Output>)>>
     for AggregateIncremental<Z, IT, A>
 where
-    Z: IndexedZSet + 'static,
-    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone + 'static,
+    Z: IndexedZSet,
+    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone,
     A: Aggregator<Z::Val, IT::Time, Z::R> + 'static,
     A::Output: DBData,
 {

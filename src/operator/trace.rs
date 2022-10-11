@@ -6,7 +6,7 @@ use crate::{
     },
     circuit_cache_key,
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
-    NumEntries, Timestamp,
+    Timestamp,
 };
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
@@ -67,9 +67,7 @@ where
     pub fn trace<T>(&self) -> Stream<Circuit<P>, T>
     where
         B: BatchReader<Time = ()>,
-        B::Key: Clone,
-        B::Val: Clone,
-        T: NumEntries + SizeOf + Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone + 'static,
+        T: Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone,
     {
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
@@ -108,9 +106,7 @@ where
     #[track_caller]
     pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<B>>
     where
-        B: Batch + SizeOf,
-        B::Key: Ord,
-        B::Val: Ord,
+        B: Batch,
         Spine<B>: SizeOf,
     {
         self.circuit()
@@ -286,10 +282,8 @@ where
 
 impl<T, B> BinaryOperator<T, B, T> for TraceAppend<T, B>
 where
-    B: BatchReader<Time = ()> + 'static,
-    B::Key: Clone,
-    B::Val: Clone,
-    T: Trace<Key = B::Key, Val = B::Val, R = B::R> + 'static,
+    B: BatchReader<Time = ()>,
+    T: Trace<Key = B::Key, Val = B::Val, R = B::R>,
 {
     fn eval(&mut self, _trace: &T, _batch: &B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
@@ -352,7 +346,7 @@ where
 
 impl<T> Operator for Z1Trace<T>
 where
-    T: Trace + SizeOf + NumEntries + 'static,
+    T: Trace,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z1 (trace)")
@@ -405,7 +399,7 @@ where
 
 impl<T> StrictOperator<T> for Z1Trace<T>
 where
-    T: SizeOf + NumEntries + Trace + 'static,
+    T: Trace,
 {
     fn get_output(&mut self) -> T {
         let mut result = self.trace.take().unwrap();
@@ -424,7 +418,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
 where
-    T: SizeOf + NumEntries + Trace + 'static,
+    T: Trace,
 {
     fn eval_strict(&mut self, _i: &T) {
         unimplemented!()

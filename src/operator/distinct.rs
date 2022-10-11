@@ -223,7 +223,7 @@ where
     Z::Key: Clone + PartialEq,
     Z::Val: Clone + PartialEq,
     Z::R: ZRingValue,
-    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + 'static,
+    I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R>,
 {
     fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         let mut builder = Z::Builder::with_capacity((), delta.len());
@@ -298,7 +298,7 @@ where
 pub struct DistinctTrace<Z, T>
 where
     Z: ZSet,
-    T: BatchReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), R = Z::R>,
 {
     // Keeps track of keys that need to be considered at future times.
     // Specifically, `future_updates[i]` accumulates all keys observed during
@@ -314,7 +314,7 @@ where
 impl<Z, T> DistinctTrace<Z, T>
 where
     Z: ZSet,
-    T: BatchReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), R = Z::R>,
 {
     fn new() -> Self {
         Self {
@@ -332,7 +332,7 @@ where
     Z: ZSet,
     Z::Key: Clone + Ord + PartialEq,
     Z::R: ZRingValue,
-    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
     // Evaluate nested incremental distinct for a single value.
     //
@@ -459,7 +459,7 @@ impl<Z, T> Operator for DistinctTrace<Z, T>
 where
     Z: ZSet,
     Z::Key: SizeOf + Clone + Ord + PartialEq,
-    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
+    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctTrace")
@@ -505,7 +505,7 @@ where
     Z: ZSet,
     Z::Key: Clone + Ord + PartialEq + SizeOf,
     Z::R: ZRingValue,
-    T: Trace<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R> + 'static,
+    T: Trace<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
     // Distinct does not have nice properties like linearity that help with
     // incremental evaluation: computing an update for each key requires inspecting

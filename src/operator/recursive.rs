@@ -8,7 +8,7 @@ use crate::{
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use size_of::SizeOf;
-use std::{hash::Hash, result::Result};
+use std::result::Result;
 
 /// Generalizes stream operators to groups of streams.
 ///
@@ -53,9 +53,8 @@ pub trait RecursiveStreams<C> {
 // batches, we can ditch the `B::Val = ()` constraint.
 impl<B> RecursiveStreams<Circuit<Circuit<()>>> for Stream<Circuit<Circuit<()>>, B>
 where
-    B: ZSet + SizeOf + Send + 'static,
-    B::Key: Clone + Ord + Hash + SizeOf,
-    B::R: SizeOf + ZRingValue,
+    B: ZSet + Send,
+    B::R: ZRingValue,
     Spine<B>: SizeOf,
 {
     type Feedback = DelayedFeedback<Circuit<()>, B>;

@@ -14,7 +14,7 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Builder, Cursor},
-    Circuit, DBData, OrdIndexedZSet, Stream,
+    Circuit, DBData, DBWeight, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
@@ -63,8 +63,8 @@ pub trait PartitionedRadixTreeCursor<'a, PK, TS, A, R>:
     fn format_tree<W>(&mut self, writer: &mut W) -> Result<(), fmt::Error>
     where
         PK: Debug,
-        TS: PrimInt + Debug + 'static,
-        A: Debug + 'static,
+        TS: DBData + PrimInt,
+        A: DBData,
         R: HasZero,
         W: Write,
     {
@@ -83,9 +83,9 @@ pub trait PartitionedRadixTreeCursor<'a, PK, TS, A, R>:
     fn validate<S>(&mut self, contents: &BTreeMap<PK, BTreeMap<TS, A>>)
     where
         PK: Ord,
-        TS: PrimInt + Debug + 'static,
-        R: Eq + HasOne + HasZero + Debug,
-        A: Eq + Clone + Debug + 'static,
+        TS: DBData + PrimInt,
+        R: DBWeight + ZRingValue,
+        A: DBData,
         S: Semigroup<A>,
     {
         let empty = BTreeMap::new();
@@ -142,7 +142,7 @@ where
         Z::R: ZRingValue,
         Agg: Aggregator<V, (), Z::R> + 'static,
         Agg::Output: DBData + Default,
-        O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key> + SizeOf + 'static,
+        O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
         O::R: ZRingValue,
     {
         self.circuit()
@@ -333,15 +333,15 @@ where
 impl<TS, V, Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O>
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Agg, O>
 where
-    Z: PartitionedBatchReader<TS, V> + Clone + 'static,
+    Z: PartitionedBatchReader<TS, V> + Clone,
     TS: DBData + PrimInt,
     V: DBData,
     Z::R: ZRingValue,
-    IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone + 'static,
-    OT: PartitionedRadixTreeReader<TS, Agg::Output, Key = Z::Key, R = O::R> + Clone + 'static,
+    IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone,
+    OT: PartitionedRadixTreeReader<TS, Agg::Output, Key = Z::Key, R = O::R> + Clone,
     Agg: Aggregator<V, (), Z::R> + 'static,
     Agg::Output: DBData + Default,
-    O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key> + 'static,
+    O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
     O::R: ZRingValue,
 {
     fn eval<'a>(

@@ -27,7 +27,7 @@ fn sharding_policy<P>(_circuit: &Circuit<P>) -> ShardingPolicy {
 impl<P, IB> Stream<Circuit<P>, IB>
 where
     P: Clone + 'static,
-    IB: BatchReader<Time = ()> + Clone + 'static,
+    IB: BatchReader<Time = ()> + Clone,
     IB::Key: Ord + Clone + Hash,
     IB::Val: Ord + Clone,
 {
@@ -105,7 +105,7 @@ where
     #[track_caller]
     pub fn shard_generic<OB>(&self) -> Option<Stream<Circuit<P>, OB>>
     where
-        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Clone + Send + 'static,
+        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
         let location = Location::caller();
 

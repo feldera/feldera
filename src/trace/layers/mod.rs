@@ -181,6 +181,7 @@ pub trait OrdOffset:
     + HasZero
     + SizeOf
     + Sized
+    + 'static
 {
     fn from_usize(offset: usize) -> Self;
 
@@ -197,7 +198,8 @@ where
         + TryInto<usize>
         + HasZero
         + SizeOf
-        + Sized,
+        + Sized
+        + 'static,
     <O as TryInto<usize>>::Error: Debug,
     <O as TryFrom<usize>>::Error: Debug,
 {

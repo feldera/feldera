@@ -54,8 +54,8 @@ where
         join: F,
     ) -> Stream<Circuit<P>, OrdZSet<V, <I1::R as MulByRef<I2::R>>::Output>>
     where
-        I1: Batch<Time = ()> + Clone + Send + 'static,
-        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
+        I1: Batch<Time = ()> + Send,
+        I2: Batch<Key = I1::Key, Time = ()> + Send,
         I1::R: MulByRef<I2::R>,
         <I1::R as MulByRef<I2::R>>::Output: DBData + ZRingValue,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + 'static,
@@ -73,9 +73,9 @@ where
         join: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: Batch<Time = ()> + Clone + Send + 'static,
-        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
-        Z: Clone + ZSet + 'static,
+        I1: Batch<Time = ()> + Send,
+        I2: Batch<Key = I1::Key, Time = ()> + Send,
+        Z: ZSet,
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
@@ -93,9 +93,9 @@ where
         join: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: Batch<Time = ()> + Clone + Send + 'static,
-        I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
-        Z: Clone + ZSet + 'static,
+        I1: Batch<Time = ()> + Send,
+        I2: Batch<Key = I1::Key, Time = ()> + Send,
+        Z: ZSet,
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
@@ -113,10 +113,10 @@ where
         location: &'static Location<'static>,
     ) -> Stream<Circuit<P>, Z>
     where
-        I1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
-        I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + Clone + 'static,
-        Z: Clone + ZSet + 'static,
-        Z::R: MulByRef<Output = Z::R>,
+        I1: BatchReader<Time = (), R = Z::R> + Clone,
+        I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + Clone,
+        Z: ZSet,
+        Z::R: ZRingValue,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     {
         self.circuit()
@@ -146,11 +146,11 @@ impl<I1> Stream<Circuit<()>, I1> {
         join_func: F,
     ) -> Stream<Circuit<()>, Z>
     where
-        I1: IndexedZSet + SizeOf + Send,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + SizeOf + Send,
+        I1: IndexedZSet + Send,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
-        Z::R: MulByRef<Output = Z::R>,
+        Z::R: ZRingValue,
     {
         let left = self.shard();
         let right = other.shard();
@@ -372,11 +372,11 @@ where
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<F, I1, I2, Z>
 where
-    I1: BatchReader<Time = ()> + 'static,
+    I1: BatchReader<Time = ()>,
     I1::R: MulByRef<I2::R, Output = Z::R>,
-    I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
+    I2: BatchReader<Key = I1::Key, Time = ()>,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
-    Z: ZSet + 'static,
+    Z: ZSet,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
@@ -458,10 +458,10 @@ where
 
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<F, I1, I2, Z>
 where
-    I1: BatchReader<Time = ()> + 'static,
-    I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
+    I1: BatchReader<Time = ()>,
+    I2: BatchReader<Key = I1::Key, Time = ()>,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
-    Z: ZSet + 'static,
+    Z: ZSet,
     I1::R: MulByRef<I2::R, Output = Z::R>,
 {
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
@@ -566,7 +566,7 @@ impl<F, I, T, Z, It> Operator for JoinTrace<F, I, T, Z, It>
 where
     F: 'static,
     I: 'static,
-    T: BatchReader + 'static,
+    T: BatchReader,
     Z: IndexedZSet,
     Z::Batcher: SizeOf,
     It: 'static,
@@ -668,15 +668,14 @@ where
 
 impl<F, I, T, Z, It> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z, It>
 where
-    I: IndexedZSet,                             /* + ::std::fmt::Display */
-    T: Trace<Key = I::Key, R = I::R> + 'static, /* + ::std::fmt::Display */
-    //T::Time: ::std::fmt::Display,
+    I: IndexedZSet,
+    T: Trace<Key = I::Key, R = I::R>,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> It + 'static,
     Z: IndexedZSet<R = I::R>, /* + ::std::fmt::Display */
     Z::Key: Default,
     Z::Val: Default,
     Z::Batcher: SizeOf,
-    Z::R: MulByRef<Output = Z::R> + Default,
+    Z::R: ZRingValue + Default,
     Z::Item: Default,
     It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
 {

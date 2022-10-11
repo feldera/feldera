@@ -1,7 +1,7 @@
 use crate::{
-    algebra::{HasZero, MulByRef, ZSet},
+    algebra::{MulByRef, ZSet},
     circuit::{
-        operator_traits::{BinaryOperator, Data, Operator},
+        operator_traits::{BinaryOperator, Operator},
         Scope,
     },
     circuit::{GlobalNodeId, OwnershipPreference},
@@ -12,7 +12,6 @@ use crate::{
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
-    hash::Hash,
     marker::PhantomData,
 };
 
@@ -43,13 +42,10 @@ where
     where
         // TODO: Associated type bounds (rust/#52662) really simplify things
         // TODO: Allow non-unit timestamps
-        Pairs: Batch<Time = ()> + Data + Send,
-        Pairs::Key: Hash + Ord + Clone,
-        Pairs::Val: Ord + Hash + Clone,
-        Keys: Batch<Key = Pairs::Key, Val = (), Time = ()> + Data + Send,
+        Pairs: Batch<Time = ()> + Send,
+        Keys: Batch<Key = Pairs::Key, Val = (), Time = ()> + Send,
         // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
-        Out: ZSet<Key = (Pairs::Key, Pairs::Val)> + 'static,
-        Out::R: HasZero,
+        Out: ZSet<Key = (Pairs::Key, Pairs::Val)>,
         Pairs::R: MulByRef<Keys::R, Output = Out::R>,
     {
         self.circuit()
@@ -99,12 +95,9 @@ where
 
 impl<Pairs, Keys, Out> BinaryOperator<Pairs, Keys, Out> for SemiJoinStream<Pairs, Keys, Out>
 where
-    Pairs: BatchReader<Time = ()> + 'static,
-    Pairs::Key: Clone + Ord,
-    Pairs::Val: Clone,
-    Keys: BatchReader<Key = Pairs::Key, Val = (), Time = ()> + 'static,
-    Out: ZSet<Key = (Pairs::Key, Pairs::Val)> + 'static,
-    Out::R: HasZero,
+    Pairs: BatchReader<Time = ()>,
+    Keys: BatchReader<Key = Pairs::Key, Val = (), Time = ()>,
+    Out: ZSet<Key = (Pairs::Key, Pairs::Val)>,
     Pairs::R: MulByRef<Keys::R, Output = Out::R>,
 {
     fn eval(&mut self, pairs: &Pairs, keys: &Keys) -> Out {

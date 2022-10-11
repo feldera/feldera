@@ -74,7 +74,7 @@ where
         Z::R: ZRingValue,
         Agg: Aggregator<Z::Val, (), Z::R> + 'static,
         Agg::Output: Default + DBData,
-        O: RadixTreeBatch<Z::Key, Agg::Output> + SizeOf + 'static,
+        O: RadixTreeBatch<Z::Key, Agg::Output>,
         O::R: ZRingValue,
     {
         self.circuit()
@@ -188,11 +188,11 @@ where
     Z: IndexedZSet,
     Z::Key: PrimInt,
     Z::R: ZRingValue,
-    IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone + 'static,
-    OT: RadixTreeReader<Z::Key, Agg::Output, R = O::R> + Clone + 'static,
+    IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone,
+    OT: RadixTreeReader<Z::Key, Agg::Output, R = O::R> + Clone,
     Agg: Aggregator<Z::Val, (), Z::R> + 'static,
     Agg::Output: DBData + Default,
-    O: RadixTreeBatch<Z::Key, Agg::Output> + 'static,
+    O: RadixTreeBatch<Z::Key, Agg::Output>,
     O::R: ZRingValue,
 {
     fn eval<'a>(
