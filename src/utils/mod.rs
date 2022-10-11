@@ -4,7 +4,7 @@ pub(crate) use vec_ext::VecExt;
 
 use std::{
     hint::unreachable_unchecked,
-    mem::{align_of, size_of, ManuallyDrop, MaybeUninit},
+    mem::{ManuallyDrop, MaybeUninit},
 };
 
 /// Tells the optimizer that a condition is always true
@@ -42,16 +42,39 @@ pub(crate) fn cursor_position_oob(position: usize, length: usize) -> ! {
 /// Casts a `Vec<T>` into a `Vec<MaybeUninit<T>>`
 #[inline]
 pub(crate) fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
-    // See https://doc.rust-lang.org/std/vec/struct.Vec.html#safety
-    debug_assert_eq!(size_of::<T>(), size_of::<MaybeUninit<T>>());
-    debug_assert_eq!(align_of::<T>(), align_of::<MaybeUninit<T>>());
-
     // Make sure we don't drop the old vec
     let mut vec = ManuallyDrop::new(vec);
+
     // Get the length, capacity and pointer of the vec (we get the pointer last as a
     // rather nitpicky thing irt stacked borrows since the `.len()` and
     // `.capacity()` calls technically reborrow the vec). Ideally we'd use
     // `Vec::into_raw_parts()` but it's currently unstable via rust/#65816
     let (len, cap, ptr) = (vec.len(), vec.capacity(), vec.as_mut_ptr());
-    unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) }
+
+    // Create a new vec with the different type
+    unsafe { Vec::from_raw_parts(ptr.cast::<MaybeUninit<T>>(), len, cap) }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::cast_uninit_vec;
+
+    #[test]
+    fn cast_uninit_vecs() {
+        let vec = vec![0u8, 1, 2, 3, 4];
+        assert_eq!(vec.len(), 5);
+        assert_eq!(vec.capacity(), 5);
+
+        let uninit = cast_uninit_vec(vec);
+        assert_eq!(uninit.len(), 5);
+        assert_eq!(uninit.capacity(), 5);
+
+        let empty = Vec::<u8>::with_capacity(4096);
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.capacity(), 4096);
+
+        let uninit = cast_uninit_vec(empty);
+        assert_eq!(uninit.len(), 0);
+        assert_eq!(uninit.capacity(), 4096);
+    }
 }

@@ -834,8 +834,9 @@ where
         // We increment position before reading out the key and diff values
         self.position += 1;
 
-        // Copy out the key and diff
-        let key = unsafe { self.storage.keys[idx].assume_init_read() };
+        // Read out the key value
+        debug_assert!(idx < self.storage.keys.len());
+        let key = unsafe { self.storage.keys.get_unchecked(idx).assume_init_read() };
 
         (key, OrderedLayerValues::new(self))
     }
@@ -859,16 +860,26 @@ where
         // Increment the offset before we drop the elements for panic safety
         self.position += offset;
 
-        // We get the skipped value range by
-        let value_start = self.storage.offs[start_position].into_usize();
-        let value_end = self.storage.offs[self.position].into_usize();
+        debug_assert!(
+            start_position < self.storage.offs.len() && self.position < self.storage.offs.len(),
+        );
+        debug_assert!(
+            start_position < self.storage.keys.len() && self.position < self.storage.keys.len(),
+        );
+
+        // We get the range of the skipped values by getting the offsets of the initial
+        // `self.position` and the initial `self.position + offset`
+        let value_start = unsafe { self.storage.offs.get_unchecked(start_position).into_usize() };
+        let value_end = unsafe { self.storage.offs.get_unchecked(self.position).into_usize() };
 
         // Drop the skipped elements
         unsafe {
             // Drop the skipped keys
             ptr::drop_in_place(
-                &mut self.storage.keys[start_position..self.position] as *mut [MaybeUninit<K>]
-                    as *mut [K],
+                self.storage
+                    .keys
+                    .get_unchecked_mut(start_position..self.position)
+                    as *mut [MaybeUninit<K>] as *mut [K],
             );
 
             // Drop the skipped values and diffs
@@ -916,7 +927,7 @@ pub struct OrderedLayerValues<'a, V, R> {
     // Invariant: `current` will always be a valid index into `consumer`
     current: usize,
     end: usize,
-    consumer: &'a mut OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>,
+    values: &'a mut OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>,
 }
 
 impl<'a, V, R> OrderedLayerValues<'a, V, R> {
@@ -924,20 +935,52 @@ impl<'a, V, R> OrderedLayerValues<'a, V, R> {
     where
         O: OrdOffset,
     {
-        unsafe { consumer.storage.assume_invariants() };
+        unsafe {
+            let position = consumer.position.into_usize();
 
-        Self {
-            // The consumer increments `value_position` before creating the value consumer so we
-            // look at `value_position` for the value range's start
-            current: consumer.storage.offs[consumer.position.into_usize() - 1].into_usize(),
-            end: consumer.storage.offs[consumer.position.into_usize()].into_usize(),
-            consumer: &mut consumer.storage.vals,
+            // Assert storage's invariants to the compiler
+            consumer.storage.assume_invariants();
+            // `position` will always be greater than one, so `position - 1` will never
+            // underflow.
+            // `position` is always inbounds of `consumer.storage.offs`
+            assume(position >= 1 && position < consumer.storage.offs.len());
+
+            // The consumer increments `value_position` before creating the value consumer
+            // so we look at `value_position` for the value range's start
+            debug_assert!(
+                position < consumer.storage.offs.len()
+                    && position - 1 < consumer.storage.offs.len()
+            );
+            let end = consumer.storage.offs.get_unchecked(position).into_usize();
+            let current = consumer
+                .storage
+                .offs
+                .get_unchecked(position - 1)
+                .into_usize();
+
+            // `current <= end` and both `current` and `end` are valid indices into
+            // `consumer.storage.vals`
+            assume(
+                current <= end
+                    && current < consumer.storage.vals.len()
+                    && end <= consumer.storage.vals.len(),
+            );
+
+            Self {
+                current,
+                end,
+                values: &mut consumer.storage.vals,
+            }
         }
     }
 }
 
 impl<'a, V, R> ValueConsumer<'a, V, R, ()> for OrderedLayerValues<'a, V, R> {
     fn value_valid(&self) -> bool {
+        // Safety: `current` is always less than or equal to `end`, knowing this this
+        // can allow the compiler to generate better code
+        unsafe { assume(self.current <= self.end) };
+
         self.current < self.end
     }
 
@@ -952,18 +995,23 @@ impl<'a, V, R> ValueConsumer<'a, V, R, ()> for OrderedLayerValues<'a, V, R> {
 
         unsafe {
             // Elide bounds checking
-            assume(idx < self.consumer.len());
-            self.consumer.assume_invariants();
+            assume(idx < self.values.len());
+            self.values.assume_invariants();
 
             // Read out the value and diff
-            let value = self.consumer.keys[idx].assume_init_read();
-            let diff = self.consumer.diffs[idx].assume_init_read();
+            debug_assert!(idx < self.values.keys.len() && idx < self.values.diffs.len());
+            let value = self.values.keys.get_unchecked(idx).assume_init_read();
+            let diff = self.values.diffs.get_unchecked(idx).assume_init_read();
 
             (value, diff, ())
         }
     }
 
     fn remaining_values(&self) -> usize {
+        // Safety: `current` is always less than or equal to `end`, knowing this this
+        // can allow the compiler to generate better code
+        unsafe { assume(self.current <= self.end) };
+
         self.end - self.current
     }
 }
@@ -971,7 +1019,7 @@ impl<'a, V, R> ValueConsumer<'a, V, R, ()> for OrderedLayerValues<'a, V, R> {
 impl<V, R> Drop for OrderedLayerValues<'_, V, R> {
     fn drop(&mut self) {
         // Drop any unconsumed diffs and values
-        unsafe { self.consumer.drop_range(self.current..self.end) }
+        unsafe { self.values.drop_range(self.current..self.end) }
     }
 }
 
