@@ -1,3 +1,4 @@
+pub(crate) mod tests;
 mod vec_ext;
 
 pub(crate) use vec_ext::VecExt;
@@ -53,28 +54,4 @@ pub(crate) fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
 
     // Create a new vec with the different type
     unsafe { Vec::from_raw_parts(ptr.cast::<MaybeUninit<T>>(), len, cap) }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::utils::cast_uninit_vec;
-
-    #[test]
-    fn cast_uninit_vecs() {
-        let vec = vec![0u8, 1, 2, 3, 4];
-        assert_eq!(vec.len(), 5);
-        assert_eq!(vec.capacity(), 5);
-
-        let uninit = cast_uninit_vec(vec);
-        assert_eq!(uninit.len(), 5);
-        assert_eq!(uninit.capacity(), 5);
-
-        let empty = Vec::<u8>::with_capacity(4096);
-        assert_eq!(empty.len(), 0);
-        assert_eq!(empty.capacity(), 4096);
-
-        let uninit = cast_uninit_vec(empty);
-        assert_eq!(uninit.len(), 0);
-        assert_eq!(uninit.capacity(), 4096);
-    }
 }
