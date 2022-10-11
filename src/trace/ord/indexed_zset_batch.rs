@@ -512,7 +512,10 @@ where
     }
 }
 
-pub struct OrdIndexedZSetConsumer<K, V, R, O> {
+pub struct OrdIndexedZSetConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
     consumer: OrderedLayerConsumer<K, V, R, O>,
 }
 
