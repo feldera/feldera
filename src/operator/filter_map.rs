@@ -7,9 +7,8 @@ use crate::{
         Circuit, OwnershipPreference, Scope, Stream,
     },
     trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
-    OrdIndexedZSet, OrdZSet,
+    DBData, OrdIndexedZSet, OrdZSet,
 };
-use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 /// This trait abstracts away a stream of records that can be filtered
@@ -71,7 +70,7 @@ pub trait FilterMap<C> {
     type ItemRef<'a>;
 
     /// Type of the `weight` component of the `(key, value, weight)` tuple.
-    type R: MonoidValue + SizeOf;
+    type R: DBData + MonoidValue;
 
     /// Filter input stream only retaining records that satisfy the
     /// `filter_func` predicate.
@@ -83,7 +82,7 @@ pub trait FilterMap<C> {
     /// record into `OrdZSet` batches.
     fn map<F, V>(&self, map_func: F) -> Stream<C, OrdZSet<V, Self::R>>
     where
-        V: Ord + Clone + SizeOf + 'static,
+        V: DBData,
         F: Fn(Self::ItemRef<'_>) -> V + Clone + 'static,
     {
         self.map_generic(map_func)
@@ -100,8 +99,8 @@ pub trait FilterMap<C> {
     /// `OrdIndexedZSet` batches.
     fn map_index<F, K, V>(&self, map_func: F) -> Stream<C, OrdIndexedZSet<K, V, Self::R>>
     where
-        K: Ord + Clone + SizeOf + 'static,
-        V: Ord + Clone + SizeOf + 'static,
+        K: DBData,
+        V: DBData,
         F: Fn(Self::ItemRef<'_>) -> (K, V) + 'static,
     {
         self.map_index_generic(map_func)
@@ -122,7 +121,7 @@ pub trait FilterMap<C> {
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
-        I::Item: Ord + Clone + SizeOf + 'static,
+        I::Item: DBData,
     {
         self.flat_map_generic(func)
     }
@@ -141,8 +140,8 @@ pub trait FilterMap<C> {
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (K, V)> + 'static,
-        K: Ord + Clone + SizeOf + 'static,
-        V: Ord + Clone + SizeOf + 'static,
+        K: DBData,
+        V: DBData,
     {
         self.flat_map_index_generic(func)
     }
@@ -158,8 +157,8 @@ pub trait FilterMap<C> {
 impl<P, K, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdZSet<K, R>>
 where
     P: Clone + 'static,
-    R: MonoidValue + SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     type Item = K;
     type ItemRef<'a> = &'a K;
@@ -228,9 +227,9 @@ where
 impl<P, K, V, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdIndexedZSet<K, V, R>>
 where
     P: Clone + 'static,
-    R: MonoidValue + SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf + 'static,
+    R: DBData + MonoidValue,
+    K: DBData,
+    V: DBData,
 {
     type Item = (K, V);
     type ItemRef<'a> = (&'a K, &'a V);
@@ -321,8 +320,6 @@ where
 impl<CI, CO, F> UnaryOperator<CI, CO> for FilterKeys<CI, CO, F>
 where
     CI: BatchReader<Time = ()> + 'static,
-    CI::Key: Clone,
-    CI::Val: Clone,
     CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
     F: Fn(&CI::Key) -> bool + 'static,
 {
@@ -426,8 +423,6 @@ where
 impl<CI, CO, F> UnaryOperator<CI, CO> for FilterVals<CI, CO, F>
 where
     CI: BatchReader<Time = ()> + 'static,
-    CI::Key: Clone,
-    CI::Val: Clone,
     CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> bool + 'static,
 {
@@ -519,7 +514,6 @@ where
 impl<CI, CO, F> UnaryOperator<CI, CO> for Map<CI, CO, F>
 where
     CI: BatchReader<Time = ()> + 'static,
-    CI::Val: Clone,
     CO: Batch<Time = (), R = CI::R> + 'static,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> (CO::Key, CO::Val) + 'static,
 {
@@ -576,7 +570,6 @@ where
 impl<CI, CO, FB, FO> UnaryOperator<CI, CO> for MapKeys<CI, CO, FB, FO>
 where
     CI: BatchReader<Time = ()> + 'static,
-    CI::Val: Clone,
     CO: Batch<Val = CI::Val, Time = (), R = CI::R> + 'static,
     FB: Fn(&CI::Key) -> CO::Key + 'static,
     FO: Fn(CI::Key) -> CO::Key + 'static,
@@ -657,7 +650,6 @@ where
 impl<CI, CO, F, I> UnaryOperator<CI, CO> for FlatMap<CI, CO, F, I>
 where
     CI: BatchReader<Time = ()> + 'static,
-    CI::Val: Clone,
     CO: Batch<Time = (), R = CI::R> + 'static,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> I + 'static,
     I: IntoIterator<Item = (CO::Key, CO::Val)> + 'static,

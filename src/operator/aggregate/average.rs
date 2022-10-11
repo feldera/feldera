@@ -2,7 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, GroupValue, HasZero, IndexedZSet, MulByRef, NegByRef},
     trace::layers::{column_leaf::OrderedColumnLeaf, ordered::OrderedLayer},
     utils::VecExt,
-    Circuit, OrdIndexedZSet, Stream, Timestamp,
+    Circuit, DBData, OrdIndexedZSet, Stream, Timestamp,
 };
 use size_of::SizeOf;
 use std::{
@@ -11,7 +11,7 @@ use std::{
 };
 
 /// Intermediate representation of an average as a `(sum, count)` pair.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, SizeOf)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Ord, PartialOrd, SizeOf)]
 pub struct Avg<T> {
     sum: T,
     count: isize,
@@ -141,12 +141,10 @@ where
     #[track_caller]
     pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
-        TS: Timestamp + SizeOf,
+        TS: DBData + Timestamp,
         Z: IndexedZSet,
-        Z::Key: PartialEq + Ord + Hash + SizeOf + Clone + Send,
-        Z::Val: Ord + SizeOf + Clone,
         Avg<A>: MulByRef<Z::R, Output = Avg<A>>,
-        A: Div<isize, Output = A> + Ord + GroupValue + SizeOf + Clone + Send,
+        A: DBData + Div<isize, Output = A> + GroupValue,
         isize: MulByRef<Z::R, Output = isize>,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
     {

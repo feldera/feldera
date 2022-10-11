@@ -14,7 +14,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    Timestamp,
+    DBData, Timestamp,
 };
 use size_of::SizeOf;
 use std::{fmt::Debug, marker::PhantomData};
@@ -33,9 +33,9 @@ pub struct OrdKeyBatch<K, T, R, O = usize> {
 
 impl<K, T, R, O> BatchReader for OrdKeyBatch<K, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    T: Timestamp + Lattice,
-    R: MonoidValue,
+    K: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Key = K;
@@ -75,9 +75,9 @@ where
 
 impl<K, T, R, O> Batch for OrdKeyBatch<K, T, R, O>
 where
-    K: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Item = K;
@@ -199,9 +199,9 @@ where
 impl<K, T, R, O> Merger<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyMerger<K, T, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     fn new_merger(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
@@ -419,9 +419,9 @@ where
 impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     #[inline]

@@ -3,6 +3,7 @@ use crate::{nexmark::model::Event, operator::FilterMap, Circuit, OrdZSet, Stream
 use arcstr::ArcStr;
 use rust_decimal::Decimal;
 use size_of::SizeOf;
+use std::hash::Hash;
 
 /// Query 14: Calculation (Not in original suite)
 ///
@@ -41,14 +42,14 @@ use size_of::SizeOf;
 /// WHERE 0.908 * price > 1000000 AND 0.908 * price < 50000000;
 /// ```
 
-#[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
 enum BidTimeType {
     Day,
     Night,
     Other,
 }
 
-#[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
 pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, ArcStr, usize);
 
 type Q14Stream = Stream<Circuit<()>, OrdZSet<Q14Output, isize>>;

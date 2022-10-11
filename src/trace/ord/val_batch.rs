@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, HasZero, Lattice, MonoidValue},
+    algebra::{Lattice, MonoidValue},
     time::{Antichain, AntichainRef},
     trace::{
         layers::{
@@ -11,13 +11,12 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    Timestamp,
+    DBData, Timestamp,
 };
 use size_of::SizeOf;
 use std::{
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
-    ops::AddAssign,
 };
 
 pub type OrdValBatchLayer<K, V, T, R, O> =
@@ -41,10 +40,10 @@ where
 
 impl<K, V, T, R, O> Display for OrdValBatch<K, V, T, R, O>
 where
-    K: Ord + Clone + Display,
-    V: Ord + Clone + Display + 'static,
-    T: Lattice + Clone + Ord + Display + Debug + 'static,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
+    K: DBData,
+    V: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset + 'static,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -60,10 +59,10 @@ where
 
 impl<K, V, T, R, O> BatchReader for OrdValBatch<K, V, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
-    T: Timestamp + Lattice,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Key = K;
@@ -106,10 +105,10 @@ where
 
 impl<K, V, T, R, O> Batch for OrdValBatch<K, V, T, R, O>
 where
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -269,10 +268,10 @@ where
 impl<K, V, T, R, O> Merger<K, V, T, R, OrdValBatch<K, V, T, R, O>> for OrdValMerger<K, V, T, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + SizeOf + Ord + Clone + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     fn new_merger(
@@ -478,10 +477,10 @@ impl<K, V, T, R, O> Builder<(K, V), T, R, OrdValBatch<K, V, T, R, O>>
     for OrdValBuilder<K, V, T, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf + 'static,
-    T: Lattice + Timestamp + Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    T: DBData + Timestamp,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     #[inline]

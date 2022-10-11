@@ -11,11 +11,11 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Batch, BatchReader, Builder},
-    Circuit, NumEntries, OrdIndexedZSet, Stream,
+    Circuit, DBData, NumEntries, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
-use std::{borrow::Cow, cmp::Ordering, fmt::Debug, hash::Hash, marker::PhantomData, ops::Neg};
+use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, ops::Neg};
 
 circuit_cache_key!(TreeAggregateId<C, D, Agg>(GlobalNodeId => Stream<C, D>));
 
@@ -58,11 +58,10 @@ where
     ) -> Stream<Circuit<P>, OrdRadixTree<Z::Key, Agg::Output, isize>>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
-        Z::Key: Ord + PrimInt + SizeOf + Hash + Debug,
-        Z::Val: Ord + Clone + SizeOf,
-        Z::R: ZRingValue + SizeOf,
+        Z::Key: PrimInt,
+        Z::R: ZRingValue,
         Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + 'static,
+        Agg::Output: DBData + Default,
     {
         self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Output, isize>>(aggregator)
     }
@@ -71,13 +70,12 @@ where
     pub fn tree_aggregate_generic<Agg, O>(&self, aggregator: Agg) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
-        Z::Key: Ord + PrimInt + SizeOf + Hash + Debug,
-        Z::Val: Ord + Clone + SizeOf,
-        Z::R: ZRingValue + SizeOf,
+        Z::Key: PrimInt,
+        Z::R: ZRingValue,
         Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + 'static,
+        Agg::Output: Default + DBData,
         O: RadixTreeBatch<Z::Key, Agg::Output> + SizeOf + 'static,
-        O::R: ZRingValue + SizeOf,
+        O::R: ZRingValue,
     {
         self.circuit()
             .cache_get_or_insert_with(
@@ -188,15 +186,14 @@ where
 impl<Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O> for RadixTreeAggregate<Z, IT, OT, Agg, O>
 where
     Z: IndexedZSet,
-    Z::Key: PrimInt + Debug,
-    Z::Val: Ord + Clone,
-    Z::R: ZRingValue + SizeOf,
+    Z::Key: PrimInt,
+    Z::R: ZRingValue,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone + 'static,
     OT: RadixTreeReader<Z::Key, Agg::Output, R = O::R> + Clone + 'static,
     Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-    Agg::Output: Default + Ord + Clone + Debug + 'static,
+    Agg::Output: DBData + Default,
     O: RadixTreeBatch<Z::Key, Agg::Output> + 'static,
-    O::R: ZRingValue + SizeOf,
+    O::R: ZRingValue,
 {
     fn eval<'a>(
         &mut self,

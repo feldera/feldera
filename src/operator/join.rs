@@ -12,14 +12,13 @@ use crate::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
         Trace,
     },
-    OrdIndexedZSet, OrdZSet,
+    DBData, OrdIndexedZSet, OrdZSet,
 };
 use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
     collections::HashMap,
-    hash::Hash,
     iter::once,
     marker::PhantomData,
     mem::{needs_drop, MaybeUninit},
@@ -56,14 +55,11 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<V, <I1::R as MulByRef<I2::R>>::Output>>
     where
         I1: Batch<Time = ()> + Clone + Send + 'static,
-        I1::Key: Ord + Hash + Clone,
-        I1::Val: Ord + Clone,
         I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
-        I2::Val: Ord + Clone,
         I1::R: MulByRef<I2::R>,
-        <I1::R as MulByRef<I2::R>>::Output: ZRingValue,
+        <I1::R as MulByRef<I2::R>>::Output: DBData + ZRingValue,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + 'static,
-        V: Ord + SizeOf + Clone + 'static,
+        V: DBData,
     {
         self.stream_join_generic(other, join)
     }
@@ -78,10 +74,7 @@ where
     ) -> Stream<Circuit<P>, Z>
     where
         I1: Batch<Time = ()> + Clone + Send + 'static,
-        I1::Key: Ord + Hash + Clone,
-        I1::Val: Ord + Clone,
         I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
-        I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
@@ -101,10 +94,7 @@ where
     ) -> Stream<Circuit<P>, Z>
     where
         I1: Batch<Time = ()> + Clone + Send + 'static,
-        I1::Key: Ord + Hash + Clone,
-        I1::Val: Ord + Clone,
         I2: Batch<Key = I1::Key, Time = ()> + Send + Clone + 'static,
-        I2::Val: Ord + Clone,
         Z: Clone + ZSet + 'static,
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
@@ -125,7 +115,6 @@ where
     where
         I1: BatchReader<Time = (), R = Z::R> + Clone + 'static,
         I2: BatchReader<Key = I1::Key, Time = (), R = Z::R> + Clone + 'static,
-        I1::Key: Ord,
         Z: Clone + ZSet + 'static,
         Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
@@ -158,11 +147,7 @@ impl<I1> Stream<Circuit<()>, I1> {
     ) -> Stream<Circuit<()>, Z>
     where
         I1: IndexedZSet + SizeOf + Send,
-        I1::Key: Ord + Clone + Hash + SizeOf,
-        I1::Val: Ord + Clone,
-        I1::R: SizeOf,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + SizeOf + Send,
-        I2::Val: Ord + Clone,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
         Z::R: MulByRef<Output = Z::R>,
@@ -181,9 +166,7 @@ impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
     I1: IndexedZSet + Send,
-    I1::Key: SizeOf + Clone + Ord + Hash,
-    I1::Val: SizeOf + Clone + Ord,
-    I1::R: ZRingValue + Default + SizeOf,
+    I1::R: ZRingValue + Default,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incrementally join two streams of batches.
@@ -207,10 +190,9 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<V, I1::R>>
     where
         TS: Timestamp + SizeOf,
-        I2::Val: SizeOf + Clone + Ord,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
-        V: Ord + Clone + Default + SizeOf + 'static,
+        V: DBData + Default,
     {
         self.join_generic::<TS, _, _, _, _>(other, move |k, v1, v2| {
             once((join_func(k, v1, v2), ()))
@@ -231,11 +213,10 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
         TS: Timestamp + SizeOf,
-        I2::Val: SizeOf + Clone + Ord,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
-        K: Ord + Clone + Default + SizeOf + 'static,
-        V: Ord + Clone + Default + SizeOf + 'static,
+        K: DBData + Default,
+        V: DBData + Default,
         It: IntoIterator<Item = (K, V)> + 'static,
     {
         self.join_generic::<TS, _, _, _, _>(other, join_func)
@@ -251,12 +232,10 @@ where
     where
         TS: Timestamp + SizeOf,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
-        I2::Key: SizeOf,
-        I2::Val: SizeOf + Clone + Ord,
         Z: IndexedZSet<R = I1::R>,
         Z::Batcher: SizeOf,
-        Z::Key: Clone + Default,
-        Z::Val: Clone + Default,
+        Z::Key: Default,
+        Z::Val: Default,
         Z::R: MulByRef<Output = Z::R> + Default,
         Z::Item: Default,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
@@ -338,7 +317,6 @@ where
         I1::Item: Default,
         I1::Batcher: SizeOf,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + SizeOf,
-        I2::Val: SizeOf + Clone + Ord + Hash,
     {
         let stream1 = self.shard();
         let stream2 = other.distinct_incremental().shard();
@@ -395,7 +373,6 @@ where
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<F, I1, I2, Z>
 where
     I1: BatchReader<Time = ()> + 'static,
-    I1::Key: Ord,
     I1::R: MulByRef<I2::R, Output = Z::R>,
     I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
@@ -482,7 +459,6 @@ where
 impl<F, I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<F, I1, I2, Z>
 where
     I1: BatchReader<Time = ()> + 'static,
-    I1::Key: Ord,
     I2: BatchReader<Key = I1::Key, Time = ()> + 'static,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
     Z: ZSet + 'static,
@@ -693,13 +669,12 @@ where
 impl<F, I, T, Z, It> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z, It>
 where
     I: IndexedZSet, /* + ::std::fmt::Display */
-    I::Key: Ord + Clone,
     T: Trace<Key = I::Key, R = I::R> + 'static, /* + ::std::fmt::Display */
     //T::Time: ::std::fmt::Display,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> It + 'static,
     Z: IndexedZSet<R = I::R>, /* + ::std::fmt::Display */
-    Z::Key: Clone + Default,
-    Z::Val: Clone + Default,
+    Z::Key: Default,
+    Z::Val: Default,
     Z::Batcher: SizeOf,
     Z::R: MulByRef<Output = Z::R> + Default,
     Z::Item: Default,
@@ -850,11 +825,12 @@ mod test {
             ord::{OrdIndexedZSet, OrdZSet},
             Batch,
         },
-        zset, Circuit, Runtime, Stream,
+        zset, Circuit, DBData, Runtime, Stream,
     };
     use size_of::SizeOf;
     use std::{
         fmt::{Display, Formatter},
+        hash::Hash,
         sync::{Arc, Mutex},
         vec,
     };
@@ -1088,7 +1064,7 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
+    #[derive(Clone, Debug, Default, Hash, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
     struct Label(pub usize, pub u16);
 
     impl Display for Label {
@@ -1097,7 +1073,7 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
+    #[derive(Clone, Debug, Default, Ord, PartialOrd, Hash, Eq, PartialEq, SizeOf)]
     struct Edge(pub usize, pub usize);
 
     impl Display for Edge {
@@ -1115,7 +1091,7 @@ mod test {
     ) -> Stream<Circuit<P>, OrdZSet<Label, isize>>
     where
         P: Clone + 'static,
-        TS: Timestamp + SizeOf + ::std::fmt::Display,
+        TS: DBData + Timestamp,
     {
         let computed_labels = circuit
             .fixedpoint(|child| {

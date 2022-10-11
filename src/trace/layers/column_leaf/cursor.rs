@@ -1,7 +1,7 @@
 use crate::{
-    algebra::{AddAssignByRef, HasZero},
-    trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
+    trace::{layers::{advance, column_leaf::OrderedColumnLeaf, Cursor}, MonoidValue},
     utils::cursor_position_oob,
+    DBData,
 };
 use std::fmt::{self, Display};
 
@@ -152,15 +152,15 @@ where
 
 impl<'a, K, R> Display for ColumnLeafCursor<'a, K, R>
 where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut cursor: ColumnLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.key();
-            writeln!(f, "{} -> {}", key, val)?;
+            writeln!(f, "{:?} -> {:?}", key, val)?;
             cursor.step();
         }
 

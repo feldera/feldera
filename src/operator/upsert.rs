@@ -10,9 +10,8 @@ use crate::{
         Builder, Trace,
     },
     utils::VecExt,
-    Circuit, Stream, Timestamp,
+    Circuit, DBData, Stream, Timestamp,
 };
-use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 impl<P, K, V> Stream<Circuit<P>, Vec<(K, Option<V>)>>
@@ -38,10 +37,10 @@ where
     // TODO: Derive TS from circuit.
     pub fn upsert<TS, B>(&self) -> Stream<Circuit<P>, B>
     where
-        K: Ord + Clone + Eq + SizeOf + 'static,
-        V: Ord + Clone + Ord + SizeOf + 'static,
-        B::R: ZRingValue + SizeOf,
-        TS: Timestamp + SizeOf,
+        K: DBData,
+        V: DBData,
+        B::R: DBData + ZRingValue,
+        TS: DBData + Timestamp,
         B: Batch<Key = K, Val = V, Time = ()> + 'static,
     {
         let circuit = self.circuit();
@@ -144,8 +143,6 @@ where
 impl<T, B> BinaryOperator<T, Vec<(T::Key, Option<T::Val>)>, B> for Upsert<T, B>
 where
     T: Trace + 'static,
-    T::Key: Clone + Ord + Eq,
-    T::Val: Clone + Ord,
     T::R: ZRingValue,
     B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R> + 'static,
 {

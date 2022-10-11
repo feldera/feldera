@@ -5,8 +5,9 @@ use crate::{
     trace::{
         consolidation::consolidate_from,
         layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+        MonoidValue,
     },
-    NumEntries,
+    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -54,8 +55,8 @@ where
 
 impl<K, R> Display for OrderedLeaf<K, R>
 where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.cursor().fmt(f)
@@ -65,8 +66,8 @@ where
 // TODO: by-value merge
 impl<K, R> Add<Self> for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     type Output = Self;
 
@@ -362,15 +363,15 @@ where
 
 impl<'a, K, R> Display for OrderedLeafCursor<'a, K, R>
 where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssignByRef + Clone + Display,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut cursor: OrderedLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.key();
-            writeln!(f, "{} -> {}", key, val)?;
+            writeln!(f, "{:?} -> {:?}", key, val)?;
             cursor.step();
         }
 

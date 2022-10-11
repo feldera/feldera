@@ -3,6 +3,7 @@ use crate::{
     circuit::Scope,
     time::Timestamp,
     trace::ord::OrdValBatch,
+    DBData,
 };
 use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
@@ -63,13 +64,13 @@ impl<TOuter: PartialOrder, TInner: PartialOrder> PartialOrder for Product<TOuter
 
 impl<TOuter, TInner> Timestamp for Product<TOuter, TInner>
 where
-    TOuter: Timestamp + SizeOf,
-    TInner: Timestamp + SizeOf,
+    TOuter: DBData + Timestamp,
+    TInner: DBData + Timestamp,
 {
     type OrdValBatch<
-        K: Ord + Clone + SizeOf + 'static,
-        V: Ord + Clone + SizeOf + 'static,
-        R: MonoidValue + SizeOf,
+        K: DBData,
+        V: DBData,
+        R: DBData + MonoidValue,
     > = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {
