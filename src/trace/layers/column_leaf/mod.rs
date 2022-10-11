@@ -13,13 +13,13 @@ pub use cursor::ColumnLeafCursor;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::Trie,
-    utils::assume,
+    utils::{assume, cast_uninit_vec},
     NumEntries,
 };
 use size_of::SizeOf;
 use std::{
     fmt::{self, Display},
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::MaybeUninit,
     ops::{Add, AddAssign, Neg},
     ptr,
     slice::SliceIndex,
@@ -107,15 +107,10 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     ) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
         unsafe { self.assume_invariants() }
 
-        let mut keys = ManuallyDrop::new(self.keys);
-        let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
-        let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
-
-        let mut diffs = ManuallyDrop::new(self.diffs);
-        let (len, cap, ptr) = (diffs.len(), diffs.capacity(), diffs.as_mut_ptr());
-        let diffs = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
-
-        OrderedColumnLeaf { keys, diffs }
+        OrderedColumnLeaf {
+            keys: cast_uninit_vec(self.keys),
+            diffs: cast_uninit_vec(self.diffs),
+        }
     }
 }
 

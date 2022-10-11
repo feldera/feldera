@@ -2,7 +2,10 @@ mod vec_ext;
 
 pub(crate) use vec_ext::VecExt;
 
-use std::hint::unreachable_unchecked;
+use std::{
+    hint::unreachable_unchecked,
+    mem::{align_of, size_of, ManuallyDrop, MaybeUninit},
+};
 
 /// Tells the optimizer that a condition is always true
 ///
@@ -34,4 +37,21 @@ pub(crate) const fn next_multiple_of(n: usize, rhs: usize) -> usize {
 #[inline(never)]
 pub(crate) fn cursor_position_oob(position: usize, length: usize) -> ! {
     panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
+}
+
+/// Casts a `Vec<T>` into a `Vec<MaybeUninit<T>>`
+#[inline]
+pub(crate) fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
+    // See https://doc.rust-lang.org/std/vec/struct.Vec.html#safety
+    debug_assert_eq!(size_of::<T>(), size_of::<MaybeUninit<T>>());
+    debug_assert_eq!(align_of::<T>(), align_of::<MaybeUninit<T>>());
+
+    // Make sure we don't drop the old vec
+    let mut vec = ManuallyDrop::new(vec);
+    // Get the length, capacity and pointer of the vec (we get the pointer last as a
+    // rather nitpicky thing irt stacked borrows since the `.len()` and
+    // `.capacity()` calls technically reborrow the vec). Ideally we'd use
+    // `Vec::into_raw_parts()` but it's currently unstable via rust/#65816
+    let (len, cap, ptr) = (vec.len(), vec.capacity(), vec.as_mut_ptr());
+    unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) }
 }

@@ -9,7 +9,7 @@ use crate::{
         },
         Consumer, ValueConsumer,
     },
-    utils::{assume, cursor_position_oob},
+    utils::{assume, cast_uninit_vec, cursor_position_oob},
     NumEntries,
 };
 use size_of::SizeOf;
@@ -17,7 +17,7 @@ use std::{
     cmp::{min, Ordering},
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::MaybeUninit,
     ops::{Add, AddAssign, Neg},
     ptr,
 };
@@ -77,12 +77,8 @@ impl<K, V, R, O> OrderedLayer<K, OrderedColumnLeaf<V, R>, O> {
             self.vals.assume_invariants();
         }
 
-        let mut keys = ManuallyDrop::new(self.keys);
-        let (len, cap, ptr) = (keys.len(), keys.capacity(), keys.as_mut_ptr());
-        let keys = unsafe { Vec::from_raw_parts(ptr.cast(), len, cap) };
-
         OrderedLayer {
-            keys,
+            keys: cast_uninit_vec(self.keys),
             offs: self.offs,
             vals: self.vals.into_uninit(),
         }
@@ -784,12 +780,27 @@ where
     }
 }
 
-// TODO: Drop impl
-// TODO: SizeOf impl
+// TODO: Fuzz testing for correctness and drop safety
 #[derive(Debug)]
-pub struct OrderedLayerConsumer<K, V, R, O> {
-    key_position: usize,
-    value_position: usize,
+pub struct OrderedLayerConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
+    /// The position within `storage.keys` and `storage.offs` we're currently
+    /// at. `position < storage.keys.len() && position < storage.offs.len()`
+    /// unless the consumer is exhausted. To get the current key's range of
+    /// values, use `storage.offs[position]..storage.offs[position + 1]`
+    position: usize,
+    /// The storage backing the consumer. Contains `MaybeUninit` values which
+    /// (as the name suggests) may or may not be uninitialized. All keys (not
+    /// offsets, those are only dropped when the consumer is) at
+    /// positions greater than or equal to `position` are initialized. In other
+    /// words, `storage.keys[..position]` are uninit and
+    /// `storage.keys[position..]` are init. For values, all values at positions
+    /// greater than or equal to `storage.offs[position]` are init and all
+    /// others are uninit, meaning that
+    /// `storage.values[..storage.offs[position]]` are uninit and
+    /// `storage.values[storage.offs[position]..]` are init
     storage: OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O>,
 }
 
@@ -802,26 +813,26 @@ where
         Self: 'a;
 
     fn key_valid(&self) -> bool {
-        self.key_position < self.storage.keys.len()
+        self.position < self.storage.keys.len()
     }
 
     fn peek_key(&self) -> &K {
         if !self.key_valid() {
-            cursor_position_oob(self.key_position, self.storage.keys.len());
+            cursor_position_oob(self.position, self.storage.keys.len());
         }
 
         // Safety: The current key is valid
-        unsafe { self.storage.keys[self.key_position].assume_init_ref() }
+        unsafe { self.storage.keys[self.position].assume_init_ref() }
     }
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        let idx = self.key_position;
+        let idx = self.position;
         if !self.key_valid() {
             cursor_position_oob(idx, self.storage.keys.len());
         }
 
         // We increment position before reading out the key and diff values
-        self.key_position += 1;
+        self.position += 1;
 
         // Copy out the key and diff
         let key = unsafe { self.storage.keys[idx].assume_init_read() };
@@ -833,7 +844,12 @@ where
     where
         K: Ord,
     {
-        let start_position = self.key_position;
+        // If the consumer is exhausted, do nothing
+        if !self.key_valid() {
+            return;
+        }
+
+        let start_position = self.position;
 
         // Search for the given key
         let offset = advance(&self.storage.keys[start_position..], |k| unsafe {
@@ -841,24 +857,22 @@ where
         });
 
         // Increment the offset before we drop the elements for panic safety
-        self.key_position += offset;
+        self.position += offset;
 
-        // We set the value position to the end of the last key's value range
-        let value_start = self.value_position;
-        self.value_position = self.storage.offs[self.key_position + 1].into_usize();
+        // We get the skipped value range by
+        let value_start = self.storage.offs[start_position].into_usize();
+        let value_end = self.storage.offs[self.position].into_usize();
 
         // Drop the skipped elements
         unsafe {
             // Drop the skipped keys
             ptr::drop_in_place(
-                &mut self.storage.keys[start_position..self.key_position] as *mut [MaybeUninit<K>]
+                &mut self.storage.keys[start_position..self.position] as *mut [MaybeUninit<K>]
                     as *mut [K],
             );
 
             // Drop the skipped values and diffs
-            self.storage
-                .vals
-                .drop_range(value_start..self.value_position);
+            self.storage.vals.drop_range(value_start..value_end);
         }
     }
 }
@@ -870,23 +884,27 @@ where
 {
     fn from(layer: OrderedLayer<K, OrderedColumnLeaf<V, R>, O>) -> Self {
         Self {
-            key_position: 0,
-            value_position: layer.offs[0].into_usize(),
+            position: 0,
             storage: layer.into_uninit(),
         }
     }
 }
 
-impl<K, V, R, O> Drop for OrderedLayerConsumer<K, V, R, O> {
+impl<K, V, R, O> Drop for OrderedLayerConsumer<K, V, R, O>
+where
+    O: OrdOffset,
+{
     fn drop(&mut self) {
         unsafe {
             // Drop any remaining keys
             ptr::drop_in_place(
-                &mut self.storage.keys[self.key_position..] as *mut [MaybeUninit<K>] as *mut [K],
+                &mut self.storage.keys[self.position..] as *mut [MaybeUninit<K>] as *mut [K],
             );
 
             // Drop any remaining values & diffs
-            self.storage.vals.drop_range(self.value_position..);
+            self.storage
+                .vals
+                .drop_range(self.storage.offs[self.position].into_usize()..);
         }
     }
 }
@@ -911,8 +929,8 @@ impl<'a, V, R> OrderedLayerValues<'a, V, R> {
         Self {
             // The consumer increments `value_position` before creating the value consumer so we
             // look at `value_position` for the value range's start
-            current: consumer.storage.offs[consumer.value_position.into_usize() - 1].into_usize(),
-            end: consumer.storage.offs[consumer.value_position.into_usize()].into_usize(),
+            current: consumer.storage.offs[consumer.position.into_usize() - 1].into_usize(),
+            end: consumer.storage.offs[consumer.position.into_usize()].into_usize(),
             consumer: &mut consumer.storage.vals,
         }
     }

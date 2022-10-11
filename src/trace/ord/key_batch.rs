@@ -467,7 +467,10 @@ where
     }
 }
 
-pub struct OrdKeyConsumer<K, T, R, O> {
+pub struct OrdKeyConsumer<K, T, R, O>
+where
+    O: OrdOffset,
+{
     consumer: OrderedLayerConsumer<K, T, R, O>,
 }
 
