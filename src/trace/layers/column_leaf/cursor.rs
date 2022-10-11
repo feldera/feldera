@@ -1,7 +1,7 @@
 use crate::{
-    trace::{layers::{advance, column_leaf::OrderedColumnLeaf, Cursor}, MonoidValue},
+    trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
     utils::cursor_position_oob,
-    DBData,
+    DBData, DBWeight,
 };
 use std::fmt::{self, Display};
 
@@ -153,7 +153,7 @@ where
 impl<'a, K, R> Display for ColumnLeafCursor<'a, K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut cursor: ColumnLeafCursor<K, R> = self.clone();

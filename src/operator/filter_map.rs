@@ -1,13 +1,12 @@
 //! Filter and transform data record-by-record.
 
 use crate::{
-    algebra::MonoidValue,
     circuit::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
     trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
-    DBData, OrdIndexedZSet, OrdZSet,
+    DBData, DBWeight, OrdIndexedZSet, OrdZSet,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -70,7 +69,7 @@ pub trait FilterMap<C> {
     type ItemRef<'a>;
 
     /// Type of the `weight` component of the `(key, value, weight)` tuple.
-    type R: DBData + MonoidValue;
+    type R: DBWeight;
 
     /// Filter input stream only retaining records that satisfy the
     /// `filter_func` predicate.
@@ -158,7 +157,7 @@ impl<P, K, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdZSet<K, R>>
 where
     P: Clone + 'static,
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     type Item = K;
     type ItemRef<'a> = &'a K;
@@ -227,7 +226,7 @@ where
 impl<P, K, V, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdIndexedZSet<K, V, R>>
 where
     P: Clone + 'static,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     K: DBData,
     V: DBData,
 {

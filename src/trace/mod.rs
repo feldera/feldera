@@ -19,22 +19,21 @@ pub mod spine_fueled;
 pub use cursor::{Consumer, Cursor, ValueConsumer};
 
 use crate::{
-    algebra::{HasZero, Lattice, MonoidValue},
+    algebra::{HasZero, MonoidValue},
     circuit::Activator,
     time::{AntichainRef, Timestamp},
 };
-use std::{
-    fmt::Debug,
-    hash::Hash
-};
 use size_of::SizeOf;
+use std::{fmt::Debug, hash::Hash};
 
 pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
-impl<T> DBData for T
-where
-    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
-{
-}
+impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
+
+pub trait DBWeight: DBData + MonoidValue {}
+impl<T> DBWeight for T where T: DBData + MonoidValue {}
+
+pub trait DBTimestamp: DBData + Timestamp {}
+impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 
 /// An append-only collection of `(key, val, time, diff)` tuples.
 ///
@@ -124,9 +123,9 @@ where
     /// Values associated with keys.
     type Val: DBData;
     /// Timestamps associated with updates
-    type Time: DBData + Timestamp + Lattice;
+    type Time: DBTimestamp;
     /// Associated update.
-    type R: DBData + MonoidValue;
+    type R: DBWeight;
 
     /// The type used to enumerate the batch's contents.
     type Cursor<'s>: Cursor<'s, Self::Key, Self::Val, Self::Time, Self::R>

@@ -10,7 +10,7 @@ use crate::{
         Builder, Trace,
     },
     utils::VecExt,
-    Circuit, DBData, Stream, Timestamp,
+    Circuit, DBData, DBTimestamp, Stream, Timestamp,
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
@@ -40,7 +40,7 @@ where
         K: DBData,
         V: DBData,
         B::R: DBData + ZRingValue,
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         B: Batch<Key = K, Val = V, Time = ()> + 'static,
     {
         let circuit = self.circuit();

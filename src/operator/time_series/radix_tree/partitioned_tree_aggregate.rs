@@ -462,7 +462,7 @@ mod test {
         algebra::{DefaultSemigroup, HasZero, Semigroup},
         operator::Fold,
         trace::BatchReader,
-        Circuit, DBData, CollectionHandle,
+        Circuit, CollectionHandle, DBData,
     };
     use num::PrimInt;
     use std::{

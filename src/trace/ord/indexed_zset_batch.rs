@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
     time::AntichainRef,
     trace::{
         layers::{
@@ -14,7 +14,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    DBData, NumEntries,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -42,9 +42,9 @@ where
 
 impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + Display,
-    V: Ord + Clone + Display + 'static,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display + 'static,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
     Layers<K, V, R, O>: Display,
 {
@@ -61,7 +61,7 @@ impl<K, V, R, O> Default for OrdIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]
@@ -98,9 +98,9 @@ where
 
 impl<K, V, R, O> NumEntries for OrdIndexedZSet<K, V, R, O>
 where
-    K: Clone + Ord,
-    V: Clone + Ord,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     const CONST_NUM_ENTRIES: Option<usize> = Layers::<K, V, R, O>::CONST_NUM_ENTRIES;
@@ -211,7 +211,7 @@ impl<K, V, R, O> BatchReader for OrdIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Key = K;
@@ -263,7 +263,7 @@ impl<K, V, R, O> Batch for OrdIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -306,7 +306,7 @@ pub struct OrdIndexedZSetMerger<K, V, R, O>
 where
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     // result that we are currently assembling.
@@ -319,7 +319,7 @@ where
     Self: SizeOf,
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]
@@ -477,7 +477,7 @@ where
     Self: SizeOf,
     K: DBData,
     V: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]

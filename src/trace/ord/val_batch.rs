@@ -11,7 +11,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    DBData, Timestamp,
+    DBData, DBTimestamp, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -38,12 +38,33 @@ where
     pub upper: Antichain<T>,
 }
 
+impl<K, V, T, R, O> NumEntries for OrdValBatch<K, V, T, R, O>
+where
+    K: DBData,
+    V: DBData,
+    T: DBTimestamp,
+    R: DBWeight,
+    O: OrdOffset,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = <OrdValBatchLayer<K, V, R, R, O>>::CONST_NUM_ENTRIES;
+
+    #[inline]
+    fn num_entries_shallow(&self) -> usize {
+        self.layer.num_entries_shallow()
+    }
+
+    #[inline]
+    fn num_entries_deep(&self) -> usize {
+        self.layer.num_entries_deep()
+    }
+}
+
 impl<K, V, T, R, O> Display for OrdValBatch<K, V, T, R, O>
 where
     K: DBData,
     V: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset + 'static,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -61,8 +82,8 @@ impl<K, V, T, R, O> BatchReader for OrdValBatch<K, V, T, R, O>
 where
     K: DBData,
     V: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Key = K;
@@ -107,8 +128,8 @@ impl<K, V, T, R, O> Batch for OrdValBatch<K, V, T, R, O>
 where
     K: DBData,
     V: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -270,8 +291,8 @@ where
     Self: SizeOf,
     K: DBData,
     V: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     fn new_merger(
@@ -479,8 +500,8 @@ where
     Self: SizeOf,
     K: DBData,
     V: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]

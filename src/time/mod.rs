@@ -5,10 +5,10 @@ mod nested_ts32;
 mod product;
 
 use crate::{
-    algebra::{Lattice, MonoidValue, PartialOrder},
+    algebra::{Lattice, PartialOrder},
     circuit::Scope,
     trace::{ord::OrdValBatch, Batch},
-    DBData, OrdIndexedZSet,
+    DBData, DBWeight, OrdIndexedZSet,
 };
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
@@ -89,7 +89,8 @@ pub trait Timestamp:
     /// We automate this choice by making it an associated type of
     /// `trait Timestamp` -- not a very elegant solution, but I couldn't
     /// think of a better one.
-    type OrdValBatch<K: DBData, V: DBData, R: DBData + MonoidValue>: Batch<Key=K, Val=V, Time=Self, R=R> + SizeOf;
+    type OrdValBatch<K: DBData, V: DBData, R: DBWeight>: Batch<Key = K, Val = V, Time = Self, R = R>
+        + SizeOf;
 
     fn minimum() -> Self;
 
@@ -155,7 +156,7 @@ pub trait Timestamp:
 }
 
 impl Timestamp for () {
-    type OrdValBatch<K: DBData, V: DBData, R: DBData + MonoidValue> = OrdIndexedZSet<K, V, R>;
+    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdIndexedZSet<K, V, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -165,7 +166,7 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
-    type OrdValBatch<K: DBData, V: DBData, R: DBData + MonoidValue> = OrdValBatch<K, V, Self, R>;
+    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {
         0

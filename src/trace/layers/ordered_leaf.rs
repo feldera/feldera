@@ -5,9 +5,8 @@ use crate::{
     trace::{
         consolidation::consolidate_from,
         layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
-        MonoidValue,
     },
-    DBData, NumEntries,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -56,7 +55,7 @@ where
 impl<K, R> Display for OrderedLeaf<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.cursor().fmt(f)
@@ -67,7 +66,7 @@ where
 impl<K, R> Add<Self> for OrderedLeaf<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     type Output = Self;
 
@@ -364,7 +363,7 @@ where
 impl<'a, K, R> Display for OrderedLeafCursor<'a, K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut cursor: OrderedLeafCursor<K, R> = self.clone();

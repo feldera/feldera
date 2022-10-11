@@ -1,9 +1,9 @@
 use crate::{
-    algebra::{Lattice, MonoidValue, PartialOrder},
+    algebra::{Lattice, PartialOrder},
     circuit::Scope,
     time::Timestamp,
     trace::ord::OrdValBatch,
-    DBData,
+    DBData, DBWeight,
 };
 use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
@@ -59,7 +59,7 @@ impl PartialOrder for NestedTimestamp32 {
 }
 
 impl Timestamp for NestedTimestamp32 {
-    type OrdValBatch<K: DBData, V: DBData, R: DBData + MonoidValue> = OrdValBatch<K, V, Self, R>;
+    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {
         Self::new(false, 0)

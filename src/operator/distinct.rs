@@ -10,7 +10,7 @@ use crate::{
     circuit_cache_key,
     time::NestedTimestamp32,
     trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace},
-    NumEntries, Timestamp,
+    NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -315,7 +315,6 @@ impl<Z, T> DistinctTrace<Z, T>
 where
     Z: ZSet,
     T: BatchReader<Key = Z::Key, Val = (), R = Z::R> + 'static,
-    T::Time: Timestamp,
 {
     fn new() -> Self {
         Self {
