@@ -12,9 +12,9 @@ pub use cursor::ColumnLeafCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::{MonoidValue, layers::Trie},
     utils::{assume, cast_uninit_vec},
-    DBData, NumEntries,
+    trace::layers::Trie,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -174,7 +174,7 @@ where
 impl<K, R> Display for OrderedColumnLeaf<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.cursor().fmt(f)

@@ -1,11 +1,11 @@
 use crate::{
-    algebra::{MonoidValue, ZRingValue},
+    algebra::ZRingValue,
     circuit::{
         operator_traits::{Operator, SourceOperator},
         LocalStoreMarker, Scope,
     },
     trace::Batch,
-    Circuit, DBData, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use fxhash::hash32;
 use size_of::SizeOf;
@@ -77,7 +77,7 @@ impl Circuit<()> {
     pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
     where
         K: DBData,
-        R: DBData + MonoidValue,
+        R: DBWeight,
     {
         let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
         let stream = self.add_source(input);
@@ -112,7 +112,7 @@ impl Circuit<()> {
     where
         K: DBData,
         V: DBData,
-        R: DBData + MonoidValue,
+        R: DBWeight,
     {
         let (input, input_handle) = Input::new(|tuples: Vec<(K, (V, R))>| {
             OrdIndexedZSet::from_tuples(

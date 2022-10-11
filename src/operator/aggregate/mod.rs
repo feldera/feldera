@@ -23,7 +23,7 @@ use crate::{
         spine_fueled::Spine,
         Batch, BatchReader, Builder,
     },
-    DBData, NumEntries, OrdIndexedZSet, OrdZSet,
+    DBData, DBTimestamp, DBWeight, NumEntries, OrdIndexedZSet, OrdZSet,
 };
 use size_of::SizeOf;
 
@@ -158,7 +158,7 @@ where
         aggregator: A,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
         A::Output: DBData,
@@ -169,7 +169,7 @@ where
     /// Like [`Self::aggregate`], but can return any batch type.
     pub fn aggregate_generic<TS, A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
     where
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         Z: IndexedZSet + SizeOf + NumEntries + Send, /* + std::fmt::Display */
         Z::R: DBData,                                /* + std::fmt::Display */
         A: Aggregator<Z::Val, TS, Z::R> + 'static,
@@ -214,7 +214,7 @@ where
         f: F,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         Z: IndexedZSet,
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
@@ -225,7 +225,7 @@ where
     /// Like [`Self::aggregate_linear`], but can return any batch type.
     pub fn aggregate_linear_generic<TS, F, O>(&self, f: F) -> Stream<Circuit<P>, O>
     where
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> O::Val + Clone + 'static,
         O: Clone + Batch<Key = Z::Key, Time = ()> + 'static,
@@ -251,7 +251,7 @@ where
     where
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> T + 'static,
-        T: DBData + MonoidValue + MulByRef<Z::R, Output = T>,
+        T: DBWeight + MulByRef<Z::R, Output = T>,
     {
         self.weigh_generic::<_, OrdZSet<_, _>>(f)
     }

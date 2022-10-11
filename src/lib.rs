@@ -28,4 +28,4 @@ pub use circuit::{
 };
 pub use operator::{CollectionHandle, InputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};
-pub use trace::DBData;
+pub use trace::{DBData, DBTimestamp, DBWeight};

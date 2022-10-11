@@ -14,7 +14,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    DBData, Timestamp,
+    DBData, DBTimestamp, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{fmt::Debug, marker::PhantomData};
@@ -31,11 +31,31 @@ pub struct OrdKeyBatch<K, T, R, O = usize> {
     pub upper: Antichain<T>,
 }
 
+impl<K, T, R, O> NumEntries for OrdKeyBatch<K, T, R, O>
+where
+    K: DBData,
+    T: DBTimestamp,
+    R: DBWeight,
+    O: OrdOffset,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = <OrdKeyBatchLayer<K, T, R, O>>::CONST_NUM_ENTRIES;
+
+    #[inline]
+    fn num_entries_shallow(&self) -> usize {
+        self.layer.num_entries_shallow()
+    }
+
+    #[inline]
+    fn num_entries_deep(&self) -> usize {
+        self.layer.num_entries_deep()
+    }
+}
+
 impl<K, T, R, O> BatchReader for OrdKeyBatch<K, T, R, O>
 where
     K: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Key = K;
@@ -76,8 +96,8 @@ where
 impl<K, T, R, O> Batch for OrdKeyBatch<K, T, R, O>
 where
     K: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Item = K;
@@ -200,8 +220,8 @@ impl<K, T, R, O> Merger<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyMerger<K
 where
     Self: SizeOf,
     K: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     fn new_merger(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
@@ -420,8 +440,8 @@ impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, 
 where
     Self: SizeOf,
     K: DBData,
-    T: DBData + Timestamp,
-    R: DBData + MonoidValue,
+    T: DBTimestamp,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]

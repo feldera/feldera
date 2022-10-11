@@ -353,7 +353,6 @@ where
 impl<T> Operator for Z1Trace<T>
 where
     T: Trace + SizeOf + NumEntries + 'static,
-    T::Time: Timestamp,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z1 (trace)")
@@ -407,7 +406,6 @@ where
 impl<T> StrictOperator<T> for Z1Trace<T>
 where
     T: SizeOf + NumEntries + Trace + 'static,
-    T::Time: Timestamp,
 {
     fn get_output(&mut self) -> T {
         let mut result = self.trace.take().unwrap();
@@ -427,7 +425,6 @@ where
 impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
 where
     T: SizeOf + NumEntries + Trace + 'static,
-    T::Time: Timestamp,
 {
     fn eval_strict(&mut self, _i: &T) {
         unimplemented!()

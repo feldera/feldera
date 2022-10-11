@@ -12,7 +12,7 @@ use crate::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
         Trace,
     },
-    DBData, OrdIndexedZSet, OrdZSet,
+    DBData, DBTimestamp, OrdIndexedZSet, OrdZSet,
 };
 use size_of::{Context, SizeOf};
 use std::{
@@ -189,7 +189,7 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdZSet<V, I1::R>>
     where
-        TS: Timestamp + SizeOf,
+        TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
         V: DBData + Default,
@@ -212,7 +212,7 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
-        TS: Timestamp + SizeOf,
+        TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
         K: DBData + Default,
@@ -230,7 +230,7 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, Z>
     where
-        TS: Timestamp + SizeOf,
+        TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         Z: IndexedZSet<R = I1::R>,
         Z::Batcher: SizeOf,
@@ -311,7 +311,7 @@ where
     /// excluding keys that are not present in `other`.
     pub fn antijoin<TS, I2>(&self, other: &Stream<Circuit<P>, I2>) -> Stream<Circuit<P>, I1>
     where
-        TS: Timestamp + SizeOf,
+        TS: DBTimestamp,
         I1::Key: Default,
         I1::Val: Default,
         I1::Item: Default,
@@ -668,7 +668,7 @@ where
 
 impl<F, I, T, Z, It> BinaryOperator<I, T, Z> for JoinTrace<F, I, T, Z, It>
 where
-    I: IndexedZSet, /* + ::std::fmt::Display */
+    I: IndexedZSet,                             /* + ::std::fmt::Display */
     T: Trace<Key = I::Key, R = I::R> + 'static, /* + ::std::fmt::Display */
     //T::Time: ::std::fmt::Display,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> It + 'static,
@@ -820,12 +820,12 @@ mod test {
     use crate::{
         indexed_zset,
         operator::{DelayedFeedback, FilterMap, Generator},
-        time::{NestedTimestamp32, Product, Timestamp},
+        time::{NestedTimestamp32, Product},
         trace::{
             ord::{OrdIndexedZSet, OrdZSet},
             Batch,
         },
-        zset, Circuit, DBData, Runtime, Stream,
+        zset, Circuit, DBTimestamp, Runtime, Stream,
     };
     use size_of::SizeOf;
     use std::{
@@ -1091,7 +1091,7 @@ mod test {
     ) -> Stream<Circuit<P>, OrdZSet<Label, isize>>
     where
         P: Clone + 'static,
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
     {
         let computed_labels = circuit
             .fixedpoint(|child| {

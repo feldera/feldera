@@ -12,7 +12,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    DBData, NumEntries,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -32,7 +32,7 @@ pub struct OrdZSet<K, R> {
 impl<K, R> Display for OrdZSet<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -58,7 +58,7 @@ impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>> {
 impl<K, R> NumEntries for OrdZSet<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     const CONST_NUM_ENTRIES: Option<usize> = <OrderedColumnLeaf<K, R>>::CONST_NUM_ENTRIES;
 
@@ -155,7 +155,7 @@ where
 impl<K, R> BatchReader for OrdZSet<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     type Key = K;
     type Val = ();
@@ -203,7 +203,7 @@ where
 impl<K, R> Batch for OrdZSet<K, R>
 where
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     type Item = K;
     type Batcher = MergeBatcher<K, (), R, Self>;
@@ -236,7 +236,7 @@ where
 pub struct OrdZSetMerger<K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     // result that we are currently assembling.
     result: <OrderedColumnLeaf<K, R> as Trie>::MergeBuilder,
@@ -246,7 +246,7 @@ impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
 where
     Self: SizeOf,
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
@@ -277,7 +277,7 @@ where
 pub struct OrdZSetCursor<'s, K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     valid: bool,
     cursor: ColumnLeafCursor<'s, K, R>,
@@ -286,7 +286,7 @@ where
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     #[inline]
     fn key(&self) -> &K {
@@ -378,7 +378,7 @@ where
 pub struct OrdZSetBuilder<K, R>
 where
     K: Ord,
-    R: MonoidValue,
+    R: DBWeight,
 {
     builder: OrderedColumnLeafBuilder<K, R>,
 }
@@ -387,7 +387,7 @@ impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
 where
     Self: SizeOf,
     K: DBData,
-    R: DBData + MonoidValue,
+    R: DBWeight,
 {
     #[inline]
     fn new_builder(_time: ()) -> Self {

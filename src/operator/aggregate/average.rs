@@ -2,7 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, GroupValue, HasZero, IndexedZSet, MulByRef, NegByRef},
     trace::layers::{column_leaf::OrderedColumnLeaf, ordered::OrderedLayer},
     utils::VecExt,
-    Circuit, DBData, OrdIndexedZSet, Stream, Timestamp,
+    Circuit, DBData, DBTimestamp, OrdIndexedZSet, Stream,
 };
 use size_of::SizeOf;
 use std::{
@@ -141,7 +141,7 @@ where
     #[track_caller]
     pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
     where
-        TS: DBData + Timestamp,
+        TS: DBTimestamp,
         Z: IndexedZSet,
         Avg<A>: MulByRef<Z::R, Output = Avg<A>>,
         A: DBData + Div<isize, Output = A> + GroupValue,

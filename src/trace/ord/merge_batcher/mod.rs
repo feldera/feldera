@@ -1,10 +1,10 @@
 //! A general purpose `Batcher` implementation based on radix sort.
 
 use crate::{
-    algebra::{Lattice, MonoidValue},
+    algebra::MonoidValue,
     trace::{consolidation, Batch, Batcher, Builder},
     utils::VecExt,
-    Timestamp,
+    DBTimestamp,
 };
 use size_of::SizeOf;
 use std::{
@@ -29,7 +29,7 @@ impl<I, T, R, B> Batcher<I, T, R, B> for MergeBatcher<I, T, R, B>
 where
     Self: SizeOf,
     I: Ord + Clone,
-    T: Lattice + Timestamp + Ord + Clone,
+    T: DBTimestamp,
     R: MonoidValue,
     B: Batch<Item = I, Time = T, R = R>,
 {
