@@ -14,7 +14,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    NumEntries,
+    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -59,9 +59,9 @@ where
 
 impl<K, V, R, O> Default for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     #[inline]
@@ -209,9 +209,9 @@ where
 
 impl<K, V, R, O> BatchReader for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Key = K;
@@ -261,9 +261,9 @@ where
 
 impl<K, V, R, O> Batch for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     type Item = (K, V);
@@ -304,9 +304,9 @@ where
 #[derive(SizeOf)]
 pub struct OrdIndexedZSetMerger<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     // result that we are currently assembling.
@@ -317,9 +317,9 @@ impl<K, V, R, O> Merger<K, V, (), R, OrdIndexedZSet<K, V, R, O>>
     for OrdIndexedZSetMerger<K, V, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     #[inline]
@@ -475,9 +475,9 @@ impl<K, V, R, O> Builder<(K, V), (), R, OrdIndexedZSet<K, V, R, O>>
     for OrdIndexedZSetBuilder<K, V, R, O>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    V: Ord + Clone + SizeOf,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    V: DBData,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     #[inline]

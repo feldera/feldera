@@ -12,9 +12,9 @@ pub use cursor::ColumnLeafCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::layers::Trie,
+    trace::{MonoidValue, layers::Trie},
     utils::{assume, cast_uninit_vec},
-    NumEntries,
+    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -173,8 +173,8 @@ where
 
 impl<K, R> Display for OrderedColumnLeaf<K, R>
 where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.cursor().fmt(f)

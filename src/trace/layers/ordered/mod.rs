@@ -12,7 +12,7 @@ use crate::{
         TupleBuilder,
     },
     utils::{assume, cast_uninit_vec},
-    NumEntries,
+    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -273,7 +273,7 @@ where
 
 impl<K, L, O> Display for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone + Display,
+    K: DBData,
     L: Trie,
     for<'a> L::Cursor<'a>: Clone + Display,
     O: OrdOffset,
@@ -640,7 +640,7 @@ where
 
 impl<'a, K, L, O> Display for OrderedCursor<'a, K, O, L>
 where
-    K: Ord + Clone + Display,
+    K: DBData,
     L: Trie,
     L::Cursor<'a>: Clone + Display,
     O: OrdOffset,
@@ -650,7 +650,7 @@ where
 
         while cursor.valid() {
             let key = cursor.key();
-            writeln!(f, "{}:", key)?;
+            writeln!(f, "{:?}:", key)?;
             let val_str = cursor.values().to_string();
 
             f.write_str(&indent(&val_str, "    "))?;

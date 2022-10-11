@@ -87,6 +87,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     fmt::{Debug, Display, Formatter, Write},
+    hash::Hash,
     mem::size_of,
 };
 
@@ -341,7 +342,7 @@ where
 }
 
 /// Describes a range of timestamps that share a common prefix.
-#[derive(Clone, Debug, Default, SizeOf, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, SizeOf, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Prefix<TS> {
     /// Prefix bits.
     key: TS,
@@ -482,7 +483,7 @@ where
 }
 
 /// Pointer to a child node.
-#[derive(Clone, Debug, SizeOf, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, SizeOf, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct ChildPtr<TS, A> {
     /// Unique prefix of a child subtree, which serves as a pointer
     /// to the child node.  Given this prefix the child node can
@@ -524,7 +525,7 @@ where
 }
 
 /// Radix tree node.
-#[derive(Clone, Debug, Default, SizeOf, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, SizeOf, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TreeNode<TS, A> {
     /// Array of children.
     // `Option` doesn't introduce space overhead.

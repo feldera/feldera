@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
     time::AntichainRef,
     trace::{
         layers::{
@@ -12,7 +12,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher,
         Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    NumEntries,
+    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -31,8 +31,8 @@ pub struct OrdZSet<K, R> {
 
 impl<K, R> Display for OrdZSet<K, R>
 where
-    K: Ord + Clone + Display,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + Display,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -57,8 +57,8 @@ impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>> {
 
 impl<K, R> NumEntries for OrdZSet<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     const CONST_NUM_ENTRIES: Option<usize> = <OrderedColumnLeaf<K, R>>::CONST_NUM_ENTRIES;
 
@@ -81,7 +81,7 @@ impl<K, R> Default for OrdZSet<K, R> {
 
 impl<K, R> NegByRef for OrdZSet<K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: MonoidValue + NegByRef,
 {
     fn neg_by_ref(&self) -> Self {
@@ -93,7 +93,7 @@ where
 
 impl<K, R> Neg for OrdZSet<K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: MonoidValue + Neg<Output = R>,
 {
     type Output = Self;
@@ -108,7 +108,7 @@ where
 // TODO: by-value merge
 impl<K, R> Add<Self> for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     R: MonoidValue,
 {
     type Output = Self;
@@ -122,7 +122,7 @@ where
 
 impl<K, R> AddAssign<Self> for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     R: MonoidValue,
 {
     fn add_assign(&mut self, rhs: Self) {
@@ -132,7 +132,7 @@ where
 
 impl<K, R> AddAssignByRef for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     R: MonoidValue,
 {
     fn add_assign_by_ref(&mut self, rhs: &Self) {
@@ -142,7 +142,7 @@ where
 
 impl<K, R> AddByRef for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     R: MonoidValue,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
@@ -154,8 +154,8 @@ where
 
 impl<K, R> BatchReader for OrdZSet<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: MonoidValue,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     type Key = K;
     type Val = ();
@@ -202,8 +202,8 @@ where
 
 impl<K, R> Batch for OrdZSet<K, R>
 where
-    K: Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     type Item = K;
     type Batcher = MergeBatcher<K, (), R, Self>;
@@ -235,7 +235,7 @@ where
 #[derive(SizeOf)]
 pub struct OrdZSetMerger<K, R>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     R: MonoidValue,
 {
     // result that we are currently assembling.
@@ -245,8 +245,8 @@ where
 impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
@@ -276,7 +276,7 @@ where
 #[derive(Debug, SizeOf)]
 pub struct OrdZSetCursor<'s, K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: MonoidValue,
 {
     valid: bool,
@@ -285,7 +285,7 @@ where
 
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: MonoidValue,
 {
     #[inline]
@@ -386,8 +386,8 @@ where
 impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
 where
     Self: SizeOf,
-    K: Ord + Clone + SizeOf + 'static,
-    R: MonoidValue + SizeOf,
+    K: DBData,
+    R: DBData + MonoidValue,
 {
     #[inline]
     fn new_builder(_time: ()) -> Self {

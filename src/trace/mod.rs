@@ -23,7 +23,18 @@ use crate::{
     circuit::Activator,
     time::{AntichainRef, Timestamp},
 };
+use std::{
+    fmt::Debug,
+    hash::Hash
+};
 use size_of::SizeOf;
+
+pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
+impl<T> DBData for T
+where
+    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
+{
+}
 
 /// An append-only collection of `(key, val, time, diff)` tuples.
 ///
@@ -109,13 +120,13 @@ where
     Self: Sized,
 {
     /// Key by which updates are indexed.
-    type Key;
+    type Key: DBData;
     /// Values associated with keys.
-    type Val;
+    type Val: DBData;
     /// Timestamps associated with updates
-    type Time: Timestamp + Lattice;
+    type Time: DBData + Timestamp + Lattice;
     /// Associated update.
-    type R: MonoidValue;
+    type R: DBData + MonoidValue;
 
     /// The type used to enumerate the batch's contents.
     type Cursor<'s>: Cursor<'s, Self::Key, Self::Val, Self::Time, Self::R>

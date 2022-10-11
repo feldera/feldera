@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::{
     nexmark::{model::Event, queries::OrdinalDate},
     operator::FilterMap,
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    Circuit, DBData, OrdIndexedZSet, OrdZSet, Stream,
 };
 use size_of::SizeOf;
 use std::{
@@ -78,8 +78,8 @@ type Q15Stream = Stream<Circuit<()>, OrdZSet<Q15Output, isize>>;
 impl<P, K, V> Stream<Circuit<P>, OrdIndexedZSet<K, V, isize>>
 where
     P: Clone + 'static,
-    K: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
-    V: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
+    K: DBData + Default,
+    V: DBData + Default,
 {
     /// Outer join:
     /// - returns the output of `join_func` for common keys.
@@ -96,8 +96,8 @@ where
     ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
     where
         Self: FilterMap<Circuit<P>, R = isize>,
-        V2: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
-        O: Clone + Default + Ord + SizeOf + 'static,
+        V2: DBData + Default,
+        O: DBData + Default,
         F: Fn(&K, &V, &V2) -> O + Clone + 'static,
         for<'a> FL: Fn(<Self as FilterMap<Circuit<P>>>::ItemRef<'a>) -> O + Clone + 'static,
         for<'a> FR: Fn(
@@ -124,8 +124,8 @@ where
         join_func: F,
     ) -> Stream<Circuit<P>, OrdZSet<O, isize>>
     where
-        V2: Default + SizeOf + Clone + Ord + Hash + Send + 'static,
-        O: Clone + Default + Ord + SizeOf + 'static,
+        V2: DBData + Default,
+        O: DBData + Default,
         F: Fn(&K, &V, &V2) -> O + Clone + 'static,
     {
         let join_func_left = join_func.clone();

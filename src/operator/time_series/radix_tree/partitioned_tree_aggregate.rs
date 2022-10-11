@@ -14,7 +14,7 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Builder, Cursor},
-    Circuit, OrdIndexedZSet, Stream,
+    Circuit, DBData, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
@@ -24,7 +24,6 @@ use std::{
     collections::BTreeMap,
     fmt,
     fmt::{Debug, Write},
-    hash::Hash,
     marker::PhantomData,
     ops::Neg,
 };
@@ -119,12 +118,11 @@ where
     ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Output, isize>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
-        Z::Key: Ord + Clone + SizeOf + Hash + Debug,
-        TS: Ord + Clone + PrimInt + SizeOf + Hash + Debug + 'static,
-        V: Ord + Clone + Debug + 'static,
-        Z::R: ZRingValue + SizeOf,
+        TS: DBData + PrimInt,
+        V: DBData,
+        Z::R: ZRingValue,
         Agg: Aggregator<V, (), Z::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + 'static,
+        Agg::Output: Default + DBData,
     {
         self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Output, isize>>(
             aggregator,
@@ -139,14 +137,13 @@ where
     ) -> Stream<Circuit<()>, O>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
-        Z::Key: Ord + Clone + Hash + Debug,
-        TS: Ord + Clone + PrimInt + SizeOf + Hash + Debug + 'static,
-        V: Ord + Clone + Debug + 'static,
-        Z::R: ZRingValue + SizeOf,
+        TS: DBData + PrimInt,
+        V: DBData,
+        Z::R: ZRingValue,
         Agg: Aggregator<V, (), Z::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + 'static,
+        Agg::Output: DBData + Default,
         O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key> + SizeOf + 'static,
-        O::R: ZRingValue + SizeOf,
+        O::R: ZRingValue,
     {
         self.circuit()
             .cache_get_or_insert_with(
@@ -237,7 +234,7 @@ impl<TS, V, R> EmptyCursor<TS, V, R> {
 
 impl<'a, TS, V, R> Cursor<'a, TS, V, (), R> for EmptyCursor<TS, V, R>
 where
-    TS: Clone + Eq + Ord,
+    TS: DBData,
     V: 'static,
 {
     fn key_valid(&self) -> bool {
@@ -337,16 +334,15 @@ impl<TS, V, Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O>
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Agg, O>
 where
     Z: PartitionedBatchReader<TS, V> + Clone + 'static,
-    Z::Key: Clone + Eq + Debug,
-    TS: PrimInt + Debug + 'static,
-    V: Ord + Clone + Debug + 'static,
-    Z::R: ZRingValue + SizeOf,
+    TS: DBData + PrimInt,
+    V: DBData,
+    Z::R: ZRingValue,
     IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone + 'static,
     OT: PartitionedRadixTreeReader<TS, Agg::Output, Key = Z::Key, R = O::R> + Clone + 'static,
     Agg: Aggregator<V, (), Z::R> + 'static,
-    Agg::Output: Default + Ord + Clone + Debug + 'static,
+    Agg::Output: DBData + Default,
     O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key> + 'static,
-    O::R: ZRingValue + SizeOf,
+    O::R: ZRingValue,
 {
     fn eval<'a>(
         &mut self,
@@ -466,12 +462,11 @@ mod test {
         algebra::{DefaultSemigroup, HasZero, Semigroup},
         operator::Fold,
         trace::BatchReader,
-        Circuit, CollectionHandle,
+        Circuit, DBData, CollectionHandle,
     };
     use num::PrimInt;
     use std::{
         collections::{btree_map::Entry, BTreeMap},
-        fmt::Debug,
         sync::{Arc, Mutex},
     };
 
@@ -482,10 +477,10 @@ mod test {
         contents: &BTreeMap<PK, BTreeMap<TS, A>>,
     ) where
         C: PartitionedRadixTreeCursor<'a, PK, TS, A, R>,
-        PK: Ord,
-        TS: PrimInt + Debug + 'static,
-        A: Clone + Eq + Debug + 'static,
-        R: HasZero,
+        PK: DBData,
+        TS: DBData + PrimInt,
+        A: DBData,
+        R: DBData + HasZero,
         S: Semigroup<A>,
     {
         let empty = BTreeMap::new();

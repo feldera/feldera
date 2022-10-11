@@ -15,11 +15,11 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Builder, Cursor},
-    Circuit, Stream,
+    Circuit, DBData, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
-use std::{borrow::Cow, fmt::Debug, hash::Hash, marker::PhantomData, ops::Neg};
+use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 pub type OrdPartitionedOverBatch<PK, TS, V, A, R> =
     OrdPartitionedIndexedZSet<PK, TS, (V, Option<A>), R>;
@@ -45,12 +45,11 @@ impl<B> Stream<Circuit<()>, B> {
     ) -> OrdPartitionedOverStream<B::Key, TS, V, Agg::Output, B::R>
     where
         B: PartitionedIndexedZSet<TS, V>,
-        B::Key: Ord + Clone + Hash + SizeOf + Send + Debug,
-        B::R: ZRingValue + Debug + Send,
+        B::R: ZRingValue,
         Agg: Aggregator<V, (), B::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + Send + 'static,
-        TS: PrimInt + Debug + SizeOf + Hash + Send + 'static,
-        V: Ord + Clone + Debug + SizeOf + Send + 'static,
+        Agg::Output: DBData + Default,
+        TS: DBData + PrimInt,
+        V: DBData,
     {
         self.partitioned_rolling_aggregate_generic::<TS, V, Agg, _>(aggregator, range)
     }
@@ -64,13 +63,12 @@ impl<B> Stream<Circuit<()>, B> {
     ) -> Stream<Circuit<()>, O>
     where
         B: PartitionedIndexedZSet<TS, V>,
-        B::Key: Ord + Clone + Hash + SizeOf + Debug,
-        B::R: ZRingValue + Debug,
+        B::R: ZRingValue,
         Agg: Aggregator<V, (), B::R> + 'static,
-        Agg::Output: Default + Ord + Clone + SizeOf + Debug + 'static,
+        Agg::Output: DBData + Default,
         O: PartitionedIndexedZSet<TS, (V, Option<Agg::Output>), Key = B::Key, R = B::R> + SizeOf,
-        TS: PrimInt + Debug + SizeOf + Hash + 'static,
-        V: Ord + Clone + Debug + 'static,
+        TS: DBData + PrimInt,
+        V: DBData,
     {
         // ```
         //                  ┌───────────────┐   input_trace
@@ -193,13 +191,12 @@ where
 impl<TS, V, A, S, B, T, RT, OT, O> QuaternaryOperator<B, T, RT, OT, O>
     for PartitionedRollingAggregate<TS, S>
 where
-    TS: PrimInt + Debug + 'static,
-    V: Clone + Debug + 'static,
-    A: Clone + Debug + 'static,
+    TS: DBData + PrimInt,
+    V: DBData,
+    A: DBData,
     S: Semigroup<A> + 'static,
     B: PartitionedBatchReader<TS, V> + Clone,
-    B::Key: Eq + Clone + Debug + 'static,
-    B::R: ZRingValue + Debug,
+    B::R: ZRingValue,
     T: PartitionedBatchReader<TS, V, Key = B::Key, R = B::R> + Clone,
     RT: PartitionedRadixTreeReader<TS, A, Key = B::Key> + Clone,
     OT: PartitionedBatchReader<TS, (V, Option<A>), Key = B::Key, R = B::R> + Clone,

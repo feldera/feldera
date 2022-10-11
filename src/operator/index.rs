@@ -9,8 +9,8 @@ use crate::{
     trace::{
         cursor::Cursor, ord::OrdIndexedZSet, Batch, BatchReader, Builder, Consumer, ValueConsumer,
     },
+    DBData,
 };
-use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -28,10 +28,9 @@ where
     /// used as input to various join and aggregation operators.
     pub fn index<K, V>(&self) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
     where
-        K: Ord + Clone + SizeOf + 'static,
-        V: Ord + Clone + SizeOf + 'static,
+        K: DBData,
+        V: DBData,
         CI: BatchReader<Key = (K, V), Val = (), Time = ()>,
-        CI::R: SizeOf,
     {
         self.index_generic()
     }
@@ -42,8 +41,6 @@ where
     where
         CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R> + 'static,
         CO: Batch<Time = ()> + Clone + 'static,
-        CO::Key: Clone,
-        CO::Val: Clone,
     {
         self.circuit()
             .cache_get_or_insert_with(IndexId::new(self.origin_node_id().clone()), || {
@@ -67,10 +64,9 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
     where
         CI: BatchReader<Time = (), Val = ()> + 'static,
-        CI::R: SizeOf,
         F: Fn(&CI::Key) -> (K, V) + Clone + 'static,
-        K: Ord + SizeOf + Clone + 'static,
-        V: Ord + SizeOf + Clone + 'static,
+        K: DBData,
+        V: DBData,
     {
         self.index_with_generic(index_func)
     }
@@ -81,8 +77,6 @@ where
     where
         CI: BatchReader<Time = (), Val = ()> + 'static,
         CO: Batch<Time = (), R = CI::R> + Clone + 'static,
-        CO::Key: Clone + Ord,
-        CO::Val: Clone + Ord,
         F: Fn(&CI::Key) -> (CO::Key, CO::Val) + Clone + 'static,
     {
         self.circuit()
@@ -133,8 +127,6 @@ impl<CI, CO> UnaryOperator<CI, CO> for Index<CI, CO>
 where
     CO: Batch<Time = ()> + Clone + 'static,
     CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R> + 'static,
-    CO::Key: Clone,
-    CO::Val: Clone,
 {
     fn eval(&mut self, input: &CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
@@ -220,8 +212,6 @@ where
     CO: Batch<Time = ()> + Clone + 'static,
     CI: BatchReader<Val = (), Time = (), R = CO::R> + 'static,
     F: Fn(&CI::Key) -> (CO::Key, CO::Val) + 'static,
-    CO::Key: Clone,
-    CO::Val: Clone,
 {
     fn eval(&mut self, i: &CI) -> CO {
         let mut tuples = Vec::with_capacity(i.len());

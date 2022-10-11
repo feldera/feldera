@@ -5,7 +5,7 @@ use crate::{
         LocalStoreMarker, Scope,
     },
     trace::Batch,
-    Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    Circuit, DBData, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use fxhash::hash32;
 use size_of::SizeOf;
@@ -76,8 +76,8 @@ impl Circuit<()> {
     /// See [`CollectionHandle`] for more details.
     pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
     where
-        K: Clone + SizeOf + Send + Ord + 'static,
-        R: MonoidValue + SizeOf + Send,
+        K: DBData,
+        R: DBData + MonoidValue,
     {
         let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
         let stream = self.add_source(input);
@@ -110,9 +110,9 @@ impl Circuit<()> {
         &self,
     ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, (V, R)>)
     where
-        K: Ord + Clone + SizeOf + Send + 'static,
-        V: Ord + Clone + SizeOf + Send + 'static,
-        R: MonoidValue + SizeOf + Clone + Send,
+        K: DBData,
+        V: DBData,
+        R: DBData + MonoidValue,
     {
         let (input, input_handle) = Input::new(|tuples: Vec<(K, (V, R))>| {
             OrdIndexedZSet::from_tuples(
@@ -133,12 +133,12 @@ impl Circuit<()> {
         upsert_func: F,
     ) -> Stream<Self, B>
     where
-        K: Clone + Ord + Send + SizeOf + Hash + 'static,
+        K: DBData,
         F: Fn(VI) -> Option<V> + 'static,
         B: Batch<Key = K, Val = V, Time = ()> + SizeOf + 'static,
-        B::R: ZRingValue + Ord + SizeOf,
-        V: Eq + Clone + Ord + SizeOf + 'static,
-        VI: Eq + Clone + Send + 'static,
+        B::R: ZRingValue,
+        V: DBData,
+        VI: DBData,
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
@@ -231,8 +231,8 @@ impl Circuit<()> {
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
-        K: Clone + Ord + Send + SizeOf + Hash + 'static,
-        R: ZRingValue + SizeOf + Ord,
+        K: DBData,
+        R: DBData + ZRingValue,
     {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, bool)>| tuples);
@@ -314,9 +314,9 @@ impl Circuit<()> {
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_map<K, V, R>(&self) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Option<V>>)
     where
-        K: Clone + Ord + Hash + Send + SizeOf + 'static,
-        V: Ord + Clone + Send + SizeOf + 'static,
-        R: ZRingValue + SizeOf + Ord,
+        K: DBData,
+        V: DBData,
+        R: DBData + ZRingValue,
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);
@@ -599,8 +599,8 @@ pub struct CollectionHandle<K, V> {
 
 impl<K, V> Clone for CollectionHandle<K, V>
 where
-    K: Clone + Send + 'static,
-    V: Clone + Send + 'static,
+    K: DBData,
+    V: DBData,
 {
     fn clone(&self) -> Self {
         // Don't clone buffers.
@@ -610,8 +610,8 @@ where
 
 impl<K, V> CollectionHandle<K, V>
 where
-    K: Clone + Send + 'static,
-    V: Clone + Send + 'static,
+    K: DBData,
+    V: DBData,
 {
     fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self {
         Self {
@@ -757,8 +757,8 @@ pub struct UpsertHandle<K, V> {
 
 impl<K, V> Clone for UpsertHandle<K, V>
 where
-    K: Clone + Send + 'static,
-    V: Clone + Send + 'static,
+    K: DBData,
+    V: DBData,
 {
     fn clone(&self) -> Self {
         // Don't clone buffers.
@@ -768,8 +768,8 @@ where
 
 impl<K, V> UpsertHandle<K, V>
 where
-    K: Clone + Send + 'static,
-    V: Clone + Send + 'static,
+    K: DBData,
+    V: DBData,
 {
     fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self
     where
