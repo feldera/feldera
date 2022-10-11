@@ -12,8 +12,8 @@ pub use cursor::ColumnLeafCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    utils::{assume, cast_uninit_vec},
     trace::layers::Trie,
+    utils::{assume, cast_uninit_vec},
     DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;

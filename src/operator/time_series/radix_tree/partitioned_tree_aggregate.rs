@@ -120,9 +120,8 @@ where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
         TS: DBData + PrimInt,
         V: DBData,
-        Z::R: ZRingValue,
-        Agg: Aggregator<V, (), Z::R> + 'static,
-        Agg::Output: Default + DBData,
+        Agg: Aggregator<V, (), Z::R>,
+        Agg::Output: Default,
     {
         self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Output, isize>>(
             aggregator,
@@ -139,9 +138,8 @@ where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
         TS: DBData + PrimInt,
         V: DBData,
-        Z::R: ZRingValue,
-        Agg: Aggregator<V, (), Z::R> + 'static,
-        Agg::Output: DBData + Default,
+        Agg: Aggregator<V, (), Z::R>,
+        Agg::Output: Default,
         O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
         O::R: ZRingValue,
     {
@@ -336,11 +334,10 @@ where
     Z: PartitionedBatchReader<TS, V> + Clone,
     TS: DBData + PrimInt,
     V: DBData,
-    Z::R: ZRingValue,
     IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone,
     OT: PartitionedRadixTreeReader<TS, Agg::Output, Key = Z::Key, R = O::R> + Clone,
-    Agg: Aggregator<V, (), Z::R> + 'static,
-    Agg::Output: DBData + Default,
+    Agg: Aggregator<V, (), Z::R>,
+    Agg::Output: Default,
     O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
     O::R: ZRingValue,
 {

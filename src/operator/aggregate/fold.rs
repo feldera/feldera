@@ -2,7 +2,7 @@ use crate::{
     algebra::{MonoidValue, Semigroup},
     operator::aggregate::Aggregator,
     trace::Cursor,
-    Timestamp,
+    DBData, Timestamp,
 };
 use std::{convert::identity, marker::PhantomData};
 
@@ -63,10 +63,11 @@ impl<V, T, R, A, S, O, SF, OF> Aggregator<V, T, R> for Fold<A, S, SF, OF>
 where
     T: Timestamp,
     R: MonoidValue,
-    A: Clone,
-    SF: Fn(&mut A, &V, R) + Clone,
-    OF: Fn(A) -> O + Clone,
-    S: Semigroup<O> + Clone,
+    A: Clone + 'static,
+    SF: Fn(&mut A, &V, R) + Clone + 'static,
+    OF: Fn(A) -> O + Clone + 'static,
+    S: Semigroup<O> + Clone + 'static,
+    O: DBData,
 {
     type Output = O;
     type Semigroup = S;

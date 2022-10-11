@@ -2,7 +2,7 @@ use crate::{
     algebra::{MonoidValue, Semigroup},
     operator::aggregate::Aggregator,
     trace::Cursor,
-    Timestamp,
+    DBData, Timestamp,
 };
 use std::{cmp::max, marker::PhantomData};
 
@@ -24,7 +24,7 @@ where
 
 impl<V, T, R> Aggregator<V, T, R> for Max
 where
-    V: Ord + Clone,
+    V: DBData,
     T: Timestamp,
     R: MonoidValue,
 {
