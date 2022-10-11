@@ -11,7 +11,7 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Batch, BatchReader, Builder},
-    Circuit, DBData, NumEntries, OrdIndexedZSet, Stream,
+    Circuit, NumEntries, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
@@ -59,9 +59,8 @@ where
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
-        Z::R: ZRingValue,
-        Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-        Agg::Output: DBData + Default,
+        Agg: Aggregator<Z::Val, (), Z::R>,
+        Agg::Output: Default,
     {
         self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Output, isize>>(aggregator)
     }
@@ -71,9 +70,8 @@ where
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
-        Z::R: ZRingValue,
-        Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-        Agg::Output: Default + DBData,
+        Agg: Aggregator<Z::Val, (), Z::R>,
+        Agg::Output: Default,
         O: RadixTreeBatch<Z::Key, Agg::Output>,
         O::R: ZRingValue,
     {
@@ -187,11 +185,10 @@ impl<Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O> for RadixTreeAggregate<Z, 
 where
     Z: IndexedZSet,
     Z::Key: PrimInt,
-    Z::R: ZRingValue,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone,
     OT: RadixTreeReader<Z::Key, Agg::Output, R = O::R> + Clone,
-    Agg: Aggregator<Z::Val, (), Z::R> + 'static,
-    Agg::Output: DBData + Default,
+    Agg: Aggregator<Z::Val, (), Z::R>,
+    Agg::Output: Default,
     O: RadixTreeBatch<Z::Key, Agg::Output>,
     O::R: ZRingValue,
 {

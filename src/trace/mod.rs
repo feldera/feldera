@@ -27,12 +27,29 @@ use crate::{
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
+/// Trait for data stored in batches.
+///
+/// This trait is used as a bound on `BatchReader::Key` and `BatchReader::Val`
+/// associated types (see [`trait BatchReader`]).  Hence when writing code that
+/// must be generic over any relational data, it is sufficient to impose
+/// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
+/// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 
+/// Trait for data types used as weights.
+///
+/// A type used for weights in a batch (i.e., as `BatchReader::R`) must behave
+/// as a monoid, i.e., a set with an associative `+` operation and a neutral
+/// element (zero).
+///
+/// When writing code generic over any weight type, it is sufficient to impose
+/// `DBWeight` as a trait bound on types.  Conversely, a trait bound of the form
+/// `B: BatchReader` implies `B::R: DBWeight`.
 pub trait DBWeight: DBData + MonoidValue {}
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
 
+/// Trait for data types used as logical timestamps.
 pub trait DBTimestamp: DBData + Timestamp {}
 impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 
@@ -42,7 +59,7 @@ impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 /// `Time` types, but does not need to return them.
 pub trait Trace: BatchReader {
     /// The type of an immutable collection of updates.
-    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R> + 'static;
+    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>;
 
     /// Allocates a new empty trace.
     fn new(activator: Option<Activator>) -> Self;

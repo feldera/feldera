@@ -1,15 +1,12 @@
 use crate::data::{Edges, Node, Rank, RankMap, Ranks, Streamed, Vertices};
 use dbsp::{
     algebra::HasOne,
-    circuit::operator_traits::Data,
     operator::{DelayedFeedback, FilterMap, Generator},
     trace::{Batch, BatchReader, Builder, Cursor},
-    OrdIndexedZSet, OrdZSet, Runtime,
+    DBData, OrdIndexedZSet, OrdZSet, Runtime,
 };
-use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
-    hash::Hash,
     panic::Location,
 };
 
@@ -261,7 +258,7 @@ fn div_join_stream<S, K>(
 ) -> Streamed<S, OrdZSet<K, Rank>>
 where
     S: Clone + 'static,
-    K: Hash + Ord + Copy + Data + SizeOf + Send,
+    K: DBData + Send + Copy,
 {
     lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {
         let capacity = min(lhs.len(), rhs.len());

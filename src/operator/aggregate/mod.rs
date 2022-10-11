@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     algebra::{
-        DefaultSemigroup, GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MonoidValue, MulByRef,
+        DefaultSemigroup, GroupValue, HasOne, HasZero, IndexedZSet, Lattice, MulByRef,
         PartialOrder, Semigroup, ZRingValue,
     },
     circuit::{
@@ -43,9 +43,9 @@ pub use min::Min;
 /// aggregators.  Users will typicaly work with ready-made implementations
 /// like [`Min`] and [`Fold`].
 // TODO: Owned aggregation using `Consumer`
-pub trait Aggregator<K, T, R>: Clone {
+pub trait Aggregator<K, T, R>: Clone + 'static {
     /// Aggregate type output by this aggregator.
-    type Output;
+    type Output: DBData;
 
     /// Semigroup structure over aggregate values.
     ///
@@ -88,7 +88,7 @@ struct WeightedCount;
 impl<T, R> Aggregator<(), T, R> for WeightedCount
 where
     T: Timestamp,
-    R: MonoidValue,
+    R: DBWeight,
 {
     type Output = R;
     type Semigroup = DefaultSemigroup<R>;
@@ -127,8 +127,7 @@ where
     ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
     where
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, (), Z::R> + 'static,
-        A::Output: DBData,
+        A: Aggregator<Z::Val, (), Z::R>,
     {
         self.stream_aggregate_generic(aggregator)
     }
@@ -137,7 +136,7 @@ where
     pub fn stream_aggregate_generic<A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
     where
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, (), Z::R> + 'static,
+        A: Aggregator<Z::Val, (), Z::R>,
         O: IndexedZSet<Key = Z::Key, Val = A::Output>,
         O::R: ZRingValue,
     {
@@ -159,8 +158,7 @@ where
     where
         TS: DBTimestamp,
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, TS, Z::R> + 'static,
-        A::Output: DBData,
+        A: Aggregator<Z::Val, TS, Z::R>,
     {
         self.aggregate_generic::<TS, A, OrdIndexedZSet<Z::Key, A::Output, isize>>(aggregator)
     }
@@ -170,8 +168,7 @@ where
     where
         TS: DBTimestamp,
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, TS, Z::R> + 'static,
-        A::Output: DBData,
+        A: Aggregator<Z::Val, TS, Z::R>,
         O: Batch<Key = Z::Key, Val = A::Output, Time = ()>,
         O::R: ZRingValue,
     {
@@ -316,7 +313,7 @@ where
 impl<Z, A, O> UnaryOperator<Z, O> for Aggregate<Z, A, O>
 where
     Z: IndexedZSet,
-    A: Aggregator<Z::Val, (), Z::R> + 'static,
+    A: Aggregator<Z::Val, (), Z::R>,
     O: IndexedZSet<Key = Z::Key, Val = A::Output>,
     O::R: ZRingValue,
 {
@@ -391,7 +388,6 @@ where
     Z: IndexedZSet,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     A: Aggregator<Z::Val, IT::Time, Z::R>,
-    A::Output: DBData,
 {
     pub fn new(aggregator: A) -> Self {
         Self {
@@ -562,7 +558,6 @@ where
     Z: IndexedZSet,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone,
     A: Aggregator<Z::Val, IT::Time, Z::R> + 'static,
-    A::Output: DBData,
 {
     fn eval(&mut self, delta: &Z, input_trace: &IT) -> Vec<(Z::Key, Option<A::Output>)> {
         // println!(

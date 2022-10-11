@@ -46,8 +46,8 @@ impl<B> Stream<Circuit<()>, B> {
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
-        Agg: Aggregator<V, (), B::R> + 'static,
-        Agg::Output: DBData + Default,
+        Agg: Aggregator<V, (), B::R>,
+        Agg::Output: Default,
         TS: DBData + PrimInt,
         V: DBData,
     {
@@ -64,8 +64,8 @@ impl<B> Stream<Circuit<()>, B> {
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
-        Agg: Aggregator<V, (), B::R> + 'static,
-        Agg::Output: DBData + Default,
+        Agg: Aggregator<V, (), B::R>,
+        Agg::Output: Default,
         O: PartitionedIndexedZSet<TS, (V, Option<Agg::Output>), Key = B::Key, R = B::R> + SizeOf,
         TS: DBData + PrimInt,
         V: DBData,
