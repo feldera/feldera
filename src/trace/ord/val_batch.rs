@@ -447,7 +447,7 @@ where
     where
         P: Fn(&V) -> bool + Clone,
     {
-        self.cursor.child.seek_with(predicate);
+        self.cursor.child.seek_with(|v| !predicate(v));
     }
     fn rewind_keys(&mut self) {
         self.cursor.rewind();

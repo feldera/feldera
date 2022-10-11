@@ -443,7 +443,7 @@ where
     where
         P: Fn(&V) -> bool + Clone,
     {
-        self.cursor.child.seek_key_with(predicate);
+        self.cursor.child.seek_key_with(|v| !predicate(v));
     }
 
     #[inline]
