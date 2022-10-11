@@ -509,11 +509,7 @@ mod test {
     ) {
         input.push(partition, ((key, upd.0), upd.1));
 
-        match contents
-            .entry(partition)
-            .or_insert_with(|| BTreeMap::new())
-            .entry(key)
-        {
+        match contents.entry(partition).or_default().entry(key) {
             Entry::Vacant(ve) => {
                 assert_eq!(upd.1, 1);
                 ve.insert(upd.0);
