@@ -100,7 +100,7 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.cursor.seek_val_with(|(k, _)| k < key);
+        self.cursor.seek_val_with(|(k, _)| k >= key);
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }
