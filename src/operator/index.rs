@@ -39,8 +39,8 @@ where
     /// not just `OrdIndexedZSet`.
     pub fn index_generic<CO>(&self) -> Stream<Circuit<P>, CO>
     where
-        CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R> + 'static,
-        CO: Batch<Time = ()> + Clone + 'static,
+        CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R>,
+        CO: Batch<Time = ()>,
     {
         self.circuit()
             .cache_get_or_insert_with(IndexId::new(self.origin_node_id().clone()), || {
@@ -63,7 +63,7 @@ where
         index_func: F,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
     where
-        CI: BatchReader<Time = (), Val = ()> + 'static,
+        CI: BatchReader<Time = (), Val = ()>,
         F: Fn(&CI::Key) -> (K, V) + Clone + 'static,
         K: DBData,
         V: DBData,
@@ -75,8 +75,8 @@ where
     /// Z-set type, not just `OrdIndexedZSet`.
     pub fn index_with_generic<CO, F>(&self, index_func: F) -> Stream<Circuit<P>, CO>
     where
-        CI: BatchReader<Time = (), Val = ()> + 'static,
-        CO: Batch<Time = (), R = CI::R> + Clone + 'static,
+        CI: BatchReader<Time = (), Val = ()>,
+        CO: Batch<Time = (), R = CI::R>,
         F: Fn(&CI::Key) -> (CO::Key, CO::Val) + Clone + 'static,
     {
         self.circuit()
@@ -125,8 +125,8 @@ where
 
 impl<CI, CO> UnaryOperator<CI, CO> for Index<CI, CO>
 where
-    CO: Batch<Time = ()> + Clone + 'static,
-    CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R> + 'static,
+    CO: Batch<Time = ()>,
+    CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R>,
 {
     fn eval(&mut self, input: &CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
@@ -209,8 +209,8 @@ where
 
 impl<CI, CO, F> UnaryOperator<CI, CO> for IndexWith<CI, CO, F>
 where
-    CO: Batch<Time = ()> + Clone + 'static,
-    CI: BatchReader<Val = (), Time = (), R = CO::R> + 'static,
+    CO: Batch<Time = ()>,
+    CI: BatchReader<Val = (), Time = (), R = CO::R>,
     F: Fn(&CI::Key) -> (CO::Key, CO::Val) + 'static,
 {
     fn eval(&mut self, i: &CI) -> CO {

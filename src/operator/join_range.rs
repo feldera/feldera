@@ -15,7 +15,7 @@
 //!   batch with weight `w1 * w2`.
 
 use crate::{
-    algebra::MulByRef,
+    algebra::{MulByRef, ZRingValue},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Circuit, Scope, Stream,
@@ -43,9 +43,9 @@ where
         join_func: JF,
     ) -> Stream<Circuit<P>, OrdZSet<It::Item, I1::R>>
     where
-        I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef<Output = I1::R>,
-        I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
+        I1: BatchReader<Time = ()> + Clone,
+        I1::R: ZRingValue,
+        I2: BatchReader<Time = (), R = I1::R> + Clone,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
         It: IntoIterator + 'static,
@@ -74,9 +74,9 @@ where
         join_func: JF,
     ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
     where
-        I1: BatchReader<Time = ()> + Clone + 'static,
-        I1::R: MulByRef<Output = I1::R>,
-        I2: BatchReader<Time = (), R = I1::R> + Clone + 'static,
+        I1: BatchReader<Time = ()> + Clone,
+        I1::R: ZRingValue,
+        I2: BatchReader<Time = (), R = I1::R> + Clone,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
         K: DBData,
@@ -94,10 +94,10 @@ where
         join_func: JF,
     ) -> Stream<Circuit<P>, O>
     where
-        I1: BatchReader<Time = (), R = O::R> + Clone + 'static,
-        I2: BatchReader<Time = (), R = O::R> + Clone + 'static,
-        O: Batch<Time = ()> + Clone + 'static,
-        O::R: MulByRef<Output = O::R>,
+        I1: BatchReader<Time = (), R = O::R> + Clone,
+        I2: BatchReader<Time = (), R = O::R> + Clone,
+        O: Batch<Time = ()>,
+        O::R: ZRingValue,
         RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
         JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
         It: IntoIterator<Item = (O::Key, O::Val)> + 'static,
@@ -142,10 +142,10 @@ where
 
 impl<RF, JF, It, I1, I2, O> BinaryOperator<I1, I2, O> for StreamJoinRange<RF, JF, It, I1, I2, O>
 where
-    I1: BatchReader<Time = (), R = O::R> + Clone + 'static,
-    I2: BatchReader<Time = (), R = O::R> + Clone + 'static,
-    O: Batch<Time = ()> + 'static,
-    O::R: MulByRef<Output = O::R>,
+    I1: BatchReader<Time = (), R = O::R> + Clone,
+    I2: BatchReader<Time = (), R = O::R> + Clone,
+    O: Batch<Time = ()>,
+    O::R: ZRingValue,
     RF: Fn(&I1::Key) -> (I2::Key, I2::Key) + 'static,
     JF: Fn(&I1::Key, &I1::Val, &I2::Key, &I2::Val) -> It + 'static,
     It: IntoIterator<Item = (O::Key, O::Val)> + 'static,

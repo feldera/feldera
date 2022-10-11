@@ -22,6 +22,7 @@ use crate::{
     algebra::{HasZero, MonoidValue},
     circuit::Activator,
     time::{AntichainRef, Timestamp},
+    NumEntries,
 };
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
@@ -114,7 +115,7 @@ pub trait Trace: BatchReader {
 /// useful for views derived from other sources in ways that prevent the
 /// construction of batches from the type of data in the view (for example,
 /// filtered views, or views with extended time coordinates).
-pub trait BatchReader
+pub trait BatchReader: NumEntries + SizeOf + 'static
 where
     Self: Sized,
 {

@@ -91,7 +91,7 @@ pub trait FilterMap<C> {
     fn map_generic<F, T, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
-        O: Batch<Key = T, Val = (), Time = (), R = Self::R> + Clone + 'static;
+        O: Batch<Key = T, Val = (), Time = (), R = Self::R>;
 
     /// Behaves as [`Self::map`] followed by [`index`](`crate::Stream::index`),
     /// but is more efficient.  Assembles output records into
@@ -109,7 +109,7 @@ pub trait FilterMap<C> {
     fn map_index_generic<F, K, V, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> (K, V) + 'static,
-        O: Batch<Key = K, Val = V, Time = (), R = Self::R> + Clone + 'static;
+        O: Batch<Key = K, Val = V, Time = (), R = Self::R>;
 
     /// Applies `func` to each record in the input stream.  Assembles output
     /// records into `OrdZSet` batches.
@@ -130,7 +130,7 @@ pub trait FilterMap<C> {
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
-        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R> + Clone + 'static;
+        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>;
 
     /// Behaves as [`Self::flat_map`] followed by
     /// [`index`](`crate::Stream::index`), but is more efficient.  Assembles
@@ -177,7 +177,7 @@ where
     fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
     where
         F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
-        O: Batch<Key = T, Val = (), Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             MapKeys::new(map_func.clone(), move |x| (map_func)(&x)),
@@ -188,7 +188,7 @@ where
     fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
     where
         F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
-        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             Map::new(move |kv: (Self::ItemRef<'_>, &())| map_func(kv.0)),
@@ -200,7 +200,7 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
-        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             FlatMap::new(move |kv: (Self::ItemRef<'_>, &())| {
@@ -214,7 +214,7 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (KT, VT)> + 'static,
-        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             FlatMap::new(move |kv: (Self::ItemRef<'_>, &())| func(kv.0)),
@@ -248,7 +248,7 @@ where
     fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
     where
         F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
-        O: Batch<Key = T, Val = (), Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             Map::new(move |kv: Self::ItemRef<'_>| (map_func(kv), ())),
@@ -259,7 +259,7 @@ where
     fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
     where
         F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
-        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(Map::new(map_func), self)
     }
@@ -268,7 +268,7 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
-        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(
             FlatMap::new(move |kv: Self::ItemRef<'_>| func(kv).into_iter().map(|x| (x, ()))),
@@ -280,7 +280,7 @@ where
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (KT, VT)> + 'static,
-        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R> + Clone + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
     {
         self.circuit().add_unary_operator(FlatMap::new(func), self)
     }
@@ -318,8 +318,8 @@ where
 
 impl<CI, CO, F> UnaryOperator<CI, CO> for FilterKeys<CI, CO, F>
 where
-    CI: BatchReader<Time = ()> + 'static,
-    CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
+    CI: BatchReader<Time = ()>,
+    CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R>,
     F: Fn(&CI::Key) -> bool + 'static,
 {
     fn eval(&mut self, input: &CI) -> CO {
@@ -421,8 +421,8 @@ where
 
 impl<CI, CO, F> UnaryOperator<CI, CO> for FilterVals<CI, CO, F>
 where
-    CI: BatchReader<Time = ()> + 'static,
-    CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R> + 'static,
+    CI: BatchReader<Time = ()>,
+    CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R>,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> bool + 'static,
 {
     fn eval(&mut self, input: &CI) -> CO {
@@ -512,8 +512,8 @@ where
 
 impl<CI, CO, F> UnaryOperator<CI, CO> for Map<CI, CO, F>
 where
-    CI: BatchReader<Time = ()> + 'static,
-    CO: Batch<Time = (), R = CI::R> + 'static,
+    CI: BatchReader<Time = ()>,
+    CO: Batch<Time = (), R = CI::R>,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> (CO::Key, CO::Val) + 'static,
 {
     fn eval(&mut self, i: &CI) -> CO {
@@ -568,8 +568,8 @@ where
 
 impl<CI, CO, FB, FO> UnaryOperator<CI, CO> for MapKeys<CI, CO, FB, FO>
 where
-    CI: BatchReader<Time = ()> + 'static,
-    CO: Batch<Val = CI::Val, Time = (), R = CI::R> + 'static,
+    CI: BatchReader<Time = ()>,
+    CO: Batch<Val = CI::Val, Time = (), R = CI::R>,
     FB: Fn(&CI::Key) -> CO::Key + 'static,
     FO: Fn(CI::Key) -> CO::Key + 'static,
 {
@@ -648,8 +648,8 @@ where
 
 impl<CI, CO, F, I> UnaryOperator<CI, CO> for FlatMap<CI, CO, F, I>
 where
-    CI: BatchReader<Time = ()> + 'static,
-    CO: Batch<Time = (), R = CI::R> + 'static,
+    CI: BatchReader<Time = ()>,
+    CO: Batch<Time = (), R = CI::R>,
     for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> I + 'static,
     I: IntoIterator<Item = (CO::Key, CO::Val)> + 'static,
 {

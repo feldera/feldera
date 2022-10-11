@@ -16,7 +16,7 @@ circuit_cache_key!(ConsolidateId<C, D>(GlobalNodeId => Stream<C, D>));
 impl<P, T> Stream<Circuit<P>, T>
 where
     P: Clone + 'static,
-    T: Clone + Trace<Time = ()> + 'static,
+    T: Trace<Time = ()> + Clone,
 {
     // TODO: drop the `Time = ()` requirement?
     /// Consolidate a trace into a single batch.
@@ -77,7 +77,7 @@ where
 
 impl<T> UnaryOperator<T, T::Batch> for Consolidate<T>
 where
-    T: Trace<Time = ()> + 'static,
+    T: Trace<Time = ()>,
 {
     fn eval(&mut self, _i: &T) -> T::Batch {
         unimplemented!()

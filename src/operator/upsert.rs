@@ -41,7 +41,7 @@ where
         V: DBData,
         B::R: DBData + ZRingValue,
         TS: DBTimestamp,
-        B: Batch<Key = K, Val = V, Time = ()> + 'static,
+        B: Batch<Key = K, Val = V, Time = ()>,
     {
         let circuit = self.circuit();
 
@@ -126,7 +126,7 @@ where
 
 impl<T, B> Operator for Upsert<T, B>
 where
-    T: BatchReader + 'static,
+    T: BatchReader,
     B: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -142,9 +142,9 @@ where
 
 impl<T, B> BinaryOperator<T, Vec<(T::Key, Option<T::Val>)>, B> for Upsert<T, B>
 where
-    T: Trace + 'static,
+    T: Trace,
     T::R: ZRingValue,
-    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R> + 'static,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
 {
     fn eval(&mut self, trace: &T, updates: &Vec<(T::Key, Option<T::Val>)>) -> B {
         // Inputs must be sorted by key

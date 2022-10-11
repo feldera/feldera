@@ -119,7 +119,7 @@ where
 
 impl<B> Display for Spine<B>
 where
-    B: Batch + Display + 'static,
+    B: Batch + Display,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -148,7 +148,7 @@ where
 
 impl<B> NumEntries for Spine<B>
 where
-    B: Batch + SizeOf + 'static,
+    B: Batch,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -167,7 +167,7 @@ where
 
 impl<B> BatchReader for Spine<B>
 where
-    B: Batch + 'static,
+    B: Batch,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -240,7 +240,7 @@ where
 
 impl<B> Spine<B>
 where
-    B: Batch + 'static,
+    B: Batch,
 {
     fn map_batches<F: FnMut(&B)>(&self, mut f: F) {
         for batch in self.merging.iter().rev() {
@@ -419,7 +419,7 @@ where
 
 impl<B> Default for Spine<B>
 where
-    B: Batch + Clone + 'static,
+    B: Batch,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -430,7 +430,7 @@ where
 
 impl<B> Trace for Spine<B>
 where
-    B: Batch + 'static,
+    B: Batch,
     B::Key: Ord,
     B::Val: Ord,
 {
@@ -541,7 +541,7 @@ where
 
 impl<B> Spine<B>
 where
-    B: Batch + 'static,
+    B: Batch,
     B::Key: Ord,
     B::Val: Ord,
 {

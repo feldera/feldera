@@ -65,7 +65,7 @@ where
     V: DBData,
     T: DBTimestamp,
     R: DBWeight,
-    O: OrdOffset + 'static,
+    O: OrdOffset,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         writeln!(

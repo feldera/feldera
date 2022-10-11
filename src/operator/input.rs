@@ -8,7 +8,6 @@ use crate::{
     Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use fxhash::hash32;
-use size_of::SizeOf;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -135,7 +134,7 @@ impl Circuit<()> {
     where
         K: DBData,
         F: Fn(VI) -> Option<V> + 'static,
-        B: Batch<Key = K, Val = V, Time = ()> + SizeOf + 'static,
+        B: Batch<Key = K, Val = V, Time = ()>,
         B::R: ZRingValue,
         V: DBData,
         VI: DBData,
