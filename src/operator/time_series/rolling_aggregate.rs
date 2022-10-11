@@ -376,7 +376,7 @@ mod test {
                 while cursor.key_valid() {
                     while cursor.val_valid() {
                         let partition = *cursor.key();
-                        let (ts, val) = cursor.val().clone();
+                        let (ts, val) = *cursor.val();
                         let range = range_spec.range_of(&ts);
                         let agg = aggregate_range_slow(batch, partition, range);
                         tuples.push(((partition, (ts, (val, agg))), 1));
@@ -389,7 +389,9 @@ mod test {
             })
     }
 
-    fn partition_over_range_circuit() -> (DBSPHandle, CollectionHandle<u64, ((u64, u64), isize)>) {
+    type RangeHandle = CollectionHandle<u64, ((u64, u64), isize)>;
+
+    fn partition_over_range_circuit() -> (DBSPHandle, RangeHandle) {
         Runtime::init_circuit(4, |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, (u64, u64), isize>();
