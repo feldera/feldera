@@ -17,6 +17,8 @@ macro_rules! float {
             #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
             #[repr(transparent)]
             #[size_of(skip_all)]
+            #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
+            #[cfg_attr(feature = "with-serde", serde(transparent))]
             pub struct $outer(OrderedFloat<$inner>);
 
             impl $outer {
