@@ -35,7 +35,7 @@ pub type OrdPartitionedOverStream<PK, TS, V, A, R> =
 // using the same algorithm as general aggregates.  Additional performance
 // gains can be obtained with an optimized implementation of radix trees
 // for linear aggregates (specifically, updating a node when only
-// some of its children have chanded can be done without computing
+// some of its children have changed can be done without computing
 // the sum of all children from scratch).
 struct LinearAggregator<V, R, A, F> {
     f: F,

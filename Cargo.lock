@@ -602,6 +602,7 @@ dependencies = [
  "hashbrown",
  "impl-trait-for-tuples",
  "indicatif",
+ "itertools",
  "mimalloc-rust-sys",
  "num",
  "num-format",
@@ -1912,6 +1913,7 @@ dependencies = [
  "arcstr",
  "rust_decimal",
  "size-of-derive",
+ "time",
 ]
 
 [[package]]
@@ -2069,6 +2071,7 @@ dependencies = [
  "itoa 1.0.4",
  "libc",
  "num_threads",
+ "serde",
  "time-macros",
 ]
 
