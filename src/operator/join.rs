@@ -169,7 +169,7 @@ impl<P, I1> Stream<Circuit<P>, I1>
 where
     P: Clone + 'static,
     I1: IndexedZSet + Send,
-    I1::R: ZRingValue + Default,
+    I1::R: ZRingValue,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incrementally join two streams of batches.
@@ -195,7 +195,7 @@ where
         TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
-        V: DBData + Default,
+        V: DBData,
     {
         self.join_generic::<TS, _, _, _, _>(other, move |k, v1, v2| {
             once((join_func(k, v1, v2), ()))
@@ -218,8 +218,8 @@ where
         TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
-        K: DBData + Default,
-        V: DBData + Default,
+        K: DBData,
+        V: DBData,
         It: IntoIterator<Item = (K, V)> + 'static,
     {
         self.join_generic::<TS, _, _, _, _>(other, join_func)
@@ -236,11 +236,7 @@ where
         TS: DBTimestamp,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         Z: IndexedZSet<R = I1::R>,
-        Z::Batcher: SizeOf,
-        Z::Key: Default,
-        Z::Val: Default,
-        Z::R: MulByRef<Output = Z::R> + Default,
-        Z::Item: Default,
+        Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
         It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
     {
@@ -315,11 +311,7 @@ where
     pub fn antijoin<TS, I2>(&self, other: &Stream<Circuit<P>, I2>) -> Stream<Circuit<P>, I1>
     where
         TS: DBTimestamp,
-        I1::Key: Default,
-        I1::Val: Default,
-        I1::Item: Default,
-        I1::Batcher: SizeOf,
-        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + SizeOf,
+        I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
     {
         self.circuit()
             .cache_get_or_insert_with(
@@ -581,7 +573,6 @@ where
     I: 'static,
     T: BatchReader,
     Z: IndexedZSet,
-    Z::Batcher: SizeOf,
     It: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -685,11 +676,7 @@ where
     T: Trace<Key = I::Key, R = I::R>,
     F: Clone + Fn(&I::Key, &I::Val, &T::Val) -> It + 'static,
     Z: IndexedZSet<R = I::R>, /* + ::std::fmt::Display */
-    Z::Key: Default,
-    Z::Val: Default,
-    Z::Batcher: SizeOf,
-    Z::R: ZRingValue + Default,
-    Z::Item: Default,
+    Z::R: ZRingValue,
     It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
 {
     fn eval(&mut self, index: &I, trace: &T) -> Z {
