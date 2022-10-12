@@ -5,8 +5,9 @@ use crate::{
     circuit::{
         metadata::{MetaItem, OperatorLocation, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
-        Circuit, Scope, Stream,
+        Circuit, GlobalNodeId, Scope, Stream,
     },
+    circuit_cache_key,
     time::Timestamp,
     trace::{
         cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
@@ -24,6 +25,8 @@ use std::{
     mem::{needs_drop, MaybeUninit},
     panic::Location,
 };
+
+circuit_cache_key!(AntijoinId<C, D>((GlobalNodeId, GlobalNodeId) => Stream<C, D>));
 
 impl<P, I1> Stream<Circuit<P>, I1>
 where
@@ -318,16 +321,26 @@ where
         I1::Batcher: SizeOf,
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send + SizeOf,
     {
-        let stream1 = self.shard();
-        let stream2 = other.distinct_incremental().shard();
+        self.circuit()
+            .cache_get_or_insert_with(
+                AntijoinId::new((
+                    self.origin_node_id().clone(),
+                    other.origin_node_id().clone(),
+                )),
+                move || {
+                    let stream1 = self.shard();
+                    let stream2 = other.distinct_incremental().shard();
 
-        stream1
-            .minus(
-                &stream1.join_generic::<TS, _, _, _, _>(&stream2, |k, v1, _v2| {
-                    std::iter::once((k.clone(), v1.clone()))
-                }),
+                    stream1
+                        .minus(
+                            &stream1.join_generic::<TS, _, _, _, _>(&stream2, |k, v1, _v2| {
+                                std::iter::once((k.clone(), v1.clone()))
+                            }),
+                        )
+                        .mark_sharded()
+                },
             )
-            .mark_sharded()
+            .clone()
     }
 }
 
