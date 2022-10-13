@@ -1,5 +1,7 @@
 use crate::{
-    algebra::{HasOne, HasZero, IndexedZSet, Semigroup, ZRingValue},
+    algebra::{
+        DefaultSemigroup, GroupValue, HasOne, HasZero, IndexedZSet, MulByRef, Semigroup, ZRingValue,
+    },
     circuit::{
         operator_traits::{Operator, QuaternaryOperator},
         OwnershipPreference, Scope,
@@ -15,16 +17,81 @@ use crate::{
         Aggregator,
     },
     trace::{spine_fueled::Spine, Builder, Cursor},
-    Circuit, DBData, Stream,
+    Circuit, DBData, DBWeight, Stream,
 };
 use num::PrimInt;
-use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
+
+// TODO: `Default` trait bounds in this module are due to an implementation
+// detail and can in principle be avoided.
 
 pub type OrdPartitionedOverBatch<PK, TS, V, A, R> =
     OrdPartitionedIndexedZSet<PK, TS, (V, Option<A>), R>;
 pub type OrdPartitionedOverStream<PK, TS, V, A, R> =
     Stream<Circuit<()>, OrdPartitionedOverBatch<PK, TS, V, A, R>>;
+
+/// `Aggregator` object that computes a linear aggregation function.
+// TODO: we need this because we currently compute linear aggregates
+// using the same algorithm as general aggregates.  Additional performance
+// gains can be obtained with an optimized implementation of radix trees
+// for linear aggregates (specifically, updating a node when only
+// some of its children have chanded can be done without computing
+// the sum of all children from scratch).
+struct LinearAggregator<V, R, A, F> {
+    f: F,
+    phantom: PhantomData<(V, R, A)>,
+}
+
+impl<V, R, A, F> Clone for LinearAggregator<V, R, A, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<V, R, A, F> LinearAggregator<V, R, A, F> {
+    fn new(f: F) -> Self {
+        Self {
+            f,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<V, R, A, F> Aggregator<V, (), R> for LinearAggregator<V, R, A, F>
+where
+    V: DBData,
+    R: DBWeight + ZRingValue,
+    A: DBData + MulByRef<R, Output = A> + GroupValue,
+    F: Fn(&V) -> A + Clone + 'static,
+{
+    type Output = A;
+
+    type Semigroup = DefaultSemigroup<A>;
+
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<A>
+    where
+        C: Cursor<'s, V, (), (), R>,
+    {
+        let mut res: Option<A> = None;
+
+        while cursor.key_valid() {
+            let w = cursor.weight();
+            let new = (self.f)(cursor.key()).mul_by_ref(&w);
+            res = match res {
+                None => Some(new),
+                Some(old) => Some(old + new),
+            };
+            cursor.step_key();
+        }
+        res
+    }
+}
 
 impl<B> Stream<Circuit<()>, B> {
     /// Rolling aggregate of a partitioned stream over time range.
@@ -66,7 +133,7 @@ impl<B> Stream<Circuit<()>, B> {
         B::R: ZRingValue,
         Agg: Aggregator<V, (), B::R>,
         Agg::Output: Default,
-        O: PartitionedIndexedZSet<TS, (V, Option<Agg::Output>), Key = B::Key, R = B::R> + SizeOf,
+        O: PartitionedIndexedZSet<TS, (V, Option<Agg::Output>), Key = B::Key, R = B::R>,
         TS: DBData + PrimInt,
         V: DBData,
     {
@@ -132,6 +199,49 @@ impl<B> Stream<Circuit<()>, B> {
 
             output
         })
+    }
+
+    /// A version of [`Self::partitioned_rolling_aggregate`] optimized for
+    /// linear aggregation functions.
+    ///
+    /// This method only works for linear aggregation functions `f`, i.e.,
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
+    /// incorrect results if `f` is not linear.
+    pub fn partitioned_rolling_aggregate_linear<TS, V, F, A>(
+        &self,
+        f: F,
+        range: RelRange<TS>,
+    ) -> OrdPartitionedOverStream<B::Key, TS, V, A, B::R>
+    where
+        B: PartitionedIndexedZSet<TS, V>,
+        B::R: ZRingValue,
+        A: DBData + MulByRef<B::R, Output = A> + GroupValue + Default,
+        F: Fn(&V) -> A + Clone + 'static,
+        TS: DBData + PrimInt,
+        V: DBData,
+    {
+        let aggregator = LinearAggregator::new(f);
+        self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
+    }
+
+    /// Like [`Self::partitioned_rolling_aggregate_linear`], but can return any
+    /// batch type.
+    pub fn partitioned_rolling_aggregate_linear_generic<TS, V, F, A, O>(
+        &self,
+        f: F,
+        range: RelRange<TS>,
+    ) -> Stream<Circuit<()>, O>
+    where
+        B: PartitionedIndexedZSet<TS, V>,
+        B::R: ZRingValue,
+        A: DBData + MulByRef<B::R, Output = A> + GroupValue + Default,
+        F: Fn(&V) -> A + Clone + 'static,
+        TS: DBData + PrimInt,
+        V: DBData,
+        O: PartitionedIndexedZSet<TS, (V, Option<A>), Key = B::Key, R = B::R>,
+    {
+        let aggregator = LinearAggregator::new(f);
+        self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
     }
 }
 
@@ -331,12 +441,13 @@ mod test {
         Circuit, CollectionHandle, DBSPHandle, OrdIndexedZSet, Runtime, Stream,
     };
 
-    type DataBatch = OrdIndexedZSet<u64, (u64, u64), isize>;
+    type DataBatch = OrdIndexedZSet<u64, (u64, i64), isize>;
     type DataStream = Stream<Circuit<()>, DataBatch>;
-    type OutputBatch = OrdIndexedZSet<u64, (u64, (u64, Option<u64>)), isize>;
+    type OutputBatch = OrdIndexedZSet<u64, (u64, (i64, Option<i64>)), isize>;
     type OutputStream = Stream<Circuit<()>, OutputBatch>;
 
-    fn aggregate_range_slow(batch: &DataBatch, partition: u64, range: Range<u64>) -> Option<u64> {
+    // Reference implementation of `aggregate_range` for testing.
+    fn aggregate_range_slow(batch: &DataBatch, partition: u64, range: Range<u64>) -> Option<i64> {
         let mut cursor = batch.cursor();
 
         cursor.seek_key(&partition);
@@ -348,10 +459,11 @@ mod test {
         partition_cursor.seek_key(&range.from);
         while partition_cursor.key_valid() && *partition_cursor.key() <= range.to {
             while partition_cursor.val_valid() {
+                let w = partition_cursor.weight() as i64;
                 agg = if let Some(a) = agg {
-                    Some(a + *partition_cursor.val())
+                    Some(a + *partition_cursor.val() * w)
                 } else {
-                    Some(*partition_cursor.val())
+                    Some(*partition_cursor.val() * w)
                 };
                 partition_cursor.step_val();
             }
@@ -361,7 +473,11 @@ mod test {
         agg
     }
 
-    fn partitioned_over_range_slow(stream: &DataStream, range_spec: RelRange<u64>) -> OutputStream {
+    // Reference implementation of `partitioned_rolling_aggregate` for testing.
+    fn partitioned_rolling_aggregate_slow(
+        stream: &DataStream,
+        range_spec: RelRange<u64>,
+    ) -> OutputStream {
         stream
             .gather(0)
             .integrate()
@@ -386,35 +502,56 @@ mod test {
             })
     }
 
-    type RangeHandle = CollectionHandle<u64, ((u64, u64), isize)>;
+    type RangeHandle = CollectionHandle<u64, ((u64, i64), isize)>;
 
-    fn partition_over_range_circuit() -> (DBSPHandle, RangeHandle) {
+    fn partition_rolling_aggregate_circuit() -> (DBSPHandle, RangeHandle) {
         Runtime::init_circuit(4, |circuit| {
             let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, u64), isize>();
+                circuit.add_input_indexed_zset::<u64, (u64, i64), isize>();
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
-                0u64,
-                |agg: &mut u64, val: &u64, _w: isize| *agg += val,
+                0i64,
+                |agg: &mut i64, val: &i64, w: isize| *agg += val * (w as i64),
             );
 
             let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
-            let expected_1000_0 = partitioned_over_range_slow(&input_stream, range_spec.clone());
+            let expected_1000_0 =
+                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
             let output_1000_0 = input_stream
-                .partitioned_rolling_aggregate::<u64, u64, _>(aggregator.clone(), range_spec)
+                .partitioned_rolling_aggregate::<u64, i64, _>(
+                    aggregator.clone(),
+                    range_spec.clone(),
+                )
                 .gather(0)
                 .integrate();
             expected_1000_0.apply2(&output_1000_0, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
+            let output_1000_0_linear = input_stream
+                .partitioned_rolling_aggregate_linear::<u64, i64, _, _>(|v| *v, range_spec)
+                .gather(0)
+                .integrate();
+            expected_1000_0.apply2(&output_1000_0_linear, |expected, actual| {
+                assert_eq!(expected, actual)
+            });
+
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
-            let expected_500_500 = partitioned_over_range_slow(&input_stream, range_spec.clone());
+            let expected_500_500 =
+                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
             let output_500_500 = input_stream
-                .partitioned_rolling_aggregate::<u64, u64, _>(aggregator, range_spec)
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec.clone())
                 .gather(0)
                 .integrate();
             expected_500_500.apply2(&output_500_500, |expected, actual| {
+                assert_eq!(expected, actual)
+            });
+
+            let output_500_500_linear = input_stream
+                .partitioned_rolling_aggregate_linear::<u64, i64, _, _>(|v| *v, range_spec)
+                .gather(0)
+                .integrate();
+            expected_500_500.apply2(&output_500_500_linear, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
@@ -425,7 +562,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range_2() {
-        let (mut circuit, mut input) = partition_over_range_circuit();
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 
         circuit.step().unwrap();
 
@@ -440,7 +577,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range() {
-        let (mut circuit, mut input) = partition_over_range_circuit();
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 
         circuit.step().unwrap();
 
@@ -479,11 +616,11 @@ mod test {
 
     use proptest::{collection, prelude::*};
 
-    type InputTuple = (u64, ((u64, u64), isize));
+    type InputTuple = (u64, ((u64, i64), isize));
     type InputBatch = Vec<InputTuple>;
 
     fn input_tuple(partitions: u64, epoch: u64) -> impl Strategy<Value = InputTuple> {
-        ((0..partitions), ((0..epoch, 100..101u64), 1..2isize))
+        ((0..partitions), ((0..epoch, 100..101i64), 1..2isize))
     }
     fn input_batch(
         partitions: u64,
@@ -507,7 +644,7 @@ mod test {
     proptest! {
         #[test]
         fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
-            let (mut circuit, mut input) = partition_over_range_circuit();
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 
             for mut batch in trace {
                 input.append(&mut batch);
@@ -519,7 +656,7 @@ mod test {
 
         #[test]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 1_000, 50, 20)) {
-            let (mut circuit, mut input) = partition_over_range_circuit();
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 
             for mut batch in trace {
                 input.append(&mut batch);
