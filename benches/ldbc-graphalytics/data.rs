@@ -1,6 +1,7 @@
 use clap::{PossibleValue, ValueEnum};
 use dbsp::{
     algebra::{HasOne, Present, F64},
+    default_hash,
     trace::{Batch, Batcher, Builder},
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
@@ -626,7 +627,7 @@ impl EdgeParser {
                 .collect();
 
             self.parse(|src, dest| {
-                edges[fxhash::hash(&src) % workers].push(((src, dest), Present));
+                edges[default_hash(&src) as usize % workers].push(((src, dest), Present));
             });
 
             edges.into_iter().map(Builder::done).collect()
@@ -641,8 +642,9 @@ impl EdgeParser {
                 .collect();
 
             self.parse(|src, dest| {
-                forward_batches[fxhash::hash(&src) % workers].push(((src, dest), Present));
-                reverse_batches[fxhash::hash(&dest) % workers].push(((dest, src), Present));
+                forward_batches[default_hash(&src) as usize % workers].push(((src, dest), Present));
+                reverse_batches[default_hash(&dest) as usize % workers]
+                    .push(((dest, src), Present));
             });
 
             forward_batches
@@ -698,7 +700,9 @@ impl VertexParser {
             .map(|_| <VertexSet as Batch>::Builder::with_capacity((), approx_vertices / workers))
             .collect();
 
-        self.parse(|vertex| vertices[fxhash::hash(&vertex) % workers].push((vertex, Present)));
+        self.parse(|vertex| {
+            vertices[default_hash(&vertex) as usize % workers].push((vertex, Present))
+        });
 
         vertices.into_iter().map(Builder::done).collect()
     }
