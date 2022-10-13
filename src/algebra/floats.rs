@@ -7,6 +7,9 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+#[cfg(feature = "with-serde")]
+use serde::{Deserialize, Serialize};
+
 macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
@@ -36,31 +39,13 @@ macro_rules! float {
                 }
             }
 
-            impl From<$inner> for $outer {
+            impl<T> From<T> for $outer
+            where
+                $inner: From<T>,
+            {
                 #[inline]
-                fn from(float: $inner) -> Self {
-                    Self::new(float)
-                }
-            }
-
-            impl From<&$inner> for $outer {
-                #[inline]
-                fn from(float: &$inner) -> Self {
-                    Self::new(*float)
-                }
-            }
-
-            impl From<$outer> for $inner {
-                #[inline]
-                fn from(float: $outer) -> Self {
-                    float.into_inner()
-                }
-            }
-
-            impl From<&$outer> for $inner {
-                #[inline]
-                fn from(float: &$outer) -> Self {
-                    float.into_inner()
+                fn from(x: T) -> Self {
+                    Self::new($inner::from(x))
                 }
             }
 
