@@ -9,4 +9,4 @@ pub use partitioned::{
     OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch, PartitionedBatchReader,
     PartitionedIndexedZSet,
 };
-pub use range::{Range, RelRange};
+pub use range::{Range, RelOffset, RelRange};
