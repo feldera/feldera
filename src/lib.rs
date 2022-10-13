@@ -2,6 +2,7 @@
 #![doc = include_str!("../README.md")]
 
 mod error;
+mod hash;
 mod num_entries;
 mod ref_pair;
 mod utils;
@@ -19,6 +20,7 @@ pub mod trace;
 pub mod nexmark;
 
 pub use crate::error::Error;
+pub use crate::hash::default_hash;
 pub use crate::num_entries::NumEntries;
 pub use crate::ref_pair::RefPair;
 pub use crate::time::Timestamp;

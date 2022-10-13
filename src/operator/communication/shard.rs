@@ -6,7 +6,7 @@
 
 use crate::{
     circuit::GlobalNodeId,
-    circuit_cache_key,
+    circuit_cache_key, default_hash,
     trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
     Circuit, Runtime, Stream,
 };
@@ -233,7 +233,7 @@ where
         let mut cursor = batch.cursor();
 
         while cursor.key_valid() {
-            let batch_index = fxhash::hash(cursor.key()) % shards;
+            let batch_index = default_hash(cursor.key()) as usize % shards;
             while cursor.val_valid() {
                 builders[batch_index].push((
                     OB::item_from(cursor.key().clone(), cursor.val().clone()),

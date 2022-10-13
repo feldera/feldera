@@ -24,7 +24,6 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     Circuit,
 };
-use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
 use std::{
@@ -339,7 +338,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
     let _ = std::fs::remove_dir_all(&profile_path);
     std::fs::create_dir_all(&profile_path).expect("failed to create directory for profile");
 
-    let mut metadata = HashMap::<_, OperatorMeta, FxBuildHasher>::default();
+    let mut metadata = HashMap::<_, OperatorMeta>::default();
     let mut steps = 0;
 
     circuit.register_scheduler_event_handler("metadata", move |event| match event {

@@ -5,9 +5,8 @@ use crate::{
         LocalStoreMarker, Scope,
     },
     trace::Batch,
-    Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    default_hash, Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
-use fxhash::hash32;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -78,7 +77,7 @@ impl Circuit<()> {
         K: DBData,
         R: DBWeight,
     {
-        let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
+        let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples) );
         let stream = self.add_source(input);
 
         let zset_handle = <CollectionHandle<K, R>>::new(input_handle);
@@ -776,7 +775,7 @@ where
     {
         Self::with_hasher(
             input_handle,
-            Arc::new(|k: &K| hash32(k)) as Arc<dyn HashFunc<K>>,
+            Arc::new(|k: &K| default_hash(k) as u32) as Arc<dyn HashFunc<K>>,
         )
     }
 
