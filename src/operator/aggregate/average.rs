@@ -13,12 +13,14 @@ use std::{
     ops::{Add, AddAssign, Div, Neg},
 };
 
-/// Representation of a partially computed average aggregate as a `(sum, count)` tuple.
+/// Representation of a partially computed average aggregate as a `(sum, count)`
+/// tuple.
 ///
-/// This struct represents the result of the linear part of the average aggregate as a
-/// `(sum, count)` tuple (see [`Stream::average`]).  The actual average value can be
-/// obtained by dividing `sum` by `count`.  `Avg` forms a commutative monoid with point-wise plus
-/// operation `(sum1, count1) + (sum2, count2) = (sum1 + sum2, count1 + count2)`.
+/// This struct represents the result of the linear part of the average
+/// aggregate as a `(sum, count)` tuple (see [`Stream::average`]).  The actual
+/// average value can be obtained by dividing `sum` by `count`.  `Avg` forms a
+/// commutative monoid with point-wise plus operation `(sum1, count1) + (sum2,
+/// count2) = (sum1 + sum2, count1 + count2)`.
 #[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Ord, PartialOrd, SizeOf)]
 pub struct Avg<T, R> {
     sum: T,
