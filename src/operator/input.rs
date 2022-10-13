@@ -4,8 +4,9 @@ use crate::{
         operator_traits::{Operator, SourceOperator},
         LocalStoreMarker, Scope,
     },
+    default_hash,
     trace::Batch,
-    default_hash, Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use std::{
     borrow::Cow,
@@ -77,7 +78,7 @@ impl Circuit<()> {
         K: DBData,
         R: DBWeight,
     {
-        let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples) );
+        let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
         let stream = self.add_source(input);
 
         let zset_handle = <CollectionHandle<K, R>>::new(input_handle);

@@ -32,6 +32,7 @@ mod fold;
 mod max;
 mod min;
 
+pub use average::Avg;
 pub use fold::Fold;
 pub use max::Max;
 pub use min::Min;
