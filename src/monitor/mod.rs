@@ -135,7 +135,17 @@ impl TraceMonitor {
     /// Attach trace monitor to a circuit.  The monitor will register for
     /// both `CircuitEvent`s and `SchedulerEvent`s.
     pub fn attach(&self, circuit: &Circuit<()>, handler_name: &str) {
-        TraceMonitorInternal::attach(self.0.clone(), circuit, handler_name);
+        TraceMonitorInternal::attach(self.0.clone(), circuit, true, handler_name);
+    }
+
+    /// Attach trace monitor to a circuit.  The monitor will register for
+    /// `CircuitEvent`s only.  It will validate the circuit construction process
+    /// and can be used to visualize the circuit (see
+    /// [`Self::visualize_circuit`] and [`Self::visualize_circuit_annotate`],
+    /// but it will not validate scheduler events, nor incur the associated
+    /// overheads.
+    pub fn attach_circuit_events(&self, circuit: &Circuit<()>, handler_name: &str) {
+        TraceMonitorInternal::attach(self.0.clone(), circuit, false, handler_name);
     }
 
     pub fn new<CE, SE>(circuit_error_handler: CE, scheduler_error_handler: SE) -> Self
@@ -186,7 +196,12 @@ pub struct TraceMonitorInternal {
 }
 
 impl TraceMonitorInternal {
-    fn attach(this: Arc<Mutex<Self>>, circuit: &Circuit<()>, handler_name: &str) {
+    fn attach(
+        this: Arc<Mutex<Self>>,
+        circuit: &Circuit<()>,
+        monitor_eval: bool,
+        handler_name: &str,
+    ) {
         let this_clone = this.clone();
 
         circuit.register_circuit_event_handler(handler_name, move |event| {
@@ -195,16 +210,18 @@ impl TraceMonitorInternal {
                 (this.circuit_error_handler)(event, &e);
             });
         });
-        circuit.register_scheduler_event_handler(handler_name, move |event| {
-            // The `ClockEnd` event can be triggered by `CircuitHandle::drop()` while the
-            // thread is being terminated, at which point the lock may be
-            // poisoned.  Just ignore the event in that case.
-            if let Ok(mut this) = this_clone.lock() {
-                let _ = this.scheduler_event(event).map_err(|e| {
-                    (this.scheduler_error_handler)(event, &e);
-                });
-            };
-        });
+        if monitor_eval {
+            circuit.register_scheduler_event_handler(handler_name, move |event| {
+                // The `ClockEnd` event can be triggered by `CircuitHandle::drop()` while the
+                // thread is being terminated, at which point the lock may be
+                // poisoned.  Just ignore the event in that case.
+                if let Ok(mut this) = this_clone.lock() {
+                    let _ = this.scheduler_event(event).map_err(|e| {
+                        (this.scheduler_error_handler)(event, &e);
+                    });
+                };
+            });
+        }
     }
 
     /// Create a new trace monitor with user-provided event handlers.
