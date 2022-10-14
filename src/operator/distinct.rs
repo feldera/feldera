@@ -10,14 +10,12 @@ use crate::{
     circuit_cache_key,
     time::NestedTimestamp32,
     trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace},
-    NumEntries,
 };
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
     cmp::Ordering,
     collections::{BTreeSet, HashMap},
-    hash::Hash,
     marker::PhantomData,
     ops::{Add, Neg},
 };
@@ -35,8 +33,6 @@ where
     where
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
-        Z::Key: Ord + Clone + Hash,
-        Z::Val: Ord + Clone + Hash,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
@@ -53,9 +49,7 @@ where
     /// is more efficient.
     pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: SizeOf + NumEntries + IndexedZSet + Send,
-        Z::Key: Clone + PartialEq + Ord + Hash,
-        Z::Val: Clone + Ord + Hash,
+        Z: IndexedZSet + Send,
         Z::R: ZRingValue,
     {
         self.shard().distinct_incremental_inner().mark_sharded()
@@ -63,9 +57,7 @@ where
 
     fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: SizeOf + NumEntries + IndexedZSet,
-        Z::Key: Clone + PartialEq + Ord,
-        Z::Val: Clone + Ord,
+        Z: IndexedZSet,
         Z::R: ZRingValue,
     {
         self.circuit()
@@ -86,8 +78,7 @@ where
     // TODO: remove this method.
     pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: SizeOf + NumEntries + Send + ZSet,
-        Z::Key: Clone + PartialEq + Ord + Hash,
+        Z: ZSet + Send,
         Z::R: ZRingValue,
     {
         self.shard()
@@ -112,9 +103,8 @@ where
     /// [`Stream::distinct_incremental_nested`].
     pub fn distinct_trace(&self) -> Stream<Circuit<P>, Z>
     where
-        Z: NumEntries + ZSet + SizeOf + Send,
-        Z::Key: Clone + Ord + SizeOf + Hash,
-        Z::R: ZRingValue + SizeOf,
+        Z: ZSet + Send,
+        Z::R: ZRingValue,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
@@ -169,8 +159,6 @@ impl<Z> UnaryOperator<Z, Z> for Distinct<Z>
 where
     Z: IndexedZSet,
     Z::R: ZRingValue,
-    Z::Key: Clone,
-    Z::Val: Clone,
 {
     fn eval(&mut self, input: &Z) -> Z {
         input.distinct()
@@ -220,8 +208,6 @@ where
 impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncremental<Z, I>
 where
     Z: IndexedZSet,
-    Z::Key: Clone + PartialEq,
-    Z::Val: Clone + PartialEq,
     Z::R: ZRingValue,
     I: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R>,
 {
@@ -330,7 +316,6 @@ where
 impl<Z, T> DistinctTrace<Z, T>
 where
     Z: ZSet,
-    Z::Key: Clone + Ord + PartialEq,
     Z::R: ZRingValue,
     T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
@@ -458,7 +443,6 @@ where
 impl<Z, T> Operator for DistinctTrace<Z, T>
 where
     Z: ZSet,
-    Z::Key: SizeOf + Clone + Ord + PartialEq,
     T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -503,7 +487,6 @@ where
 impl<Z, T> BinaryOperator<Z, T, Z> for DistinctTrace<Z, T>
 where
     Z: ZSet,
-    Z::Key: Clone + Ord + PartialEq + SizeOf,
     Z::R: ZRingValue,
     T: Trace<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
 {
