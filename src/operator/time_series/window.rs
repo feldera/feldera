@@ -8,16 +8,13 @@ use crate::{
     },
     trace::{cursor::Cursor, ord::OrdZSet, spine_fueled::Spine, Batch, BatchReader},
 };
-use size_of::SizeOf;
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
 impl<P, B> Stream<Circuit<P>, B>
 where
     P: Clone + 'static,
-    B: IndexedZSet + SizeOf,
-    B::Key: Ord + SizeOf + Clone,
-    B::Val: Ord + SizeOf + Clone,
-    B::R: NegByRef + SizeOf,
+    B: IndexedZSet,
+    B::R: NegByRef,
 {
     /// Extract a subset of values that fall within a moving window from a
     /// stream of time-indexed values.
@@ -123,9 +120,7 @@ where
 impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), OrdZSet<B::Val, B::R>> for Window<B>
 where
     B: IndexedZSet,
-    B::Val: Ord + SizeOf + Clone,
-    B::Key: Ord + SizeOf + Clone,
-    B::R: NegByRef + SizeOf,
+    B::R: NegByRef,
 {
     /// * `batch` - input stream containing new time series data points indexed
     ///   by time.
