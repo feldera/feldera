@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   check:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, skylake-2x]
 
     steps:
       - name: Checkout

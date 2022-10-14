@@ -31,7 +31,7 @@ jobs:
           - {
               rust: nightly,
               target: x86_64-unknown-linux-gnu,
-              os: ubuntu-latest,
+              os: [self-hosted, Linux, skylake-2x],
             }
           - { rust: nightly, target: x86_64-apple-darwin, os: macos-latest }
           - {
@@ -147,12 +147,12 @@ jobs:
       # ```
       # but no, instead we have to do whatever the hell this is
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [skylake-2x, macos-latest]
         sanitizer: [address, thread, memory, leak]
         target: [x86_64-unknown-linux-gnu] # x86_64-apple-darwin
         exclude:
           # Exclude ubuntu runs with darwin targets
-          - { os: ubuntu-latest, target: x86_64-apple-darwin }
+          - { os: skylake-2x, target: x86_64-apple-darwin }
           # Exclude macos runs with linux targets
           - { os: macos-latest, target: x86_64-unknown-linux-gnu }
           # Exclude darwin runs with memory sanitizers since
