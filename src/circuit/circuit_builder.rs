@@ -325,6 +325,8 @@ pub trait Node {
     fn metadata(&self, output: &mut OperatorMeta);
 
     fn fixedpoint(&self, scope: Scope) -> bool;
+
+    fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -955,6 +957,14 @@ impl<P> Circuit<P> {
             .iter()
             .map(|node| node.local_id())
             .collect()
+    }
+
+    /// Recursively apply `f` to all nodes in `self` and its children.
+    pub(crate) fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
+        for node in self.inner().nodes.iter() {
+            f(node.as_ref());
+            node.map_nodes_recursive(f);
+        }
     }
 
     /// Deliver `clock_start` notification to all nodes in the circuit.
@@ -3064,6 +3074,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.circuit.inner().fixedpoint(scope + 1)
+    }
+
+    fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
+        self.circuit.map_nodes_recursive(f);
     }
 }
 
