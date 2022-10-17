@@ -91,6 +91,10 @@ pub struct Config {
     #[clap(long, default_value = "1", env = "NEXMARK_PERSON_PROPORTION")]
     pub person_proportion: usize,
 
+    /// Dump DBSP profiles for all executed queries to the specified directory.
+    #[clap(long, env = "NEXMARK_PROFILE_PATH")]
+    pub profile_path: Option<String>,
+
     /// Queries to run, all by default.
     #[clap(long, env = "NEXMARK_QUERIES", value_enum)]
     pub query: Vec<Query>,
@@ -133,6 +137,7 @@ impl Default for Config {
             num_in_flight_auctions: 100,
             out_of_order_group_size: 1,
             person_proportion: 1,
+            profile_path: None,
             query: Vec::new(),
             source_buffer_size: 10_000,
             input_batch_size: 40_000,

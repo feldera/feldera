@@ -15,7 +15,7 @@ macro_rules! run_queries {
         // so. The DBSP processing happens in its own thread where the resource usage
         // calculation can also happen.
         let (dbsp_step_tx, dbsp_step_rx) = mpsc::sync_channel(1);
-        let dbsp_join_handle = spawn_dbsp_consumer(dbsp, dbsp_step_rx, step_done_tx.clone());
+        let dbsp_join_handle = spawn_dbsp_consumer(stringify!($query), $nexmark_config.profile_path.as_deref(), dbsp, dbsp_step_rx, step_done_tx.clone());
 
         // Start the generator inputting the specified number of batches to the circuit
         // whenever it receives a message.

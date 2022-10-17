@@ -28,6 +28,7 @@ use mimalloc::{AllocStats, MiMalloc};
 use num_format::{Locale, ToFormattedString};
 use size_of::HumanBytes;
 use std::{
+    path::Path,
     sync::mpsc,
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -56,16 +57,28 @@ enum StepCompleted {
 }
 
 fn spawn_dbsp_consumer(
+    query: &str,
+    profile_path: Option<&str>,
     mut dbsp: DBSPHandle,
     step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
 ) -> JoinHandle<()> {
+    let query = query.to_string();
+    let profile_path = profile_path.map(ToString::to_string);
+
     thread::Builder::new()
         .name("benchmark_consumer".into())
         .spawn(move || {
+            if profile_path.is_some() {
+                dbsp.enable_cpu_profiler().unwrap();
+            }
             while let Ok(()) = step_do_rx.recv() {
                 dbsp.step().unwrap();
                 step_done_tx.send(StepCompleted::Dbsp).unwrap();
+            }
+            if let Some(profile_path) = profile_path {
+                dbsp.dump_profile(<String as AsRef<Path>>::as_ref(&profile_path).join(query))
+                    .unwrap();
             }
         })
         .unwrap()

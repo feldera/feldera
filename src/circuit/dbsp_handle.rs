@@ -1,9 +1,9 @@
 use crate::{
-    circuit::runtime::RuntimeHandle, Circuit, Error as DBSPError, Runtime, RuntimeError,
-    SchedulerError,
+    circuit::runtime::RuntimeHandle, profile::Profiler, Circuit, Error as DBSPError, Runtime,
+    RuntimeError, SchedulerError,
 };
 use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
-use std::thread::Result as ThreadResult;
+use std::{fs, fs::create_dir_all, path::Path, thread::Result as ThreadResult, time::Instant};
 
 impl Runtime {
     /// Instantiate a circuit in a multithreaded runtime.
@@ -55,12 +55,16 @@ impl Runtime {
             let status_sender = status_senders.into_iter().nth(worker_index).unwrap();
             let command_receiver = command_receivers.into_iter().nth(worker_index).unwrap();
 
-            let circuit = match Circuit::build(constructor) {
-                Ok((circuit, res)) => {
+            let (circuit, profiler) = match Circuit::build(|circuit| {
+                let profiler = Profiler::new(circuit);
+                let res = constructor(circuit);
+                (res, profiler)
+            }) {
+                Ok((circuit, (res, profiler))) => {
                     if init_sender.send(Ok(res)).is_err() {
                         return;
                     }
-                    circuit
+                    (circuit, profiler)
                 }
                 Err(e) => {
                     let _ = init_sender.send(Err(e));
@@ -74,13 +78,28 @@ impl Runtime {
             while !Runtime::kill_in_progress() {
                 // Wait for command.
                 match command_receiver.try_recv() {
-                    Ok(()) => {
+                    Ok(Command::Step) => {
                         //moregc = true;
-                        let status = circuit.step();
+                        let status = circuit.step().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         };
+                    }
+                    Ok(Command::EnableProfiler) => {
+                        profiler.enable_cpu_profiler();
+                        // Send response.
+                        if status_sender.send(Ok(Response::Unit)).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::DumpProfile) => {
+                        if status_sender
+                            .send(Ok(Response::Profile(profiler.dump_profile())))
+                            .is_err()
+                        {
+                            return;
+                        }
                     }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
@@ -116,9 +135,13 @@ impl Runtime {
         }
 
         // On error, kill the runtime.
-        if let Some(error) = init_status.iter().find_map(|status| status.as_ref().err()) {
+        if init_status.iter().any(Result::is_err) {
+            let error = init_status
+                .into_iter()
+                .find_map(|status| status.err())
+                .unwrap();
             let _ = runtime.kill();
-            return Err(error.clone());
+            return Err(error);
         }
 
         let dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
@@ -129,25 +152,39 @@ impl Runtime {
     }
 }
 
+#[derive(Clone)]
+enum Command {
+    Step,
+    EnableProfiler,
+    DumpProfile,
+}
+
+enum Response {
+    Unit,
+    Profile(String),
+}
+
 /// A handle to control the execution of a circuit in a multithreaded runtime.
 #[derive(Debug)]
 pub struct DBSPHandle {
+    // Time when the handle was created.
+    start_time: Instant,
     runtime: Option<RuntimeHandle>,
-    // Channels used to send commands to workers.  Currently the only supported
-    // command is 'step', so we can use `()` to represent commands.
-    command_senders: Vec<Sender<()>>,
+    // Channels used to send commands to workers.
+    command_senders: Vec<Sender<Command>>,
     // Channels used to receive command completion status from
     // workers.
-    status_receivers: Vec<Receiver<Result<(), SchedulerError>>>,
+    status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
 }
 
 impl DBSPHandle {
     fn new(
         runtime: RuntimeHandle,
-        command_senders: Vec<Sender<()>>,
-        status_receivers: Vec<Receiver<Result<(), SchedulerError>>>,
+        command_senders: Vec<Sender<Command>>,
+        status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
     ) -> Self {
         Self {
+            start_time: Instant::now(),
             runtime: Some(runtime),
             command_senders,
             status_receivers,
@@ -160,15 +197,17 @@ impl DBSPHandle {
         self.runtime.take().unwrap().kill()
     }
 
-    /// Evaluate the circuit for one clock cycle.
-    pub fn step(&mut self) -> Result<(), DBSPError> {
+    fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DBSPError>
+    where
+        F: FnMut(Response),
+    {
         if self.runtime.is_none() {
             return Err(DBSPError::Runtime(RuntimeError::Killed));
         }
 
         // Send command.
         for (worker, sender) in self.command_senders.iter().enumerate() {
-            if matches!(sender.send(()), Err(_)) {
+            if matches!(sender.send(command.clone()), Err(_)) {
                 let _ = self.kill_inner();
                 return Err(DBSPError::Runtime(RuntimeError::WorkerPanic(worker)));
             }
@@ -186,8 +225,55 @@ impl DBSPHandle {
                     let _ = self.kill_inner();
                     return Err(DBSPError::Scheduler(e));
                 }
-                Ok(Ok(_)) => {}
+                Ok(Ok(resp)) => handler(resp),
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn num_workers(&self) -> usize {
+        self.status_receivers.len()
+    }
+
+    /// Evaluate the circuit for one clock cycle.
+    pub fn step(&mut self) -> Result<(), DBSPError> {
+        self.broadcast_command(Command::Step, |_| {})
+    }
+
+    /// Enable CPU profiler.
+    ///
+    /// Enable recording of CPU usage info.  When CPU profiling is enabled,
+    /// [`Self::dump_profile`] outputs CPU usage info along with memory
+    /// usage and other circuit metadata.  CPU profiling introduces small
+    /// runtime overhead.
+    pub fn enable_cpu_profiler(&mut self) -> Result<(), DBSPError> {
+        self.broadcast_command(Command::EnableProfiler, |_| {})
+    }
+
+    /// Dump profiling information to the specified directory.
+    ///
+    /// Creates `dir_path` if it doesn't exist.  For each worker thread, creates
+    /// `dir_path/<timestamp>/<worker>.dot` file containing worker profile in
+    /// the graphviz format.  If CPU profiling was enabled (see
+    /// [`Self::enable_cpu_profiler`]), the profile will contain both CPU and
+    /// memory usage information; otherwise only memory usage details are
+    /// reported.
+    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<(), DBSPError> {
+        let elapsed = self.start_time.elapsed().as_micros();
+        let mut profiles = Vec::with_capacity(self.num_workers());
+
+        let dir_path = dir_path.as_ref().join(elapsed.to_string());
+        create_dir_all(&dir_path)?;
+
+        self.broadcast_command(Command::DumpProfile, |resp| {
+            if let Response::Profile(prof) = resp {
+                profiles.push(prof);
+            }
+        })?;
+
+        for (worker, profile) in profiles.into_iter().enumerate() {
+            fs::write(dir_path.join(format!("{worker}.dot")), profile)?;
         }
 
         Ok(())
@@ -242,10 +328,11 @@ mod tests {
             circuit.add_source(Generator::new(|| 5usize));
         });
 
-        assert_eq!(
-            res.unwrap_err(),
-            DBSPError::Runtime(RuntimeError::WorkerPanic(0))
-        );
+        if let DBSPError::Runtime(err) = res.unwrap_err() {
+            assert_eq!(err, RuntimeError::WorkerPanic(0));
+        } else {
+            panic!();
+        }
     }
 
     // TODO: initialization error in worker thread (the `constructor` closure
@@ -275,10 +362,11 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(
-            handle.step().unwrap_err(),
-            DBSPError::Runtime(RuntimeError::WorkerPanic(0))
-        );
+        if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
+            assert_eq!(err, RuntimeError::WorkerPanic(0));
+        } else {
+            panic!();
+        }
     }
 
     // Kill the runtime.
@@ -298,7 +386,11 @@ mod tests {
         })
         .unwrap();
 
+        handle.enable_cpu_profiler().unwrap();
         handle.step().unwrap();
+        handle
+            .dump_profile(std::env::temp_dir().join("test_kill"))
+            .unwrap();
         handle.kill().unwrap();
     }
 
