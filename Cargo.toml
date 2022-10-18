@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+    [package.metadata.docs.rs]
+    all-features = true
+    rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
@@ -15,12 +15,26 @@ default = ["with-serde"]
 persistence = ["rocksdb", "uuid"]
 with-serde = ["serde", "erased-serde"]
 with-csv = ["csv"]
-with-nexmark = ["arcstr/bincode", "cached", "clap", "csv", "rand", "regex", "rust_decimal", "time", "size-of/rust_decimal", "size-of/arcstr", "paste"]
+with-nexmark = [
+    "arcstr",
+    "arcstr/bincode",
+    "cached",
+    "clap",
+    "csv",
+    "rand",
+    "regex",
+    "rust_decimal",
+    "time",
+    "size-of/rust_decimal",
+    "size-of/arcstr",
+    "paste",
+]
+__gdelt = ["size-of/arcstr"]
 
 [dependencies]
 num = "0.4.0"
 anyhow = "1.0.57"
-size-of = { version = "0.1.2", features = ["time-std"]}
+size-of = { version = "0.1.2", features = ["time-std"] }
 petgraph = "0.6.0"
 typedmap = { version = "0.3.0", features = ["dashmap"] }
 crossbeam-utils = "0.8.6"
@@ -29,10 +43,10 @@ priority-queue = "1.2.1"
 hashbrown = "0.12.0"
 csv = { git = "https://github.com/ryzhyk/rust-csv.git", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
-erased-serde = { version = "0.3.23", optional = true}
+erased-serde = { version = "0.3.23", optional = true }
 impl-trait-for-tuples = "0.2"
 textwrap = "0.15.0"
-ordered-float = { version = "3.0.0", features = ["serde"]}
+ordered-float = { version = "3.0.0", features = ["serde"] }
 arcstr = { version = "1.1.4", optional = true }
 rust_decimal = { version = "1.26.1", optional = true }
 regex = { version = "1.6.0", optional = true }
@@ -41,9 +55,11 @@ paste = { version = "1.0.9", optional = true }
 bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
-rocksdb = { version = "0.19", default-features = false, features = ["multi-threaded-cf"], optional = true }
+rocksdb = { version = "0.19", default-features = false, features = [
+    "multi-threaded-cf",
+], optional = true }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
-uuid = { version = "1.1.2",  features = ["v4"], optional = true }
+uuid = { version = "1.1.2", features = ["v4"], optional = true }
 
 # TODO: Remove these dependencies
 rand = { version = "0.8", optional = true }
@@ -51,11 +67,13 @@ clap = { version = "3.2.8", optional = true, features = ["derive", "env"] }
 cached = { version = "0.38.0", optional = true }
 
 [dev-dependencies]
+csv = "1.1.6"
 zip = "0.6.2"
 tar = "0.4.38"
 rand = "0.8.5"
 zstd = "0.10.0"
 paste = "1.0.9"
+arcstr = "1.1.4"
 anyhow = "1.0.57"
 rstest = "0.15"
 cached = "0.38.0"
@@ -69,7 +87,11 @@ clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
 ascii_table = "4.0.2"
 num-format = "0.4.0"
-time = { version = "0.3.14", features = ["formatting", "serde", "serde-human-readable"] }
+time = { version = "0.3.14", features = [
+    "formatting",
+    "serde",
+    "serde-human-readable",
+] }
 itertools = "0.10.5"
 serde_json = "1.0.87"
 serde_with = "2.0.1"
@@ -109,6 +131,14 @@ harness = false
 name = "column_leaf"
 harness = false
 
-[patch.crates-io]
+[[bench]]
+name = "gdelt"
+harness = false
+required-features = ["__gdelt"]
+
 # Waiting for bincode 2.0.0 to be released (https://github.com/thomcc/arcstr/pull/45)
-arcstr = { git = "https://github.com/gz/arcstr.git", features = ["bincode"], rev = "b43120c", optional = true }
+[patch.crates-io.arcstr]
+git = "https://github.com/gz/arcstr.git"
+features = ["bincode"]
+rev = "b43120c"
+optional = true
