@@ -97,7 +97,7 @@ use time::{Date, Instant, PrimitiveDateTime};
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
-const DEFAULT_BATCH_SIZE: &'static str = "10000";
+const DEFAULT_BATCH_SIZE: &str = "10000";
 
 const DAY_IN_SECONDS: i64 = 24 * 3600;
 
@@ -194,10 +194,17 @@ struct Args {
 
 type Weight = i32;
 
+type EnrichedTransactions = OrdIndexedZSet<(F64, i64), (Transaction, Demographics), Weight>;
+type AverageSpendingPerWeek =
+    OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>;
+type AverageSpendingPerMonth =
+    OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>;
+type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, (F64, Option<i32>), Weight>;
+
 struct FraudBenchmark {
     dbsp: DBSPHandle,
-    hdemographics: CollectionHandle<Demographics, Weight>,
-    htransactions: CollectionHandle<Transaction, Weight>,
+    demographics: CollectionHandle<Demographics, Weight>,
+    transactions: CollectionHandle<Transaction, Weight>,
 }
 
 impl FraudBenchmark {
@@ -214,29 +221,22 @@ impl FraudBenchmark {
             let transactions_by_ccnum = transactions.map_index(|t| (t.cc_num, t.clone()));
             let demographics_by_ccnum = demographics.map_index(|d| (d.cc_num, d.clone()));
 
-            let enriched_transactions: Stream<
-                _,
-                OrdIndexedZSet<(F64, i64), (Transaction, Demographics), Weight>,
-            > = transactions_by_ccnum.join_index::<(), _, _, _, _, _>(
-                &demographics_by_ccnum,
-                |cc_num, tran, dem| {
+            let enriched_transactions: Stream<_, EnrichedTransactions> = transactions_by_ccnum
+                .join_index::<(), _, _, _, _, _>(&demographics_by_ccnum, |cc_num, tran, dem| {
                     let timestamp = tran.trans_date_trans_time.assume_utc().unix_timestamp();
                     Some(((*cc_num, timestamp), (tran.clone(), dem.clone())))
-                },
-            );
+                });
 
             // AVG(amt) OVER(
             //     PARTITION BY CAST(cc_num AS NUMERIC)
             //     ORDER BY unix_time
             //     -- 1 week is 604800  seconds
             //     RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS avg_spend_pw,
-            let avg_spend_pw: Stream<
-                _,
-                OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>,
-            > = amounts.partitioned_rolling_aggregate_linear(
-                |amt| Avg::new(*amt, 1),
-                RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 7), RelOffset::Before(1)),
-            );
+            let avg_spend_pw: Stream<_, AverageSpendingPerWeek> = amounts
+                .partitioned_rolling_aggregate_linear(
+                    |amt| Avg::new(*amt, 1),
+                    RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 7), RelOffset::Before(1)),
+                );
 
             // TODO: this should be returned directly by `partitioned_rolling_aggregate`
             let avg_spend_pw_indexed = avg_spend_pw.map_index(|(cc_num, (ts, (_, avg_amt)))| {
@@ -251,13 +251,11 @@ impl FraudBenchmark {
             //     ORDER BY unix_time
             //     -- 1 month(30 days) is 2592000 seconds
             //     RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS avg_spend_pm,
-            let avg_spend_pm: Stream<
-                _,
-                OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>,
-            > = amounts.partitioned_rolling_aggregate_linear(
-                |amt| Avg::new(*amt, 1),
-                RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
-            );
+            let avg_spend_pm: Stream<_, AverageSpendingPerMonth> = amounts
+                .partitioned_rolling_aggregate_linear(
+                    |amt| Avg::new(*amt, 1),
+                    RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
+                );
 
             let avg_spend_pm_indexed = avg_spend_pm.map_index(|(cc_num, (ts, (_, avg_amt)))| {
                 (
@@ -271,13 +269,11 @@ impl FraudBenchmark {
             //     ORDER BY unix_time
             //     -- 1 day is 86400  seconds
             //     RANGE BETWEEN 86400 PRECEDING AND 1 PRECEDING) AS trans_freq_24,
-            let trans_freq_24: Stream<
-                _,
-                OrdPartitionedIndexedZSet<F64, i64, (F64, Option<i32>), Weight>,
-            > = amounts.partitioned_rolling_aggregate_linear(
-                |_amt| 1,
-                RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
-            );
+            let trans_freq_24: Stream<_, TransactionFrequency> = amounts
+                .partitioned_rolling_aggregate_linear(
+                    |_amt| 1,
+                    RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
+                );
 
             let trans_freq_24_indexed = trans_freq_24
                 .map_index(|(cc_num, (ts, (_, freq)))| ((*cc_num, *ts), freq.unwrap_or(0)));
@@ -285,12 +281,12 @@ impl FraudBenchmark {
             avg_spend_pw_indexed
                 .join_index::<(), _, _, _, _, _>(
                     &avg_spend_pm_indexed,
-                    |cc_num_ts, pw_avg, pm_avg| Some((cc_num_ts.clone(), (*pw_avg, *pm_avg))),
+                    |&cc_num_ts, pw_avg, pm_avg| Some((cc_num_ts, (*pw_avg, *pm_avg))),
                 )
                 .join_index::<(), _, _, _, _, _>(
                     &trans_freq_24_indexed,
-                    |cc_num_ts, (pw_avg, pm_avg), freq| {
-                        Some((cc_num_ts.clone(), (*pw_avg, *pm_avg, *freq)))
+                    |&cc_num_ts, (pw_avg, pm_avg), freq| {
+                        Some((cc_num_ts, (*pw_avg, *pm_avg, *freq)))
                     },
                 )
                 .join::<(), _, _, _>(
@@ -316,8 +312,8 @@ impl FraudBenchmark {
 
         Self {
             dbsp,
-            hdemographics,
-            htransactions,
+            demographics: hdemographics,
+            transactions: htransactions,
         }
     }
 
@@ -329,7 +325,7 @@ impl FraudBenchmark {
         for record in dem_iter {
             let record = record.unwrap();
             // println!("Person: {record:?}");
-            self.hdemographics.push(record, 1);
+            self.demographics.push(record, 1);
         }
         self.dbsp.step().unwrap();
     }
@@ -367,7 +363,7 @@ impl FraudBenchmark {
                     (transaction, 1)
                 })
                 .collect();
-            self.htransactions.append(&mut batch);
+            self.transactions.append(&mut batch);
             println!("{total_size} parsing: {} ", chunk_start.elapsed());
             total_size += batch_size;
 
