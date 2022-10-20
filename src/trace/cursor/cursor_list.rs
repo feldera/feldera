@@ -13,10 +13,10 @@ use std::marker::PhantomData;
 /// no clever management of these sets otherwise.
 #[derive(Debug)]
 pub struct CursorList<'s, K, V, T, R, C: Cursor<'s, K, V, T, R>> {
-    _phantom: PhantomData<(K, V, T, R, &'s ())>,
     cursors: Vec<C>,
     min_key: Vec<usize>,
     min_val: Vec<usize>,
+    __type: PhantomData<&'s (K, V, T, R)>,
 }
 
 impl<'s, K, V, T, R, C: Cursor<'s, K, V, T, R>> CursorList<'s, K, V, T, R, C>
@@ -26,11 +26,11 @@ where
 {
     /// Creates a new cursor list from pre-existing cursors.
     pub fn new(cursors: Vec<C>) -> Self {
-        let mut result = CursorList {
-            _phantom: PhantomData,
+        let mut result = Self {
             cursors,
             min_key: Vec::new(),
             min_val: Vec::new(),
+            __type: PhantomData,
         };
 
         result.minimize_keys();
@@ -101,44 +101,49 @@ where
     V: Ord,
     R: MonoidValue,
 {
-    // validation methods
-    #[inline]
     fn key_valid(&self) -> bool {
         !self.min_key.is_empty()
     }
-    #[inline]
+
     fn val_valid(&self) -> bool {
         !self.min_val.is_empty()
     }
 
-    // accessors
-    #[inline]
     fn key(&self) -> &K {
         debug_assert!(self.key_valid());
         debug_assert!(self.cursors[self.min_key[0]].key_valid());
         self.cursors[self.min_key[0]].key()
     }
-    #[inline]
+
     fn val(&self) -> &V {
         debug_assert!(self.key_valid());
         debug_assert!(self.val_valid());
         debug_assert!(self.cursors[self.min_val[0]].val_valid());
         self.cursors[self.min_val[0]].val()
     }
-    #[inline]
-    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
+
+    fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
         for &index in self.min_val.iter() {
-            self.cursors[index].map_times(|t, d| logic(t, d));
+            init = self.cursors[index].fold_times(init, &mut fold);
         }
-    }
-    #[inline]
-    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
-        for &index in self.min_val.iter() {
-            self.cursors[index].map_times_through(|t, d| logic(t, d), upper);
-        }
+
+        init
     }
 
-    #[inline]
+    fn fold_times_through<F, U>(&mut self, upper: &T, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
+        for &index in self.min_val.iter() {
+            init = self.cursors[index].fold_times_through(upper, init, &mut fold);
+        }
+
+        init
+    }
+
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
@@ -151,15 +156,13 @@ where
         res
     }
 
-    // key methods
-    #[inline]
     fn step_key(&mut self) {
         for &index in self.min_key.iter() {
             self.cursors[index].step_key();
         }
         self.minimize_keys();
     }
-    #[inline]
+
     fn seek_key(&mut self, key: &K) {
         for cursor in self.cursors.iter_mut() {
             cursor.seek_key(key);
@@ -167,7 +170,6 @@ where
         self.minimize_keys();
     }
 
-    #[inline]
     fn last_key(&mut self) -> Option<&K> {
         self.cursors
             .iter_mut()
@@ -176,15 +178,13 @@ where
             .unwrap_or(None)
     }
 
-    // value methods
-    #[inline]
     fn step_val(&mut self) {
         for &index in self.min_val.iter() {
             self.cursors[index].step_val();
         }
         self.minimize_vals();
     }
-    #[inline]
+
     fn seek_val(&mut self, val: &V) {
         for &index in self.min_key.iter() {
             self.cursors[index].seek_val(val);
@@ -202,15 +202,13 @@ where
         self.minimize_vals();
     }
 
-    // rewinding methods
-    #[inline]
     fn rewind_keys(&mut self) {
         for cursor in self.cursors.iter_mut() {
             cursor.rewind_keys();
         }
         self.minimize_keys();
     }
-    #[inline]
+
     fn rewind_vals(&mut self) {
         for &index in self.min_key.iter() {
             self.cursors[index].rewind_vals();

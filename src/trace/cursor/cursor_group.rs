@@ -35,35 +35,51 @@ where
     C: Cursor<'s, K, V, T, R>,
     K: PartialEq,
 {
-    #[inline]
     fn key_valid(&self) -> bool {
         self.base.val_valid()
     }
 
-    #[inline]
     fn val_valid(&self) -> bool {
         self.val_valid
     }
 
-    #[inline]
     fn key(&self) -> &V {
         self.base.val()
     }
 
-    #[inline]
     fn val(&self) -> &() {
         &()
     }
 
-    fn map_times<L: FnMut(&T, &R)>(&mut self, logic: L) {
-        self.base.map_times_through(logic, &self.upper);
+    fn map_times<L>(&mut self, logic: L)
+    where
+        L: FnMut(&T, &R),
+    {
+        self.base.map_times_through(&self.upper, logic);
     }
 
-    fn map_times_through<L: FnMut(&T, &R)>(&mut self, logic: L, upper: &T) {
-        self.base.map_times_through(logic, &self.upper.meet(upper))
+    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
+        self.base.fold_times_through(&self.upper, init, fold)
     }
 
-    #[inline]
+    fn map_times_through<L>(&mut self, upper: &T, logic: L)
+    where
+        L: FnMut(&T, &R),
+    {
+        self.base.map_times_through(&self.upper.meet(upper), logic)
+    }
+
+    fn fold_times_through<F, U>(&mut self, upper: &T, init: U, fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
+        self.base
+            .fold_times_through(&self.upper.meet(upper), init, fold)
+    }
+
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>,
@@ -71,7 +87,6 @@ where
         self.base.weight()
     }
 
-    #[inline]
     fn step_key(&mut self) {
         self.base.step_val();
     }
@@ -84,15 +99,12 @@ where
         unimplemented!()
     }
 
-    #[inline]
     fn step_val(&mut self) {
         self.val_valid = false;
     }
 
-    #[inline]
     fn seek_val(&mut self, _val: &()) {}
 
-    #[inline]
     fn seek_val_with<P>(&mut self, predicate: P)
     where
         P: Fn(&()) -> bool + Clone,
@@ -102,12 +114,10 @@ where
         }
     }
 
-    #[inline]
     fn rewind_keys(&mut self) {
         self.base.rewind_vals();
     }
 
-    #[inline]
     fn rewind_vals(&mut self) {
         self.val_valid = true;
     }

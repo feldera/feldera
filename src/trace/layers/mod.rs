@@ -79,6 +79,7 @@ pub trait Trie: Sized {
 pub trait Builder {
     /// The type of collection produced.
     type Trie: Trie;
+
     /// Requests a commitment to the offset of the current-most sub-collection.
     ///
     /// This is most often used by parent collections to indicate that some set
@@ -86,6 +87,7 @@ pub trait Builder {
     /// and that the builder should acknowledge this and report the limit
     /// (to store as an offset in the parent collection).
     fn boundary(&mut self) -> usize;
+
     /// Finalizes the building process and returns the collection.
     fn done(self) -> Self::Trie;
 }
@@ -115,12 +117,35 @@ pub trait MergeBuilder: Builder {
 pub trait TupleBuilder: Builder {
     /// The type of item accepted for construction.
     type Item;
+
     /// Allocates a new builder.
     fn new() -> Self;
+
     /// Allocates a new builder with capacity for at least `cap` tuples.
-    fn with_capacity(cap: usize) -> Self; // <-- unclear how to set child capacities...
-    /// Inserts a new into the collection.
+    fn with_capacity(capacity: usize) -> Self; // <-- unclear how to set child capacities...
+
+    /// Reserve space for `additional` new tuples to be added to the current
+    /// builder
+    fn reserve_tuples(&mut self, additional: usize);
+
+    /// Inserts a new tuple into the current builder
     fn push_tuple(&mut self, tuple: Self::Item);
+
+    /// Inserts all of the given tuples into the current builder
+    fn extend_tuples<I>(&mut self, tuples: I)
+    where
+        I: IntoIterator<Item = Self::Item>,
+    {
+        let tuples = tuples.into_iter();
+
+        let (lower, upper) = tuples.size_hint();
+        self.reserve_tuples(upper.unwrap_or(lower));
+
+        for tuple in tuples {
+            self.push_tuple(tuple);
+        }
+    }
+
     fn tuples(&self) -> usize;
 }
 
@@ -303,8 +328,13 @@ impl TupleBuilder for () {
     type Item = ();
 
     fn new() -> Self {}
-    fn with_capacity(_cap: usize) -> Self {}
+
+    fn with_capacity(_capacity: usize) -> Self {}
+
+    fn reserve_tuples(&mut self, _additional: usize) {}
+
     fn push_tuple(&mut self, _tuple: Self::Item) {}
+
     fn tuples(&self) -> usize {
         0
     }

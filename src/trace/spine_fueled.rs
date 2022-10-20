@@ -84,14 +84,14 @@ use crate::{
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::{Cursor, CursorList},
-        rc_blanket_impls::RcBatchCursor,
+        rc_batch::RcBatchCursor,
         Batch, BatchReader, Consumer, Merger, Trace, ValueConsumer,
     },
     NumEntries,
 };
 use size_of::SizeOf;
 use std::{
-    fmt::{self, Display},
+    fmt::{self, Debug, Display},
     marker::PhantomData,
     mem::replace,
     rc::Rc,
@@ -109,7 +109,7 @@ pub struct Spine<B>
 where
     B: Batch,
 {
-    merging: Vec<MergeState<Rc<B>>>,
+    pub merging: Vec<MergeState<Rc<B>>>,
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     effort: usize,
@@ -124,15 +124,9 @@ where
     B::Val: Ord,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut res = Vec::new();
-        self.map_batches(|batch| {
-            res.push(writeln!(
-                f,
-                "batch:\n{}",
-                indent(&batch.to_string(), "    ")
-            ))
-        });
-        res.into_iter().collect()
+        self.try_fold_batches((), |_, batch| {
+            writeln!(f, "batch:\n{}", indent(&batch.to_string(), "    "),)
+        })
     }
 }
 
@@ -155,9 +149,7 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
-        let mut total = 0;
-        self.map_batches(|batch| total += batch.len());
-        total
+        self.fold_batches(0, |acc, batch| acc + batch.len())
     }
 
     fn num_entries_deep(&self) -> usize {
@@ -180,15 +172,11 @@ where
     type Consumer = SpineConsumer<B>;
 
     fn key_count(&self) -> usize {
-        let mut result = 0;
-        self.map_batches(|b| result += b.key_count());
-        result
+        self.fold_batches(0, |acc, batch| acc + batch.key_count())
     }
 
     fn len(&self) -> usize {
-        let mut result = 0;
-        self.map_batches(|b| result += b.len());
-        result
+        self.fold_batches(0, |acc, batch| acc + batch.len())
     }
 
     fn lower(&self) -> AntichainRef<'_, Self::Time> {
@@ -200,33 +188,29 @@ where
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        let mut cursors = Vec::new();
-
+        let mut cursors = Vec::with_capacity(self.merging.len());
         for merge_state in self.merging.iter().rev() {
             match merge_state {
-                MergeState::Double(variant) => match variant {
-                    MergeVariant::InProgress(batch1, batch2, _) => {
-                        if !batch1.is_empty() {
-                            cursors.push(batch1.cursor());
-                        }
-                        if !batch2.is_empty() {
-                            cursors.push(batch2.cursor());
-                        }
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                    if !batch1.is_empty() {
+                        cursors.push(batch1.cursor());
                     }
-                    MergeVariant::Complete(Some(batch)) => {
-                        if !batch.is_empty() {
-                            cursors.push(batch.cursor());
-                        }
+
+                    if !batch2.is_empty() {
+                        cursors.push(batch2.cursor());
                     }
-                    MergeVariant::Complete(None) => {}
-                },
-                MergeState::Single(Some(batch)) => {
+                }
+
+                MergeState::Double(MergeVariant::Complete(Some(batch)))
+                | MergeState::Single(Some(batch)) => {
                     if !batch.is_empty() {
                         cursors.push(batch.cursor());
                     }
                 }
-                MergeState::Single(None) => {}
-                MergeState::Vacant => {}
+
+                MergeState::Double(MergeVariant::Complete(None))
+                | MergeState::Single(None)
+                | MergeState::Vacant => {}
             }
         }
 
@@ -242,18 +226,59 @@ impl<B> Spine<B>
 where
     B: Batch,
 {
-    fn map_batches<F: FnMut(&B)>(&self, mut f: F) {
+    #[allow(dead_code)]
+    fn map_batches<F>(&self, mut map: F)
+    where
+        F: FnMut(&B),
+    {
         for batch in self.merging.iter().rev() {
             match batch {
                 MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
-                    f(batch1);
-                    f(batch2);
+                    map(batch1);
+                    map(batch2);
                 }
-                MergeState::Double(MergeVariant::Complete(Some(batch))) => f(batch),
-                MergeState::Single(Some(batch)) => f(batch),
+                MergeState::Double(MergeVariant::Complete(Some(batch))) => map(batch),
+                MergeState::Single(Some(batch)) => map(batch),
                 _ => {}
             }
         }
+    }
+
+    fn fold_batches<T, F>(&self, init: T, mut fold: F) -> T
+    where
+        F: FnMut(T, &B) -> T,
+    {
+        self.merging
+            .iter()
+            .rev()
+            .fold(init, |acc, batch| match batch {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                    let acc = fold(acc, batch1);
+                    fold(acc, batch2)
+                }
+                MergeState::Double(MergeVariant::Complete(Some(batch))) => fold(acc, batch),
+                MergeState::Single(Some(batch)) => fold(acc, batch),
+                _ => acc,
+            })
+    }
+
+    // TODO: Use the `Try` trait when stable
+    fn try_fold_batches<T, E, F>(&self, init: T, mut fold: F) -> Result<T, E>
+    where
+        F: FnMut(T, &B) -> Result<T, E>,
+    {
+        self.merging
+            .iter()
+            .rev()
+            .try_fold(init, |acc, batch| match batch {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                    let acc = fold(acc, batch1)?;
+                    fold(acc, batch2)
+                }
+                MergeState::Double(MergeVariant::Complete(Some(batch))) => fold(acc, batch),
+                MergeState::Single(Some(batch)) => fold(acc, batch),
+                _ => Ok(acc),
+            })
     }
 }
 
@@ -279,37 +304,50 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    #[inline]
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
 
-    #[inline]
     fn val_valid(&self) -> bool {
         self.cursor.val_valid()
     }
 
-    #[inline]
     fn key(&self) -> &B::Key {
         self.cursor.key()
     }
 
-    #[inline]
     fn val(&self) -> &B::Val {
         self.cursor.val()
     }
 
-    #[inline]
-    fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L) {
+    fn map_times<L>(&mut self, logic: L)
+    where
+        L: FnMut(&B::Time, &B::R),
+    {
         self.cursor.map_times(logic);
     }
 
-    #[inline]
-    fn map_times_through<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L, upper: &B::Time) {
-        self.cursor.map_times_through(logic, upper);
+    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
+    where
+        F: FnMut(U, &B::Time, &B::R) -> U,
+    {
+        self.cursor.fold_times(init, fold)
     }
 
-    #[inline]
+    fn map_times_through<L>(&mut self, upper: &B::Time, logic: L)
+    where
+        L: FnMut(&B::Time, &B::R),
+    {
+        self.cursor.map_times_through(upper, logic);
+    }
+
+    fn fold_times_through<F, U>(&mut self, upper: &B::Time, init: U, fold: F) -> U
+    where
+        F: FnMut(U, &B::Time, &B::R) -> U,
+    {
+        self.cursor.fold_times_through(upper, init, fold)
+    }
+
     fn weight(&mut self) -> B::R
     where
         B::Time: PartialEq<()>,
@@ -317,32 +355,26 @@ where
         self.cursor.weight()
     }
 
-    #[inline]
     fn step_key(&mut self) {
         self.cursor.step_key();
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &B::Key) {
         self.cursor.seek_key(key);
     }
 
-    #[inline]
     fn last_key(&mut self) -> Option<&B::Key> {
         self.cursor.last_key()
     }
 
-    #[inline]
     fn step_val(&mut self) {
         self.cursor.step_val();
     }
 
-    #[inline]
     fn seek_val(&mut self, val: &B::Val) {
         self.cursor.seek_val(val);
     }
 
-    #[inline]
     fn seek_val_with<P>(&mut self, predicate: P)
     where
         P: Fn(&B::Val) -> bool + Clone,
@@ -350,12 +382,10 @@ where
         self.cursor.seek_val_with(predicate);
     }
 
-    #[inline]
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
     }
 
-    #[inline]
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
     }
@@ -886,7 +916,10 @@ where
 /// A layer can be empty, contain a single batch, or contain a pair of batches
 /// that are in the process of merging into a batch for the next layer.
 #[derive(SizeOf)]
-enum MergeState<B: Batch> {
+pub enum MergeState<B>
+where
+    B: Batch,
+{
     /// An empty layer, containing no updates.
     Vacant,
     /// A layer containing a single batch.
@@ -898,7 +931,10 @@ enum MergeState<B: Batch> {
     Double(MergeVariant<B>),
 }
 
-impl<B: Batch> MergeState<B> {
+impl<B> MergeState<B>
+where
+    B: Batch,
+{
     /// The number of actual updates contained in the level.
     fn len(&self) -> usize {
         match self {
@@ -931,7 +967,7 @@ impl<B: Batch> MergeState<B> {
     /// distinguish between Vacant entries and structurally empty batches,
     /// which should be done with the `is_complete()` method.
     ///
-    /// There is the addional option of input batches.
+    /// There is the additional option of input batches.
     fn complete(&mut self) -> Option<B> {
         match replace(self, MergeState::Vacant) {
             MergeState::Vacant => None,
@@ -987,8 +1023,7 @@ impl<B: Batch> MergeState<B> {
                 let begin_merge = <B as Batch>::begin_merge(&batch1, &batch2);
                 MergeVariant::InProgress(batch1, batch2, begin_merge)
             }
-            (None, Some(x)) => MergeVariant::Complete(Some(x)),
-            (Some(x), None) => MergeVariant::Complete(Some(x)),
+            (batch @ Some(_), None) | (None, batch @ Some(_)) => MergeVariant::Complete(batch),
             (None, None) => MergeVariant::Complete(None),
         };
 
@@ -996,8 +1031,25 @@ impl<B: Batch> MergeState<B> {
     }
 }
 
+impl<B> Debug for MergeState<B>
+where
+    B: Batch + Debug,
+    B::Merger: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Vacant => f.write_str("Vacant"),
+            Self::Single(batch) => f.debug_tuple("Single").field(batch).finish(),
+            Self::Double(merging) => f.debug_tuple("Double").field(merging).finish(),
+        }
+    }
+}
+
 #[derive(SizeOf)]
-enum MergeVariant<B: Batch> {
+pub enum MergeVariant<B>
+where
+    B: Batch,
+{
     /// Describes an actual in-progress merge between two non-trivial batches.
     InProgress(B, B, <B as Batch>::Merger),
     /// A merge that requires no further work. May or may not represent a
@@ -1005,7 +1057,10 @@ enum MergeVariant<B: Batch> {
     Complete(Option<B>),
 }
 
-impl<B: Batch> MergeVariant<B> {
+impl<B> MergeVariant<B>
+where
+    B: Batch,
+{
     /// Completes and extracts the batch, unless structurally empty.
     ///
     /// The result is either `None`, for structurally empty batches,
@@ -1035,6 +1090,24 @@ impl<B: Batch> MergeVariant<B> {
             }
         } else {
             *self = variant;
+        }
+    }
+}
+
+impl<B> Debug for MergeVariant<B>
+where
+    B: Batch + Debug,
+    B::Merger: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InProgress(batch1, batch2, merger) => f
+                .debug_tuple("InProgress")
+                .field(batch1)
+                .field(batch2)
+                .field(merger)
+                .finish(),
+            Self::Complete(batch) => f.debug_tuple("Complete").field(batch).finish(),
         }
     }
 }

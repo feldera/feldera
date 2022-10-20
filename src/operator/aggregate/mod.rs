@@ -472,34 +472,27 @@ where
                 input_cursor.rewind_vals();
 
                 let mut time_of_interest = None;
-
-                // println!("{}: found key in input_cursor", Runtime::worker_index());
                 while input_cursor.val_valid() {
                     // TODO: More efficient lookup of the smallest timestamp exceeding
                     // `self.time`, without scanning everything.
-                    input_cursor.map_times(|t, _| {
-                        // println!(
-                        //     "{}: val:{:?}, time: {t:?} weight: {w}",
-                        //     Runtime::worker_index(),
-                        //     input_cursor.val()
-                        // );
-                        if !t.less_equal(&self.time) {
-                            time_of_interest = match &time_of_interest {
-                                None => Some(self.time.join(t)),
-                                Some(toi) => Some(min(toi.clone(), self.time.join(t))),
-                            };
-                        }
-                    });
+                    time_of_interest =
+                        input_cursor.fold_times(time_of_interest, |time_of_interest, time, _| {
+                            if !time.less_equal(&self.time) {
+                                match time_of_interest {
+                                    None => Some(self.time.join(time)),
+                                    Some(time_of_interest) => {
+                                        Some(min(time_of_interest, self.time.join(time)))
+                                    }
+                                }
+                            } else {
+                                time_of_interest
+                            }
+                        });
 
                     input_cursor.step_val();
                 }
 
                 if let Some(t) = time_of_interest {
-                    // println!(
-                    //     "{}: adding {key} to keys_of_interest @ {:?}",
-                    //     Runtime::worker_index(),
-                    //     time_of_interest
-                    // );
                     self.keys_of_interest
                         .entry(t)
                         .or_insert_with(BTreeSet::new)

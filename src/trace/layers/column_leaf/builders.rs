@@ -24,7 +24,6 @@ pub struct OrderedColumnLeafBuilder<K, R> {
 
 impl<K, R> OrderedColumnLeafBuilder<K, R> {
     /// Get the length of the current builder
-    #[inline]
     pub(crate) fn len(&self) -> usize {
         unsafe { self.assume_invariants() }
         self.keys.len()
@@ -35,7 +34,6 @@ impl<K, R> OrderedColumnLeafBuilder<K, R> {
     /// # Safety
     ///
     /// Requires that `keys` and `diffs` have the exact same length
-    #[inline]
     unsafe fn assume_invariants(&self) {
         assume(self.keys.len() == self.diffs.len())
     }
@@ -48,13 +46,11 @@ where
 {
     type Trie = OrderedColumnLeaf<K, R>;
 
-    #[inline]
     fn boundary(&mut self) -> usize {
         unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
-    #[inline]
     fn done(self) -> Self::Trie {
         unsafe { self.assume_invariants() }
 
@@ -71,13 +67,11 @@ where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
-    #[inline]
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
-        let capacity = left.keys() + right.keys();
+        let capacity = Trie::keys(left) + Trie::keys(right);
         Self::with_key_capacity(capacity)
     }
 
-    #[inline]
     fn with_key_capacity(capacity: usize) -> Self {
         Self {
             keys: Vec::with_capacity(capacity),
@@ -85,7 +79,6 @@ where
         }
     }
 
-    #[inline]
     fn reserve(&mut self, additional: usize) {
         unsafe { self.assume_invariants() }
         self.keys.reserve(additional);
@@ -93,7 +86,6 @@ where
         unsafe { self.assume_invariants() }
     }
 
-    #[inline]
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         unsafe {
             self.assume_invariants();
@@ -186,7 +178,6 @@ where
 {
     type Item = (K, R);
 
-    #[inline]
     fn new() -> Self {
         Self {
             keys: Vec::new(),
@@ -194,7 +185,6 @@ where
         }
     }
 
-    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self {
             keys: Vec::with_capacity(capacity),
@@ -202,13 +192,16 @@ where
         }
     }
 
-    #[inline]
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+        self.diffs.reserve(additional);
+    }
+
     fn tuples(&self) -> usize {
         unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
-    #[inline]
     fn push_tuple(&mut self, (key, diff): (K, R)) {
         // if cfg!(debug_assertions) && !self.keys.is_empty() {
         //     debug_assert!(
@@ -242,7 +235,6 @@ impl<K, R> UnorderedColumnLeafBuilder<K, R> {
     }
 
     /// Get the length of the current builder
-    #[inline]
     pub(crate) fn len(&self) -> usize {
         self.tuples.len()
     }
@@ -277,7 +269,6 @@ where
 {
     type Item = (K, R);
 
-    #[inline]
     fn new() -> Self {
         Self {
             tuples: Vec::new(),
@@ -285,7 +276,6 @@ where
         }
     }
 
-    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self {
             tuples: Vec::with_capacity(capacity),
@@ -293,14 +283,23 @@ where
         }
     }
 
-    #[inline]
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.tuples.reserve(additional);
+    }
+
     fn tuples(&self) -> usize {
         self.len()
     }
 
-    #[inline]
     fn push_tuple(&mut self, tuple: (K, R)) {
         self.tuples.push(tuple);
+    }
+
+    fn extend_tuples<I>(&mut self, tuples: I)
+    where
+        I: IntoIterator<Item = Self::Item>,
+    {
+        self.tuples.extend(tuples);
     }
 }
 

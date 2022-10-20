@@ -251,9 +251,19 @@ where
         panic!("")
     }
 
-    fn map_times<L: FnMut(&(), &R)>(&mut self, _logic: L) {}
+    fn fold_times<F, U>(&mut self, init: U, _fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        init
+    }
 
-    fn map_times_through<L: FnMut(&(), &R)>(&mut self, _logic: L, _upper: &()) {}
+    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, _fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        init
+    }
 
     fn weight(&mut self) -> R {
         panic!("")

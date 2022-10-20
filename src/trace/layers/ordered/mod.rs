@@ -45,13 +45,24 @@ pub struct OrderedLayer<K, L, O = usize> {
 }
 
 impl<K, L, O> OrderedLayer<K, L, O> {
+    /// Break down an `OrderedLayer` into its constituent parts
+    pub fn into_parts(self) -> (Vec<K>, Vec<O>, L) {
+        (self.keys, self.offs, self.vals)
+    }
+
     /// Create a new `OrderedLayer` from its component parts
     ///
     /// # Safety
     ///
-    /// `keys` must have a length of `offs.len() + 1`
+    /// - `keys` must have a length of `offs.len() + 1` and every offset within
+    ///   `offs` must be a valid value index into `vals`.
+    /// - Every key's offset range must also be a valid range within `vals`
+    /// - Every value range must be non-empty
     pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L) -> Self {
+        // TODO: Maybe validate indices into `vals` when debug assertions are enabled
+        // TODO: Maybe validate that value ranges are all valid
         debug_assert_eq!(keys.len() + 1, offs.len());
+
         Self { keys, offs, vals }
     }
 
@@ -60,7 +71,6 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     /// # Safety
     ///
     /// Requires that `offs` has a length of `keys + 1`
-    #[inline]
     unsafe fn assume_invariants(&self) {
         assume(self.offs.len() == self.keys.len() + 1)
     }
@@ -69,7 +79,6 @@ impl<K, L, O> OrderedLayer<K, L, O> {
 impl<K, V, R, O> OrderedLayer<K, OrderedColumnLeaf<V, R>, O> {
     /// Turns the current `OrderedLayer<K, OrderedColumnLeaf<V, R>, O>` into a
     /// layer of [`MaybeUninit`] values
-    #[inline]
     fn into_uninit(
         self,
     ) -> OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O> {
@@ -94,12 +103,10 @@ where
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
-    #[inline]
     fn num_entries_shallow(&self) -> usize {
         self.keys()
     }
 
-    #[inline]
     fn num_entries_deep(&self) -> usize {
         self.tuples()
     }
@@ -111,7 +118,6 @@ where
     L: Trie + NegByRef,
     O: OrdOffset,
 {
-    #[inline]
     fn neg_by_ref(&self) -> Self {
         Self {
             keys: self.keys.clone(),
@@ -131,7 +137,6 @@ where
 {
     type Output = Self;
 
-    #[inline]
     fn neg(self) -> Self {
         Self {
             keys: self.keys,
@@ -152,7 +157,7 @@ where
 {
     type Output = Self;
 
-    #[inline]
+    // TODO: In-place merge
     fn add(self, rhs: Self) -> Self::Output {
         if self.is_empty() {
             rhs
@@ -170,7 +175,7 @@ where
     L: Trie,
     O: OrdOffset,
 {
-    #[inline]
+    // TODO: In-place merge
     fn add_assign(&mut self, rhs: Self) {
         if self.is_empty() {
             *self = rhs;
@@ -186,7 +191,6 @@ where
     L: Trie,
     O: OrdOffset,
 {
-    #[inline]
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
             *self = self.merge(other);
@@ -200,7 +204,6 @@ where
     L: Trie,
     O: OrdOffset,
 {
-    #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
     }
@@ -217,19 +220,16 @@ where
     type MergeBuilder = OrderedBuilder<K, L::MergeBuilder, O>;
     type TupleBuilder = UnorderedBuilder<K, L::TupleBuilder, O>;
 
-    #[inline]
     fn keys(&self) -> usize {
         unsafe { self.assume_invariants() }
         self.keys.len()
     }
 
-    #[inline]
     fn tuples(&self) -> usize {
         unsafe { self.assume_invariants() }
         self.vals.tuples()
     }
 
-    #[inline]
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         unsafe { self.assume_invariants() }
 
@@ -285,17 +285,118 @@ where
 
 /// Assembles a layer of this
 #[derive(SizeOf)]
-pub struct OrderedBuilder<K, L, O = usize>
-where
-    K: Ord,
-    O: OrdOffset,
-{
+pub struct OrderedBuilder<K, L, O = usize> {
     /// Keys
     pub keys: Vec<K>,
     /// Offsets
     pub offs: Vec<O>,
     /// The next layer down
     pub vals: L,
+}
+
+impl<K, L, O> OrderedBuilder<K, L, O> {
+    /// Performs one step of merging.
+    pub fn merge_step(
+        &mut self,
+        (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
+        (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
+    ) where
+        K: Ord + Clone,
+        L: MergeBuilder,
+        O: OrdOffset,
+    {
+        match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
+            Ordering::Less => {
+                // determine how far we can advance lower1 until we reach/pass lower2
+                let step = 1 + advance(&trie1.keys[(1 + *lower1)..upper1], |x| {
+                    x < &trie2.keys[*lower2]
+                });
+                let step = min(step, 1_000);
+                self.copy_range(trie1, *lower1, *lower1 + step);
+                *lower1 += step;
+            }
+
+            Ordering::Equal => {
+                let lower = self.vals.boundary();
+                // record vals_length so we can tell if anything was pushed.
+                let upper = self.vals.push_merge(
+                    trie1.vals.cursor_from(
+                        trie1.offs[*lower1].into_usize(),
+                        trie1.offs[*lower1 + 1].into_usize(),
+                    ),
+                    trie2.vals.cursor_from(
+                        trie2.offs[*lower2].into_usize(),
+                        trie2.offs[*lower2 + 1].into_usize(),
+                    ),
+                );
+                if upper > lower {
+                    self.keys.push(trie1.keys[*lower1].clone());
+                    self.offs.push(O::from_usize(upper));
+                }
+
+                *lower1 += 1;
+                *lower2 += 1;
+            }
+
+            Ordering::Greater => {
+                // determine how far we can advance lower2 until we reach/pass lower1
+                let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
+                    x < &trie1.keys[*lower1]
+                });
+                let step = min(step, 1_000);
+                self.copy_range(trie2, *lower2, *lower2 + step);
+                *lower2 += step;
+            }
+        }
+    }
+
+    /// Push a key and all of its associated values to the current builder
+    ///
+    /// Can be more efficient than repeatedly calling `.push_tuple()` because it
+    /// doesn't require an owned key for every value+diff pair which can allow
+    /// eliding unnecessary clones
+    pub fn with_key<F>(&mut self, key: K, with: F)
+    where
+        K: Eq,
+        L: TupleBuilder,
+        O: OrdOffset,
+        F: for<'a> FnOnce(OrderedBuilderVals<'a, K, L, O>),
+    {
+        let mut pushes = 0;
+        let vals = OrderedBuilderVals {
+            builder: self,
+            pushes: &mut pushes,
+        };
+        with(vals);
+
+        // If the user's closure actually added any elements, push the key
+        if pushes != 0
+            && (self.keys.is_empty()
+                || !self.offs[self.keys.len()].is_zero()
+                || self.keys[self.keys.len() - 1] != key)
+        {
+            if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
+                self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
+            }
+            self.keys.push(key);
+            self.offs.push(O::zero());
+        }
+    }
+}
+
+pub struct OrderedBuilderVals<'a, K, L, O> {
+    builder: &'a mut OrderedBuilder<K, L, O>,
+    pushes: &'a mut usize,
+}
+
+impl<'a, K, L, O> OrderedBuilderVals<'a, K, L, O>
+where
+    L: TupleBuilder,
+{
+    pub fn push(&mut self, value: <L as TupleBuilder>::Item) {
+        *self.pushes += 1;
+        self.builder.vals.push_tuple(value);
+    }
 }
 
 impl<K, L, O> Builder for OrderedBuilder<K, L, O>
@@ -306,13 +407,11 @@ where
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
 
-    #[inline]
     fn boundary(&mut self) -> usize {
         self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
         self.keys.len()
     }
 
-    #[inline]
     fn done(mut self) -> Self::Trie {
         if !self.keys.is_empty() && self.offs[self.keys.len()].is_zero() {
             self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
@@ -332,7 +431,6 @@ where
     L: MergeBuilder,
     O: OrdOffset,
 {
-    #[inline]
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self {
         let mut offs = Vec::with_capacity(other1.keys() + other2.keys() + 1);
         offs.push(O::zero());
@@ -344,7 +442,6 @@ where
         }
     }
 
-    #[inline]
     fn with_key_capacity(capacity: usize) -> Self {
         let mut offs = Vec::with_capacity(capacity + 1);
         offs.push(O::zero());
@@ -356,7 +453,6 @@ where
         }
     }
 
-    #[inline]
     fn reserve(&mut self, additional: usize) {
         self.keys.reserve(additional);
         self.offs.reserve(additional);
@@ -413,68 +509,6 @@ where
     }
 }
 
-impl<K, L, O> OrderedBuilder<K, L, O>
-where
-    K: Ord + Clone,
-    L: MergeBuilder,
-    O: OrdOffset,
-{
-    /// Performs one step of merging.
-    #[inline]
-    pub fn merge_step(
-        &mut self,
-        other1: (&<Self as Builder>::Trie, &mut usize, usize),
-        other2: (&<Self as Builder>::Trie, &mut usize, usize),
-    ) {
-        let (trie1, lower1, upper1) = other1;
-        let (trie2, lower2, upper2) = other2;
-
-        match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
-            Ordering::Less => {
-                // determine how far we can advance lower1 until we reach/pass lower2
-                let step = 1 + advance(&trie1.keys[(1 + *lower1)..upper1], |x| {
-                    x < &trie2.keys[*lower2]
-                });
-                let step = min(step, 1_000);
-                self.copy_range(trie1, *lower1, *lower1 + step);
-                *lower1 += step;
-            }
-
-            Ordering::Equal => {
-                let lower = self.vals.boundary();
-                // record vals_length so we can tell if anything was pushed.
-                let upper = self.vals.push_merge(
-                    trie1.vals.cursor_from(
-                        trie1.offs[*lower1].into_usize(),
-                        trie1.offs[*lower1 + 1].into_usize(),
-                    ),
-                    trie2.vals.cursor_from(
-                        trie2.offs[*lower2].into_usize(),
-                        trie2.offs[*lower2 + 1].into_usize(),
-                    ),
-                );
-                if upper > lower {
-                    self.keys.push(trie1.keys[*lower1].clone());
-                    self.offs.push(O::from_usize(upper));
-                }
-
-                *lower1 += 1;
-                *lower2 += 1;
-            }
-
-            Ordering::Greater => {
-                // determine how far we can advance lower2 until we reach/pass lower1
-                let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
-                    x < &trie1.keys[*lower1]
-                });
-                let step = min(step, 1_000);
-                self.copy_range(trie2, *lower2, *lower2 + step);
-                *lower2 += step;
-            }
-        }
-    }
-}
-
 impl<K, L, O> TupleBuilder for OrderedBuilder<K, L, O>
 where
     K: Ord + Clone,
@@ -483,7 +517,6 @@ where
 {
     type Item = (K, L::Item);
 
-    #[inline]
     fn new() -> Self {
         Self {
             keys: Vec::new(),
@@ -492,7 +525,6 @@ where
         }
     }
 
-    #[inline]
     fn with_capacity(cap: usize) -> Self {
         let mut offs = Vec::with_capacity(cap + 1);
         offs.push(O::zero());
@@ -504,12 +536,16 @@ where
         }
     }
 
-    #[inline]
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+        self.offs.reserve(additional);
+        self.vals.reserve_tuples(additional);
+    }
+
     fn tuples(&self) -> usize {
         self.vals.tuples()
     }
 
-    #[inline]
     fn push_tuple(&mut self, (key, val): (K, L::Item)) {
         // if first element, prior element finish, or different element, need to push
         // and maybe punctuate.
@@ -545,12 +581,10 @@ where
 {
     type Trie = OrderedLayer<K, L::Trie, O>;
 
-    #[inline]
     fn boundary(&mut self) -> usize {
         self.vals.len()
     }
 
-    #[inline]
     fn done(mut self) -> Self::Trie {
         // Don't use `sort_unstable_by_key` to avoid cloning the key.
         self.vals
@@ -572,7 +606,6 @@ where
 {
     type Item = (K, L::Item);
 
-    #[inline]
     fn new() -> Self {
         Self {
             vals: Vec::new(),
@@ -580,22 +613,30 @@ where
         }
     }
 
-    #[inline]
-    fn with_capacity(cap: usize) -> Self {
+    fn with_capacity(capacity: usize) -> Self {
         Self {
-            vals: Vec::with_capacity(cap),
+            vals: Vec::with_capacity(capacity),
             _phantom: PhantomData,
         }
     }
 
-    #[inline]
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.vals.reserve(additional);
+    }
+
     fn tuples(&self) -> usize {
         self.vals.len()
     }
 
-    #[inline]
     fn push_tuple(&mut self, kv: Self::Item) {
         self.vals.push(kv);
+    }
+
+    fn extend_tuples<I>(&mut self, tuples: I)
+    where
+        I: IntoIterator<Item = Self::Item>,
+    {
+        self.vals.extend(tuples);
     }
 }
 
@@ -619,7 +660,6 @@ where
     O: OrdOffset,
     L::Cursor<'s>: Clone,
 {
-    #[inline]
     fn clone(&self) -> Self {
         Self {
             storage: self.storage,
@@ -629,35 +669,11 @@ where
         }
     }
 
-    #[inline]
     fn clone_from(&mut self, source: &Self) {
         self.storage.clone_from(&source.storage);
         self.pos.clone_from(&source.pos);
         self.bounds.clone_from(&source.bounds);
         self.child.clone_from(&source.child);
-    }
-}
-
-impl<'a, K, L, O> Display for OrderedCursor<'a, K, O, L>
-where
-    K: DBData,
-    L: Trie,
-    L::Cursor<'a>: Clone + Display,
-    O: OrdOffset,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let mut cursor: OrderedCursor<'_, K, O, L> = self.clone();
-
-        while cursor.valid() {
-            let key = cursor.key();
-            writeln!(f, "{key:?}:")?;
-            let val_str = cursor.values().to_string();
-
-            f.write_str(&indent(&val_str, "    "))?;
-            cursor.step();
-        }
-
-        Ok(())
     }
 }
 
@@ -750,9 +766,6 @@ where
         }
     }
 
-    // fn size(&self) -> usize { self.bounds.1 - self.bounds.0 }
-
-    #[inline]
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
@@ -778,5 +791,28 @@ where
                 self.storage.offs[self.pos + 1].into_usize(),
             );
         }
+    }
+}
+
+impl<'a, K, L, O> Display for OrderedCursor<'a, K, O, L>
+where
+    K: DBData,
+    L: Trie,
+    L::Cursor<'a>: Clone + Display,
+    O: OrdOffset,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut cursor: OrderedCursor<'_, K, O, L> = self.clone();
+
+        while cursor.valid() {
+            let key = cursor.key();
+            writeln!(f, "{key:?}:")?;
+            let val_str = cursor.values().to_string();
+
+            f.write_str(&indent(&val_str, "    "))?;
+            cursor.step();
+        }
+
+        Ok(())
     }
 }

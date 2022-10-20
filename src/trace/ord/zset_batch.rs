@@ -25,8 +25,25 @@ use std::{
 /// An immutable collection of `(key, weight)` pairs without timing information.
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct OrdZSet<K, R> {
-    /// Where all the dataz is.
+    #[doc(hidden)]
     pub layer: OrderedColumnLeaf<K, R>,
+}
+
+impl<K, R> OrdZSet<K, R> {
+    pub fn len(&self) -> usize {
+        self.layer.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layer.is_empty()
+    }
+
+    pub fn retain<F>(&mut self, retain: F)
+    where
+        F: FnMut(&K, &R) -> bool,
+    {
+        self.layer.retain(retain);
+    }
 }
 
 impl<K, R> Display for OrdZSet<K, R>
@@ -181,7 +198,7 @@ where
 
     #[inline]
     fn key_count(&self) -> usize {
-        self.layer.keys()
+        Trie::keys(&self.layer)
     }
 
     #[inline]
@@ -288,70 +305,65 @@ where
     K: DBData,
     R: DBWeight,
 {
-    #[inline]
     fn key(&self) -> &K {
         self.cursor.current_key()
     }
 
-    #[inline]
     fn val(&self) -> &() {
         &()
     }
 
-    #[inline]
-    fn map_times<L: FnMut(&(), &R)>(&mut self, mut logic: L) {
+    fn fold_times<F, U>(&mut self, init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
         if self.cursor.valid() {
-            logic(&(), self.cursor.current_diff());
+            fold(init, &(), self.cursor.current_diff())
+        } else {
+            init
         }
     }
 
-    #[inline]
-    fn map_times_through<L: FnMut(&(), &R)>(&mut self, logic: L, _upper: &()) {
-        self.map_times(logic)
+    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        self.fold_times(init, fold)
     }
 
-    #[inline]
     fn weight(&mut self) -> R {
         debug_assert!(&self.cursor.valid());
         self.cursor.current_diff().clone()
     }
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.cursor.valid()
     }
 
-    #[inline]
     fn val_valid(&self) -> bool {
         self.valid
     }
 
-    #[inline]
     fn step_key(&mut self) {
         self.cursor.step();
         self.valid = true;
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek_key(key);
         self.valid = true;
     }
 
-    #[inline]
     fn last_key(&mut self) -> Option<&K> {
         self.cursor.last_key().map(|(k, _)| k)
     }
 
-    #[inline]
     fn step_val(&mut self) {
         self.valid = false;
     }
 
-    #[inline]
     fn seek_val(&mut self, _val: &()) {}
 
-    #[inline]
     fn seek_val_with<P>(&mut self, predicate: P)
     where
         P: Fn(&()) -> bool + Clone,
@@ -361,13 +373,11 @@ where
         }
     }
 
-    #[inline]
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
         self.valid = true;
     }
 
-    #[inline]
     fn rewind_vals(&mut self) {
         self.valid = true;
     }

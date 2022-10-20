@@ -36,6 +36,7 @@ where
             Ordering::Greater => self.cursor2.key_valid(),
         }
     }
+
     fn val_valid(&self) -> bool {
         match (self.key_order, self.val_order) {
             (Ordering::Less, _) => self.cursor1.val_valid(),
@@ -53,6 +54,7 @@ where
             _ => self.cursor2.key(),
         }
     }
+
     fn val(&self) -> &V {
         if self.key_order == Ordering::Less
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
@@ -62,31 +64,43 @@ where
             self.cursor2.val()
         }
     }
-    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
+
+    fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
         if self.key_order == Ordering::Less
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
         {
-            self.cursor1.map_times(|t, d| logic(t, d));
+            init = self.cursor1.fold_times(init, &mut fold);
         }
+
         if self.key_order == Ordering::Greater
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Less)
         {
-            self.cursor2.map_times(|t, d| logic(t, d));
+            init = self.cursor2.fold_times(init, fold);
         }
+
+        init
     }
 
-    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+    fn fold_times_through<F, U>(&mut self, upper: &T, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
         if self.key_order == Ordering::Less
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Greater)
         {
-            self.cursor1.map_times_through(|t, d| logic(t, d), upper);
+            init = self.cursor1.fold_times_through(upper, init, &mut fold);
         }
 
         if self.key_order == Ordering::Greater
             || (self.key_order == Ordering::Equal && self.val_order != Ordering::Less)
         {
-            self.cursor2.map_times_through(|t, d| logic(t, d), upper);
+            init = self.cursor2.fold_times_through(upper, init, fold);
         }
+
+        init
     }
 
     fn weight(&mut self) -> R

@@ -22,7 +22,6 @@ where
     K: Ord + Clone,
     R: Clone,
 {
-    #[inline]
     pub const fn new(
         pos: usize,
         storage: &'s OrderedColumnLeaf<K, R>,
@@ -35,23 +34,19 @@ where
         }
     }
 
-    #[inline]
     pub(super) const fn storage(&self) -> &'s OrderedColumnLeaf<K, R> {
         self.storage
     }
 
-    #[inline]
     pub(super) const fn bounds(&self) -> (usize, usize) {
         self.bounds
     }
 
-    #[inline]
     pub fn seek_key(&mut self, key: &K) {
         unsafe { self.storage.assume_invariants() }
         self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
     }
 
-    #[inline]
     pub fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,
@@ -60,12 +55,10 @@ where
         self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], predicate);
     }
 
-    #[inline]
     pub fn current_key(&self) -> &K {
         &self.storage.keys[self.pos]
     }
 
-    #[inline]
     pub fn current_diff(&self) -> &R {
         &self.storage.diffs[self.pos]
     }
@@ -82,12 +75,10 @@ where
 
     type ValueStorage = ();
 
-    #[inline]
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
 
-    #[inline]
     fn key(&self) -> Self::Key<'s> {
         // Elide extra bounds checking
         unsafe { self.storage.assume_invariants() }
@@ -99,10 +90,8 @@ where
         (&self.storage.keys[self.pos], &self.storage.diffs[self.pos])
     }
 
-    #[inline]
     fn values(&self) {}
 
-    #[inline]
     fn step(&mut self) {
         self.pos += 1;
 
@@ -111,7 +100,6 @@ where
         }
     }
 
-    #[inline]
     fn seek<'a>(&mut self, key: Self::Key<'a>)
     where
         's: 'a,
@@ -119,7 +107,6 @@ where
         self.seek_key(key.0);
     }
 
-    #[inline]
     fn last_key(&mut self) -> Option<Self::Key<'s>> {
         unsafe { self.storage.assume_invariants() }
 
@@ -133,17 +120,14 @@ where
         }
     }
 
-    #[inline]
     fn valid(&self) -> bool {
         self.pos < self.bounds.1
     }
 
-    #[inline]
     fn rewind(&mut self) {
         self.pos = self.bounds.0;
     }
 
-    #[inline]
     fn reposition(&mut self, lower: usize, upper: usize) {
         self.pos = lower;
         self.bounds = (lower, upper);

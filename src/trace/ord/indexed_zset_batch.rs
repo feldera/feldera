@@ -375,70 +375,65 @@ where
     R: MonoidValue,
     O: OrdOffset,
 {
-    #[inline]
     fn key(&self) -> &K {
         self.cursor.key()
     }
 
-    #[inline]
     fn val(&self) -> &V {
         self.cursor.child.current_key()
     }
 
-    #[inline]
-    fn map_times<L: FnMut(&(), &R)>(&mut self, mut logic: L) {
+    fn fold_times<F, U>(&mut self, init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
         if self.cursor.child.valid() {
-            logic(&(), self.cursor.child.current_diff());
+            fold(init, &(), self.cursor.child.current_diff())
+        } else {
+            init
         }
     }
 
-    #[inline]
-    fn map_times_through<L: FnMut(&(), &R)>(&mut self, logic: L, _upper: &()) {
-        self.map_times(logic)
+    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        self.fold_times(init, fold)
     }
 
-    #[inline]
     fn weight(&mut self) -> R {
         debug_assert!(self.cursor.child.valid());
         self.cursor.child.current_diff().clone()
     }
 
-    #[inline]
     fn key_valid(&self) -> bool {
         self.cursor.valid()
     }
 
-    #[inline]
     fn val_valid(&self) -> bool {
         self.cursor.child.valid()
     }
 
-    #[inline]
     fn step_key(&mut self) {
         self.cursor.step();
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek(key);
     }
 
-    #[inline]
     fn last_key(&mut self) -> Option<&K> {
         self.cursor.last_key()
     }
 
-    #[inline]
     fn step_val(&mut self) {
         self.cursor.child.step();
     }
 
-    #[inline]
     fn seek_val(&mut self, val: &V) {
         self.cursor.child.seek_key(val);
     }
 
-    #[inline]
     fn seek_val_with<P>(&mut self, predicate: P)
     where
         P: Fn(&V) -> bool + Clone,
@@ -446,12 +441,10 @@ where
         self.cursor.child.seek_key_with(|v| !predicate(v));
     }
 
-    #[inline]
     fn rewind_keys(&mut self) {
         self.cursor.rewind();
     }
 
-    #[inline]
     fn rewind_vals(&mut self) {
         self.cursor.child.rewind();
     }
