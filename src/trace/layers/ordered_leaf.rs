@@ -279,17 +279,30 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Tuple
     for OrderedLeafBuilder<K, R>
 {
     type Item = (K, R);
+
     fn new() -> Self {
         OrderedLeafBuilder { vals: Vec::new() }
     }
+
     fn with_capacity(cap: usize) -> Self {
         OrderedLeafBuilder {
             vals: Vec::with_capacity(cap),
         }
     }
-    #[inline]
+
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.vals.reserve(additional);
+    }
+
     fn push_tuple(&mut self, tuple: (K, R)) {
         self.vals.push(tuple)
+    }
+
+    fn extend_tuples<I>(&mut self, tuples: I)
+    where
+        I: IntoIterator<Item = Self::Item>,
+    {
+        self.vals.extend(tuples);
     }
 
     fn tuples(&self) -> usize {
@@ -319,25 +332,40 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Build
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> TupleBuilder
-    for UnorderedLeafBuilder<K, R>
+impl<K, R> TupleBuilder for UnorderedLeafBuilder<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     type Item = (K, R);
+
     fn new() -> Self {
         UnorderedLeafBuilder {
             vals: Vec::new(),
             boundary: 0,
         }
     }
-    fn with_capacity(cap: usize) -> Self {
+
+    fn with_capacity(capacity: usize) -> Self {
         UnorderedLeafBuilder {
-            vals: Vec::with_capacity(cap),
+            vals: Vec::with_capacity(capacity),
             boundary: 0,
         }
     }
-    #[inline]
+
+    fn reserve_tuples(&mut self, additional: usize) {
+        self.vals.reserve(additional);
+    }
+
     fn push_tuple(&mut self, tuple: (K, R)) {
         self.vals.push(tuple)
+    }
+
+    fn extend_tuples<I>(&mut self, tuples: I)
+    where
+        I: IntoIterator<Item = Self::Item>,
+    {
+        self.vals.extend(tuples);
     }
 
     fn tuples(&self) -> usize {

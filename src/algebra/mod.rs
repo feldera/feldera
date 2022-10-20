@@ -214,6 +214,8 @@ where
 /// A type with an associative addition.
 /// We trust the implementation to have an associative addition.
 /// (this cannot be checked statically).
+// TODO: Add a `for<'a> Add<&'a Self, Output = Self>` bound for adding an owned
+// and a referenced value together
 pub trait SemigroupValue:
     Clone + Eq + SizeOf + Add<Output = Self> + AddByRef + AddAssign + AddAssignByRef + 'static
 {

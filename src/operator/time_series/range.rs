@@ -193,12 +193,18 @@ where
         self.cursor.val()
     }
 
-    fn map_times<L: FnMut(&(), &R)>(&mut self, logic: L) {
-        self.cursor.map_times(logic)
+    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        self.cursor.fold_times(init, fold)
     }
 
-    fn map_times_through<L: FnMut(&(), &R)>(&mut self, logic: L, upper: &()) {
-        self.cursor.map_times_through(logic, upper)
+    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, fold: F) -> U
+    where
+        F: FnMut(U, &(), &R) -> U,
+    {
+        self.cursor.fold_times(init, fold)
     }
 
     fn weight(&mut self) -> R {

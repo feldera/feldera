@@ -8,7 +8,12 @@ use crate::{
     trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
     DBData, DBWeight, OrdIndexedZSet, OrdZSet,
 };
-use std::{borrow::Cow, marker::PhantomData};
+use std::{
+    any::TypeId,
+    borrow::Cow,
+    marker::PhantomData,
+    mem::{transmute_copy, ManuallyDrop},
+};
 
 /// This trait abstracts away a stream of records that can be filtered
 /// and transformed on a record-by-record basis.
@@ -289,7 +294,7 @@ where
 /// Internal implementation for filtering [`BatchReader`]s
 pub struct FilterKeys<CI, CO, F> {
     filter: F,
-    _type: PhantomData<(CI, CO)>,
+    _type: PhantomData<*const (CI, CO)>,
 }
 
 impl<CI, CO, F> FilterKeys<CI, CO, F> {
@@ -298,6 +303,38 @@ impl<CI, CO, F> FilterKeys<CI, CO, F> {
             filter,
             _type: PhantomData,
         }
+    }
+
+    fn filter_owned_generic(&mut self, input: CI) -> CO
+    where
+        CI: BatchReader<Time = ()>,
+        CO: Batch<Key = CI::Key, Val = CI::Val, Time = (), R = CI::R>,
+        F: Fn(&CI::Key) -> bool + 'static,
+    {
+        // We can use Builder because cursor yields ordered values.  This
+        // is a nice property of the filter operation.
+        //
+        // Pre-allocating will create waste if most tuples get filtered out, since
+        // the buffers allocated here can make it all the way to the output batch.
+        // This is probably ok, because the batch will either get freed at the end
+        // of the current clock tick or get added to the trace, where it will likely
+        // get merged with other batches soon, at which point the waste is gone.
+        let mut builder = CO::Builder::with_capacity((), input.len());
+
+        let mut consumer = input.consumer();
+        while consumer.key_valid() {
+            let (key, mut values) = consumer.next_key();
+
+            // FIXME: We assume that this operator will only be used with `OrdZSet` and that
+            // it has either zero or one values, meaning that it'll skip any additional
+            // values
+            if (self.filter)(&key) && values.value_valid() {
+                let (value, weight, ()) = values.next_value();
+                builder.push((CO::item_from(key, value), weight));
+            }
+        }
+
+        builder.done()
     }
 }
 
@@ -349,37 +386,44 @@ where
         builder.done()
     }
 
-    // TODO: We could honestly specialize this to be in-place for OrdZSet
     fn eval_owned(&mut self, input: CI) -> CO {
-        // We can use Builder because cursor yields ordered values.  This
-        // is a nice property of the filter operation.
-        //
-        // Pre-allocating will create waste if most tuples get filtered out, since
-        // the buffers allocated here can make it all the way to the output batch.
-        // This is probably ok, because the batch will either get freed at the end
-        // of the current clock tick or get added to the trace, where it will likely
-        // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = CO::Builder::with_capacity((), input.len());
+        // Bootleg specialization, we can do filtering in-place when the input and
+        // output types are `OrdZSet`. I'd prefer to do this with "real" specialization
+        // of some kind, but this'll work for now
+        if TypeId::of::<CI>() == TypeId::of::<OrdZSet<CI::Key, CI::R>>()
+            && TypeId::of::<CO>() == TypeId::of::<OrdZSet<CI::Key, CI::R>>()
+        {
+            // Safety: We've ensured that `CI` is an `OrdZSet`
+            let mut output = unsafe {
+                let input = ManuallyDrop::new(input);
+                transmute_copy::<CI, OrdZSet<CI::Key, CI::R>>(&input)
+            };
 
-        let mut consumer = input.consumer();
-        while consumer.key_valid() {
-            let (key, mut values) = consumer.next_key();
+            // Filter the values within the `OrdZSet`
+            output.retain(|key, _| (self.filter)(key));
 
-            // FIXME: We assume that this operator will only be used with `OrdZSet` and that
-            // it has either zero or one values, meaning that it'll skip any additional
-            // values
-            if (self.filter)(&key) && values.value_valid() {
-                let (value, weight, ()) = values.next_value();
-                builder.push((CO::item_from(key, value), weight));
+            // Safety: We've ensured that `CO` is an `OrdZSet`
+            unsafe {
+                let output = ManuallyDrop::new(output);
+                transmute_copy::<OrdZSet<CI::Key, CI::R>, CO>(&output)
             }
+        } else {
+            // Use a generic filter implementation
+            self.filter_owned_generic(input)
         }
-
-        builder.done()
     }
 
     // Filtering *wants* owned values, but it's not critical to performance
     fn input_preference(&self) -> OwnershipPreference {
-        OwnershipPreference::WEAKLY_PREFER_OWNED
+        if TypeId::of::<CI>() == TypeId::of::<OrdZSet<CI::Key, CI::R>>()
+            && TypeId::of::<CO>() == TypeId::of::<OrdZSet<CI::Key, CI::R>>()
+        {
+            // Owned values matter a lot more when the input and output types are both
+            // OrdZSet
+            OwnershipPreference::PREFER_OWNED
+        } else {
+            OwnershipPreference::WEAKLY_PREFER_OWNED
+        }
     }
 }
 

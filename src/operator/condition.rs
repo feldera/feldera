@@ -134,10 +134,7 @@ mod test {
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{DelayedFeedback, FilterMap, Generator},
-        trace::{
-            ord::{OrdIndexedZSet, OrdZSet},
-            BatchReader,
-        },
+        trace::ord::{OrdIndexedZSet, OrdZSet},
         zset, Circuit, Stream,
     };
 
@@ -216,7 +213,7 @@ mod test {
 
                             let reachable = init.plus(&suc).distinct();
                             feedback.connect(&reachable);
-                            let condition = reachable.differentiate().condition(|z| z.len() == 0);
+                            let condition = reachable.differentiate().condition(|z| z.is_empty());
                             (condition, reachable.export())
                         };
 

@@ -153,11 +153,13 @@ where
     T: Trace + 'static,
 {
     pub fn delay_trace(&self) -> Stream<Circuit<P>, T> {
+        // The delayed trace should be automatically created while the real trace is
+        // created via `.trace()` or a similar function
+        // FIXME: Create a trace if it doesn't exist
         self.circuit()
-            .cache_get_or_insert_with(
-                DelayedTraceId::new(self.origin_node_id().clone()),
-                || unimplemented!(),
-            )
+            .cache_get_or_insert_with(DelayedTraceId::new(self.origin_node_id().clone()), || {
+                panic!("called `.delay_trace()` on a stream without a previously created trace")
+            })
             .clone()
     }
 }

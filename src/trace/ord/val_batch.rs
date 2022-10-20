@@ -408,30 +408,45 @@ where
     fn key(&self) -> &K {
         self.cursor.key()
     }
+
     fn val(&self) -> &V {
         self.cursor.child.key()
     }
-    fn map_times<L: FnMut(&T, &R)>(&mut self, mut logic: L) {
+
+    fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
         self.cursor.child.child.rewind();
         while self.cursor.child.child.valid() {
-            logic(
+            init = fold(
+                init,
                 self.cursor.child.child.current_key(),
                 self.cursor.child.child.current_diff(),
             );
             self.cursor.child.child.step();
         }
+
+        init
     }
-    fn map_times_through<L: FnMut(&T, &R)>(&mut self, mut logic: L, upper: &T) {
+
+    fn fold_times_through<F, U>(&mut self, upper: &T, mut init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &T, &R) -> U,
+    {
         self.cursor.child.child.rewind();
         while self.cursor.child.child.valid() {
             if self.cursor.child.child.key().0.less_equal(upper) {
-                logic(
+                init = fold(
+                    init,
                     self.cursor.child.child.current_key(),
                     self.cursor.child.child.current_diff(),
                 );
             }
             self.cursor.child.child.step();
         }
+
+        init
     }
 
     fn weight(&mut self) -> R

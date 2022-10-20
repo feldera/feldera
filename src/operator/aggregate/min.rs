@@ -38,10 +38,12 @@ where
         C: Cursor<'s, V, (), T, R>,
     {
         while cursor.key_valid() {
-            let mut weight = R::zero();
-
-            cursor.map_times(|_t, w| weight.add_assign_by_ref(w));
-
+            // FIXME: This could be more succinct if we had an `Add<&Self, Output = Self>`
+            // bound on `R`
+            let weight = cursor.fold_times(R::zero(), |mut acc, _, weight| {
+                acc.add_assign_by_ref(weight);
+                acc
+            });
             if !weight.is_zero() {
                 return Some(cursor.key().clone());
             }

@@ -717,8 +717,6 @@ where
                                             w1.mul_by_ref(w2),
                                         )),
                                     ));
-                                    //println!("  tuple@{}: ({:?}, {})", off,
-                                    // output, w1.clone() * w2.clone());
                                 });
                             }
                             trace_cursor.step_val();

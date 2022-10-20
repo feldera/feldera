@@ -16,6 +16,9 @@ pub mod layers;
 pub mod ord;
 #[cfg(feature = "persistence")]
 pub mod persistent;
+pub mod rc_batch;
+pub mod unordered;
+
 // We export the `spine_fueled` module only for testing (so we can explicitly
 // choose the in-memory DS). For regular logic, since we replace it with the
 // persistent feature sometimes, one should import the re-exported path e.g.,
@@ -24,6 +27,8 @@ pub mod persistent;
 pub mod spine_fueled;
 #[cfg(not(test))]
 mod spine_fueled;
+
+pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
 
 use crate::{
     algebra::{HasZero, MonoidValue},
@@ -167,10 +172,13 @@ where
 {
     /// Key by which updates are indexed.
     type Key: DBData;
+
     /// Values associated with keys.
     type Val: DBData;
+
     /// Timestamps associated with updates
     type Time: DBTimestamp;
+
     /// Associated update.
     type R: DBWeight;
 
@@ -187,6 +195,10 @@ where
     fn consumer(self) -> Self::Consumer;
 
     /// The number of keys in the batch.
+    // TODO: return `(usize, Option<usize>)`, similar to
+    // `Iterator::size_hint`, since not all implementations
+    // can compute the number of keys precisely.  Same for
+    // `len()`.
     fn key_count(&self) -> usize;
 
     /// The number of updates in the batch.
@@ -285,7 +297,10 @@ where
 }
 
 /// Functionality for collecting and batching updates.
-pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
+pub trait Batcher<I, T, R, Output>: SizeOf
+where
+    Output: Batch<Item = I, Time = T, R = R>,
+{
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
     fn new_batcher(time: T) -> Self;
@@ -304,7 +319,10 @@ pub trait Batcher<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
 }
 
 /// Functionality for building batches from ordered update sequences.
-pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
+pub trait Builder<I, T, R, Output>: SizeOf
+where
+    Output: Batch<Item = I, Time = T, R = R>,
+{
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
     fn new_builder(time: T) -> Self;
@@ -334,7 +352,10 @@ pub trait Builder<I, T, R, Output: Batch<Item = I, Time = T, R = R>>: SizeOf {
 }
 
 /// Represents a merge in progress.
-pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>>: SizeOf {
+pub trait Merger<K, V, T, R, Output>: SizeOf
+where
+    Output: Batch<Key = K, Val = V, Time = T, R = R>,
+{
     /// Creates a new merger to merge the supplied batches, optionally
     /// compacting up to the supplied frontier.
     fn new_merger(source1: &Output, source2: &Output) -> Self;
@@ -353,347 +374,43 @@ pub trait Merger<K, V, T, R, Output: Batch<Key = K, Val = V, Time = T, R = R>>: 
     fn done(self) -> Output;
 }
 
-/// Blanket implementations for reference counted batches.
-pub mod rc_blanket_impls {
-    use crate::{
-        time::AntichainRef,
-        trace::{Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, ValueConsumer},
-    };
-    use size_of::SizeOf;
-    use std::rc::Rc;
+pub trait UnorderedBatchReader: NumEntries + SizeOf + 'static
+where
+    Self: Sized,
+{
+    /// Key by which updates are indexed
+    type Key: DBData;
 
-    impl<B: BatchReader> BatchReader for Rc<B> {
-        type Key = B::Key;
-        type Val = B::Val;
-        type Time = B::Time;
-        type R = B::R;
+    /// Values associated with keys
+    type Val: DBData;
 
-        /// The type used to enumerate the batch's contents.
-        type Cursor<'s> = RcBatchCursor<'s, B> where B: 's;
+    /// Timestamps associated with updates
+    type Time: DBTimestamp;
 
-        type Consumer = RcBatchConsumer<B>;
+    /// Associated update
+    type R: DBWeight;
 
-        /// Acquires a cursor to the batch's contents.
-        fn cursor(&self) -> Self::Cursor<'_> {
-            RcBatchCursor::new(B::cursor(self))
-        }
+    /// An unordered cursor for traversing the current batch
+    type UnorderedCursor<'a>: UnorderedCursor<'a, Self::Key, Self::Val, Self::Time, Self::R>;
 
-        fn consumer(self) -> Self::Consumer {
-            todo!()
-        }
+    /// Creates an unordered cursor for traversing the current batch
+    fn unordered_cursor(&self) -> Self::UnorderedCursor<'_>;
 
-        /// The number of updates in the batch.
-        // TODO: return `(usize, Option<usize>)`, similar to
-        // `Iterator::size_hint`, since not all implementations
-        // can compute the number of keys precisely.  Same for
-        // `len()`.
-        fn key_count(&self) -> usize {
-            B::key_count(self)
-        }
+    /// The number of keys in the batch.
+    fn key_count(&self) -> (usize, Option<usize>);
 
-        /// The number of updates in the batch.
-        ///
-        /// This won't be accurate on all implementations either.
-        fn len(&self) -> usize {
-            B::len(self)
-        }
+    /// The number of updates in the batch
+    fn len(&self) -> usize;
 
-        fn lower(&self) -> AntichainRef<'_, Self::Time> {
-            B::lower(self)
-        }
-
-        fn upper(&self) -> AntichainRef<'_, Self::Time> {
-            B::upper(self)
-        }
+    /// Returns `true` if the current batch is empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
-    /// Wrapper to provide cursor to nested scope.
-    pub struct RcBatchCursor<'s, B>
-    where
-        B: BatchReader + 's,
-    {
-        cursor: B::Cursor<'s>,
-    }
+    /// All times in the batch are greater or equal to an element of `lower`
+    fn lower(&self) -> AntichainRef<'_, Self::Time>;
 
-    impl<'s, B: BatchReader> RcBatchCursor<'s, B> {
-        const fn new(cursor: B::Cursor<'s>) -> Self {
-            RcBatchCursor { cursor }
-        }
-    }
-
-    impl<'s, B: BatchReader> Cursor<'s, B::Key, B::Val, B::Time, B::R> for RcBatchCursor<'s, B> {
-        #[inline]
-        fn key_valid(&self) -> bool {
-            self.cursor.key_valid()
-        }
-
-        #[inline]
-        fn val_valid(&self) -> bool {
-            self.cursor.val_valid()
-        }
-
-        #[inline]
-        fn key(&self) -> &B::Key {
-            self.cursor.key()
-        }
-
-        #[inline]
-        fn val(&self) -> &B::Val {
-            self.cursor.val()
-        }
-
-        #[inline]
-        fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L) {
-            self.cursor.map_times(logic)
-        }
-
-        #[inline]
-        fn map_times_through<L: FnMut(&B::Time, &B::R)>(&mut self, logic: L, upper: &B::Time) {
-            self.cursor.map_times_through(logic, upper)
-        }
-
-        #[inline]
-        fn weight(&mut self) -> B::R
-        where
-            B::Time: PartialEq<()>,
-        {
-            self.cursor.weight()
-        }
-
-        #[inline]
-        fn step_key(&mut self) {
-            self.cursor.step_key()
-        }
-
-        #[inline]
-        fn seek_key(&mut self, key: &B::Key) {
-            self.cursor.seek_key(key)
-        }
-
-        #[inline]
-        fn last_key(&mut self) -> Option<&B::Key> {
-            self.cursor.last_key()
-        }
-
-        #[inline]
-        fn step_val(&mut self) {
-            self.cursor.step_val()
-        }
-
-        #[inline]
-        fn seek_val(&mut self, val: &B::Val) {
-            self.cursor.seek_val(val)
-        }
-        #[inline]
-        fn seek_val_with<P>(&mut self, predicate: P)
-        where
-            P: Fn(&B::Val) -> bool + Clone,
-        {
-            self.cursor.seek_val_with(predicate)
-        }
-
-        #[inline]
-        fn rewind_keys(&mut self) {
-            self.cursor.rewind_keys()
-        }
-
-        #[inline]
-        fn rewind_vals(&mut self) {
-            self.cursor.rewind_vals()
-        }
-    }
-
-    pub struct RcBatchConsumer<B>
-    where
-        B: BatchReader,
-    {
-        consumer: B::Consumer,
-    }
-
-    impl<B> Consumer<B::Key, B::Val, B::R, B::Time> for RcBatchConsumer<B>
-    where
-        B: BatchReader,
-    {
-        type ValueConsumer<'a> = RcBatchValueConsumer<'a, B>
-        where
-            Self: 'a;
-
-        fn key_valid(&self) -> bool {
-            self.consumer.key_valid()
-        }
-
-        fn peek_key(&self) -> &B::Key {
-            self.consumer.peek_key()
-        }
-
-        fn next_key(&mut self) -> (B::Key, Self::ValueConsumer<'_>) {
-            let (key, values) = self.consumer.next_key();
-            (key, RcBatchValueConsumer { values })
-        }
-
-        fn seek_key(&mut self, key: &B::Key)
-        where
-            B::Key: Ord,
-        {
-            self.consumer.seek_key(key);
-        }
-    }
-
-    pub struct RcBatchValueConsumer<'a, B>
-    where
-        B: BatchReader + 'a,
-    {
-        #[allow(clippy::type_complexity)]
-        values: <B::Consumer as Consumer<B::Key, B::Val, B::R, B::Time>>::ValueConsumer<'a>,
-    }
-
-    impl<'a, B> ValueConsumer<'a, B::Val, B::R, B::Time> for RcBatchValueConsumer<'a, B>
-    where
-        B: BatchReader + 'a,
-    {
-        fn value_valid(&self) -> bool {
-            self.values.value_valid()
-        }
-
-        fn next_value(&mut self) -> (B::Val, B::R, B::Time) {
-            self.values.next_value()
-        }
-
-        fn remaining_values(&self) -> usize {
-            self.values.remaining_values()
-        }
-    }
-
-    /// An immutable collection of updates.
-    impl<B: Batch> Batch for Rc<B> {
-        type Item = B::Item;
-        type Batcher = RcBatcher<B>;
-        type Builder = RcBuilder<B>;
-        type Merger = RcMerger<B>;
-
-        fn item_from(key: Self::Key, val: Self::Val) -> Self::Item {
-            B::item_from(key, val)
-        }
-
-        fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-        where
-            Self::Val: From<()>,
-        {
-            Rc::new(B::from_keys(time, keys))
-        }
-
-        fn recede_to(&mut self, frontier: &B::Time) {
-            Rc::get_mut(self).unwrap().recede_to(frontier);
-        }
-
-        fn from_tuples(time: Self::Time, tuples: Vec<(Self::Item, Self::R)>) -> Self {
-            Rc::new(B::from_tuples(time, tuples))
-        }
-
-        fn empty(time: Self::Time) -> Self {
-            Rc::new(B::empty(time))
-        }
-    }
-
-    /// Wrapper type for batching reference counted batches.
-    #[derive(SizeOf)]
-    pub struct RcBatcher<B: Batch> {
-        batcher: B::Batcher,
-    }
-
-    /// Functionality for collecting and batching updates.
-    impl<B: Batch> Batcher<B::Item, B::Time, B::R, Rc<B>> for RcBatcher<B> {
-        #[inline]
-        fn new_batcher(time: B::Time) -> Self {
-            Self {
-                batcher: B::Batcher::new_batcher(time),
-            }
-        }
-
-        #[inline]
-        fn push_batch(&mut self, batch: &mut Vec<(B::Item, B::R)>) {
-            self.batcher.push_batch(batch)
-        }
-
-        #[inline]
-        fn push_consolidated_batch(&mut self, batch: &mut Vec<(B::Item, B::R)>) {
-            self.batcher.push_consolidated_batch(batch)
-        }
-
-        #[inline]
-        fn tuples(&self) -> usize {
-            self.batcher.tuples()
-        }
-
-        #[inline]
-        fn seal(self) -> Rc<B> {
-            Rc::new(self.batcher.seal())
-        }
-    }
-
-    /// Wrapper type for building reference counted batches.
-    #[derive(SizeOf)]
-    pub struct RcBuilder<B: Batch> {
-        builder: B::Builder,
-    }
-
-    /// Functionality for building batches from ordered update sequences.
-    impl<B: Batch> Builder<B::Item, B::Time, B::R, Rc<B>> for RcBuilder<B> {
-        #[inline]
-        fn new_builder(time: B::Time) -> Self {
-            Self {
-                builder: B::Builder::new_builder(time),
-            }
-        }
-
-        #[inline]
-        fn with_capacity(time: B::Time, cap: usize) -> Self {
-            Self {
-                builder: <B::Builder as Builder<B::Item, B::Time, B::R, B>>::with_capacity(
-                    time, cap,
-                ),
-            }
-        }
-
-        #[inline]
-        fn reserve(&mut self, additional: usize) {
-            self.builder.reserve(additional);
-        }
-
-        #[inline]
-        fn push(&mut self, element: (B::Item, B::R)) {
-            self.builder.push(element)
-        }
-
-        #[inline]
-        fn done(self) -> Rc<B> {
-            Rc::new(self.builder.done())
-        }
-    }
-
-    /// Wrapper type for merging reference counted batches.
-    #[derive(SizeOf)]
-    pub struct RcMerger<B: Batch> {
-        merger: B::Merger,
-    }
-
-    /// Represents a merge in progress.
-    impl<B: Batch> Merger<B::Key, B::Val, B::Time, B::R, Rc<B>> for RcMerger<B> {
-        #[inline]
-        fn new_merger(source1: &Rc<B>, source2: &Rc<B>) -> Self {
-            Self {
-                merger: B::begin_merge(source1, source2),
-            }
-        }
-
-        #[inline]
-        fn work(&mut self, source1: &Rc<B>, source2: &Rc<B>, fuel: &mut isize) {
-            self.merger.work(source1, source2, fuel)
-        }
-
-        #[inline]
-        fn done(self) -> Rc<B> {
-            Rc::new(self.merger.done())
-        }
-    }
+    /// All times in the batch are not greater or equal to any element of
+    /// `upper`
+    fn upper(&self) -> AntichainRef<'_, Self::Time>;
 }
