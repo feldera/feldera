@@ -693,17 +693,17 @@ mod test {
     #[test]
     fn filter_map_test() {
         let circuit = Circuit::build(move |circuit| {
-            let mut input: vec::IntoIter<OrdZSet<(isize, &'static str), isize>> =
-                vec![zset! { (1, "1") => 1, (-1, "-1") => 1, (5, "5 foo") => 1, (-2, "-2") => 1 }].into_iter();
+            let mut input: vec::IntoIter<OrdZSet<(isize, String), isize>> =
+                vec![zset! { (1, "1".to_string()) => 1, (-1, "-1".to_string()) => 1, (5, "5 foo".to_string()) => 1, (-2, "-2".to_string()) => 1 }].into_iter();
 
             let mut filter_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
             let mut i_filter_output =
-                vec![indexed_zset! { 5 => {"5 foo" => 1} }].into_iter();
+                vec![indexed_zset! { 5 => {"5 foo".to_string() => 1} }].into_iter();
             let mut indexed_output =
                 vec![indexed_zset! { 1 => {1 => 1}, -1 => {-1 => 1}, 5 => {5 => 1}, -2 => {-2 => 1} }].into_iter();
             let mut i_indexed_output =
-                vec![indexed_zset! { 2 => {"1" => 1}, -2 => {"-1" => 1}, 10 => {"5 foo" => 1}, -4 => {"-2" => 1} }].into_iter();
+                vec![indexed_zset! { 2 => {"1".to_string() => 1}, -2 => {"-1".to_string() => 1}, 10 => {"5 foo".to_string() => 1}, -4 => {"-2".to_string() => 1} }].into_iter();
             let mut times2_output =
                 vec![zset! { 2 => 1, -2 => 1, 10 => 1, -4 => 1 }].into_iter();
             let mut i_times2_output =
@@ -723,11 +723,11 @@ mod test {
             let mut abs_output =
                 vec![zset! { 1 => 2, 5 => 1, 2 => 1 }].into_iter();
             let mut i_abs_output =
-                vec![zset! { (1, "1") => 1, (1, "-1") => 1, (5, "5 foo") => 1, (2, "-2") => 1 }].into_iter();
+                vec![zset! { (1, "1".to_string()) => 1, (1, "-1".to_string()) => 1, (5, "5 foo".to_string()) => 1, (2, "-2".to_string()) => 1 }].into_iter();
             let mut abs_pos_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
             let mut i_abs_pos_output =
-                vec![zset! { (1, "1") => 1, (5, "5 foo") => 1 }].into_iter();
+                vec![zset! { (1, "1".to_string()) => 1, (5, "5 foo".to_string()) => 1 }].into_iter();
             let mut sqr_output =
                 vec![zset! { 1 => 2, 25 => 1, 4 => 1 }].into_iter();
             let mut i_sqr_output =
@@ -739,7 +739,7 @@ mod test {
             let mut sqr_pos_indexed_output =
                 vec![indexed_zset! { 1 => {1 => 1}, 25 => {5 => 1} }].into_iter();
             let mut i_sqr_pos_indexed_output =
-                vec![indexed_zset! { 1 => {"1" => 1}, 25 => {"5 foo" => 1} }].into_iter();
+                vec![indexed_zset! { 1 => {"1".to_string() => 1}, 25 => {"5 foo".to_string() => 1} }].into_iter();
 
             let input =
                 circuit.add_source(Generator::new(move || input.next().unwrap()));
@@ -759,16 +759,16 @@ mod test {
             let sqr_pos_indexed = input_ints.flat_map_index(|&n| if n > 0 { Some((n * n, n)) } else { None });
 
             let i_filter_pos = input_indexed.filter(|(&n, s)| n > 0 && s.contains("foo"));
-            let i_indexed = input_indexed.map_index(|(&n, &s)| (2 * n, s));
+            let i_indexed = input_indexed.map_index(move |(&n, s)| (2 * n, s.clone()));
             let i_times2 = input_indexed.map(|(&n, _)| n * 2);
             let i_times2_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * 2) } else { None });
             let i_neg = input_indexed.map(|(n, _)| -n);
             let i_neg_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(-n) } else { None });
-            let i_abs = input_indexed.map(|(n, &s)| (n.abs(), s));
-            let i_abs_pos = input_indexed.flat_map(|(&n, &s)| if n > 0 { Some((n.abs(), s)) } else { None });
+            let i_abs = input_indexed.map(|(n, s)| (n.abs(), s.clone()));
+            let i_abs_pos = input_indexed.flat_map(|(&n, s)| if n > 0 { Some((n.abs(), s.clone())) } else { None });
             let i_sqr = input_indexed.map(|(n, _)| n * n);
             let i_sqr_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * n) } else { None });
-            let i_sqr_pos_indexed = input_indexed.flat_map_index(|(&n, &s)| if n > 0 { Some((n * n, s)) } else { None });
+            let i_sqr_pos_indexed = input_indexed.flat_map_index(|(&n, s)| if n > 0 { Some((n * n, s.clone())) } else { None });
 
             filter_pos.inspect(move |n| {
                 assert_eq!(*n, filter_output.next().unwrap());

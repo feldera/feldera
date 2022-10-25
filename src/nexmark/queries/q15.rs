@@ -56,7 +56,7 @@ use time::{
 /// GROUP BY DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord, bincode::Decode, bincode::Encode)]
 pub struct Q15Output {
     day: String,
     total_bids: usize,

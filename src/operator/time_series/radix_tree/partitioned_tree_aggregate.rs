@@ -13,7 +13,7 @@ use crate::{
         trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
         Aggregator,
     },
-    trace::{spine_fueled::Spine, Builder, Cursor},
+    trace::{Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;

@@ -68,7 +68,19 @@ use time::{
 /// GROUP BY channel, DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, Debug, Default, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(
+    Eq,
+    Clone,
+    Debug,
+    Default,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub struct Q16Output {
     channel: ArcStr,
     day: ArcStr,
@@ -89,7 +101,19 @@ pub struct Q16Output {
 
 type Q16Stream = Stream<Circuit<()>, OrdZSet<Q16Output, isize>>;
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    bincode::Decode,
+    bincode::Encode,
+)]
 pub struct Q16Intermediate1(
     isize,
     (u8, u8),
@@ -104,7 +128,19 @@ pub struct Q16Intermediate1(
     isize,
 );
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    bincode::Decode,
+    bincode::Encode,
+)]
 pub struct Q16Intermediate2(
     isize,
     (u8, u8),

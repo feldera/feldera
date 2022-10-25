@@ -6,8 +6,7 @@ use crate::{
     },
     operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
     trace::{
-        consolidation::consolidate, cursor::Cursor, spine_fueled::Spine, Batch, BatchReader,
-        Builder, Trace,
+        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace,
     },
     utils::VecExt,
     Circuit, DBData, DBTimestamp, Stream, Timestamp,

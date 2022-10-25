@@ -7,7 +7,7 @@
 use crate::{
     circuit::GlobalNodeId,
     circuit_cache_key, default_hash,
-    trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
     Circuit, Runtime, Stream,
 };
 use std::{hash::Hash, panic::Location};

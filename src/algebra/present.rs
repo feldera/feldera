@@ -3,7 +3,20 @@ use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A zero-sized weight that indicates a value is present
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Default,
+    bincode::Decode,
+    bincode::Encode,
+)]
 pub struct Present;
 
 impl HasZero for Present {

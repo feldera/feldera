@@ -350,6 +350,33 @@ pub struct Prefix<TS> {
     prefix_len: u32,
 }
 
+impl<TS> bincode::Encode for Prefix<TS>
+where
+    TS: bincode::Encode + bincode::Decode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.key, encoder)?;
+        bincode::Encode::encode(&self.prefix_len, encoder)?;
+        Ok(())
+    }
+}
+
+impl<TS> bincode::Decode for Prefix<TS>
+where
+    TS: bincode::Encode + bincode::Decode,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let key: TS = bincode::Decode::decode(decoder)?;
+        let prefix_len: u32 = bincode::Decode::decode(decoder)?;
+        Ok(Self { key, prefix_len })
+    }
+}
+
 impl<TS> Display for Prefix<TS>
 where
     TS: PrimInt + Debug,
@@ -495,6 +522,38 @@ struct ChildPtr<TS, A> {
     child_agg: A,
 }
 
+impl<TS, A> bincode::Encode for ChildPtr<TS, A>
+where
+    TS: bincode::Encode + bincode::Decode,
+    A: bincode::Encode + bincode::Decode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.child_prefix, encoder)?;
+        bincode::Encode::encode(&self.child_agg, encoder)?;
+        Ok(())
+    }
+}
+
+impl<TS, A> bincode::Decode for ChildPtr<TS, A>
+where
+    TS: bincode::Encode + bincode::Decode,
+    A: bincode::Encode + bincode::Decode,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let child_prefix: Prefix<TS> = bincode::Decode::decode(decoder)?;
+        let child_agg: A = bincode::Decode::decode(decoder)?;
+        Ok(Self {
+            child_prefix,
+            child_agg,
+        })
+    }
+}
+
 impl<TS, A> Display for ChildPtr<TS, A>
 where
     TS: PrimInt + Debug,
@@ -530,6 +589,33 @@ pub struct TreeNode<TS, A> {
     /// Array of children.
     // `Option` doesn't introduce space overhead.
     children: [Option<ChildPtr<TS, A>>; RADIX],
+}
+
+impl<TS, A> bincode::Encode for TreeNode<TS, A>
+where
+    TS: bincode::Encode + bincode::Decode,
+    A: bincode::Encode + bincode::Decode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.children, encoder)?;
+        Ok(())
+    }
+}
+
+impl<TS, A> bincode::Decode for TreeNode<TS, A>
+where
+    TS: bincode::Encode + bincode::Decode + 'static,
+    A: bincode::Encode + bincode::Decode + 'static,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let children: [Option<ChildPtr<TS, A>>; RADIX] = bincode::Decode::decode(decoder)?;
+        Ok(Self { children })
+    }
 }
 
 impl<TS, A> Display for TreeNode<TS, A>
@@ -869,5 +955,63 @@ pub(super) mod test {
             Some(ChildPtr::from_timestamp(0x1000_0000_0000_0000u64, 10))
         );
         assert_eq!(node.aggregate::<DefaultSemigroup<_>>(), Some(130));
+    }
+
+    #[test]
+    fn prefix_decode_encode() {
+        let mut slice = [0u8; 20];
+        for input in [
+            Prefix::new(0xffff_ffff_0000_0000u64, 32),
+            Prefix::new(0x1234_5678_0000_1111u64, 64),
+            Prefix::new(u64::MAX, 64),
+        ]
+        .into_iter()
+        {
+            let _length =
+                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
+                    .unwrap();
+            let decoded: Prefix<u64> =
+                bincode::decode_from_slice(&slice, bincode::config::standard())
+                    .unwrap()
+                    .0;
+            assert_eq!(decoded, input);
+        }
+    }
+
+    #[test]
+    fn childptr_decode_encode() {
+        let mut slice = [0u8; 20];
+        for input in [
+            ChildPtr::from_timestamp(u64::MIN, -1),
+            ChildPtr::from_timestamp(0x1000_0000_0000_0000u64, 10),
+            ChildPtr::from_timestamp(u64::MAX, 3),
+        ]
+        .into_iter()
+        {
+            let _length =
+                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
+                    .unwrap();
+            let decoded: ChildPtr<u64, isize> =
+                bincode::decode_from_slice(&slice, bincode::config::standard())
+                    .unwrap()
+                    .0;
+            assert_eq!(decoded, input);
+        }
+    }
+
+    #[test]
+    fn treenode_decode_encode() {
+        let mut slice = [0u8; 28];
+
+        let mut input = TreeNode::new();
+        *input.slot_mut(1) = Some(ChildPtr::from_timestamp(0x1000_0000_0000_0000u64, 10));
+
+        let _length =
+            bincode::encode_into_slice(&input, &mut slice, bincode::config::standard()).unwrap();
+        let decoded: TreeNode<u64, isize> =
+            bincode::decode_from_slice(&slice, bincode::config::standard())
+                .unwrap()
+                .0;
+        assert_eq!(decoded, input);
     }
 }

@@ -16,7 +16,7 @@ use crate::{
         trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
         Aggregator,
     },
-    trace::{spine_fueled::Spine, Builder, Cursor},
+    trace::{Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, Stream,
 };
 use num::PrimInt;
@@ -643,6 +643,7 @@ mod test {
 
     proptest! {
         #[test]
+        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
             let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 
@@ -655,6 +656,7 @@ mod test {
         }
 
         #[test]
+        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 1_000, 50, 20)) {
             let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
 

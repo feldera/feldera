@@ -63,6 +63,35 @@ impl<T, R> Avg<T, R> {
     }
 }
 
+impl<T, R> bincode::Encode for Avg<T, R>
+where
+    T: bincode::Encode + bincode::Decode,
+    R: bincode::Encode + bincode::Decode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.sum, encoder)?;
+        bincode::Encode::encode(&self.count, encoder)?;
+        Ok(())
+    }
+}
+
+impl<T, R> bincode::Decode for Avg<T, R>
+where
+    T: bincode::Encode + bincode::Decode,
+    R: bincode::Encode + bincode::Decode,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let sum: T = bincode::Decode::decode(decoder)?;
+        let count: R = bincode::Decode::decode(decoder)?;
+        Ok(Self::new(sum, count))
+    }
+}
+
 impl<T, R> HasZero for Avg<T, R>
 where
     T: HasZero,
@@ -295,5 +324,26 @@ mod tests {
 
         let output = apply_average(input);
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn avg_decode_encode() {
+        let mut slice = [0u8; 20];
+        for input in [
+            Avg::new(usize::MIN, isize::MIN),
+            Avg::new(0, 0),
+            Avg::new(usize::MAX, isize::MAX),
+        ]
+        .into_iter()
+        {
+            let _length =
+                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
+                    .unwrap();
+            let decoded: Avg<usize, isize> =
+                bincode::decode_from_slice(&slice, bincode::config::standard())
+                    .unwrap()
+                    .0;
+            assert_eq!(decoded, input);
+        }
     }
 }

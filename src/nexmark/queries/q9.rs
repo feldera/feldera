@@ -56,7 +56,7 @@ use size_of::SizeOf;
 /// WHERE rownum <= 1;
 /// ```
 
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
 pub struct Q9Output(
     u64,
     ArcStr,
