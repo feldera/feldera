@@ -14,9 +14,15 @@ pub mod consolidation;
 pub mod cursor;
 pub mod layers;
 pub mod ord;
+pub mod persistent;
+// We export the `spine_fueled` module only for testing (so we can explicitly
+// choose the in-memory DS). For regular logic, since we replace it with the
+// persistent feature sometimes, one should import the re-exported path e.g.,
+// `crate::trace::Spine`.
+#[cfg(test)]
 pub mod spine_fueled;
-
-pub use cursor::{Consumer, Cursor, ValueConsumer};
+#[cfg(not(test))]
+mod spine_fueled;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
@@ -24,7 +30,13 @@ use crate::{
     time::{AntichainRef, Timestamp},
     NumEntries,
 };
+use bincode::{Decode, Encode};
+pub use cursor::{Consumer, Cursor, ValueConsumer};
+#[cfg(feature = "persistence")]
+pub use persistent::PersistentTrace as Spine;
 use size_of::SizeOf;
+#[cfg(not(feature = "persistence"))]
+pub use spine_fueled::Spine;
 use std::{fmt::Debug, hash::Hash};
 
 /// Trait for data stored in batches.
@@ -34,8 +46,14 @@ use std::{fmt::Debug, hash::Hash};
 /// must be generic over any relational data, it is sufficient to impose
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
-pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
-impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
+pub trait DBData:
+    Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
+{
+}
+impl<T> DBData for T where
+    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
+{
+}
 
 /// Trait for data types used as weights.
 ///
@@ -363,6 +381,8 @@ pub mod rc_blanket_impls {
         }
 
         /// The number of updates in the batch.
+        ///
+        /// This won't be accurate on all implementations either.
         fn len(&self) -> usize {
             B::len(self)
         }

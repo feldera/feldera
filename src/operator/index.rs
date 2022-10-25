@@ -242,22 +242,22 @@ mod test {
     fn index_test() {
         let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
-                zset!{ (1, "a") => 1
-                     , (1, "b") => 1
-                     , (2, "a") => 1
-                     , (2, "c") => 1
-                     , (1, "a") => 2
-                     , (1, "b") => -1
+                zset!{ (1, 'a') => 1
+                     , (1, 'b') => 1
+                     , (2, 'a') => 1
+                     , (2, 'c') => 1
+                     , (1, 'a') => 2
+                     , (1, 'b') => -1
                 },
-                zset!{ (1, "d") => 1
-                     , (1, "e") => 1
-                     , (2, "a") => -1
-                     , (3, "a") => 2
+                zset!{ (1, 'd') => 1
+                     , (1, 'e') => 1
+                     , (2, 'a') => -1
+                     , (3, 'a') => 2
                 },
             ].into_iter();
             let mut outputs = vec![
-                indexed_zset!{ 1 => {"a" => 3}, 2 => {"a" => 1, "c" => 1}},
-                indexed_zset!{ 1 => {"a" => 3, "d" => 1, "e" => 1}, 2 => {"c" => 1}, 3 => {"a" => 2}},
+                indexed_zset!{ 1 => {'a' => 3}, 2 => {'a' => 1, 'c' => 1}},
+                indexed_zset!{ 1 => {'a' => 3, 'd' => 1, 'e' => 1}, 2 => {'c' => 1}, 3 => {'a' => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
                    .index()
@@ -275,22 +275,22 @@ mod test {
     fn index_with_test() {
         let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
-                zset!{ (1, "a") => 1
-                     , (1, "b") => 1
-                     , (2, "a") => 1
-                     , (2, "c") => 1
-                     , (1, "a") => 2
-                     , (1, "b") => -1
+                zset!{ (1, 'a') => 1
+                     , (1, 'b') => 1
+                     , (2, 'a') => 1
+                     , (2, 'c') => 1
+                     , (1, 'a') => 2
+                     , (1, 'b') => -1
                 },
-                zset!{ (1, "d") => 1
-                     , (1, "e") => 1
-                     , (2, "a") => -1
-                     , (3, "a") => 2
+                zset!{ (1, 'd') => 1
+                     , (1, 'e') => 1
+                     , (2, 'a') => -1
+                     , (3, 'a') => 2
                 },
             ].into_iter();
             let mut outputs = vec![
-                indexed_zset!{ 1 => {"a" => 3}, 2 => {"a" => 1, "c" => 1}},
-                indexed_zset!{ 1 => {"a" => 3, "d" => 1, "e" => 1}, 2 => {"c" => 1}, 3 => {"a" => 2}},
+                indexed_zset!{ 1 => {'a' => 3}, 2 => {'a' => 1, 'c' => 1}},
+                indexed_zset!{ 1 => {'a' => 3, 'd' => 1, 'e' => 1}, 2 => {'c' => 1}, 3 => {'a' => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
                    .index_with(|&(k, v)| (k, v))

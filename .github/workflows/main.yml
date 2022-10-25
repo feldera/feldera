@@ -8,6 +8,10 @@ env:
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
+  # It's really `--all-features`, but not adding `persistence`, we expect the
+  # persistence feature to go away again in the future (but if we add it
+  # unconditionally it changes the code that's run significantly)
+  ALMOST_ALL_FEATURES: --features "with-serde with-csv with-nexmark"
 
 jobs:
   tests:
@@ -82,7 +86,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --target ${{ matrix.target }}
+          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }}
 
   #   miri:
   #     name: Miri
@@ -116,7 +120,7 @@ jobs:
   #           MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation -Zmiri-preemption-rate=0"
   #         with:
   #           command: miri
-  #           args: test --all-features
+  #           args: test ${{ env.ALMOST_ALL_FEATURES }}
 
   test-sanitizers:
     name: Sanitizer Tests
@@ -181,13 +185,18 @@ jobs:
           RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
           RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
           ASAN_OPTIONS: detect_stack_use_after_return=1,detect_leaks=1
+          # Ensure the C++ code (rocksdb etc.) also gets compiled with the correct sanitizer arguments
+          CC: "clang"
+          CCFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
+          CXX: "clang++"
+          CXXFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
+          ASAN_SYMBOLIZER_PATH: "/usr/bin/llvm-symbolizer-14"
           # Backtraces sometimes mess with sanitizers
           RUST_BACKTRACE: 0
         with:
           command: test
-          # leak sanitizer is crashing on exchange tests and is very slow on
-          # many of the proptests.
-          args: --all-features --target ${{ matrix.target }} -Z build-std -- --skip 'exchange' --skip 'proptest'
+          # leak sanitizer is crashing on exchange tests.
+          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'exchange' --skip 'proptest' --skip 'persistent'
 
   clippy:
     name: Clippy

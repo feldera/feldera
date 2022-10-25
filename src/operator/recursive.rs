@@ -4,7 +4,7 @@ use crate::{
     algebra::{ZRingValue, ZSet},
     circuit::{schedule::Error as SchedulerError, Circuit, Stream},
     operator::DelayedFeedback,
-    trace::spine_fueled::Spine,
+    trace::Spine,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use size_of::SizeOf;
@@ -119,6 +119,10 @@ impl<C> RecursiveStreams<C> for Tuple {
     }
 }
 
+// We skip formatting this until
+// https://github.com/rust-lang/rustfmt/issues/5420 is resolved
+// (or we can run this doctest with persistence enabled)
+#[rustfmt::skip]
 impl<P: Clone + 'static> Circuit<P> {
     /// Create a nested circuit that computes one or more mutually recursive
     /// streams of Z-sets.
@@ -199,9 +203,9 @@ impl<P: Clone + 'static> Circuit<P> {
     ///     // Initial labeling of the graph.
     ///     let mut init_labels = vec![
     ///         // Start with a single label on node 1.
-    ///         zset_set! { (1, "l1") },
+    ///         zset_set! { (1, "l1".to_string()) },
     ///         // Add a label to node 2.
-    ///         zset_set! { (2, "l2") },
+    ///         zset_set! { (2, "l2".to_string()) },
     ///         zset! { },
     ///     ]
     ///     .into_iter();
@@ -211,13 +215,13 @@ impl<P: Clone + 'static> Circuit<P> {
     ///
     ///     // Expected _changes_ to the output graph labeling after each clock cycle.
     ///     let mut expected_outputs = vec![
-    ///         zset! { (1, "l1") => 1, (2, "l1") => 1, (3, "l1") => 1, (4, "l1") => 1 },
-    ///         zset! { (1, "l2") => 1, (2, "l2") => 1, (3, "l2") => 1, (4, "l2") => 1, (5, "l1") => 1, (5, "l2") => 1 },
-    ///         zset! { (2, "l1") => -1, (3, "l1") => -1, (4, "l1") => -1, (5, "l1") => -1 },
+    ///         zset! { (1, "l1".to_string()) => 1, (2, "l1".to_string()) => 1, (3, "l1".to_string()) => 1, (4, "l1".to_string()) => 1 },
+    ///         zset! { (1, "l2".to_string()) => 1, (2, "l2".to_string()) => 1, (3, "l2".to_string()) => 1, (4, "l2".to_string()) => 1, (5, "l1".to_string()) => 1, (5, "l2".to_string()) => 1 },
+    ///         zset! { (2, "l1".to_string()) => -1, (3, "l1".to_string()) => -1, (4, "l1".to_string()) => -1, (5, "l1".to_string()) => -1 },
     ///     ]
     ///     .into_iter();
     ///
-    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<(usize, &'static str), isize>>| {
+    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<(usize, String), isize>>| {
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
     ///         let edges = edges.delta0(child);
     ///         let init_labels = init_labels.delta0(child);
@@ -227,7 +231,7 @@ impl<P: Clone + 'static> Circuit<P> {
     ///         let result = labels.index()
     ///               .join::<NestedTimestamp32, _, _, _>(
     ///                   &edges.index(),
-    ///                   |_from, l, to| (*to, *l),
+    ///                   |_from, l, to| (*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
     ///         Ok(result)

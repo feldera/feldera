@@ -177,6 +177,31 @@ pub trait CursorDebug<'s, K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<'s, K,
         }
         out
     }
+
+    /// Returns values with time, weights for a given cursor.
+    ///
+    /// Starts wherever the current cursor is pointing to and walks to the end
+    /// of the values for the current key.
+    ///
+    /// Should only be called with `key_valid() == true`.
+    ///
+    /// # Panics
+    /// - Panics (in debug mode) if the key is not valid.
+    fn val_to_vec(&mut self) -> Vec<(V, Vec<(T, R)>)> {
+        debug_assert!(self.key_valid());
+        let mut vs = Vec::new();
+        while self.val_valid() {
+            let mut weights = Vec::new();
+            self.map_times(|ts, r| {
+                weights.push((ts.clone(), r.clone()));
+            });
+
+            vs.push((self.val().clone(), weights));
+            self.step_val();
+        }
+
+        vs
+    }
 }
 
 impl<'s, C, K: Clone, V: Clone, T: Clone, R: Clone> CursorDebug<'s, K, V, T, R> for C where

@@ -9,10 +9,7 @@ use crate::{
     },
     circuit_cache_key,
     time::Timestamp,
-    trace::{
-        cursor::Cursor as TraceCursor, spine_fueled::Spine, Batch, BatchReader, Batcher, Builder,
-        Trace,
-    },
+    trace::{cursor::Cursor as TraceCursor, Batch, BatchReader, Batcher, Builder, Spine, Trace},
     DBData, DBTimestamp, OrdIndexedZSet, OrdZSet,
 };
 use size_of::{Context, SizeOf};
@@ -839,30 +836,30 @@ mod test {
         let circuit = Circuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    (1, "a") => 1,
-                    (1, "b") => 2,
-                    (2, "c") => 3,
-                    (2, "d") => 4,
-                    (3, "e") => 5,
-                    (3, "f") => -2,
+                    (1, "a".to_string()) => 1,
+                    (1, "b".to_string()) => 2,
+                    (2, "c".to_string()) => 3,
+                    (2, "d".to_string()) => 4,
+                    (3, "e".to_string()) => 5,
+                    (3, "f".to_string()) => -2,
                 },
-                zset! {(1, "a") => 1},
-                zset! {(1, "a") => 1},
-                zset! {(4, "n") => 2},
-                zset! {(1, "a") => 0},
+                zset! {(1, "a".to_string()) => 1},
+                zset! {(1, "a".to_string()) => 1},
+                zset! {(4, "n".to_string()) => 2},
+                zset! {(1, "a".to_string()) => 0},
             ]
             .into_iter();
             let mut input2 = vec![
                 zset! {
-                    (2, "g") => 3,
-                    (2, "h") => 4,
-                    (3, "i") => 5,
-                    (3, "j") => -2,
-                    (4, "k") => 5,
-                    (4, "l") => -2,
+                    (2, "g".to_string()) => 3,
+                    (2, "h".to_string()) => 4,
+                    (3, "i".to_string()) => 5,
+                    (3, "j".to_string()) => -2,
+                    (4, "k".to_string()) => 5,
+                    (4, "l".to_string()) => -2,
                 },
-                zset! {(1, "b") => 1},
-                zset! {(4, "m") => 1},
+                zset! {(1, "b".to_string()) => 1},
+                zset! {(4, "m".to_string()) => 1},
                 zset! {},
                 zset! {},
             ]
@@ -915,7 +912,7 @@ mod test {
             let mut inc_outputs = inc_outputs_vec.clone().into_iter();
             let mut inc_outputs2 = inc_outputs_vec.into_iter();
 
-            let index1: Stream<_, OrdIndexedZSet<usize, &'static str, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<usize, String, isize>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
                         input1.next().unwrap()
@@ -924,7 +921,7 @@ mod test {
                     }
                 }))
                 .index();
-            let index2: Stream<_, OrdIndexedZSet<usize, &'static str, isize>> = circuit
+            let index2: Stream<_, OrdIndexedZSet<usize, String, isize>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
                         input2.next().unwrap()
@@ -1063,7 +1060,19 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Hash, Ord, PartialOrd, Eq, PartialEq, SizeOf)]
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        Hash,
+        Ord,
+        PartialOrd,
+        Eq,
+        PartialEq,
+        SizeOf,
+        bincode::Decode,
+        bincode::Encode,
+    )]
     struct Label(pub usize, pub u16);
 
     impl Display for Label {
@@ -1072,7 +1081,19 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Default, Ord, PartialOrd, Hash, Eq, PartialEq, SizeOf)]
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        Ord,
+        PartialOrd,
+        Hash,
+        Eq,
+        PartialEq,
+        SizeOf,
+        bincode::Decode,
+        bincode::Encode,
+    )]
     struct Edge(pub usize, pub usize);
 
     impl Display for Edge {

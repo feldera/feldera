@@ -17,8 +17,33 @@ const EPOCH_MASK: u32 = 0x80000000;
 /// This representation precisely captures the nested clock value, but only
 /// distinguishes the latest parent clock cycle, or "epoch", (higher-order bit
 /// set to `1`) from all previous epochs (higher order bit is `0`).
-#[derive(Clone, SizeOf, Default, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone,
+    SizeOf,
+    Default,
+    Eq,
+    PartialEq,
+    Debug,
+    Hash,
+    PartialOrd,
+    Ord,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub struct NestedTimestamp32(u32);
+
+#[cfg(test)]
+impl proptest::arbitrary::Arbitrary for NestedTimestamp32 {
+    type Parameters = ();
+    type Strategy = proptest::prelude::BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        use proptest::prelude::*;
+        (any::<bool>(), 0u32..10)
+            .prop_map(|(epoch, x)| NestedTimestamp32::new(epoch, x))
+            .boxed()
+    }
+}
 
 impl Display for NestedTimestamp32 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {

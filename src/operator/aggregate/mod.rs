@@ -20,8 +20,7 @@ use crate::{
     time::Timestamp,
     trace::{
         cursor::{Cursor, CursorGroup},
-        spine_fueled::Spine,
-        Batch, BatchReader, Builder,
+        Batch, BatchReader, Builder, Spine,
     },
     DBData, DBTimestamp, DBWeight, OrdIndexedZSet, OrdZSet,
 };
@@ -799,6 +798,7 @@ mod test {
 
     proptest! {
         #[test]
+        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
             let circuit = Circuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
@@ -809,6 +809,7 @@ mod test {
         }
 
         #[test]
+        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_aggregate_test_mt(inputs in test_input(), workers in (2..=16usize)) {
             let iterations = inputs.len();
             let mut circuit = Runtime::init_circuit(workers, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;

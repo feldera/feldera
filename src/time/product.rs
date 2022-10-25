@@ -9,7 +9,19 @@ use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
 
 /// A nested pair of timestamps, one outer and one inner.
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Default, Ord, PartialOrd, SizeOf)]
+#[derive(
+    Copy,
+    Clone,
+    Hash,
+    Eq,
+    PartialEq,
+    Default,
+    Ord,
+    PartialOrd,
+    SizeOf,
+    bincode::Decode,
+    bincode::Encode,
+)]
 pub struct Product<TOuter, TInner> {
     /// Outer timestamp.
     pub outer: TOuter,

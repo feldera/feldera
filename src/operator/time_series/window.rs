@@ -6,7 +6,7 @@ use crate::{
         operator_traits::{Operator, TernaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    trace::{cursor::Cursor, ord::OrdZSet, spine_fueled::Spine, Batch, BatchReader},
+    trace::{cursor::Cursor, ord::OrdZSet, Batch, BatchReader, Spine},
 };
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
@@ -225,23 +225,23 @@ mod test {
             let mut input = vec![
                 zset! {
                     // old value before the first window, should never appear in the output.
-                    (800, "800") => 1, (900, "900") => 1, (950, "950") => 1, (999, "999") => 1,
+                    (800, "800".to_string()) => 1, (900, "900".to_string()) => 1, (950, "950".to_string()) => 1, (999, "999".to_string()) => 1,
                     // will appear in the next window
-                    (1000, "1000") => 1
+                    (1000, "1000".to_string()) => 1
                 },
                 zset! {
                     // old value before the first window
-                    (700, "700") => 1,
+                    (700, "700".to_string()) => 1,
                     // too late, the window already moved forward
-                    (900, "900") => 1,
-                    (901, "901") => 1,
-                    (999, "999") => 1,
-                    (1000, "1000") => 1,
-                    (1001, "1001") => 1, // will appear in the next window
-                    (1002, "1002") => 1, // will appear two windows later
-                    (1003, "1003") => 1, // will appear three windows later
+                    (900, "900".to_string()) => 1,
+                    (901, "901".to_string()) => 1,
+                    (999, "999".to_string()) => 1,
+                    (1000, "1000".to_string()) => 1,
+                    (1001, "1001".to_string()) => 1, // will appear in the next window
+                    (1002, "1002".to_string()) => 1, // will appear two windows later
+                    (1003, "1003".to_string()) => 1, // will appear three windows later
                 },
-                zset! { (1004, "1004") => 1 }, // no new values in this window
+                zset! { (1004, "1004".to_string()) => 1 }, // no new values in this window
                 zset! {},
                 zset! {},
                 zset! {},
@@ -249,12 +249,12 @@ mod test {
             .into_iter();
 
             let mut output = vec![
-                zset! { "900" => 1 , "950" => 1 , "999" => 1 },
-                zset! { "900" => -1 , "901" => 1 , "999" => 1 , "1000" => 2 },
-                zset! { "901" => -1 , "1001" => 1 },
-                zset! { "1002" => 1 },
-                zset! { "1003" => 1 },
-                zset! { "1004" => 1 },
+                zset! { "900".to_string() => 1 , "950".to_string() => 1 , "999".to_string() => 1 },
+                zset! { "900".to_string() => -1 , "901".to_string() => 1 , "999".to_string() => 1 , "1000".to_string() => 2 },
+                zset! { "901".to_string() => -1 , "1001".to_string() => 1 },
+                zset! { "1002".to_string() => 1 },
+                zset! { "1003".to_string() => 1 },
+                zset! { "1004".to_string() => 1 },
             ]
             .into_iter();
 
@@ -265,7 +265,7 @@ mod test {
                 res
             }));
 
-            let index1: Stream<_, OrdIndexedZSet<Time, &'static str, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1
@@ -287,34 +287,34 @@ mod test {
 
             let mut input = vec![
                 // window: 995..1000
-                zset! { (700, "700") => 1 , (995, "995") => 1 , (996, "996") => 1 , (999, "999") => 1 , (1000, "1000") => 1 },
-                zset! { (995, "995") =>  1 , (1000, "1000") => 1 , (1001, "1001") => 1 },
-                zset! { (999, "999") => 1 },
-                zset! { (1002, "1002") => 1 },
-                zset! { (1003, "1003") => 1 },
+                zset! { (700, "700".to_string()) => 1 , (995, "995".to_string()) => 1 , (996, "996".to_string()) => 1 , (999, "999".to_string()) => 1 , (1000, "1000".to_string()) => 1 },
+                zset! { (995, "995".to_string()) =>  1 , (1000, "1000".to_string()) => 1 , (1001, "1001".to_string()) => 1 },
+                zset! { (999, "999".to_string()) => 1 },
+                zset! { (1002, "1002".to_string()) => 1 },
+                zset! { (1003, "1003".to_string()) => 1 },
                 // window: 1000..1005
-                zset! { (996, "996") => 1 }, // no longer within window
-                zset! { (999, "999") => 1 },
-                zset! { (1004, "1004") => 1 },
-                zset! { (1005, "1005") => 1 }, // next window
-                zset! { (1010, "1010") => 1 },
+                zset! { (996, "996".to_string()) => 1 }, // no longer within window
+                zset! { (999, "999".to_string()) => 1 },
+                zset! { (1004, "1004".to_string()) => 1 },
+                zset! { (1005, "1005".to_string()) => 1 }, // next window
+                zset! { (1010, "1010".to_string()) => 1 },
                 // window: 1005..1010
-                zset! { (1005, "1005") => 1  },
+                zset! { (1005, "1005".to_string()) => 1  },
             ]
             .into_iter();
 
             let mut output = vec![
-                zset! { "995" => 1 , "996" => 1 , "999" => 1 },
-                zset! { "995" => 1 },
-                zset! { "999" => 1 },
+                zset! { "995".to_string() => 1 , "996".to_string() => 1 , "999".to_string() => 1 },
+                zset! { "995".to_string() => 1 },
+                zset! { "999".to_string() => 1 },
                 zset! {},
                 zset! {},
-                zset! { "1000" => 2 , "1001" => 1 , "1002" => 1 , "1003" => 1 , "995" => -2 , "996" => -1 , "999" => -2 },
+                zset! { "1000".to_string() => 2 , "1001".to_string() => 1 , "1002".to_string() => 1 , "1003".to_string() => 1 , "995".to_string() => -2 , "996".to_string() => -1 , "999".to_string() => -2 },
                 zset! {},
-                zset! { "1004" => 1 },
+                zset! { "1004".to_string() => 1 },
                 zset! {},
                 zset! {},
-                zset! { "1000" => -2 , "1001" => -1 , "1002" => -1 , "1003" => -1 , "1004" => -1 , "1005" => 2 },
+                zset! { "1000".to_string() => -2 , "1001".to_string() => -1 , "1002".to_string() => -1 , "1003".to_string() => -1 , "1004".to_string() => -1 , "1005".to_string() => 2 },
             ]
             .into_iter();
 
@@ -328,7 +328,7 @@ mod test {
                     res
                 }));
 
-            let index1: Stream<_, OrdIndexedZSet<Time, &'static str, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1
@@ -349,30 +349,30 @@ mod test {
 
             let mut input = vec![
                 zset! {
-                    (800, "800") => 1,
-                    (900, "900") => 1,
-                    (950, "950") => 1,
-                    (990, "990") => 1,
-                    (999, "999") => 1,
-                    (1000, "1000") => 1
+                    (800, "800".to_string()) => 1,
+                    (900, "900".to_string()) => 1,
+                    (950, "950".to_string()) => 1,
+                    (990, "990".to_string()) => 1,
+                    (999, "999".to_string()) => 1,
+                    (1000, "1000".to_string()) => 1
                 },
                 zset! {
-                    (700, "700") => 1,
-                    (900, "900") => 1,
-                    (901, "901") => 1,
-                    (915, "915") => 1,
-                    (940, "940") => 1,
-                    (985, "985") => 1,
-                    (999, "999") => 1,
-                    (1000, "1000") => 1,
-                    (1001, "1001") => 1,
-                    (1002, "1002") => 1,
-                    (1003, "1003") => 1,
+                    (700, "700".to_string()) => 1,
+                    (900, "900".to_string()) => 1,
+                    (901, "901".to_string()) => 1,
+                    (915, "915".to_string()) => 1,
+                    (940, "940".to_string()) => 1,
+                    (985, "985".to_string()) => 1,
+                    (999, "999".to_string()) => 1,
+                    (1000, "1000".to_string()) => 1,
+                    (1001, "1001".to_string()) => 1,
+                    (1002, "1002".to_string()) => 1,
+                    (1003, "1003".to_string()) => 1,
                 },
-                zset! { (1004, "1004") => 1,
-                        (1010, "1010") => 1,
-                        (1020, "1020") => 1,
-                        (1039, "1039") => 1 },
+                zset! { (1004, "1004".to_string()) => 1,
+                        (1010, "1010".to_string()) => 1,
+                        (1020, "1020".to_string()) => 1,
+                        (1039, "1039".to_string()) => 1 },
                 zset! {},
                 zset! {},
                 zset! {},
@@ -380,12 +380,12 @@ mod test {
             .into_iter();
 
             let mut output = vec![
-                zset! { "900" => 1 , "950" => 1 , "990" => 1, "999" => 1 },
-                zset! { "900" => -1 , "915" => 1 , "940" => 1 , "985" => 1, "990" => -1, "999" => -1 },
-                zset! { "915" => -1 , "985" => -1 },
-                zset! { "1000" => 2, "1001" => 1, "1002" => 1, "1003" => 1, "1004" => 1, "1010" => 1, "1020" => 1, "1039" => 1, "985" => 1, "990" => 1, "999" => 2 },
-                zset! { "1039" => -1, "940" => -1 },
-                zset! { "1020" => -1, "950" => -1 },
+                zset! { "900".to_string() => 1 , "950".to_string() => 1 , "990".to_string() => 1, "999".to_string() => 1 },
+                zset! { "900".to_string() => -1 , "915".to_string() => 1 , "940".to_string() => 1 , "985".to_string() => 1, "990".to_string() => -1, "999".to_string() => -1 },
+                zset! { "915".to_string() => -1 , "985".to_string() => -1 },
+                zset! { "1000".to_string() => 2, "1001".to_string() => 1, "1002".to_string() => 1, "1003".to_string() => 1, "1004".to_string() => 1, "1010".to_string() => 1, "1020".to_string() => 1, "1039".to_string() => 1, "985".to_string() => 1, "990".to_string() => 1, "999".to_string() => 2 },
+                zset! { "1039".to_string() => -1, "940".to_string() => -1 },
+                zset! { "1020".to_string() => -1, "950".to_string() => -1 },
             ]
             .into_iter();
 
@@ -407,7 +407,7 @@ mod test {
                 }));
 
 
-            let index1: Stream<_, OrdIndexedZSet<Time, &'static str, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1

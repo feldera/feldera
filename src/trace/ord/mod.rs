@@ -34,7 +34,7 @@ pub use key_batch::OrdKeyBatch;
 pub use val_batch::OrdValBatch;
 pub use zset_batch::OrdZSet;
 
-use crate::trace::spine_fueled::Spine;
+use crate::trace::Spine;
 
 /// A trace implementation using a spine of ordered lists.
 pub type OrdValSpine<K, V, T, R, O = usize> = Spine<OrdValBatch<K, V, T, R, O>>;

@@ -4,6 +4,7 @@ use arcstr::ArcStr;
 use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::hash::Hash;
+use std::ops::Deref;
 
 /// Query 14: Calculation (Not in original suite)
 ///
@@ -42,17 +43,72 @@ use std::hash::Hash;
 /// WHERE 0.908 * price > 1000000 AND 0.908 * price < 50000000;
 /// ```
 
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
+pub struct Q14Output(u64, u64, BincodeDecimal, BidTimeType, u64, ArcStr, usize);
+
+type Q14Stream = Stream<Circuit<()>, OrdZSet<Q14Output, isize>>;
+
+/// Wrapper type for `Decimal` that implements Decode and Encode.
+/// 
+/// # Note
+/// Since the query doesn't use spine we don't actually end up
+/// serializing/deserializing Decimals but we still need to implement it to
+/// satisfy trait constraints.
+/// 
+/// For the future we can submit a PR to `rust_decimal` to implement `Decode`
+/// and `Encode` for `Decimal` directly or if we end up using rykv anyways
+/// `rust_decimal` has support for it already.
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord)]
+struct BincodeDecimal(Decimal);
+
+impl bincode::Encode for BincodeDecimal {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.0.to_string(), encoder)?;
+        Ok(())
+    }
+}
+
+impl bincode::Decode for BincodeDecimal {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let s: String = bincode::Decode::decode(decoder)?;
+        Ok(Self(Decimal::from_str_exact(&s).unwrap()))
+    }
+}
+
+impl<'de> bincode::BorrowDecode<'de> for BincodeDecimal {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let s: String = bincode::BorrowDecode::borrow_decode(decoder)?;
+        Ok(Self(Decimal::from_str_exact(&s).unwrap()))
+    }
+}
+
+impl Deref for BincodeDecimal {
+    type Target = Decimal;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl SizeOf for BincodeDecimal {
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        self.0.size_of_children(context);
+    }
+}
+
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
 enum BidTimeType {
     Day,
     Night,
     Other,
 }
-
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf)]
-pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, ArcStr, usize);
-
-type Q14Stream = Stream<Circuit<()>, OrdZSet<Q14Output, isize>>;
 
 // This is used because we can't currently use chrono.Utc, which would simply
 // be Utc.timestamp_millis(b.date_time as i64).hour(), as it's waiting on a
@@ -70,7 +126,7 @@ pub fn q14(input: NexmarkStream) -> Q14Stream {
                 Some(Q14Output(
                     b.auction,
                     b.bidder,
-                    new_price,
+                    BincodeDecimal(new_price),
                     match hour_for_millis(b.date_time) {
                         8..=18 => BidTimeType::Day,
                         20..=23 | 0..=6 => BidTimeType::Night,
@@ -98,14 +154,14 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, ArcStr::new(), 0) => 1])]
+    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Night, 0, ArcStr::new(), 0) => 1])]
     #[case::decimal_price_converted_outside_range(1_000_000, 0, "", zset![])]
     #[case::decimal_price_converted_on_exclusive_boundary(1_000_000, 0, "", zset![])]
-    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 20*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
-    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 8*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
-    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
-    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, ArcStr::new(), 0) => 1])]
-    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them.").into(), 4) => 1])]
+    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Night, 20*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
+    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Day, 8*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
+    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, ArcStr::new(), 0) => 1])]
+    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Other, 8*60*60*1000 - 1, ArcStr::new(), 0) => 1])]
+    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, BincodeDecimal(Decimal::new(1_816_000_000, 3)), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them.").into(), 4) => 1])]
     fn test_q14(
         #[case] price: usize,
         #[case] date_time: u64,

@@ -2,6 +2,12 @@ name: Coverage
 
 on: [push, pull_request]
 
+env:
+  # It's really `--all-features`, but not adding `persistence`, we expect the
+  # persistence feature to go away again in the future (but if we add it
+  # unconditionally it changes the code that's run significantly)
+  ALMOST_ALL_FEATURES: --features "with-serde with-csv with-nexmark"
+
 jobs:
   check:
     name: Coverage
@@ -29,7 +35,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: llvm-cov
-          args: --all-features --workspace --lcov --output-path coverage.info --ignore-filename-regex tests.rs
+          args: ${{ env.ALMOST_ALL_FEATURES }} --workspace --lcov --output-path coverage.info --ignore-filename-regex tests.rs
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3

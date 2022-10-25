@@ -5,7 +5,7 @@ use crate::{
         Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
-    trace::{cursor::Cursor, spine_fueled::Spine, Batch, BatchReader, Builder, Trace},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
     Timestamp,
 };
 use size_of::SizeOf;

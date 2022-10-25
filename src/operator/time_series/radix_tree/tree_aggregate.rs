@@ -10,7 +10,7 @@ use crate::{
         trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
         Aggregator,
     },
-    trace::{spine_fueled::Spine, Batch, BatchReader, Builder},
+    trace::{Batch, BatchReader, Builder, Spine},
     Circuit, NumEntries, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;

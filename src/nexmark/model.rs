@@ -3,13 +3,14 @@
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
 use arcstr::ArcStr;
+use bincode::{Decode, Encode};
 use size_of::SizeOf;
 
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub struct Person {
     pub id: u64,
     pub name: ArcStr,
@@ -25,7 +26,7 @@ pub struct Person {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub struct Auction {
     pub id: u64,
     pub item_name: ArcStr,
@@ -43,7 +44,7 @@ pub struct Auction {
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
@@ -64,7 +65,7 @@ pub struct Bid {
 
 /// An event in the auction system, either a (new) `Person`, a (new) `Auction`,
 /// or a `Bid`.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub enum Event {
     Person(Person),
     Auction(Auction),

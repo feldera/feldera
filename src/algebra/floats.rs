@@ -396,9 +396,102 @@ impl From<F64> for F32 {
     }
 }
 
-#[test]
-fn fromstr() {
-    assert_eq!(Ok(F32::new(10.0)), F32::from_str("10"));
-    assert_eq!(Ok(F64::new(-10.0)), F64::from_str("-10"));
-    assert!(F32::from_str("what").is_err());
+impl bincode::Encode for F64 {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.0 .0, encoder)?;
+        Ok(())
+    }
+}
+
+impl bincode::Decode for F64 {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let f: f64 = bincode::Decode::decode(decoder)?;
+        Ok(Self::new(f))
+    }
+}
+
+impl bincode::Encode for F32 {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.0 .0, encoder)?;
+        Ok(())
+    }
+}
+
+impl bincode::Decode for F32 {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let f: f32 = bincode::Decode::decode(decoder)?;
+        Ok(Self::new(f))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{F32, F64};
+    use std::str::FromStr;
+
+    #[test]
+    fn fromstr() {
+        assert_eq!(Ok(F32::new(10.0)), F32::from_str("10"));
+        assert_eq!(Ok(F64::new(-10.0)), F64::from_str("-10"));
+        assert!(F32::from_str("what").is_err());
+    }
+
+    #[test]
+    fn f64_decode_encode() {
+        let mut slice = [0u8; 12];
+
+        for input in [
+            F64::new(-1.0),
+            F64::new(0.0),
+            F64::new(1.0),
+            F64::new(f64::MAX),
+            F64::new(f64::MIN),
+            F64::new(f64::NAN),
+            F64::new(f64::INFINITY),
+        ]
+        .into_iter()
+        {
+            let _length =
+                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
+                    .unwrap();
+            let decoded: F64 = bincode::decode_from_slice(&slice, bincode::config::standard())
+                .unwrap()
+                .0;
+            assert_eq!(decoded, input);
+        }
+    }
+
+    #[test]
+    fn f32_decode_encode() {
+        let mut slice = [0u8; 12];
+        for input in [
+            F32::new(-1.0),
+            F32::new(0.0),
+            F32::new(1.0),
+            F32::new(f32::MAX),
+            F32::new(f32::MIN),
+            F32::new(f32::NAN),
+            F32::new(f32::INFINITY),
+        ]
+        .into_iter()
+        {
+            let _length =
+                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
+                    .unwrap();
+            let decoded: F32 = bincode::decode_from_slice(&slice, bincode::config::standard())
+                .unwrap()
+                .0;
+            assert_eq!(decoded, input);
+        }
+    }
 }

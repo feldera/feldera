@@ -4,16 +4,19 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-    [package.metadata.docs.rs]
-    all-features = true
-    rustdoc-args = ["--cfg", "docsrs"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+# Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
+# main.yml and coverage.yml:
 default = ["with-serde"]
+persistence = []
 with-serde = ["serde"]
 with-csv = ["csv"]
 with-nexmark = [
-    "arcstr",
+    "arcstr/bincode",
     "cached",
     "clap",
     "csv",
@@ -49,6 +52,9 @@ paste = { version = "1.0.9", optional = true }
 bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
+rocksdb = { version = "0.19", default-features = false, features = ["multi-threaded-cf"] }
+bincode = "2.0.0-rc.2"
+uuid = { version = "1.1.2",  features = ["v4"] }
 
 # TODO: Remove these dependencies
 rand = { version = "0.8", optional = true }
@@ -66,6 +72,7 @@ rstest = "0.15"
 cached = "0.38.0"
 proptest = "1.0.0"
 criterion = "0.4.0"
+proptest-derive = "0.3.0"
 rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"
 mimalloc-rust-sys = "1.7.2"
@@ -109,3 +116,7 @@ harness = false
 [[bench]]
 name = "column_leaf"
 harness = false
+
+[patch.crates-io]
+# Waiting for bincode 2.0.0 to be released (https://github.com/thomcc/arcstr/pull/45)
+arcstr = { git = "https://github.com/gz/arcstr.git", features = ["bincode"], rev = "b43120c", optional = true }
