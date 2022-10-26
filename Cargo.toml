@@ -12,7 +12,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
 default = ["with-serde"]
-persistence = []
+persistence = ["rocksdb", "uuid"]
 with-serde = ["serde"]
 with-csv = ["csv"]
 with-nexmark = [
@@ -52,9 +52,9 @@ paste = { version = "1.0.9", optional = true }
 bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
-rocksdb = { version = "0.19", default-features = false, features = ["multi-threaded-cf"] }
+rocksdb = { version = "0.19", default-features = false, features = ["multi-threaded-cf"], optional = true }
 bincode = "2.0.0-rc.2"
-uuid = { version = "1.1.2",  features = ["v4"] }
+uuid = { version = "1.1.2",  features = ["v4"], optional = true }
 
 # TODO: Remove these dependencies
 rand = { version = "0.8", optional = true }
