@@ -14,6 +14,7 @@ pub mod consolidation;
 pub mod cursor;
 pub mod layers;
 pub mod ord;
+#[cfg(feature = "persistence")]
 pub mod persistent;
 // We export the `spine_fueled` module only for testing (so we can explicitly
 // choose the in-memory DS). For regular logic, since we replace it with the
@@ -30,6 +31,7 @@ use crate::{
     time::{AntichainRef, Timestamp},
     NumEntries,
 };
+#[cfg(feature = "persistence")]
 use bincode::{Decode, Encode};
 pub use cursor::{Consumer, Cursor, ValueConsumer};
 #[cfg(feature = "persistence")]
@@ -46,12 +48,27 @@ use std::{fmt::Debug, hash::Hash};
 /// must be generic over any relational data, it is sufficient to impose
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
+#[cfg(feature = "persistence")]
 pub trait DBData:
     Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
 {
 }
+
+#[cfg(not(feature = "persistence"))]
+pub trait DBData:
+    Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
+{
+}
+
+#[cfg(feature = "persistence")]
 impl<T> DBData for T where
     T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
+{
+}
+
+#[cfg(not(feature = "persistence"))]
+impl<T> DBData for T where
+    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
 {
 }
 
