@@ -400,7 +400,7 @@ impl Display for CircuitEvent {
                 node_id,
                 output_node_id,
             } => {
-                write!(f, "StrictOperatorInput({} -> {})", node_id, output_node_id)
+                write!(f, "StrictOperatorInput({node_id} -> {output_node_id})")
             }
 
             Self::Subcircuit { node_id, iterative } => {
@@ -413,7 +413,7 @@ impl Display for CircuitEvent {
             }
 
             Self::SubcircuitComplete { node_id } => {
-                write!(f, "SubcircuitComplete({})", node_id,)
+                write!(f, "SubcircuitComplete({node_id})",)
             }
 
             Self::Edge {
@@ -421,7 +421,7 @@ impl Display for CircuitEvent {
                 from,
                 to,
             } => {
-                write!(f, "Stream({} -> [{}]{})", from, preference, to)
+                write!(f, "Stream({from} -> [{preference}]{to})")
             }
 
             Self::Edge {
@@ -429,7 +429,7 @@ impl Display for CircuitEvent {
                 from,
                 to,
             } => {
-                write!(f, "Dependency({} -> {})", from, to)
+                write!(f, "Dependency({from} -> {to})")
             }
         }
     }

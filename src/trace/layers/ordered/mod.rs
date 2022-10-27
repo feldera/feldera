@@ -650,7 +650,7 @@ where
 
         while cursor.valid() {
             let key = cursor.key();
-            writeln!(f, "{:?}:", key)?;
+            writeln!(f, "{key:?}:")?;
             let val_str = cursor.values().to_string();
 
             f.write_str(&indent(&val_str, "    "))?;

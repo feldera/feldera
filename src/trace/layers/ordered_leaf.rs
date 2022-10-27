@@ -370,7 +370,7 @@ where
 
         while cursor.valid() {
             let (key, val) = cursor.key();
-            writeln!(f, "{:?} -> {:?}", key, val)?;
+            writeln!(f, "{key:?} -> {val:?}")?;
             cursor.step();
         }
 

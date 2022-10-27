@@ -88,9 +88,9 @@ impl Display for TraceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyPath => f.write_str("cannot create node at an empty path"),
-            Self::UnknownNode(node) => write!(f, "unknown node {}", node),
-            Self::NodeExists(node) => write!(f, "node already exists: {}", node),
-            Self::NotACircuit(node) => write!(f, "not a circuit node {}", node),
+            Self::UnknownNode(node) => write!(f, "unknown node {node}"),
+            Self::NodeExists(node) => write!(f, "node already exists: {node}"),
+            Self::NotACircuit(node) => write!(f, "not a circuit node {node}"),
             Self::NodeOutsideCurrentScope(node, scope) => write!(
                 f,
                 "node id {} does not belong to the current scope {}",
@@ -243,8 +243,8 @@ impl TraceMonitorInternal {
     /// Create a trace monitor whose error handlers will panic on error.
     fn new_panic_on_error() -> Self {
         Self::new(
-            |event, err| panic!("invalid circuit event {}: {}", event, err),
-            |event, err| panic!("invalid scheduler event {}: {}", event, err),
+            |event, err| panic!("invalid circuit event {event}: {err}"),
+            |event, err| panic!("invalid scheduler event {event}: {err}"),
         )
     }
 
@@ -477,7 +477,7 @@ impl TraceMonitorInternal {
                             .unwrap()
                             .len();
                         if visited_nodes.len() != expected_len {
-                            return Err(TraceError::InvalidEvent(Cow::from(format!("received 'StepEnd' event after evaluating {} nodes instead of the expected {}", visited_nodes.len(), expected_len))));
+                            return Err(TraceError::InvalidEvent(Cow::from(format!("received 'StepEnd' event after evaluating {} nodes instead of the expected {expected_len}", visited_nodes.len()))));
                         }
                     }
                     state => {
@@ -522,7 +522,7 @@ impl TraceMonitorInternal {
                         if cnode.is_strict_input() {
                             let output_id = cnode.output_id().unwrap();
                             if !visited_nodes.contains(&output_id) {
-                                return Err(TraceError::InvalidEvent(Cow::from(format!("input node {} of a strict operator is evaluated before the output node {}", local_node_id, output_id))));
+                                return Err(TraceError::InvalidEvent(Cow::from(format!("input node {local_node_id} of a strict operator is evaluated before the output node {output_id}"))));
                             }
                         };
 

@@ -533,7 +533,7 @@ where
     fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self.keys_of_interest.keys().all(|ts| {
             if ts.less_equal(&self.time.epoch_end(scope)) {
-                println!("ts: {:?}, epoch_end: {:?}", ts, self.time.epoch_end(scope));
+                println!("ts: {ts:?}, epoch_end: {:?}", self.time.epoch_end(scope));
             }
             !ts.less_equal(&self.time.epoch_end(scope))
         }));
