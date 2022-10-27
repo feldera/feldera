@@ -413,7 +413,7 @@ impl Display for CircuitEvent {
             }
 
             Self::SubcircuitComplete { node_id } => {
-                write!(f, "SubcircuitComplete({node_id})",)
+                write!(f, "SubcircuitComplete({node_id})")
             }
 
             Self::Edge {

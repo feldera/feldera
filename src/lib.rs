@@ -28,6 +28,6 @@ pub use crate::time::Timestamp;
 pub use circuit::{
     Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
 };
-pub use operator::{CollectionHandle, InputHandle, UpsertHandle};
+pub use operator::{CollectionHandle, InputHandle, OutputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};
 pub use trace::{DBData, DBTimestamp, DBWeight};

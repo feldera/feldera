@@ -195,9 +195,9 @@ jobs:
           RUST_BACKTRACE: 0
         with:
           command: test
-          # leak sanitizer is crashing on exchange tests.
-          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'exchange' --skip 'proptest' --skip 'persistent'
-
+          # leak sanitizer is crashing on exchange tests and is very slow on
+          # many of the proptests.
+          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'exchange' --skip 'proptest' --skip 'persistent' --skip 'deinput'
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

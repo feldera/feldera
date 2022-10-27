@@ -13,7 +13,6 @@ use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem::{swap, take},
-    ops::DerefMut,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -425,8 +424,8 @@ where
 }
 
 /// Mailbox that buffers data between the circuit and the outside world.
-/// It is use inside an `InputHandle` to store data sent to a worker
-/// thread and inside an `OutputHandle` to store data sent by a worke
+/// It is used inside an `InputHandle` to store data sent to a worker
+/// thread and inside an `OutputHandle` to store data sent by a worker
 /// thread to the outside world.
 #[derive(Clone)]
 pub(super) struct Mailbox<T> {
@@ -444,14 +443,14 @@ where
     }
 
     pub(super) fn take(&self) -> T {
-        take(self.value.lock().unwrap().deref_mut())
+        take(&mut *self.value.lock().unwrap())
     }
 
     fn update<F>(&self, f: F)
     where
         F: FnOnce(&mut T),
     {
-        f(self.value.lock().unwrap().deref_mut());
+        f(&mut *self.value.lock().unwrap());
     }
 
     pub(super) fn set(&self, v: T) {
