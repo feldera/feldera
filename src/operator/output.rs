@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{Operator, SinkOperator},
         LocalStoreMarker, OwnershipPreference, Scope,
     },
-    trace::{spine_fueled::Spine, Batch, Trace},
+    trace::{Batch, Spine, Trace},
     Circuit, Runtime, Stream,
 };
 use std::{
@@ -22,7 +22,7 @@ where
     /// Create an output handle that makes the contents of `self` available
     /// outside the circuit.
     ///
-    /// This API make result of the computation performed by the circuit
+    /// This API makes the result of the computation performed by the circuit
     /// available to the outside world.  At each clock cycle, the contents
     /// of the stream is buffered inside the handle and can be read using
     /// the [`OutputHandle`] API.
@@ -158,7 +158,7 @@ where
     /// Read the value produced by `worker` worker thread during the last
     /// clock cycle.
     ///
-    /// This method is invoked between two subsequent
+    /// This method is invoked between two consecutive
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`)
     /// calls to retrieve the value written to the stream during the last
     /// clock cycle.  The first call is guaranteed to return a value
@@ -229,7 +229,7 @@ where
 }
 
 /// Sink operator that stores the contents of its input stream in
-/// the `OutputHandle`.
+/// an `OutputHandle`.
 struct Output<T> {
     mailbox: Mailbox<Option<T>>,
 }
