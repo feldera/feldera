@@ -86,7 +86,7 @@ where
                     writeln!(
                         f,
                         "{}",
-                        textwrap::indent(format!("{:?} -> {:?}", t, w).as_str(), "        ")
+                        textwrap::indent(format!("{t:?} -> {w:?}").as_str(), "        ")
                     )
                     .expect("can't write out");
                 });
