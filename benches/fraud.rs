@@ -69,6 +69,7 @@
 mod mimalloc;
 
 use anyhow::Result;
+use bincode::{Decode, Encode};
 use clap::Parser;
 use crossbeam::channel::bounded;
 use csv::Reader as CsvReader;
@@ -100,7 +101,7 @@ const DEFAULT_BATCH_SIZE: &'static str = "10000";
 
 const DAY_IN_SECONDS: i64 = 24 * 3600;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Decode, Encode, SizeOf)]
 struct QueryResult {
     // day: Weekday,
     // age: u32,
@@ -119,7 +120,9 @@ struct QueryResult {
     is_fraud: u32,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, SizeOf)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, Decode, Encode, SizeOf,
+)]
 struct Demographics {
     cc_num: F64,
     first: u32,
@@ -132,11 +135,15 @@ struct Demographics {
     long: F64,
     city_pop: u32,
     job: u32,
+    #[bincode(with_serde)]
     dob: Date,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, SizeOf)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, Decode, Encode, SizeOf,
+)]
 struct Transaction {
+    #[bincode(with_serde)]
     #[serde(deserialize_with = "primitive_date_time_from_str")]
     trans_date_trans_time: PrimitiveDateTime,
     cc_num: F64,

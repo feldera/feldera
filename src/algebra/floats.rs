@@ -415,6 +415,15 @@ impl bincode::Decode for F64 {
     }
 }
 
+impl<'de> bincode::BorrowDecode<'de> for F64 {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let f: f64 = bincode::BorrowDecode::borrow_decode(decoder)?;
+        Ok(Self::new(f))
+    }
+}
+
 impl bincode::Encode for F32 {
     fn encode<E: bincode::enc::Encoder>(
         &self,
@@ -430,6 +439,15 @@ impl bincode::Decode for F32 {
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let f: f32 = bincode::Decode::decode(decoder)?;
+        Ok(Self::new(f))
+    }
+}
+
+impl<'de> bincode::BorrowDecode<'de> for F32 {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let f: f32 = bincode::BorrowDecode::borrow_decode(decoder)?;
         Ok(Self::new(f))
     }
 }
