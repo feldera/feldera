@@ -424,9 +424,12 @@ where
     type Value = InputHandle<T>;
 }
 
-/// Mailbox used to buffer data sent via an `InputHandle` to a worker thread.
+/// Mailbox that buffers data between the circuit and the outside world.
+/// It is use inside an `InputHandle` to store data sent to a worker
+/// thread and inside an `OutputHandle` to store data sent by a worke
+/// thread to the outside world.
 #[derive(Clone)]
-struct Mailbox<T> {
+pub(super) struct Mailbox<T> {
     value: Arc<Mutex<T>>,
 }
 
@@ -434,13 +437,13 @@ impl<T> Mailbox<T>
 where
     T: Default,
 {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             value: Arc::new(Mutex::new(Default::default())),
         }
     }
 
-    fn take(&self) -> T {
+    pub(super) fn take(&self) -> T {
         take(self.value.lock().unwrap().deref_mut())
     }
 
@@ -451,7 +454,7 @@ where
         f(self.value.lock().unwrap().deref_mut());
     }
 
-    fn set(&self, v: T) {
+    pub(super) fn set(&self, v: T) {
         *self.value.lock().unwrap() = v;
     }
 }

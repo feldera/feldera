@@ -21,7 +21,7 @@ where
     ///
     /// The input stream carries changes to a key/value map in the form of
     /// _upserts_.  An upsert assigns a new value to a key (or `None` to
-    /// remove the key fro the map) without explicitly removing the old
+    /// remove the key from the map) without explicitly removing the old
     /// value, if any.  Upserts are produced by some operators
     /// or arrive from external data sources via
     /// [`UpsertHandle`](`crate::UpsertHandle`)s.  The operator converts upserts
