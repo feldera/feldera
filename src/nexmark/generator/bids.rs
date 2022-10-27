@@ -49,10 +49,10 @@ impl<R: Rng> NexmarkGenerator<R> {
                 // which uses `Integer.reverse` to get a deterministic channel_id.
                 url = match self.rng.gen_range(0..10) {
                     9 => url,
-                    _ => format!("{}&channel_id={}", url, channel_number.reverse_bits()).into(),
+                    _ => format!("{url}&channel_id={}", channel_number.reverse_bits()).into(),
                 };
 
-                (format!("channel-{}", channel_number).into(), url)
+                (format!("channel-{channel_number}").into(), url)
             })
             .clone()
     }
