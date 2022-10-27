@@ -12,7 +12,7 @@ use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::{
     nexmark::{
-        config::{Config as NexmarkConfig, Query as NexmarkQuery},
+        config::{Config as NexmarkConfig, Query as NexmarkQuery, NEXMARK_RESULTS_FILE},
         model::Event,
         queries::{
             q0, q1, q12, q13, q13_side_input, q14, q15, q16, q17, q18, q19, q2, q20, q21, q22, q3,
@@ -36,6 +36,23 @@ use std::{
 
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
+
+/// Reported metrics (per query) for the benchmark.
+const RESULT_COLUMNS: [&str; 13] = [
+    "Query",
+    "#Events",
+    "Cores",
+    "Elapsed",
+    "Cores * Elapsed",
+    "Throughput/Cores",
+    "Total Usr CPU",
+    "Total Sys CPU",
+    "Current RSS",
+    "Peak RSS",
+    "Current Commit",
+    "Peak Commit",
+    "Page Faults",
+];
 
 /// Currently just the elapsed time, but later add CPU and Mem.
 #[derive(Default)]
@@ -188,22 +205,7 @@ fn create_ascii_table() -> AsciiTable {
     let mut ascii_table = AsciiTable::default();
     ascii_table.set_max_width(200);
 
-    let columns = [
-        "Query",
-        "#Events",
-        "Cores",
-        "Elapsed",
-        "Cores * Elapsed",
-        "Throughput/Cores",
-        "Total Usr CPU",
-        "Total Sys CPU",
-        "Current RSS",
-        "Peak RSS",
-        "Current Commit",
-        "Peak Commit",
-        "Page Faults",
-    ];
-    for (idx, column_name) in columns.into_iter().enumerate() {
+    for (idx, column_name) in RESULT_COLUMNS.into_iter().enumerate() {
         ascii_table.column(idx).set_header(column_name);
     }
 
@@ -256,11 +258,11 @@ fn main() -> Result<()> {
     );
 
     let ascii_table = create_ascii_table();
-    ascii_table.print(results.into_iter().map(|result| {
+    ascii_table.print(results.iter().map(|result| {
         let (before, after) = (result.before_stats, result.after_stats);
 
         vec![
-            result.name,
+            result.name.clone(),
             format!("{}", result.num_events.to_formatted_string(&Locale::en)),
             format!("{cpu_cores}"),
             format!("{:#.3?}", result.elapsed),
@@ -284,6 +286,40 @@ fn main() -> Result<()> {
             format!("{}", after.page_faults - before.page_faults),
         ]
     }));
+
+    if nexmark_config.output_csv {
+        // The file is truncated if it already exists.
+        let mut csv_writer = csv::Writer::from_path(NEXMARK_RESULTS_FILE)?;
+        csv_writer.write_record(RESULT_COLUMNS)?;
+        for result in results.into_iter() {
+            // Converting units to seconds, bytes
+            let (before, after) = (result.before_stats, result.after_stats);
+            csv_writer.write_record(vec![
+                result.name,
+                format!("{}", result.num_events),
+                format!("{cpu_cores}"),
+                format!("{:#.3}", result.elapsed.as_secs()),
+                format!("{:#.3}", (result.elapsed * cpu_cores as u32).as_secs()),
+                format!(
+                    "{0:#.3}",
+                    result.num_events as f32 / result.elapsed.as_secs_f32() / cpu_cores as f32,
+                ),
+                format!(
+                    "{:#.3?}",
+                    Duration::from_millis((after.user_ms - before.user_ms) as u64).as_secs(),
+                ),
+                format!(
+                    "{:#.3?}",
+                    Duration::from_millis((after.system_ms - before.system_ms) as u64).as_secs(),
+                ),
+                format!("{}", after.current_rss),
+                format!("{}", after.peak_rss),
+                format!("{}", after.current_commit),
+                format!("{}", after.peak_commit),
+                format!("{}", after.page_faults - before.page_faults),
+            ])?;
+        }
+    }
 
     Ok(())
 }
