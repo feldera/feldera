@@ -55,10 +55,7 @@ pub trait DBData:
 }
 
 #[cfg(not(feature = "persistence"))]
-pub trait DBData:
-    Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
-{
-}
+pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 
 #[cfg(feature = "persistence")]
 impl<T> DBData for T where
@@ -67,10 +64,7 @@ impl<T> DBData for T where
 }
 
 #[cfg(not(feature = "persistence"))]
-impl<T> DBData for T where
-    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static
-{
-}
+impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 
 /// Trait for data types used as weights.
 ///
