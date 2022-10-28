@@ -89,19 +89,19 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-run --all-features  --target ${{ matrix.target }}
+          args: --workspace --no-run --all-features  --target ${{ matrix.target }}
 
       - name: Build tests with no features
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-run --no-default-features  --target ${{ matrix.target }}
+          args: --workspace --no-run --no-default-features  --target ${{ matrix.target }}
 
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }}
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }}
 
   #   miri:
   #     name: Miri
@@ -215,11 +215,11 @@ jobs:
           # of test threads.  Crashes happen in random tests, but always at the
           # same location in the sanitizer code:
           # https://github.com/llvm-mirror/compiler-rt/blob/69445f095c22aac2388f939bedebf224a6efcdaf/lib/sanitizer_common/sanitizer_thread_registry.h#L104.
-          # So we run tests with only 1 threads at a time to mitigate this.
+          # So we run tests one at a time to mitigate this.
           THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
         with:
           command: test
-          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -245,7 +245,7 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all -- -D warnings
+          args: --all-features --workspace -- -D warnings
 
   fmt:
     name: Rustfmt
@@ -293,9 +293,11 @@ jobs:
 
       - name: Check links
         uses: actions-rs/cargo@v1
+        env:
+          RUSTRDOCFLAGS: "-D warnings --cfg docsrs"
         with:
-          command: rustdoc
-          args: ${{ env.ALMOST_ALL_FEATURES }} -- -D warnings --cfg docsrs
+          command: doc
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }}
 
   udeps:
     name: Unused Dependencies
@@ -327,4 +329,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: udeps
-          args: --all --all-features --all-targets
+          args: --workspace --all-features --all-targets

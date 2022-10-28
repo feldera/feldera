@@ -1,0 +1,103 @@
+use crate::Catalog;
+use anyhow::Result as AnyResult;
+use once_cell::sync::Lazy;
+use serde_yaml::Value as YamlValue;
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+mod csv;
+
+use self::csv::CsvInputFormat;
+
+/// Static map of supported input formats.
+// TODO: support for registering new formats at runtime in order to allow
+// external crates to implement new formats.
+static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> =
+    Lazy::new(|| BTreeMap::from([("csv", Box::new(CsvInputFormat) as Box<dyn InputFormat>)]));
+
+/// Trait that represents a specific data format.
+///
+/// This is a factory trait that creates parsers for a specific data format.
+pub trait InputFormat: Send + Sync {
+    /// Unique name of the data format.
+    fn name(&self) -> Cow<'static, str>;
+
+    /// Create a new parser for the supported format.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Format-specific configuration.
+    ///
+    /// * `catalog` - Circuit [catalog](`Catalog`).  The newly created parser
+    ///   will use this catalog to bind to one or more input streams of the
+    ///   circuit.  Most input endpoints feed data to one specific input stream.
+    ///   The name of this stream must be specified as an `input_stream` field
+    ///   of `config`.  Some endpoints, however, may carry data that gets
+    ///   demultiplexed to multiple input streams. An example is a database
+    ///   change data capture (CDC) protocol endpoint that receives updates to
+    ///   multiple input tables.  Its associated data format includes metadata
+    ///   about the destination table of each record.  The associated parser
+    ///   uses this metadata to locate corresponding steams in the circuit
+    ///   catalog.
+    fn new_parser(
+        &self,
+        config: &YamlValue,
+        catalog: &Arc<Mutex<Catalog>>,
+    ) -> AnyResult<Box<dyn Parser>>;
+}
+
+impl dyn InputFormat {
+    /// Lookup input format by name.
+    pub fn get_format(name: &str) -> Option<&'static dyn InputFormat> {
+        INPUT_FORMATS.get(name).map(|f| &**f)
+    }
+}
+
+/// Parser that converts a raw byte stream into a stream of database records.
+pub trait Parser: Send {
+    /// Push a chunk of data to the parser.
+    ///
+    /// The parser breaks `data` up into records and pushes these records
+    /// to the circuit using the
+    /// [`DeCollectionHandle`](`crate::DeCollectionHandle`) API.
+    ///
+    /// The parser must not buffer any data, except for any incomplete records
+    /// that cannot be fully parsed until more data or an end-of-file
+    /// notification is received.
+    ///
+    /// Returns the number of records in the parsed representation or an error
+    /// if parsing fails.
+    fn input(&mut self, data: &[u8]) -> AnyResult<usize>;
+
+    /// End-of-input notification.
+    ///
+    /// No more data will be received from the stream.  The parser uses this
+    /// notification to complete or discard any incompletely parsed records.
+    ///
+    /// Returns the number of additional records pushed to the circuit or an
+    /// error if parsing fails.
+    fn eof(&mut self) -> AnyResult<usize>;
+
+    /// Flush input handles.
+    ///
+    /// The parser must call
+    /// [`DeCollectionHandle::flush()`](`crate::DeCollectionHandle::flush`) on
+    /// all input handles modified by this parser.
+    fn flush(&mut self);
+
+    /// Clear input handles.
+    ///
+    /// The parser must call
+    /// [`DeCollectionHandle::clear_buffer()`](`crate::DeCollectionHandle::clear_buffer`)
+    /// on all input handles modified by this parser.
+    fn clear(&mut self);
+
+    /// Create a new parser with the same configuration as `self`.
+    ///
+    /// Used by multithreaded transport endpoints to create multiple parallel
+    /// input pipelines.
+    fn fork(&self) -> Box<dyn Parser>;
+}

@@ -13,8 +13,6 @@ mod condition;
 mod consolidate;
 #[cfg(feature = "with-csv")]
 mod csv;
-#[cfg(feature = "with-serde")]
-mod deinput;
 mod delta0;
 mod differentiate;
 mod distinct;
@@ -40,10 +38,6 @@ pub use self::csv::CsvSource;
 pub use aggregate::{Aggregator, Avg, Fold, Max, Min};
 pub use apply::Apply;
 pub use condition::Condition;
-#[cfg(feature = "with-serde")]
-pub use deinput::{
-    DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
-};
 pub use delta0::Delta0;
 pub use distinct::Distinct;
 pub use filter_map::{FilterKeys, FilterMap, FilterVals, FlatMap, Map, MapKeys};

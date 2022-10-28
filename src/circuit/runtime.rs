@@ -6,7 +6,7 @@ use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
     cell::{Cell, RefCell},
     fmt,
-    fmt::{Debug, Formatter},
+    fmt::{Debug, Display, Error as FmtError, Formatter},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -19,6 +19,17 @@ use typedmap::{TypedDashMap, TypedMapKey};
 pub enum Error {
     WorkerPanic(usize),
     Killed,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        match self {
+            Self::WorkerPanic(worker) => {
+                write!(f, "worker thread '{worker}' panicked")
+            }
+            Self::Killed => f.write_str("circuit killed by the user"),
+        }
+    }
 }
 
 // Thread-local variables used by the termination protocol.

@@ -1,4 +1,4 @@
-use crate::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
+use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
 use erased_serde::{deserialize, Deserializer as ErasedDeserializer, Error as EError};
 use serde::Deserialize;
 
@@ -144,11 +144,11 @@ pub trait DeCollectionHandle: Send {
     ///
     /// The `deserializer` argument wraps a single serialized record whose
     /// type depends on the underlying input stream: streams created by
-    /// [`Circuit::add_input_zset`](`crate::Circuit::add_input_zset`)
-    /// and [`Circuit::add_input_set`](`crate::Circuit::add_input_set`)
+    /// [`Circuit::add_input_zset`](`dbsp::Circuit::add_input_zset`)
+    /// and [`Circuit::add_input_set`](`dbsp::Circuit::add_input_set`)
     /// methods support deletion by value, hence the serialized record must
     /// match the value type of the stream.  Streams created with
-    /// [`Circuit::add_input_map`](`crate::Circuit::add_input_map`)
+    /// [`Circuit::add_input_map`](`dbsp::Circuit::add_input_map`)
     /// support deletion by key, so the serialized record must match the key
     /// type of the stream.
     ///
@@ -173,7 +173,7 @@ pub trait DeCollectionHandle: Send {
     /// Push all buffered updates to the underlying input stream handle.
     ///
     /// Flushed updates will be pushed to the stream during the next call
-    /// to [`DBSPHandle::step`](`crate::DBSPHandle::step`).  `flush` can
+    /// to [`DBSPHandle::step`](`dbsp::DBSPHandle::step`).  `flush` can
     /// be called multiple times between two subsequent `step`s.  Every
     /// `flush` call adds new updates to the previously flushed updates.
     ///
@@ -197,7 +197,7 @@ pub trait DeCollectionHandle: Send {
 }
 
 /// An input handle that wraps a [`CollectionHandle<V, R>`](`CollectionHandle`)
-/// returned by [`Circuit::add_input_zset`](`crate::Circuit::add_input_zset`).
+/// returned by [`Circuit::add_input_zset`](`dbsp::Circuit::add_input_zset`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, +1)` update for the underlying
@@ -265,7 +265,7 @@ where
 }
 
 /// An input handle that wraps a [`UpsertHandle<V, bool>`](`UpsertHandle`)
-/// returned by [`Circuit::add_input_set`](`crate::Circuit::add_input_set`).
+/// returned by [`Circuit::add_input_set`](`dbsp::Circuit::add_input_set`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, true)` update for the underlying
@@ -326,7 +326,7 @@ where
 }
 
 /// An input handle that wraps a [`UpsertHandle<K, Option<V>>`](`UpsertHandle`)
-/// returned by [`Circuit::add_input_map`](`crate::Circuit::add_input_map`).
+/// returned by [`Circuit::add_input_map`](`dbsp::Circuit::add_input_map`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(key_func(v), Some(v))` update for the
@@ -393,19 +393,16 @@ where
 }
 
 #[cfg(test)]
-#[cfg(feature = "with-csv")]
 mod test {
     use crate::{
-        algebra::F32,
-        operator::{
-            DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
-            DeZSetHandle,
-        },
-        trace::Batch,
-        DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
+        DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
+        DeZSetHandle,
     };
     use bincode::{Decode, Encode};
     use csv::{string_record_deserializer, Reader as CsvReader, Writer as CsvWriter};
+    use dbsp::{
+        algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
+    };
     use erased_serde::Deserializer as ErasedDeserializer;
     use serde::{Deserialize, Serialize};
     use serde_json::{de::StrRead, to_string as to_json_string, Deserializer as JsonDeserializer};
