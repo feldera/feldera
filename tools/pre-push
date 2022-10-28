@@ -7,7 +7,7 @@ echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tool
 
 set -ex
 
-cargo fmt -- --check
-cargo clippy -- -D warnings
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
 
-RUSTDOCFLAGS="-Dwarnings" cargo doc
+RUSTDOCFLAGS="-Dwarnings" cargo doc --workspace

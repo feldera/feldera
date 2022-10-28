@@ -8,12 +8,15 @@ license = "MIT OR Apache-2.0"
     all-features = true
     rustdoc-args = ["--cfg", "docsrs"]
 
+[workspace]
+members = ["adapters"]
+
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
 default = ["with-serde"]
 persistence = ["rocksdb", "uuid"]
-with-serde = ["serde", "erased-serde"]
+with-serde = ["serde"]
 with-csv = ["csv"]
 with-nexmark = [
     "arcstr",
@@ -42,8 +45,8 @@ priority-queue = "1.2.1"
 hashbrown = "0.12.0"
 csv = { git = "https://github.com/ryzhyk/rust-csv.git", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
-erased-serde = { version = "0.3.23", optional = true }
 impl-trait-for-tuples = "0.2"
+itertools = "0.10.5"
 textwrap = "0.15.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 arcstr = { version = "1.1.4", optional = true }
@@ -75,8 +78,6 @@ tar = "0.4.38"
 rand = "0.8.5"
 zstd = "0.10.0"
 paste = "1.0.9"
-arcstr = "1.1.4"
-anyhow = "1.0.57"
 rstest = "0.15"
 cached = "0.38.0"
 proptest = "1.0.0"
@@ -94,10 +95,8 @@ time = { version = "0.3.14", features = [
     "serde",
     "serde-human-readable",
 ] }
-itertools = "0.10.5"
 serde_json = "1.0.87"
 serde_with = "2.0.1"
-csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
 
 [profile.bench]
 debug = true

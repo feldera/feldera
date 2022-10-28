@@ -1,6 +1,11 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId};
+use itertools::Itertools;
+use std::{
+    fmt::{Display, Error as FmtError, Formatter},
+    string::ToString,
+};
 
 mod static_scheduler;
 pub use static_scheduler::StaticScheduler;
@@ -12,8 +17,8 @@ pub use dynamic_scheduler::DynamicScheduler;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// `origin` node has more than one strong successors who insist on
-    /// consuming its output by value (`OwnershipPreference::
-    /// STRONGLY_PREFER_OWNED` or higher).
+    /// consuming its output by value
+    /// (`OwnershipPreference::STRONGLY_PREFER_OWNED` or higher).
     OwnershipConflict {
         origin: GlobalNodeId,
         consumers: Vec<GlobalNodeId>,
@@ -23,6 +28,21 @@ pub enum Error {
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        match self {
+            Self::OwnershipConflict { origin, consumers } => {
+                write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
+                       consumers.iter().map(ToString::to_string).format(","))
+            }
+            Self::CyclicCircuit { node_id } => {
+                write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
+            }
+            Self::Killed => f.write_str("circuit has been killed by the user"),
+        }
+    }
 }
 
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
