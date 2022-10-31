@@ -3,6 +3,7 @@ use mimalloc_rust_sys::{
     basic_allocation::{mi_free, mi_malloc, mi_realloc, mi_zalloc},
     extended_functions::{mi_process_info, mi_stats_reset},
 };
+use serde::Serialize;
 use std::alloc::{GlobalAlloc, Layout};
 
 /// `MI_MAX_ALIGN_SIZE` is 16 unless manually overridden:
@@ -10,7 +11,7 @@ use std::alloc::{GlobalAlloc, Layout};
 const MI_MAX_ALIGN_SIZE: usize = 16;
 
 /// Allocation and process statistics
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize)]
 pub struct AllocStats {
     pub elapsed_ms: usize,
     pub user_ms: usize,

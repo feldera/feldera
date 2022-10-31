@@ -26,6 +26,8 @@ use dbsp::{
 use indicatif::{ProgressBar, ProgressStyle};
 use mimalloc::{AllocStats, MiMalloc};
 use num_format::{Locale, ToFormattedString};
+use serde::Serialize;
+use serde_with::{serde_as, DurationSecondsWithFrac};
 use size_of::HumanBytes;
 use std::{
     path::Path,
@@ -37,28 +39,13 @@ use std::{
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
-/// Reported metrics (per query) for the benchmark.
-const RESULT_COLUMNS: [&str; 13] = [
-    "Query",
-    "#Events",
-    "Cores",
-    "Elapsed",
-    "Cores * Elapsed",
-    "Throughput/Cores",
-    "Total Usr CPU",
-    "Total Sys CPU",
-    "Current RSS",
-    "Peak RSS",
-    "Current Commit",
-    "Peak Commit",
-    "Page Faults",
-];
-
 /// Currently just the elapsed time, but later add CPU and Mem.
-#[derive(Default)]
+#[serde_as]
+#[derive(Default, Serialize)]
 struct NexmarkResult {
     name: String,
     num_events: u64,
+    #[serde_as(as = "DurationSecondsWithFrac<String>")]
     elapsed: Duration,
     before_stats: AllocStats,
     after_stats: AllocStats,
@@ -202,6 +189,23 @@ fn coordinate_input_and_steps(
 }
 
 fn create_ascii_table() -> AsciiTable {
+    /// Reported metrics (per query) for the benchmark.
+    const RESULT_COLUMNS: [&str; 13] = [
+        "Query",
+        "#Events",
+        "Cores",
+        "Elapsed",
+        "Cores * Elapsed",
+        "Throughput/Cores",
+        "Total Usr CPU",
+        "Total Sys CPU",
+        "Current RSS",
+        "Peak RSS",
+        "Current Commit",
+        "Peak Commit",
+        "Page Faults",
+    ];
+
     let mut ascii_table = AsciiTable::default();
     ascii_table.set_max_width(200);
 
@@ -289,35 +293,36 @@ fn main() -> Result<()> {
 
     if nexmark_config.output_csv {
         // The file is truncated if it already exists.
-        let mut csv_writer = csv::Writer::from_path(NEXMARK_RESULTS_FILE)?;
-        csv_writer.write_record(RESULT_COLUMNS)?;
+        let mut csv_writer = csv::WriterBuilder::new()
+            // csv says we can't have headers written by `serialize` because we
+            // have two AllocStats struct with the same field names I guess? So
+            // we write the header row manually, see below.
+            .has_headers(false)
+            .from_path(NEXMARK_RESULTS_FILE)?;
+        csv_writer.write_record(&[
+            "name",
+            "num_events",
+            "elapsed",
+            "allocstats_before_elapsed_ms",
+            "allocstats_before_user_ms",
+            "allocstats_before_system_ms",
+            "allocstats_before_current_rss",
+            "allocstats_before_peak_rss",
+            "allocstats_before_current_commit",
+            "allocstats_before_peak_commit",
+            "allocstats_before_page_faults",
+            "allocstats_after_elapsed_ms",
+            "allocstats_after_user_ms",
+            "allocstats_after_system_ms",
+            "allocstats_after_current_rss",
+            "allocstats_after_peak_rss",
+            "allocstats_after_current_commit",
+            "allocstats_after_peak_commit",
+            "allocstats_after_page_faults",
+        ])?;
+
         for result in results.into_iter() {
-            // Converting units to seconds, bytes
-            let (before, after) = (result.before_stats, result.after_stats);
-            csv_writer.write_record(vec![
-                result.name,
-                format!("{}", result.num_events),
-                format!("{cpu_cores}"),
-                format!("{:#.3}", result.elapsed.as_secs()),
-                format!("{:#.3}", (result.elapsed * cpu_cores as u32).as_secs()),
-                format!(
-                    "{0:#.3}",
-                    result.num_events as f32 / result.elapsed.as_secs_f32() / cpu_cores as f32,
-                ),
-                format!(
-                    "{:#.3?}",
-                    Duration::from_millis((after.user_ms - before.user_ms) as u64).as_secs(),
-                ),
-                format!(
-                    "{:#.3?}",
-                    Duration::from_millis((after.system_ms - before.system_ms) as u64).as_secs(),
-                ),
-                format!("{}", after.current_rss),
-                format!("{}", after.peak_rss),
-                format!("{}", after.current_commit),
-                format!("{}", after.peak_commit),
-                format!("{}", after.page_faults - before.page_faults),
-            ])?;
+            csv_writer.serialize(result)?;
         }
     }
 

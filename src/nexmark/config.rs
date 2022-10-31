@@ -11,6 +11,10 @@ pub use crate::nexmark::queries::Query;
 pub const PERSON_ID_LEAD: usize = 10;
 
 /// Filename where to save nexmark results.
+///
+/// # Notes
+/// If you change this string, also adjust `NEXMARK_CSV_FILE` in
+/// `scripts/ci.bash`
 pub const NEXMARK_RESULTS_FILE: &str = "nexmark_results.csv";
 
 /// A Nexmark streaming data source generator
