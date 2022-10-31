@@ -66,6 +66,8 @@ jobs:
 
       - name: Restore cache
         uses: Swatinem/rust-cache@v1
+        # Don't cache on Windows due to low disk space
+        if: runner.os != 'Windows'
 
       # We split building the tests into a separate step
       # so that we can easily distinguish between build

@@ -6,9 +6,16 @@ machine.
 ## Configuration
 
 ```bash
-sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev
+sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev python3-pip
 sudo useradd github-runner -m -s /bin/zsh
 ```
+
+In `$HOME/.zshrc` add python binaries folder to the PATH:
+
+```bash
+export PATH=/home/github-runner/.local/bin:$PATH
+```
+
 
 Add sudo capability for github-runner:
 
