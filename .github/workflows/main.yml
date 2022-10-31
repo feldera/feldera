@@ -195,9 +195,14 @@ jobs:
           RUST_BACKTRACE: 0
         with:
           command: test
-          # leak sanitizer is crashing on exchange tests and is very slow on
-          # many of the proptests.
-          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'exchange' --skip 'proptest' --skip 'persistent' --skip 'deinput'
+          # Leak sanitizer is very slow on many of the proptests.
+          # Additionally, there appears to be a bug in the sanitizer framework
+          # that causes the leak sanitizer to crash randomly with a large number
+          # of test threads.  Crashes happen in random tests, but always at the
+          # same location in the sanitizer code:
+          # https://github.com/llvm-mirror/compiler-rt/blob/69445f095c22aac2388f939bedebf224a6efcdaf/lib/sanitizer_common/sanitizer_thread_registry.h#L104.
+          # So we run tests one at a time to mitigate this. 
+          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' --test-threads=1
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
