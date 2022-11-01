@@ -10,7 +10,21 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: 'never'
+          skip_after_successful_duplicate: 'true'
+          paths_ignore: '["**/README.md", "**/doc/**"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
   bench-skylake-2x:
+    needs: pre_job
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: [self-hosted, skylake-2x]
     steps:
       - uses: actions/checkout@v3.0.2

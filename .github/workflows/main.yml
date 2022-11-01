@@ -14,10 +14,23 @@ env:
   ALMOST_ALL_FEATURES: --features "with-serde with-csv with-nexmark"
 
 jobs:
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: 'never'
+          skip_after_successful_duplicate: 'true'
+          paths_ignore: '["**/README.md", "**/doc/**"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+
   tests:
     name: Tests
-
-    needs: [clippy, fmt]
+    needs: [pre_job, clippy, fmt]
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -126,8 +139,9 @@ jobs:
 
   test-sanitizers:
     name: Sanitizer Tests
+    needs: [pre_job, clippy, fmt]
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
 
-    needs: [clippy, fmt]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
