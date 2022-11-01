@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Usage: $ CI_MACHINE_TYPE='skylake-2x' bash scripts/ci.bash
+# Usage (to test): $ SMOKE=true CI_MACHINE_TYPE='skylake-2x' bash scripts/ci.bash
+# For CI env: Don't set `SMOKE`
 #
-# For testing set: SMOKE=true
 set -ex
 
 if [ -v ${CI_MACHINE_TYPE} ]; then
@@ -11,7 +11,9 @@ if [ -v ${CI_MACHINE_TYPE} ]; then
 fi
 
 # Clean-up old results
+if [ "$SMOKE" = "" ]; then
 rm -rf gh-pages
+fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE}
@@ -30,8 +32,9 @@ cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVEN
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv
 
 # Clone repo
-rm -rf gh-pages
-git clone --depth 1 -b main git@github.com:gz/dbsp-benchmarks.git gh-pages
+if [ ! -d "gh-pages" ]; then
+    git clone --depth 1 -b main git@github.com:gz/dbsp-benchmarks.git gh-pages
+fi
 pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
@@ -51,7 +54,7 @@ fi
 # Copy nexmark results
 mkdir -p ${DEPLOY_DIR}
 mv ${NEXMARK_CSV_FILE} ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
+gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
 
 # Add galen results to repo
 DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
@@ -63,7 +66,7 @@ fi
 # Copy galen results
 mkdir -p ${DEPLOY_DIR}
 mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/${GALEN_CSV_FILE}
+gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE
