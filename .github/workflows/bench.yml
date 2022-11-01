@@ -44,7 +44,7 @@ jobs:
         with:
           issue-number: ${{ steps.findPr.outputs.pr }}
           comment-author: 'github-actions[bot]'
-          body-includes: Nexmark benchmark results
+          body-includes: Benchmark results
 
       - name: Create or update comment
         uses: peter-evans/create-or-update-comment@v2
