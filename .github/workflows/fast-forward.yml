@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted, Linux, skylake-2x]
     if: |
       github.event.issue.pull_request &&
-      github.event.comment.author_association == 'OWNER' &&
+      github.event.comment.author_association == 'COLLABORATOR' &&
       contains(github.event.comment.body, '/fast-forward')
 
     steps:
