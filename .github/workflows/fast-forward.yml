@@ -1,0 +1,40 @@
+name: Fast-forward
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  fast_forward:
+    name: Fast-forward
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request &&
+      github.event.comment.author_association == 'OWNER' && 
+      contains(github.event.comment.body, '/fast-forward')
+
+    steps:
+      - name: Generate access token
+        uses: tibdex/github-app-token@v1
+        id: generate-token
+        with:
+          app_id: ${{ secrets.DBSP_BOT_ID }}
+          private_key: ${{ secrets.DBSP_BOT_PRIVATE_KEY }}
+
+      - name: Fetch repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Checkout pull request
+        run: hub pr checkout ${{ github.event.issue.number }}
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+
+      - name: Fast-forward & push
+        run: |
+          export PR_COMMIT=$(git rev-parse HEAD)
+          git checkout main
+          git merge --ff-only "$PR_COMMIT"
+          git push origin main
