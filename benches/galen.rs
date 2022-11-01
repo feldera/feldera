@@ -52,6 +52,8 @@ type Weight = isize;
 const GALEN_DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data");
 const GALEN_ARCHIVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data.zip");
 const GALEN_GRAPH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data/galen.dot");
+// If you change this, also adjust `scripts/ci.bash`:
+const GALEN_RESULT_CSV: &str = "galen_results.csv";
 
 fn csv_source<T>(file: &str) -> CsvSource<BufReader<File>, T, Weight, OrdZSet<T, Weight>>
 where
@@ -78,6 +80,10 @@ struct Args {
     #[clap(long)]
     workers: usize,
 
+    /// Store results in a csv file in addition to printing on the command-line.
+    #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
+    output_csv: bool,
+
     #[doc(hidden)]
     #[clap(long = "bench", hide = true)]
     __bench: bool,
@@ -91,7 +97,7 @@ fn main() -> Result<()> {
 
     unpack_galen_data()?;
 
-    let hruntime = Runtime::run(args.workers, || {
+    let hruntime = Runtime::run(args.workers, move || {
         let monitor = TraceMonitor::new_panic_on_error();
         let circuit = Circuit::build(|circuit| {
             /*
@@ -290,8 +296,20 @@ fn main() -> Result<()> {
 
         let start = Instant::now();
         circuit.step().unwrap();
+
         if Runtime::worker_index() == 0 {
-            println!("finished in {:#?}", start.elapsed());
+            let elapsed = start.elapsed();
+            println!("finished in {:#?}", elapsed);
+            if args.output_csv {
+                let mut csv_writer = csv::Writer::from_path(GALEN_RESULT_CSV)
+                    .expect("failed to open results csv file for writing");
+                csv_writer
+                    .write_record(&["name", "elapsed"])
+                    .expect("failed to write csv header");
+                csv_writer
+                    .write_record(&["galen", elapsed.as_secs_f64().to_string().as_str()])
+                    .expect("failed to write csv record");
+            }
         }
     });
 
