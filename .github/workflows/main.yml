@@ -22,10 +22,10 @@ jobs:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@master
         with:
-          concurrent_skipping: 'never'
+          concurrent_skipping: 'same_content'
           skip_after_successful_duplicate: 'true'
           paths_ignore: '["**/README.md", "**/doc/**"]'
-          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+          do_not_skip: '["workflow_dispatch", "schedule"]'
 
   tests:
     name: Tests
@@ -209,16 +209,17 @@ jobs:
           ASAN_SYMBOLIZER_PATH: "/usr/bin/llvm-symbolizer-14"
           # Backtraces sometimes mess with sanitizers
           RUST_BACKTRACE: 0
-        with:
-          command: test
           # Leak sanitizer is very slow on many of the proptests.
           # Additionally, there appears to be a bug in the sanitizer framework
           # that causes the leak sanitizer to crash randomly with a large number
           # of test threads.  Crashes happen in random tests, but always at the
           # same location in the sanitizer code:
           # https://github.com/llvm-mirror/compiler-rt/blob/69445f095c22aac2388f939bedebf224a6efcdaf/lib/sanitizer_common/sanitizer_thread_registry.h#L104.
-          # So we run tests with onlyt 3 threads at a time to mitigate this.
-          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' --test-threads=3
+          # So we run tests with only 1 threads at a time to mitigate this.
+          THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
+        with:
+          command: test
+          args: ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
