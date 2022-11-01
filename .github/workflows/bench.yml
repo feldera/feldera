@@ -1,5 +1,7 @@
 name: Benchmarks
 
+# In public repositories peter-evans/create-or-update-comment does not work in
+# pull_request workflows when triggered by forks.
 on: [push, pull_request]
 
 env:
@@ -18,10 +20,10 @@ jobs:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@master
         with:
-          concurrent_skipping: 'never'
+          concurrent_skipping: 'same_content'
           skip_after_successful_duplicate: 'true'
           paths_ignore: '["**/README.md", "**/doc/**"]'
-          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+          do_not_skip: '["workflow_dispatch", "schedule"]'
   bench-skylake-2x:
     needs: pre_job
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
