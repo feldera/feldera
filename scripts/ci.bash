@@ -16,7 +16,8 @@ rm -rf gh-pages
 fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
-rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE}
+LDBC_CSV_FILE='ldbc_results.csv'
+rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE}
 rm -f nexmark_comment.txt
 
 # Run nexmark benchmark
@@ -30,6 +31,12 @@ cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVEN
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv
+
+# Run ldbc benchmarks
+cargo bench --bench ldbc-graphalytics -- bfs graph500-22 --threads 1
+cargo bench --bench ldbc-graphalytics -- bfs datagen-9_1-fb --threads 6
+cargo bench --bench ldbc-graphalytics -- pagerank graph500-22 --threads 1
+cargo bench --bench ldbc-graphalytics -- pagerank datagen-9_1-fb --threads 6
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
@@ -67,6 +74,18 @@ fi
 mkdir -p ${DEPLOY_DIR}
 mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
+
+# Add ldbc results to repo
+DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results for this SHA (the directory exists),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
+# Copy ldbc results
+mkdir -p ${DEPLOY_DIR}
+mv ${LDBC_CSV_FILE} ${DEPLOY_DIR}
+gzip -f ${DEPLOY_DIR}/${LDBC_CSV_FILE}
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

@@ -102,6 +102,7 @@ harness = false
 
 [[bench]]
 name = "ldbc-graphalytics"
+required-features = ["with-csv"]
 harness = false
 
 [[bench]]

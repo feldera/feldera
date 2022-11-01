@@ -30,3 +30,4 @@ benches/ldbc-graphalytics-data/
 nexmark_results.csv
 nexmark_comment.txt
 galen_results.csv
+ldbc_results.csv

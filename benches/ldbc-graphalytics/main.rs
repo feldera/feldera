@@ -30,10 +30,12 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     fmt::Write as _,
+    fs::OpenOptions,
     io::{self, Write},
     mem::{replace, size_of, take},
     num::{NonZeroU8, NonZeroUsize},
     ops::{Add, Neg},
+    path::Path,
     rc::Rc,
     sync::{Arc, Mutex},
     thread,
@@ -42,6 +44,9 @@ use std::{
 
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
+
+// If you change this, also adjust `scripts/ci.bash`:
+const LDBC_RESULT_CSV: &str = "ldbc_results.csv";
 
 enum OutputData {
     None,
@@ -238,6 +243,30 @@ fn main() {
             let kevps = evps / 1000.0;
             println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
 
+            if config.output_csv {
+                let results_file_already_exists = Path::new(LDBC_RESULT_CSV).is_file();
+                // If the file exists, we append another row, this is different
+                // from other benchmarks that can run everything with a single
+                // invocation:
+                let file = OpenOptions::new()
+                    .write(true)
+                    .append(results_file_already_exists)
+                    .create(!results_file_already_exists)
+                    .open(LDBC_RESULT_CSV)
+                    .expect("failed to open results csv file for writing");
+                    let mut csv_writer = csv::Writer::from_writer(file);
+
+                if !results_file_already_exists {
+                    // Write a header row if the file is newly created
+                    csv_writer
+                        .write_record(&["name", "algorithm", "dataset", "threads", "elapsed", "elements", "evps"])
+                        .expect("failed to write csv header");
+                }
+                csv_writer
+                    .write_record(&["ldbc", args.algorithm(), config.dataset.name, threads.get().to_string().as_str(), elapsed.as_secs_f64().to_string().as_str(), elements.to_string().as_str(), evps.to_string().as_str()])
+                    .expect("failed to write csv record");
+            }
+
             let output = replace(&mut *output.borrow_mut(), OutputData::None);
             match output {
                 OutputData::None => println!("no output was produced"),
@@ -428,6 +457,14 @@ impl Args {
             | Self::ListDatasets { config } => config,
         }
     }
+
+    fn algorithm(&self) -> &str {
+        match Self::parse() {
+            Self::Bfs { .. } => "bfs",
+            Self::Pagerank { .. } => "pagerank",
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Parser)]
@@ -448,6 +485,10 @@ struct Config {
     /// The number of iterations to run
     #[clap(long, default_value = "5")]
     iters: NonZeroU8,
+
+    /// Store results in a csv file in addition to printing on the command-line.
+    #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
+    output_csv: bool,
 
     // When running with `cargo bench` the binary gets the `--bench` flag, so we
     // have to parse and ignore it so clap doesn't get angry
