@@ -6,7 +6,7 @@ machine.
 ## Configuration
 
 ```bash
-sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev python3-pip
+sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev python3-pip hub
 sudo useradd github-runner -m -s /bin/zsh
 ```
 
@@ -37,6 +37,9 @@ Other than that, follow the steps listed under Settings -> Actions -> Runner -> 
 ```
 << steps from Web-UI >>
 ```
+
+Ensure the runners have permission to access the benchmarks repo and the source
+code repo in case you want to do fast-forward merging.
 
 ## Starting the runner
 

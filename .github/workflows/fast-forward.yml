@@ -1,3 +1,17 @@
+# Github UI does not support merges that preserve the commit revision of the PR
+# branch (fast forward merging).
+#
+# See also this issue: https://github.com/community/community/discussions/4618
+#
+# Since we store benchmark results from PRs with the revision information from
+# the PR branch, ideally we'd like to preserve the results that we stored for a
+# given revision while developing on the feature branch and still be able to
+# lookup results on a commit id once it lands in main. If the commit IDs change
+# that makes it harder.
+#
+# Hence this script allows to do a fast-forward merge by commenting
+# /fast-forward on the PR. With /fast-forward the commit IDs are preserved
+# between the feature branch and the main branch.
 name: Fast-forward
 
 on:
@@ -7,30 +21,23 @@ on:
 jobs:
   fast_forward:
     name: Fast-forward
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, skylake-2x]
     if: |
       github.event.issue.pull_request &&
-      github.event.comment.author_association == 'OWNER' && 
+      github.event.comment.author_association == 'OWNER' &&
       contains(github.event.comment.body, '/fast-forward')
 
     steps:
-      - name: Generate access token
-        uses: tibdex/github-app-token@v1
-        id: generate-token
-        with:
-          app_id: ${{ secrets.DBSP_BOT_ID }}
-          private_key: ${{ secrets.DBSP_BOT_PRIVATE_KEY }}
 
       - name: Fetch repository
         uses: actions/checkout@v3
         with:
-          token: ${{ steps.generate-token.outputs.token }}
           fetch-depth: 0
 
       - name: Checkout pull request
         run: hub pr checkout ${{ github.event.issue.number }}
         env:
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fast-forward & push
         run: |
