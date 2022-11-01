@@ -30,7 +30,16 @@ jobs:
     runs-on: [self-hosted, skylake-2x]
     steps:
       - uses: actions/checkout@v3.0.2
-
+        # By default a merge commit is checked out. If you look at the SHA that
+        # is checked out, it doesn't match your local commit SHA. Rather it's
+        # the SHA of a merge commit (your branch + base branch). So for
+        # pull_request actions it won't match the commit ID on the branch. This
+        # is confusing for storing benchmark results because the commit ID we
+        # find during `git rev-parse` exists nowhere in the history. Since we
+        # don't do merge commits anyways, we make sure we check out the head
+        # commit (which will exist in the history)s.
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
