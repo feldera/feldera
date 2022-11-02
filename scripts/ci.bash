@@ -38,10 +38,9 @@ cargo bench --bench galen --features="with-csv" -- --workers 10 --csv
 
 # Run ldbc benchmarks
 cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs graph500-22 --threads 1 --csv
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-9_1-fb --threads 6 --csv
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-8_4-fb --threads 6 --csv
 cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank graph500-22 --threads 1 --csv
-# Disabled (takes 40min to run):
-# cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-9_1-fb --threads 6 --csv
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-8_4-fb --threads 6 --csv
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
