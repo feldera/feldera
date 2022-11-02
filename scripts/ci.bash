@@ -15,28 +15,48 @@ if [ "$SMOKE" = "" ]; then
 rm -rf gh-pages
 fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
+NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
+NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
-rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE}
+rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${NEXMARK_PERSISTENCE_CSV_FILE}
 rm -f nexmark_comment.txt
 
 # Run nexmark benchmark
 EVENT_RATE=10000000
 MAX_EVENTS=100000000
+CORES=8
 if [ "$SMOKE" != "" ]; then
   EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
-cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores 8  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
+cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
 
 # Run ldbc benchmarks
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs graph500-22 --threads 1 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-8_4-fb --threads 6 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank graph500-22 --threads 1 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-8_4-fb --threads 6 --csv ${LDBC_CSV_FILE}
+DATASET_SMALL='graph500-22'
+DATASET_MEDIUM='datagen-8_4-fb'
+if [ "$SMOKE" != "" ]; then
+    DATASET_SMALL='wiki-Talk'
+    DATASET_MEDIUM='kgs'
+fi
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+
+# Run nexmark benchmark with persistence
+EVENT_RATE=5000000
+MAX_EVENTS=3000000
+CORES=1
+if [ "$SMOKE" != "" ]; then
+  EVENT_RATE=5000000
+  MAX_EVENTS=100000
+fi
+cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
+cargo bench --bench nexmark --features with-nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
@@ -60,8 +80,10 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 # Copy nexmark results
 mkdir -p ${DEPLOY_DIR}
-mv ${NEXMARK_CSV_FILE} ${DEPLOY_DIR}
+mv ${NEXMARK_CSV_FILE} ${NEXMARK_PERSISTENCE_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
+gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
+gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
 
 # Add galen results to repo
 DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
