@@ -308,8 +308,6 @@ fn main() -> Result<()> {
                     .expect("failed to open results csv file for writing");
                 let mut csv_writer = csv::WriterBuilder::new().from_writer(file);
                 if !results_file_already_exists {
-                    let mut csv_writer = csv::Writer::from_path(&csv_file)
-                        .expect("failed to open results csv file for writing");
                     csv_writer
                         .write_record(&["name", "workers", "elapsed"])
                         .expect("failed to write csv header");
