@@ -254,7 +254,7 @@ fn main() {
                     .create(!results_file_already_exists)
                     .open(LDBC_RESULT_CSV)
                     .expect("failed to open results csv file for writing");
-                    let mut csv_writer = csv::Writer::from_writer(file);
+                let mut csv_writer = csv::Writer::from_writer(file);
 
                 if !results_file_already_exists {
                     // Write a header row if the file is newly created
