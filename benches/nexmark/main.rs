@@ -12,7 +12,7 @@ use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::{
     nexmark::{
-        config::{Config as NexmarkConfig, Query as NexmarkQuery, NEXMARK_RESULTS_FILE},
+        config::{Config as NexmarkConfig, Query as NexmarkQuery},
         model::Event,
         queries::{
             q0, q1, q12, q13, q13_side_input, q14, q15, q16, q17, q18, q19, q2, q20, q21, q22, q3,
@@ -30,6 +30,7 @@ use serde::Serialize;
 use serde_with::{serde_as, DurationSecondsWithFrac};
 use size_of::HumanBytes;
 use std::{
+    fs::OpenOptions,
     path::Path,
     sync::mpsc,
     thread::{self, JoinHandle},
@@ -44,6 +45,7 @@ static ALLOC: MiMalloc = MiMalloc;
 #[derive(Default, Serialize)]
 struct NexmarkResult {
     name: String,
+    num_cores: usize,
     num_events: u64,
     #[serde_as(as = "DurationSecondsWithFrac<String>")]
     elapsed: Duration,
@@ -291,35 +293,41 @@ fn main() -> Result<()> {
         ]
     }));
 
-    if nexmark_config.output_csv {
-        // The file is truncated if it already exists.
+    if let Some(csv_file) = nexmark_config.output_csv {
+        let results_file_already_exists = Path::new(&csv_file).is_file();
+        let file = OpenOptions::new()
+            .write(true)
+            .append(results_file_already_exists)
+            .create(!results_file_already_exists)
+            .open(&csv_file)
+            .expect("failed to open results csv file for writing");
         let mut csv_writer = csv::WriterBuilder::new()
-            // csv says we can't have headers written by `serialize` because we
-            // have two AllocStats struct with the same field names I guess? So
-            // we write the header row manually, see below.
             .has_headers(false)
-            .from_path(NEXMARK_RESULTS_FILE)?;
-        csv_writer.write_record(&[
-            "name",
-            "num_events",
-            "elapsed",
-            "allocstats_before_elapsed_ms",
-            "allocstats_before_user_ms",
-            "allocstats_before_system_ms",
-            "allocstats_before_current_rss",
-            "allocstats_before_peak_rss",
-            "allocstats_before_current_commit",
-            "allocstats_before_peak_commit",
-            "allocstats_before_page_faults",
-            "allocstats_after_elapsed_ms",
-            "allocstats_after_user_ms",
-            "allocstats_after_system_ms",
-            "allocstats_after_current_rss",
-            "allocstats_after_peak_rss",
-            "allocstats_after_current_commit",
-            "allocstats_after_peak_commit",
-            "allocstats_after_page_faults",
-        ])?;
+            .from_writer(file);
+        if !results_file_already_exists {
+            csv_writer.write_record(&[
+                "name",
+                "num_cores",
+                "num_events",
+                "elapsed",
+                "allocstats_before_elapsed_ms",
+                "allocstats_before_user_ms",
+                "allocstats_before_system_ms",
+                "allocstats_before_current_rss",
+                "allocstats_before_peak_rss",
+                "allocstats_before_current_commit",
+                "allocstats_before_peak_commit",
+                "allocstats_before_page_faults",
+                "allocstats_after_elapsed_ms",
+                "allocstats_after_user_ms",
+                "allocstats_after_system_ms",
+                "allocstats_after_current_rss",
+                "allocstats_after_peak_rss",
+                "allocstats_after_current_commit",
+                "allocstats_after_peak_commit",
+                "allocstats_after_page_faults",
+            ])?;
+        }
 
         for result in results.into_iter() {
             csv_writer.serialize(result)?;

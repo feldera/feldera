@@ -45,9 +45,6 @@ use std::{
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
-// If you change this, also adjust `scripts/ci.bash`:
-const LDBC_RESULT_CSV: &str = "ldbc_results.csv";
-
 enum OutputData {
     None,
     Bfs(DistanceSet<i8>),
@@ -63,7 +60,7 @@ fn main() {
         .unwrap_or_else(|| NonZeroUsize::new(8).unwrap());
     let dataset = config.dataset;
 
-    match args {
+    match &args {
         Args::Bfs { .. } => println!(
             "running breadth-first search with {threads} thread{}",
             if threads.get() == 1 { "" } else { "s" },
@@ -153,6 +150,7 @@ fn main() {
         let output = Rc::new(RefCell::new(OutputData::None));
 
         let output_inner = output.clone();
+        let args_for_circuit = args.clone();
         let root = Circuit::build(move |circuit| {
             if config.profile && is_leader {
                 attach_profiling(dataset, circuit);
@@ -174,7 +172,7 @@ fn main() {
             })
             .mark_sharded();
 
-            match args {
+            match args_for_circuit {
                 Args::Bfs { .. } => {
                     bfs::bfs(roots, vertices, edges)
                         .gather(0)
@@ -243,8 +241,8 @@ fn main() {
             let kevps = evps / 1000.0;
             println!("achieved {kevps:.02} kEVPS ({evps:.02} EVPS)");
 
-            if config.output_csv {
-                let results_file_already_exists = Path::new(LDBC_RESULT_CSV).is_file();
+            if let Some(csv_file) = config.output_csv {
+                let results_file_already_exists = Path::new(&csv_file).is_file();
                 // If the file exists, we append another row, this is different
                 // from other benchmarks that can run everything with a single
                 // invocation:
@@ -252,7 +250,7 @@ fn main() {
                     .write(true)
                     .append(results_file_already_exists)
                     .create(!results_file_already_exists)
-                    .open(LDBC_RESULT_CSV)
+                    .open(&csv_file)
                     .expect("failed to open results csv file for writing");
                 let mut csv_writer = csv::Writer::from_writer(file);
 
@@ -465,7 +463,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
     });
 }
 
-#[derive(Debug, Clone, Copy, Parser)]
+#[derive(Debug, Clone, Parser)]
 enum Args {
     /// Run the breadth-first search benchmark
     Bfs {
@@ -493,13 +491,14 @@ enum Args {
 }
 
 impl Args {
-    pub(crate) fn config(self) -> Config {
+    pub(crate) fn config(&self) -> Config {
         match self {
             Self::Bfs { config }
             | Self::Pagerank { config }
             | Self::ListDownloaded { config }
             | Self::ListDatasets { config } => config,
         }
+        .clone()
     }
 
     fn algorithm(&self) -> &str {
@@ -511,7 +510,7 @@ impl Args {
     }
 }
 
-#[derive(Debug, Clone, Copy, Parser)]
+#[derive(Debug, Clone, Parser)]
 struct Config {
     /// Select the dataset to benchmark
     #[clap(value_enum, default_value = "example-directed")]
@@ -532,7 +531,7 @@ struct Config {
 
     /// Store results in a csv file in addition to printing on the command-line.
     #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
-    output_csv: bool,
+    output_csv: Option<String>,
 
     // When running with `cargo bench` the binary gets the `--bench` flag, so we
     // have to parse and ignore it so clap doesn't get angry
