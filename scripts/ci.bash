@@ -15,6 +15,10 @@ if [ "$SMOKE" = "" ]; then
 rm -rf gh-pages
 fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
+# For comparing DRAM / persistence
+NEXMARK_DRAM_CSV_FILE='nexmark_dram_results.csv'
+NEXMARK_PERSISTENT_CSV_FILE='nexmark_persistent_results.csv'
+
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
 rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE}
@@ -36,7 +40,8 @@ cargo bench --bench galen --features="with-csv" -- --workers 10 --csv
 cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs graph500-22 --threads 1 --csv
 cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-9_1-fb --threads 6 --csv
 cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank graph500-22 --threads 1 --csv
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-9_1-fb --threads 6 --csv
+# Disabled (takes 40min to run):
+# cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-9_1-fb --threads 6 --csv
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
