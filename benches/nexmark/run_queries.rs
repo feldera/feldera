@@ -50,6 +50,7 @@ macro_rules! run_queries {
         // Return the user/system CPU overhead from the generator/input thread.
         NexmarkResult {
             name: stringify!($query).to_owned(),
+            num_cores,
             before_stats,
             after_stats,
             elapsed,

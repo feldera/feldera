@@ -12,7 +12,7 @@ use dbsp::{
 };
 use mimalloc::MiMalloc;
 use std::{
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::BufReader,
     iter::once,
     path::Path,
@@ -52,8 +52,6 @@ type Weight = isize;
 const GALEN_DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data");
 const GALEN_ARCHIVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data.zip");
 const GALEN_GRAPH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data/galen.dot");
-// If you change this, also adjust `scripts/ci.bash`:
-const GALEN_RESULT_CSV: &str = "galen_results.csv";
 
 fn csv_source<T>(file: &str) -> CsvSource<BufReader<File>, T, Weight, OrdZSet<T, Weight>>
 where
@@ -75,14 +73,14 @@ where
     CsvSource::from_csv_reader(reader)
 }
 
-#[derive(Debug, Clone, Copy, Parser)]
+#[derive(Debug, Clone, Parser)]
 struct Args {
     #[clap(long)]
     workers: usize,
 
     /// Store results in a csv file in addition to printing on the command-line.
     #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
-    output_csv: bool,
+    output_csv: Option<String>,
 
     #[doc(hidden)]
     #[clap(long = "bench", hide = true)]
@@ -300,14 +298,28 @@ fn main() -> Result<()> {
         if Runtime::worker_index() == 0 {
             let elapsed = start.elapsed();
             println!("finished in {:#?}", elapsed);
-            if args.output_csv {
-                let mut csv_writer = csv::Writer::from_path(GALEN_RESULT_CSV)
+            if let Some(csv_file) = args.output_csv {
+                let results_file_already_exists = Path::new(&csv_file).is_file();
+                let file = OpenOptions::new()
+                    .write(true)
+                    .append(results_file_already_exists)
+                    .create(!results_file_already_exists)
+                    .open(&csv_file)
                     .expect("failed to open results csv file for writing");
+                let mut csv_writer = csv::WriterBuilder::new().from_writer(file);
+                if !results_file_already_exists {
+                    let mut csv_writer = csv::Writer::from_path(&csv_file)
+                        .expect("failed to open results csv file for writing");
+                    csv_writer
+                        .write_record(&["name", "workers", "elapsed"])
+                        .expect("failed to write csv header");
+                }
                 csv_writer
-                    .write_record(&["name", "elapsed"])
-                    .expect("failed to write csv header");
-                csv_writer
-                    .write_record(&["galen", elapsed.as_secs_f64().to_string().as_str()])
+                    .write_record(&[
+                        "galen",
+                        args.workers.to_string().as_str(),
+                        elapsed.as_secs_f64().to_string().as_str(),
+                    ])
                     .expect("failed to write csv record");
             }
         }

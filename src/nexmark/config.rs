@@ -10,13 +10,6 @@ pub use crate::nexmark::queries::Query;
 // Number of yet-to-be-created people and auction ids allowed.
 pub const PERSON_ID_LEAD: usize = 10;
 
-/// Filename where to save nexmark results.
-///
-/// # Notes
-/// If you change this string, also adjust `NEXMARK_CSV_FILE` in
-/// `scripts/ci.bash`
-pub const NEXMARK_RESULTS_FILE: &str = "nexmark_results.csv";
-
 /// A Nexmark streaming data source generator
 ///
 /// Based on the Java/Flink generator found in the [Nexmark repository](https://github.com/nexmark/nexmark).
@@ -117,7 +110,7 @@ pub struct Config {
 
     /// Store results in a csv file in addition to printing on the command-line.
     #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
-    pub output_csv: bool,
+    pub output_csv: Option<String>,
 }
 
 /// Implementation of config methods based on the Java implementation at
@@ -152,7 +145,7 @@ impl Default for Config {
             query: Vec::new(),
             source_buffer_size: 10_000,
             input_batch_size: 40_000,
-            output_csv: false,
+            output_csv: None,
         }
     }
 }

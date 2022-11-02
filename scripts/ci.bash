@@ -15,10 +15,6 @@ if [ "$SMOKE" = "" ]; then
 rm -rf gh-pages
 fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
-# For comparing DRAM / persistence
-NEXMARK_DRAM_CSV_FILE='nexmark_dram_results.csv'
-NEXMARK_PERSISTENT_CSV_FILE='nexmark_persistent_results.csv'
-
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
 rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE}
@@ -31,16 +27,16 @@ if [ "$SMOKE" != "" ]; then
   EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
-cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores 8  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv
+cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores 8  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
 
 # Run galen benchmark
-cargo bench --bench galen --features="with-csv" -- --workers 10 --csv
+cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
 
 # Run ldbc benchmarks
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs graph500-22 --threads 1 --csv
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-8_4-fb --threads 6 --csv
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank graph500-22 --threads 1 --csv
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-8_4-fb --threads 6 --csv
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs graph500-22 --threads 1 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs datagen-8_4-fb --threads 6 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank graph500-22 --threads 1 --csv ${LDBC_CSV_FILE}
+cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank datagen-8_4-fb --threads 6 --csv ${LDBC_CSV_FILE}
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
