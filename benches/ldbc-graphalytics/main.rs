@@ -258,13 +258,57 @@ fn main() {
 
                 if !results_file_already_exists {
                     // Write a header row if the file is newly created
-                    csv_writer
-                        .write_record(&["name", "algorithm", "dataset", "threads", "elapsed", "elements", "evps"])
-                        .expect("failed to write csv header");
+                    csv_writer.write_record(&[
+                        "name",
+                        "algorithm",
+                        "dataset",
+                        "threads",
+                        "elapsed",
+                        "elements",
+                        "evps",
+                        "allocstats_before_elapsed_ms",
+                        "allocstats_before_user_ms",
+                        "allocstats_before_system_ms",
+                        "allocstats_before_current_rss",
+                        "allocstats_before_peak_rss",
+                        "allocstats_before_current_commit",
+                        "allocstats_before_peak_commit",
+                        "allocstats_before_page_faults",
+                        "allocstats_after_elapsed_ms",
+                        "allocstats_after_user_ms",
+                        "allocstats_after_system_ms",
+                        "allocstats_after_current_rss",
+                        "allocstats_after_peak_rss",
+                        "allocstats_after_current_commit",
+                        "allocstats_after_peak_commit",
+                        "allocstats_after_page_faults"
+                    ]).expect("failed to write csv header");
                 }
-                csv_writer
-                    .write_record(&["ldbc", args.algorithm(), config.dataset.name, threads.get().to_string().as_str(), elapsed.as_secs_f64().to_string().as_str(), elements.to_string().as_str(), evps.to_string().as_str()])
-                    .expect("failed to write csv record");
+                csv_writer.write_record(&[
+                    "ldbc",
+                    args.algorithm(),
+                    config.dataset.name,
+                    threads.get().to_string().as_str(),
+                    elapsed.as_secs_f64().to_string().as_str(),
+                    elements.to_string().as_str(),
+                    evps.to_string().as_str(),
+                    init_stats.elapsed_ms.to_string().as_str(),
+                    init_stats.user_ms.to_string().as_str(),
+                    init_stats.system_ms.to_string().as_str(),
+                    init_stats.current_rss.to_string().as_str(),
+                    init_stats.peak_rss.to_string().as_str(),
+                    init_stats.current_commit.to_string().as_str(),
+                    init_stats.peak_commit.to_string().as_str(),
+                    init_stats.page_faults.to_string().as_str(),
+                    stats.elapsed_ms.to_string().as_str(),
+                    stats.user_ms.to_string().as_str(),
+                    stats.system_ms.to_string().as_str(),
+                    stats.current_rss.to_string().as_str(),
+                    stats.peak_rss.to_string().as_str(),
+                    stats.current_commit.to_string().as_str(),
+                    stats.peak_commit.to_string().as_str(),
+                    stats.page_faults.to_string().as_str(),
+                ]).expect("failed to write csv record");
             }
 
             let output = replace(&mut *output.borrow_mut(), OutputData::None);
