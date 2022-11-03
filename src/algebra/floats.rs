@@ -479,12 +479,12 @@ mod tests {
         ]
         .into_iter()
         {
-            let _length =
-                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
-                    .unwrap();
-            let decoded: F64 = bincode::decode_from_slice(&slice, bincode::config::standard())
-                .unwrap()
-                .0;
+            let length =
+                bincode::encode_into_slice(input, &mut slice, bincode::config::standard()).unwrap();
+            let decoded: F64 =
+                bincode::decode_from_slice(&slice[..length], bincode::config::standard())
+                    .unwrap()
+                    .0;
             assert_eq!(decoded, input);
         }
     }
@@ -503,12 +503,12 @@ mod tests {
         ]
         .into_iter()
         {
-            let _length =
-                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
-                    .unwrap();
-            let decoded: F32 = bincode::decode_from_slice(&slice, bincode::config::standard())
-                .unwrap()
-                .0;
+            let length =
+                bincode::encode_into_slice(input, &mut slice, bincode::config::standard()).unwrap();
+            let decoded: F32 =
+                bincode::decode_from_slice(&slice[..length], bincode::config::standard())
+                    .unwrap()
+                    .0;
             assert_eq!(decoded, input);
         }
     }

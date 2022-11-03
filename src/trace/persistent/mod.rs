@@ -3,16 +3,18 @@
 
 use std::cmp::Ordering;
 
-use bincode::config::{BigEndian, Fixint};
-use bincode::enc::write::Writer;
-use bincode::error::EncodeError;
-use bincode::{decode_from_slice, Decode, Encode};
+use bincode::{
+    config::{BigEndian, Fixint},
+    decode_from_slice,
+    enc::write::Writer,
+    error::EncodeError,
+    Decode, Encode,
+};
 use once_cell::sync::Lazy;
 use rocksdb::{Cache, DBCompressionType, Options, DB};
 use uuid::Uuid;
 
 mod cursor;
-#[cfg(test)]
 mod tests;
 mod trace;
 

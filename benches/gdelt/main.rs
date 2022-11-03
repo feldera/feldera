@@ -69,7 +69,14 @@ fn main() {
         .map(NonZeroUsize::get)
         .unwrap_or(1);
     let batches = args.batches.get();
-    let person = ArcStr::from(args.person);
+    let person = ArcStr::from(args.person.trim().to_lowercase());
+
+    if let Some((start, end)) = args.date_start.zip(args.date_end) {
+        if start > end {
+            eprintln!("error: `--date-start` must be less than than or equal to `--date-end` ({start} > {end})");
+            return;
+        }
+    }
 
     let (mut handle, mut entries) = Runtime::init_circuit(threads, move |circuit| {
         let (events, handle) = circuit.add_input_zset();

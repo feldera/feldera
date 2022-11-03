@@ -2314,9 +2314,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b6cf33b5dcf8bba2e7b0af3987126dfb5099544412d98cade4f797b21c741b3"
 dependencies = [
  "arcstr",
+ "hashbrown",
  "rust_decimal",
  "size-of-derive",
  "time",
+ "xxhash-rust",
 ]
 
 [[package]]

@@ -18,9 +18,12 @@ pub mod ord;
 pub mod persistent;
 pub mod rc_batch;
 pub mod spine_fueled;
-pub mod unordered;
 
 pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
+#[cfg(feature = "persistence")]
+pub use persistent::PersistentTrace as Spine;
+#[cfg(not(feature = "persistence"))]
+pub use spine_fueled::Spine;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
@@ -30,12 +33,7 @@ use crate::{
 };
 #[cfg(feature = "persistence")]
 use bincode::{Decode, Encode};
-pub use cursor::{Consumer, Cursor, ValueConsumer};
-#[cfg(feature = "persistence")]
-pub use persistent::PersistentTrace as Spine;
 use size_of::SizeOf;
-#[cfg(not(feature = "persistence"))]
-pub use spine_fueled::Spine;
 use std::{fmt::Debug, hash::Hash};
 
 /// Trait for data stored in batches.

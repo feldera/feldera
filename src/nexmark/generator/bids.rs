@@ -118,7 +118,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 fn get_base_url<R: Rng>(rng: &mut R) -> ArcStr {
     arcstr::format!(
         "https://www.nexmark.com/{}/item.htm?query=1",
-        next_string(rng, BASE_URL_PATH_LENGTH)
+        next_string(rng, BASE_URL_PATH_LENGTH),
     )
 }
 
@@ -153,12 +153,10 @@ pub mod tests {
                 auction: expected_auction_id,
                 bidder: expected_bidder_id,
                 price: 100,
-                channel: "Google".to_string().into(),
-                url: "https://www.nexmark.com/googl/item.htm?query=1"
-                    .to_string()
-                    .into(),
+                channel: arcstr::literal!("Google"),
+                url: arcstr::literal!("https://www.nexmark.com/googl/item.htm?query=1"),
                 date_time: 1_000_000_000_000,
-                extra: (0..expected_size).map(|_| "A").collect::<String>().into(),
+                extra: "A".repeat(expected_size).into(),
             },
             bid
         );
@@ -189,8 +187,13 @@ pub mod tests {
     #[test]
     fn test_get_new_channel_instance_cached() {
         let mut ng = make_test_generator();
-        ng.bid_channel_cache
-            .cache_set(1234, ("Google".into(), "https://google.example.com".into()));
+        ng.bid_channel_cache.cache_set(
+            1234,
+            (
+                arcstr::literal!("Google"),
+                arcstr::literal!("https://google.example.com"),
+            ),
+        );
 
         let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
 

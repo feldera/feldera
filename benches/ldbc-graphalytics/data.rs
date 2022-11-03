@@ -6,8 +6,10 @@ use dbsp::{
     Circuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
+use reqwest::header::CONTENT_LENGTH;
 use std::{
     cmp::Reverse,
+    collections::HashMap,
     ffi::OsStr,
     fmt::{self, Debug},
     fs::{self, File, OpenOptions},
@@ -115,8 +117,37 @@ pub(crate) fn list_downloaded_benchmarks() {
 }
 
 pub(crate) fn list_datasets() {
+    let cache_file = Path::new(DATA_PATH).join("dataset_cache.json");
+    let dataset_sizes = if cache_file.exists() {
+        serde_json::from_reader(File::open(&cache_file).unwrap()).unwrap_or_default()
+    } else {
+        let mut sizes = HashMap::with_capacity(DataSet::DATASETS.len());
+
+        // TODO: Realistically we should be doing all of these requests in parallel but
+        // I don't feel like adding tokio as a direct dependency at the moment (it's
+        // already a transitive dependency so it doesn't *really* matter, I'm just lazy)
+        let client = reqwest::blocking::Client::new();
+        for dataset in DataSet::DATASETS {
+            if let Ok(response) = client.head(dataset.url).send() {
+                if let Some(length) = response.headers()[CONTENT_LENGTH]
+                    .to_str()
+                    .ok()
+                    .and_then(|len| len.parse::<u64>().ok())
+                {
+                    sizes.insert(dataset.name.to_owned(), length);
+                }
+            }
+        }
+
+        fs::create_dir_all(DATA_PATH).unwrap();
+        let cache_file = BufWriter::new(File::create(&cache_file).unwrap());
+        serde_json::to_writer_pretty(cache_file, &sizes).unwrap();
+
+        sizes
+    };
+
     let mut datasets = DataSet::DATASETS.to_vec();
-    datasets.sort_by_key(|dataset| dataset.scale);
+    datasets.sort_by_key(|dataset| (dataset.scale, dataset_sizes.get(dataset.name).copied()));
 
     let longest_name = datasets
         .iter()
@@ -126,12 +157,18 @@ pub(crate) fn list_datasets() {
 
     let mut stdout = io::stdout().lock();
     for dataset in datasets {
-        writeln!(
+        write!(
             stdout,
-            "{:<longest_name$} scale: {:?}",
+            "{:<longest_name$} scale: {:?} archive size: ",
             dataset.name, dataset.scale,
         )
         .unwrap();
+
+        if let Some(&length) = dataset_sizes.get(dataset.name) {
+            writeln!(stdout, "{}", HumanBytes(length)).unwrap();
+        } else {
+            writeln!(stdout, "???").unwrap();
+        }
     }
 
     stdout.flush().unwrap();
@@ -340,47 +377,6 @@ impl DataSet {
 
         Ok(data_path)
     }
-
-    // Urls are hosted with faster download speeds here:
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/cit-Patents.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/com-friendster.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_5-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_6-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_7-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_8-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-7_9-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_0-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_1-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_2-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_3-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_4-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_5-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_6-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_7-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_8-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-8_9-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_0-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_1-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_2-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_3-zf.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-9_4-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-sf10k-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/datagen-sf3k-fb.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/dota-league.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/example-directed.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/example-undirected.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-22.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-23.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-24.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-25.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-26.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-27.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-28.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-29.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/graph500-30.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/kgs.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/twitter_mpi.tar.zst
-    // https://r2-public-worker.ldbc.workers.dev/graphalytics/wiki-Talk.tar.zst
 }
 
 macro_rules! datasets {
@@ -429,7 +425,7 @@ datasets! {
     DATAGEN_9_4 = "datagen-9_4-fb" @ XL,
 
     DATAGEN_SF3K = "datagen-sf3k-fb" @ XL,
-    // There's also datagen-sf10k-fb but it requires downloading 2 files
+    DATAGEN_SF10K = "datagen-sf10k-fb" @ XL,
 
     GRAPH_500_22 = "graph500-22" @ S,
     GRAPH_500_23 = "graph500-23" @ M,
@@ -439,7 +435,7 @@ datasets! {
     GRAPH_500_27 = "graph500-27" @ XL,
     GRAPH_500_28 = "graph500-28" @ XXL,
     GRAPH_500_29 = "graph500-29" @ XXL,
-    // There's also graph500-30 but it's massive and requires downloading 4 files
+    GRAPH_500_30 = "graph500-30" @ XXL,
 
     KGS = "kgs" @ XS,
     WIKI_TALK = "wiki-Talk" @ XXS,
