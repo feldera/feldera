@@ -173,9 +173,7 @@ pub trait UnorderedCursor<'a, K, T, V, R> {
     /// is more convenient (and potentially more efficient) than using
     /// [`Self::map_times`] to iterate over a single value.
     ///
-    /// # Panics
-    ///
-    /// Panics if not `self.key_valid() && self.val_valid()`.
+    /// If the current key and value are not valid, behavior is unspecified
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>;

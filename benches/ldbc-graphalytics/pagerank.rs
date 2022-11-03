@@ -155,7 +155,7 @@ pub fn pagerank(
                 weights_var
                     .stream()
                     .apply2(&initial_weights, |weights, initial_weights| {
-                        if initial_weights.len() != 0 {
+                        if initial_weights.is_empty() {
                             initial_weights.clone()
                         } else {
                             weights.clone()

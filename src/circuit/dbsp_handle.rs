@@ -50,7 +50,7 @@ impl Runtime {
             let worker_index = Runtime::worker_index();
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
-            // or exits, its channel will become disonnected.
+            // or exits, its channel will become disconnected.
             let init_sender = init_senders.into_iter().nth(worker_index).unwrap();
             let status_sender = status_senders.into_iter().nth(worker_index).unwrap();
             let command_receiver = command_receivers.into_iter().nth(worker_index).unwrap();
@@ -84,7 +84,7 @@ impl Runtime {
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
-                        };
+                        }
                     }
                     Ok(Command::EnableProfiler) => {
                         profiler.enable_cpu_profiler();

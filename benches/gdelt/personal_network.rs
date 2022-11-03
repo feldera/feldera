@@ -52,23 +52,31 @@ use std::{
     cmp::min,
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::Range,
     panic::Location,
 };
 use xxhash_rust::xxh3::Xxh3Builder;
 
 pub fn personal_network(
     target: ArcStr,
-    date_range: Option<Range<u64>>,
+    date_start: Option<u64>,
+    date_end: Option<u64>,
     events: &Stream<Circuit<()>, OrdZSet<PersonalNetworkGkgEntry, i32>>,
 ) -> Stream<Circuit<()>, OrdZSet<(ArcStr, ArcStr), i32>> {
     // Filter out events outside of our date range and that don't mention our target
-    let relevant_events = if let Some(date_range) = date_range {
-        events
-            .filter(move |entry| date_range.contains(&entry.date) && entry.people.contains(&target))
-    } else {
-        events.filter(move |entry| entry.people.contains(&target))
+    let events_filter: Box<dyn Fn(&PersonalNetworkGkgEntry) -> bool> = match (date_start, date_end)
+    {
+        (None, None) => Box::new(move |entry| entry.people.contains(&target)),
+        (Some(start), None) => {
+            Box::new(move |entry| entry.date >= start && entry.people.contains(&target))
+        }
+        (None, Some(end)) => {
+            Box::new(move |entry| entry.date <= end && entry.people.contains(&target))
+        }
+        (Some(start), Some(end)) => Box::new(move |entry| {
+            entry.date >= start && entry.date <= end && entry.people.contains(&target)
+        }),
     };
+    let relevant_events = events.filter(events_filter);
 
     let forward_events =
         relevant_events.index_with(|entry| (entry.id.clone(), entry.people.clone()));
