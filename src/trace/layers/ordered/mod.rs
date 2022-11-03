@@ -8,7 +8,7 @@ pub use consumer::{OrderedLayerConsumer, OrderedLayerValues};
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::layers::{
-        advance, column_leaf::OrderedColumnLeaf, Builder, Cursor, MergeBuilder, OrdOffset, Trie,
+        advance, column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, OrdOffset, Trie,
         TupleBuilder,
     },
     utils::{assume, cast_uninit_vec},
@@ -76,12 +76,12 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     }
 }
 
-impl<K, V, R, O> OrderedLayer<K, OrderedColumnLeaf<V, R>, O> {
-    /// Turns the current `OrderedLayer<K, OrderedColumnLeaf<V, R>, O>` into a
+impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
+    /// Turns the current `OrderedLayer<K, ColumnLayer<V, R>, O>` into a
     /// layer of [`MaybeUninit`] values
     fn into_uninit(
         self,
-    ) -> OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O> {
+    ) -> OrderedLayer<MaybeUninit<K>, ColumnLayer<MaybeUninit<V>, MaybeUninit<R>>, O> {
         unsafe {
             self.assume_invariants();
             self.vals.assume_invariants();

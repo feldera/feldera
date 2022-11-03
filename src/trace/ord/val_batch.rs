@@ -3,7 +3,7 @@ use crate::{
     time::{Antichain, AntichainRef},
     trace::{
         layers::{
-            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
+            column_layer::{ColumnLayer, ColumnLayerBuilder},
             ordered::{OrderedBuilder, OrderedCursor, OrderedLayer},
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
             TupleBuilder,
@@ -20,7 +20,7 @@ use std::{
 };
 
 pub type OrdValBatchLayer<K, V, T, R, O> =
-    OrderedLayer<K, OrderedLayer<V, OrderedColumnLeaf<T, R>, O>, O>;
+    OrderedLayer<K, OrderedLayer<V, ColumnLayer<T, R>, O>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
@@ -394,7 +394,7 @@ where
     R: MonoidValue,
     O: OrdOffset,
 {
-    cursor: OrderedCursor<'s, K, O, OrderedLayer<V, OrderedColumnLeaf<T, R>, O>>,
+    cursor: OrderedCursor<'s, K, O, OrderedLayer<V, ColumnLayer<T, R>, O>>,
 }
 
 impl<'s, K, V, T, R, O> Cursor<'s, K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
@@ -493,7 +493,7 @@ where
 }
 
 type RawOrdValBuilder<K, V, T, R, O> =
-    OrderedBuilder<K, OrderedBuilder<V, OrderedColumnLeafBuilder<T, R>, O>, O>;
+    OrderedBuilder<K, OrderedBuilder<V, ColumnLayerBuilder<T, R>, O>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]

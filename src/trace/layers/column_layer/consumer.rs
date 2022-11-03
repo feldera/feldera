@@ -1,6 +1,6 @@
 use crate::{
     trace::{
-        layers::{advance, column_leaf::OrderedColumnLeaf},
+        layers::{advance, column_layer::ColumnLayer},
         Consumer, ValueConsumer,
     },
     utils::cursor_position_oob,
@@ -12,16 +12,16 @@ use std::mem::MaybeUninit;
 // TODO: Fuzz for panic and drop safety
 
 #[derive(Debug)]
-pub struct ColumnLeafConsumer<K, R> {
+pub struct ColumnLayerConsumer<K, R> {
     // Invariant: `storage.len <= self.position`, if `storage.len == self.position` the cursor is
     // exhausted
     position: usize,
     // Invariant: `storage.keys[position..]` and `storage.diffs[position..]` are all valid
-    storage: OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>>,
+    storage: ColumnLayer<MaybeUninit<K>, MaybeUninit<R>>,
 }
 
-impl<K, R> Consumer<K, (), R, ()> for ColumnLeafConsumer<K, R> {
-    type ValueConsumer<'a> = ColumnLeafValues<'a, K, R>
+impl<K, R> Consumer<K, (), R, ()> for ColumnLayerConsumer<K, R> {
+    type ValueConsumer<'a> = ColumnLayerValues<'a, K, R>
     where
         Self: 'a;
 
@@ -50,7 +50,7 @@ impl<K, R> Consumer<K, (), R, ()> for ColumnLeafConsumer<K, R> {
         // Copy out the key and diff
         let key = unsafe { self.storage.keys[idx].assume_init_read() };
 
-        (key, ColumnLeafValues::new(self))
+        (key, ColumnLayerValues::new(self))
     }
 
     fn seek_key(&mut self, key: &K)
@@ -75,9 +75,9 @@ impl<K, R> Consumer<K, (), R, ()> for ColumnLeafConsumer<K, R> {
     }
 }
 
-impl<K, R> From<OrderedColumnLeaf<K, R>> for ColumnLeafConsumer<K, R> {
+impl<K, R> From<ColumnLayer<K, R>> for ColumnLayerConsumer<K, R> {
     #[inline]
-    fn from(leaf: OrderedColumnLeaf<K, R>) -> Self {
+    fn from(leaf: ColumnLayer<K, R>) -> Self {
         Self {
             position: 0,
             storage: leaf.into_uninit(),
@@ -85,7 +85,7 @@ impl<K, R> From<OrderedColumnLeaf<K, R>> for ColumnLeafConsumer<K, R> {
     }
 }
 
-impl<K, R> Drop for ColumnLeafConsumer<K, R> {
+impl<K, R> Drop for ColumnLayerConsumer<K, R> {
     fn drop(&mut self) {
         // Drop all remaining elements
         unsafe { self.storage.drop_range(self.position..) }
@@ -93,14 +93,14 @@ impl<K, R> Drop for ColumnLeafConsumer<K, R> {
 }
 
 #[derive(Debug)]
-pub struct ColumnLeafValues<'a, K, R> {
+pub struct ColumnLayerValues<'a, K, R> {
     done: bool,
-    consumer: &'a mut ColumnLeafConsumer<K, R>,
+    consumer: &'a mut ColumnLayerConsumer<K, R>,
 }
 
-impl<'a, K, R> ColumnLeafValues<'a, K, R> {
+impl<'a, K, R> ColumnLayerValues<'a, K, R> {
     #[inline]
-    fn new(consumer: &'a mut ColumnLeafConsumer<K, R>) -> Self {
+    fn new(consumer: &'a mut ColumnLayerConsumer<K, R>) -> Self {
         Self {
             done: false,
             consumer,
@@ -108,7 +108,7 @@ impl<'a, K, R> ColumnLeafValues<'a, K, R> {
     }
 }
 
-impl<'a, K, R> ValueConsumer<'a, (), R, ()> for ColumnLeafValues<'a, K, R> {
+impl<'a, K, R> ValueConsumer<'a, (), R, ()> for ColumnLayerValues<'a, K, R> {
     fn value_valid(&self) -> bool {
         !self.done
     }
@@ -131,7 +131,7 @@ impl<'a, K, R> ValueConsumer<'a, (), R, ()> for ColumnLeafValues<'a, K, R> {
     }
 }
 
-impl<'a, K, R> Drop for ColumnLeafValues<'a, K, R> {
+impl<'a, K, R> Drop for ColumnLayerValues<'a, K, R> {
     fn drop(&mut self) {
         // If the value consumer was never used, drop the difference value
         if !self.done {

@@ -3,9 +3,9 @@ use crate::{
     time::AntichainRef,
     trace::{
         layers::{
-            column_leaf::{
-                ColumnLeafConsumer, ColumnLeafCursor, ColumnLeafValues, OrderedColumnLeaf,
-                OrderedColumnLeafBuilder,
+            column_layer::{
+                ColumnLayer, ColumnLayerBuilder, ColumnLayerConsumer, ColumnLayerCursor,
+                ColumnLayerValues,
             },
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
@@ -26,7 +26,7 @@ use std::{
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct OrdZSet<K, R> {
     #[doc(hidden)]
-    pub layer: OrderedColumnLeaf<K, R>,
+    pub layer: ColumnLayer<K, R>,
 }
 
 impl<K, R> OrdZSet<K, R> {
@@ -60,14 +60,14 @@ where
     }
 }
 
-impl<K, R> From<OrderedColumnLeaf<K, R>> for OrdZSet<K, R> {
-    fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
+impl<K, R> From<ColumnLayer<K, R>> for OrdZSet<K, R> {
+    fn from(layer: ColumnLayer<K, R>) -> Self {
         Self { layer }
     }
 }
 
-impl<K, R> From<OrderedColumnLeaf<K, R>> for Rc<OrdZSet<K, R>> {
-    fn from(layer: OrderedColumnLeaf<K, R>) -> Self {
+impl<K, R> From<ColumnLayer<K, R>> for Rc<OrdZSet<K, R>> {
+    fn from(layer: ColumnLayer<K, R>) -> Self {
         Rc::new(From::from(layer))
     }
 }
@@ -77,7 +77,7 @@ where
     K: DBData,
     R: DBWeight,
 {
-    const CONST_NUM_ENTRIES: Option<usize> = <OrderedColumnLeaf<K, R>>::CONST_NUM_ENTRIES;
+    const CONST_NUM_ENTRIES: Option<usize> = <ColumnLayer<K, R>>::CONST_NUM_ENTRIES;
 
     fn num_entries_shallow(&self) -> usize {
         self.layer.num_entries_shallow()
@@ -91,7 +91,7 @@ where
 impl<K, R> Default for OrdZSet<K, R> {
     fn default() -> Self {
         Self {
-            layer: OrderedColumnLeaf::empty(),
+            layer: ColumnLayer::empty(),
         }
     }
 }
@@ -192,7 +192,7 @@ where
     #[inline]
     fn consumer(self) -> Self::Consumer {
         OrdZSetConsumer {
-            consumer: ColumnLeafConsumer::from(self.layer),
+            consumer: ColumnLayerConsumer::from(self.layer),
         }
     }
 
@@ -243,7 +243,7 @@ where
 
     fn empty(_time: Self::Time) -> Self {
         Self {
-            layer: OrderedColumnLeaf::empty(),
+            layer: ColumnLayer::empty(),
         }
     }
 }
@@ -256,7 +256,7 @@ where
     R: DBWeight,
 {
     // result that we are currently assembling.
-    result: <OrderedColumnLeaf<K, R> as Trie>::MergeBuilder,
+    result: <ColumnLayer<K, R> as Trie>::MergeBuilder,
 }
 
 impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
@@ -267,11 +267,10 @@ where
 {
     fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
         Self {
-            result:
-                <<OrderedColumnLeaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                    &batch1.layer,
-                    &batch2.layer,
-                ),
+            result: <<ColumnLayer<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
+                &batch1.layer,
+                &batch2.layer,
+            ),
         }
     }
 
@@ -297,7 +296,7 @@ where
     R: DBWeight,
 {
     valid: bool,
-    cursor: ColumnLeafCursor<'s, K, R>,
+    cursor: ColumnLayerCursor<'s, K, R>,
 }
 
 impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
@@ -390,7 +389,7 @@ where
     K: Ord,
     R: DBWeight,
 {
-    builder: OrderedColumnLeafBuilder<K, R>,
+    builder: ColumnLayerBuilder<K, R>,
 }
 
 impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
@@ -402,14 +401,14 @@ where
     #[inline]
     fn new_builder(_time: ()) -> Self {
         Self {
-            builder: OrderedColumnLeafBuilder::new(),
+            builder: ColumnLayerBuilder::new(),
         }
     }
 
     #[inline]
     fn with_capacity(_time: (), capacity: usize) -> Self {
         Self {
-            builder: <OrderedColumnLeafBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
+            builder: <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(capacity),
         }
     }
 
@@ -433,7 +432,7 @@ where
 
 #[derive(Debug, SizeOf)]
 pub struct OrdZSetConsumer<K, R> {
-    consumer: ColumnLeafConsumer<K, R>,
+    consumer: ColumnLayerConsumer<K, R>,
 }
 
 impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
@@ -464,7 +463,7 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 
 #[derive(Debug)]
 pub struct OrdZSetValueConsumer<'a, K, R> {
-    values: ColumnLeafValues<'a, K, R>,
+    values: ColumnLayerValues<'a, K, R>,
 }
 
 impl<'a, K, R> ValueConsumer<'a, (), R, ()> for OrdZSetValueConsumer<'a, K, R> {

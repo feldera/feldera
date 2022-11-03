@@ -1,32 +1,28 @@
 use crate::{
-    trace::layers::{advance, column_leaf::OrderedColumnLeaf, Cursor},
+    trace::layers::{advance, column_layer::ColumnLayer, Cursor},
     utils::cursor_position_oob,
     DBData, DBWeight,
 };
 use std::fmt::{self, Display};
 
-/// A cursor for walking through an [`OrderedColumnLeaf`].
+/// A cursor for walking through an [`ColumnLayer`].
 #[derive(Debug, Clone)]
-pub struct ColumnLeafCursor<'s, K, R>
+pub struct ColumnLayerCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
 {
     pos: usize,
-    storage: &'s OrderedColumnLeaf<K, R>,
+    storage: &'s ColumnLayer<K, R>,
     bounds: (usize, usize),
 }
 
-impl<'s, K, R> ColumnLeafCursor<'s, K, R>
+impl<'s, K, R> ColumnLayerCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
 {
-    pub const fn new(
-        pos: usize,
-        storage: &'s OrderedColumnLeaf<K, R>,
-        bounds: (usize, usize),
-    ) -> Self {
+    pub const fn new(pos: usize, storage: &'s ColumnLayer<K, R>, bounds: (usize, usize)) -> Self {
         Self {
             pos,
             storage,
@@ -34,7 +30,7 @@ where
         }
     }
 
-    pub(super) const fn storage(&self) -> &'s OrderedColumnLeaf<K, R> {
+    pub(super) const fn storage(&self) -> &'s ColumnLayer<K, R> {
         self.storage
     }
 
@@ -64,7 +60,7 @@ where
     }
 }
 
-impl<'s, K, R> Cursor<'s> for ColumnLeafCursor<'s, K, R>
+impl<'s, K, R> Cursor<'s> for ColumnLayerCursor<'s, K, R>
 where
     K: Ord + Clone,
     R: Clone,
@@ -134,13 +130,13 @@ where
     }
 }
 
-impl<'a, K, R> Display for ColumnLeafCursor<'a, K, R>
+impl<'a, K, R> Display for ColumnLayerCursor<'a, K, R>
 where
     K: DBData,
     R: DBWeight,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut cursor: ColumnLeafCursor<K, R> = self.clone();
+        let mut cursor: ColumnLayerCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.key();

@@ -36,7 +36,7 @@ use dbsp::{
     trace::{
         consolidation,
         layers::{
-            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
+            column_layer::{ColumnLayer, ColumnLayerBuilder},
             ordered::OrderedBuilder,
             Builder as LayerBuilder, MergeBuilder, OrdOffset, TupleBuilder,
         },
@@ -437,7 +437,7 @@ struct HashedKVBatch<K, V, R, O = usize> {
     offsets: Vec<O>,
     // The value+diff pairs associated with any given key can be fetched with
     // `values[offsets[keys[&key]]..offsets[keys[&key] + 1]]`
-    values: OrderedColumnLeaf<V, R>,
+    values: ColumnLayer<V, R>,
 }
 
 impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
@@ -445,7 +445,7 @@ impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
         HashedKVBatchProbe::new(self)
     }
 
-    fn from_builder(builder: OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>) -> Self
+    fn from_builder(builder: OrderedBuilder<K, ColumnLayerBuilder<V, R>, O>) -> Self
     where
         K: DBData,
         V: DBData,
@@ -551,8 +551,7 @@ where
         consolidation::consolidate(&mut inputs);
 
         let mut keys = HashMap::with_capacity_and_hasher(inputs.len(), Xxh3Builder::new());
-        let mut values =
-            <OrderedColumnLeafBuilder<_, _> as TupleBuilder>::with_capacity(inputs.len());
+        let mut values = <ColumnLayerBuilder<_, _> as TupleBuilder>::with_capacity(inputs.len());
         let mut offsets = Vec::with_capacity(inputs.len() + 1);
         offsets.push(O::zero());
 
@@ -762,7 +761,7 @@ impl<'a, V, R> ValueConsumer<'a, V, R, ()> for HashedValueConsumer<'a, V, R> {
     }
 }
 
-type RawKVBuilder<K, V, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>;
+type RawKVBuilder<K, V, R, O> = OrderedBuilder<K, ColumnLayerBuilder<V, R>, O>;
 
 #[derive(SizeOf)]
 struct HashedKVBuilder<K, V, R, O = usize>

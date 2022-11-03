@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::{
         layers::{
-            column_leaf::{ColumnLeafConsumer, UnorderedColumnLeafBuilder},
+            column_layer::{ColumnLayerConsumer, UnorderedColumnLayerBuilder},
             Builder, TupleBuilder,
         },
         Consumer, ValueConsumer,
@@ -113,13 +113,13 @@ where
     }
 }
 
-fn standard_consumer(canary: &Canary) -> ColumnLeafConsumer<Item<usize>, Item<i32>> {
-    let mut batcher = UnorderedColumnLeafBuilder::new();
+fn standard_consumer(canary: &Canary) -> ColumnLayerConsumer<Item<usize>, Item<i32>> {
+    let mut batcher = UnorderedColumnLayerBuilder::new();
     for idx in 0..TOTAL_TUPLES {
         batcher.push_tuple((Item::new(idx, canary.clone()), Item::new(1, canary.clone())));
     }
 
-    ColumnLeafConsumer::from(batcher.done())
+    ColumnLayerConsumer::from(batcher.done())
 }
 
 #[test]
@@ -181,7 +181,7 @@ mod proptests {
     use crate::{
         trace::{
             layers::{
-                column_leaf::{ColumnLeafConsumer, OrderedColumnLeafBuilder},
+                column_layer::{ColumnLayerBuilder, ColumnLayerConsumer},
                 Builder, TupleBuilder,
             },
             Consumer,
@@ -198,12 +198,12 @@ mod proptests {
 
             // Build the source column leaf, we use the builder api so that no comparisons occur here
             let mut consumer = {
-                let mut builder = OrderedColumnLeafBuilder::with_capacity(leaf_length);
+                let mut builder = ColumnLayerBuilder::with_capacity(leaf_length);
                 for _ in 0..leaf_length {
                     builder.push_tuple((Box::new(orderings.clone()), 1));
                 }
 
-                ColumnLeafConsumer::from(builder.done())
+                ColumnLayerConsumer::from(builder.done())
             };
 
             // Seek repeatedly to incur a panic within the comparison function
@@ -220,12 +220,12 @@ mod proptests {
 
             // Build the source column leaf
             let mut consumer = {
-                let mut builder = OrderedColumnLeafBuilder::with_capacity(leaf_length);
+                let mut builder = ColumnLayerBuilder::with_capacity(leaf_length);
                 for key in 0..leaf_length {
                     builder.push_tuple((LimitedDrops::new(Box::new(key), Some(allowed_drops.clone())), 1));
                 }
 
-                ColumnLeafConsumer::from(builder.done())
+                ColumnLayerConsumer::from(builder.done())
             };
 
             // We seek for a random key which should drop some elements and then we drop the
