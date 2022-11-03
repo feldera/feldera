@@ -259,7 +259,7 @@ fn main() {
 
                 if !results_file_already_exists {
                     // Write a header row if the file is newly created
-                    csv_writer.write_record(&[
+                    csv_writer.write_record([
                         "name",
                         "algorithm",
                         "dataset",
@@ -283,9 +283,10 @@ fn main() {
                         "allocstats_after_current_commit",
                         "allocstats_after_peak_commit",
                         "allocstats_after_page_faults"
-                    ]).expect("failed to write csv header");
+                    ])
+                    .expect("failed to write csv header");
                 }
-                csv_writer.write_record(&[
+                csv_writer.write_record([
                     "ldbc",
                     args.algorithm(),
                     config.dataset.name,
@@ -309,7 +310,8 @@ fn main() {
                     stats.current_commit.to_string().as_str(),
                     stats.peak_commit.to_string().as_str(),
                     stats.page_faults.to_string().as_str(),
-                ]).expect("failed to write csv record");
+                ])
+                .expect("failed to write csv record");
             }
 
             const MAX_PRINT_COUNT: usize = 10;

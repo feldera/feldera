@@ -3,22 +3,27 @@
 //!
 //! We define "correct" by testing if it behaves the same as Spine.
 
-use std::fmt::Debug;
-use std::ops::Range;
-use std::vec::Vec;
-
+use crate::{
+    algebra::{HasZero, MonoidValue},
+    time::NestedTimestamp32,
+    trace::{
+        cursor::Cursor,
+        ord::{OrdIndexedZSet, OrdKeyBatch, OrdValBatch, OrdZSet},
+        persistent::{cursor::PersistentTraceCursor, PersistentTrace},
+        spine_fueled::{Spine, SpineCursor},
+        Batch, BatchReader, Builder, Trace,
+    },
+};
 use bincode::{Decode, Encode};
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
-
-use crate::algebra::{HasZero, MonoidValue};
-use crate::time::NestedTimestamp32;
-use crate::trace::cursor::Cursor;
-use crate::trace::ord::{OrdIndexedZSet, OrdKeyBatch, OrdValBatch, OrdZSet};
-use crate::trace::persistent::{cursor::PersistentTraceCursor, PersistentTrace};
-use crate::trace::spine_fueled::{Spine, SpineCursor};
-use crate::trace::{Batch, BatchReader, Builder, Trace};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Debug, Display},
+    hash::{Hash, Hasher},
+    ops::Range,
+};
 
 /// Maximum number of actions to perform on a trace.
 const TRACE_ACTIONS_RANGE: Range<usize> = 0..8;
@@ -45,7 +50,7 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 /// The tests ensure that the RocksDB based data-structure adhere to the same
 /// ordering as the DRAM based version which is defined through the [`Ord`]
 /// trait.
-#[derive(Clone, Hash, Debug, Encode, Decode, Arbitrary, SizeOf)]
+#[derive(Clone, Debug, Encode, Decode, Arbitrary, SizeOf)]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
     pub(super) _a: isize,
@@ -53,9 +58,15 @@ pub(super) struct ComplexKey {
     pub(super) ord: String,
 }
 
-impl std::fmt::Display for ComplexKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+impl Display for ComplexKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.ord)
+    }
+}
+
+impl Hash for ComplexKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ord.hash(state);
     }
 }
 
@@ -68,13 +79,13 @@ impl PartialEq for ComplexKey {
 impl Eq for ComplexKey {}
 
 impl PartialOrd for ComplexKey {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.ord.partial_cmp(&other.ord)
     }
 }
 
 impl Ord for ComplexKey {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.ord.cmp(&other.ord)
     }
 }
@@ -287,13 +298,13 @@ fn cursor_trait<B, I>(
                 check_eq_invariants(i, &model_cursor, &totest_cursor);
             }
             CursorAction::SeekKey(k) => {
-                model_cursor.seek_key(&k);
-                totest_cursor.seek_key(&k);
+                model_cursor.seek_key(k);
+                totest_cursor.seek_key(k);
                 check_eq_invariants(i, &model_cursor, &totest_cursor);
             }
             CursorAction::SeekVal(v) => {
-                model_cursor.seek_val(&v);
-                totest_cursor.seek_val(&v);
+                model_cursor.seek_val(v);
+                totest_cursor.seek_val(v);
                 check_eq_invariants(i, &model_cursor, &totest_cursor);
             }
             CursorAction::SeekValWith(v) => {
@@ -341,18 +352,11 @@ fn cursor_trait<B, I>(
             CursorAction::MapTimesThrough(upper) => {
                 let mut model_invocations = Vec::new();
                 let mut test_invocation = Vec::new();
-                model_cursor.map_times_through(
-                    |v, t| {
-                        model_invocations.push((v.clone(), t.clone()));
-                    },
-                    &upper,
-                );
-                totest_cursor.map_times_through(
-                    |v, t| {
-                        test_invocation.push((v.clone(), t.clone()));
-                    },
-                    &upper,
-                );
+                model_cursor.map_times_through(upper, |v, t| {
+                    model_invocations.push((v.clone(), t.clone()));
+                });
+                totest_cursor
+                    .map_times_through(upper, |v, t| test_invocation.push((v.clone(), t.clone())));
                 assert_eq!(model_invocations, test_invocation);
             }
         }

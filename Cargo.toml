@@ -70,7 +70,6 @@ cached = { version = "0.38.0", optional = true }
     features = ["hashbrown", "time-std", "xxhash-xxh3"]
 
 [dev-dependencies]
-csv = "1.1.6"
 zip = "0.6.2"
 tar = "0.4.38"
 rand = "0.8.5"
@@ -98,6 +97,7 @@ time = { version = "0.3.14", features = [
 itertools = "0.10.5"
 serde_json = "1.0.87"
 serde_with = "2.0.1"
+csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
 
 [profile.bench]
 debug = true
@@ -131,7 +131,7 @@ required-features = ["with-csv"]
 harness = false
 
 [[bench]]
-name = "column_leaf"
+name = "column_layer"
 harness = false
 
 [[bench]]
@@ -142,6 +142,5 @@ required-features = ["__gdelt"]
 # Waiting for bincode 2.0.0 to be released (https://github.com/thomcc/arcstr/pull/45)
 [patch.crates-io.arcstr]
 git = "https://github.com/gz/arcstr.git"
-features = ["bincode"]
 rev = "b43120c"
 optional = true

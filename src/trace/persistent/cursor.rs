@@ -118,52 +118,57 @@ impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
 }
 
 impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTraceCursor<'s, B> {
-    #[inline]
     fn key_valid(&self) -> bool {
         self.cur_key.is_some()
     }
 
-    #[inline]
     fn val_valid(&self) -> bool {
         // A value is valid if `cur_vals` is set and we have not iterated past
         // the length of the current values.
         self.cur_vals.is_some() && self.val_idx < self.cur_vals.as_ref().unwrap().len()
     }
 
-    #[inline]
     fn key(&self) -> &B::Key {
         self.cur_key.as_ref().unwrap()
     }
 
-    #[inline]
     fn val(&self) -> &B::Val {
         &self.cur_vals.as_ref().unwrap()[self.val_idx].0
     }
 
-    #[inline]
-    fn map_times<L: FnMut(&B::Time, &B::R)>(&mut self, mut logic: L) {
-        if self.val_valid() {
-            for (time, val) in self.cur_vals.as_ref().unwrap()[self.val_idx].1.iter() {
-                logic(time, val);
-            }
-        }
-    }
-
-    fn map_times_through<L: FnMut(&B::Time, &B::R)>(&mut self, mut logic: L, upper: &B::Time) {
+    fn fold_times<F, U>(&mut self, init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &B::Time, &B::R) -> U,
+    {
         if self.key_valid() && self.val_valid() {
-            // Note that `map_times_through` uses `less_equal` to determine if
-            // `logic` should be called on a given `(time, diff)`. However,
-            // `cur_vals` is sorted by `Ord` hence we have to go through all the
-            // values to determine how many times `logic` should be called.
-            for (time, val) in self.cur_vals.as_ref().unwrap()[self.val_idx].1.iter() {
-                if time.less_equal(upper) {
-                    logic(time, val);
-                }
-            }
+            self.cur_vals.as_ref().unwrap()[self.val_idx]
+                .1
+                .iter()
+                .fold(init, |init, (time, val)| fold(init, time, val))
+        } else {
+            init
         }
     }
 
-    #[inline]
+    fn fold_times_through<F, U>(&mut self, upper: &B::Time, init: U, mut fold: F) -> U
+    where
+        F: FnMut(U, &B::Time, &B::R) -> U,
+    {
+        if self.key_valid() && self.val_valid() {
+            // Note that `fold_times_through` uses `less_equal` to determine if
+            // `fold` should be called on a given `(time, diff)`. However,
+            // `cur_vals` is sorted by `Ord` hence we have to go through all the
+            // values to determine how many times `fold` should be called.
+            self.cur_vals.as_ref().unwrap()[self.val_idx]
+                .1
+                .iter()
+                .filter(|(time, _)| time.less_equal(upper))
+                .fold(init, |init, (time, val)| fold(init, time, val))
+        } else {
+            init
+        }
+    }
+
     fn weight(&mut self) -> B::R
     where
         B::Time: PartialEq<()>,
@@ -175,7 +180,6 @@ impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTrace
         self.cur_vals.as_ref().unwrap()[self.val_idx].1[0].1.clone()
     }
 
-    #[inline]
     fn step_key(&mut self) {
         if self.db_iter.valid() {
             // Note: RocksDB only allows to call `next` on a `valid` cursor
@@ -227,7 +231,6 @@ impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTrace
         self.last_key.as_ref()
     }
 
-    #[inline]
     fn seek_key(&mut self, key: &B::Key) {
         if self.cur_key.is_none() {
             // We are at the end of the cursor.
@@ -258,19 +261,16 @@ impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTrace
         }
     }
 
-    #[inline]
     fn step_val(&mut self) {
         self.val_idx += 1;
     }
 
-    #[inline]
     fn seek_val(&mut self, val: &B::Val) {
         while self.val_valid() && self.val() < val {
             self.step_val();
         }
     }
 
-    #[inline]
     fn seek_val_with<P>(&mut self, predicate: P)
     where
         P: Fn(&B::Val) -> bool,
@@ -280,7 +280,6 @@ impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTrace
         }
     }
 
-    #[inline]
     fn rewind_keys(&mut self) {
         self.db_iter.seek_to_first();
         if self.db_iter.valid() {
@@ -292,7 +291,6 @@ impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for PersistentTrace
         }
     }
 
-    #[inline]
     fn rewind_vals(&mut self) {
         self.val_idx = 0;
     }

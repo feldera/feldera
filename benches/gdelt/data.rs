@@ -57,6 +57,7 @@
 //! [GKG cookbook]: http://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
 
 use arcstr::{literal, ArcStr};
+use bincode::{Decode, Encode};
 use csv::{ReaderBuilder, Trim};
 use dbsp::CollectionHandle;
 use hashbrown::{HashMap, HashSet};
@@ -83,7 +84,7 @@ type Interner = HashSet<ArcStr, Xxh3Builder>;
 type Invalid = HashSet<&'static str, Xxh3Builder>;
 type Normalizations = HashMap<&'static str, &'static [ArcStr], Xxh3Builder>;
 
-#[derive(Debug, Clone, SizeOf)]
+#[derive(Debug, Clone, SizeOf, Decode, Encode)]
 pub struct PersonalNetworkGkgEntry {
     pub id: ArcStr,
     pub date: u64,

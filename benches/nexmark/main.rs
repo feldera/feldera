@@ -305,7 +305,7 @@ fn main() -> Result<()> {
             .has_headers(false)
             .from_writer(file);
         if !results_file_already_exists {
-            csv_writer.write_record(&[
+            csv_writer.write_record([
                 "name",
                 "num_cores",
                 "num_events",

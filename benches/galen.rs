@@ -309,11 +309,11 @@ fn main() -> Result<()> {
                 let mut csv_writer = csv::WriterBuilder::new().from_writer(file);
                 if !results_file_already_exists {
                     csv_writer
-                        .write_record(&["name", "workers", "elapsed"])
+                        .write_record(["name", "workers", "elapsed"])
                         .expect("failed to write csv header");
                 }
                 csv_writer
-                    .write_record(&[
+                    .write_record([
                         "galen",
                         args.workers.to_string().as_str(),
                         elapsed.as_secs_f64().to_string().as_str(),

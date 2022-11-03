@@ -3,8 +3,8 @@
 //! This module has:
 //!  - a few unit test that check interesting cases (mostly found by proptests)
 //!  - proptests that check that the persistent trace behaves like a spine
+#![cfg(test)]
 
-#[cfg(test)]
 mod proptests;
 
 use super::PersistentTrace;
@@ -34,8 +34,8 @@ fn vals_are_sorted() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, usize, usize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
 }
@@ -48,7 +48,7 @@ fn empty_batch_ptrace() {
         crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
     spine.insert(vset1.clone());
     let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
-    ptrace.insert(vset1.clone());
+    ptrace.insert(vset1);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
 }
@@ -78,8 +78,8 @@ fn insert_bug() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
 }
@@ -106,8 +106,8 @@ fn times_are_sorted() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
 }
@@ -133,8 +133,8 @@ fn recede_to_bug() {
     spine.recede_to(&1);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, usize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
     ptrace.recede_to(&1);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
@@ -165,8 +165,8 @@ fn weights_cancellation() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, isize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
 }
@@ -238,9 +238,9 @@ fn timestamp_aggregation() {
 
     let mut ptrace =
         PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
-    ptrace.insert(vset3.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
+    ptrace.insert(vset3);
     ptrace.recede_to(&NestedTimestamp32::new(false, 2));
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
@@ -311,9 +311,9 @@ fn weights_cancellation2() {
 
     let mut ptrace =
         PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new(None);
-    ptrace.insert(vset1.clone());
-    ptrace.insert(vset2.clone());
-    ptrace.insert(vset3.clone());
+    ptrace.insert(vset1);
+    ptrace.insert(vset2);
+    ptrace.insert(vset3);
     ptrace.recede_to(&NestedTimestamp32::new(false, 2));
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
@@ -335,7 +335,7 @@ fn cursor_weight() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdZSet<String, i32>>::new(None);
-    ptrace.insert(vset1.clone());
+    ptrace.insert(vset1);
 
     let mut ptrace_cursor = ptrace.cursor();
     let mut spine_cursor = spine.cursor();
@@ -368,7 +368,7 @@ fn cursor_weight_multiple_values_bug() {
     spine.apply_fuel(&mut fuel);
 
     let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, String, i32>>::new(None);
-    ptrace.insert(vset1.clone());
+    ptrace.insert(vset1);
 
     let mut ptrace_cursor = ptrace.cursor();
     let mut spine_cursor = spine.cursor();

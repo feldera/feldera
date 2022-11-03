@@ -86,7 +86,7 @@ macro_rules! leaf_benches {
                     b.iter_batched(
                         || unsorted.clone(),
                         |unsorted| {
-                            let mut builder = UnorderedColumnLeafBuilder::new();
+                            let mut builder = UnorderedColumnLayerBuilder::new();
                             for tuple in unsorted {
                                 builder.push_tuple(tuple);
                             }
@@ -138,7 +138,7 @@ macro_rules! leaf_benches {
                     b.iter_batched(
                         || (left.cursor(), right.cursor()),
                         |(left, right)| {
-                            let mut builder = OrderedColumnLeafBuilder::new();
+                            let mut builder = ColumnLayerBuilder::new();
                             builder.push_merge(left, right);
                         },
                         BatchSize::PerIteration,
