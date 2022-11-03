@@ -56,7 +56,7 @@
 //!
 //! [GKG cookbook]: http://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
 
-use arcstr::ArcStr;
+use arcstr::{literal, ArcStr};
 use csv::{ReaderBuilder, Trim};
 use dbsp::CollectionHandle;
 use hashbrown::{HashMap, HashSet};
@@ -74,10 +74,14 @@ use zip::ZipArchive;
 const DATA_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/gdelt-data");
 
 const MASTER_LIST: &str = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt";
-const LAST_15_MINUTES: &str = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt";
+// const LAST_15_MINUTES: &str = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt";
 
 pub const GKG_SUFFIX: &str = ".gkg.csv.zip";
 pub const GDELT_URL: &str = "http://data.gdeltproject.org/gdeltv2/";
+
+type Interner = HashSet<ArcStr, Xxh3Builder>;
+type Invalid = HashSet<&'static str, Xxh3Builder>;
+type Normalizations = HashMap<&'static str, &'static [ArcStr], Xxh3Builder>;
 
 #[derive(Debug, Clone, SizeOf)]
 pub struct PersonalNetworkGkgEntry {
@@ -203,10 +207,9 @@ pub fn get_gkg_file(url: &str) -> Option<File> {
 
 pub fn parse_personal_network_gkg(
     handle: &mut CollectionHandle<PersonalNetworkGkgEntry, i32>,
-    interner: &mut HashSet<ArcStr, Xxh3Builder>,
-    // Sometimes gdelt extracts weird stuff so we have to correct it
-    normalizations: &HashMap<&'static str, &'static [ArcStr], Xxh3Builder>,
-    invalid: &HashSet<&'static str, Xxh3Builder>,
+    interner: &mut Interner,
+    normalizations: &Normalizations,
+    invalid: &Invalid,
     file: File,
 ) -> usize {
     let mut records = 0;
@@ -252,4 +255,67 @@ pub fn parse_personal_network_gkg(
     }
 
     records
+}
+
+/// The GDELT data isn't perfect so we have to do some corrections to the
+/// generated data
+pub fn build_gdelt_normalizations() -> (Interner, Normalizations, Invalid) {
+    let mut interner = HashSet::with_capacity_and_hasher(4096, Xxh3Builder::new());
+
+    let normalizations = {
+        static NORMALS: &[(&str, &[ArcStr])] = &[
+            ("a los angeles", &[literal!("los angeles")]),
+            ("a harry truman", &[literal!("harry truman")]),
+            ("a ronald reagan", &[literal!("ronald reagan")]),
+            ("a lyndon johnson", &[literal!("lyndon johnson")]),
+            ("a sanatan dharam", &[literal!("sanatan dharam")]),
+            ("b richard nixon", &[literal!("richard nixon")]),
+            ("b dwight eisenhower", &[literal!("dwight eisenhower")]),
+            ("c george w bush", &[literal!("george w bush")]),
+            ("c gerald ford", &[literal!("gerald ford")]),
+            ("c john f kennedy", &[literal!("john f kennedy")]),
+            // I can't even begin to explain this one
+            ("obama jeb bush", &[literal!("jeb bush")]),
+            (
+                "brandon morse thebrandonmorse",
+                &[literal!("brandon morse")],
+            ),
+            ("lady michelle obama", &[literal!("michelle obama")]),
+            ("jo biden", &[literal!("joe biden")]),
+            ("joseph robinette biden jr", &[literal!("joe biden")]),
+            ("brad thor bradthor", &[literal!("brad thor")]),
+            ("hilary clinton", &[literal!("hillary clinton")]),
+            ("hillary rodham clinton", &[literal!("hillary clinton")]),
+            (
+                "sherlockian a sherlock holmes",
+                &[literal!("sherlock holmes")],
+            ),
+            ("america larry pratt", &[literal!("larry pratt")]),
+            ("cullen hawkins sircullen", &[literal!("cullen hawkins")]),
+            (
+                "leslie knope joe biden",
+                &[literal!("leslie knope"), literal!("joe biden")],
+            ),
+            ("jacquelyn martin europe", &[literal!("jacquelyn martin")]),
+        ];
+        // Add the static normals to the interner, might as well reuse them
+        interner.extend(NORMALS.iter().flat_map(|&(_, person)| person).cloned());
+
+        let mut map = HashMap::with_capacity_and_hasher(NORMALS.len(), Xxh3Builder::new());
+        map.extend(NORMALS);
+        map
+    };
+
+    // Invalid "people" that aren't really people
+    let invalid = {
+        // On one hand, "krispy kreme klub" is most definitely not a person. On the
+        // other hand, it's kinda funny to see it pop up in the graph
+        let invalid = ["whitehouse cvesummit", "islam obama"];
+
+        let mut set = HashSet::with_capacity_and_hasher(invalid.len(), Xxh3Builder::new());
+        set.extend(invalid.into_iter());
+        set
+    };
+
+    (interner, normalizations, invalid)
 }

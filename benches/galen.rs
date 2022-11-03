@@ -7,8 +7,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
-    monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, trace::BatchReader,
-    Circuit, OrdZSet, Runtime, Stream,
+    monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, Circuit, OrdZSet, Runtime,
+    Stream,
 };
 use mimalloc::MiMalloc;
 use std::{

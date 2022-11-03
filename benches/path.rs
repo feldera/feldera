@@ -3,7 +3,7 @@ mod mimalloc;
 use dbsp::{
     operator::{FilterMap, Generator},
     time::NestedTimestamp32,
-    trace::{ord::OrdZSet, Batch, BatchReader},
+    trace::{ord::OrdZSet, Batch},
     Circuit, Runtime, Stream,
 };
 use mimalloc::MiMalloc;
