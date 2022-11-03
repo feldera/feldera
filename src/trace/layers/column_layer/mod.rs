@@ -6,9 +6,9 @@ mod consumer;
 mod cursor;
 mod tests;
 
-pub use builders::{OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder};
-pub use consumer::{ColumnLeafConsumer, ColumnLeafValues};
-pub use cursor::ColumnLeafCursor;
+pub use builders::{ColumnLayerBuilder, UnorderedColumnLayerBuilder};
+pub use consumer::{ColumnLayerConsumer, ColumnLayerValues};
+pub use cursor::ColumnLayerCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -25,16 +25,16 @@ use std::{
     slice::SliceIndex,
 };
 
-/// A layer of ordered values
+/// A layer of unordered values
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
-pub struct OrderedColumnLeaf<K, R> {
+pub struct ColumnLayer<K, R> {
     // Invariant: keys.len == diffs.len
     pub(super) keys: Vec<K>,
     pub(super) diffs: Vec<R>,
 }
 
-impl<K, R> OrderedColumnLeaf<K, R> {
-    /// Create an empty `OrderedColumnLeaf`
+impl<K, R> ColumnLayer<K, R> {
+    /// Create an empty `ColumnLayer`
     pub const fn empty() -> Self {
         Self {
             keys: Vec::new(),
@@ -42,12 +42,19 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         }
     }
 
-    /// Breaks an `OrderedColumnLeaf` into its component parts
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            keys: Vec::with_capacity(capacity),
+            diffs: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Breaks an `ColumnLayer` into its component parts
     pub fn into_parts(self) -> (Vec<K>, Vec<R>) {
         (self.keys, self.diffs)
     }
 
-    /// Creates a new `OrderedColumnLeaf` from the given keys and diffs
+    /// Creates a new `ColumnLayer` from the given keys and diffs
     ///
     /// # Safety
     ///
@@ -119,14 +126,14 @@ impl<K, R> OrderedColumnLeaf<K, R> {
         assume(self.keys.len() == self.diffs.len())
     }
 
-    /// Turns the current `OrderedColumnLeaf<K, V>` into a leaf of
+    /// Turns the current `ColumnLayer<K, V>` into a leaf of
     /// [`MaybeUninit`] values
     pub(in crate::trace::layers) fn into_uninit(
         self,
-    ) -> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+    ) -> ColumnLayer<MaybeUninit<K>, MaybeUninit<R>> {
         unsafe { self.assume_invariants() }
 
-        OrderedColumnLeaf {
+        ColumnLayer {
             keys: cast_uninit_vec(self.keys),
             diffs: cast_uninit_vec(self.diffs),
         }
@@ -263,7 +270,7 @@ impl<K, R> OrderedColumnLeaf<K, R> {
     }
 }
 
-impl<K, R> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
+impl<K, R> ColumnLayer<MaybeUninit<K>, MaybeUninit<R>> {
     /// Drops all keys and diffs within the given range
     ///
     /// # Safety
@@ -293,15 +300,15 @@ impl<K, R> OrderedColumnLeaf<MaybeUninit<K>, MaybeUninit<R>> {
     }
 }
 
-impl<K, R> Trie for OrderedColumnLeaf<K, R>
+impl<K, R> Trie for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     type Item = (K, R);
-    type Cursor<'s> = ColumnLeafCursor<'s, K, R> where K: 's, R: 's;
-    type MergeBuilder = OrderedColumnLeafBuilder<K, R>;
-    type TupleBuilder = UnorderedColumnLeafBuilder<K, R>;
+    type Cursor<'s> = ColumnLayerCursor<'s, K, R> where K: 's, R: 's;
+    type MergeBuilder = ColumnLayerBuilder<K, R>;
+    type TupleBuilder = UnorderedColumnLayerBuilder<K, R>;
 
     fn keys(&self) -> usize {
         self.len()
@@ -313,11 +320,11 @@ where
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         unsafe { self.assume_invariants() }
-        ColumnLeafCursor::new(lower, self, (lower, upper))
+        ColumnLayerCursor::new(lower, self, (lower, upper))
     }
 }
 
-impl<K, R> Display for OrderedColumnLeaf<K, R>
+impl<K, R> Display for ColumnLayer<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -328,7 +335,7 @@ where
 }
 
 // TODO: by-value merge
-impl<K, R> Add<Self> for OrderedColumnLeaf<K, R>
+impl<K, R> Add<Self> for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
@@ -347,7 +354,7 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for OrderedColumnLeaf<K, R>
+impl<K, R> AddAssign<Self> for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
@@ -360,7 +367,7 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for OrderedColumnLeaf<K, R>
+impl<K, R> AddAssignByRef for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
@@ -373,7 +380,7 @@ where
     }
 }
 
-impl<K, R> AddByRef for OrderedColumnLeaf<K, R>
+impl<K, R> AddByRef for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
@@ -383,7 +390,7 @@ where
     }
 }
 
-impl<K, R> NegByRef for OrderedColumnLeaf<K, R>
+impl<K, R> NegByRef for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: NegByRef,
@@ -396,7 +403,7 @@ where
     }
 }
 
-impl<K, R> Neg for OrderedColumnLeaf<K, R>
+impl<K, R> Neg for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Neg<Output = R>,
@@ -411,7 +418,7 @@ where
     }
 }
 
-impl<K, R> NumEntries for OrderedColumnLeaf<K, R>
+impl<K, R> NumEntries for ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
@@ -430,7 +437,7 @@ where
     }
 }
 
-impl<K, R> Default for OrderedColumnLeaf<K, R> {
+impl<K, R> Default for ColumnLayer<K, R> {
     #[inline]
     fn default() -> Self {
         Self::empty()

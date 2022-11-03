@@ -3,7 +3,7 @@ use crate::{
     time::AntichainRef,
     trace::{
         layers::{
-            column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
+            column_layer::{ColumnLayer, ColumnLayerBuilder},
             ordered::{
                 OrderedBuilder, OrderedCursor, OrderedLayer, OrderedLayerConsumer,
                 OrderedLayerValues,
@@ -25,7 +25,7 @@ use std::{
     rc::Rc,
 };
 
-type Layers<K, V, R, O> = OrderedLayer<K, OrderedColumnLeaf<V, R>, O>;
+type Layers<K, V, R, O> = OrderedLayer<K, ColumnLayer<V, R>, O>;
 
 /// An immutable collection of update tuples.
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
@@ -365,7 +365,7 @@ where
     R: MonoidValue,
     O: OrdOffset + PartialEq,
 {
-    cursor: OrderedCursor<'s, K, O, OrderedColumnLeaf<V, R>>,
+    cursor: OrderedCursor<'s, K, O, ColumnLayer<V, R>>,
 }
 
 impl<'s, K, V, R, O> Cursor<'s, K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
@@ -450,7 +450,7 @@ where
     }
 }
 
-type IndexBuilder<K, V, R, O> = OrderedBuilder<K, OrderedColumnLeafBuilder<V, R>, O>;
+type IndexBuilder<K, V, R, O> = OrderedBuilder<K, ColumnLayerBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]

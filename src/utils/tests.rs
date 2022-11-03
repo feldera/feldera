@@ -3,7 +3,7 @@
 
 use crate::{
     trace::layers::{
-        column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder},
+        column_layer::{ColumnLayer, ColumnLayerBuilder},
         Builder, TupleBuilder,
     },
     utils::cast_uninit_vec,
@@ -160,12 +160,12 @@ prop_compose! {
 }
 
 prop_compose! {
-    /// Generate an `OrderedColumnLeaf`
+    /// Generate a `ColumnLayer`
     pub(crate) fn column_leaf(max_length: usize)
         (length in 0..=max_length)
         (length in length..=length, diffs in vec(any::<isize>(), length))
-    -> OrderedColumnLeaf<usize, isize> {
-        let mut builder = OrderedColumnLeafBuilder::with_capacity(length);
+    -> ColumnLayer<usize, isize> {
+        let mut builder = ColumnLayerBuilder::with_capacity(length);
         for (idx, diff) in diffs.into_iter().enumerate() {
             builder.push_tuple((idx, diff));
         }

@@ -3,7 +3,7 @@ use crate::{
         AddAssignByRef, AddByRef, GroupValue, HasOne, HasZero, IndexedZSet, MulByRef, NegByRef,
         ZRingValue,
     },
-    trace::layers::{column_leaf::OrderedColumnLeaf, ordered::OrderedLayer},
+    trace::layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
     utils::VecExt,
     Circuit, DBData, DBTimestamp, OrdIndexedZSet, Stream,
 };
@@ -291,7 +291,7 @@ where
     }
 
     // Safety: `averages.len() == diffs.len()`
-    let averages = unsafe { OrderedColumnLeaf::from_parts(averages, diffs) };
+    let averages = unsafe { ColumnLayer::from_parts(averages, diffs) };
 
     // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
     // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them

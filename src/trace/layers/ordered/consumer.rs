@@ -1,6 +1,6 @@
 use crate::{
     trace::{
-        layers::{advance, column_leaf::OrderedColumnLeaf, ordered::OrderedLayer, OrdOffset},
+        layers::{advance, column_layer::ColumnLayer, ordered::OrderedLayer, OrdOffset},
         Consumer, ValueConsumer,
     },
     utils::{assume, cursor_position_oob},
@@ -8,7 +8,7 @@ use crate::{
 use std::{mem::MaybeUninit, ptr};
 
 /// A [`Consumer`] implementation for [`OrderedLayer`]s that contain
-/// [`OrderedColumnLeaf`]s
+/// [`ColumnLayer`]s
 // TODO: Fuzz testing for correctness and drop safety
 #[derive(Debug)]
 pub struct OrderedLayerConsumer<K, V, R, O>
@@ -30,7 +30,7 @@ where
     /// others are uninit, meaning that
     /// `storage.values[..storage.offs[position]]` are uninit and
     /// `storage.values[storage.offs[position]..]` are init
-    storage: OrderedLayer<MaybeUninit<K>, OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>, O>,
+    storage: OrderedLayer<MaybeUninit<K>, ColumnLayer<MaybeUninit<V>, MaybeUninit<R>>, O>,
 }
 
 impl<K, V, R, O> Consumer<K, V, R, ()> for OrderedLayerConsumer<K, V, R, O>
@@ -121,12 +121,11 @@ where
     }
 }
 
-impl<K, V, R, O> From<OrderedLayer<K, OrderedColumnLeaf<V, R>, O>>
-    for OrderedLayerConsumer<K, V, R, O>
+impl<K, V, R, O> From<OrderedLayer<K, ColumnLayer<V, R>, O>> for OrderedLayerConsumer<K, V, R, O>
 where
     O: OrdOffset,
 {
-    fn from(layer: OrderedLayer<K, OrderedColumnLeaf<V, R>, O>) -> Self {
+    fn from(layer: OrderedLayer<K, ColumnLayer<V, R>, O>) -> Self {
         Self {
             position: 0,
             storage: layer.into_uninit(),
@@ -160,7 +159,7 @@ pub struct OrderedLayerValues<'a, V, R> {
     // Invariant: `current` will always be a valid index into `consumer`
     current: usize,
     end: usize,
-    values: &'a mut OrderedColumnLeaf<MaybeUninit<V>, MaybeUninit<R>>,
+    values: &'a mut ColumnLayer<MaybeUninit<V>, MaybeUninit<R>>,
 }
 
 impl<'a, V, R> OrderedLayerValues<'a, V, R> {

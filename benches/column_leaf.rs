@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion
 use dbsp::{
     algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
     trace::layers::{
-        column_leaf::{OrderedColumnLeaf, OrderedColumnLeafBuilder, UnorderedColumnLeafBuilder},
+        column_layer::{ColumnLayer, ColumnLayerBuilder, UnorderedColumnLayerBuilder},
         Builder, MergeBuilder, Trie, TupleBuilder,
     },
 };
@@ -25,7 +25,7 @@ where
     data
 }
 
-fn data_builder<K, R>(length: usize) -> UnorderedColumnLeafBuilder<K, R>
+fn data_builder<K, R>(length: usize) -> UnorderedColumnLayerBuilder<K, R>
 where
     K: Ord + Clone,
     R: MonoidValue,
@@ -33,14 +33,14 @@ where
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
 
-    let mut builder = UnorderedColumnLeafBuilder::new();
+    let mut builder = UnorderedColumnLayerBuilder::new();
     for _ in 0..length {
         builder.push_tuple(rng.gen());
     }
     builder
 }
 
-fn data_leaf<K, R>(length: usize) -> OrderedColumnLeaf<K, R>
+fn data_leaf<K, R>(length: usize) -> ColumnLayer<K, R>
 where
     K: Ord + Clone,
     R: MonoidValue,
@@ -48,14 +48,14 @@ where
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
 
-    let mut builder = UnorderedColumnLeafBuilder::with_capacity(length);
+    let mut builder = UnorderedColumnLayerBuilder::with_capacity(length);
     for _ in 0..length {
         builder.push_tuple(rng.gen());
     }
     builder.done()
 }
 
-fn data_leaves<K, R>(length: usize) -> (OrderedColumnLeaf<K, R>, OrderedColumnLeaf<K, R>)
+fn data_leaves<K, R>(length: usize) -> (ColumnLayer<K, R>, ColumnLayer<K, R>)
 where
     K: Ord + Clone,
     R: MonoidValue,
@@ -64,8 +64,8 @@ where
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
 
     let (mut right, mut left) = (
-        UnorderedColumnLeafBuilder::with_capacity(length / 2),
-        UnorderedColumnLeafBuilder::with_capacity(length / 2),
+        UnorderedColumnLayerBuilder::with_capacity(length / 2),
+        UnorderedColumnLayerBuilder::with_capacity(length / 2),
     );
     for _ in 0..length / 2 {
         left.push_tuple(rng.gen());

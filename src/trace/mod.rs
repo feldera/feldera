@@ -17,16 +17,8 @@ pub mod ord;
 #[cfg(feature = "persistence")]
 pub mod persistent;
 pub mod rc_batch;
-pub mod unordered;
-
-// We export the `spine_fueled` module only for testing (so we can explicitly
-// choose the in-memory DS). For regular logic, since we replace it with the
-// persistent feature sometimes, one should import the re-exported path e.g.,
-// `crate::trace::Spine`.
-#[cfg(test)]
 pub mod spine_fueled;
-#[cfg(not(test))]
-mod spine_fueled;
+pub mod unordered;
 
 pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
 

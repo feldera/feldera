@@ -89,9 +89,7 @@ pub trait Cursor<'s, K, V, T, R> {
     /// is more convenient (and potentially more efficient) than using
     /// [`Self::map_times`] to iterate over a single value.
     ///
-    /// # Panics
-    ///
-    /// Panics if not `self.key_valid() && self.val_valid()`.
+    /// If the current key and value are not valid, behavior is unspecified
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>;
@@ -148,7 +146,7 @@ pub trait UnorderedCursor<'a, K, T, V, R> {
     ///
     /// A value of `false` indicates that the cursor has exhausted all values
     /// for this key.
-    fn value_valid(&self) -> bool;
+    fn val_valid(&self) -> bool;
 
     /// A reference to the current key. Panics if invalid.
     fn key(&self) -> &K;
@@ -162,8 +160,8 @@ pub trait UnorderedCursor<'a, K, T, V, R> {
     }
 
     /// Returns a reference to the current value, if valid.
-    fn get_value(&self) -> Option<&V> {
-        self.value_valid().then(|| self.value())
+    fn get_val(&self) -> Option<&V> {
+        self.val_valid().then(|| self.value())
     }
 
     /// Returns the weight associated with the current key/value pair.

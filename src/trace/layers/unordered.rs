@@ -1,61 +1,48 @@
-use crate::{
-    trace::layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
-    utils::assume,
+use crate::trace::layers::{
+    column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
 };
 use size_of::SizeOf;
 
 /// A layer of unordered values
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
 pub struct UnorderedLeaf<K, R> {
-    // Invariant: keys.len == diffs.len
-    keys: Vec<K>,
-    diffs: Vec<R>,
+    layer: ColumnLayer<K, R>,
 }
 
 impl<K, R> UnorderedLeaf<K, R> {
     /// Create an empty `UnorderedLeaf`
     pub const fn empty() -> Self {
         Self {
-            keys: Vec::new(),
-            diffs: Vec::new(),
+            layer: ColumnLayer::empty(),
         }
     }
 
     fn with_capacity(capacity: usize) -> UnorderedLeaf<K, R> {
         Self {
-            keys: Vec::with_capacity(capacity),
-            diffs: Vec::with_capacity(capacity),
+            layer: ColumnLayer::with_capacity(capacity),
         }
     }
 
     /// Get the length of the current leaf
     pub fn len(&self) -> usize {
-        unsafe { self.assume_invariants() }
-        self.keys.len()
+        self.layer.len()
     }
 
     /// Returns `true` if the current leaf is empty
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.layer.is_empty()
     }
 
     pub fn keys(&self) -> &[K] {
-        unsafe { self.assume_invariants() }
-        &self.keys
+        self.layer.keys()
     }
 
     pub fn diffs(&self) -> &[R] {
-        unsafe { self.assume_invariants() }
-        &self.diffs
+        self.layer.diffs()
     }
 
-    /// Assume the invariants of the current leaf
-    ///
-    /// # Safety
-    ///
-    /// Requires that `keys` and `diffs` have the exact same length
-    pub(crate) unsafe fn assume_invariants(&self) {
-        assume(self.keys.len() == self.diffs.len())
+    unsafe fn assume_invariants(&self) {
+        self.layer.assume_invariants();
     }
 }
 
@@ -131,7 +118,7 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
-    fn seek<'a>(&mut self, key: Self::Key<'a>)
+    fn seek<'a>(&mut self, _key: Self::Key<'a>)
     where
         's: 'a,
     {
@@ -150,7 +137,7 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
-    fn reposition(&mut self, lower: usize, upper: usize) {
+    fn reposition(&mut self, _lower: usize, _upper: usize) {
         todo!()
     }
 }
@@ -207,8 +194,8 @@ where
 
     fn reserve(&mut self, additional: usize) {
         unsafe { self.leaf.assume_invariants() }
-        self.leaf.keys.reserve(additional);
-        self.leaf.diffs.reserve(additional);
+        self.leaf.layer.keys.reserve(additional);
+        self.leaf.layer.diffs.reserve(additional);
         unsafe { self.leaf.assume_invariants() }
     }
 
@@ -218,11 +205,15 @@ where
             other.assume_invariants();
         }
 
-        assert!(lower <= other.keys.len() && upper <= other.keys.len());
-        self.leaf.keys.extend_from_slice(&other.keys[lower..upper]);
+        assert!(lower <= other.layer.keys.len() && upper <= other.layer.keys.len());
         self.leaf
+            .layer
+            .keys
+            .extend_from_slice(&other.layer.keys[lower..upper]);
+        self.leaf
+            .layer
             .diffs
-            .extend_from_slice(&other.diffs[lower..upper]);
+            .extend_from_slice(&other.layer.diffs[lower..upper]);
 
         unsafe { self.leaf.assume_invariants() }
     }
@@ -301,8 +292,8 @@ where
     }
 
     fn reserve_tuples(&mut self, additional: usize) {
-        self.leaf.keys.reserve(additional);
-        self.leaf.diffs.reserve(additional);
+        self.leaf.layer.keys.reserve(additional);
+        self.leaf.layer.diffs.reserve(additional);
     }
 
     fn tuples(&self) -> usize {
@@ -311,8 +302,8 @@ where
 
     fn push_tuple(&mut self, (key, diff): (K, R)) {
         unsafe { self.leaf.assume_invariants() }
-        self.leaf.keys.push(key);
-        self.leaf.diffs.push(diff);
+        self.leaf.layer.keys.push(key);
+        self.leaf.layer.diffs.push(diff);
         unsafe { self.leaf.assume_invariants() }
     }
 }
