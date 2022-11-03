@@ -30,7 +30,7 @@ if [ "$SMOKE" != "" ]; then
   EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
-cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
+numactl --cpunodebind=1 cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
