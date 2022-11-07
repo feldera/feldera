@@ -67,13 +67,13 @@ pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
 DATE_PREFIX=`date +"%Y-%m-%d-%H-%M"`
-if [ ! -v GITHUB_SHA ]; then
+if [ ! -v PR_COMMIT_SHA ]; then
     # So we can run the script in non-runner environments:
-    GITHUB_SHA=`git rev-parse HEAD`
+    PR_COMMIT_SHA=`git rev-parse HEAD`
 fi
 
 # Add nexmark results to repo
-DEPLOY_DIR="gh-pages/nexmark/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
+DEPLOY_DIR="gh-pages/nexmark/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
 if [ -d "${DEPLOY_DIR}" ]; then
     # If we already have results for this SHA (the directory exists),
     # we will add the new results in a subdir
@@ -87,7 +87,7 @@ gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
 
 # Add galen results to repo
-DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
+DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
 if [ -d "${DEPLOY_DIR}" ]; then
     # If we already have results for this SHA (the directory exists),
     # we will add the new results in a subdir
@@ -99,7 +99,7 @@ mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
 
 # Add ldbc results to repo
-DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${GITHUB_SHA}/"
+DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
 if [ -d "${DEPLOY_DIR}" ]; then
     # If we already have results for this SHA (the directory exists),
     # we will add the new results in a subdir
@@ -121,7 +121,7 @@ if [ "$SMOKE" = "" ]; then
         git config user.name "dbsp-ci"
     fi
     git add .
-    git commit -a -m "Added benchmark results for $GITHUB_SHA."
+    git commit -a -m "Added benchmark results for $PR_COMMIT_SHA."
     git push origin main
     cd ..
     python3 gh-pages/_scripts/compare_nexmark.py > nexmark_comment.txt
