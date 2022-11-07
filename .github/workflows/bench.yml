@@ -80,3 +80,4 @@ jobs:
           edit-mode: replace
     env:
       CI_MACHINE_TYPE: "skylake-2x"
+      PR_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
