@@ -37,6 +37,7 @@ use std::{
     ops::{Add, Neg},
     path::Path,
     rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
@@ -129,6 +130,8 @@ fn main() {
 
     let edge_data = Arc::new(edge_data.into_iter().map(Mutex::new).collect::<Vec<_>>());
     let vertex_data = Arc::new(vertex_data.into_iter().map(Mutex::new).collect::<Vec<_>>());
+    let incorrect_results_main = Arc::new(AtomicBool::new(false));
+    let incorrect_results = incorrect_results_main.clone();
 
     Runtime::run(threads.get(), move || {
         let worker_idx = Runtime::worker_index();
@@ -309,6 +312,7 @@ fn main() {
                 ]).expect("failed to write csv record");
             }
 
+            const MAX_PRINT_COUNT: usize = 10;
             let output = replace(&mut *output.borrow_mut(), OutputData::None);
             match output {
                 OutputData::None => println!("no output was produced"),
@@ -320,12 +324,17 @@ fn main() {
                     if !difference.is_empty() {
                         let mut stdout = io::stdout().lock();
                         let mut cursor = difference.cursor();
+                        let mut print_count = MAX_PRINT_COUNT;
 
-                        while cursor.key_valid() {
+                        while cursor.key_valid() && print_count > 0 {
                             let (node, distance) = *cursor.key();
                             let weight = cursor.weight();
                             writeln!(stdout, "{node}, {distance} ({weight:+})").unwrap();
                             cursor.step_key();
+                            print_count -= 1;
+                        }
+                        if print_count == 0 && difference.len() - MAX_PRINT_COUNT > 0{
+                            writeln!(stdout, "[stopped printing remaining {} incorrect results]", difference.len() - MAX_PRINT_COUNT).unwrap();
                         }
                     }
 
@@ -334,6 +343,8 @@ fn main() {
                         difference.len(),
                         if difference.len() == 1 { "" } else { "s" },
                     );
+
+                    incorrect_results.store(!difference.is_empty(), Ordering::Relaxed);
                 }
 
                 OutputData::PageRank(result) => {
@@ -341,6 +352,7 @@ fn main() {
                     let difference = expected.add(result.neg());
 
                     let mut incorrect = 0;
+                    let mut print_count = MAX_PRINT_COUNT;
                     if !difference.is_empty() {
                         let mut stdout = io::stdout().lock();
                         let mut cursor = difference.cursor();
@@ -381,21 +393,28 @@ fn main() {
                             }
 
                             cursor.step_key();
+                            print_count -= 1;
                         }
 
+                        if print_count == 0 && difference.len() - MAX_PRINT_COUNT > 0 {
+                            writeln!(stdout, "[stopped printing remaining {} incorrect results]", difference.len() - MAX_PRINT_COUNT).unwrap();
+                        }
                         stdout.flush().unwrap();
                     }
-
                     println!(
                         "pagerank had {incorrect} incorrect result{}",
                         if incorrect == 1 { "" } else { "s" },
                     );
+
+                    incorrect_results.store(!difference.is_empty(), Ordering::Relaxed);
                 }
             }
         }
     })
     .join()
     .unwrap();
+
+    std::process::exit(incorrect_results_main.load(Ordering::Relaxed) as i32);
 }
 
 fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
