@@ -12,7 +12,7 @@ This is a rough outline of what a contributor's workflow looks like:
 - Create a topic branch from where you want to base your work
 - Make commits of logical units
 - Make sure your commit messages are in the proper format (see below)
-- Push your changes to a topic branch in your fork of the repository
+- Push your changes to a topic branch in the vmware repository or a fork if you don't have commit access to vmware (the reason that pushing directly to the vmware repo is preferred is because then CI will be able to add benchmark results to the PR in the comments).
 - Submit a pull request
 
 Example:
@@ -60,6 +60,19 @@ git push --force-with-lease origin my-new-feature
 
 Be sure to add a comment to the PR indicating your new changes are ready to review, as GitHub does not generate a
 notification when you git push.
+
+### Closing a pull request
+
+Since we run benchmarks as part of CI it's good practice to preserve the commit IDs of the feature branch 
+we've worked on (and benchmarked). Unfortunately, [the github UI does not have support for this](https://github.com/community/community/discussions/4618) 
+(it only allows rebase, squash and merge commits to close PRs).
+Therefore, it's recommended to close and merge PRs using the following git CLI invocation:
+
+```shell
+git checkout main
+git merge --ff-only feature-branch-name
+git push vmware main
+```
 
 ### Code Style
 
