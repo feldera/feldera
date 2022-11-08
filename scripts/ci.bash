@@ -67,8 +67,8 @@ pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
 DATE_PREFIX=`date +"%Y-%m-%d-%H-%M"`
-if [ ! -v PR_COMMIT_SHA ]; then
-    # So we can run the script in non-runner environments:
+if [ -z "${PR_COMMIT_SHA}" ]; then
+    # So we can run the script in non-runner environments and not pull request events
     PR_COMMIT_SHA=`git rev-parse HEAD`
 fi
 
