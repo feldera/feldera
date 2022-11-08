@@ -378,10 +378,13 @@ fn main() {
                                         } else {
                                             (first, first_weight, second, second_weight)
                                         };
-
-                                        writeln!(stdout, "{key}, expected {second} and got {first}  ({first_weight:+}, {second_weight:+})")
-                                            .unwrap();
                                         incorrect += 1;
+
+                                        if print_count > 0 {
+                                            writeln!(stdout, "{key}, expected {second} and got {first}  ({first_weight:+}, {second_weight:+})")
+                                                .unwrap();
+                                            print_count -= 1;
+                                        }
                                     }
                                 } else if first_weight.is_positive() {
                                     writeln!(stdout, "{key}, missing: {first} ({first_weight:+})")
@@ -393,10 +396,8 @@ fn main() {
                             }
 
                             cursor.step_key();
-                            print_count -= 1;
                         }
-
-                        if print_count == 0 && difference.len() - MAX_PRINT_COUNT > 0 {
+                        if incorrect > MAX_PRINT_COUNT {
                             writeln!(stdout, "[stopped printing remaining {} incorrect results]", difference.len() - MAX_PRINT_COUNT).unwrap();
                         }
                         stdout.flush().unwrap();
@@ -405,8 +406,7 @@ fn main() {
                         "pagerank had {incorrect} incorrect result{}",
                         if incorrect == 1 { "" } else { "s" },
                     );
-
-                    incorrect_results.store(!difference.is_empty(), Ordering::Relaxed);
+                    incorrect_results.store(incorrect > 0, Ordering::Relaxed);
                 }
             }
         }
