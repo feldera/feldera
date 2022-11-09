@@ -39,7 +39,7 @@ fn select_impl(length: usize, indices: &mut Vec<usize>) {
     }
 
     #[cfg(target_arch = "aarch64")]
-    if is_aarch64_feature_detected!("neon") {
+    if std::arch::is_aarch64_feature_detected!("neon") {
         selected = fill_indices_aarch64_neon;
     }
 
@@ -265,7 +265,7 @@ pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Ve
 
 /// Fills indices using wasm simd
 // FIXME: Add `target_family = "wasm"`/`target_arch = "wasm64"` support
-#[cfg(target_family = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 #[target_feature(enable = "simd128")]
 unsafe fn fill_indices_wasm32_simd128(original_length: usize, indices: &mut Vec<usize>) {
     use std::arch::wasm32::{i32x4, i32x4_add, i32x4_splat, v128, v128_store};
