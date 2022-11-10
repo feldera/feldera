@@ -68,6 +68,11 @@ the accompanying paper:
 - [Budiu, McSherry, Ryzhyk, Tannen. DBSP: Automatic Incremental View Maintenance
   for Rich Query Languages](https://arxiv.org/abs/2203.16684)
 
+## Front-end languages
+
+In case you don't like Rust, a compiler from SQL to DBSP is being
+developed: <https://github.com/vmware/sql-to-dbsp-compiler>
+
 ## Applications
 
 *TODO*
