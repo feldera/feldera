@@ -38,32 +38,31 @@ jobs:
 
       matrix:
         # We test the following targets:
-        # - 64bit Linux nightly
+        # - 64bit Linux stable
         # - 64bit Linux beta
         # - 64bit Linux nightly
-        # - 64bit MacOS nightly
-        # - 64bit Windows nightly
-        # - 32bit Windows nightly
+        # - 64bit MacOS stable
+        # - 64bit Windows stable
+        # - 32bit Windows stable
         include:
           - {
-              rust: nightly,
+              rust: stable,
               target: x86_64-unknown-linux-gnu,
               os: [self-hosted, Linux, skylake-2x],
             }
-          - { rust: nightly, target: x86_64-apple-darwin, os: macos-latest }
+          - { rust: stable, target: x86_64-apple-darwin, os: macos-latest }
           - {
-              rust: nightly,
+              rust: stable,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
             }
-          - { rust: nightly, target: i686-pc-windows-msvc, os: windows-latest }
-            # TODO: uncomment when we're back to stable Rust.
-            #- { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
-            #- {
-            #  rust: nightly,
-            #  target: x86_64-unknown-linux-gnu,
-            #  os: ubuntu-latest,
-            #}
+          - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
+          - { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - {
+              rust: nightly,
+              target: x86_64-unknown-linux-gnu,
+              os: ubuntu-latest,
+            }
 
     steps:
       - name: Checkout
@@ -234,6 +233,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          # Run nightly clippy, which often finds additional issues.
           toolchain: nightly
           components: clippy
           default: true
@@ -261,6 +261,8 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          # We use unstable rustfmt features: `wrap_comments` and
+          # `format_code_in_doc_comments`.
           toolchain: nightly
           components: rustfmt
           default: true
@@ -285,7 +287,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           default: true
 
       - name: Restore cache

@@ -442,7 +442,7 @@ impl ControllerInner {
         let parser = format.new_parser(&endpoint_config.format.config, &self.catalog)?;
 
         // Create probe.
-        let endpoint_id = inputs.last_key_value().map(|(k, _)| k + 1).unwrap_or(0);
+        let endpoint_id = inputs.iter().rev().next().map(|(k, _)| k + 1).unwrap_or(0);
         let probe = Box::new(InputProbe::new(
             endpoint_id,
             endpoint_name,
