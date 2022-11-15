@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 mod file;
 
-pub use file::FileInputTransport;
+pub use file::{FileInputTransport, FileOutputTransport};
 
 /// Static map of supported input transports.
 // TODO: support for registering new transports at runtime in order to allow
@@ -15,6 +15,14 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
     BTreeMap::from([(
         "file",
         Box::new(FileInputTransport) as Box<dyn InputTransport>,
+    )])
+});
+
+/// Static map of supported output transports.
+static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> = Lazy::new(|| {
+    BTreeMap::from([(
+        "file",
+        Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
     )])
 });
 
@@ -96,14 +104,50 @@ pub trait InputConsumer: Send {
     /// Endpoint failed; no more data will be received from this endpoint.
     fn error(&mut self, error: AnyError);
 
-    /// End-of-input notification.
+    /// End-of-input-stream notification.
     ///
     /// No more data will be received from the endpoint.
-    fn eof(&mut self);
+    fn eoi(&mut self);
 
     /// Create a new consumer instance.
     ///
     /// Used by multithreaded transport endpoints to create multiple parallel
     /// input pipelines.
     fn fork(&self) -> Box<dyn InputConsumer>;
+}
+
+/// Trait that represents a specific data transport.
+///
+/// This is a factory trait that creates outgoing transport endpoint instances.
+pub trait OutputTransport: Send + Sync {
+    /// Unique name of the data transport.
+    fn name(&self) -> Cow<'static, str>;
+
+    /// Create a new transport endpoint.
+    ///
+    /// Create and initializes a transport endpoint.  The endpoint will push
+    /// received data to the provided input consumer.  The endpoint is created
+    /// in a paused state.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Transport-specific configuration.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the specified configuration is invalid or the endpoint failed
+    /// to initialize (e.g., the endpoint was not able to establish a network
+    /// connection).
+    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn OutputEndpoint>>;
+}
+
+impl dyn OutputTransport {
+    /// Lookup output transport by name.
+    pub fn get_transport(name: &str) -> Option<&'static dyn OutputTransport> {
+        OUTPUT_TRANSPORT.get(name).map(|f| &**f)
+    }
+}
+
+pub trait OutputEndpoint: Send {
+    fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()>;
 }

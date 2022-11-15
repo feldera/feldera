@@ -817,6 +817,8 @@ dependencies = [
  "num-derive",
  "num-traits",
  "once_cell",
+ "proptest",
+ "proptest-derive",
  "serde",
  "serde_json",
  "serde_yaml",

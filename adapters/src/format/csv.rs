@@ -1,19 +1,23 @@
 use crate::{
-    format::{InputFormat, Parser},
-    Catalog, DeCollectionHandle,
+    format::{Encoder, InputFormat, OutputFormat, Parser},
+    Catalog, DeCollectionHandle, OutputConsumer, SerBatch,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
-use csv::{byte_record_deserializer, Reader as CsvReader, ReaderBuilder as CsvReaderBuilder};
+use csv::{
+    byte_record_deserializer, Reader as CsvReader, ReaderBuilder as CsvReaderBuilder,
+    WriterBuilder as CsvWriterBuilder,
+};
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     io::Read,
+    mem::take,
     sync::{Arc, Mutex},
 };
 
-/// CSV file format parser.
+/// CSV format parser.
 pub struct CsvInputFormat;
 
 #[derive(Deserialize)]
@@ -36,7 +40,7 @@ impl InputFormat for CsvInputFormat {
         catalog
             .lock()
             .unwrap()
-            .input_collection(&config.input_stream)
+            .input_collection_handle(&config.input_stream)
             .map(|stream| Box::new(CsvParser::new(stream)) as Box<dyn Parser>)
             .ok_or_else(|| AnyError::msg(format!("unknown stream '{}'", config.input_stream)))
     }
@@ -134,7 +138,7 @@ impl Parser for CsvParser {
         }
     }
 
-    fn eof(&mut self) -> AnyResult<usize> {
+    fn eoi(&mut self) -> AnyResult<usize> {
         if self.leftover.is_empty() {
             return Ok(0);
         }
@@ -155,5 +159,101 @@ impl Parser for CsvParser {
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(&*self.input_stream))
+    }
+}
+
+/// CSV format encoder.
+pub struct CsvOutputFormat;
+
+const fn default_buffer_size_records() -> usize {
+    10_000
+}
+
+#[derive(Deserialize)]
+struct CsvEncoderConfig {
+    #[serde(default = "default_buffer_size_records")]
+    buffer_size_records: usize,
+}
+
+impl OutputFormat for CsvOutputFormat {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("csv")
+    }
+
+    fn new_encoder(
+        &self,
+        config: &YamlValue,
+        consumer: Box<dyn OutputConsumer>,
+    ) -> AnyResult<Box<dyn Encoder>> {
+        let config = CsvEncoderConfig::deserialize(config)?;
+
+        Ok(Box::new(CsvEncoder::new(consumer, config)))
+    }
+}
+
+struct CsvEncoder {
+    /// Input handle to push serialized data to.
+    output_consumer: Box<dyn OutputConsumer>,
+
+    /// Builder used to create a new CSV writer for each received data
+    /// buffer.
+    builder: CsvWriterBuilder,
+
+    config: CsvEncoderConfig,
+
+    buffer: Vec<u8>,
+}
+
+impl CsvEncoder {
+    fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
+        let mut builder = CsvWriterBuilder::new();
+        builder.has_headers(false);
+
+        Self {
+            output_consumer,
+            builder,
+            config,
+            buffer: Vec::new(),
+        }
+    }
+}
+
+impl Encoder for CsvEncoder {
+    fn encode(&mut self, batches: &[Box<dyn SerBatch>]) -> AnyResult<()> {
+        let buffer = take(&mut self.buffer);
+        let mut writer = self.builder.from_writer(buffer);
+        let mut num_records = 0;
+
+        for batch in batches.iter() {
+            let mut cursor = batch.cursor();
+
+            while cursor.key_valid() {
+                let w = cursor.weight();
+                writer.serialize((cursor.key(), w))?;
+                num_records += 1;
+
+                if num_records >= self.config.buffer_size_records {
+                    let mut buffer = writer.into_inner()?;
+                    // println!("push_buffer {}", std::str::from_utf8(&buffer).unwrap());
+                    self.output_consumer.push_buffer(&buffer);
+                    buffer.clear();
+                    num_records = 0;
+                    writer = self.builder.from_writer(buffer);
+                }
+
+                cursor.step_key();
+            }
+        }
+
+        let mut buffer = writer.into_inner()?;
+
+        if num_records > 0 {
+            self.output_consumer.push_buffer(&buffer);
+            buffer.clear();
+        }
+
+        self.buffer = buffer;
+
+        Ok(())
     }
 }

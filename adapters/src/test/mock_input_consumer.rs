@@ -7,8 +7,8 @@ pub struct MockInputConsumerState {
     /// All data received from the endpoint since the last `reset`.
     pub data: Vec<u8>,
 
-    /// `eof` has been received since the last `reset`.
-    pub eof: bool,
+    /// `eoi` has been received since the last `reset`.
+    pub eoi: bool,
 
     /// The last error received from the endpoint since the last `reset`.
     pub endpoint_error: Option<AnyError>,
@@ -29,7 +29,7 @@ impl MockInputConsumerState {
     fn new(parser: Box<dyn Parser>) -> Self {
         Self {
             data: Vec::new(),
-            eof: false,
+            eoi: false,
             endpoint_error: None,
             parser_result: None,
             parser,
@@ -46,7 +46,7 @@ impl MockInputConsumerState {
     /// Reset all fields to defaults.
     pub fn reset(&mut self) {
         self.data.clear();
-        self.eof = false;
+        self.eoi = false;
         self.endpoint_error = None;
         self.parser_result = None;
     }
@@ -107,8 +107,8 @@ impl InputConsumer for MockInputConsumer {
         state.endpoint_error = Some(error);
     }
 
-    fn eof(&mut self) {
-        self.state().eof = true;
+    fn eoi(&mut self) {
+        self.state().eoi = true;
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {

@@ -9,10 +9,10 @@
 //! formats (CSV, bincode, JSON, etc.) into the DBSP input and output
 //! pipelines.
 //!
-//! ## Overview (just the input pipeline so far)
+//! ## Overview
 //!
-//! The data ingestion pipeline consists of two kinds of adapters: *data
-//! transport* adapters and **data format** adapters.
+//! The data ingestion pipeline consists of two kinds of adapters: **data
+//! transport** adapters and **data format** adapters.
 //!
 //! ```text
 //!                                                       ┌──────────────┐
@@ -23,26 +23,26 @@
 //!                                                       │  │ config │  │
 //!                                                       │  ├────────┤  │
 //!                         control commands              │  │  stats │  │
-//!                  ┌──┬────────┬─┬──────────────────────┤  └────────┘  │
-//!                  │  │        │ │                      │              │
-//!                  │  │        │ │                      └──────────────┘
-//!                  │  │        │ │
-//!                  │  │        │ │
-//!                  │  │        │ │                        ┌───────────┐
-//!                  ▼  │        │ │                        │           │
-//!                ┌────┴───┐    ▼ │   ┌──────┐        ┌────┴─┐         │
-//!          ─────►│endpoint├──────┼──►│parser├───────►│handle│         ├───►
-//!                └────────┘      │   └──────┘        └────┬─┘         │
-//!                     ▼          │                        │  circuit  │
-//! transport-     ┌────────┐bytes ▼   ┌──────┐records ┌────┴─┐         │
-//! specific ─────►│endpoint├─────────►│parser├───────►│handle│         │
-//! protocol       └────────┘          └──────┘        └────┬─┘         │
-//!                    ▲                  ▲                 │           │
-//!                    │                  │                 └───────────┘
-//!               ┌────┴────┐         ┌───┴────┐
-//!               │  input  │         │ input  │
-//!               │transport│         │ format │
-//!               └─────────┘         └────────┘
+//!                  ┌──┬─────────────────────────────────┤  └────────┘  │
+//!                  │  │                                 │              │
+//!                  │  │                                 └──────────────┘
+//!                  │  │        
+//!                  │  │       
+//!                  │  │                                   ┌───────────┐
+//!                  ▼  │                                   │           │         queue
+//!                ┌────┴───┐          ┌──────┐        ┌────┴─┐       ┌─┴────┐  ┌─┬─┬─┬─┐   ┌───────┐   ┌────────┐
+//!          ─────►│endpoint├─────────►│parser├───────►│handle│       │handle├──┤ │ │ │ ├──►│encoder├──►│endpoint├──►
+//!                └────────┘          └──────┘        └────┬─┘       └─┬────┘  └─┴─┴─┴─┘   └───────┘   └────────┘
+//!                     ▼                                   │  circuit  │
+//! transport-     ┌────────┐bytes     ┌──────┐records ┌────┴─┐       ┌─┴────┐  ┌─┬─┬─┬─┐   ┌───────┐   ┌────────┐
+//! specific ─────►│endpoint├─────────►│parser├───────►│handle│       │handle├──┤ │ │ │ ├──►│encoder├──►│endpoint├──►
+//! protocol       └────────┘          └──────┘        └────┬─┘       └─┬────┘  └─┴─┴─┴─┘   └───────┘   └────────┘
+//!                    ▲                  ▲                 │           │                       ▲            ▲
+//!                    │                  │                 └───────────┘                       │            │
+//!               ┌────┴────┐         ┌───┴────┐                                            ┌───┴────┐  ┌────┴────┐
+//!               │  input  │         │ input  │                                            │ output │  │  output │
+//!               │transport│         │ format │                                            │ format │  │transport│
+//!               └─────────┘         └────────┘                                            └────────┘  └─────────┘
 //! ```
 //!
 //! A data transport implements support for a specific streaming technology like
@@ -56,6 +56,12 @@
 //! transform raw binary data into a stream of **records** and push this data to
 //! the DBSP circuit.
 //!
+//! Similar to input pipelines, an output pipeline consists of an (output)
+//! transport endpoint and an encoder that serializes output batches into a
+//! particular format.  Output batches produced by the circuit are placed in
+//! lock-free queueus.  Each output pipeline runs in a separate thread that
+//! dequeues the batches and pushes them to the encoder.
+//!
 //! The [`Controller`] component serves as a centralized control plane that
 //! coordinates the creation, reconfiguration, teardown of the pipeline, and
 //! implements runtime flow control.  It instantiates the pipeline according to
@@ -68,13 +74,27 @@
 //!
 //! * [`InputTransport`] is a factory trait that creates [`InputEndpoint`]
 //!   instances.
+//!
 //! * [`InputEndpoint`] represents an individual data connection, e.g., a file,
 //!   an S3 bucket or a Kafka topic.
 //!
+//! * [`OutputTransport`] is a factory trait that creates [`OutputEndpoint`]
+//!   instances.
+//!
+//! * [`OutputEndpoint`] represents an individual outgoing data connection,
+//!   e.g., a file, an S3 bucket or a Kafka topic.
+//!
 //! Similarly, the format adapter API consists of:
+//!
 //! * [`InputFormat`] - a factory trait that creates [`Parser`] instances
+//!
 //! * [`Parser`] - a parser that consumes a raw binary stream and outputs a
 //!   stream of records.
+//!
+//! * [`OutputFormat`] - a factory trait that creates [`Encoder`] instances
+//!
+//! * [`Encoder`] - an encoder that consumes batches of records and serializes
+//!   them into binary buffers.
 //!
 //! ## Controller API
 //!
@@ -92,15 +112,15 @@ mod catalog;
 mod controller;
 mod deinput;
 mod format;
+mod seroutput;
 mod transport;
 
 #[cfg(test)]
 mod test;
 
-#[derive(Copy, Clone, FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum PipelineState {
-    /// All input endpoints are paused (or are in the process of getting
-    /// paused).
+    /// All input endpoints are paused (or are in the process of being paused).
     Paused = 0,
 
     /// Controller is running.
@@ -114,7 +134,11 @@ pub use catalog::Catalog;
 pub use deinput::{
     DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
 };
-pub use format::{InputFormat, Parser};
+pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, Parser};
+pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
 
 pub use controller::{Controller, ControllerConfig};
-pub use transport::{FileInputTransport, InputConsumer, InputEndpoint, InputTransport};
+pub use transport::{
+    FileInputTransport, InputConsumer, InputEndpoint, InputTransport, OutputEndpoint,
+    OutputTransport,
+};

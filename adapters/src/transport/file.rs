@@ -1,4 +1,4 @@
-use super::{InputConsumer, InputEndpoint, InputTransport};
+use super::{InputConsumer, InputEndpoint, InputTransport, OutputEndpoint, OutputTransport};
 use crate::PipelineState;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
@@ -8,7 +8,7 @@ use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Result as IoResult, Write},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -48,11 +48,11 @@ struct FileInputConfig {
     ///
     /// Default: when this parameter is not specified, a platform-specific
     /// default is used.
-    buffer_size: Option<usize>,
+    buffer_size_bytes: Option<usize>,
 
     /// Enable file following.
     ///
-    /// When `false`, the endpoint outputs an [`eof`](`InputConsumer::eof`)
+    /// When `false`, the endpoint outputs an [`eoi`](`InputConsumer::eoi`)
     /// message and stops upon reaching the end of file.  When `true`, the
     /// endpoint will keep watching the file and outputting any new content
     /// appended to it.
@@ -77,7 +77,7 @@ impl FileInputEndpoint {
 
     fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
         let file = File::open(&self.config.path)?;
-        let reader = match self.config.buffer_size {
+        let reader = match self.config.buffer_size_bytes {
             Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
             _ => BufReader::new(file),
         };
@@ -103,6 +103,7 @@ impl FileInputEndpoint {
         status: Arc<AtomicU32>,
         follow: bool,
     ) {
+        println!("file reader worker");
         loop {
             match PipelineState::from_u32(status.load(Ordering::Acquire)) {
                 Some(PipelineState::Paused) => parker.park(),
@@ -115,13 +116,14 @@ impl FileInputEndpoint {
                         }
                         Ok(data) if data.is_empty() => {
                             if !follow {
-                                consumer.eof();
+                                consumer.eoi();
                                 return;
                             } else {
                                 sleep(Duration::from_millis(SLEEP_MS));
                             }
                         }
                         Ok(data) => {
+                            // println!("read {} bytes from file", data.len());
                             consumer.input(data);
                             let len = data.len();
                             reader.consume(len);
@@ -168,6 +170,46 @@ impl Drop for FileInputEndpoint {
     }
 }
 
+/// `OutputTransport` implementation that writes data to file.
+pub struct FileOutputTransport;
+
+impl OutputTransport for FileOutputTransport {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("file")
+    }
+
+    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn OutputEndpoint>> {
+        let config = FileOutputConfig::deserialize(config)?;
+        let ep = FileOutputEndpoint::new(config)?;
+
+        Ok(Box::new(ep))
+    }
+}
+
+#[derive(Deserialize)]
+struct FileOutputConfig {
+    /// File path.
+    path: String,
+}
+
+struct FileOutputEndpoint {
+    file: File,
+}
+
+impl FileOutputEndpoint {
+    fn new(config: FileOutputConfig) -> IoResult<Self> {
+        let file = File::create(config.path)?;
+        Ok(Self { file })
+    }
+}
+
+impl OutputEndpoint for FileOutputEndpoint {
+    fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        self.file.write_all(buffer)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::test::{mock_input_pipeline, wait};
@@ -206,7 +248,7 @@ transport:
     name: file
     config:
         path: {:?}
-        buffer_size: 5
+        buffer_size_bytes: 5
 format:
     name: csv
     config:
@@ -234,7 +276,7 @@ format:
 
         // No outputs should be produced at this point.
         assert!(consumer.state().data.is_empty());
-        assert!(!consumer.state().eof);
+        assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
         endpoint.start().unwrap();
@@ -261,7 +303,7 @@ transport:
     name: file
     config:
         path: {:?}
-        buffer_size: 5
+        buffer_size_bytes: 5
         follow: true
 format:
     name: csv
@@ -292,7 +334,7 @@ format:
 
             // No outputs should be produced at this point.
             assert!(consumer.state().data.is_empty());
-            assert!(!consumer.state().eof);
+            assert!(!consumer.state().eoi);
 
             // Unpause the endpoint, wait for the data to appear at the output.
             endpoint.start().unwrap();

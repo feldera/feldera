@@ -56,7 +56,7 @@ where
 {
     let mut catalog = Catalog::new();
     let input_handle = <MockDeZSet<T>>::new();
-    catalog.register_input(name, input_handle.clone());
+    catalog.register_input_collection_handle(name, input_handle.clone());
 
     let consumer = MockInputConsumer::from_config(&config.format, &Arc::new(Mutex::new(catalog)));
 

@@ -27,6 +27,10 @@ pub struct ControllerConfig {
 
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+
+    /// Output endpoint configuration.
+    #[serde(default)]
+    pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 }
 
 /// Internal representaion of controller configuration stored inside the
@@ -36,6 +40,7 @@ pub struct ControllerConfig {
 pub struct ControllerInnerConfig {
     pub global: GlobalControllerConfig,
     pub inputs: BTreeMap<EndpointId, InputEndpointConfig>,
+    pub outputs: BTreeMap<EndpointId, OutputEndpointConfig>,
 }
 
 impl ControllerInnerConfig {
@@ -43,6 +48,7 @@ impl ControllerInnerConfig {
         Self {
             global,
             inputs: BTreeMap::new(),
+            outputs: BTreeMap::new(),
         }
     }
 }
@@ -87,6 +93,25 @@ pub struct InputEndpointConfig {
     pub max_buffered_records: u64,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OutputEndpointConfig {
+    /// The name of the output stream of the circuit that this pipeline is
+    /// connected to.
+    pub stream: Cow<'static, str>,
+
+    /// Transport endpoint configuration.
+    pub transport: TransportConfig,
+
+    /// Encoder configuration.
+    pub format: FormatConfig,
+
+    /// Backpressure threshold.
+    ///
+    /// The default is 1 million.
+    #[serde(default = "default_max_buffered_records")]
+    pub max_buffered_records: u64,
+}
+
 /// Transport endpoint configuration.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TransportConfig {
@@ -94,17 +119,21 @@ pub struct TransportConfig {
     pub name: Cow<'static, str>,
 
     /// Transport-specific endpoint configuration passed to
-    /// [`Transport::new_endpoint`](`crate::Transport::new_endpoint`).
+    /// [`OutputTransport::new_endpoint`](`crate::OutputTransport::new_endpoint`)
+    /// and
+    /// [`InputTransport::new_endpoint`](`crate::InputTransport::new_endpoint`).
+    #[serde(default)]
     pub config: YamlValue,
 }
 
 /// Data format specification used to parse raw data received from the
-/// endpoint.
+/// endpoint or to encode data sent to the endpoint.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FormatConfig {
     /// Format name, e.g., "csv", "json", "bincode", etc.
     pub name: Cow<'static, str>,
 
-    /// Format-specific parser configuration.
+    /// Format-specific parser or encoder configuration.
+    #[serde(default)]
     pub config: YamlValue,
 }
