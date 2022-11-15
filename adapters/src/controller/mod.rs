@@ -34,10 +34,15 @@
 //! counters in the controller.
 
 use crate::{
-    Catalog, InputConsumer, InputEndpoint, InputFormat, InputTransport, Parser, PipelineState,
+    Catalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport, OutputConsumer,
+    OutputEndpoint, OutputFormat, OutputTransport, Parser, PipelineState, SerBatch,
+    SerOutputBatchHandle,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
-use crossbeam::sync::{Parker, ShardedLock, Unparker};
+use crossbeam::{
+    queue::SegQueue,
+    sync::{Parker, ShardedLock, Unparker},
+};
 use dbsp::DBSPHandle;
 use num_traits::FromPrimitive;
 use std::{
@@ -56,7 +61,7 @@ mod stats;
 
 pub use config::{
     ControllerConfig, ControllerInnerConfig, FormatConfig, GlobalControllerConfig,
-    InputEndpointConfig,
+    InputEndpointConfig, OutputEndpointConfig,
 };
 use error::ControllerError;
 use stats::ControllerStats;
@@ -74,11 +79,9 @@ pub struct Controller {
 
     /// The circuit thread handle (see module-level docs).
     circuit_thread_handle: JoinHandle<AnyResult<()>>,
-    circuit_thread_unparker: Unparker,
 
     /// The backpressure thread handle (see module-level docs).
     backpressure_thread_handle: JoinHandle<()>,
-    backpressure_thread_unparker: Unparker,
 }
 
 impl Controller {
@@ -100,7 +103,8 @@ impl Controller {
     ///   and individual endpoint configs.
     ///
     /// * `error_cb` - Error callback.  The controller doesn't implement its own
-    ///   error handling policy, but simply forwards most errors up the stack.
+    ///   error handling policy, but simply forwards most errors to this
+    ///   callback.
     ///
     /// # Errors
     ///
@@ -116,47 +120,42 @@ impl Controller {
         config: &ControllerConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> AnyResult<Self> {
-        let inner = Arc::new(ControllerInner::new(catalog, &config.global, error_cb));
+        let circuit_thread_parker = Parker::new();
+        let circuit_thread_unparker = circuit_thread_parker.unparker().clone();
 
         let backpressure_thread_parker = Parker::new();
         let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
+
+        let inner = Arc::new(ControllerInner::new(
+            catalog,
+            &config.global,
+            circuit_thread_unparker,
+            backpressure_thread_unparker,
+            error_cb,
+        ));
 
         let backpressure_thread_handle = {
             let inner = inner.clone();
             spawn(move || Self::backpressure_thread(inner, backpressure_thread_parker))
         };
 
-        let circuit_thread_parker = Parker::new();
-        let circuit_thread_unparker = circuit_thread_parker.unparker().clone();
-
         let circuit_thread_handle = {
             let inner = inner.clone();
-            let backpressure_thread_unparker = backpressure_thread_unparker.clone();
-            spawn(move || {
-                Self::circuit_thread(
-                    circuit,
-                    inner,
-                    circuit_thread_parker,
-                    backpressure_thread_unparker,
-                )
-            })
+            spawn(move || Self::circuit_thread(circuit, inner, circuit_thread_parker))
         };
 
         for (input_name, input_config) in config.inputs.iter() {
-            inner.connect_input(
-                input_name,
-                input_config,
-                circuit_thread_unparker.clone(),
-                backpressure_thread_unparker.clone(),
-            )?;
+            inner.connect_input(input_name, input_config)?;
+        }
+
+        for (output_name, output_config) in config.outputs.iter() {
+            inner.connect_output(output_name, output_config)?;
         }
 
         Ok(Self {
             inner,
             circuit_thread_handle,
-            circuit_thread_unparker,
             backpressure_thread_handle,
-            backpressure_thread_unparker,
         })
     }
 
@@ -180,14 +179,7 @@ impl Controller {
         endpoint_name: &str,
         config: &InputEndpointConfig,
     ) -> AnyResult<()> {
-        self.inner.connect_input(
-            endpoint_name,
-            config,
-            self.circuit_thread_unparker.clone(),
-            self.backpressure_thread_unparker.clone(),
-        )?;
-        self.unpark_backpressure();
-        Ok(())
+        self.inner.connect_input(endpoint_name, config)
     }
 
     /// Change the state of all input endpoints to running.
@@ -195,7 +187,6 @@ impl Controller {
     /// Start streaming data through all connected input endpoints.
     pub fn start(&self) {
         self.inner.start();
-        self.unpark_backpressure();
     }
 
     /// Pause all input endpoints.
@@ -206,15 +197,17 @@ impl Controller {
     /// fully paused.
     pub fn pause(&self) {
         self.inner.pause();
-        self.unpark_backpressure();
+    }
+
+    /// Returns controller stats.
+    pub fn stats(&self) -> &ControllerStats {
+        &self.inner.stats
     }
 
     /// Terminate the controller, stop all input endpoints and destroy the
     /// circuit.
     pub fn stop(self) -> AnyResult<()> {
         self.inner.stop();
-        self.unpark_circuit();
-        self.unpark_backpressure();
         self.circuit_thread_handle
             .join()
             .map_err(|_| AnyError::msg("circuit thread panicked"))??;
@@ -224,22 +217,13 @@ impl Controller {
         Ok(())
     }
 
-    /// Unpark the circuit thread.
-    fn unpark_circuit(&self) {
-        self.circuit_thread_unparker.unpark();
-    }
-
-    /// Unpark the backpressure thread.
-    fn unpark_backpressure(&self) {
-        self.backpressure_thread_unparker.unpark();
-    }
-
-    /// Circuit thread function.
+    /// Circuit thread function: holds the handle to the circuit, calls `step`
+    /// on it whenever input data is available, pushes output batches
+    /// produced by the circuit to output pipelines.
     fn circuit_thread(
         mut circuit: DBSPHandle,
         controller: Arc<ControllerInner>,
         parker: Parker,
-        backpressure_thread_unparker: Unparker,
     ) -> AnyResult<()> {
         let mut start: Option<Instant> = None;
 
@@ -249,26 +233,51 @@ impl Controller {
         drop(config);
 
         loop {
-            match PipelineState::from_u32(controller.state.load(Ordering::Acquire)) {
-                Some(PipelineState::Running) | Some(PipelineState::Paused) => {
-                    let buffered_records = controller.stats.num_buffered_records();
+            match controller.state() {
+                PipelineState::Running | PipelineState::Paused => {
+                    // Backpressure in the output pipeline: wait for room in output buffers to
+                    // become available.
+                    if controller.output_buffers_full() {
+                        parker.park();
+                        continue;
+                    }
+
+                    let buffered_records = controller.stats.num_buffered_input_records();
 
                     // We have sufficient buffered inputs or the buffering delay has expired --
-                    // kick the circuit to consume buffered data.
-                    if buffered_records >= min_batch_size_records
+                    // kick the circuit to consume buffered data.  Use strict inequality in case
+                    // `min_batch_size_records` is 0.
+                    if buffered_records > min_batch_size_records
                         || start
                             .map(|start| start.elapsed() >= max_buffering_delay)
                             .unwrap_or(false)
                     {
                         start = None;
                         // Reset all counters of buffered records and bytes to 0.
-                        controller.stats.consume_buffered();
+                        controller.stats.consume_buffered_inputs();
                         // Wake up the backpressure thread to unpause endpoints blocked due to
                         // backpressure.
-                        backpressure_thread_unparker.unpark();
+                        controller.unpark_backpressure();
                         circuit
                             .step()
                             .unwrap_or_else(|e| controller.error(ControllerError::dbsp_error(e)));
+
+                        // Push output batches to output pipelines.
+                        let outputs = controller.outputs.read().unwrap();
+                        for (endpoint_id, output) in outputs.iter() {
+                            // TODO: add an endpoint config option to consolidate output batches.
+                            let batch = output.output_handle.take_from_all();
+                            let num_records = batch.iter().map(|b| b.len()).sum();
+
+                            // Increment stats first, so we don't end up with negative counts.
+                            controller.stats.enqueue_batch(*endpoint_id, num_records);
+                            output.queue.push(batch);
+
+                            // Wake up the output thread.  We're not trying to be smart here and
+                            // wake up the thread conditionally if it was previously idle, as I
+                            // don't expect this to make any real difference.
+                            output.unparker.unpark();
+                        }
                     } else if buffered_records > 0 {
                         // We have some buffered data, but less than `min_batch_size_records` --
                         // wait up to `max_buffering_delay` for more data to
@@ -281,13 +290,12 @@ impl Controller {
                         parker.park();
                     }
                 }
-                Some(PipelineState::Terminated) => {
+                PipelineState::Terminated => {
                     circuit
                         .kill()
                         .map_err(|_| AnyError::msg("dbsp thead panicked"))?;
                     return Ok(());
                 }
-                _ => unreachable!(),
             }
         }
     }
@@ -306,8 +314,8 @@ impl Controller {
         loop {
             let inputs = controller.inputs.lock().unwrap();
 
-            match PipelineState::from_u32(controller.state.load(Ordering::Acquire)) {
-                Some(PipelineState::Paused) => {
+            match controller.state() {
+                PipelineState::Paused => {
                     // Pause circuit if not yet paused.
                     if !global_pause {
                         for (epid, ep) in inputs.iter() {
@@ -324,7 +332,7 @@ impl Controller {
                     }
                     global_pause = true;
                 }
-                Some(PipelineState::Running) => {
+                PipelineState::Running => {
                     // Resume endpoints that have buffer space, pause endpoints with full buffers.
                     for (epid, ep) in inputs.iter() {
                         if controller
@@ -357,8 +365,7 @@ impl Controller {
                     }
                     global_pause = false;
                 }
-                Some(PipelineState::Terminated) => return,
-                _ => unreachable!(),
+                PipelineState::Terminated => return,
             }
 
             drop(inputs);
@@ -383,6 +390,53 @@ impl InputEndpointState {
     }
 }
 
+/// A lock-free queue used to send output batches from the circuit thread
+/// to output endpoint threads.
+type BatchQueue = SegQueue<Vec<Box<dyn SerBatch>>>;
+
+/// State tracked by the controller for each output endpoint.
+struct OutputEndpointState {
+    /// Endpoint name.
+    endpoint_name: String,
+
+    /// Output stream name from the circuit catalog.
+    ///
+    /// Note: we currently assume that each output endpoint is connected to
+    /// exactly one output stream.  This can be generalized to a
+    /// many-to-many relation, e.g., a single endpoint that implements a
+    /// database connection can read from multiple output streams (one per DB
+    /// table). Likewise, there's no reason the same output stream cannot be
+    /// sent to multiple destinations. Like with the rest of this design, we
+    /// keep things simple until we understand real use cases better.
+    stream_name: String,
+
+    /// Handle for the output stream.
+    output_handle: Box<dyn SerOutputBatchHandle>,
+
+    /// FIFO queue of batches read from the stream.
+    queue: Arc<BatchQueue>,
+
+    /// Unparker for the endpoint thread.
+    unparker: Unparker,
+}
+
+impl OutputEndpointState {
+    pub fn new(
+        endpoint_name: &str,
+        stream_name: &str,
+        output_handle: Box<dyn SerOutputBatchHandle>,
+        unparker: Unparker,
+    ) -> Self {
+        Self {
+            endpoint_name: endpoint_name.to_string(),
+            stream_name: stream_name.to_string(),
+            output_handle,
+            queue: Arc::new(SegQueue::new()),
+            unparker,
+        }
+    }
+}
+
 /// Controller state sharable across threads.
 ///
 /// A reference to this struct is held by each input probe and by both
@@ -393,6 +447,9 @@ struct ControllerInner {
     state: AtomicU32,
     catalog: Arc<Mutex<Catalog>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointState>>,
+    outputs: ShardedLock<BTreeMap<EndpointId, OutputEndpointState>>,
+    circuit_thread_unparker: Unparker,
+    backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
 }
 
@@ -400,6 +457,8 @@ impl ControllerInner {
     fn new(
         catalog: Catalog,
         global_config: &GlobalControllerConfig,
+        circuit_thread_unparker: Unparker,
+        backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Self {
         let stats = ControllerStats::new();
@@ -412,6 +471,9 @@ impl ControllerInner {
             state,
             catalog: Arc::new(Mutex::new(catalog)),
             inputs: Mutex::new(BTreeMap::new()),
+            outputs: ShardedLock::new(BTreeMap::new()),
+            circuit_thread_unparker,
+            backpressure_thread_unparker,
             error_cb,
         }
     }
@@ -420,8 +482,6 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
-        circuit_thread_unparker: Unparker,
-        backpressure_thread_unparker: Unparker,
     ) -> AnyResult<()> {
         let mut inputs = self.inputs.lock().unwrap();
 
@@ -442,14 +502,14 @@ impl ControllerInner {
         let parser = format.new_parser(&endpoint_config.format.config, &self.catalog)?;
 
         // Create probe.
-        let endpoint_id = inputs.iter().rev().next().map(|(k, _)| k + 1).unwrap_or(0);
+        let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
         let probe = Box::new(InputProbe::new(
             endpoint_id,
             endpoint_name,
             parser,
             self.clone(),
-            circuit_thread_unparker,
-            backpressure_thread_unparker,
+            self.circuit_thread_unparker.clone(),
+            self.backpressure_thread_unparker.clone(),
         ));
 
         // Create transport endpoint.
@@ -474,17 +534,167 @@ impl ControllerInner {
         // Initialize endpoint stats.
         self.stats.add_input(&endpoint_id);
 
+        self.unpark_backpressure();
         Ok(())
+    }
+
+    /// Unpark the circuit thread.
+    fn unpark_circuit(&self) {
+        self.circuit_thread_unparker.unpark();
+    }
+
+    /// Unpark the backpressure thread.
+    fn unpark_backpressure(&self) {
+        self.backpressure_thread_unparker.unpark();
+    }
+
+    fn connect_output(
+        self: &Arc<Self>,
+        endpoint_name: &str,
+        endpoint_config: &OutputEndpointConfig,
+    ) -> AnyResult<()> {
+        let mut outputs = self.outputs.write().unwrap();
+
+        if outputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
+            Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
+        }
+        for ep in outputs.values() {
+            if ep.stream_name == endpoint_config.stream {
+                Err(ControllerError::duplicate_output_stream_consumer(
+                    &ep.stream_name,
+                    &ep.endpoint_name,
+                    endpoint_name,
+                ))?;
+            }
+        }
+
+        // Create output pipeline, consisting of an encoder, output probe and
+        // transport endpoint; run the pipeline in a separate thread.
+        //
+        // ┌───────┐   ┌───────────┐   ┌────────┐
+        // │encoder├──►│OutputProbe├──►│endpoint├──►
+        // └───────┘   └───────────┘   └────────┘
+
+        // Lookup output handle in catalog.
+        let collection_handle = self
+            .catalog
+            .lock()
+            .unwrap()
+            .output_batch_handle(&endpoint_config.stream)
+            .ok_or_else(|| ControllerError::unknown_output_stream(&endpoint_config.stream))?
+            .fork();
+
+        // Create transport endpoint.
+        let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
+            .ok_or_else(|| {
+                ControllerError::unknown_output_transport(&endpoint_config.transport.name)
+            })?;
+
+        let endpoint = transport.new_endpoint(&endpoint_config.transport.config)?;
+
+        // Create probe.
+        let endpoint_id = outputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
+        let probe = Box::new(OutputProbe::new(
+            endpoint_id,
+            endpoint_name,
+            endpoint,
+            self.clone(),
+        ));
+
+        // Create encoder.
+        let format = <dyn OutputFormat>::get_format(&endpoint_config.format.name)
+            .ok_or_else(|| ControllerError::unknown_output_format(&endpoint_config.format.name))?;
+        let encoder = format.new_encoder(&endpoint_config.format.config, probe)?;
+
+        let parker = Parker::new();
+        let endpoint_state = OutputEndpointState::new(
+            endpoint_name,
+            &endpoint_config.stream,
+            collection_handle,
+            parker.unparker().clone(),
+        );
+        let queue = endpoint_state.queue.clone();
+        let controller = self.clone();
+
+        outputs.insert(endpoint_id, endpoint_state);
+
+        let endpoint_name_string = endpoint_name.to_string();
+        // Thread to run the output pipeline.
+        spawn(move || {
+            Self::output_thread_func(
+                endpoint_id,
+                endpoint_name_string,
+                encoder,
+                parker,
+                queue,
+                controller,
+            )
+        });
+
+        drop(outputs);
+
+        // Record endpoint config in `self.config`.
+        let mut config = self.config.write().unwrap();
+        config.outputs.insert(endpoint_id, endpoint_config.clone());
+
+        // Initialize endpoint stats.
+        self.stats.add_output(&endpoint_id);
+
+        Ok(())
+    }
+
+    fn output_thread_func(
+        endpoint_id: EndpointId,
+        endpoint_name: String,
+        mut encoder: Box<dyn Encoder>,
+        parker: Parker,
+        queue: Arc<BatchQueue>,
+        controller: Arc<ControllerInner>,
+    ) {
+        loop {
+            if controller.state() == PipelineState::Terminated {
+                return;
+            }
+
+            // Dequeue the next output batch and push it to the encoder.
+            if let Some(data) = queue.pop() {
+                let num_records = data.iter().map(|b| b.len()).sum();
+
+                encoder.encode(data.as_slice()).unwrap_or_else(|e| {
+                    controller.error(ControllerError::encoder_error(&endpoint_name, e))
+                });
+
+                // `num_records` output records have been transmitted --
+                // update output stats, wake up the circuit thread if the
+                // number of queued records drops below high water mark.
+                controller.stats.output_batch(
+                    endpoint_id,
+                    num_records,
+                    &controller.config.read().unwrap(),
+                    &controller.circuit_thread_unparker,
+                );
+            } else {
+                // Queue is empty -- wait for the circuit thread to wake us up when
+                // more data is available.
+                parker.park();
+            }
+        }
+    }
+
+    fn state(self: &Arc<Self>) -> PipelineState {
+        PipelineState::from_u32(self.state.load(Ordering::Acquire)).unwrap()
     }
 
     fn start(self: &Arc<Self>) {
         self.state
             .store(PipelineState::Running as u32, Ordering::Release);
+        self.unpark_backpressure();
     }
 
     fn pause(self: &Arc<Self>) {
         self.state
             .store(PipelineState::Paused as u32, Ordering::Release);
+        self.unpark_backpressure();
     }
 
     fn stop(self: &Arc<Self>) {
@@ -497,15 +707,22 @@ impl ControllerInner {
 
         self.state
             .store(PipelineState::Terminated as u32, Ordering::Release);
+
+        self.unpark_circuit();
+        self.unpark_backpressure();
     }
 
     fn error(&self, error: ControllerError) {
         (self.error_cb)(error);
     }
+
+    fn output_buffers_full(&self) -> bool {
+        self.stats.output_buffers_full(&self.config.read().unwrap())
+    }
 }
 
-// An input probe inserted between the transport endpoint and the parser to
-// track stats and errors.
+/// An input probe inserted between the transport endpoint and the parser to
+/// track stats and errors.
 struct InputProbe {
     endpoint_id: EndpointId,
     endpoint_name: String,
@@ -538,6 +755,7 @@ impl InputProbe {
 /// `InputConsumer` interface exposed to the transport endpoint.
 impl InputConsumer for InputProbe {
     fn input(&mut self, data: &[u8]) {
+        // println!("input consumer {} bytes", data.len());
         // Pass input buffer to the parser.
         match self.parser.input(data) {
             Ok(num_records) => {
@@ -553,7 +771,6 @@ impl InputConsumer for InputProbe {
                 );
             }
             Err(error) => {
-                // Error: propagate the error up the stack.
                 self.parser.clear();
                 self.controller
                     .error(ControllerError::parse_error(&self.endpoint_name, error));
@@ -561,15 +778,15 @@ impl InputConsumer for InputProbe {
         }
     }
 
-    fn eof(&mut self) {
+    fn eoi(&mut self) {
         // The endpoint reached end-of-file.  Notify and flush the parser (even though
         // no new data has been received, the parser may contain some partially
         // parsed data and may be waiting for, e.g., and end-of-line or
         // end-of-file to finish parsing it).
-        match self.parser.eof() {
+        match self.parser.eoi() {
             Ok(num_records) => {
                 self.parser.flush();
-                self.controller.stats.eof(
+                self.controller.stats.eoi(
                     self.endpoint_id,
                     num_records,
                     &self.controller.config.read().unwrap(),
@@ -601,15 +818,63 @@ impl InputConsumer for InputProbe {
     }
 }
 
+/// An output probe inserted between the encoder and the output transport
+/// endpoint to track stats.
+struct OutputProbe {
+    endpoint_id: EndpointId,
+    endpoint_name: String,
+    endpoint: Box<dyn OutputEndpoint>,
+    controller: Arc<ControllerInner>,
+}
+
+impl OutputProbe {
+    pub fn new(
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        endpoint: Box<dyn OutputEndpoint>,
+        controller: Arc<ControllerInner>,
+    ) -> Self {
+        Self {
+            endpoint_id,
+            endpoint_name: endpoint_name.to_owned(),
+            endpoint,
+            controller,
+        }
+    }
+}
+
+impl OutputConsumer for OutputProbe {
+    fn push_buffer(&mut self, buffer: &[u8]) {
+        let num_bytes = buffer.len();
+
+        match self.endpoint.push_buffer(buffer) {
+            Ok(()) => {
+                self.controller
+                    .stats
+                    .output_buffer(self.endpoint_id, num_bytes);
+            }
+            Err(error) => {
+                self.controller
+                    .error(ControllerError::transport_error(&self.endpoint_name, error));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::{Catalog, Controller, ControllerConfig};
+    use crate::{test::wait, Catalog, Controller, ControllerConfig};
     use bincode::{Decode, Encode};
-    use dbsp::{algebra::F32, DBSPHandle, Runtime};
+    use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
+    use dbsp::{DBSPHandle, Runtime};
     use serde::{Deserialize, Serialize};
     use serde_yaml;
     use size_of::SizeOf;
+    use std::fs::remove_file;
     use tempfile::NamedTempFile;
+
+    use proptest::{collection, prelude::*};
+    use proptest_derive::Arbitrary;
 
     #[derive(
         Debug,
@@ -624,70 +889,144 @@ mod test {
         SizeOf,
         Encode,
         Decode,
+        Arbitrary,
     )]
     struct TestStruct {
+        id: u32,
         b: bool,
-        f: F32,
-        s: Option<String>,
+        i: Option<i64>,
+        s: String,
     }
 
-    /*impl TestStruct {
-        fn new(b: bool, f: F32, s: Option<String>) -> Self {
-            Self { b, f, s }
-        }
-    }*/
+    fn test_data(size: usize) -> impl Strategy<Value = Vec<TestStruct>> {
+        collection::vec(any::<TestStruct>(), 0..=size)
+    }
 
     fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
-        let (circuit, (input, _output)) = Runtime::init_circuit(workers, |circuit| {
+        let (circuit, (input, output)) = Runtime::init_circuit(workers, |circuit| {
             let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
 
-            let houtput = input.integrate().output();
+            let houtput = input.output();
             (hinput, houtput)
         })
         .unwrap();
 
         let mut catalog = Catalog::new();
-        catalog.register_input_zset("test_input1", input);
+        catalog.register_input_zset_handle("test_input1", input);
+        catalog.register_output_batch_handle("test_output1", output);
 
         (circuit, catalog)
     }
 
-    #[test]
-    fn csv_file_test() {
-        let (circuit, catalog) = test_circuit(4);
+    // TODO: Parameterize this with config string, so we can test different
+    // input/output formats and transports when we support more than one.
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+        #[test]
+        fn proptest_csv_file(
+            data in test_data(5000),
+            min_batch_size_records in 1..100usize,
+            max_buffering_delay_usecs in 1..2000usize,
+            input_buffer_size_bytes in 1..1000usize,
+            output_buffer_size_records in 1..100usize)
+        {
+            // Assign unique indexes to records to make sure that all records are unique,
+            // all weights are eualt to 1, and so the number of output records is equal to
+            // the number of input records.
+            let data: Vec<TestStruct> = data.iter().enumerate().map(|(idx, val)| {
+                let mut val = val.clone();
+                val.id = idx as u32;
+                val
+            }).collect();
 
-        let temp_file = NamedTempFile::new().unwrap();
+            let (circuit, catalog) = test_circuit(4);
 
-        let config_str = format!(
-            r#"
+            let temp_input_file = NamedTempFile::new().unwrap();
+            let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
+            let output_path = temp_output_path.to_str().unwrap().to_string();
+            temp_output_path.close().unwrap();
+
+            let config_str = format!(
+                r#"
+min_batch_size_records: {min_batch_size_records}
+max_buffering_delay_usecs: {max_buffering_delay_usecs}
 inputs:
     test_input1:
         transport:
             name: file
             config:
                 path: {:?}
-                buffer_size: 5
-                follow: true
+                buffer_size_bytes: {input_buffer_size_bytes}
+                follow: false
         format:
             name: csv
             config:
                 input_stream: test_input1
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file
+            config:
+                path: {:?}
+        format:
+            name: csv
+            config:
+                buffer_size_records: {output_buffer_size_records}
         "#,
-            temp_file.path().to_str().unwrap()
-        );
+            temp_input_file.path().to_str().unwrap(),
+            output_path,
+            );
 
-        let config: ControllerConfig = serde_yaml::from_str(&config_str).unwrap();
+            println!("input file: {}", temp_input_file.path().to_str().unwrap());
+            println!("output file: {output_path}");
+            let config: ControllerConfig = serde_yaml::from_str(&config_str).unwrap();
 
-        let controller = Controller::with_config(
-            circuit,
-            catalog,
-            &config,
-            Box::new(|e| panic!("error: {e}")),
-        )
-        .unwrap();
+            let controller = Controller::with_config(
+                circuit,
+                catalog,
+                &config,
+                Box::new(|e| panic!("error: {e}")),
+                )
+                .unwrap();
 
-        // TODO: feed some data, make sure it appears in the output stream.
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(temp_input_file.as_file());
 
-        controller.stop().unwrap();
+            for val in data.iter().cloned() {
+                writer.serialize(val).unwrap();
+            }
+            writer.flush().unwrap();
+            controller.start();
+
+            // Wait for the pipeline to output all records.
+            wait(|| {
+                controller.stats().output_stats().get(&0).unwrap().transmitted_records() == data.len() as u64
+            }, None);
+
+            controller.stop().unwrap();
+
+            let mut expected = data.clone();
+            expected.sort();
+
+            let mut actual: Vec<_> = CsvReaderBuilder::new()
+                .has_headers(false)
+                .from_path(&output_path)
+                .unwrap()
+                .deserialize::<(TestStruct, i32)>()
+                .map(|res| {
+                    let (val, weight) = res.unwrap();
+                    assert_eq!(weight, 1);
+                    val
+                })
+                .collect();
+            actual.sort();
+
+            // Don't leave garbage in the FS.
+            remove_file(&output_path).unwrap();
+
+            assert_eq!(actual, expected);
+        }
     }
 }

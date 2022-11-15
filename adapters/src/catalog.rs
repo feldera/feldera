@@ -1,4 +1,4 @@
-use crate::{DeCollectionHandle, DeZSetHandle};
+use crate::{DeCollectionHandle, DeZSetHandle, SerOutputBatchHandle};
 use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -13,7 +13,8 @@ use std::collections::BTreeMap;
 /// method).
 #[derive(Default)]
 pub struct Catalog {
-    input_collections: BTreeMap<String, Box<dyn DeCollectionHandle>>,
+    input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
+    output_batch_handles: BTreeMap<String, Box<dyn SerOutputBatchHandle>>,
 }
 
 impl Catalog {
@@ -22,25 +23,39 @@ impl Catalog {
         Self::default()
     }
 
-    pub fn register_input_zset<K, R>(&mut self, name: &str, handle: CollectionHandle<K, R>)
+    pub fn register_input_zset_handle<K, R>(&mut self, name: &str, handle: CollectionHandle<K, R>)
     where
         K: DBData + for<'de> Deserialize<'de>,
         R: DBWeight + ZRingValue,
     {
-        self.register_input(name, DeZSetHandle::new(handle));
+        self.register_input_collection_handle(name, DeZSetHandle::new(handle));
     }
 
     /// Add a named input stream handle to the catalog.
-    pub fn register_input<H>(&mut self, name: &str, handle: H)
+    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
     where
         H: DeCollectionHandle + 'static,
     {
-        self.input_collections
+        self.input_collection_handles
+            .insert(name.to_owned(), Box::new(handle));
+    }
+
+    /// Add a named output stream handle to the catalog.
+    pub fn register_output_batch_handle<H>(&mut self, name: &str, handle: H)
+    where
+        H: SerOutputBatchHandle + 'static,
+    {
+        self.output_batch_handles
             .insert(name.to_owned(), Box::new(handle));
     }
 
     /// Look up an input stream handle by name.
-    pub fn input_collection(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
-        self.input_collections.get(name).map(|b| &**b)
+    pub fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
+        self.input_collection_handles.get(name).map(|b| &**b)
+    }
+
+    /// Look up an output stream handle by name.
+    pub fn output_batch_handle(&self, name: &str) -> Option<&dyn SerOutputBatchHandle> {
+        self.output_batch_handles.get(name).map(|b| &**b)
     }
 }
