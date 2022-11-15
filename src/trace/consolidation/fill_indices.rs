@@ -197,7 +197,7 @@ unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>
     indices.set_len(original_length);
 }
 
-#[cfg(target_family = "aarch64")]
+#[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Vec<usize>) {
     use std::{
