@@ -219,7 +219,7 @@ jobs:
           THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
         with:
           command: test
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' --skip 'set_test_mt4' ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
