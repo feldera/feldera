@@ -167,7 +167,10 @@ jobs:
       # but no, instead we have to do whatever the hell this is
       matrix:
         os: [skylake-2x, macos-latest]
-        sanitizer: [address, thread, memory, leak]
+        # The leak sanitizer keeps randomly crashing.  Hope we can enable it in
+        # the future when it's more stable.
+        # sanitizer: [address, thread, memory, leak]
+        sanitizer: [address, thread, memory]
         target: [x86_64-unknown-linux-gnu] # x86_64-apple-darwin
         exclude:
           # Exclude ubuntu runs with darwin targets
@@ -218,7 +221,7 @@ jobs:
           THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
         with:
           command: test
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' --skip 'set_test_mt4' ${{ env.THREADS }}
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
