@@ -61,12 +61,12 @@ git push --force-with-lease origin my-new-feature
 Be sure to add a comment to the PR indicating your new changes are ready to review, as GitHub does not generate a
 notification when you git push.
 
-### Closing a pull request
+### Merging a pull request
 
-Since we run benchmarks as part of CI it's good practice to preserve the commit IDs of the feature branch 
+Since we run benchmarks as part of CI it's good practice to preserve the commit IDs of the feature branch
 we've worked on (and benchmarked). Unfortunately, [the github UI does not have support for this](https://github.com/community/community/discussions/4618) 
 (it only allows rebase, squash and merge commits to close PRs).
-Therefore, it's recommended to close and merge PRs using the following git CLI invocation:
+Therefore, it's recommended to merge PRs using the following git CLI invocation:
 
 ```shell
 git checkout main
