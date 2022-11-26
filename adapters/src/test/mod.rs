@@ -8,9 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod data;
 mod mock_dezset;
 mod mock_input_consumer;
 
+pub use data::{generate_test_data, TestStruct};
 pub use mock_dezset::MockDeZSet;
 pub use mock_input_consumer::MockInputConsumer;
 

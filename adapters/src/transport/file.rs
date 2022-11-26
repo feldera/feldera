@@ -103,7 +103,6 @@ impl FileInputEndpoint {
         status: Arc<AtomicU32>,
         follow: bool,
     ) {
-        println!("file reader worker");
         loop {
             match PipelineState::from_u32(status.load(Ordering::Acquire)) {
                 Some(PipelineState::Paused) => parker.park(),

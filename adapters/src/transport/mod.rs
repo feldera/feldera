@@ -6,16 +6,29 @@ use std::collections::BTreeMap;
 
 mod file;
 
+#[cfg(feature = "with-kafka")]
+mod kafka;
+
 pub use file::{FileInputTransport, FileOutputTransport};
+
+#[cfg(feature = "with-kafka")]
+pub use kafka::KafkaInputTransport;
 
 /// Static map of supported input transports.
 // TODO: support for registering new transports at runtime in order to allow
 // external crates to implement new transports.
 static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = Lazy::new(|| {
-    BTreeMap::from([(
-        "file",
-        Box::new(FileInputTransport) as Box<dyn InputTransport>,
-    )])
+    BTreeMap::from([
+        (
+            "file",
+            Box::new(FileInputTransport) as Box<dyn InputTransport>,
+        ),
+        #[cfg(feature = "with-kafka")]
+        (
+            "kafka",
+            Box::new(KafkaInputTransport) as Box<dyn InputTransport>,
+        ),
+    ])
 });
 
 /// Static map of supported output transports.

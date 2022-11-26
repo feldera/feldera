@@ -42,6 +42,11 @@ jobs:
       - name: Restore cache
         uses: Swatinem/rust-cache@v1
 
+      - name: Start redpanda
+        uses: redpanda-data/github-action@v0.1.3
+        with:
+          version: "latest"
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
