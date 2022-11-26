@@ -863,44 +863,17 @@ impl OutputConsumer for OutputProbe {
 
 #[cfg(test)]
 mod test {
-    use crate::{test::wait, Catalog, Controller, ControllerConfig};
-    use bincode::{Decode, Encode};
+    use crate::{
+        test::{generate_test_data, wait, TestStruct},
+        Catalog, Controller, ControllerConfig,
+    };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
     use dbsp::{DBSPHandle, Runtime};
-    use serde::{Deserialize, Serialize};
     use serde_yaml;
-    use size_of::SizeOf;
     use std::fs::remove_file;
     use tempfile::NamedTempFile;
 
-    use proptest::{collection, prelude::*};
-    use proptest_derive::Arbitrary;
-
-    #[derive(
-        Debug,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Serialize,
-        Deserialize,
-        Clone,
-        Hash,
-        SizeOf,
-        Encode,
-        Decode,
-        Arbitrary,
-    )]
-    struct TestStruct {
-        id: u32,
-        b: bool,
-        i: Option<i64>,
-        s: String,
-    }
-
-    fn test_data(size: usize) -> impl Strategy<Value = Vec<TestStruct>> {
-        collection::vec(any::<TestStruct>(), 0..=size)
-    }
+    use proptest::prelude::*;
 
     fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
         let (circuit, (input, output)) = Runtime::init_circuit(workers, |circuit| {
@@ -924,7 +897,7 @@ mod test {
         #![proptest_config(ProptestConfig::with_cases(30))]
         #[test]
         fn proptest_csv_file(
-            data in test_data(5000),
+            data in generate_test_data(5000),
             min_batch_size_records in 1..100usize,
             max_buffering_delay_usecs in 1..2000usize,
             input_buffer_size_bytes in 1..1000usize,
