@@ -59,7 +59,7 @@ jobs:
           - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
           - { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
           - {
-              rust: nightly,
+              rust: nightly-2022-11-10,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-latest,
             }
@@ -189,7 +189,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2022-11-10
           target: ${{ matrix.target }}
           components: rust-src
           default: true
@@ -237,7 +237,7 @@ jobs:
         with:
           profile: minimal
           # Run nightly clippy, which often finds additional issues.
-          toolchain: nightly
+          toolchain: nightly-2022-11-10
           components: clippy
           default: true
 
@@ -266,7 +266,7 @@ jobs:
           profile: minimal
           # We use unstable rustfmt features: `wrap_comments` and
           # `format_code_in_doc_comments`.
-          toolchain: nightly
+          toolchain: nightly-2022-11-10
           components: rustfmt
           default: true
 
@@ -318,7 +318,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2022-11-10
           default: true
 
       - name: Restore cache
