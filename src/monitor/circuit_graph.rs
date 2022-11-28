@@ -196,7 +196,7 @@ impl Node {
     }
 
     /// Lookup node in the subtree with the root in `self` by path.
-    fn node_ref<'a>(&self, mut path: slice::Iter<'a, NodeId>) -> Option<&Node> {
+    fn node_ref(&self, mut path: slice::Iter<NodeId>) -> Option<&Node> {
         match path.next() {
             None => Some(self),
             Some(node_id) => match &self.kind {
@@ -207,7 +207,7 @@ impl Node {
     }
 
     /// Lookup node in the subtree with the root in `self` by path.
-    fn node_mut<'a>(&mut self, mut path: slice::Iter<'a, NodeId>) -> Option<&mut Node> {
+    fn node_mut(&mut self, mut path: slice::Iter<NodeId>) -> Option<&mut Node> {
         match path.next() {
             None => Some(self),
             Some(node_id) => match &mut self.kind {
