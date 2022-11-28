@@ -434,10 +434,10 @@ where
     /// aggregation logic in the `Aggregator` trait.  The second iteration
     /// is only needed inside nested scopes and can in the future be
     /// optimized to terminate early.
-    fn eval_key<'s>(
+    fn eval_key(
         &mut self,
         key: &Z::Key,
-        input_cursor: &mut IT::Cursor<'s>,
+        input_cursor: &mut IT::Cursor<'_>,
         output: &mut Vec<(Z::Key, Option<A::Output>)>,
     ) {
         // println!(
