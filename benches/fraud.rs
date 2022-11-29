@@ -195,11 +195,9 @@ struct Args {
 type Weight = i32;
 
 type EnrichedTransactions = OrdIndexedZSet<(F64, i64), (Transaction, Demographics), Weight>;
-type AverageSpendingPerWeek =
-    OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>;
-type AverageSpendingPerMonth =
-    OrdPartitionedIndexedZSet<F64, i64, (F64, Option<Avg<F64, i32>>), Weight>;
-type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, (F64, Option<i32>), Weight>;
+type AverageSpendingPerWeek = OrdPartitionedIndexedZSet<F64, i64, Option<Avg<F64, i32>>, Weight>;
+type AverageSpendingPerMonth = OrdPartitionedIndexedZSet<F64, i64, Option<Avg<F64, i32>>, Weight>;
+type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, Option<i32>, Weight>;
 
 struct FraudBenchmark {
     dbsp: DBSPHandle,
@@ -239,7 +237,7 @@ impl FraudBenchmark {
                 );
 
             // TODO: this should be returned directly by `partitioned_rolling_aggregate`
-            let avg_spend_pw_indexed = avg_spend_pw.map_index(|(cc_num, (ts, (_, avg_amt)))| {
+            let avg_spend_pw_indexed = avg_spend_pw.map_index(|(cc_num, (ts, avg_amt))| {
                 (
                     (*cc_num, *ts),
                     avg_amt.as_ref().and_then(|avg| avg.compute_avg()),
@@ -257,7 +255,7 @@ impl FraudBenchmark {
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
                 );
 
-            let avg_spend_pm_indexed = avg_spend_pm.map_index(|(cc_num, (ts, (_, avg_amt)))| {
+            let avg_spend_pm_indexed = avg_spend_pm.map_index(|(cc_num, (ts, avg_amt))| {
                 (
                     (*cc_num, *ts),
                     avg_amt.as_ref().and_then(|avg| avg.compute_avg()),
@@ -275,8 +273,8 @@ impl FraudBenchmark {
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
                 );
 
-            let trans_freq_24_indexed = trans_freq_24
-                .map_index(|(cc_num, (ts, (_, freq)))| ((*cc_num, *ts), freq.unwrap_or(0)));
+            let trans_freq_24_indexed =
+                trans_freq_24.map_index(|(cc_num, (ts, freq))| ((*cc_num, *ts), freq.unwrap_or(0)));
 
             avg_spend_pw_indexed
                 .join_index::<(), _, _, _, _, _>(
