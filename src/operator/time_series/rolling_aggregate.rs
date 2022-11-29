@@ -25,10 +25,8 @@ use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 // TODO: `Default` trait bounds in this module are due to an implementation
 // detail and can in principle be avoided.
 
-pub type OrdPartitionedOverBatch<PK, TS, V, A, R> =
-    OrdPartitionedIndexedZSet<PK, TS, (V, Option<A>), R>;
-pub type OrdPartitionedOverStream<PK, TS, V, A, R> =
-    Stream<Circuit<()>, OrdPartitionedOverBatch<PK, TS, V, A, R>>;
+pub type OrdPartitionedOverStream<PK, TS, A, R> =
+    Stream<Circuit<()>, OrdPartitionedIndexedZSet<PK, TS, Option<A>, R>>;
 
 /// `Aggregator` object that computes a linear aggregation function.
 // TODO: we need this because we currently compute linear aggregates
@@ -109,7 +107,7 @@ impl<B> Stream<Circuit<()>, B> {
         &self,
         aggregator: Agg,
         range: RelRange<TS>,
-    ) -> OrdPartitionedOverStream<B::Key, TS, V, Agg::Output, B::R>
+    ) -> OrdPartitionedOverStream<B::Key, TS, Agg::Output, B::R>
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
@@ -133,7 +131,7 @@ impl<B> Stream<Circuit<()>, B> {
         B::R: ZRingValue,
         Agg: Aggregator<V, (), B::R>,
         Agg::Output: Default,
-        O: PartitionedIndexedZSet<TS, (V, Option<Agg::Output>), Key = B::Key, R = B::R>,
+        O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
         TS: DBData + PrimInt,
         V: DBData,
     {
@@ -166,7 +164,7 @@ impl<B> Stream<Circuit<()>, B> {
 
             let output = circuit
                 .add_quaternary_operator(
-                    <PartitionedRollingAggregate<TS, Agg::Semigroup>>::new(range),
+                    <PartitionedRollingAggregate<TS, Agg::Semigroup, V>>::new(range),
                     &stream,
                     &input_trace,
                     &tree,
@@ -211,7 +209,7 @@ impl<B> Stream<Circuit<()>, B> {
         &self,
         f: F,
         range: RelRange<TS>,
-    ) -> OrdPartitionedOverStream<B::Key, TS, V, A, B::R>
+    ) -> OrdPartitionedOverStream<B::Key, TS, A, B::R>
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
@@ -238,7 +236,7 @@ impl<B> Stream<Circuit<()>, B> {
         F: Fn(&V) -> A + Clone + 'static,
         TS: DBData + PrimInt,
         V: DBData,
-        O: PartitionedIndexedZSet<TS, (V, Option<A>), Key = B::Key, R = B::R>,
+        O: PartitionedIndexedZSet<TS, Option<A>, Key = B::Key, R = B::R>,
     {
         let aggregator = LinearAggregator::new(f);
         self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
@@ -255,12 +253,12 @@ impl<B> Stream<Circuit<()>, B> {
 ///   time series.
 /// * Input stream 4: trace of previously produced outputs.  Used to compute
 ///   retractions.
-struct PartitionedRollingAggregate<TS, S> {
+struct PartitionedRollingAggregate<TS, S, V> {
     range: RelRange<TS>,
-    phantom: PhantomData<S>,
+    phantom: PhantomData<(S, V)>,
 }
 
-impl<TS, S> PartitionedRollingAggregate<TS, S> {
+impl<TS, S, V> PartitionedRollingAggregate<TS, S, V> {
     fn new(range: RelRange<TS>) -> Self {
         Self {
             range,
@@ -268,7 +266,7 @@ impl<TS, S> PartitionedRollingAggregate<TS, S> {
         }
     }
 
-    fn affected_ranges<'a, V, R, C>(&self, delta_cursor: &mut C) -> Ranges<TS>
+    fn affected_ranges<'a, R, C>(&self, delta_cursor: &mut C) -> Ranges<TS>
     where
         C: Cursor<'a, TS, V, (), R>,
         TS: PrimInt,
@@ -284,10 +282,11 @@ impl<TS, S> PartitionedRollingAggregate<TS, S> {
     }
 }
 
-impl<TS, S> Operator for PartitionedRollingAggregate<TS, S>
+impl<TS, S, V> Operator for PartitionedRollingAggregate<TS, S, V>
 where
     TS: 'static,
     S: 'static,
+    V: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("PartitionedRollingAggregate")
@@ -299,7 +298,7 @@ where
 }
 
 impl<TS, V, A, S, B, T, RT, OT, O> QuaternaryOperator<B, T, RT, OT, O>
-    for PartitionedRollingAggregate<TS, S>
+    for PartitionedRollingAggregate<TS, S, V>
 where
     TS: DBData + PrimInt,
     V: DBData,
@@ -309,8 +308,8 @@ where
     B::R: ZRingValue,
     T: PartitionedBatchReader<TS, V, Key = B::Key, R = B::R> + Clone,
     RT: PartitionedRadixTreeReader<TS, A, Key = B::Key> + Clone,
-    OT: PartitionedBatchReader<TS, (V, Option<A>), Key = B::Key, R = B::R> + Clone,
-    O: IndexedZSet<Key = B::Key, Val = (TS, (V, Option<A>)), R = B::R>,
+    OT: PartitionedBatchReader<TS, Option<A>, Key = B::Key, R = B::R> + Clone,
+    O: IndexedZSet<Key = B::Key, Val = (TS, Option<A>), R = B::R>,
 {
     fn eval<'a>(
         &mut self,
@@ -391,23 +390,21 @@ where
                     // println!("tree: {treestr}");
                     // tree_partition_cursor.rewind_keys();
 
-                    let agg = tree_partition_cursor.aggregate_range::<S>(&range);
-                    // println!("key: {:?}, range: {:?}, agg: {:?}", input_range_cursor.key(),
-                    // range, agg);
-
                     while input_range_cursor.val_valid() {
                         // Generate output update.
                         if !input_range_cursor.weight().le0() {
+                            let agg = tree_partition_cursor.aggregate_range::<S>(&range);
+                            // println!("key: {:?}, range: {:?}, agg: {:?}",
+                            // input_range_cursor.key(), range, agg);
+
                             insertion_builder.push((
                                 O::item_from(
                                     delta_cursor.key().clone(),
-                                    (
-                                        *input_range_cursor.key(),
-                                        (input_range_cursor.val().clone(), agg.clone()),
-                                    ),
+                                    (*input_range_cursor.key(), agg),
                                 ),
                                 HasOne::one(),
                             ));
+                            break;
                         }
 
                         input_range_cursor.step_val();
@@ -443,7 +440,7 @@ mod test {
 
     type DataBatch = OrdIndexedZSet<u64, (u64, i64), isize>;
     type DataStream = Stream<Circuit<()>, DataBatch>;
-    type OutputBatch = OrdIndexedZSet<u64, (u64, (i64, Option<i64>)), isize>;
+    type OutputBatch = OrdIndexedZSet<u64, (u64, Option<i64>), isize>;
     type OutputStream = Stream<Circuit<()>, OutputBatch>;
 
     // Reference implementation of `aggregate_range` for testing.
@@ -489,10 +486,10 @@ mod test {
                 while cursor.key_valid() {
                     while cursor.val_valid() {
                         let partition = *cursor.key();
-                        let (ts, val) = *cursor.val();
+                        let (ts, _val) = *cursor.val();
                         let range = range_spec.range_of(&ts);
                         let agg = aggregate_range_slow(batch, partition, range);
-                        tuples.push(((partition, (ts, (val, agg))), 1));
+                        tuples.push(((partition, (ts, agg)), 1));
                         cursor.step_val();
                     }
                     cursor.step_key();
@@ -500,6 +497,8 @@ mod test {
 
                 OutputBatch::from_tuples((), tuples)
             })
+            .distinct()
+            .gather(0)
     }
 
     type RangeHandle = CollectionHandle<u64, ((u64, i64), isize)>;
