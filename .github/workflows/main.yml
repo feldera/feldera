@@ -43,7 +43,6 @@ jobs:
         # - 64bit Linux nightly
         # - 64bit MacOS stable
         # - 64bit Windows stable
-        # - 32bit Windows stable
         include:
           - {
               rust: stable,
@@ -62,7 +61,8 @@ jobs:
               os: windows-latest,
               test_flags: --skip kafka
             }
-          - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
+          # `rdkafka` doesn't compile on 32-bit Windows.
+          # - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
           - { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
           - {
               rust: nightly-2022-11-10,
