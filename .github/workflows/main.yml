@@ -87,11 +87,12 @@ jobs:
         # Don't cache on Windows due to low disk space
         if: runner.os != 'Windows'
 
-      - name: Start redpanda
+      - name: Install redpanda
         if: runner.os == 'Linux'
-        uses: redpanda-data/github-action@v0.1.3
-        with:
-          version: "latest"
+        run: |
+          curl -1sLf 'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && \
+          sudo apt install redpanda -y && \
+          sudo systemctl start redpanda
 
       # We split building the tests into a separate step
       # so that we can easily distinguish between build
