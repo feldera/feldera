@@ -12,7 +12,7 @@ mod kafka;
 pub use file::{FileInputTransport, FileOutputTransport};
 
 #[cfg(feature = "with-kafka")]
-pub use kafka::KafkaInputTransport;
+pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
 
 /// Static map of supported input transports.
 // TODO: support for registering new transports at runtime in order to allow
@@ -33,10 +33,17 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
 
 /// Static map of supported output transports.
 static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> = Lazy::new(|| {
-    BTreeMap::from([(
-        "file",
-        Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
-    )])
+    BTreeMap::from([
+        (
+            "file",
+            Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
+        ),
+        #[cfg(feature = "with-kafka")]
+        (
+            "kafka",
+            Box::new(KafkaOutputTransport) as Box<dyn OutputTransport>,
+        ),
+    ])
 });
 
 /// Trait that represents a specific data transport.
@@ -145,13 +152,24 @@ pub trait OutputTransport: Send + Sync {
     /// # Arguments
     ///
     /// * `config` - Transport-specific configuration.
+    /// * `async_error_callback` - the endpoint must invoke this callback to
+    ///   notify the client about asynchronous errors, i.e., errors that happen
+    ///   outside the context of the [`OutputEndpoint::push_buffer`] method. For
+    ///   instance, a reliable message bus like Kafka may notify the endpoint
+    ///   about a failure to deliver a previously sent message via an async
+    ///   callback. If the endpoint is unable to handle this error, it must
+    ///   forward it to the client via the `async_error_callback`.
     ///
     /// # Errors
     ///
     /// Fails if the specified configuration is invalid or the endpoint failed
     /// to initialize (e.g., the endpoint was not able to establish a network
     /// connection).
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn OutputEndpoint>>;
+    fn new_endpoint(
+        &self,
+        config: &YamlValue,
+        async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+    ) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 
 impl dyn OutputTransport {

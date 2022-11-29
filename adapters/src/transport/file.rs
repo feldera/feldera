@@ -177,7 +177,11 @@ impl OutputTransport for FileOutputTransport {
         Cow::Borrowed("file")
     }
 
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn OutputEndpoint>> {
+    fn new_endpoint(
+        &self,
+        config: &YamlValue,
+        _async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+    ) -> AnyResult<Box<dyn OutputEndpoint>> {
         let config = FileOutputConfig::deserialize(config)?;
         let ep = FileOutputEndpoint::new(config)?;
 
