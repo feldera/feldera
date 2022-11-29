@@ -6,7 +6,7 @@ machine.
 ## Configuration
 
 ```bash
-sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev python3-pip hub numactl
+sudo apt-get install libssl-dev zsh build-essential pkg-config git gcc clang libclang-dev python3-pip hub numactl cmake
 sudo useradd github-runner -m -s /bin/zsh
 ```
 
