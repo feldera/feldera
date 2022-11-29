@@ -51,7 +51,7 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       # Find the PR associated with this push, if there is one. Note that this
-      # is neede because `${{ github.event.pull_request.number }}` does not get
+      # is needed because `${{ github.event.pull_request.number }}` does not get
       # set on push requests.
       - uses: jwalton/gh-find-current-pr@v1
         id: findPr
@@ -65,6 +65,8 @@ jobs:
       # Find comment with benchmark info if it exists
       - name: Find Comment
         uses: peter-evans/find-comment@v2
+        # This action fails when not running on a PR.
+        if: ${{ steps.findPr.outputs.pr != '' }}
         id: fc
         with:
           issue-number: ${{ steps.findPr.outputs.pr }}
@@ -73,6 +75,7 @@ jobs:
 
       - name: Create or update comment
         uses: peter-evans/create-or-update-comment@v2
+        if: ${{ steps.findPr.outputs.pr != '' }}
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ steps.findPr.outputs.pr }}
