@@ -1,3 +1,4 @@
+use super::KafkaLogLevel;
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use num_traits::FromPrimitive;
@@ -44,57 +45,6 @@ impl InputTransport for KafkaInputTransport {
         let config = KafkaInputConfig::deserialize(config)?;
         let ep = KafkaInputEndpoint::new(config, consumer)?;
         Ok(Box::new(ep))
-    }
-}
-
-/// Kafka logging levels.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum KafkaLogLevel {
-    #[serde(rename = "emerg")]
-    Emerg,
-    #[serde(rename = "alert")]
-    Alert,
-    #[serde(rename = "critical")]
-    Critical,
-    #[serde(rename = "error")]
-    Error,
-    #[serde(rename = "warning")]
-    Warning,
-    #[serde(rename = "notice")]
-    Notice,
-    #[serde(rename = "info")]
-    Info,
-    #[serde(rename = "debug")]
-    Debug,
-}
-
-impl From<RDKafkaLogLevel> for KafkaLogLevel {
-    fn from(level: RDKafkaLogLevel) -> Self {
-        match level {
-            RDKafkaLogLevel::Emerg => Self::Emerg,
-            RDKafkaLogLevel::Alert => Self::Alert,
-            RDKafkaLogLevel::Critical => Self::Critical,
-            RDKafkaLogLevel::Error => Self::Error,
-            RDKafkaLogLevel::Warning => Self::Warning,
-            RDKafkaLogLevel::Notice => Self::Notice,
-            RDKafkaLogLevel::Info => Self::Info,
-            RDKafkaLogLevel::Debug => Self::Debug,
-        }
-    }
-}
-
-impl From<KafkaLogLevel> for RDKafkaLogLevel {
-    fn from(level: KafkaLogLevel) -> Self {
-        match level {
-            KafkaLogLevel::Emerg => RDKafkaLogLevel::Emerg,
-            KafkaLogLevel::Alert => RDKafkaLogLevel::Alert,
-            KafkaLogLevel::Critical => RDKafkaLogLevel::Critical,
-            KafkaLogLevel::Error => RDKafkaLogLevel::Error,
-            KafkaLogLevel::Warning => RDKafkaLogLevel::Warning,
-            KafkaLogLevel::Notice => RDKafkaLogLevel::Notice,
-            KafkaLogLevel::Info => RDKafkaLogLevel::Info,
-            KafkaLogLevel::Debug => RDKafkaLogLevel::Debug,
-        }
     }
 }
 
@@ -188,13 +138,13 @@ impl KafkaInputEndpoint {
 ///
 /// See https://github.com/edenhill/librdkafka/issues/1849 for a discussion
 /// of the pause/unpause behavior.
-struct KafkaEndpointContext {
+struct KafkaInputContext {
     // We keep a weak reference to the endpoint to avoid a reference cycle:
     // endpoint->BaseConsumer->context->endpoint.
     endpoint: Mutex<Weak<KafkaInputEndpointInner>>,
 }
 
-impl KafkaEndpointContext {
+impl KafkaInputContext {
     fn new() -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
@@ -202,9 +152,9 @@ impl KafkaEndpointContext {
     }
 }
 
-impl ClientContext for KafkaEndpointContext {}
+impl ClientContext for KafkaInputContext {}
 
-impl ConsumerContext for KafkaEndpointContext {
+impl ConsumerContext for KafkaInputContext {
     fn post_rebalance(&self, rebalance: &Rebalance<'_>) {
         // println!("Rebalance: {rebalance:?}");
         if matches!(rebalance, Rebalance::Assign(_)) {
@@ -225,7 +175,7 @@ impl ConsumerContext for KafkaEndpointContext {
 
 struct KafkaInputEndpointInner {
     state: AtomicU32,
-    kafka_consumer: BaseConsumer<KafkaEndpointContext>,
+    kafka_consumer: BaseConsumer<KafkaInputContext>,
 }
 
 impl KafkaInputEndpointInner {
@@ -244,7 +194,7 @@ impl KafkaInputEndpointInner {
         }
 
         // Context object to intercept rebalancing events.
-        let context = KafkaEndpointContext::new();
+        let context = KafkaInputContext::new();
 
         // Create Kafka consumer.
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
@@ -401,249 +351,5 @@ impl InputEndpoint for KafkaInputEndpoint {
 impl Drop for KafkaInputEndpoint {
     fn drop(&mut self) {
         self.disconnect();
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use crate::test::{generate_test_data, mock_input_pipeline, wait, MockDeZSet, TestStruct};
-    use csv::WriterBuilder as CsvWriterBuilder;
-    use futures::executor::block_on;
-    use log::{LevelFilter, Log, Metadata, Record};
-    use proptest::{collection, prelude::*};
-    use rdkafka::{
-        admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
-        client::DefaultClientContext,
-        config::{FromClientConfig, RDKafkaLogLevel},
-        producer::{BaseRecord, DefaultProducerContext, ThreadedProducer},
-        ClientConfig,
-    };
-    use std::{thread::sleep, time::Duration};
-
-    struct TestLogger;
-    static TEST_LOGGER: TestLogger = TestLogger;
-
-    impl Log for TestLogger {
-        fn enabled(&self, _metadata: &Metadata) -> bool {
-            true
-        }
-
-        fn log(&self, record: &Record) {
-            println!("{} - {}", record.level(), record.args());
-        }
-
-        fn flush(&self) {}
-    }
-
-    struct KafkaResources {
-        admin_client: AdminClient<DefaultClientContext>,
-    }
-
-    /// An object that creates a couple of topics on startup and deletes them
-    /// on drop.  Helps make sure that test runs don't leave garbage behind.
-    impl KafkaResources {
-        fn create_topics() -> Self {
-            let mut admin_config = ClientConfig::new();
-            admin_config
-                .set("bootstrap.servers", "localhost")
-                .set_log_level(RDKafkaLogLevel::Debug);
-            let admin_client = AdminClient::from_config(&admin_config).unwrap();
-
-            let input_topic1 = NewTopic::new("input_topic1", 1, TopicReplication::Fixed(1));
-            let input_topic2 = NewTopic::new("input_topic2", 2, TopicReplication::Fixed(1));
-
-            // Delete topics if they exist from previous failed runs that crashed before
-            // cleaning up.  Otherwise, it may take a long time to re-join a
-            // group whose members are dead, plus the old topics may contain
-            // messages that will mess up our tests.
-            let _ = block_on(
-                admin_client.delete_topics(&["input_topic1", "input_topic2"], &AdminOptions::new()),
-            );
-
-            block_on(
-                admin_client.create_topics([&input_topic1, &input_topic2], &AdminOptions::new()),
-            )
-            .unwrap();
-
-            Self { admin_client }
-        }
-
-        fn add_partition(&self, topic: &str) {
-            block_on(
-                self.admin_client
-                    .create_partitions(&[NewPartitions::new(topic, 1)], &AdminOptions::new()),
-            )
-            .unwrap();
-        }
-    }
-
-    impl Drop for KafkaResources {
-        fn drop(&mut self) {
-            let _ = block_on(
-                self.admin_client
-                    .delete_topics(&["input_topic1", "input_topic2"], &AdminOptions::new()),
-            );
-        }
-    }
-
-    fn send_to_topic(
-        producer: &ThreadedProducer<DefaultProducerContext>,
-        data: &[Vec<TestStruct>],
-        topic: &str,
-    ) {
-        for batch in data {
-            let mut writer = CsvWriterBuilder::new()
-                .has_headers(false)
-                .from_writer(Vec::with_capacity(batch.len() * 32));
-
-            for val in batch.iter().cloned() {
-                writer.serialize(val).unwrap();
-            }
-            writer.flush().unwrap();
-            let bytes = writer.into_inner().unwrap();
-
-            let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(&bytes);
-            producer.send(record).unwrap();
-            // println!("sent {} bytes", bytes.len());
-        }
-        // producer.flush(Timeout::Never).unwrap();
-        println!("Data written to '{topic}'");
-    }
-
-    /// Wait to receive all records in `data` in the same order.
-    fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
-        let num_records: usize = data.iter().map(Vec::len).sum();
-
-        wait(|| zset.state().flushed.len() == num_records, None);
-
-        for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-            assert_eq!(&zset.state().flushed[i].0, val);
-        }
-    }
-
-    /// Wait to receive all records in `data` in some order.
-    fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
-        let num_records: usize = data.iter().map(Vec::len).sum();
-
-        wait(|| zset.state().flushed.len() == num_records, None);
-
-        let mut data_sorted = data
-            .iter()
-            .flat_map(|data| data.clone().into_iter())
-            .collect::<Vec<_>>();
-        data_sorted.sort();
-
-        let mut zset_sorted = zset
-            .state()
-            .flushed
-            .iter()
-            .map(|(val, polarity)| {
-                assert_eq!(*polarity, true);
-                val.clone()
-            })
-            .collect::<Vec<_>>();
-        zset_sorted.sort();
-
-        assert_eq!(zset_sorted, data_sorted);
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2))]
-
-        #[test]
-        fn proptest_kafka_input(data in collection::vec(generate_test_data(1000), 0..=100)) {
-
-            let _ = log::set_logger(&TEST_LOGGER);
-            log::set_max_level(LevelFilter::Debug);
-
-            let kafka_resources = KafkaResources::create_topics();
-
-            // auto.offset.reset: "earliest" - guarantees that on startup the
-            // consumer will observe all messages sent by the producer even if
-            // the producer starts earlier (the consumer won't start until the
-            // rebalancing protocol kicks in).
-            let config_str = format!(
-                r#"
-transport:
-    name: kafka
-    config:
-        bootstrap.servers: "localhost"
-        auto.offset.reset: "earliest"
-        topics: [input_topic1, input_topic2]
-        log_level: debug
-format:
-    name: csv
-    config:
-        input_stream: test_input
-"#);
-
-            println!("Building input pipeline");
-
-            let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
-                "test_input",
-                serde_yaml::from_str(&config_str).unwrap(),
-            );
-
-            endpoint.start().unwrap();
-
-            let mut producer_config = ClientConfig::new();
-            producer_config
-                .set("bootstrap.servers", "localhost")
-                .set("message.timeout.ms", "0") // infinite timeout
-                .set_log_level(RDKafkaLogLevel::Debug);
-            let producer = ThreadedProducer::from_config(&producer_config)?;
-
-            println!("Test: Receive from a topic with a single partition");
-
-            // Send data to a topic with a single partition;
-            // Make sure all records arrive in the original order.
-            send_to_topic(&producer, &data, "input_topic1");
-
-            wait_for_output_ordered(&zset, &data);
-            zset.reset();
-
-            println!("Test: Receive from a topic with multiple partitions");
-
-            // Send data to a topic with multiple partitions.
-            // Make sure all records are delivered, but not necessarily in the original order.
-            send_to_topic(&producer, &data, "input_topic2");
-
-            wait_for_output_unordered(&zset, &data);
-            zset.reset();
-
-            println!("Test: pause/resume");
-            //println!("records before pause: {}", zset.state().flushed.len());
-
-            // Paused endpoint shouldn't receive any data.
-            endpoint.pause().unwrap();
-            sleep(Duration::from_millis(1000));
-
-            kafka_resources.add_partition("input_topic2");
-
-            send_to_topic(&producer, &data, "input_topic2");
-            sleep(Duration::from_millis(1000));
-            assert_eq!(zset.state().flushed.len(), 0);
-
-            // Receive everything after unpause.
-            endpoint.start().unwrap();
-            wait_for_output_unordered(&zset, &data);
-
-            zset.reset();
-
-            println!("Test: Disconnect");
-            // Disconnected endpoint should not receive any data.
-            endpoint.disconnect();
-            sleep(Duration::from_millis(1000));
-
-            send_to_topic(&producer, &data, "input_topic2");
-            sleep(Duration::from_millis(1000));
-            assert_eq!(zset.state().flushed.len(), 0);
-
-            sleep(2 * super::POLL_TIMEOUT);
-
-            println!("Delete Kafka resources");
-            drop(kafka_resources);
-        }
     }
 }

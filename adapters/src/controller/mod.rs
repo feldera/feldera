@@ -590,7 +590,16 @@ impl ControllerInner {
                 ControllerError::unknown_output_transport(&endpoint_config.transport.name)
             })?;
 
-        let endpoint = transport.new_endpoint(&endpoint_config.transport.config)?;
+        let endpoint_name_str = endpoint_name.to_string();
+        let self_weak = Arc::downgrade(self);
+        let endpoint = transport.new_endpoint(
+            &endpoint_config.transport.config,
+            Box::new(move |e: AnyError| {
+                if let Some(controller) = self_weak.upgrade() {
+                    controller.error(ControllerError::transport_error(&endpoint_name_str, e))
+                }
+            }),
+        )?;
 
         // Create probe.
         let endpoint_id = outputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -864,32 +873,15 @@ impl OutputConsumer for OutputProbe {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{generate_test_data, wait, TestStruct},
-        Catalog, Controller, ControllerConfig,
+        test::{generate_test_batch, test_circuit, wait, TestStruct},
+        Controller, ControllerConfig,
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
-    use dbsp::{DBSPHandle, Runtime};
     use serde_yaml;
     use std::fs::remove_file;
     use tempfile::NamedTempFile;
 
     use proptest::prelude::*;
-
-    fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
-        let (circuit, (input, output)) = Runtime::init_circuit(workers, |circuit| {
-            let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
-
-            let houtput = input.output();
-            (hinput, houtput)
-        })
-        .unwrap();
-
-        let mut catalog = Catalog::new();
-        catalog.register_input_zset_handle("test_input1", input);
-        catalog.register_output_batch_handle("test_output1", output);
-
-        (circuit, catalog)
-    }
 
     // TODO: Parameterize this with config string, so we can test different
     // input/output formats and transports when we support more than one.
@@ -897,21 +889,12 @@ mod test {
         #![proptest_config(ProptestConfig::with_cases(30))]
         #[test]
         fn proptest_csv_file(
-            data in generate_test_data(5000),
+            data in generate_test_batch(5000),
             min_batch_size_records in 1..100usize,
             max_buffering_delay_usecs in 1..2000usize,
             input_buffer_size_bytes in 1..1000usize,
             output_buffer_size_records in 1..100usize)
         {
-            // Assign unique indexes to records to make sure that all records are unique,
-            // all weights are eualt to 1, and so the number of output records is equal to
-            // the number of input records.
-            let data: Vec<TestStruct> = data.iter().enumerate().map(|(idx, val)| {
-                let mut val = val.clone();
-                val.id = idx as u32;
-                val
-            }).collect();
-
             let (circuit, catalog) = test_circuit(4);
 
             let temp_input_file = NamedTempFile::new().unwrap();
