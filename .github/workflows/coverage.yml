@@ -38,7 +38,6 @@ jobs:
           profile: minimal
           toolchain: stable
           components: llvm-tools-preview
-          override: true
 
       - name: Restore cache
         uses: Swatinem/rust-cache@v1
