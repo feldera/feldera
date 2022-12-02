@@ -2,6 +2,8 @@ use crate::{controller::FormatConfig, Catalog, InputConsumer, InputFormat, Parse
 use anyhow::{Error as AnyError, Result as AnyResult};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub type ErrorCallback = Box<dyn FnMut(&AnyError) + Send>;
+
 /// Inner state of `MockInputConsumer` shared by all clones of the consumer.
 pub struct MockInputConsumerState {
     /// All data received from the endpoint since the last `reset`.
@@ -22,7 +24,7 @@ pub struct MockInputConsumerState {
     /// Callback to invoke on transport or parser error.
     ///
     /// Panics on error if `None`.
-    error_cb: Option<Box<dyn FnMut(&AnyError) + Send>>,
+    error_cb: Option<ErrorCallback>,
 }
 
 impl MockInputConsumerState {
@@ -72,7 +74,7 @@ impl MockInputConsumer {
         self.0.lock().unwrap()
     }
 
-    pub fn on_error(&self, error_cb: Option<Box<dyn FnMut(&AnyError) + Send>>) {
+    pub fn on_error(&self, error_cb: Option<ErrorCallback>) {
         self.state().error_cb = error_cb;
     }
 }
