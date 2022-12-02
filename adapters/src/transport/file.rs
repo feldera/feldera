@@ -218,7 +218,6 @@ mod test {
     use crate::test::{mock_input_pipeline, wait};
     use csv::WriterBuilder as CsvWriterBuilder;
     use serde::{Deserialize, Serialize};
-    use serde_yaml;
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;
 
@@ -285,7 +284,7 @@ format:
         endpoint.start().unwrap();
         wait(|| zset.state().flushed.len() == test_data.len(), None);
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-            assert_eq!(*polarity, true);
+            assert!(polarity);
             assert_eq!(val, &test_data[i]);
         }
     }
@@ -343,7 +342,7 @@ format:
             endpoint.start().unwrap();
             wait(|| zset.state().flushed.len() == test_data.len(), None);
             for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-                assert_eq!(*polarity, true);
+                assert!(polarity);
                 assert_eq!(val, &test_data[i]);
             }
             endpoint.pause().unwrap();
@@ -355,7 +354,7 @@ format:
         drop(writer);
 
         consumer.on_error(Some(Box::new(|_| {})));
-        temp_file.as_file().write(b"xxx\n").unwrap();
+        temp_file.as_file().write_all(b"xxx\n").unwrap();
         temp_file.as_file().flush().unwrap();
 
         endpoint.start().unwrap();

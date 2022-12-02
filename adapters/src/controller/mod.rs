@@ -877,7 +877,6 @@ mod test {
         Controller, ControllerConfig,
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
-    use serde_yaml;
     use std::fs::remove_file;
     use tempfile::NamedTempFile;
 
@@ -963,7 +962,7 @@ outputs:
 
             controller.stop().unwrap();
 
-            let mut expected = data.clone();
+            let mut expected = data;
             expected.sort();
 
             let mut actual: Vec<_> = CsvReaderBuilder::new()

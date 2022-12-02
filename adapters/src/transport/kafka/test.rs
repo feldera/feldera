@@ -158,7 +158,7 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
         .flushed
         .iter()
         .map(|(val, polarity)| {
-            assert_eq!(*polarity, true);
+            assert!(polarity);
             val.clone()
         })
         .collect::<Vec<_>>();
@@ -182,8 +182,7 @@ proptest! {
         // consumer will observe all messages sent by the producer even if
         // the producer starts earlier (the consumer won't start until the
         // rebalancing protocol kicks in).
-        let config_str = format!(
-            r#"
+        let config_str = r#"
 transport:
     name: kafka
     config:
@@ -195,13 +194,13 @@ format:
     name: csv
     config:
         input_stream: test_input
-"#);
+"#;
 
         println!("Building input pipeline");
 
         let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
             "test_input",
-            serde_yaml::from_str(&config_str).unwrap(),
+            serde_yaml::from_str(config_str).unwrap(),
         );
 
         endpoint.start().unwrap();
@@ -279,8 +278,7 @@ format:
             // consumer will observe all messages sent by the producer even if
             // the producer starts earlier (the consumer won't start until the
             // rebalancing protocol kicks in).
-            let config_str = format!(
-                r#"
+            let config_str = r#"
 inputs:
     test_input1:
         transport:
@@ -305,21 +303,20 @@ outputs:
                 max_inflight_messages: 0
         format:
             name: csv
-"#);
+"#;
 
             println!("Creating circuit");
             let (circuit, catalog) = test_circuit(4);
 
             println!("Starting controller");
-            let config: ControllerConfig = serde_yaml::from_str(&config_str).unwrap();
+            let config: ControllerConfig = serde_yaml::from_str(config_str).unwrap();
 
             let controller = Controller::with_config(
                 circuit,
                 catalog,
                 &config,
-                Box::new(|e| panic!("error: {e}")),
-                )
-                .unwrap();
+                Box::new(|e| panic!("error: {e}"))
+            ).unwrap();
 
             let received_data: Arc<Mutex<Vec<TestStruct>>> = Arc::new(Mutex::new(Vec::new()));
             let received_data_clone = received_data.clone();
@@ -332,10 +329,10 @@ outputs:
                 let group_id = format!(
                     "test_group_{}",
                     SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis()
-                    );
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                );
 
                 let kafka_consumer = ClientConfig::new()
                     .set("bootstrap.servers", "localhost")
