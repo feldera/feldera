@@ -1,12 +1,21 @@
+<<<<<<< HEAD
 use super::{refine_kafka_error, KafkaLogLevel};
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use log::debug;
+=======
+use super::KafkaLogLevel;
+use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
+use anyhow::{Error as AnyError, Result as AnyResult};
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
 use num_traits::FromPrimitive;
 use rdkafka::{
     config::{FromClientConfigAndContext, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
+<<<<<<< HEAD
     error::{KafkaError, KafkaResult},
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
     ClientConfig, ClientContext, Message,
 };
 use serde::Deserialize;
@@ -14,7 +23,10 @@ use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+<<<<<<< HEAD
     env,
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
@@ -22,6 +34,7 @@ use std::{
     thread::spawn,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+<<<<<<< HEAD
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -29,6 +42,8 @@ use utoipa::{
     },
     ToSchema,
 };
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -49,7 +64,10 @@ impl InputTransport for KafkaInputTransport {
 
     fn new_endpoint(
         &self,
+<<<<<<< HEAD
         _name: &str,
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
         config: &YamlValue,
         consumer: Box<dyn InputConsumer>,
     ) -> AnyResult<Box<dyn InputEndpoint>> {
@@ -60,7 +78,11 @@ impl InputTransport for KafkaInputTransport {
 }
 
 /// Input endpoint configuration.
+<<<<<<< HEAD
 #[derive(Deserialize, Debug)]
+=======
+#[derive(Deserialize)]
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -88,6 +110,7 @@ pub struct KafkaInputConfig {
     group_join_timeout_secs: u32,
 }
 
+<<<<<<< HEAD
 // The auto-derived implementation gets confused by the flattened
 // `kafka_options` field. FIXME: I didn't figure out how to attach a
 // `description` to the `topics` property.
@@ -127,6 +150,8 @@ used to configure the Kafka producer."#))))
     }
 }
 
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
 impl KafkaInputConfig {
     /// Set `option` to `val`; return an error if `option` is set to a different
     /// value.
@@ -151,11 +176,14 @@ impl KafkaInputConfig {
     /// Validate configuration, set default option values required by this
     /// adapter.
     fn validate(&mut self) -> AnyResult<()> {
+<<<<<<< HEAD
         self.set_option_if_missing(
             "bootstrap.servers",
             &env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string()),
         );
 
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
         // Commit automatically.
         // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
         self.enforce_option("enable.auto.commit", "true")?;
@@ -237,7 +265,10 @@ impl KafkaInputEndpointInner {
     fn new(mut config: KafkaInputConfig, consumer: Box<dyn InputConsumer>) -> AnyResult<Arc<Self>> {
         // Create Kafka consumer configuration.
         config.validate()?;
+<<<<<<< HEAD
         debug!("Starting Kafka input endpoint: {config:?}");
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
 
         let mut client_config = ClientConfig::new();
 
@@ -317,7 +348,11 @@ impl KafkaInputEndpointInner {
     }
 
     /// Pause all partitions assigned to the consumer.
+<<<<<<< HEAD
     fn pause_partitions(&self) -> KafkaResult<()> {
+=======
+    fn pause_partitions(&self) -> AnyResult<()> {
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
         // println!("pause");
         // self.debug_consumer();
 
@@ -327,16 +362,23 @@ impl KafkaInputEndpointInner {
     }
 
     /// Resume all partitions assigned to the consumer.
+<<<<<<< HEAD
     fn resume_partitions(&self) -> KafkaResult<()> {
+=======
+    fn resume_partitions(&self) -> AnyResult<()> {
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
         self.kafka_consumer
             .resume(&self.kafka_consumer.assignment()?)?;
         Ok(())
     }
 
+<<<<<<< HEAD
     fn refine_error(&self, e: KafkaError) -> (bool, AnyError) {
         refine_kafka_error(self.kafka_consumer.client(), e)
     }
 
+=======
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
     fn worker_thread(endpoint: Arc<KafkaInputEndpointInner>, mut consumer: Box<dyn InputConsumer>) {
         let mut actual_state = PipelineState::Paused;
         loop {
@@ -345,16 +387,24 @@ impl KafkaInputEndpointInner {
                 PipelineState::Paused if actual_state != PipelineState::Paused => {
                     actual_state = PipelineState::Paused;
                     if let Err(e) = endpoint.pause_partitions() {
+<<<<<<< HEAD
                         let (_fatal, e) = endpoint.refine_error(e);
                         consumer.error(true, e);
+=======
+                        consumer.error(e);
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
                         return;
                     }
                 }
                 PipelineState::Running if actual_state != PipelineState::Running => {
                     actual_state = PipelineState::Running;
                     if let Err(e) = endpoint.resume_partitions() {
+<<<<<<< HEAD
                         let (_fatal, e) = endpoint.refine_error(e);
                         consumer.error(true, e);
+=======
+                        consumer.error(e);
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
                         return;
                     };
                 }
@@ -374,9 +424,14 @@ impl KafkaInputEndpointInner {
                 }
                 Some(Err(e)) => {
                     // println!("poll returned error");
+<<<<<<< HEAD
                     let (fatal, e) = endpoint.refine_error(e);
                     consumer.error(fatal, e);
                     if fatal {
+=======
+                    consumer.error(AnyError::from(e));
+                    if endpoint.kafka_consumer.client().fatal_error().is_some() {
+>>>>>>> 37ce523 (Created dataflow-jit crate and moved adapters to /crates)
                         return;
                     }
                 }

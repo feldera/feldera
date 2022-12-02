@@ -1,11 +1,5 @@
 [workspace]
-members = [
-    "crates/dbsp",
-    "crates/nexmark",
-    "crates/adapters",
-    "crates/pipeline_manager"
-]
-
+members = ["crates/*"]
 exclude = ["sql-to-dbsp-compiler/temp"]
 
 [profile.bench]
