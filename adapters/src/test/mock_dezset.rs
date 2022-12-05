@@ -15,6 +15,12 @@ pub struct MockDeZSetState<T> {
     pub flushed: Vec<(T, bool)>,
 }
 
+impl<T> Default for MockDeZSetState<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> MockDeZSetState<T> {
     pub fn new() -> Self {
         Self {
@@ -31,6 +37,12 @@ impl<T> MockDeZSetState<T> {
 }
 
 pub struct MockDeZSet<T>(Arc<Mutex<MockDeZSetState<T>>>);
+
+impl<T> Default for MockDeZSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Mock implementation of `DeCollectionHandle`.
 impl<T> Clone for MockDeZSet<T> {

@@ -63,8 +63,8 @@ pub use config::{
     ControllerConfig, ControllerInnerConfig, FormatConfig, GlobalControllerConfig,
     InputEndpointConfig, OutputEndpointConfig,
 };
-use error::ControllerError;
-use stats::ControllerStats;
+pub use error::ControllerError;
+pub use stats::ControllerStats;
 
 type EndpointId = u64;
 

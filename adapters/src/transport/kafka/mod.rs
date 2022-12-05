@@ -5,7 +5,7 @@ mod input;
 mod output;
 
 #[cfg(test)]
-mod test;
+pub mod test;
 
 pub use input::KafkaInputTransport;
 pub use output::KafkaOutputTransport;
