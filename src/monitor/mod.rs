@@ -93,8 +93,7 @@ impl Display for TraceError {
             Self::NotACircuit(node) => write!(f, "not a circuit node {node}"),
             Self::NodeOutsideCurrentScope(node, scope) => write!(
                 f,
-                "node id {} does not belong to the current scope {}",
-                node, scope
+                "node id {node} does not belong to the current scope {scope}",
             ),
             Self::UnexpectedNodeId => {
                 f.write_str("node id is not valid for this event type in the current state")
@@ -507,8 +506,7 @@ impl TraceMonitorInternal {
                     CircuitState::Step(visited_nodes) => {
                         if visited_nodes.contains(&local_node_id) {
                             return Err(TraceError::InvalidEvent(Cow::from(format!(
-                                "node id {} evaluated twice in one clock cycle",
-                                local_node_id
+                                "node id {local_node_id} evaluated twice in one clock cycle",
                             ))));
                         }
                         let global_id = node.global_id();

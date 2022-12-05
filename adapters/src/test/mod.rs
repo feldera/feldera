@@ -2,6 +2,7 @@
 
 use crate::{controller::InputEndpointConfig, Catalog, InputEndpoint, InputTransport};
 use dbsp::{DBSPHandle, Runtime};
+use log::{Log, Metadata, Record};
 use serde::Deserialize;
 use std::{
     sync::{Arc, Mutex},
@@ -10,12 +11,30 @@ use std::{
 };
 
 mod data;
+
+#[cfg(feature = "with-kafka")]
+pub mod kafka;
 mod mock_dezset;
 mod mock_input_consumer;
 
 pub use data::{generate_test_batch, generate_test_batches, TestStruct};
 pub use mock_dezset::MockDeZSet;
 pub use mock_input_consumer::MockInputConsumer;
+
+pub struct TestLogger;
+pub static TEST_LOGGER: TestLogger = TestLogger;
+
+impl Log for TestLogger {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &Record) {
+        println!("{} - {}", record.level(), record.args());
+    }
+
+    fn flush(&self) {}
+}
 
 /// Wait for `predicate` to become `true`.
 ///

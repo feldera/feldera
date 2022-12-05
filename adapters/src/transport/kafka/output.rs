@@ -9,7 +9,9 @@ use rdkafka::{
 };
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{borrow::Cow, collections::BTreeMap, time::Duration};
+
+const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
 /// `OutputTransport` implementation that writes to a Kafka topic.
 pub struct KafkaOutputTransport;
@@ -102,7 +104,7 @@ impl ProducerContext for KafkaOutputContext {
             (self.async_error_callback)(AnyError::new(error.clone()));
         }
 
-        // There is no harm in unparking the the endpoint thread unconditionally,
+        // There is no harm in unparking the endpoint thread unconditionally,
         // regardless of whether it's actually parked or not.
         self.unparker.unpark();
     }
@@ -153,7 +155,13 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         // Wait for the number of unacknowledged messages to drop
         // below `max_inflight_messages`.
         while self.kafka_producer.in_flight_count() as i64 > self.max_inflight_messages as i64 {
-            self.parker.park();
+            // FIXME: It appears that the delivery callback can be invoked before the
+            // in-flight counter is decremented, in which case we may never get
+            // unparked and may need to poll the in-flight counter.  This
+            // shouldn't cause performance issues in practice, but
+            // it would still be nice to have a more reliable way to wake up the endpoint
+            // thread _after_ the in-flight counter has been decremented.
+            self.parker.park_timeout(OUTPUT_POLLING_INTERVAL);
         }
 
         let record = <BaseRecord<(), [u8], ()>>::to(&self.topic).payload(buffer);
