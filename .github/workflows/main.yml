@@ -232,9 +232,11 @@ jobs:
           # https://github.com/llvm-mirror/compiler-rt/blob/69445f095c22aac2388f939bedebf224a6efcdaf/lib/sanitizer_common/sanitizer_thread_registry.h#L104.
           # So we run tests one at a time to mitigate this.
           THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
+          # Memory sanitizer reports uninitialized reads in `librdkafka`.
+          SKIP_KAFKA: "${{ (matrix.sanitizer == 'memory' || matrix.sanitizer == 'thread') && '--skip kafka' || '' }}"
         with:
           command: test
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.THREADS }}
+          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
