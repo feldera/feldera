@@ -107,7 +107,7 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
 
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
-mod test {
+mod test_with_kafka {
     use super::{build_app, ServerState};
     use crate::{
         test::{
