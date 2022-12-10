@@ -30,7 +30,7 @@
 //! by the circuit, but the counter shows that 10 records are still
 //! pending.
 
-use super::{ControllerInnerConfig, EndpointId};
+use super::{GlobalControllerConfig, InputEndpointConfig, OutputEndpointConfig, EndpointId};
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use std::{
     collections::BTreeMap,
@@ -60,19 +60,19 @@ impl ControllerStats {
     }
 
     /// Initialize stats for a new input endpoint.
-    pub fn add_input(&self, endpoint_id: &EndpointId) {
+    pub fn add_input(&self, endpoint_id: &EndpointId, endpoint_name: &str, config: &InputEndpointConfig) {
         self.input_stats
             .write()
             .unwrap()
-            .insert(*endpoint_id, InputEndpointStats::new());
+            .insert(*endpoint_id, InputEndpointStats::new(endpoint_name, config));
     }
 
     /// Initialize stats for a new output endpoint.
-    pub fn add_output(&self, endpoint_id: &EndpointId) {
+    pub fn add_output(&self, endpoint_id: &EndpointId, endpoint_name: &str, config: &OutputEndpointConfig) {
         self.output_stats
             .write()
             .unwrap()
-            .insert(*endpoint_id, OutputEndpointStats::new());
+            .insert(*endpoint_id, OutputEndpointStats::new(endpoint_name, config));
     }
 
     /// Total number of records buffered by all input endpoints.
@@ -112,13 +112,12 @@ impl ControllerStats {
     pub fn input_endpoint_full(
         &self,
         endpoint_id: &EndpointId,
-        config: &ControllerInnerConfig,
     ) -> bool {
         let buffered_records = self.num_input_endpoint_buffered_records(endpoint_id);
 
-        let max_buffered_records = match config.inputs.get(endpoint_id) {
+        let max_buffered_records = match self.input_stats.read().unwrap().get(endpoint_id) {
             None => return false,
-            Some(endpoint_config) => endpoint_config.max_buffered_records,
+            Some(endpoint) => endpoint.config.max_buffered_records,
         };
 
         buffered_records >= max_buffered_records
@@ -131,7 +130,7 @@ impl ControllerStats {
     /// * `endpoint_id` - id of the input endpoint.
     /// * `num_bytes` - number of bytes received.
     /// * `num_records` - number of records in the deserialized batch.
-    /// * `config` - controller config.
+    /// * `global_config` - global controller config.
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
@@ -142,7 +141,7 @@ impl ControllerStats {
         endpoint_id: EndpointId,
         num_bytes: usize,
         num_records: usize,
-        config: &ControllerInnerConfig,
+        global_config: &GlobalControllerConfig,
         circuit_thread_unparker: &Unparker,
         backpressure_thread_unparker: &Unparker,
     ) {
@@ -156,27 +155,24 @@ impl ControllerStats {
             .fetch_add(num_records, Ordering::AcqRel);
 
         if old == 0
-            || (old <= config.global.min_batch_size_records
-                && old + num_records > config.global.min_batch_size_records)
+            || (old <= global_config.min_batch_size_records
+                && old + num_records > global_config.min_batch_size_records)
         {
             circuit_thread_unparker.unpark();
         }
 
-        // There is a potential race condition if the endpoint is currently being
-        // removed. In this case, it's safe to ignore this operation.
-        let endpoint_config = match config.inputs.get(&endpoint_id) {
-            None => return,
-            Some(endpoint_config) => endpoint_config,
-        };
+        let input_stats = self.input_stats.read().unwrap();
 
         // Update endpoint counters; unpark backpressure thread if endpoint's
         // `max_buffered_records` exceeded.
-        let input_stats = self.input_stats.read().unwrap();
+        //
+        // There is a potential race condition if the endpoint is currently being
+        // removed. In this case, it's safe to ignore this operation.
         if let Some(endpoint_stats) = input_stats.get(&endpoint_id) {
             let old = endpoint_stats.add_buffered(num_bytes, num_records);
 
-            if old < endpoint_config.max_buffered_records
-                && old + num_records >= endpoint_config.max_buffered_records
+            if old < endpoint_stats.config.max_buffered_records
+                && old + num_records >= endpoint_stats.config.max_buffered_records
             {
                 backpressure_thread_unparker.unpark();
             }
@@ -190,7 +186,7 @@ impl ControllerStats {
     ///
     /// * `endpoint_id` - id of the input endpoint.
     /// * `num_records` - number of records returned by `Parser::eoi`.
-    /// * `config` - controller config.
+    /// * `global_config` - global controller config.
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
@@ -198,7 +194,7 @@ impl ControllerStats {
         &self,
         endpoint_id: EndpointId,
         num_records: usize,
-        config: &ControllerInnerConfig,
+        global_config: &GlobalControllerConfig,
         circuit_thread_unparker: &Unparker,
     ) {
         let num_records = num_records as u64;
@@ -208,8 +204,8 @@ impl ControllerStats {
         let old = self
             .buffered_input_records
             .fetch_add(num_records, Ordering::AcqRel);
-        if old < config.global.min_batch_size_records
-            && old + num_records >= config.global.min_batch_size_records
+        if old < global_config.min_batch_size_records
+            && old + num_records >= global_config.min_batch_size_records
         {
             circuit_thread_unparker.unpark();
         }
@@ -232,18 +228,12 @@ impl ControllerStats {
         &self,
         endpoint_id: EndpointId,
         num_records: usize,
-        config: &ControllerInnerConfig,
         circuit_thread_unparker: &Unparker,
     ) {
-        let endpoint_config = match config.outputs.get(&endpoint_id) {
-            None => return,
-            Some(endpoint_config) => endpoint_config,
-        };
-
         if let Some(endpoint_stats) = self.output_stats().get(&endpoint_id) {
             let old = endpoint_stats.output_batch(num_records);
-            if old < endpoint_config.max_buffered_records
-                && old + num_records as u64 >= endpoint_config.max_buffered_records
+            if old < endpoint_stats.config.max_buffered_records
+                && old + num_records as u64 >= endpoint_stats.config.max_buffered_records
             {
                 circuit_thread_unparker.unpark();
             }
@@ -256,22 +246,22 @@ impl ControllerStats {
         };
     }
 
-    pub fn output_buffers_full(&self, config: &ControllerInnerConfig) -> bool {
+    pub fn output_buffers_full(&self) -> bool {
         self.output_stats()
-            .iter()
-            .any(|(endpoint_id, endpoint_stats)| {
-                if let Some(endpoint_config) = config.outputs.get(endpoint_id) {
-                    endpoint_stats.buffered_records.load(Ordering::Acquire)
-                        >= endpoint_config.max_buffered_records
-                } else {
-                    false
-                }
+            .values()
+            .any(|endpoint_stats| {
+                endpoint_stats.buffered_records.load(Ordering::Acquire)
+                    >= endpoint_stats.config.max_buffered_records
             })
     }
 }
 
 /// Input endpoint statistics.
 pub struct InputEndpointStats {
+    pub endpoint_name: String,
+
+    pub config: InputEndpointConfig,
+
     /// Total bytes pushed to the endpoint since it was created.
     pub total_bytes: AtomicU64,
 
@@ -288,8 +278,10 @@ pub struct InputEndpointStats {
 }
 
 impl InputEndpointStats {
-    fn new() -> Self {
+    fn new(endpoint_name: &str, config: &InputEndpointConfig) -> Self {
         Self {
+            endpoint_name: endpoint_name.to_string(),
+            config: config.clone(),
             total_bytes: AtomicU64::new(0),
             total_records: AtomicU64::new(0),
             buffered_bytes: AtomicU64::new(0),
@@ -319,8 +311,10 @@ impl InputEndpointStats {
 }
 
 /// Output endpoint statistics.
-#[derive(Default)]
 pub struct OutputEndpointStats {
+    pub endpoint_name: String,
+    pub config: OutputEndpointConfig,
+
     pub transmitted_records: AtomicU64,
     pub transmitted_bytes: AtomicU64,
 
@@ -336,8 +330,15 @@ impl OutputEndpointStats {
 }
 
 impl OutputEndpointStats {
-    fn new() -> Self {
-        Self::default()
+    fn new(endpoint_name: &str, config: &OutputEndpointConfig) -> Self {
+        Self {
+            endpoint_name: endpoint_name.to_string(),
+            config: config.clone(),
+            transmitted_records: AtomicU64::new(0),
+            transmitted_bytes: AtomicU64::new(0),
+            buffered_records: AtomicU64::new(0),
+            buffered_batches: AtomicU64::new(0),
+        }
     }
 
     fn enqueue_batch(&self, num_records: usize) {

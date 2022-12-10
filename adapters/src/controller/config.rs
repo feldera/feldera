@@ -5,7 +5,6 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
-use super::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
@@ -31,26 +30,6 @@ pub struct ControllerConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
-}
-
-/// Internal representaion of controller configuration stored inside the
-/// controller. Similar to `ControllerConfig`, but indexes endpoints by id
-/// instead of names.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ControllerInnerConfig {
-    pub global: GlobalControllerConfig,
-    pub inputs: BTreeMap<EndpointId, InputEndpointConfig>,
-    pub outputs: BTreeMap<EndpointId, OutputEndpointConfig>,
-}
-
-impl ControllerInnerConfig {
-    pub fn new(global: GlobalControllerConfig) -> Self {
-        Self {
-            global,
-            inputs: BTreeMap::new(),
-            outputs: BTreeMap::new(),
-        }
-    }
 }
 
 /// Global controller configuration settings.
