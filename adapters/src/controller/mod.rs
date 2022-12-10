@@ -60,7 +60,7 @@ mod error;
 mod stats;
 
 pub use config::{
-    ControllerConfig, ControllerInnerConfig, FormatConfig, GlobalControllerConfig,
+    ControllerConfig, FormatConfig, GlobalControllerConfig,
     InputEndpointConfig, OutputEndpointConfig,
 };
 pub use error::ControllerError;
@@ -227,10 +227,8 @@ impl Controller {
     ) -> AnyResult<()> {
         let mut start: Option<Instant> = None;
 
-        let config = controller.config.read().unwrap();
-        let max_buffering_delay = Duration::from_micros(config.global.max_buffering_delay_usecs);
-        let min_batch_size_records = config.global.min_batch_size_records;
-        drop(config);
+        let max_buffering_delay = Duration::from_micros(controller.global_config.max_buffering_delay_usecs);
+        let min_batch_size_records = controller.global_config.min_batch_size_records;
 
         loop {
             match controller.state() {
@@ -337,7 +335,7 @@ impl Controller {
                     for (epid, ep) in inputs.iter() {
                         if controller
                             .stats
-                            .input_endpoint_full(epid, &controller.config.read().unwrap())
+                            .input_endpoint_full(epid)
                         {
                             // The endpoint is full and is not yet in the paused state -- pause it
                             // now.
@@ -442,7 +440,7 @@ impl OutputEndpointState {
 /// A reference to this struct is held by each input probe and by both
 /// controller threads.
 struct ControllerInner {
-    config: ShardedLock<ControllerInnerConfig>,
+    global_config: GlobalControllerConfig,
     stats: ControllerStats,
     state: AtomicU32,
     catalog: Arc<Mutex<Catalog>>,
@@ -463,10 +461,9 @@ impl ControllerInner {
     ) -> Self {
         let stats = ControllerStats::new();
         let state = AtomicU32::new(PipelineState::Paused as u32);
-        let config = ShardedLock::new(ControllerInnerConfig::new(global_config.clone()));
 
         Self {
-            config,
+            global_config: global_config.clone(),
             stats,
             state,
             catalog: Arc::new(Mutex::new(catalog)),
@@ -527,12 +524,8 @@ impl ControllerInner {
 
         drop(inputs);
 
-        // Record endpoint config in `self.config`.
-        let mut config = self.config.write().unwrap();
-        config.inputs.insert(endpoint_id, endpoint_config.clone());
-
         // Initialize endpoint stats.
-        self.stats.add_input(&endpoint_id);
+        self.stats.add_input(&endpoint_id, endpoint_name, endpoint_config);
 
         self.unpark_backpressure();
         Ok(())
@@ -642,12 +635,8 @@ impl ControllerInner {
 
         drop(outputs);
 
-        // Record endpoint config in `self.config`.
-        let mut config = self.config.write().unwrap();
-        config.outputs.insert(endpoint_id, endpoint_config.clone());
-
         // Initialize endpoint stats.
-        self.stats.add_output(&endpoint_id);
+        self.stats.add_output(&endpoint_id, endpoint_name, endpoint_config);
 
         Ok(())
     }
@@ -679,7 +668,6 @@ impl ControllerInner {
                 controller.stats.output_batch(
                     endpoint_id,
                     num_records,
-                    &controller.config.read().unwrap(),
                     &controller.circuit_thread_unparker,
                 );
             } else {
@@ -726,7 +714,7 @@ impl ControllerInner {
     }
 
     fn output_buffers_full(&self) -> bool {
-        self.stats.output_buffers_full(&self.config.read().unwrap())
+        self.stats.output_buffers_full()
     }
 }
 
@@ -774,7 +762,7 @@ impl InputConsumer for InputProbe {
                     self.endpoint_id,
                     data.len(),
                     num_records,
-                    &self.controller.config.read().unwrap(),
+                    &self.controller.global_config,
                     &self.circuit_thread_unparker,
                     &self.backpressure_thread_unparker,
                 );
@@ -798,7 +786,7 @@ impl InputConsumer for InputProbe {
                 self.controller.stats.eoi(
                     self.endpoint_id,
                     num_records,
-                    &self.controller.config.read().unwrap(),
+                    &self.controller.global_config,
                     &self.circuit_thread_unparker,
                 );
             }
