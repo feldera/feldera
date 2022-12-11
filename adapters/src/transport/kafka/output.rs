@@ -24,7 +24,7 @@ impl OutputTransport for KafkaOutputTransport {
     fn new_endpoint(
         &self,
         config: &YamlValue,
-        async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
         let config = KafkaOutputConfig::deserialize(config)?;
         let ep = KafkaOutputEndpoint::new(config, async_error_callback)?;
@@ -78,11 +78,14 @@ struct KafkaOutputContext {
     unparker: Unparker,
 
     /// Callback to notify the controller about delivery failure.
-    async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+    async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
 }
 
 impl KafkaOutputContext {
-    fn new(unparker: Unparker, async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>) -> Self {
+    fn new(
+        unparker: Unparker,
+        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+    ) -> Self {
         Self {
             unparker,
             async_error_callback,
@@ -101,7 +104,7 @@ impl ProducerContext for KafkaOutputContext {
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
         if let Err((error, _message)) = delivery_result {
-            (self.async_error_callback)(AnyError::new(error.clone()));
+            (self.async_error_callback)(false, AnyError::new(error.clone()));
         }
 
         // There is no harm in unparking the endpoint thread unconditionally,
@@ -120,7 +123,7 @@ struct KafkaOutputEndpoint {
 impl KafkaOutputEndpoint {
     fn new(
         config: KafkaOutputConfig,
-        async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Self> {
         // Create Kafka consumer configuration.
         let mut client_config = ClientConfig::new();

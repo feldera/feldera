@@ -1,10 +1,11 @@
-use super::KafkaLogLevel;
+use super::{refine_kafka_error, KafkaLogLevel};
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use num_traits::FromPrimitive;
 use rdkafka::{
     config::{FromClientConfigAndContext, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
+    error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
 use serde::Deserialize;
@@ -261,7 +262,7 @@ impl KafkaInputEndpointInner {
     }
 
     /// Pause all partitions assigned to the consumer.
-    fn pause_partitions(&self) -> AnyResult<()> {
+    fn pause_partitions(&self) -> KafkaResult<()> {
         // println!("pause");
         // self.debug_consumer();
 
@@ -271,10 +272,14 @@ impl KafkaInputEndpointInner {
     }
 
     /// Resume all partitions assigned to the consumer.
-    fn resume_partitions(&self) -> AnyResult<()> {
+    fn resume_partitions(&self) -> KafkaResult<()> {
         self.kafka_consumer
             .resume(&self.kafka_consumer.assignment()?)?;
         Ok(())
+    }
+
+    fn refine_error(&self, e: KafkaError) -> (bool, AnyError) {
+        refine_kafka_error(self.kafka_consumer.client(), e)
     }
 
     fn worker_thread(endpoint: Arc<KafkaInputEndpointInner>, mut consumer: Box<dyn InputConsumer>) {
@@ -285,14 +290,16 @@ impl KafkaInputEndpointInner {
                 PipelineState::Paused if actual_state != PipelineState::Paused => {
                     actual_state = PipelineState::Paused;
                     if let Err(e) = endpoint.pause_partitions() {
-                        consumer.error(e);
+                        let (_fatal, e) = endpoint.refine_error(e);
+                        consumer.error(true, e);
                         return;
                     }
                 }
                 PipelineState::Running if actual_state != PipelineState::Running => {
                     actual_state = PipelineState::Running;
                     if let Err(e) = endpoint.resume_partitions() {
-                        consumer.error(e);
+                        let (_fatal, e) = endpoint.refine_error(e);
+                        consumer.error(true, e);
                         return;
                     };
                 }
@@ -312,8 +319,9 @@ impl KafkaInputEndpointInner {
                 }
                 Some(Err(e)) => {
                     // println!("poll returned error");
-                    consumer.error(AnyError::from(e));
-                    if endpoint.kafka_consumer.client().fatal_error().is_some() {
+                    let (fatal, e) = endpoint.refine_error(e);
+                    consumer.error(fatal, e);
+                    if fatal {
                         return;
                     }
                 }

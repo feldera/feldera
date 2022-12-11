@@ -16,8 +16,6 @@ use std::sync::Mutex;
 
 // TODO:
 //
-// - Config
-// - Stats: return per-endpoint statistics + status (ok/failed)
 // - grafana
 
 struct ServerState {
@@ -63,6 +61,7 @@ where
         .service(start)
         .service(pause)
         .service(shutdown)
+        .service(status)
 }
 
 async fn index() -> ActixResult<NamedFile> {
@@ -86,6 +85,19 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             controller.pause();
             HttpResponse::Ok().body("Pipeline paused")
+        }
+        None => HttpResponse::Conflict().body("The pipeline has been terminated"),
+    }
+}
+
+#[get("/status")]
+async fn status(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let json_string = serde_json::to_string(controller.status()).unwrap();
+            HttpResponse::Ok()
+                .content_type(mime::APPLICATION_JSON)
+                .body(json_string)
         }
         None => HttpResponse::Conflict().body("The pipeline has been terminated"),
     }
@@ -219,6 +231,11 @@ outputs:
 
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
+
+        println!("/status");
+        let req = test::TestRequest::get().uri("/status").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
 
         // Pause command; send more data, receive none.
         println!("/pause");

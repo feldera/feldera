@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["with-kafka", "server"]
 with-kafka = ["rdkafka"]
-server = ["actix-files", "actix-web", "with-kafka"]
+server = ["actix-files", "actix-web", "serde_json", "mime", "with-kafka"]
 test-utils = ["size-of", "futures", "proptest", "proptest-derive"]
 
 [dependencies]
@@ -20,12 +20,14 @@ serde = { version = "1.0", features = ["derive"] }
 erased-serde = "0.3.23"
 once_cell = "1.9.0"
 serde_yaml = "0.9.14"
+serde_json = { version = "1.0.89", optional = true }
 csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 # cmake-build is required on Windows.
 rdkafka = { version = "0.29.0", features = ["cmake-build"], optional = true }
 actix-files = { version = "0.6.2", optional = true }
 actix-web = { version = "4.2", optional = true }
+mime = { version = "0.3.16", optional = true }
 log = "0.4.17"
 size-of = { version = "0.1.2", features = ["time-std"], optional = true}
 futures = { version = "0.3.25", optional = true}
