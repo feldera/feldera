@@ -110,7 +110,7 @@ impl FileInputEndpoint {
                     let data = reader.fill_buf();
                     match data {
                         Err(e) => {
-                            consumer.error(AnyError::from(e));
+                            consumer.error(true, AnyError::from(e));
                             return;
                         }
                         Ok(data) if data.is_empty() => {
@@ -180,7 +180,7 @@ impl OutputTransport for FileOutputTransport {
     fn new_endpoint(
         &self,
         config: &YamlValue,
-        _async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+        _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
         let config = FileOutputConfig::deserialize(config)?;
         let ep = FileOutputEndpoint::new(config)?;

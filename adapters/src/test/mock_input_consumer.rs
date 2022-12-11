@@ -98,7 +98,7 @@ impl InputConsumer for MockInputConsumer {
         state.parser.flush();
     }
 
-    fn error(&mut self, error: AnyError) {
+    fn error(&mut self, _fatal: bool, error: AnyError) {
         let mut state = self.state();
 
         if let Some(error_cb) = &mut state.error_cb {

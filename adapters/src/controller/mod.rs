@@ -60,11 +60,11 @@ mod error;
 mod stats;
 
 pub use config::{
-    ControllerConfig, FormatConfig, GlobalControllerConfig,
-    InputEndpointConfig, OutputEndpointConfig,
+    ControllerConfig, FormatConfig, GlobalControllerConfig, InputEndpointConfig,
+    OutputEndpointConfig,
 };
 pub use error::ControllerError;
-pub use stats::ControllerStats;
+pub use stats::ControllerStatus;
 
 type EndpointId = u64;
 
@@ -199,9 +199,9 @@ impl Controller {
         self.inner.pause();
     }
 
-    /// Returns controller stats.
-    pub fn stats(&self) -> &ControllerStats {
-        &self.inner.stats
+    /// Returns controller status.
+    pub fn status(&self) -> &ControllerStatus {
+        &self.inner.status
     }
 
     /// Terminate the controller, stop all input endpoints and destroy the
@@ -227,8 +227,9 @@ impl Controller {
     ) -> AnyResult<()> {
         let mut start: Option<Instant> = None;
 
-        let max_buffering_delay = Duration::from_micros(controller.global_config.max_buffering_delay_usecs);
-        let min_batch_size_records = controller.global_config.min_batch_size_records;
+        let max_buffering_delay =
+            Duration::from_micros(controller.status.global_config.max_buffering_delay_usecs);
+        let min_batch_size_records = controller.status.global_config.min_batch_size_records;
 
         loop {
             match controller.state() {
@@ -240,7 +241,7 @@ impl Controller {
                         continue;
                     }
 
-                    let buffered_records = controller.stats.num_buffered_input_records();
+                    let buffered_records = controller.status.num_buffered_input_records();
 
                     // We have sufficient buffered inputs or the buffering delay has expired --
                     // kick the circuit to consume buffered data.  Use strict inequality in case
@@ -252,7 +253,7 @@ impl Controller {
                     {
                         start = None;
                         // Reset all counters of buffered records and bytes to 0.
-                        controller.stats.consume_buffered_inputs();
+                        controller.status.consume_buffered_inputs();
                         // Wake up the backpressure thread to unpause endpoints blocked due to
                         // backpressure.
                         controller.unpark_backpressure();
@@ -268,7 +269,7 @@ impl Controller {
                             let num_records = batch.iter().map(|b| b.len()).sum();
 
                             // Increment stats first, so we don't end up with negative counts.
-                            controller.stats.enqueue_batch(*endpoint_id, num_records);
+                            controller.status.enqueue_batch(*endpoint_id, num_records);
                             output.queue.push(batch);
 
                             // Wake up the output thread.  We're not trying to be smart here and
@@ -320,10 +321,12 @@ impl Controller {
                             // Pause the endpoint unless it's already paused due to backpressure.
                             if !paused_endpoints.contains(epid) {
                                 ep.endpoint.pause().unwrap_or_else(|e| {
-                                    controller.error(ControllerError::transport_error(
+                                    controller.input_transport_error(
+                                        *epid,
                                         &ep.endpoint_name,
+                                        true,
                                         e,
-                                    ))
+                                    )
                                 });
                             }
                         }
@@ -333,18 +336,17 @@ impl Controller {
                 PipelineState::Running => {
                     // Resume endpoints that have buffer space, pause endpoints with full buffers.
                     for (epid, ep) in inputs.iter() {
-                        if controller
-                            .stats
-                            .input_endpoint_full(epid)
-                        {
+                        if controller.status.input_endpoint_full(epid) {
                             // The endpoint is full and is not yet in the paused state -- pause it
                             // now.
                             if !global_pause && !paused_endpoints.contains(epid) {
                                 ep.endpoint.pause().unwrap_or_else(|e| {
-                                    controller.error(ControllerError::transport_error(
+                                    controller.input_transport_error(
+                                        *epid,
                                         &ep.endpoint_name,
+                                        true,
                                         e,
-                                    ))
+                                    )
                                 });
                             }
                             paused_endpoints.insert(*epid);
@@ -352,10 +354,12 @@ impl Controller {
                             // The endpoint is paused when it should be running -- unpause it.
                             if global_pause || paused_endpoints.contains(epid) {
                                 ep.endpoint.start().unwrap_or_else(|e| {
-                                    controller.error(ControllerError::transport_error(
+                                    controller.input_transport_error(
+                                        *epid,
                                         &ep.endpoint_name,
+                                        true,
                                         e,
-                                    ))
+                                    )
                                 });
                             }
                             paused_endpoints.remove(epid);
@@ -374,12 +378,12 @@ impl Controller {
 }
 
 /// State tracked by the controller for each input endpoint.
-struct InputEndpointState {
+struct InputEndpointDescr {
     endpoint_name: String,
     endpoint: Box<dyn InputEndpoint>,
 }
 
-impl InputEndpointState {
+impl InputEndpointDescr {
     pub fn new(endpoint_name: &str, endpoint: Box<dyn InputEndpoint>) -> Self {
         Self {
             endpoint_name: endpoint_name.to_owned(),
@@ -393,7 +397,7 @@ impl InputEndpointState {
 type BatchQueue = SegQueue<Vec<Box<dyn SerBatch>>>;
 
 /// State tracked by the controller for each output endpoint.
-struct OutputEndpointState {
+struct OutputEndpointDescr {
     /// Endpoint name.
     endpoint_name: String,
 
@@ -418,7 +422,7 @@ struct OutputEndpointState {
     unparker: Unparker,
 }
 
-impl OutputEndpointState {
+impl OutputEndpointDescr {
     pub fn new(
         endpoint_name: &str,
         stream_name: &str,
@@ -440,12 +444,11 @@ impl OutputEndpointState {
 /// A reference to this struct is held by each input probe and by both
 /// controller threads.
 struct ControllerInner {
-    global_config: GlobalControllerConfig,
-    stats: ControllerStats,
+    status: ControllerStatus,
     state: AtomicU32,
     catalog: Arc<Mutex<Catalog>>,
-    inputs: Mutex<BTreeMap<EndpointId, InputEndpointState>>,
-    outputs: ShardedLock<BTreeMap<EndpointId, OutputEndpointState>>,
+    inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
+    outputs: ShardedLock<BTreeMap<EndpointId, OutputEndpointDescr>>,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -459,12 +462,11 @@ impl ControllerInner {
         backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Self {
-        let stats = ControllerStats::new();
+        let status = ControllerStatus::new(global_config);
         let state = AtomicU32::new(PipelineState::Paused as u32);
 
         Self {
-            global_config: global_config.clone(),
-            stats,
+            status,
             state,
             catalog: Arc::new(Mutex::new(catalog)),
             inputs: Mutex::new(BTreeMap::new()),
@@ -519,13 +521,14 @@ impl ControllerInner {
 
         inputs.insert(
             endpoint_id,
-            InputEndpointState::new(endpoint_name, endpoint),
+            InputEndpointDescr::new(endpoint_name, endpoint),
         );
 
         drop(inputs);
 
         // Initialize endpoint stats.
-        self.stats.add_input(&endpoint_id, endpoint_name, endpoint_config);
+        self.status
+            .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
         self.unpark_backpressure();
         Ok(())
@@ -583,19 +586,20 @@ impl ControllerInner {
                 ControllerError::unknown_output_transport(&endpoint_config.transport.name)
             })?;
 
+        let endpoint_id = outputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
         let endpoint_name_str = endpoint_name.to_string();
+
         let self_weak = Arc::downgrade(self);
         let endpoint = transport.new_endpoint(
             &endpoint_config.transport.config,
-            Box::new(move |e: AnyError| {
+            Box::new(move |fatal: bool, e: AnyError| {
                 if let Some(controller) = self_weak.upgrade() {
-                    controller.error(ControllerError::transport_error(&endpoint_name_str, e))
+                    controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
                 }
             }),
         )?;
 
         // Create probe.
-        let endpoint_id = outputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
         let probe = Box::new(OutputProbe::new(
             endpoint_id,
             endpoint_name,
@@ -609,7 +613,7 @@ impl ControllerInner {
         let encoder = format.new_encoder(&endpoint_config.format.config, probe)?;
 
         let parker = Parker::new();
-        let endpoint_state = OutputEndpointState::new(
+        let endpoint_state = OutputEndpointDescr::new(
             endpoint_name,
             &endpoint_config.stream,
             collection_handle,
@@ -636,7 +640,8 @@ impl ControllerInner {
         drop(outputs);
 
         // Initialize endpoint stats.
-        self.stats.add_output(&endpoint_id, endpoint_name, endpoint_config);
+        self.status
+            .add_output(&endpoint_id, endpoint_name, endpoint_config);
 
         Ok(())
     }
@@ -665,7 +670,7 @@ impl ControllerInner {
                 // `num_records` output records have been transmitted --
                 // update output stats, wake up the circuit thread if the
                 // number of queued records drops below high water mark.
-                controller.stats.output_batch(
+                controller.status.output_batch(
                     endpoint_id,
                     num_records,
                     &controller.circuit_thread_unparker,
@@ -713,8 +718,46 @@ impl ControllerInner {
         (self.error_cb)(error);
     }
 
+    /// Process an input transport error.
+    ///
+    /// Update endpoint stats and notify the error callback.
+    fn input_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        fatal: bool,
+        error: AnyError,
+    ) {
+        self.status
+            .input_transport_error(endpoint_id, fatal, &error);
+        self.error(ControllerError::input_transport_error(
+            endpoint_name,
+            fatal,
+            error,
+        ));
+    }
+
+    /// Process an output transport error.
+    ///
+    /// Update endpoint stats and notify the error callback.
+    fn output_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        fatal: bool,
+        error: AnyError,
+    ) {
+        self.status
+            .output_transport_error(endpoint_id, fatal, &error);
+        self.error(ControllerError::output_transport_error(
+            endpoint_name,
+            fatal,
+            error,
+        ));
+    }
+
     fn output_buffers_full(&self) -> bool {
-        self.stats.output_buffers_full()
+        self.status.output_buffers_full()
     }
 }
 
@@ -758,11 +801,11 @@ impl InputConsumer for InputProbe {
             Ok(num_records) => {
                 // Success: push data to the input handle, update stats.
                 self.parser.flush();
-                self.controller.stats.input_batch(
+                self.controller.status.input_batch(
                     self.endpoint_id,
                     data.len(),
                     num_records,
-                    &self.controller.global_config,
+                    &self.controller.status.global_config,
                     &self.circuit_thread_unparker,
                     &self.backpressure_thread_unparker,
                 );
@@ -783,10 +826,10 @@ impl InputConsumer for InputProbe {
         match self.parser.eoi() {
             Ok(num_records) => {
                 self.parser.flush();
-                self.controller.stats.eoi(
+                self.controller.status.eoi(
                     self.endpoint_id,
                     num_records,
-                    &self.controller.global_config,
+                    &self.controller.status.global_config,
                     &self.circuit_thread_unparker,
                 );
             }
@@ -798,9 +841,9 @@ impl InputConsumer for InputProbe {
         }
     }
 
-    fn error(&mut self, error: AnyError) {
+    fn error(&mut self, fatal: bool, error: AnyError) {
         self.controller
-            .error(ControllerError::transport_error(&self.endpoint_name, error));
+            .output_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {
@@ -847,12 +890,16 @@ impl OutputConsumer for OutputProbe {
         match self.endpoint.push_buffer(buffer) {
             Ok(()) => {
                 self.controller
-                    .stats
+                    .status
                     .output_buffer(self.endpoint_id, num_bytes);
             }
             Err(error) => {
-                self.controller
-                    .error(ControllerError::transport_error(&self.endpoint_name, error));
+                self.controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    error,
+                );
             }
         }
     }
@@ -945,7 +992,7 @@ outputs:
 
             // Wait for the pipeline to output all records.
             wait(|| {
-                controller.stats().output_stats().get(&0).unwrap().transmitted_records() == data.len() as u64
+                controller.status().output_status().get(&0).unwrap().transmitted_records() == data.len() as u64
             }, None);
 
             controller.stop().unwrap();

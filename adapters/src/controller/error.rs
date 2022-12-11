@@ -155,13 +155,17 @@ pub enum ControllerError {
         error: AnyError,
     },
 
-    /// Transport endpoint error.
-    ///
-    /// Transport errors are non-recoverable.  An error indicates
-    /// that the endpoint has failed to re-establish lost connection and
-    /// is unable to continue receiving data.
-    TransportError {
+    /// Input transport endpoint error.
+    InputTransportError {
         endpoint_name: String,
+        fatal: bool,
+        error: AnyError,
+    },
+
+    /// Output transport endpoint error.
+    OutputTransportError {
+        endpoint_name: String,
+        fatal: bool,
         error: AnyError,
     },
 
@@ -177,26 +181,45 @@ impl Display for ControllerError {
             Self::Config { config_error } => {
                 write!(f, "invalid controller configuration: '{config_error}'")
             }
-            Self::TransportError {
+            Self::InputTransportError {
                 endpoint_name,
+                fatal,
                 error,
             } => {
                 write!(
                     f,
-                    "transport error on endpoint '{endpoint_name}': '{error}'"
+                    "{}error on input endpoint '{endpoint_name}': '{error}'",
+                    if *fatal { "FATAL " } else { "" }
+                )
+            }
+            Self::OutputTransportError {
+                endpoint_name,
+                fatal,
+                error,
+            } => {
+                write!(
+                    f,
+                    "{}error on output endpoint '{endpoint_name}': '{error}'",
+                    if *fatal { "FATAL " } else { "" }
                 )
             }
             Self::ParseError {
                 endpoint_name,
                 error,
             } => {
-                write!(f, "parse error on endpoint '{endpoint_name}': '{error}'")
+                write!(
+                    f,
+                    "parse error on input endpoint '{endpoint_name}': '{error}'"
+                )
             }
             Self::EncoderError {
                 endpoint_name,
                 error,
             } => {
-                write!(f, "encoder error on endpoint '{endpoint_name}': '{error}'")
+                write!(
+                    f,
+                    "encoder error on output endpoint '{endpoint_name}': '{error}'"
+                )
             }
             Self::DbspError { error } => {
                 write!(f, "DBSP error: '{error}'")
@@ -262,9 +285,18 @@ impl ControllerError {
         }
     }
 
-    pub fn transport_error(endpoint_name: &str, error: AnyError) -> Self {
-        Self::TransportError {
+    pub fn input_transport_error(endpoint_name: &str, fatal: bool, error: AnyError) -> Self {
+        Self::InputTransportError {
             endpoint_name: endpoint_name.to_owned(),
+            fatal,
+            error,
+        }
+    }
+
+    pub fn output_transport_error(endpoint_name: &str, fatal: bool, error: AnyError) -> Self {
+        Self::OutputTransportError {
+            endpoint_name: endpoint_name.to_owned(),
+            fatal,
             error,
         }
     }

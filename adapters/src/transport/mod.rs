@@ -122,7 +122,7 @@ pub trait InputConsumer: Send {
     /// Endpoint failed.
     ///
     /// Endpoint failed; no more data will be received from this endpoint.
-    fn error(&mut self, error: AnyError);
+    fn error(&mut self, fatal: bool, error: AnyError);
 
     /// End-of-input-stream notification.
     ///
@@ -158,7 +158,9 @@ pub trait OutputTransport: Send + Sync {
     ///   instance, a reliable message bus like Kafka may notify the endpoint
     ///   about a failure to deliver a previously sent message via an async
     ///   callback. If the endpoint is unable to handle this error, it must
-    ///   forward it to the client via the `async_error_callback`.
+    ///   forward it to the client via the `async_error_callback`.  The first
+    ///   argument of the callback is a flag that indicates a fatal error that
+    ///   the endpoint cannot recover from.
     ///
     /// # Errors
     ///
@@ -168,7 +170,7 @@ pub trait OutputTransport: Send + Sync {
     fn new_endpoint(
         &self,
         config: &YamlValue,
-        async_error_callback: Box<dyn Fn(AnyError) + Send + Sync>,
+        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 

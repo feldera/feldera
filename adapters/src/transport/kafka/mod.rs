@@ -1,4 +1,10 @@
-use rdkafka::config::RDKafkaLogLevel;
+use anyhow::Error as AnyError;
+use rdkafka::{
+    client::{Client as KafkaClient, ClientContext},
+    config::RDKafkaLogLevel,
+    error::KafkaError,
+    types::RDKafkaErrorCode,
+};
 use serde::Deserialize;
 
 mod input;
@@ -58,5 +64,27 @@ impl From<KafkaLogLevel> for RDKafkaLogLevel {
             KafkaLogLevel::Info => RDKafkaLogLevel::Info,
             KafkaLogLevel::Debug => RDKafkaLogLevel::Debug,
         }
+    }
+}
+
+/// If `e` is an error of type `RDKafkaErrorCode::Fatal`, replace
+/// it with the result of calling `client.fatal_error()` (which
+/// should return the actual cause of the failure).  Otherwise,
+/// returns `e`.  The first element of the returned tuple is
+/// `true` if `e` is a fatal error.
+fn refine_kafka_error<C>(client: &KafkaClient<C>, e: KafkaError) -> (bool, AnyError)
+where
+    C: ClientContext,
+{
+    match e.rdkafka_error_code() {
+        None => (false, AnyError::from(e)),
+        Some(code) if code == RDKafkaErrorCode::Fatal => {
+            if let Some((_errcode, errstr)) = client.fatal_error() {
+                (true, AnyError::msg(errstr))
+            } else {
+                (true, AnyError::from(e))
+            }
+        }
+        _ => (false, AnyError::from(e)),
     }
 }
