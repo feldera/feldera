@@ -1,8 +1,9 @@
 use crate::ir::{
-    expr::{Expr, Function, InputFlags},
-    graph::NodeId,
-    layout_cache::{LayoutCache, LayoutId},
+    expr::Expr,
+    function::{Function, InputFlags},
+    layout_cache::LayoutCache,
     types::Signature,
+    LayoutId, NodeId,
 };
 use enum_dispatch::enum_dispatch;
 

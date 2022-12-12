@@ -1,7 +1,20 @@
+mod block;
 mod expr;
+mod function;
 mod graph;
+mod ids;
 mod layout_cache;
 mod node;
 mod types;
 
+pub use expr::{
+    BinOp, BinOpKind, Branch, Constant, CopyRowTo, CopyVal, Expr, Extract, Insert, IsNull, Jump,
+    NullRow, RValue, Return, SetNull, Terminator, UninitRow,
+};
+pub use function::{Function, FunctionBuilder, InputFlags};
+pub use graph::Graph;
+pub use ids::{BlockId, ExprId, LayoutId, NodeId};
+pub use layout_cache::LayoutCache;
 pub use types::{RowLayout, RowLayoutBuilder, RowType, Signature};
+
+pub(crate) use ids::{BlockIdGen, ExprIdGen, LayoutIdGen, NodeIdGen};

@@ -61,12 +61,15 @@ pub struct Layout {
     // we store values at
     index_mappings: Vec<u32>,
     bitflag_indices: Vec<u32>,
+    is_unit: bool,
 }
 
 impl Layout {
     // FIXME: All unit types should be eliminated before this point
     // TODO: We need to do layout optimization here
     pub fn from_row(layout: &RowLayout, target: &TargetFrontendConfig) -> Self {
+        let is_unit = layout.is_unit();
+
         // The number of bitflag niches we have to fill
         // FIXME: Instead of just splitting the number of required bitflags into
         // bytes up front, we should probably take advantage of differently sized
@@ -82,7 +85,7 @@ impl Layout {
         let mut types = Vec::with_capacity(layout.rows().len());
         let mut index_mappings = Vec::with_capacity(layout.rows().len());
 
-        let (mut index, mut size, mut align) = (0, 0, 0);
+        let (mut index, mut size, mut align) = (0, 0, 1);
 
         for row in layout.rows() {
             let ty = match row {
@@ -155,7 +158,24 @@ impl Layout {
             offsets,
             index_mappings,
             bitflag_indices,
+            is_unit,
         }
+    }
+
+    pub fn is_unit(&self) -> bool {
+        self.is_unit
+    }
+
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    pub fn is_zero_sized(&self) -> bool {
+        self.size == 0
+    }
+
+    pub fn align(&self) -> u32 {
+        self.align
     }
 }
 
