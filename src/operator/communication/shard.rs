@@ -13,7 +13,6 @@ use crate::{
 use std::{hash::Hash, panic::Location};
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
-circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
 
 // An attempt to future-proof the design for when we support multiple sharding
 // disciplines.
@@ -159,57 +158,6 @@ where
                 Some(output)
             }
         })
-    }
-
-    /// Collect all shards of a stream at the same worker.
-    ///
-    /// The output stream in `receiver_worker` will contain a union of all
-    /// input batches across all workers.  The output streams in all other
-    /// workers will contain empty batches.
-    #[track_caller]
-    pub fn gather(&self, receiver_worker: usize) -> Stream<Circuit<P>, IB>
-    where
-        IB: Batch + Send,
-    {
-        let location = Location::caller();
-
-        match Runtime::runtime() {
-            None => self.clone(),
-            Some(runtime) => {
-                let num_workers = runtime.num_workers();
-                assert!(receiver_worker < num_workers);
-
-                if num_workers == 1 {
-                    self.clone()
-                } else {
-                    self.circuit()
-                        .cache_get_or_insert_with(
-                            GatherId::new((self.origin_node_id().clone(), receiver_worker)),
-                            move || {
-                                let (sender, receiver) = self.circuit().new_exchange_operators(
-                                    &runtime,
-                                    Runtime::worker_index(),
-                                    Some(location),
-                                    move |batch: IB, batches: &mut Vec<IB>| {
-                                        for _ in 0..num_workers {
-                                            batches.push(IB::empty(()));
-                                        }
-                                        batches[receiver_worker] = batch;
-                                    },
-                                    |trace: &mut Spine<IB>, batch: IB| trace.insert(batch),
-                                );
-
-                                // Is `consolidate` always necessary? Some (all?) consumers may be
-                                // happy working with traces.
-                                self.circuit()
-                                    .add_exchange(sender, receiver, self)
-                                    .consolidate()
-                            },
-                        )
-                        .clone()
-                }
-            }
-        }
     }
 
     // Partitions the batch into `nshards` partitions based on the hash of the key.
