@@ -1,4 +1,4 @@
-use crate::ir::{expr::InputFlags, layout_cache::LayoutId};
+use crate::ir::{function::InputFlags, LayoutId};
 use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
@@ -50,12 +50,16 @@ impl Display for RowType {
 }
 
 pub struct RowLayoutBuilder {
-    rows: Vec<(RowType, bool)>,
+    rows: Vec<RowType>,
+    nullability: BitVec,
 }
 
 impl RowLayoutBuilder {
     pub const fn new() -> Self {
-        Self { rows: Vec::new() }
+        Self {
+            rows: Vec::new(),
+            nullability: BitVec::EMPTY,
+        }
     }
 
     pub fn with_row(mut self, row_type: RowType, nullable: bool) -> Self {
@@ -64,20 +68,18 @@ impl RowLayoutBuilder {
     }
 
     pub fn add_row(&mut self, row_type: RowType, nullable: bool) -> &mut Self {
-        self.rows.push((row_type, nullable));
+        self.rows.push(row_type);
+        self.nullability.push(nullable);
         self
     }
 
-    pub fn build(mut self) -> RowLayout {
-        let mut rows = Vec::with_capacity(self.rows.len());
-        let mut nullability = BitVec::with_capacity(self.rows.len());
+    pub fn build(self) -> RowLayout {
+        debug_assert_eq!(self.rows.len(), self.nullability.len());
 
-        for (row_type, nullable) in self.rows {
-            rows.push(row_type);
-            nullability.push(nullable);
+        RowLayout {
+            rows: self.rows,
+            nullability: self.nullability,
         }
-
-        RowLayout { rows, nullability }
     }
 }
 
@@ -88,12 +90,33 @@ pub struct RowLayout {
 }
 
 impl RowLayout {
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(self.rows.len(), self.nullability.len());
+        self.rows.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn rows(&self) -> &[RowType] {
         &self.rows
     }
 
     pub fn nullability(&self) -> &BitVec {
         &self.nullability
+    }
+
+    pub fn is_unit(&self) -> bool {
+        self.rows == [RowType::Unit] && self.nullability.not_any()
+    }
+
+    pub fn is_zero_sized(&self) -> bool {
+        self.rows.iter().all(RowType::is_unit) && self.nullability.not_any()
+    }
+
+    pub fn needs_drop(&self) -> bool {
+        self.rows.iter().any(RowType::needs_drop)
     }
 
     pub fn unit() -> Self {
@@ -114,10 +137,6 @@ impl RowLayout {
             rows: vec![RowType::I32],
             nullability,
         }
-    }
-
-    pub fn needs_drop(&self) -> bool {
-        self.rows.iter().any(RowType::needs_drop)
     }
 }
 
@@ -160,5 +179,17 @@ impl Signature {
             arg_flags,
             ret,
         }
+    }
+
+    pub fn args(&self) -> &[LayoutId] {
+        &self.args
+    }
+
+    pub fn arg_flags(&self) -> &[InputFlags] {
+        &self.arg_flags
+    }
+
+    pub fn ret(&self) -> LayoutId {
+        self.ret
     }
 }

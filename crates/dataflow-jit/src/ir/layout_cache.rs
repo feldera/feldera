@@ -1,8 +1,8 @@
-use crate::ir::types::RowLayout;
+use crate::ir::{types::RowLayout, LayoutId, LayoutIdGen};
 use std::{
     cell::{Ref, RefCell},
     collections::BTreeMap,
-    fmt::{self, Debug, Display},
+    fmt::{self, Debug},
     rc::Rc,
 };
 
@@ -39,8 +39,7 @@ struct LayoutCacheInner {
     idx_to_id: BTreeMap<u32, LayoutId>,
     id_to_idx: BTreeMap<LayoutId, u32>,
     layouts: Vec<RowLayout>,
-    layout_id: u32,
-
+    layout_id: LayoutIdGen,
     unit_layout: LayoutId,
 }
 
@@ -50,8 +49,8 @@ impl LayoutCacheInner {
             idx_to_id: BTreeMap::new(),
             id_to_idx: BTreeMap::new(),
             layouts: Vec::new(),
-            layout_id: 0,
-            unit_layout: LayoutId(0),
+            layout_id: LayoutIdGen::new(),
+            unit_layout: LayoutId::MAX,
         };
 
         let unit_layout = this.add(RowLayout::unit());
@@ -83,12 +82,7 @@ impl LayoutCacheInner {
             );
             let layout_idx = self.layouts.len() as u32;
 
-            let layout_id = {
-                let id = self.layout_id;
-                self.layout_id += 1;
-                LayoutId(id)
-            };
-
+            let layout_id = self.layout_id.next();
             self.idx_to_id.insert(layout_idx, layout_id);
             self.id_to_idx.insert(layout_id, layout_idx);
             self.layouts.push(layout);
@@ -110,21 +104,5 @@ impl LayoutCacheInner {
 impl Debug for LayoutCacheInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_set().entries(&self.layouts).finish()
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct LayoutId(u32);
-
-impl Debug for LayoutId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-impl Display for LayoutId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "layout{}", self.0)
     }
 }

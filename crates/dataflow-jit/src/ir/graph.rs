@@ -1,33 +1,15 @@
 use crate::ir::{
     layout_cache::LayoutCache,
     node::{DataflowNode, Node},
+    NodeId, NodeIdGen,
 };
-use std::{
-    collections::BTreeMap,
-    fmt::{self, Debug, Display},
-};
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(transparent)]
-pub struct NodeId(u32);
-
-impl Debug for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-impl Display for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "n{}", self.0)
-    }
-}
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub struct Graph {
     nodes: BTreeMap<NodeId, Node>,
     layout_cache: LayoutCache,
-    node_id: u32,
+    node_id: NodeIdGen,
 }
 
 impl Graph {
@@ -35,7 +17,7 @@ impl Graph {
         Self {
             nodes: BTreeMap::new(),
             layout_cache: LayoutCache::new(),
-            node_id: 0,
+            node_id: NodeIdGen::new(),
         }
     }
 
@@ -44,13 +26,9 @@ impl Graph {
         N: Into<Node>,
     {
         let node = node.into();
-
-        let node_id = self.node_id;
-        self.node_id += 1;
-
-        self.nodes.insert(NodeId(node_id), node);
-
-        NodeId(node_id)
+        let node_id = self.node_id.next();
+        self.nodes.insert(node_id, node);
+        node_id
     }
 
     pub fn layout_cache(&self) -> &LayoutCache {
@@ -64,10 +42,17 @@ impl Graph {
     }
 }
 
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::ir::{
-        expr::{Constant, CopyRowTo, FunctionBuilder, NullRow, UninitRow},
+        expr::{Constant, CopyRowTo, NullRow, UninitRow},
+        function::FunctionBuilder,
         graph::Graph,
         node::{Differentiate, Fold, IndexWith, Map, Neg, Source, Sum},
         types::{RowLayout, RowLayoutBuilder, RowType},
@@ -142,8 +127,10 @@ mod tests {
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
-                let _key = func.add_mut_input(unit_layout);
+                let key = func.add_mut_input(unit_layout);
                 let value = func.add_mut_input(nullable_i32);
+
+                func.insert(key, 0, Constant::Unit);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 4);
@@ -360,8 +347,10 @@ mod tests {
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(source_row);
-                let _key = func.add_mut_input(unit_layout);
+                let key = func.add_mut_input(unit_layout);
                 let value = func.add_mut_input(source_row);
+
+                func.insert(key, 0, Constant::Unit);
 
                 func.add_expr(CopyRowTo::new(input, value, source_row));
                 func.ret_unit();
@@ -382,8 +371,10 @@ mod tests {
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
-                let _key = func.add_mut_input(unit_layout);
+                let key = func.add_mut_input(unit_layout);
                 let value = func.add_mut_input(nullable_i32);
+
+                func.insert(key, 0, Constant::Unit);
 
                 func.add_expr(CopyRowTo::new(input, value, nullable_i32));
                 func.ret_unit();

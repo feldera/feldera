@@ -1,0 +1,34 @@
+use crate::ir::{expr::Terminator, BlockId, ExprId};
+
+#[derive(Debug)]
+pub struct Block {
+    pub(crate) id: BlockId,
+    pub(crate) body: Vec<ExprId>,
+    pub(crate) terminator: Terminator,
+}
+
+impl Block {
+    pub fn body(&self) -> &[ExprId] {
+        &self.body
+    }
+
+    pub fn terminator(&self) -> &Terminator {
+        &self.terminator
+    }
+}
+
+pub(crate) struct UnsealedBlock {
+    pub(crate) id: BlockId,
+    pub(crate) body: Vec<ExprId>,
+    pub(crate) terminator: Option<Terminator>,
+}
+
+impl UnsealedBlock {
+    pub(crate) fn new(id: BlockId) -> Self {
+        Self {
+            id,
+            body: Vec::new(),
+            terminator: None,
+        }
+    }
+}
