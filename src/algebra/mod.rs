@@ -381,6 +381,116 @@ impl MulByRef<isize> for Option<F64> {
     }
 }
 
+/////////// same for i64
+
+impl MulByRef<i64> for i32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        (*self as i64 * w) as Self
+    }
+}
+
+impl MulByRef<i64> for isize {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        (*self as i64 * w) as Self
+    }
+}
+
+impl MulByRef<i64> for f32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<i64> for f64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<i64> for F32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<i64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<i64> for Option<i32> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| (*x as i64 * w) as i32)
+    }
+}
+
+impl MulByRef<i64> for Option<i64> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| *x * w)
+    }
+}
+
+impl MulByRef<i64> for Option<f32> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f32))
+    }
+}
+
+impl MulByRef<i64> for Option<f64> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f64))
+    }
+}
+
+impl MulByRef<i64> for Option<F32> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f32))
+    }
+}
+
+impl MulByRef<i64> for Option<F64> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| *x * (*w as f64))
+    }
+}
+
 /// Semigroup over values of type `V`.
 ///
 /// This trait defines an associative binary operation
@@ -468,6 +578,16 @@ mod integer_ring_tests {
         assert_eq!(0, isize::zero());
         assert_eq!(1, isize::one());
         let two = isize::one().add_by_ref(&isize::one());
+        assert_eq!(2, two);
+        assert_eq!(-2, two.neg_by_ref());
+        assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
+    }
+
+    #[test]
+    fn fixed_i64_tests() {
+        assert_eq!(0, i64::zero());
+        assert_eq!(1, i64::one());
+        let two = i64::one().add_by_ref(&i64::one());
         assert_eq!(2, two);
         assert_eq!(-2, two.neg_by_ref());
         assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
