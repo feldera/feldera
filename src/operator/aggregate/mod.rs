@@ -121,13 +121,15 @@ where
     /// a nested Z-set `ZSet<V, R>`.  This method applies `aggregator`
     /// to each such Z-set and adds it to the output indexed Z-set with
     /// weight `+1`.
+    #[allow(clippy::type_complexity)]
     pub fn stream_aggregate<A>(
         &self,
         aggregator: A,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R>,
+        Z::R: ZRingValue,
     {
         self.stream_aggregate_generic(aggregator)
     }
@@ -151,16 +153,18 @@ where
     /// It transforms a stream of changes to an indexed Z-set to a stream of
     /// changes to its aggregate computed by applying `aggregator` to each
     /// key in the input.
+    #[allow(clippy::type_complexity)]
     pub fn aggregate<TS, A>(
         &self,
         aggregator: A,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, isize>>
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where
         TS: DBTimestamp,
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, TS, Z::R>,
+        Z::R: ZRingValue,
     {
-        self.aggregate_generic::<TS, A, OrdIndexedZSet<Z::Key, A::Output, isize>>(aggregator)
+        self.aggregate_generic::<TS, A, OrdIndexedZSet<Z::Key, A::Output, Z::R>>(aggregator)
     }
 
     /// Like [`Self::aggregate`], but can return any batch type.
@@ -207,12 +211,13 @@ where
     pub fn aggregate_linear<TS, F, A>(
         &self,
         f: F,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
+    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
         TS: DBTimestamp,
         Z: IndexedZSet,
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        Z::R: ZRingValue,
     {
         self.aggregate_linear_generic::<TS, _, _>(f)
     }

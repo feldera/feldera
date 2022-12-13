@@ -5,7 +5,7 @@ use crate::{
     },
     trace::layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
     utils::VecExt,
-    Circuit, DBData, DBTimestamp, OrdIndexedZSet, Stream,
+    Circuit, DBData, DBTimestamp, DBWeight, OrdIndexedZSet, Stream,
 };
 use size_of::SizeOf;
 use std::{
@@ -222,7 +222,7 @@ where
     /// computed by applying the `(sum, count) -> sum / count`
     /// transformation to its output.
     #[track_caller]
-    pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, isize>>
+    pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
         TS: DBTimestamp,
         Z: IndexedZSet,
@@ -263,13 +263,12 @@ where
 /// Note that unfortunately we can't reuse the `Vec<Avg<A>>`'s allocation here
 /// since an `Avg<A>` will never have the same size as an `A` due to `Avg<A>`
 /// containing an extra `isize` field
-fn apply_average<K, A, R>(
-    aggregate: OrdIndexedZSet<K, Avg<A, R>, isize>,
-) -> OrdIndexedZSet<K, A, isize>
+fn apply_average<K, A, R, W>(aggregate: OrdIndexedZSet<K, Avg<A, R>, W>) -> OrdIndexedZSet<K, A, W>
 where
     K: Ord,
     A: DBData + From<R> + Div<Output = A>,
     R: DBData + ZRingValue,
+    W: DBWeight,
 {
     // Break the given `OrdIndexedZSet` into its components
     let OrderedLayer { keys, offs, vals } = aggregate.layer;
