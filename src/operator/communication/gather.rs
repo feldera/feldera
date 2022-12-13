@@ -2,81 +2,35 @@ use crate::{
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
-        GlobalNodeId, LocalStoreMarker, OwnershipPreference, Scope,
+        GlobalNodeId, OwnershipPreference, Scope,
     },
     circuit_cache_key,
     trace::{spine_fueled::Spine, Batch, Trace},
     Circuit, Runtime, Stream,
 };
-use crossbeam::{
-    atomic::AtomicConsume,
-    channel::{Receiver, Sender},
-};
-use once_cell::sync::OnceCell;
+use arc_swap::ArcSwap;
+use crossbeam::atomic::AtomicConsume;
+use crossbeam_utils::CachePadded;
 use std::{
     borrow::Cow,
-    hash::{Hash, Hasher},
     marker::PhantomData,
+    mem::MaybeUninit,
     panic::Location,
-    ptr,
     sync::{
-        atomic::{AtomicPtr, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
 };
-use typedmap::TypedMapKey;
 
-// TODO: We could use `ArcSwap<Box<dyn Fn() + ...>>` with a default noop function
-// to remove some more sync/checking overhead
-type NotifyCallback = Arc<OnceCell<Box<dyn Fn() + Send + Sync + 'static>>>;
+type NotifyCallback = dyn Fn() + Send + Sync + 'static;
 
 circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
-
-#[repr(transparent)]
-struct GatherStoreId<T> {
-    id: usize,
-    __type: PhantomData<T>,
-}
-
-impl<T> GatherStoreId<T> {
-    const fn new(id: usize) -> Self {
-        Self {
-            id,
-            __type: PhantomData,
-        }
-    }
-}
-
-unsafe impl<T> Sync for GatherStoreId<T> {}
-
-impl<T> Hash for GatherStoreId<T> {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        self.id.hash(state);
-    }
-}
-
-impl<T> PartialEq for GatherStoreId<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<T> Eq for GatherStoreId<T> {}
-
-impl<T> TypedMapKey<LocalStoreMarker> for GatherStoreId<T>
-where
-    T: 'static,
-{
-    type Value = (Sender<T>, Receiver<T>, NotifyCallback);
-}
+circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<T>>));
 
 impl<P, B> Stream<Circuit<P>, B>
 where
     P: Clone + 'static,
-    B: 'static,
+    B: Send + 'static,
 {
     /// Collect all shards of a stream at the same worker.
     ///
@@ -107,39 +61,31 @@ where
                                 let current_worker = Runtime::worker_index();
                                 let gather_id = runtime.sequence_next(current_worker);
 
-                                let (tx, rx, ready_callback) = runtime
+                                let gather = runtime
                                     .local_store()
-                                    .entry(GatherStoreId::new(gather_id))
-                                    .or_insert_with(|| {
-                                        let (tx, rx) = crossbeam::channel::bounded(workers);
-                                        (tx, rx, Arc::new(OnceCell::new()))
-                                    })
+                                    .entry(GatherDataId::new(gather_id))
+                                    .or_insert_with(|| Arc::new(GatherData::new(workers, location)))
                                     .value()
                                     .clone();
 
-                                let (producer, consumer) = OneshotSpsc::new().split();
-                                let sender =
-                                    GatherProducer::new(producer, ready_callback.clone(), location);
-                                tx.send(consumer).unwrap();
-
                                 let gather_trace = if current_worker == receiver_worker {
-                                    let mut consumers = Vec::with_capacity(workers);
-                                    for _ in 0..workers {
-                                        consumers.push(rx.recv().unwrap());
-                                    }
+                                    // Safety: The current worker is unique
+                                    let producer = unsafe {
+                                        GatherProducer::new(gather.clone(), current_worker)
+                                    };
 
                                     self.circuit().add_exchange(
-                                        sender,
-                                        GatherConsumer::new(
-                                            consumers.into_boxed_slice(),
-                                            ready_callback,
-                                            location,
-                                        ),
+                                        producer,
+                                        GatherConsumer::new(gather),
                                         self,
                                     )
                                 } else {
+                                    // Safety: The current worker is unique
+                                    let producer =
+                                        unsafe { GatherProducer::new(gather, current_worker) };
+
                                     self.circuit().add_exchange(
-                                        sender,
+                                        producer,
                                         EmptyGatherConsumer::new(location),
                                         self,
                                     )
@@ -157,27 +103,151 @@ where
     }
 }
 
-struct GatherProducer<T> {
-    queue: Producer<T>,
-    notify: NotifyCallback,
+struct GatherData<T> {
+    is_valid: Box<[CachePadded<AtomicBool>]>,
+    values: Box<[CachePadded<MaybeUninit<T>>]>,
+    notify: ArcSwap<Box<NotifyCallback>>,
     location: &'static Location<'static>,
 }
 
-impl<T> GatherProducer<T> {
-    const fn new(
-        queue: Producer<T>,
-        notify: NotifyCallback,
-        location: &'static Location<'static>,
-    ) -> Self {
+impl<T> GatherData<T> {
+    fn new(length: usize, location: &'static Location<'static>) -> Self {
+        fn noop_notify() {
+            if cfg!(debug_assertions) {
+                panic!("a notification callback was never set on a gather node");
+            }
+        }
+
+        let is_valid = (0..length)
+            .map(|_| CachePadded::new(AtomicBool::new(false)))
+            .collect();
+
+        let mut values = Vec::with_capacity(length);
+        // Safety: `CachePadded<MaybeUninit<T>>` is valid to initialize as uninit
+        #[allow(clippy::uninit_vec)]
+        unsafe {
+            values.set_len(length);
+        }
+
         Self {
-            queue,
-            notify,
+            is_valid,
+            values: values.into_boxed_slice(),
+            notify: ArcSwap::new(Arc::new(Box::new(noop_notify))),
             location,
         }
     }
 
-    fn notify(&self) {
-        (self.notify.get().unwrap())();
+    /// Return the total number of workers
+    const fn workers(&self) -> usize {
+        self.is_valid.len()
+    }
+
+    // Sets the notify callback for this gather operator
+    fn set_notify(&self, notify: Box<NotifyCallback>) {
+        self.notify.store(Arc::new(notify));
+    }
+
+    /// Returns `true` if all channels are filled
+    ///
+    /// # Safety
+    ///
+    /// The calling thread must be the gathering thread
+    unsafe fn all_channels_ready(&self) -> bool {
+        self.is_valid.iter().all(|is_valid| is_valid.load_consume())
+    }
+
+    /// Pushes a value to a channel
+    ///
+    /// # Safety
+    ///
+    /// `worker` must be a valid and unique channel index
+    unsafe fn push(&self, worker: usize, value: T) {
+        if cfg!(debug_assertions) {
+            assert!(worker < self.values.len());
+
+            // There shouldn't be any value stored within the channel when we're pushing
+            let currently_filled = self.is_valid[worker].load_consume();
+            assert!(!currently_filled);
+        }
+
+        unsafe {
+            // Write the value to the slot
+            (*(self.values.as_ptr().add(worker) as *mut CachePadded<MaybeUninit<T>>)).write(value);
+
+            // Mark the slot as valid
+            self.is_valid
+                .get_unchecked(worker)
+                .store(true, Ordering::Release);
+        }
+
+        // Notify any subscriber
+        (self.notify.load())();
+    }
+
+    /// Pops a value from a channel
+    ///
+    /// # Safety
+    ///
+    /// - `worker` must be valid channel index
+    /// - This must only be called from the gather thread
+    /// - `worker`'s channel must be initialized
+    unsafe fn pop(&self, worker: usize) -> T {
+        debug_assert!(worker < self.values.len());
+
+        unsafe {
+            let slot_is_valid = self.is_valid.get_unchecked(worker);
+
+            // Load the value currently stored in the channel (and synchronize against
+            // previous writes)
+            let is_valid = slot_is_valid.load_consume();
+            debug_assert!(is_valid);
+
+            // Read the value from the channel
+            let value = self.values.get_unchecked(worker).assume_init_read();
+
+            // Set the slot to be invalid
+            slot_is_valid.store(false, Ordering::Relaxed);
+
+            value
+        }
+    }
+}
+
+impl<T> Drop for GatherData<T> {
+    fn drop(&mut self) {
+        if cfg!(debug_assertions) && !std::thread::panicking() {
+            assert!(
+                !self.is_valid.iter().any(|is_valid| is_valid.load_consume()),
+                "dropped a GatherData with values stored in its channel",
+            );
+        }
+
+        assert!(self.is_valid.len() == self.values.len());
+        for idx in 0..self.is_valid.len() {
+            if self.is_valid[idx].load_consume() {
+                // Safety: The value is initialized
+                unsafe { self.values[idx].assume_init_drop() };
+            }
+        }
+    }
+}
+
+unsafe impl<T: Send> Send for GatherData<T> {}
+unsafe impl<T: Send> Sync for GatherData<T> {}
+
+struct GatherProducer<T> {
+    gather: Arc<GatherData<T>>,
+    worker: usize,
+}
+
+impl<T> GatherProducer<T> {
+    /// Create a new `GatherProducer`
+    ///
+    /// # Safety
+    ///
+    /// `worker` must be inbounds and unique within `gather`'s channels
+    const unsafe fn new(gather: Arc<GatherData<T>>, worker: usize) -> Self {
+        Self { gather, worker }
     }
 }
 
@@ -190,7 +260,7 @@ where
     }
 
     fn location(&self) -> OperatorLocation {
-        Some(self.location)
+        Some(self.gather.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -203,13 +273,13 @@ where
     T: Clone + Send + 'static,
 {
     fn eval(&mut self, input: &T) {
-        self.queue.push(input.clone());
-        self.notify();
+        // Safety: `worker` is guaranteed to be a valid & unique worker index
+        unsafe { self.gather.push(self.worker, input.clone()) }
     }
 
     fn eval_owned(&mut self, input: T) {
-        self.queue.push(input);
-        self.notify();
+        // Safety: `worker` is guaranteed to be a valid & unique worker index
+        unsafe { self.gather.push(self.worker, input) }
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -218,26 +288,12 @@ where
 }
 
 struct GatherConsumer<T> {
-    queues: Box<[Consumer<T>]>,
-    ready_callback: NotifyCallback,
-    location: &'static Location<'static>,
+    gather: Arc<GatherData<T>>,
 }
 
 impl<T> GatherConsumer<T> {
-    const fn new(
-        queues: Box<[Consumer<T>]>,
-        ready_callback: NotifyCallback,
-        location: &'static Location<'static>,
-    ) -> Self {
-        Self {
-            queues,
-            ready_callback,
-            location,
-        }
-    }
-
-    fn all_consumers_full(&self) -> bool {
-        !self.queues.iter().any(Consumer::is_empty)
+    const fn new(gather: Arc<GatherData<T>>) -> Self {
+        Self { gather }
     }
 }
 
@@ -247,7 +303,7 @@ impl<T: 'static> Operator for GatherConsumer<T> {
     }
 
     fn location(&self) -> OperatorLocation {
-        Some(self.location)
+        Some(self.gather.location)
     }
 
     fn is_async(&self) -> bool {
@@ -258,11 +314,12 @@ impl<T: 'static> Operator for GatherConsumer<T> {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let _ = self.ready_callback.set(Box::new(callback));
+        self.gather.set_notify(Box::new(callback));
     }
 
     fn ready(&self) -> bool {
-        self.all_consumers_full()
+        // Safety: This is the gather thread
+        unsafe { self.gather.all_channels_ready() }
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -276,13 +333,12 @@ where
     Spine<T>: Trace<Batch = T>,
 {
     fn eval(&mut self) -> Spine<T> {
-        debug_assert!(self.all_consumers_full());
+        // Safety: This is the gather thread
+        debug_assert!(unsafe { self.gather.all_channels_ready() });
 
         let mut spine = Spine::new(None);
-        for consumer in self.queues.iter_mut() {
-            let batch = *consumer
-                .pop()
-                .expect("GatherConsumer popped from empty channel");
+        for worker in 0..self.gather.workers() {
+            let batch = unsafe { self.gather.pop(worker) };
             spine.insert(batch);
         }
 
@@ -328,96 +384,5 @@ where
 {
     fn eval(&mut self) -> Spine<T> {
         Default::default()
-    }
-}
-
-/// A very specialized oneshot single producer, single consumer channel
-///
-/// # Safety
-///
-/// Requires external synchronization via circuit epochs, the [`Producer`]
-/// associated with a channel should only be pushed to once every clock cycle.
-///
-struct OneshotSpsc<T> {
-    inner: AtomicPtr<T>,
-}
-
-impl<T> OneshotSpsc<T> {
-    /// Create a new oneshot channel
-    const fn new() -> Self {
-        Self {
-            inner: AtomicPtr::new(ptr::null_mut()),
-        }
-    }
-
-    /// Split the oneshot channel into producer and consumer halves
-    fn split(self) -> (Producer<T>, Consumer<T>)
-    where
-        T: Send,
-    {
-        let this = Arc::new(self);
-
-        (
-            Producer {
-                queue: this.clone(),
-            },
-            Consumer { queue: this },
-        )
-    }
-
-    /// Load the value currently pointed to by the channel
-    fn load(&self) -> *mut T {
-        // Use consume ordering for loads
-        self.inner.load_consume()
-    }
-}
-
-impl<T> Drop for OneshotSpsc<T> {
-    fn drop(&mut self) {
-        let node = self.load();
-
-        // If the channel is dropped while it contains a value, drop the value
-        if !node.is_null() {
-            let _ = unsafe { Box::from_raw(node) };
-        }
-    }
-}
-
-struct Producer<T> {
-    queue: Arc<OneshotSpsc<T>>,
-}
-
-impl<T> Producer<T> {
-    fn push(&mut self, value: T) {
-        // There shouldn't be any value stored within the channel when we're pushing
-        if cfg!(debug_assertions) {
-            let prev_node = self.queue.load();
-            assert_eq!(prev_node, ptr::null_mut());
-        }
-
-        let node = Box::into_raw(Box::new(value));
-        self.queue.inner.store(node, Ordering::Release);
-    }
-}
-
-struct Consumer<T> {
-    queue: Arc<OneshotSpsc<T>>,
-}
-
-impl<T> Consumer<T> {
-    /// Returns `true` if the channel is currently empty
-    fn is_empty(&self) -> bool {
-        self.queue.load().is_null()
-    }
-
-    fn pop(&mut self) -> Option<Box<T>> {
-        // Load the value currently stored in the channel
-        let node = self.queue.load();
-        if node.is_null() {
-            return None;
-        }
-
-        self.queue.inner.store(ptr::null_mut(), Ordering::Relaxed);
-        unsafe { Some(Box::from_raw(node)) }
     }
 }

@@ -279,6 +279,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "216261ddc8289130e551ddcd5ce8a064710c0d064a4d2895c67151c92b5443f6"
 
 [[package]]
+name = "arc-swap"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "983cd8b9d4b02a6dc6ffa557262eb5858a27a0038ffffe21a0f133eaa819a164"
+
+[[package]]
 name = "arcstr"
 version = "1.1.4"
 source = "git+https://github.com/gz/arcstr.git?rev=b43120c#b43120cd13db16a1c1f61a12d1637b047b9bcd89"
@@ -1104,6 +1110,7 @@ name = "dbsp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "arcstr",
  "ascii_table",
  "bincode",
