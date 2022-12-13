@@ -62,6 +62,7 @@ rocksdb = { version = "0.19", default-features = false, features = [
 ], optional = true }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 uuid = { version = "1.1.2", features = ["v4"], optional = true }
+arc-swap = "1.5.1"
 
 # TODO: Remove these dependencies
 rand = { version = "0.8", optional = true }

@@ -9,70 +9,29 @@ use crate::{
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
-        LocalStoreMarker, OwnershipPreference, Runtime, Scope,
+        OwnershipPreference, Runtime, Scope,
     },
-    Circuit,
+    circuit_cache_key, Circuit,
 };
 use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
 use std::{
     borrow::Cow,
-    hash::{Hash, Hasher},
     marker::PhantomData,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
-use typedmap::TypedMapKey;
 
-/// We use the `Runtime::local_store` mechanism to connect multiple workers
-/// to an `Exchange` instance.  During circuit construction each, worker
-/// allocates a unique id that happens to be the same across all workers.
-/// The worker then allocates a new `Exchange` and adds it to the local store
-/// using the id as a key.  If there already is an `Exchange` with this id in
-/// the store, created by another worker, a reference to that `Exchange` will
-/// be used instead.
-struct ExchangeId<T> {
-    id: usize,
-    _marker: PhantomData<T>,
-}
-
-unsafe impl<T> Sync for ExchangeId<T> {}
-
-// Implement `Hash`, `Eq` manually to avoid `T: Hash` type bound.
-impl<T> Hash for ExchangeId<T> {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        self.id.hash(state);
-    }
-}
-
-impl<T> PartialEq for ExchangeId<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<T> Eq for ExchangeId<T> {}
-
-impl<T> ExchangeId<T> {
-    fn new(id: usize) -> Self {
-        Self {
-            id,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> TypedMapKey<LocalStoreMarker> for ExchangeId<T>
-where
-    T: 'static,
-{
-    type Value = Arc<Exchange<T>>;
-}
+// We use the `Runtime::local_store` mechanism to connect multiple workers
+// to an `Exchange` instance.  During circuit construction each, worker
+// allocates a unique id that happens to be the same across all workers.
+// The worker then allocates a new `Exchange` and adds it to the local store
+// using the id as a key.  If there already is an `Exchange` with this id in
+// the store, created by another worker, a reference to that `Exchange` will
+// be used instead.
+circuit_cache_key!(local ExchangeId<T>(usize => Arc<Exchange<T>>));
 
 /// `Exchange` is an N-to-N communication primitive that partitions data across
 /// multiple concurrent threads.
