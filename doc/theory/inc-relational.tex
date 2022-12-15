@@ -1,0 +1,644 @@
+\section{Incremental relational queries}\label{sec:inc-relational}
+
+We start by giving a few rules that can be used to optimize relational
+\dbsp circuits.  Later we show how \dbsp relational circuits can be
+converted to incremental versions.
+
+\subsection{Optimizing $\distinct$}\label{sec:optimizations}
+
+All standard algebraic properties
+of the relational operators can be used to optimize circuits.  In addition,
+a few optimizations are related to the $\distinct$ operator, which is
+not linear, and thus expensive to incrementalize:
+
+\begin{proposition}\label{prop-distinct-delay}
+Let Q be one of the following \zrs operators: filtering $\sigma$,
+join $\bowtie$, or Cartesian product $\times$.
+Then we have $\forall i \in \Z[I], \ispositive(i) \Rightarrow Q(\distinct(i)) = \distinct(Q(i))$.
+\end{proposition}
+
+\begin{center}
+\begin{tabular}{m{3.5cm}m{.5cm}m{3.5cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input, node distance=1.1cm] (distinct) {$\distinct$};
+  \node[block, right of=distinct, node distance=1.2cm] (q) {$Q$};
+  \node[right of=q] (output)  {$o$};
+  \draw[->] (input) -- (distinct);
+  \draw[->] (distinct) -- (q);
+  \draw[->] (q) -- (output);
+\end{tikzpicture}
+&
+$\cong$
+&
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (q) {$Q$};
+  \node[block, right of=q, node distance=1.2cm] (distinct1) {$\distinct$};
+  \node[right of=distinct1, node distance=1.2cm] (output)  {$o$};
+  \draw[->] (input) -- (q);
+  \draw[->] (q) -- (distinct1);
+  \draw[->] (distinct1) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+This rule allows us to delay the application of $\distinct$.
+
+\begin{proposition}\label{prop-distinct-once}
+Let Q be one of the following \zrs operators: filtering $\sigma$,
+projection $\pi$, selection (map($f$)), addition $+$, join $\bowtie$, or
+Cartesian product $\times$.
+Then we have $\forall i \in \Z[I], \ispositive(i) \Rightarrow \distinct(Q(\distinct(i))) = \distinct(Q(i))$.
+\end{proposition}
+
+This is Proposition 6.13 in~\cite{green-tcs11}.
+
+\begin{center}
+\begin{tabular}{m{6.5cm}m{.5cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input, node distance=1.5cm] (distinct) {$\distinct$};
+  \node[block, right of=distinct, node distance=1.5cm] (q) {$Q$};
+  \node[block, right of=q, node distance=1.5cm] (distinct1) {$\distinct$};
+  \node[right of=distinct1, node distance=1.5cm] (output)  {$o$};
+  \draw[->] (input) -- (distinct);
+  \draw[->] (distinct) -- (q);
+  \draw[->] (q) -- (distinct1);
+  \draw[->] (distinct1) -- (output);
+\end{tikzpicture}
+&
+$\cong$ \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (q) {$Q$};
+  \node[block, right of=q, node distance=1.5cm] (distinct1) {$\distinct$};
+  \node[right of=distinct1, node distance=1.5cm] (output)  {$o$};
+  \draw[->] (input) -- (q);
+  \draw[->] (q) -- (distinct1);
+  \draw[->] (distinct1) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+These properties allow us to ``consolidate'' distinct operators by performing
+one distinct at the end of a chain of computations.
+
+\begin{proposition}\label{prop:inc_distinct}
+The following circuit implements $\inc{(\lift{\distinct})}$:
+
+\begin{center}
+\begin{tabular}{m{3.5cm}m{.5cm}m{6cm}}
+\begin{tikzpicture}[auto,node distance=1.5cm,>=latex]
+    \node[] (input) {$d$};
+    \node[block, right of=input] (d) {$\inc{(\lift{\distinct})}$};
+    \node[right of=d] (output) {$o$};
+    \draw[->] (input) -- (d);
+    \draw[->] (d) -- (output);
+\end{tikzpicture} &
+$\cong$ &
+\begin{tikzpicture}[>=latex]
+    \node[] (input) {$d$};
+    \node[block, right of=input] (I) {$\I$};
+    \node[block, right of=I] (z) {$\zm$};
+    \node[block, below of=z, node distance=1cm] (H) {$\lift{H}$};
+    \node[right of=H] (output) {$o$};
+    \draw[->] (input) -- node (mid) {} (I);
+    \draw[->] (I) -- (z);
+    \draw[->] (mid.center) |- (H);
+    \draw[->] (z) -- node (i) [right] {$i$} (H);
+    \draw[->] (H) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+\noindent where $H: \Z[A] \times \Z[A] \to \Z[A]$ is defined as:
+$$
+H(i, d)[x] \defn
+\begin{cases}
+-1 & \mbox{if } i[x] > 0 \mbox{ and } (i + d)[x] \leq 0 \\
+1  & \mbox{if } i[x] \leq 0 \mbox{ and } (i + d)[x] > 0 \\
+0  & \mbox{otherwise} \\
+\end{cases}
+$$
+\end{proposition}
+
+The function $H$ detects whether the multiplicity of an element in the
+input set $i$ is changing from negative to positive or vice-versa.
+
+\subsubsection{Anti-joins}
+
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (i1) {\code{I1}};
+  \node[below of=i1, node distance=.7cm] (i2) {\code{I2}};
+  \node[block, right of=i1, node distance=1.5cm] (join) {$\bowtie$};
+  \node[block, shape=circle, inner sep=0in, right of=join] (m) {$-$};
+  \node[block, above of=m, shape=circle, inner sep=0in, node distance=.7cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.5cm] (distinct) {$\distinct$};
+  \node[right of=distinct, node distance=1.5cm] (output) {\code{O}};
+  \draw[->] (i1) -- node (tap) {} (join);
+  \draw[->] (i2) -| (join);
+  \draw[->] (join) -- (m);
+  \draw[->] (m) -- (plus);
+  \draw[->] (tap.south) |- (plus);
+  \draw[->] (plus) -- (distinct);
+  \draw[->] (distinct) -- (output);
+\end{tikzpicture}
+
+This can be optimized as follows:
+
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (i1) {\code{I1}};
+  \node[below of=i1, node distance=.7cm] (i2) {\code{I2}};
+  \node[block, right of=i2, node distance=1.5cm] (distinct) {$\distinct$};
+  \node[block, shape=circle, inner sep=0in, right of=distinct, node distance=1.5cm] (m) {$-$};
+  \node[block, above of=m, node distance=.7cm] (join) {$\bowtie$};
+  \node[block, above of=join, shape=circle, inner sep=0in, node distance=.7cm] (plus) {$+$};
+  \node[right of=plus, node distance=1.5cm] (output) {\code{O}};
+  \draw[->] (i1) -- node (tap) {} (join);
+  \draw[->] (i2) -- (distinct);
+  \draw[->] (distinct) -- (m);
+  \draw[->] (m) -- (join);
+  \draw[->] (join) -- (plus);
+  \draw[->] (tap.south) |- (plus);
+  \draw[->] (plus) -- (output);
+\end{tikzpicture}
+
+\subsection{Parallelization}
+
+DBSP is rich enough to express operators such as the Volcano exchange
+operator~\cite{graefe-sigmod90}, which can be used to parallelize DBSP circuits.
+The following circuit shows a parallel implementation of a join operator.
+
+\begin{tabular}{m{2.5cm}m{.7cm}m{5cm}}
+\begin{tikzpicture}
+\node[] (s1) {$s_1$};
+\node[below of=i1, node distance=1.5cm] (s2) {$s_2$};
+\node[right of=s1] (invisible) {};
+\node[below of=invisible, block, node distance=.75cm] (join) {$\bowtie$};
+\draw[->] (s1) -| (join);
+\draw[->] (s2) -| (join);
+\node[right of=join] (o) {$o$};
+\draw[->] (join) -- (o);
+\end{tikzpicture}
+     &
+     $\cong$
+     &
+\begin{tikzpicture}
+\node[] (s1) {$s_1$};
+\node[right of=s1, block] (s1s) {};
+\node[right of=s1s] (invisible1) {};
+\node[above of=invisible1, block, node distance=.5cm] (sigma11) {$\sigma_1$};
+\node[below of=invisible1, block, node distance=.5cm] (sigma12) {$\sigma_2$};
+
+\node[below of=i1, node distance=1.5cm] (s2) {$s_2$};
+\node[right of=s2, block] (s2s) {};
+\node[right of=s2s] (invisible2) {};
+\node[above of=invisible2, block, node distance=.5cm] (sigma21) {$\sigma_1$};
+\node[below of=invisible2, block, node distance=.5cm] (sigma22) {$\sigma_2$};
+\draw[->] (s1) -- (s1s);
+\draw[->] (s1s) |- (sigma11);
+\draw[->] (s1s) |- (sigma12);
+
+\draw[->] (s2) -- (s2s);
+\draw[->] (s2s) |- (sigma21);
+\draw[->] (s2s) |- (sigma22);
+
+\node[block, right of=invisible1, node distance=1.5cm] (join1) {$\bowtie$};
+\node[block, right of=invisible2, node distance=2cm] (join2) {$\bowtie$};
+\node[block, right of=join1, shape=circle, inner sep=0in] (plus) {$+$};
+\node[right of=plus] (o) {$o$};
+
+\draw[->] (sigma11) -| (join1);
+\draw[->] (sigma21) -| (join1);
+\draw[->] (sigma12) -| (join2);
+\draw[->] (sigma22) -| (join2);
+\draw[->] (join1) -- (plus);
+\draw[->] (join2) -| (plus);
+\draw[->] (plus) -- (o);
+
+\end{tikzpicture}
+\end{tabular}
+
+Here is an example of an exchange operator which repartitions the data
+in a collection from two partitions to three partitions, where $\sigma_i$
+for $i \in [3]$ are disjoint selection functions that partition the space
+of tuples.
+
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (s1) {$s_1$};
+  \node[below of=i1, node distance=2cm] (s2) {$s_2$};
+  \node[block, right of=s1] (s12) {$\sigma_2$};
+  \node[block, above of=s12, node distance=.7cm] (s11) {$\sigma_1$};
+  \node[block, below of=s12, node distance=.7cm] (s13) {$\sigma_3$};
+  \draw[->] (s1) -- node(mid) {} (s12);
+  \draw[->] (mid.south) |- (s11);
+  \draw[->] (mid) |- (s13);
+  \node[block, right of=s2] (s22) {$\sigma_2$};
+  \node[block, above of=s22, node distance=.7cm] (s21) {$\sigma_1$};
+  \node[block, below of=s22, node distance=.7cm] (s23) {$\sigma_3$};
+  \draw[->] (s2) -- node(mid2) {} (s22);
+  \draw[->] (mid2.south) |- (s21);
+  \draw[->] (mid2) |- (s23);
+  \node[block, right of=s11, node distance=1cm, shape=circle, inner sep=0in] (p1) {$+$};
+  \node[block, right of=s12, node distance=1.5cm, shape=circle, inner sep=0in] (p2) {$+$};
+  \node[block, right of=s13, node distance=2cm, shape=circle, inner sep=0in] (p3) {$+$};
+  \draw[->] (s11) -- (p1);
+  \draw[->] (s12) -- (p2);
+  \draw[->] (s13) -- (p3);
+  \draw[->] (s21) -| (p1);
+  \draw[->] (s22) -| (p2);
+  \draw[->] (s23) -| (p3);
+  \node[right of=p1] (o1) {$o_1$};
+  \node[right of=p2] (o2) {$o_2$};
+  \node[right of=p3] (o3) {$o_3$};
+  \draw[->] (p1) -- (o1);
+  \draw[->] (p2) -- (o2);
+  \draw[->] (p3) -- (o3);
+\end{tikzpicture}
+
+\subsection{Incremental relational queries}\label{sec:incremental-relational}
+
+Let us consider a relational query $Q$
+defining a view.  To create a circuit that maintains incrementally the view defined by $Q$
+we apply the following mechanical steps:
+
+\begin{algorithm}[incremental view maintenance]\label{algorithm-inc}\quad
+\begin{enumerate}
+    \item Translate $Q$ into a circuit using the rules in Table~\ref{tab:relational}.
+    \item Apply optimization rules, including $\distinct$ consolidation.
+    \item Lift the whole circuit, by applying Proposition~\ref{prop:distributivity},
+    converting it to a circuit operating on streams.
+    \item Incrementalize the whole circuit ``surrounding'' it with $\I$ and $\D$.
+    \item Apply the chain rule and other properties of the $\inc{\cdot}$ operator
+    from Proposition~\ref{prop-inc-properties} to optimize the incremental implementation.
+\end{enumerate}
+\end{algorithm}
+
+It is known that a query can be implemented by multiple plans, with
+varying data-dependent costs.  The input provided to this algorithm is
+a standard relational query plan, and this algorithm produces an
+incremental plan that is ``similar'' to the input plan\footnote{Query
+  planners generally use cost-based heuristics to optimize plans, but
+  IVM planning in general does not have this luxury, since the plan
+  must be generated \emph{before} the data has been fed to the
+  database.  Nevertheless, standard query optimization techniques,
+  perhaps based on historical statistics, can be applied to the query
+  plan before generating the incremental plan.}.  Step (2) generates
+an equivalent circuit, with possibly fewer $\distinct$ operators (the
+result is deterministic no matter the order of elimination).  Step (3)
+yields a circuit that consumes a \emph{stream} of complete database
+snapshots and outputs a stream of complete view snapshots. Step (4)
+yields a circuit that consumes a stream of changes to the database and
+outputs a stream of view changes; however, the internal operation of
+the circuit is non-incremental, as it rebuilds the complete database
+using integration operators.  Step (5) incrementalizes the circuit by
+rewriting all operators to compute directly on changes.
+
+\subsubsection{Example}
+
+In this section we apply the incremental view maintenance algorithm to a concrete
+query.  Let us consider the following query:
+
+\begin{lstlisting}[language=SQL]
+CREATE VIEW v AS
+SELECT DISTINCT t1.x, t2.y FROM (
+     SELECT t1.x, t1.id
+     FROM t
+     WHERE t.a > 2
+) t1
+JOIN (
+     SELECT t2.id, t2.y
+     FROM r
+     WHERE r.s > 5
+) t2 ON t1.id = t2.id
+\end{lstlisting}
+
+Step 1: First we create a \dbsp circuit to represent this query using the
+translation rules from Table~\ref{tab:relational}:
+
+\noindent
+\begin{tikzpicture}[node distance=1.5cm,>=latex]
+    \node[] (t1) {\code{t1}};
+    \node[block, right of=t1, node distance=1.2cm] (s1) {$\sigma_{a > 2}$};
+    \node[block, right of=s1] (d1) {$\distinct$};
+    \node[block, right of=d1] (p1) {$\pi_{x, id}$};
+    \node[block, right of=p1] (d11) {$\distinct$};
+    \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
+    \node[block, right of=t2, node distance=1.2cm] (s2) {$\sigma_{s > 5}$};
+    \node[block, right of=s2] (d2) {$\distinct$};
+    \node[block, right of=d2] (p2) {$\pi_{id, y}$};
+    \node[block, right of=p2] (d21) {$\distinct$};
+    \node[below of=d11, node distance=.5cm] (mid) {};
+    \node[block, right of=mid] (j) {$\bowtie_{id = id}$};
+    \node[block, right of=j] (p) {$\pi_{x, y}$};
+    \node[block, right of=p] (d) {$\distinct$};
+    \node[right of=d, node distance=1.2cm] (V) {\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (d1);
+    \draw[->] (d1) -- (p1);
+    \draw[->] (p1) -- (d11);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (d2);
+    \draw[->] (d2) -- (p2);
+    \draw[->] (p2) -- (d21);
+    \draw[->] (d11) -| (j);
+    \draw[->] (d21) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Step 2: we apply the $\distinct$ optimization rules; first the rule from~\ref{prop-distinct-once}
+gives us the following equivalent circuit:
+
+\noindent
+\begin{tikzpicture}[node distance=1.5cm,>=latex]
+    \node[] (t1) {\code{t1}};
+    \node[block, right of=t1, node distance=1.2cm] (s1) {$\sigma_{a > 2}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
+    \node[block, right of=p1] (d11) {$\distinct$};
+    \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
+    \node[block, right of=t2, node distance=1.2cm] (s2) {$\sigma_{s > 5}$};
+    \node[block, right of=s2] (p2) {$\pi_{id, y}$};
+    \node[block, right of=p2] (d21) {$\distinct$};
+    \node[below of=d11, node distance=.5cm] (mid) {};
+    \node[block, right of=mid, node distance=1.2cm] (j) {$\bowtie_{id = id}$};
+    \node[block, right of=j] (p) {$\pi_{x, y}$};
+    \node[block, right of=p] (d) {$\distinct$};
+    \node[right of=d, node distance=1.2cm] (V) {\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (p1) -- (d11);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p2) -- (d21);
+    \draw[->] (d11) -| (j);
+    \draw[->] (d21) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Applying the rule from~\ref{prop-distinct-delay} we get:
+
+\noindent
+\begin{tikzpicture}[node distance=1.5cm,>=latex]
+    \node[] (t1) {\code{t1}};
+    \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
+    \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
+    \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
+    \node[block, right of=s2] (p2) {$\pi_{id, y}$};
+    \node[below of=p1, node distance=.5cm] (mid) {};
+    \node[block, right of=mid, node distance=1.2cm] (j) {$\bowtie_{id = id}$};
+    \node[block, right of=j, node distance=1.7cm] (d0) {$\distinct$};
+    \node[block, right of=d0] (p) {$\pi_{x, y}$};
+    \node[block, right of=p] (d) {$\distinct$};
+    \node[right of=d, node distance=1.2cm] (V) {\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (d0);
+    \draw[->] (d0) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+And applying again~\ref{prop-distinct-once} we get:
+
+\noindent
+\begin{tikzpicture}[node distance=1.5cm,>=latex]
+    \node[] (t1) {\code{t1}};
+    \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
+    \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
+    \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
+    \node[block, right of=s2] (p2) {$\pi_{id, y}$};
+    \node[below of=p1, node distance=.5cm] (mid) {};
+    \node[block, right of=mid, node distance=1.2cm] (j) {$\bowtie_{id = id}$};
+    \node[block, right of=j] (p) {$\pi_{x, y}$};
+    \node[block, right of=p] (d) {$\distinct$};
+    \node[right of=d, node distance=1.2cm] (V) {\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Step 3: we lift the circuit using distributivity of composition over lifting; we
+obtain a circuit that computes over streams, i.e., for each new input pair of relations
+\code{t1} and \code{t2} it will produce an output view \code{V}:
+
+\noindent
+\begin{tikzpicture}[node distance=1.7cm,>=latex]
+    \node[] (t1) {\code{t1}};
+    \node[block, right of=t1, node distance=1.1cm] (s1) {$\lift{\sigma_{a > 2}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
+    \node[below of=t1, node distance=1.2cm] (t2) {\code{t2}};
+    \node[block, right of=t2, node distance=1.1cm] (s2) {$\lift{\sigma_{s > 5}}$};
+    \node[block, right of=s2] (p2) {$\lift{\pi_{id, y}}$};
+    \node[below of=p1, node distance=.6cm] (mid) {};
+    \node[block, right of=mid, node distance=1.3cm] (j) {$\lift{\bowtie_{id = id}}$};
+    \node[block, right of=j] (p) {$\lift{\pi_{x, y}}$};
+    \node[block, right of=p] (d) {$\lift{\distinct}$};
+    \node[right of=d] (V) {\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Step 4: incrementalize circuit, obtaining a circuit that computes over changes;
+this circuit receives changes to relations \code{t1} and \code{t2} and for each
+such change it produces the corresponding change in the output view \code{V}:
+
+\noindent
+\begin{tikzpicture}[node distance=1.7cm,>=latex]
+    \node[] (t1) {$\Delta$\code{t1}};
+    \node[block, right of=t1, node distance=.8cm] (I1) {$\I$};
+    \node[block, right of=I1, node distance=1.3cm] (s1) {$\lift{\sigma_{a > 2}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
+    \node[below of=t1, node distance=1.2cm] (t2) {$\Delta$\code{t2}};
+    \node[block, right of=t2, node distance=.8cm] (I2) {$\I$};
+    \node[block, right of=I2, node distance=1.3cm] (s2) {$\lift{\sigma_{s > 5}}$};
+    \node[block, right of=s2] (p2) {$\lift{\pi_{id, y}}$};
+    \node[below of=p1, node distance=.6cm] (mid) {};
+    \node[block, right of=mid, node distance=1.6cm] (j) {$\lift{\bowtie_{id = id}}$};
+    \node[block, right of=j] (p) {$\lift{\pi_{x, y}}$};
+    \node[block, right of=p] (d) {$\lift{\distinct}$};
+    \node[block, right of=d, node distance=1.3cm] (D) {$\D$};
+    \node[right of=D, node distance=1.2cm] (V) {$\Delta$\code{V}};
+    \draw[->] (t1) -- (I1);
+    \draw[->] (I1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (I2);
+    \draw[->] (I2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (D);
+    \draw[->] (D) -- (V);
+\end{tikzpicture}
+
+Step 5: apply the chain rule to rewrite the circuit as a composition of incremental operators;
+
+\noindent
+\begin{tikzpicture}[node distance=2cm,>=latex]
+    \node[] (t1) {$\Delta$\code{t1}};
+    \node[block, right of=t1, node distance=1.5cm] (s1) {$\inc{(\lift{\sigma_{a > 2}})}$};
+    \node[block, right of=s1] (p1) {$\inc{(\lift{\pi_{x, id}})}$};
+    \node[below of=t1, node distance=1.6cm] (t2) {$\Delta$\code{t2}};
+    \node[block, right of=t2, node distance=1.5cm] (s2) {$\inc{(\lift{\sigma_{s > 5}})}$};
+    \node[block, right of=s2] (p2) {$\inc{(\lift{\pi_{id, y}})}$};
+    \node[below of=p1, node distance=.8cm] (mid) {};
+    \node[block, right of=mid, node distance=1.2cm] (j) {$\inc{(\lift{\bowtie_{id = id}})}$};
+    \node[block, right of=j, node distance=2.2cm] (p) {$\inc{(\lift{\pi_{x, y}})}$};
+    \node[block, right of=p, node distance=2.2cm] (d) {$\inc{(\lift{\distinct})}$};
+    \node[right of=d, node distance=1.8cm] (V) {$\Delta$\code{V}};
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Use the linearity of $\sigma$ and $\pi$ to simplify this circuit:
+
+\noindent
+\begin{tikzpicture}[node distance=2cm,>=latex]
+    \node[] (t1) {$\Delta$\code{t1}};
+    \node[block, right of=t1, node distance=1.3cm] (s1) {$\lift{\sigma_{a > 2}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
+    \node[below of=t1, node distance=1.6cm] (t2) {$\Delta$\code{t2}};
+    \node[block, right of=t2, node distance=1.3cm] (s2) {$\lift{\sigma_{s > 5}}$};
+    \node[block, right of=s2] (p2) {$\lift{\pi_{id, y}}$};
+    \node[below of=p1, node distance=.8cm] (mid) {};
+    \node[block, right of=mid, node distance=.8cm] (j) {$\inc{(\lift{\bowtie_{id = id}})}$};
+    \node[block, right of=j] (p) {$\lift{\pi_{x, y}}$};
+    \node[block, right of=p] (d) {$\inc{(\lift{\distinct})}$};
+    \node[right of=d, node distance=1.8cm] (V) {$\Delta$\code{V}};.8
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p1) -| (j);
+    \draw[->] (p2) -| (j);
+    \draw[->] (j) -- (p);
+    \draw[->] (p) -- (d);
+    \draw[->] (d) -- (V);
+\end{tikzpicture}
+
+Finally, replace the incremental join using the formula for bilinear operators
+(Theorem~\ref{bilinear}),
+and the incremental $\distinct$ (Proposition~\ref{prop:inc_distinct}),
+obtaining the circuit below:
+
+\noindent
+\begin{tikzpicture}[node distance=1.8cm,>=latex]
+    \node[] (t1) {$\Delta$\code{t1}};
+    \node[block, right of=t1, node distance=1.3cm] (s1) {$\lift{\sigma_{a > 2}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
+    \node[below of=t1, node distance=1.6cm] (t2) {$\Delta$\code{t2}};
+    \node[block, right of=t2, node distance=1.3cm] (s2) {$\lift{\sigma_{s > 5}}$};
+    \node[block, right of=s2] (p2) {$\lift{\pi_{id, y}}$};
+
+    % join expansion
+      \node[block, right of=p1, node distance=1cm] (jI1) {$\I$};
+      \node[block, below of=p1, node distance=.8cm] (ab) {$\lift\bowtie_{id=id}$};
+      \node[block, right of=p2, node distance=1cm] (jI2) {$\I$};
+      \draw[->] (p1) -- (jI1);
+      \draw[->] (p2) -- (jI2);
+      \node[block, right of=jI1, node distance=1cm] (ZI1) {$\zm$};
+      \node[block, right of=jI2, node distance=1cm] (ZI2) {$\zm$};
+      \draw[->] (jI1) -- (ZI1);
+      \draw[->] (jI2) -- (ZI2);
+      \node[block, right of=ZI1] (DI1) {$\lift\bowtie_{id=id}$};
+      \node[block, right of=ZI2] (DI2) {$\lift\bowtie_{id=id}$};
+      \draw[->] (ZI1) -- (DI1);
+      \draw[->] (ZI2) -- (DI2);
+      \node[block, circle, below of=DI1, inner sep=0cm, node distance=.8cm] (sum) {$+$};
+      \draw[->] (ab) -- (sum);
+      \draw[->] (DI1) -- (sum);
+      \draw[->] (DI2) -- (sum);
+      \draw[->] (p1) -- (ab);
+      \draw[->] (p2) -- (ab);
+      \draw[->] (p1) -- (DI2);
+      \draw[->] (p2) -- (DI1);
+
+    \node[block, right of=sum, node distance=1cm] (p) {$\lift{\pi_{x, y}}$};
+    \draw[->] (sum) -- (p);
+    \node[block, right of=p, node distance=1.2cm] (Id) {$\I$};
+    \node[block, right of=Id, node distance=1cm] (zd) {$\zm$};
+    \node[block, below of=zd, node distance=.8cm] (H) {$\lift{H}$};
+    \node[right of=H, node distance=1.3cm] (V) {$\Delta$\code{V}};.8
+    \draw[->] (t1) -- (s1);
+    \draw[->] (s1) -- (p1);
+    \draw[->] (t2) -- (s2);
+    \draw[->] (s2) -- (p2);
+    \draw[->] (p) -- node (tapp) {} (Id);
+    \draw[->] (Id) -- (zd);
+    \draw[->] (zd) -- (H);
+    \draw[->] (tapp.center) |- (H);
+    \draw[->] (H) -- (V);
+\end{tikzpicture}
+
+Notice that the resulting circuit contains three integration operations: two from
+the join, and one from the $\distinct$.  It also contains three join operators.
+However, the work performed by each operator
+for each new input is proportional to the size of change, as we argue in the following section.
+
+\subsection{Complexity of incremental circuits}\label{sec:complexity}
+
+Incremental circuits are efficient.  We evaluate the cost of a circuit while processing the
+$t$-th input change from two points of view: the work performed, and the total memory used.
+Even if $Q$ is a pure function, $\inc{Q}$ is actually a streaming system, with internal state.
+This state is stored entirely in the delay operators $\zm$, some of which appear in $\I$ and $\D$ operators.
+The result produced by $\inc{Q}$ on the $t$-th input depends in general not only on the new
+$t$-th input, but also on all prior inputs it has received.
+
+We argue that each operator in the incremental version of a circuit is efficient in
+terms of work and space.  We make the standard IVM assumption that the input changes \emph{of each operator}
+are small\footnote{In the worst case this may not hold for all operators in a composite
+query plan because outputs of operators can be large even if inputs are small.}: $|\Delta DB[t]| \ll |DB[t]| = |(\I(\Delta DB))[t]|$.
+
+An unoptimized incremental operator $\inc{Q} = \D \circ Q \circ \I$
+evaluates query $Q$ on the whole database $DB$, the integral of the input stream:
+$DB = \I(\Delta DB)$; hence its time complexity  is the same as that of the non-incremental
+evaluation of $Q$.  In addition, each of the $\I$ and $\D$ operators uses $O(|DB[t]|)$ memory.
+
+Step (5) of the incrementalization algorithm applies the optimizations described in \secref{sec:incremental};
+these reduce the time complexity of each operator to be a function of $O(|\Delta DB[t]|$.
+For example, Theorem~\ref{linear}, allows evaluating $\inc{S}$, where $S$ is a
+linear operator, in time $O(|\Delta DB[t]|)$.  The $\I$
+operator can also be evaluated in $O(|\Delta DB[t]|)$ time, because
+all values that appear in the output of $\I(\Delta DB)[t]$ must be present in
+current input change $\Delta DB[t]$.  Similarly, while the $\distinct$ operator is not
+linear, $\inc{(\lift{\distinct})}$ can also be evaluated in $O(|\Delta DB[t]|)$ according to
+Proposition~\ref{prop:inc_distinct}.  Bilinear operators, including join, can be
+evaluated in time $O(|DB[t]| \times |\Delta DB[t]|)$, which is a factor of $|DB[t] / \Delta DB[t]|$
+better than full re-evaluation.
+
+The space complexity of linear operators is 0 (zero), since they store no
+data persistently.  The space complexity of operators such as $\inc{(\lift{\distinct})}$,
+$\inc{(\lift{\bowtie})}$, $\I$, and $\D$ is $O(|DB[t]|)$ (the first two
+because they contain one or more integrals $\I$ in their expansion).

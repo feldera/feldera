@@ -1,0 +1,55 @@
+\section{Z-transform and stream convolutions}\label{sec:ztransform}
+
+\begin{definition}
+The \defined{Z-transform} of a stream, as traditionally defined in signal processing, 
+is a function that associates with any stream over a group a formal power series in the 
+indeterminate $z$: $\mathcal{Z}: \stream{A} 
+\rightarrow A\llbracket z \rrbracket$ defined as $\mathcal{Z}(s) \defn \sum_{t \geq 0} s[t] z^{-t}$. 
+\end{definition}
+
+For example, the Z-transform of the $\id$ stream is the power series 
+$0 + \zm + z^{-2} + z^{-3} + \ldots$.
+
+\begin{definition}
+Let $(R,+,\cdot,0,1)$ be a commutative ring.
+The \defined{Cauchy product} (also called discrete convolution) of two streams 
+$\ast : \stream{R} \times \stream{R} \rightarrow \stream{R}$  is defined as:
+$$
+(a\ast b)[t] ~=~ \sum_{i=0}^t a[i]\cdot b[t-i]
+$$
+\end{definition}
+
+For example, the convolution of the $\id$ stream with itself is the
+stream $\id \ast \id$ containing the sequence of values 
+$0, (0 \cdot 1 + 1 \cdot 0), (0 \cdot 2 + 1 \cdot 1 + 2 \cdot 0), \ldots =
+0, 0, 1, 4, 8, \ldots$.
+
+\begin{proposition}
+The structure $(\stream{R},+,\ast,0,1)$ 
+is also a commutative ring. This ring is isomorphic to the ring of
+formal power series in one indeterminate $R\llbracket z \rrbracket$ with coefficients from $R$.
+\end{proposition}
+
+
+Sometimes it is more convenient to use the formal power series notation.
+Notice that we have $\zm(s) = \zm \ast s$, 
+justifying the traditional notation for the delay operator $\zm$.
+It follows that the differentiation of a stream 
+$s$ is $\D(s)=(1-\zm)\ast s$. 
+
+Moreover, the equation that defines the integration of a stream $s$, $\xi=\zm(\xi)+s$ is equivalent
+to $\xi=\zm\ast\xi + s$ and then to $(1-\zm)\ast\xi=s$. Since $1-\zm$ has multiplicative inverse
+$$
+(1-\zm)^{-1} ~=~ 1+\zm+z^{-2}+z^{-3}+\cdots
+$$
+we can express the integration operator by $\I(s) = (1-\zm)^{-1}\ast s$. Theorem~\ref{inverses} now
+follows by algebraic manipulations in the ring of formal power series. Similarly for the time-invariance
+and linearity properties of $\D$ and $\I$. Even causality can be treated algebraically, once we note that,
+like addition, convolution is causal.
+
+\paragraph{Observation} As shown above, there are two proof styles
+for equations over streams: one is (usually) by induction over the
+time dimension,
+and the other one is equational, by operating with
+polynomials over $z$.  The theory of digital signal processing posits
+that these two proof styles give the same results.

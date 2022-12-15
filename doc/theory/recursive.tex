@@ -1,0 +1,651 @@
+\section{Recursive queries in \dbsp}\label{sec:recursive}
+
+Recursive queries are very useful in a many applications.
+For example, many graph algorithms (such as graph reachability
+or transitive closure) are naturally expressed using recursive queries.
+
+We illustrate the implementation of recursive queries in \dbsp for
+stratified Datalog.
+
+\subsection{Implementing recursive queries}
+
+For warm-up we start with a single recursive queries, and then we discuss
+the case of mutually recursive queries.
+
+\subsubsection{Recursive rules}\label{sec:recursion}
+
+In Datalog a recursive rule appears when a relation that appears in the head of a rule
+is also used in a positive term in the rule's body.  (Stratification disallows
+the use of the same relation negated in the rule's body).
+The Datalog semantics of recursive rules is to compute a fixedpoint.
+
+Consider a Datalog program of the form:
+
+\begin{lstlisting}[language=ddlog]
+O(v) :- C(v).  // base case
+O(v) :- ..., O(x), I(z), ... .  // recursive case
+\end{lstlisting}
+
+Note that relation \code{O} is recursively defined.  Let us assume wlog that the \code{O}
+relation depends on two other relations (i.e., in the rule bodies defining \code{O} the
+two other relations appear) : a ``base case'' relation \code{C} (which appears in a
+non-recursive rule), and a relation \code{I} which appears in the recursive rule, but
+does not itself depend on \code{O}.
+
+To implement the computation of \code{O} as a circuit we perform the following algorithm:
+
+\begin{algorithm}[recursive queries]\label{algorithm-rec}
+\noindent
+\begin{enumerate}[nosep, leftmargin=\parindent]
+\item Implement the non-recursive relational query $R$ as described in
+    \secref{sec:relational} and Table~\ref{tab:relational}; this produces
+    an acyclic circuit whose inputs and outputs are a \zrs:
+    \begin{center}
+    \begin{tikzpicture}[auto,>=latex]
+      \node[] (I) {\code{I}};
+      \node[below of=I, node distance=.5cm] (O) {\code{O}};
+      \node[block, right of=I] (R) {$R$};
+      \node[right of=R] (o) {\code{O}};
+      \draw[->] (I) -- (R);
+      \draw[->] (O) -| (R);
+      \draw[->] (R) -- (o);
+    \end{tikzpicture}
+    \end{center}
+
+\item Lift this circuit to operate on streams:
+    \begin{center}
+    \begin{tikzpicture}[auto,>=latex]
+      \node[] (I) {\code{I}};
+      \node[below of=I, node distance=.5cm] (O) {\code{O}};
+      \node[block, right of=I] (R) {$\lift R$};
+      \node[right of=R] (o) {\code{O}};
+      \draw[->] (I) -- (R);
+      \draw[->] (O) -| (R);
+      \draw[->] (R) -- (o);
+    \end{tikzpicture}
+    \end{center}
+  We construct $\lift{R}$ by lifting each operator of the circuit individually
+  according to Proposition~\ref{prop:distributivity}.
+
+\item Build a cycle, connecting the output to the  corresponding
+input via a delay:
+
+ \begin{center}
+\begin{tikzpicture}[auto,>=latex, node distance=.8cm]
+  \node[] (I) {\code{I}};
+  \node[block, right of=I] (R) {$\lift R$};
+  \node[right of=R, node distance=1.5cm] (O) {\code{O}};
+  \node[block, below of=R, node distance=.9cm] (z) {$\zm$};
+  \draw[->] (I) -- (R);
+  \draw[->] (R) -- node(o) {$o$} (O);
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -- (R);
+ \end{tikzpicture}
+ \end{center}
+\item ``Bracket'' the circuit in $\I$ and $\D$ nodes, and then in $\delta_0$ and $\int$:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex, node distance=.8cm]
+  \node[] (Iinput) {\code{I}};
+  \node[block, right of=Iinput] (ID) {$\delta_0$};
+  \node[block, right of=ID] (II) {$\I$};
+  \node[block, right of=II] (f) {$\lift{R}$};
+  \node[block, right of=f, node distance=1.5cm] (D) {$\D$};
+  \node[block, right of=D] (S) {$\int$};
+  \node[right of=S] (output)  {\code{O}};
+  \draw[->] (Iinput) -- (ID);
+  \draw[->] (ID) -- (II);
+  \draw[->] (II) -- (f);
+  \draw[->] (f) -- node (o) {$o$} (D);
+  \draw[->] (D) -- (S);
+  \draw[->] (S) -- (output);
+  \node[block, below of=f, node distance=.9cm] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -- (f);
+\end{tikzpicture}
+\end{center}
+\end{enumerate}
+\end{algorithm}
+
+This circuit as drawn is not a well-formed circuit.
+\val{Why not well-formed? As far as I can see its semantics
+follows from Corollary~\ref{feedback-semantics}.}
+\mihai{The WFC rules require any circuit bracketed by $\delta_0$ -- $\int$ to have no other input or output edges.  It also
+requires back-edges to go through a plus only.  It is
+more strict than the stream computation rules.}
+It can, however, be modified into an equivalent
+well-formed circuit by adding two constant zero value streams:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (Iinput) {\code{I}};
+  \node[below of=Iinput] (Cinput) {\code{C}};
+  \node[below of=Cinput] (Zinput) {$0$};
+  \node[block, right of=Iinput] (IE) {$E$};
+  \node[block, right of=Cinput] (CE) {$E$};
+  \node[block, right of=Zinput] (ZE) {$E$};
+  \node[block, shape=circle, right of=ZE, inner sep=0in] (Zplus) {$+$};
+  \node[block, right of=CE] (f) {$\lift{R}$};
+  \node[block, shape=circle, above of=f, inner sep=0in] (Cplus) {$+$};
+  \node[block, right of=Cplus] (Cz) {$\zm$};
+  \node[block, right of=Cz, node distance=1.5cm] (zero) {$\lift{\lambda x . 0}$};
+  \node[block, right of=f, shape=circle, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus, node distance=3cm] (X) {$X$};
+  \node[right of=X] (output)  {\code{O}};
+  \node[block, below of=plus] (z) {$\zm$};
+
+  \draw[->] (Iinput) -- (IE);
+  \draw[->] (Cinput) -- (CE);
+  \draw[->] (Zinput) -- (ZE);
+  \draw[->] (ZE) -- (Zplus);
+  \draw[->] (CE) to[out=55,in=125] (plus);
+  \draw[->] (plus) -- +(right:2.4cm) node (o) {} -- (X);
+  \draw[->] (X) -- (output);
+  \draw[->] (o.south) |- (zero);
+  \draw[->] (Zplus) -- (f);
+  \draw[->] (z) -- (Zplus);
+  \draw[->] (Zplus) -- (f);
+  \draw[->] (IE) -- (Cplus);
+  \draw[->] (f) -- (plus);
+  \draw[->] (zero) -- (Cz);
+  \draw[->] (o) |- (z);
+  \draw[->] (Cz) -- (Cplus);
+  \draw[->] (Cplus) -- (f);
+\end{tikzpicture}
+\end{center}
+
+\begin{theorem}
+If $\isset(\code{I})$ and $\isset(\code{C})$, the output of the circuit above is
+the relation $\code{O}$ as defined by the Datalog semantics of recursive relations
+as a function of the input relations \code{I} and \code{C}.
+\end{theorem}
+
+\begin{proof}
+The proof is by structural induction on the structure of the circuit.
+As a basis for induction we assume that the circuit $R$ correctly implements
+the semantics of the recursive rule body when treating \code{O} as an
+independent input.  We need to prove that the output of circuit encompassing
+$R$ produces the correct value of the \code{O} relation, as defined by
+the recursive Datalog equation.
+
+Let us compute the contents of the $o$ stream, produced at the output
+of the $\distinct$ operator.  We will show that this stream is composed
+of increasing approximations of the value of \code{O}, and in fact
+$\code{O} = \lim_{t \to \infty} o[t]$ if the limit exists.
+
+We define the following one-argument function: $R'(x) = \lambda x . R(\code{I}, x)$.
+Notice that the left input of the $\lift{R}$ block is a constant stream
+with the value \code{I}.  Due to the stratified nature of the language,
+we must have $\ispositive(R')$, so $\forall x . R'(x) \geq x$.
+Also $\lift{R'}$ is time-invariant, so $R'(0) = 0$.
+
+With this notation for $R'$ the previous circuit has the
+output as the following simpler circuit:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (Cinput) {\code{C}};
+  \node[block, right of=Cinput] (CE) {$E$};
+  \node[block, below of=CE] (f) {$\lift{R'}$};
+  \node[block, right of=f, shape=circle, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.5cm] (X) {$X$};
+  \node[right of=X] (output)  {\code{O}};
+  \draw[->] (Cinput) -- (CE);
+  \draw[->] (f) -- (plus);
+  \draw[->] (plus) -- node (o) {$o$} (X);
+  \draw[->] (X) -- (output);
+  \node[block, below of=plus] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (f);
+  \draw[->] (CE) -| (plus);
+\end{tikzpicture}
+\end{center}
+
+We use the following notation: $x \cup y = \distinct(x + y)$.  As discussed in Section~\ref{sec:union}
+the $\cup$ operation computes the same result as set union when $x$ and $y$ are sets.
+With this notation let us compute the values of the $o$ stream:
+
+$$
+\begin{aligned}
+o[0] =& \code{C} + R'(0) = \code{C} \cup R'(0) = \code{C} \\
+o[1] =& \code{C} + R'(o[0]) = \code{C} \cup R'(\code{C}) \\
+o[t] =& \code{C} + R(o[t-1]) = \code{C} \cup R'(o[t-1]) \\
+\end{aligned}
+$$
+
+Defining a new helper function $S(x) = \code{C} \cup R'(x)$, the previous system of equations becomes:
+
+$$
+\begin{aligned}
+o[0] =& S(0) \\
+o[1] =& S(S(0)) \\
+o[t] =& S(o[t-1]) \\
+\end{aligned}
+$$
+
+So, by induction $o[t] = S^t(0)$, where by $S^t$ we mean $\underbrace{S \circ S \circ \ldots \circ S}_{t}$.
+$S$ is monotone because $R'$ is monotone; thus, if there is a time $k$ such that $S^k(0) = S^{k+1}(0)$, we have
+$\forall j \in \N . S^{k+j}(0) = S^k(0)$.
+
+\code{O} is computed by the $X$ operator as the limit of stream $o$:
+$\code{O} = X(o) = \lim_{n \to \infty} o[n]$.  If this limit exists (i.e., a fixed-point
+is reached), the circuit computes the fixed point $\fix{x}{S(x)}$.  This is exactly
+the definition of the Datalog semantics of a recursive relation definition: $\code{O} =
+\fix{x}{\code{C} \cup R(\code{I}, x)}$.
+\end{proof}
+
+Note that the use of unbounded domains (like integers with arithmetic operations) does
+not guarantee convergence for all programs.
+
+Our circuit implementation is in fact computing the value of relation \code{O} using the standard
+\defined{na\"{\i}ve evaluation} algorithm (e.g., see Algorithm~1 from \cite{greco-sldm15}).
+
+Observe that the ``inner'' part of the circuit is the incremental
+form of another circuit, since is ``sandwiched'' between $\I$ and $\D$ operators.
+According to Proposition~\ref{prop-inc-properties}, part 7, the circuit can be
+rewritten as:
+
+\begin{equation}
+\begin{aligned}
+  \label{eq:seminaive}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (Cinput) {\code{C}};
+  \node[below of=Cinput] (Iinput) {\code{I}};
+  \node[block, right of=Iinput] (Idelta) {$\delta_0$};
+  \node[block, above of=Idelta] (Cdelta) {$\delta_0$};
+  \node[block, right of=Idelta] (f) {$\inc{\lift{R}}$};
+  \node[block, right of=f, shape=circle, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.5cm] (S) {$\int$};
+  \node[right of=S] (output)  {\code{O}};
+  \node[block, below of=plus] (z) {$\zm$};
+  \draw[->] (Iinput) -- (Idelta);
+  \draw[->] (Cinput) -- (Cdelta);
+  \draw[->] (Cdelta) -| (plus);
+  \draw[->] (f) -- (plus);
+  \draw[->] (plus) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (f);
+  \draw[->] (Idelta) -- (f);
+\end{tikzpicture}
+\end{aligned}
+\end{equation}
+
+This form of the circuit is effectively implementing the \defined{semi-na\"{\i}ve evaluation}
+of the same relation (Algorithm~2 from~\cite{greco-sldm15}).  So the correctness of semi-na\"{\i}ve evaluation
+is an immediate consequence of the cycle rule from Proposition~\ref{prop-inc-properties}.
+
+\begin{comment}
+Let us notice that the combination $\int \circ \D$ applied to a
+monotone stream will produce that fixed-point value of the input
+stream (if it exists).  This suggests a simple practical implementation
+for for $\int$ operator: stop aggregating at the first input that is 0.
+For monotone loop bodies involving a positive query $Q$ this implementation is
+correct.
+\end{comment}
+
+\subsection{Example: a recursive query in \dbsp}\label{sec:recursive-example}
+
+Here we apply the algorithm~\ref{algorithm-rec}, that converts a
+recursive query into a DBSP circuit, to a concrete Datalog program.
+The program computes the transitive closure of a directed graph:
+
+\begin{lstlisting}[language=ddlog,basicstyle=\small]
+// Edge relation with head and tail
+input relation E(h: Node, t: Node)
+// Reach relation with source s and sink t
+output relation R(s: Node, t: Node)
+R(x, y) :- E(x, y).
+R(x, y) :- E(x, z), R(z, y).
+\end{lstlisting}
+
+Step 1: we ignore the fact that R is both an input and an output and we implement
+the \dbsp circuit corresponding to the body of the query.  This query could be expressed
+in SQL as:
+
+\begin{lstlisting}[language=SQL,basicstyle=\small]
+( SELECT * FROM E)
+UNION
+( SELECT E.h , R.t
+  FROM E JOIN R
+  ON E.t = R.s )
+\end{lstlisting}
+
+This query generates a \dbsp circuit with inputs \code{E} and \code{R}:
+
+\begin{center}
+\begin{tikzpicture}[>=latex, node distance=1.2cm]
+  \node[] (E) {\code{E}};
+  \node[above of=E, node distance=.8cm] (R1) {\code{R}};
+  \node[block, right of=R1] (j) {$\bowtie_{t=s}$};
+  \node[block, right of=j] (pj) {$\pi_{h, t}$};
+  \node[block, circle, below of=pj, inner sep=0cm, node distance=.8cm] (plus) {$+$};
+  \node[block, right of=plus] (d) {$\distinct$};
+  \node[right of=d] (R) {\code{R}};
+  \draw[->] (R1) -- (j);
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  \draw[->] (d) -- (R);
+\end{tikzpicture}
+\end{center}
+
+Step 2: Lift the circuit by lifting each operator pointwise:
+
+\begin{center}
+\begin{tikzpicture}[>=latex, node distance=1.5cm]
+  \node[] (E) {\code{E}};
+  \node[above of=E, node distance=.9cm] (R1) {\code{R}};
+  \node[block, right of=R1] (j) {$\lift{\bowtie_{t=s}}$};
+  \node[block, right of=j] (pj) {$\lift{\pi_{h, t}}$};
+  \node[block, circle, below of=pj, node distance=.9cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus] (d) {$\lift{\distinct}$};
+  \node[right of=d] (R) {\code{R}};
+  \draw[->] (R1) -- (j);
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  \draw[->] (d) -- (R);
+\end{tikzpicture}
+\end{center}
+
+Step 3: Connect the feedback loop implied by relation \code{R}:
+
+\begin{center}
+\begin{tikzpicture}[>=latex]
+  \node[] (E) {\code{E}};
+  \node[right of=E] (empty) {};
+  \node[block, above of=empty, node distance=.8cm] (j) {$\lift{\bowtie_{t=s}}$};
+  \node[block, right of=j, node distance=1.4cm] (pj) {$\lift{\pi_{h, t}}$};
+  \node[block, circle, below of=pj, node distance=.8cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.3cm] (d) {$\lift{\distinct}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+
+  % generic part
+  \node[right of=d, node distance=1.4cm] (output)  {\code{R}};
+  \draw[->] (d) -- node (o) {} (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\zm$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+\end{center}
+
+Step 4: ``bracket'' the circuit, once with $\I$-$\D$, then with $\delta_0$-$\int$:
+
+\noindent
+\begin{equation}\label{recursive-join}
+\begin{tikzpicture}[>=latex]
+  \node[] (Einput) {\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (ID) {$\delta_0$};
+  \node[block, right of=ID, node distance=.8cm] (E) {$\I$};
+
+  % relational query
+  \node[block, above of=E, node distance=.8cm] (j) {$\lift{\bowtie_{t=s}}$};
+  \node[block, right of=j, node distance=1.5cm] (pj) {$\lift{\pi_{h, t}}$};
+  \node[block, circle, below of=pj, node distance=.8cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.3cm] (d) {$\lift{\distinct}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+
+  % generic part
+  \node[block, right of=d, node distance=1.3cm] (D) {$\D$};
+  \node[block, right of=D, node distance=.8cm] (S) {$\int$};
+  \node[right of=S, node distance=.8cm] (output)  {\code{R}};
+  \draw[->] (Einput) -- (ID);
+  \draw[->] (ID) -- (E);
+  \draw[->] (d) -- node (o) {} (D);
+  \draw[->] (D) -- (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\zm$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+\end{equation}
+
+The above circuit is a complete implementation of the non-streaming
+recursive query; given an input relation \code{E} it will produce
+its transitive closure \code{R} at the output.
+
+Now we use semina\"ive evaluation~\ref{eq:seminaive} to rewrite the circuit
+(to save space in the figures we will omit the indices from $\pi$ and $\sigma$
+in the subsequent figures):
+
+\begin{center}
+\begin{tikzpicture}[>=latex, node distance=1.4cm]
+  \node[] (Einput) {\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (E) {$\delta_0$};
+
+  % relational query
+  \node[block, above of=E, node distance=.9cm] (j) {$\inc{(\lift{\bowtie})}$};
+  \node[block, right of=j, node distance=1.5cm] (pj) {$\inc{(\lift{\pi})}$};
+  \node[block, circle, below of=pj, node distance=.9cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.5cm] (d) {$\inc{(\lift{\distinct})}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+
+  % generic part
+  \node[block, right of=d, node distance=1.6cm] (S) {$\int$};
+  \node[right of=S, node distance=1cm] (output)  {\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.9cm] (z) {$\zm$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+\end{center}
+
+Using the linearity of $\lift\pi$, this can be rewritten as:
+
+\begin{center}
+\begin{tikzpicture}[>=latex, node distance=1.3cm]
+  \node[] (Einput) {\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (E) {$\delta_0$};
+
+  % relational query
+  \node[block, above of=E, node distance=.9cm] (j) {$\inc{(\lift{\bowtie})}$};
+  \node[block, right of=j] (pj) {$\lift{\pi}$};
+  \node[block, circle, below of=pj, node distance=.9cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.6cm] (d) {$\inc{(\lift{\distinct})}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+
+  % generic part
+  \node[block, right of=d, node distance=1.6cm] (S) {$\int$};
+  \node[right of=S, node distance=.8cm] (output)  {\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.9cm] (z) {$\zm$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+\end{center}
+
+\subsubsection{Mutually recursive rules}\label{sec:mutually-recursive}
+
+Given a stratified Datalog program we can compute a graph where relations are nodes and dependences
+between relations are edges.  We then compute the strongly connected components of this graph.
+All relations from a strongly-connected component are mutually recursive.
+
+Let us consider the implementation of a single strongly-connected component defining $n$
+relations $O_i, i \in [n]$.  We can assume wlog that the definition of $O_i$ has the following
+structure:
+\newcommand{\tns}{\code{:-}}
+\newcommand{\cd}{\code{.}}
+$$
+\begin{array}{lll}
+O_i(v) &\tns& C_i(v)\cd \\
+O_i(v) &\tns&  I_i(x), O_0(v_0), O_1(v_1), \ldots, O_{n-1}(v_{n-1}), v = \ldots \cd \\
+\end{array}
+$$
+
+There are exactly $n$ base cases, one defining each $O_i$.  Also, we assume that each $O_i$ relation
+depends on an external relation $I_i$, which does not itself depend on any $O_k$.
+
+To compile these into circuits we generalize the algorithm from Section~\ref{sec:recursion}:
+
+\begin{enumerate}
+    \item For each recursive rule for $O_i$ implement a circuit $R_i$
+    that treats all $O_j . j \in [n]$ and $I_i$ in the rule body as inputs.
+    Here is the circuit $R_0$ for relation $O_0$:
+
+    \begin{tikzpicture}[auto,>=latex]
+      \node[] (i) {$I_0$};
+      \node[below of=i, node distance=.7cm] (o0) {$O_0$};
+      \node[below of=o0, node distance=.3cm] (odots) {$\ldots$};
+      \node[below of=odots, node distance=.3cm] (on) {$O_{n-1}$};
+      \node[block, right of=i, node distance=2cm] (R) {$R_0$};
+      \node[right of=R] (output) {};
+      \draw[->] (o0) -- (R);
+      \draw[->] (on) -- (R);
+      \draw[->] (i) -- (R);
+      \draw[->] (R) -- (output);
+    \end{tikzpicture}
+
+    \item Embed each circuit $R_i$ as part of a ``widget'' as follows:
+
+    \begin{tikzpicture}[auto,>=latex]
+      \node[] (c0) {$C_0$};
+      \node[below of=c0, node distance=.7cm] (i) {$I_0$};
+      \node[below of=i, node distance=.7cm] (o0) {$O_0$};
+      \node[below of=o0, node distance=.3cm] (odots) {$\ldots$};
+      \node[below of=odots, node distance=.3cm] (on) {$O_{n-1}$};
+      \node[block, right of=i, node distance=2cm] (R) {$R_0$};
+      \node[block, right of=R, shape=circle, inner sep=0in] (plus) {$+$};
+      \node[right of=plus, node distance=1.5cm] (o) {$O_0'$};
+      \draw[->] (o0) -- (R);
+      \draw[->] (on) -- (R);
+      \draw[->] (i) -- (R);
+      \draw[->] (R) -- (plus);
+      \draw[->] (plus) -- (o);
+      \draw[->] (c0) -| (plus);
+    \end{tikzpicture}
+
+    \item Finally, lift each such widget and connect them to each other via
+    $\zm$ operators to the corresponding recursive inputs.
+    The following is the shape of the circuit computing $O_0$;
+    the $O_j'$ sources correspond to the widget outputs of the other
+    recursive circuits:
+
+    \begin{tikzpicture}[auto,>=latex]
+      \node[] (c0) {$C_0$};
+      \node[block, right of=c0] (ec0) {$E$};
+      \node[below of=c0, node distance=.7cm] (i) {$I_0$};
+      \node[block, right of=i] (ei) {$E$};
+      \node[right of=ei] (marker) {};
+      \node[block, below of=marker, node distance=.7cm] (z0) {$\zm$};
+      \node[below of=z0, node distance=.35cm] (dots) {$\ldots$};
+      \node[block, below of=dots, node distance=.35cm] (zn) {$\zm$};
+      \node[block, right of=ei, node distance=2.5cm] (R) {$\lift{R_0}$};
+      \node[block, right of=R, shape=circle, inner sep=0in] (plus) {$+$};
+      \node[block, right of=plus, node distance=2cm] (X) {$X$};
+      \node[right, right of=X] (o) {$O_0$};
+      \node[right of=zn, node distance=4cm] (on) {$O_{n-1}'$};
+
+      \draw[->] (c0) -- (ec0);
+      \draw[->] (i) -- (ei);
+      \draw[->] (ei) -- (R);
+      \draw[->] (R) -- (plus);
+      \draw[->] (plus) -- node (oo) {$O_o'$} (X);
+      \draw[->] (ec0) -| (plus);
+      \draw[->] (X) -- (o);
+      \draw[->] (oo) |- (z0);
+      \draw[->] (on) -- (zn);
+      \draw[->] (z0) -- (R);
+      \draw[->] (zn) -- (R);
+    \end{tikzpicture}
+\end{enumerate}
+
+\begin{theorem}
+The program defined by the previous circuit computes
+the relations $O_i$ as a function of the input relations $I_j$ and $C_i$.
+\end{theorem}
+\begin{proof}
+TODO.
+\end{proof}
+
+\paragraph{Example: mutually recursive relations}
+
+Consider the Datalog program below computing the transitive closure of a graph
+having two kinds of edges, blue (B) and red (R):
+
+\begin{lstlisting}[language=ddlog]
+P(x,y) :- B(x,y).
+Q(x,y) :- R(x,y).
+P(x,y) :- B(x,z), Q(z,y).
+Q(z,y) :- R(x,z), P(z,y).
+O(x,y) :- P(x,y).
+O(x,y) :- Q(x,y).
+\end{lstlisting}
+
+The program defined by the following circuit computes
+the relation $\code{O}$ as a function of the input relations $\code{R}, \code{B}$:
+
+\val{I will add in Section~\ref{sec:causal} a consequence of Corollary~\ref{feedback-semantics} to justify the well-definedness of this.}
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+\node[] (inputB) {\code{B}};
+\node[block, right of=inputB] (EB) {$E$};
+
+\node[block, shape=circle, right of=EB, node distance=1.5cm, inner sep=0in] (plusP) {$+$};
+\node[block, right of=plusP, node distance=1.5cm] (distinctP) {$\lift{\distinct}$};
+\node[block, below of=distinctP] (zP) {$\zm$};
+\node[block, below of=zP] (zQ) {$\zm$};
+\node[block, below of=zQ] (distinctQ) {$\lift{\distinct}$};
+\node[block, right of=distinctP, node distance=1.5cm] (xP) {$X$};
+\node[block, right of=distinctQ, node distance=1.5cm] (xQ) {$X$};
+
+\node[block, shape=circle, left of=distinctQ, node distance=1.5cm, inner sep=0in] (plusQ) {$+$};
+\node[block, left of=zP, node distance=1.5cm] (joinP) {$\lift{\bowtie}$};
+\node[block, left of=zQ, node distance=1.5cm] (joinQ) {$\lift{\bowtie}$};
+
+\node[block, left of=plusQ, node distance=1.5cm] (ER) {$E$};
+\node[left of=ER] (inputR) {\code{R}};
+
+\path (xP) -- node[block, shape=circle, inner sep=0cm] (sum) {$+$} (xQ);
+\node[right of=sum] (O) {\code{O}};
+\path (inputB) -- (inputR) ;
+
+\draw[->] (inputB) -- (EB);
+\draw[->] (inputR) -- (ER);
+\draw[->] (EB) -- (plusP);
+\draw[->] (ER) -- (plusQ);
+\draw[->] (plusP) -- (distinctP);
+\draw[->] (plusQ) -- (distinctQ);
+\draw[->] (zP) -- (joinQ);
+\draw[->] (zQ) -- (joinP);
+\draw[->] (EB) -- (joinP);
+\draw[->] (ER) -- (joinQ);
+\draw[->] (joinQ) -- (plusQ);
+\draw[->] (joinP) -- (plusP);
+\draw[->] (distinctP) -- (zP);
+\draw[->] (distinctQ) -- (zQ);
+\draw[->] (distinctP) -- (xP);
+\draw[->] (distinctQ) -- (xQ);
+\draw[->] (xP) -- node (p) {\code{P}} (sum);
+\draw[->] (xQ) -- node (q) [right] {\code{Q}} (sum);
+\draw[->] (sum) -- (O);
+\end{tikzpicture}
+\end{center}

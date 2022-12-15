@@ -1,0 +1,474 @@
+\subsection{Incrementalizing a recursive query}\label{sec:recursive-incremental-example}
+
+Here we take the \dbsp circuit for the transitive closure of a graph generated in \refsec{sec:recursive-example}
+and convert it to an incremental circuit using algorithm~\ref{algorithm-inc}.
+The resulting circuit maintains the transitive closure as edges
+are inserted or removed.
+
+First we lift the circuit entirely, using Proposition~\ref{prop-lift-cycle}:
+
+\noindent
+\begin{tikzpicture}[>=latex, node distance=1.3cm]
+  \node[] (Einput) {\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (E) {$\lift{\delta_0}$};
+  
+  % relational query
+  \node[block, above of=E, node distance=.7cm] (j) {$\lift{\inc{(\lift{\bowtie})}}$};
+  \node[block, right of=j] (pj) {$\lift{\lift{\pi}}$};
+  \node[block, circle, below of=pj, node distance=.7cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus] (d) {$\lift{\inc{(\lift{\distinct})}}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  
+  % generic part
+  \node[block, right of=d, node distance=1.5cm] (S) {$\lift{\int}$};
+  \node[right of=S, node distance=.8cm] (output)  {\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\lift{\zm}$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+
+We convert this circuit into an incremental circuit, which receives
+in each transaction the changes to relation \code{E} and produces the 
+corresponding changes to relation \code{R}:
+
+\noindent
+\begin{tikzpicture}[>=latex, node distance=1.3cm]
+  \node[] (DE) {$\Delta$\code{E}};
+  \node[block, right of=DE, node distance=.7cm] (Einput) {$\I$};
+  \draw[->] (DE) -- (Einput);
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (E) {$\lift{\delta_0}$};
+  
+  % relational query
+  \node[block, above of=E, node distance=.7cm] (j) {$\lift{\inc{(\lift{\bowtie})}}$};
+  \node[block, right of=j] (pj) {$\lift{\lift{\pi}}$};
+  \node[block, circle, below of=pj, node distance=.7cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.2cm] (d) {$\lift{\inc{(\lift{\distinct})}}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  
+  % generic part
+  \node[block, right of=d, node distance=1.4cm] (S) {$\lift{\int}$};
+  \node[block, right of=S, node distance=.7cm] (OD) {$\D$};
+  \node[right of=OD, node distance=.8cm] (output)  {$\Delta$\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (OD);
+  \draw[->] (OD) -- (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\lift{\zm}$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+
+We can now apply again the chain and cycle rules to this circuit:
+
+\noindent
+\begin{tikzpicture}[>=latex, node distance=1.4cm]
+  \node[] (Einput) {$\Delta$\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=1cm] (E) {$\inc{(\lift{\delta_0})}$};
+  
+  % relational query
+  \node[block, above of=E, node distance=.8cm] (j) {$\inc{(\lift{\inc{(\lift{\bowtie})}})}$};
+  \node[block, right of=j, node distance=1.6cm] (pj) {$\inc{(\lift{\lift{\pi}})}$};
+  \node[block, circle, below of=pj, node distance=.8cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus] (d) {$\inc{(\lift{\inc{(\lift{\distinct})}})}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  
+  % generic part
+  \node[block, right of=d, node distance=1.8cm] (S) {$\inc{(\lift{\int})}$};
+  \node[right of=S, node distance=1cm] (output)  {$\Delta$\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\inc{(\lift{\zm})}$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+
+We now take advantage of the linearity of $\lift\delta_0$, $\lift\int$, 
+$\lift\zm$, and $\lift\lift\pi$ to simplify the circuit
+by removing some $\inc{\cdot}$ invocations:
+
+\noindent
+\begin{tikzpicture}[>=latex, node distance=1.3cm]
+  \node[] (Einput) {$\Delta$\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (E) {$\lift{\delta_0}$};
+  
+  % relational query
+  \node[block, above of=E, node distance=.7cm] (j) {$\inc{(\lift{\inc{(\lift{\bowtie})}})}$};
+  \node[block, right of=j, node distance=1.6cm] (pj) {$\lift{\lift{\pi}}$};
+  \node[block, circle, below of=pj, node distance=.7cm, inner sep=0cm] (plus) {$+$};
+  \node[block, right of=plus, node distance=1.5cm] (d) {$\inc{(\lift{\inc{(\lift{\distinct})}})}$};
+  \draw[->] (E) -- (j);
+  \draw[->] (j) -- (pj);
+  \draw[->] (E) -- (plus);
+  \draw[->] (pj) -- (plus);
+  \draw[->] (plus) -- (d);
+  
+  % generic part
+  \node[block, right of=d, node distance=1.8cm] (S) {$\lift{\int}$};
+  \node[right of=S, node distance=.8cm] (output)  {$\Delta$\code{R}};
+  \draw[->] (Einput) -- (E);
+  \draw[->] (d) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=j, node distance=.8cm] (z) {$\lift{\zm}$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (j);
+\end{tikzpicture}
+
+There are two applications of $\inc{\cdot}$ remaining in this circuit: $\inc{(\lift{\inc{(\lift{\bowtie})}})}$
+and $\inc{(\lift{\inc{(\lift\distinct)}})}$.  We expand their implementations separately,
+and we stitch them into the global circuit at the end.  This ability to reason about
+sub-circuits highlights the modularity of \dbsp.
+
+The join is expanded twice, using the bilinearity
+of $\lift\bowtie$ and $\lift\lift\bowtie$.  Let's start with the inner circuit,
+implementing $\inc{(\lift{\bowtie})}$, given by Theorem~\ref{bilinear}:
+
+\begin{tabular}{m{2cm}m{.5cm}m{4.5cm}}
+\begin{tikzpicture}[auto,>=latex]
+    \node[] (a) {$a$};
+    \node[below of=a, node distance=.5cm] (midway) {};
+    \node[below of=midway, node distance=.5cm] (b) {$b$};
+    \node[block, right of=midway] (q) {$\inc{(\lift{\bowtie})}$};
+    \node[right of=q] (output) {$o$};
+    \draw[->] (a) -| (q);
+    \draw[->] (b) -| (q);
+    \draw[->] (q) -- (output);
+\end{tikzpicture} &
+$\cong$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input1) {$a$};
+  \node[below of=input1, node distance=1cm] (input2) {$b$};
+  \node[block, right of=input1, node distance=.7cm] (I1) {$\I$};
+  \node[block, right of=input2, node distance=.7cm] (I2) {$\I$};
+  \draw[->] (input1) -- (I1);
+  \draw[->] (input2) -- (I2);
+  \node[block, right of=I2] (ZI2) {$\zm$};
+  \draw[->] (I2) -- (ZI2);
+  \node[block, right of=I1] (DI1) {$\lift{\bowtie}$};
+  \node[block, right of=ZI2] (DI2) {$\lift{\bowtie}$};
+  \draw[->] (I1) -- (DI1);
+  \draw[->] (ZI2) -- (DI2);
+  \node[block, circle, right of=DI1, inner sep=0cm] (sum) {$+$};
+  \draw[->] (DI1) -- (sum);
+  \draw[->] (DI2) -- (sum);
+  \node[right of=sum, node distance=.5cm] (output) {$o$};
+  \draw[->] (sum) -- (output);
+  \draw[->] (input1) -- (DI2);
+  \draw[->] (input2) -- (DI1);
+\end{tikzpicture}
+\end{tabular}
+
+Now we lift and incrementalize to get the circuit for $\inc{(\lift{\inc{(\lift{\bowtie})}})}$:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input1) {$a$};
+  \node[below of=input1, node distance=.8cm] (input2) {$b$};
+  \node[block, right of=input1, node distance=.7cm] (II1) {$\I$};
+  \node[block, right of=input2, node distance=.7cm] (II2) {$\I$};
+  \node[block, right of=II1, node distance=.7cm] (I1) {$\lift{\I}$};
+  \node[block, right of=II2, node distance=.7cm] (I2) {$\lift{\I}$};
+  \draw[->] (input1) -- (II1);
+  \draw[->] (II1) -- (I1);
+  \draw[->] (input2) -- (II2);
+  \draw[->] (II2) -- (I2);
+  \node[block, right of=I2] (ZI2) {$\lift{\zm}$};
+  \draw[->] (I2) -- (ZI2);
+  \node[block, right of=I1] (DI1) {$\lift{\lift{\bowtie}}$};
+  \node[block, right of=ZI2] (DI2) {$\lift{\lift{\bowtie}}$};
+  \draw[->] (I1) -- (DI1);
+  \draw[->] (ZI2) -- (DI2);
+  \node[block, circle, right of=DI1, inner sep=0cm] (sum) {$+$};
+  \draw[->] (DI1) -- (sum);
+  \draw[->] (DI2) -- (sum);
+  \node[block, right of=sum, node distance=.7cm] (D) {$\D$};
+  \node[right of=D, node distance=.7cm] (output) {$o$};
+  \draw[->] (sum) -- (D);
+  \draw[->] (D) -- (output);
+  \draw[->] (II1) -- (DI2);
+  \draw[->] (II2) -- (DI1);
+\end{tikzpicture}
+\end{center}
+
+Applying the chain rule and the linearity of $\lift\I$ and $\lift\zm$:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input1) {$a$};
+  \node[below of=input1, node distance=.8cm] (input2) {$b$};
+  \node[block, right of=input1, node distance=.7cm] (I1) {$\lift{\I}$};
+  \node[block, right of=input2, node distance=.7cm] (I2) {$\lift{\I}$};
+  \draw[->] (input1) -- (I1);
+  \draw[->] (input2) -- (I2);
+  \node[block, right of=I2] (ZI2) {$\lift{\zm}$};
+  \draw[->] (I2) -- (ZI2);
+  \node[block, right of=I1, node distance=1.3cm] (DI1) {$\inc{(\lift{\lift{\bowtie}})}$};
+  \node[block, right of=ZI2, node distance=1.3cm] (DI2) {$\inc{(\lift{\lift{\bowtie}})}$};
+  \draw[->] (I1) -- (DI1);
+  \draw[->] (ZI2) -- (DI2);
+  \node[block, circle, right of=DI1, inner sep=0cm] (sum) {$+$};
+  \draw[->] (DI1) -- (sum);
+  \draw[->] (DI2) -- (sum);
+  \node[right of=sum, node distance=.7cm] (output) {$o$};
+  \draw[->] (sum) -- (output);
+  \draw[->] (input1) -- (DI2);
+  \draw[->] (input2) -- (DI1);
+\end{tikzpicture}
+\end{center}
+
+We now have two applications of $\inc{(\lift\lift\bowtie)}$.  Each of these is the
+incremental form of a bilinear operator, so it in the end we will have $2\times2 = 4$ 
+applications of $\lift\lift\bowtie$.  Here is the final form of the expanded join circuit:
+
+\begin{equation}\label{join-expansion}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (a) {$a$}; 
+  \node[below of=a, node distance=.8cm] (b) {$b$};
+  
+  \node[block, right of=a] (LIa) {$\lift{\I}$};
+  \node[block, above of=LIa, node distance=.8cm] (Ia) {$\I$};
+  \node[block, right of=LIa] (IIa) {$\I$};
+  \node[block, right of=Ia] (zIa) {$\zm$};
+  \draw[->] (a) -- (LIa);
+  \draw[->] (a) -- (Ia);
+  \draw[->] (Ia) -- (zIa);
+  \draw[->] (LIa) -- (IIa);
+  
+  \node[block, right of=b] (Ib) {$\I$};
+  \node[block, below of=Ib, node distance=.8cm] (LIb) {$\lift\I$};
+  \node[block, right of=Ib] (zb) {$\zm$};
+  \node[block, right of=LIb] (IIb) {$\I$};
+  \node[block, right of=IIb] (zIIb) {$\lift\zm$};
+  \node[block, below of=IIb, node distance=.8cm] (zIb) {$\lift\zm$};
+  \draw[->] (b) -- (Ib);
+  \draw[->] (b) -- (LIb);
+  \draw[->] (Ib) -- (zb);
+  \draw[->] (LIb) -- (IIb);
+  \draw[->] (IIb) -- (zIIb);
+  \draw[->] (LIb) -- (zIb);
+  
+  \node[block, right of=zIIb] (j1) {$\lift\lift\bowtie$};
+  \node[block, above of=j1, node distance=.8cm]   (j2) {$\lift\lift\bowtie$};
+  \node[block, above of=j2, node distance=.8cm]   (j3) {$\lift\lift\bowtie$};
+  \node[block, above of=j3, node distance=.8cm]   (j4) {$\lift\lift\bowtie$};
+  \draw[->] (zIIb) -- (j1);
+  \draw[->] (a) -- (j1);
+  \draw[->] (zb) -- (j2);
+  \draw[->] (LIa) -- (j2);
+  \draw[->] (IIa) -- (j3);
+  \draw[->] (b) -- (j3);
+  \draw[->] (zIa) -- (j4);
+  \draw[->] (zIb) -- (j4);
+  
+  \node[block, right of=j3, circle, inner sep=0cm] (plus) {$+$};
+  \draw[->] (j1) -- (plus);
+  \draw[->] (j2) -- (plus);
+  \draw[->] (j3) -- (plus);
+  \draw[->] (j4) -- (plus); 
+  \node[right of=plus, node distance=.8cm] (o) {$o$};
+  \draw[->] (plus) -- (o);
+\end{tikzpicture}
+\end{equation}
+
+Returning to $\inc{(\lift{\inc{(\lift\distinct)}})}$, we can compute its circuit by expanding
+once using Proposition~\ref{prop-inc_distinct}:
+
+\noindent
+\begin{tabular}{m{3cm}m{0cm}m{3cm}}
+\begin{tikzpicture}[>=latex]
+\node[] (input) {$i$};
+\node[block, right of=input, node distance=1.5cm] (d) {$\inc{(\lift{\inc{(\lift{\distinct})}})}$};
+\node[right of=d, node distance=1.5cm] (output) {$o$};
+\draw[->] (input) -- (d);
+\draw[->] (d) -- (output);
+\end{tikzpicture}
+& $\cong$ &
+\begin{tikzpicture}[>=latex, node distance=.8cm]
+    \node[] (input) {$i$};
+    \node[block, right of=input] (I) {$\I$};
+    \node[block, right of=I] (LI) {$\lift{\I}$};
+    \node[block, right of=LI, node distance=1cm] (z) {$\lift{\zm}$};
+    \node[block, below of=z, node distance=.8cm] (H) {$\lift{\lift{H}}$};
+    \node[block, right of=H, node distance=1cm] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \draw[->] (input) -- (I);
+    \draw[->] (I) -- node (mid) {} (LI);
+    \draw[->] (LI) -- (z);
+    \draw[->] (mid.center) |- (H);
+    \draw[->] (z) -- (H);
+    \draw[->] (H) -- (D);
+    \draw[->] (D) -- (output);
+\end{tikzpicture}
+\end{tabular}
+
+Finally, stitching all these pieces together we get the final circuit
+shown in Figure~\ref{fig:recursive-example}.
+
+\begin{figure*}[h]
+\begin{tikzpicture}[>=latex]
+  \node[] (Einput) {$\Delta$\code{E}};
+  % generic part
+  \node[block, right of=Einput, node distance=.8cm] (dE) {$\lift{\delta_0}$};
+  \draw[->] (Einput) -- (dE); 
+  \node[right of=dE] (empty) {};
+
+  % join(a,b)
+  \node[block, above of=dE, node distance=2.2cm] (b) { };
+  \node[block, above of=b, node distance=.8cm] (a) { };
+  \draw[->] (dE) -- (b);
+  
+  \node[block, right of=a] (LIa) {$\lift{\I}$};
+  \node[block, above of=LIa, node distance=.8cm] (Ia) {$\I$};
+  \node[block, right of=LIa] (IIa) {$\I$};
+  \node[block, right of=Ia] (zIa) {$\zm$};
+  \draw[->] (a) -- (LIa);
+  \draw[->] (a) -- (Ia);
+  \draw[->] (Ia) -- (zIa);
+  \draw[->] (LIa) -- (IIa);
+  
+  \node[block, right of=b] (Ib) {$\I$};
+  \node[block, below of=Ib, node distance=.8cm] (LIb) {$\lift\I$};
+  \node[block, right of=Ib] (zb) {$\zm$};
+  \node[block, right of=LIb] (IIb) {$\I$};
+  \node[block, right of=IIb] (zIIb) {$\lift\zm$};
+  \node[block, below of=IIb, node distance=.8cm] (zIb) {$\lift\zm$};
+  \draw[->] (b) -- (Ib);
+  \draw[->] (b) -- (LIb);
+  \draw[->] (Ib) -- (zb);
+  \draw[->] (LIb) -- (IIb);
+  \draw[->] (IIb) -- (zIIb);
+  \draw[->] (LIb) -- (zIb);
+  
+  \node[block, right of=zIIb] (j1) {$\lift\lift\bowtie$};
+  \node[block, above of=j1, node distance=.8cm]   (j2) {$\lift\lift\bowtie$};
+  \node[block, above of=j2, node distance=.8cm]   (j3) {$\lift\lift\bowtie$};
+  \node[block, above of=j3, node distance=.8cm]   (j4) {$\lift\lift\bowtie$};
+  \draw[->] (zIIb) -- (j1);
+  \draw[->] (a) -- (j1);
+  \draw[->] (zb) -- (j2);
+  \draw[->] (LIa) -- (j2);
+  \draw[->] (IIa) -- (j3);
+  \draw[->] (b) -- (j3);
+  \draw[->] (zIa) -- (j4);
+  \draw[->] (zIb) -- (j4);
+  
+  \node[block, right of=j3, circle, inner sep=0cm] (plus) {$+$};
+  \draw[->] (j1) -- (plus);
+  \draw[->] (j2) -- (plus);
+  \draw[->] (j3) -- (plus);
+  \draw[->] (j4) -- (plus); 
+  
+  % relational query
+  \node[block, right of=plus, node distance=.8cm] (pj) {$\lift{\lift{\pi}}$};
+  \node[below of=pj, node distance=.6cm] (mid) {};
+  \node[block, circle, right of=empty, inner sep=0cm, node distance=5.5cm] (relplus) {$+$};
+  
+  \draw[->] (plus) -- (pj);
+  \draw[->] (dE) -- (relplus);
+  \draw[->] (pj) -- (relplus);
+  
+    % distinct
+    \node[block, right of=relplus, node distance=.7cm] (distI) {$\I$};
+    \node[block, right of=distI] (distLI) {$\lift{\I}$};
+    \node[block, right of=distLI, node distance=1cm] (distz) {$\lift{\zm}$};
+    \node[block, above of=distz, node distance=.8cm] (distH) {$\lift{\lift{H}}$};
+    \node[block, right of=distH] (distD) {$\D$};
+    \draw[->] (relplus) -- (distI);
+    \draw[->] (distI) -- node (distmid) {} (distLI);
+    \draw[->] (distLI) -- (distz);
+    \draw[->] (distmid.center) |- (distH);
+    \draw[->] (distz) -- (distH);
+    \draw[->] (distH) -- (distD);
+  
+  % generic part
+  \node[block, right of=distD] (S) {$\lift{\int}$};
+  \node[right of=S, node distance=.8cm] (output)  {$\Delta$\code{R}};
+  \draw[->] (distD) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, above of=a, node distance=1.2cm] (z) {$\lift{\zm}$};
+  \draw[->] (o.center) |- (z);
+  \draw[->] (z) -- (a);
+\end{tikzpicture}
+\caption{Final form of circuit from \refsec{sec:recursive-example}\label{fig:recursive-example}
+which is incrementally maintaining the transitive closure of a graph.}
+\end{figure*}
+
+\section{Nested circuit work}\label{sec:work}
+
+In this diagram we annotate edges with the size of the collections
+flowing along the edge.  The $a$ stream is produced by a $\delta_0$ operator; it 
+contains initially a change to the database, but afterwards all elements are 0 --
+we show this with $|\Delta DB|, 0, 0$.
+
+\begin{equation}\label{join-expansion}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (a0) {$a$}; 
+  \node[block, right of=a0] (a) { };
+  \node[below of=a0] (b0) {$b$};
+  \node[block, right of=b0] (b) { };
+  \draw[->] (a0) -- node (a0s) {$|\Delta DB|, 0, 0$} (a);
+  \draw[->] (b0) -- node (b0s) {$|\Delta\Delta DB|$} (b);
+  
+  \node[block, right of=a, node distance=1.5cm] (LIa) {$\lift{\I}$};
+  \node[block, above of=LIa] (Ia) {$\I$};
+  \node[block, right of=LIa, node distance=1.5cm] (IIa) {$\I$};
+  \node[block, right of=Ia, node distance=1.5cm] (zIa) {$\zm$};
+  \draw[->] (a) -- (LIa);
+  \draw[->] (a) -- (Ia);
+  \draw[->] (Ia) -- node(Ias) {$|\Delta DB|$} (zIa);
+  \draw[->] (LIa) -- node(Ias) {$|DB|, 0, 0$} (IIa);
+  
+  \node[block, right of=b] (Ib) {$\I$};
+  \node[block, below of=Ib] (LIb) {$\lift\I$};
+  \node[block, right of=Ib, node distance=1.5cm] (zb) {$\zm$};
+  \node[block, right of=LIb, node distance=1.5cm] (IIb) {$\I$};
+  \node[block, right of=IIb, node distance=1.5cm] (zIIb) {$\lift\zm$};
+  \node[block, below of=IIb] (zIb) {$\lift\zm$};
+  \draw[->] (b) -- (Ib);
+  \draw[->] (b) -- (LIb);
+  \draw[->] (Ib) -- node[below](IBs) {$|\Delta DB|$} (zb);
+  \draw[->] (LIb) -- node[below](LIbs) {$|\Delta DB|$} (IIb);
+  \draw[->] (IIb) -- node(zIIbs) {$|DB|$} (zIIb);
+  \draw[->] (LIb) -- (zIb);
+  
+  \node[block, right of=zIIb, node distance=1.5cm] (j1) {$\lift\lift\bowtie$};
+  \node[block, above of=j1]   (j2) {$\lift\lift\bowtie$};
+  \node[block, above of=j2]   (j3) {$\lift\lift\bowtie$};
+  \node[block, above of=j3]   (j4) {$\lift\lift\bowtie$};
+  \draw[->] (zIIb) -- (j1);
+  \draw[->] (a) -- (j1);
+  \draw[->] (zb) -- (j2);
+  \draw[->] (LIa) -- (j2);
+  \draw[->] (IIa) -- node(IIas) {$|DB|$} (j3);
+  \draw[->] (b) -- (j3);
+  \draw[->] (zIa) -- (j4);
+  \draw[->] (zIb) -- (j4);
+  
+  \node[block, right of=j3, circle, inner sep=0cm] (plus) {$+$};
+  \draw[->] (j1) -- (plus);
+  \draw[->] (j2) -- (plus);
+  \draw[->] (j3) -- (plus);
+  \draw[->] (j4) -- (plus); 
+  \node[right of=plus, node distance=.8cm] (o) {$o$};
+  \draw[->] (plus) -- (o);
+\end{tikzpicture}
+\end{equation}
