@@ -1,0 +1,187 @@
+\documentclass[10pt]{article}
+
+\usepackage{array}
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{stmaryrd}
+\usepackage{tikz}
+\usepackage{comment}
+\usepackage{xspace}
+\usepackage{makeidx}
+\usepackage{stackengine}
+\usepackage{ifthen}
+\usepackage{listofitems}
+\usepackage{graphicx}
+\usepackage[final]{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\graphicspath{ {.} }
+\lstset{language=Java,
+  commentstyle=\color{brown},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red},
+  basicstyle=\ttfamily}
+
+\lstdefinelanguage{ddlog}{
+  language=Java, % we base it on Java, just for comments
+  morekeywords={input, output, typedef, relation, typedef, bool, not,
+    string, bit, extern, function, var, for, match, skip, in, integer, % not really in DDlog
+    Aggregate, FlatMap},
+  deletestring=[b]{'}
+}
+\hypersetup{
+  colorlinks   = true,    % Colours links instead of ugly boxes
+  urlcolor     = blue,    % Colour for external hyperlinks
+  linkcolor    = blue,    % Colour of internal links
+  citecolor    = red      % Colour of citations
+}
+\hypersetup{final}
+
+\usetikzlibrary{shapes, arrows.meta, positioning}
+\tikzstyle{block} = [draw, fill=white, rectangle]
+
+\input{matrix}
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{algorithm}[theorem]{Algorithm}
+
+\newcommand{\secref}[1]{Section~\ref{#1}}  % reference to a section
+\newcommand{\refsec}[1]{\secref{#1}}
+% Used when a term is first defined.  Adds the term to the index.
+\newcommand{\defined}[1]{\textbf{#1}\index{#1}}
+\newcommand{\zr}{$\Z$-set\xspace}
+\newcommand{\zrs}{$\Z$-sets\xspace} % plural
+\newcommand{\means}[1]{\ensuremath{\llbracket #1 \rrbracket}}
+\newcommand{\code}[1]{\mbox{\texttt{#1}}}
+\newcommand{\Z}{\mathbb{Z}}  % integers
+\newcommand{\R}{\mathbb{R}}  % reals
+\newcommand{\N}{\mathbb{N}}  % naturals
+\newcommand{\B}{\mathbb{B}}  % Booleans
+\newcommand{\norm}[1]{\| #1 \|} % norm; requires math mode
+% stream with elements of a given type
+\newcommand{\stream}[1]{\ensuremath{\mathcal{S}_{#1}}}
+% finite stream with elements of a given type (zero almost everywhere)
+\newcommand{\streamf}[1]{\ensuremath{\overline{\mathcal{S}_{#1}}}}
+\newcommand{\zm}{\ensuremath{z^{-1}}} % stream delay operator
+\ifthenelse{\equal{1}{0}}{ % allows switching to mathit/mathcal
+\newcommand{\I}{\mathcal{I}}  % stream integration
+\newcommand{\D}{\mathcal{D}}  % stream derivative
+}{
+\newcommand{\I}{\mathit{I}}  % stream integration
+\newcommand{\D}{\mathit{D}}  % stream derivative
+}
+\newcommand{\inc}[1]{{#1}^{\Delta}}
+\newcommand{\dbsp}{DBSP\xspace}
+\newcommand{\distinct}{\mathit{distinct}}  % distinct operator
+% set with elements of given type
+\newcommand{\set}[1]{\mathit{set}_{#1}}
+\newcommand{\id}{\ensuremath{\mathit{id}}} % identity function
+\newcommand{\isset}{\mbox{isset}}
+\newcommand{\ispositive}{\mbox{ispositive}}
+\newcommand{\defn}{\stackrel{\textrm{\scriptsize def}}{=}}
+\newcommand{\map}{\mbox{map}}
+\newcommand{\fix}[2]{\mbox{fix}\,#1.#2}
+\newcommand{\lift}[1]{{\uparrow}#1}
+\newcommand{\rew}{\ensuremath{\mapsto}} % rewriting
+\newcommand{\birew}{\ensuremath{\mapsfrom\!\mapsto}} % bidirectional rewriting
+\newcommand{\pair}[2]{\ensuremath{\langle #1,#2 \rangle}} % pairing
+\newcommand{\zpp}[1]{\mbox{zpp}(#1)}
+\newcommand{\makeset}{\ensuremath{\mbox{makeset}}}
+\newcommand{\sv}[1]{ % simple stream value, supplied as a space-separated list of 5 values
+\setsepchar{ }
+\readlist\arg{#1}
+{[}
+\begin{array}{cccccc}
+    \arg[1] & \arg[2] & \arg[3] & \arg[4] & \arg[5] & \cdots
+\end{array}
+{]}
+}
+
+\newcommand{\st}{\;|\;}
+\newcommand\Hookarrowleft[1]{\ensuremath{\stackrel{\curvearrowleft}{#1}}}
+
+\newcommand{\cut}[2]{#1|_{_{\leq #2}}}
+\newcommand{\scut}[2]{#1|_{_{< #2}}}
+
+
+\setlength{\marginparwidth}{4cm}
+\newcommand{\scream}[2]{\marginpar{\footnotesize \textbf{#1}: #2}}
+\newcommand{\val}[1]{\scream{VAL}{#1}}
+\newcommand{\mihai}[1]{\scream{MIHAI}{#1}}
+\newcommand{\leonid}[1]{\scream{LEONID}{#1}}
+
+\title{\dbsp: Automatic Incremental View Maintenance for Rich Query
+Languages}
+\author{
+  Mihai Budiu \\ VMware Research \and
+  Tej Chajed \\ VMware Research \and
+Frank McSherry \\ Materialize Inc. \and
+Leonid Ryzhyk \\ VMware Research \and
+Val Tannen \\ University of Pennsylvania
+}
+
+\makeindex
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Incremental view maintenance (IVM) has been for a long time a central problem in database theory~\cite{gupta-idb95}.
+Many solutions have been proposed for restricted classes of database languages,
+such as the relational algebra, or Datalog.  These techniques do not naturally generalize to
+richer languages.  In this paper we give a general, heuristic-free
+solution to this problem in 3 steps: (1) we describe a simple but expressive language
+called \dbsp for describing computations over data streams; (2) we give a new mathematical definition of IVM and
+a general algorithm for solving IVM for arbitrary \dbsp programs, and (3) we show
+how to model many rich database query languages (including the full relational algebra, queries over
+sets and multisets, arbitrarily nested relations, aggregation, flatmap (unnest), monotonic and non-monotonic
+recursion, streaming aggregation, and arbitrary compositions of all of these) using \dbsp.
+As a consequence, we obtain efficient
+incremental view maintenance algorithms for queries over all these languages.
+\end{abstract}
+
+\begin{quote}
+This document is work in progress.  It contains a formal specification
+of the \dbsp language, proofs of the theoretical results, and the
+specification of several query languages in \dbsp.  A shorter earlier
+preprint is available at \url{https://arxiv.org/abs/2203.16684}.
+\end{quote}
+
+\tableofcontents
+
+\input{intro}
+\input{related}
+
+\part{Streaming and incremental computations}
+\input{streams}
+\input{relational}
+\input{incremental}
+\input{inc-relational}
+\input{nested}
+\input{recursive}
+\input{inc-recursive}
+\input{extensions}
+
+\part{Implementation}
+\input{circuits}
+\input{ddlog}
+\input{implementation}
+
+\part{Appendixes}
+\appendix
+\input{ztransform}
+
+\printindex
+
+\bibliographystyle{plainurl}
+\bibliography{main}
+
+\end{document}

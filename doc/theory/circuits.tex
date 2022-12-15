@@ -1,0 +1,622 @@
+\section{Well-formed circuits}\label{sec:wfc}
+
+In this section we formalize the shape legal computations allowed in our framework.
+We model computations as circuits.  A circuit is a directed graph where each vertex is a 
+primitive computation node (a function) and each edge has a type; at circuit evaluation time each 
+edge will represent one value of that type.  
+
+We provide a recursive set of circuit construction rules.  
+We call a circuit \defined{well-formed} (\defined{WFC}) if it can be 
+constructed by a sequence of applications of these rules.  For each 
+WFC construction rule of a circuit $C$ from simpler parts 
+we also provide typing derivation rules and a denotational semantics for $\means{C}$ 
+that reduces the meaning of $C$ to its components.  The semantics of a 
+circuit expresses each circuit output as a function of the circuit inputs.
+
+\subsection{Primitive nodes}
+
+\newcommand{\primitives}{\ensuremath{\mathbf{P}}}
+
+We assume a set of base types that represent abelian groups: $A_1, A_2, 
+\ldots, \\ B_1, B_2, \ldots$.  (The base types 
+do \emph{not} include stream types; stream types are derived.)
+
+We are given a fixed set of \defined{primitive computation nodes} $\primitives$; 
+each primitive node has an input arity $k$.  Iin our applications 
+we only use unary and binary primitive nodes, so we will restrict ourselves to such nodes,
+but these constructions can be generalized to nodes with any arity.
+A binary node $n \in \primitives$ has a type of the form 
+$n: A_0 \times A_1 \rightarrow A$, where all $A$s are base types.
+We assume the existence of a total function ``meaning'' $\means{\cdot}$ 
+that gives the semantics of each node: 
+$\means{n} : \means{A_0} \times \means{A_1} \rightarrow \means{A}$.  
+
+In Section~\ref{sec:notation} we have seen many generic primitive nodes:
+the identity function $\id: A \rightarrow A$, 
+scalar function nodes (where all inputs are base types $A_i$), 
+sum $\bigoplus: A \times A \rightarrow A$, negation $-: A \rightarrow A$,
+pairs $\pair{\cdot}{\cdot}: A \times B \rightarrow \pair{A}{B}$,
+$\mbox{fst}: A \times B \rightarrow A$ and $\mbox{snd}: A \times B \rightarrow B$.
+Their typing and semantics is standard.  We will introduce more domain-specific
+primitive nodes when discussing specific applications, in Section~\ref{sec:datalog}.
+
+\subsection{Circuits as graphs}
+
+A circuit is a 5-tuple $C = (I, O, V, E, M)$.
+
+\begin{itemize}
+    \item $I$ is an ordered list of input ports.  
+    An input port indicates a value produced by the environment.  We use letters like $i, j$
+    for input ports.  Each input port has a type $i: A$ for some abelian group $A$  (where $A$ can be a stream type).
+    \item $O$ is an ordered list of output ports.  An output port represents a value produced by the circuit.
+    as a function of the values of the input ports.  We use letters like $o, l$ for output ports.
+    Each output port has a type $o: A$ for some abelian group $A$ (where $A$ can be a stream type).
+    \item $V$ is a set of internal vertices.
+    \item $E$ is a set of edges; $E \subseteq (V \times V) \cup (I \times V) \cup (V \times O)$.
+    We call an edge of the form $(i,v)$ for $i \in I, v \in V$ an \defined{input edge}, 
+    and an edge of the form $(v, o)$ for $v \in V, o \in O$ an \defined{output edge}.
+    \item Each internal vertex $v$ is associated with a primitive computation
+    node or with another circuit; 
+    for primitive nodes the \defined{implementation function} $M: V \rightarrow \primitives$ 
+    gives the primitive computation associated with a vertex.
+\end{itemize}
+
+Given a circuit $C$ we use the suffix notation to indicate its various components, e.g., 
+$C.O$ is the list of output edges, and $C.V$ is the set of vertexes.  
+
+%A \emph{typing context} maps edges to types: $\Gamma = (e_0: A_0, \ldots e_n: A_n)$,
+%where $e_i \in E$, and $A_i$ are abelian groups.
+
+\subsection{Circuit semantics}
+
+Given a circuit $C$ with $k$ input ports $C.I = (i_j, j \in [k])$ with types $i_j: A_j, j \in [k]$,
+and $m$ output ports $C.O = (o_j, j \in [m])$ with types $o_j: B_j, j \in [m]$,
+the semantics of the circuit is given by the semantics of all its output ports: 
+$\means{C} = \prod_{j \in [m]} \means{C.o_j}$.
+The semantics of output port $C.o_j$ is a total function
+$\means{C.o_j} : \means{A_0} \times \ldots \means{A_{k-1}} \rightarrow \means{B_j}$.
+
+\subsection{Circuit construction rules}
+
+We give a set of inductive rules for constructing WFCs.
+In the inductive definitions we always combine or WFCs to
+produce a new WFC.
+
+These rules maintain the following invariants about all constructed circuits, which
+can proved by structural induction:
+\begin{itemize}
+    \item All input and outputs are either all scalars
+    or they are all streams of the same ``depth''.
+    \item All circuits are time-invariant.
+    \item For circuits operating over streams, all circuit outputs are causal
+    in all of the circuit inputs.
+\end{itemize}
+
+\subsubsection{Single node}
+
+Given a primitive (unary or binary) node $n$ with type 
+$n: A_0 \times A_1 \rightarrow B$, (where each $A_i, B$
+is a base type), we can construct a circuit $C(n)$ with a single vertex.  The circuit has exactly 
+$2$ input ports and any number $m$ of output ports having all the same type $B$;
+the output ports will carry all the same value. 
+
+\begin{tikzpicture}[auto,>=latex]
+\node (n) [block,minimum width=.5cm, minimum height=.5cm]  {$n$};
+\node (dots)   [left=of n] {};
+\node (input1) [above of=dots, node distance=.5cm]  {$i_0$};
+\node (input2) [below of=dots, node distance=.5cm]  {$i_1$};
+\draw[->] (input1) -- (n);
+\draw[->] (input2) -- (n);
+\node (odots)   [right=of n] {$\ldots$};
+\node (output0) [above of=odots, node distance=7mm] {$o_0$};
+\node (output1) [below of=odots, node distance=7mm] {$o_{m-1}$};
+\draw[->] (n)  -- (output0);
+\draw[->] (n)  -- (output1);
+\end{tikzpicture}
+
+Formally:
+
+\begin{itemize}
+    \item $C(n).V = \{v\}$.
+    \item $C(n).I = (i_j, j \in [k])$
+    \item $C(n).O = (o_j, j \in [m])$
+    \item $C(n).E = \{ (i_j, v), j \in [k] \} \cup \{ (v, o_j), j \in [m] \}$
+    \item $C(n).M(v) = n$.
+\end{itemize}
+
+$$\frac{
+i_0: A_0, \ldots, i_{k-1}: A_{k-1}, n: A_0 \times A_1 \times \ldots A_{k-1} \rightarrow B
+}{
+\forall j \in [m] . n.o_j: B}$$
+
+All output edges of the circuit produce the same value.
+$\means{C(n).o_j}: \means{A_0} \times \ldots \means{A_{k_1}} \rightarrow \means{A}$
+given by $\means{C(n).o_j} = \means{n}$.
+
+\subsubsection{Delay node}
+
+A similar circuit construction rule is applicable to the $\zm$ node, with the difference that
+$\zm$ operates on streams.  Given a type $A$ we can construct the circuit $Cz$ with a single vertex.
+The circuit has 1 input port of type $i: \stream{A}$
+and any number $m$ of output ports with the same type $\stream{A}$.
+
+\begin{tikzpicture}[auto,>=latex]
+\node (n) [block,minimum width=.5cm, minimum height=.5cm]  {$\zm$};
+\node (input) [left=of n]  {$i$};
+\draw[->] (input) -- (n);
+\node (odots)   [right=of n] {$\ldots$};
+\node (output0) [above=of odots, yshift=-7mm] {$o_0$};
+\node (output1) [below=of odots, yshift=7mm] {$o_{m-1}$};
+\draw[->] (n)  -- (output0);
+\draw[->] (n)  -- (output1);
+\end{tikzpicture}
+
+Formally:
+
+\begin{itemize}
+    \item $Cz.V = \{ v \}$.
+    \item $Cz.I = (i)$.
+    \item $Cz.O = (o_j, j \in [m])$.
+    \item $Cz.E = \{ (i, v) \} \cup \{ (v, o_j), j \in [m] \}$.
+    \item $Cz.M(v) = \zm: \stream{A} \rightarrow \stream{A}$
+\end{itemize}
+
+$$\frac{i: \stream{A}}{Cz.o_j: \stream{A}}$$
+
+All output edges of the circuit produce the same value.
+$\means{Cz.o_j}: \means{\stream{A}} \rightarrow \means{\stream{A}}$
+given by $\means{Cz.o_j} = \means{\zm}$.
+
+\subsubsection{Sequential composition}
+
+Given two WFCs $C$ and $D$ with inputs (and necessarily outputs as well) in the same clock domain,
+their sequential composition is specified by a set of pairs of ports; each pair
+has an output port of $C$ and an input port of $D$: $P = \{ (o_j, i_j), j \in [n] \}$,
+where $o_j \in C.O$ and $i_j \in D.I$ with respectively matching types.
+The sequential composition $C +_P D$ is a new circuit where each output port of $C$ is 
+``connected'' with the corresponding input port of $D$ from $P$.
+
+To simplify the definition, we can assume WLOG that each of $C$ has exactly 2 inputs and outputs and
+$D$ has 2 inputs and 1 output, and also that the second output of $C$ is connected to
+first input of $D$ (i.e., $P$ contains at most one pair or ports). 
+Circuits and connections with more inputs and outputs can be built by ``bundling''
+multiple edges using the pair operator $\pair{\cdot}{\cdot}$.  Sequential composition 
+is given by the following diagram:
+
+\noindent
+\begin{tabular}{m{4.2cm}m{2.3cm}m{6.5cm}}
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$C$};
+\node (output1) [right=of c.north east] {$o_0$};
+\node (output2) [right=of c.south east] {$o_1$};
+\node (input1) [left=of c.north west]  {$i_0$};
+\node (input2) [left=of c.south west]  {$i_1$};
+\draw[->] (c)  -- (output1);
+\draw[->] (c)  -- (output2);
+\draw[->] (input1) -- (c);
+\draw[->] (input2) -- (c);
+
+\node (d) [block,minimum width=1cm, minimum height=1cm,below=of c]  {$D$};
+\node (output) [right=of d] {$l_0$};
+\node (input3) [left=of d.north west]  {$j_0$};
+\node (input4) [left=of d.south west]  {$j_1$};
+\draw[->] (d)  -- (output);
+\draw[->] (input3) -- (d);
+\draw[->] (input4) -- (d);
+\end{tikzpicture}
+&
+\begin{tabular}{c}
+$P = (o_1, j_0)$ \\
+$\Rightarrow$ \\
+$C +_P D$
+\end{tabular}
+&
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$C$};
+\node (output1) [right=of c.north east] {$o_0$};
+\node (input1) [left=of c.north west]  {$i_0$};
+\node (input2) [left=of c.south west]  {$i_1$};
+\draw[->] (c)  -- (output1);
+\draw[->] (input1) -- (c);
+\draw[->] (input2) -- (c);
+
+\node (d) [block,minimum width=1cm, minimum height=1cm,right=of c.south east]  {$D$};
+\node (output) [right=of d] {$l_0$};
+\node (input4) [left=of d.south west]  {$j_1$};
+\draw[->] (d)  -- (output);
+\draw[->] (input4) -- (d);
+
+\draw[->] (c) -- (d);
+\end{tikzpicture}
+\end{tabular}
+
+Formally the definition is given by:
+
+\begin{itemize}
+\item $(C+_P D).I = C.I \cup D.I \setminus \{ i \st \exists o . (o, i) \in P \}$.
+\item $(C+_P D).O = C.O \setminus \{ o \st \exists i . (o, i) \in P \} \cup D.O$.
+\item $(C+_P D).V = C.V \cup D.V$.
+\item $(C+_P D).E = C.E \cup D.E \setminus \{ (v, o) \st \exists i . (o, i) \in P, v \in C.V \} \\ \setminus 
+\{ (i, v) \st \exists i. (o, i) \in P, v \in D.V \} \cup \{ (u, v) \st \exists (o,i) \in P, (u,o) \in C.E, (i, v) \in D.E \}$.
+\item $(C+_P D).M = \{ v \mapsto C.M(v) \st v \in C.V \} \cup \{ v \mapsto D.M(v) \st v \in D.V \}$.
+\end{itemize}
+
+$$\frac{
+\begin{gathered}
+    C: A_0 \times A_1 \rightarrow B_0 \times B_1 \\
+    D: B_1 \times A_2 \rightarrow B_2 \\
+    P = \{ (C.O_0, D.I_0) \} \\
+\end{gathered}
+}{
+% denominator
+D +_P C: A_0 \times A_1 \times A_2 \rightarrow B_0 \times B_2
+}
+$$
+
+$$
+\begin{gathered}
+\means{(C +_P D).O_0} = \means{C.O_0} \\
+\means{(C +_P D).O_1} = \lambda i_0, i_1, j_1 . \means{D}(\means{C}(i_0, i_1), j_1) 
+\end{gathered}
+$$
+
+\mihai{We may also need a parallel composition}
+\begin{comment}
+The ``parallel'' composition of two circuits is just a special case
+of the sequential composition where the set of edge pairs connected is empty $P = \phi$.
+However, when circuits are connected in parallel we still require that all inputs
+and outputs of $C$ and $D$ to be in the same clock domain.  When $P \not= \phi$ this
+is ensured by the typing rules.
+\end{comment}
+
+This transformation combines acyclic graphs into an acyclic graph.
+
+\subsubsection{Adding a back-edge}
+
+\newcommand{\chook}{\ensuremath{C\Hookarrowleft{io}}}
+
+We can assume WLOG that we are given a circuit $C$ with two inputs and two outputs.
+\val{According to the model, the two outputs can produce different streams. Algebraically, this means the circuit $C$ is implementing two operators, one for each output, say $T(i_0,i)$ for output $o$ and $T_0(i_0,i)$ for output $o_0$.}
+\mihai{Yes, that is correct. In fact, this is the main difference between 
+circuits and operators: a circuit can have many different outputs, while
+an operator always has exactly 1.}
+Assume that $C$'s output port $o \in C.O$ has a stream type $o: \stream{A}$ 
+and the input port $i \in C.I$ has the same type $i: \stream{A}$.
+We can create a new circuit $\chook$ by adding two nodes: one $z$ node 
+implemented by $\zm$ and one $p$ node implemented by $+_{\stream{A}}$, 
+and a new input port $i': \stream{A}$, connected as in the following diagram:
+
+\begin{tabular}{m{4.2cm}m{1cm}m{5cm}}
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$C$};
+\node (output1) [right=of c, node distance=1.5cm] {$o$};
+\node (output2) [right=of c.north east, node distance=1.5cm] {$o_0$};
+\node (input1) [left=of c.north west]  {$i_0$};
+\node (input2) [left=of c]  {$i$};
+\draw[->] (c)  -- (output1);
+\draw[->] (input1) -- (c);
+\draw[->] (input2) -- (c);
+\draw[->] (c) -- (output2);
+\end{tikzpicture}
+&
+$\Rightarrow$
+&
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i'$};
+  \node[block, shape=circle, right of=input, inner sep=0in] (plus) {$+$};
+  \node[block, right=of plus, minimum height=1cm, minimum width=1cm, node distance=1.5cm] (c) {$C$};
+  \node (output2) [right=of c.north east, node distance=1.5cm] {$o_0$};
+  \node (input2) [left=of c.north west] {$i_0$};
+  \draw[->] (input) -- (plus);
+  \draw[->] (input2) -- (c);
+  \draw[->] (plus) -- (c);
+  \node[block, below of=c] (z) {$\zm$};
+  \draw[->] (c.east) -- ++(right:1em) |- (z.east);
+  \draw[->] (z) -| (plus);
+  \draw[->] (c) -- (output2);
+\end{tikzpicture}
+\end{tabular}
+
+Formally the definition is given by:
+
+\begin{itemize}
+\item $(\chook).I = C.I \setminus \{ i \} \cup \{ i' \}$.
+\item $(\chook).O = C.O \setminus \{ o \}$.
+\item $(\chook).V = C.V \cup \{ z, p \}$.
+\item $(\chook).E = C.E \cup \{ (i', p) \} \setminus \{ (u, o) \in C.E \st u \in C.V \} \cup 
+\{ (p, v) \st \exists i. (i, v) \in C.E \} \cup \{ (u, p) \st \exists (u,o) \in C.E \}$.
+\item $(\chook).M = C.M \cup \{ p \mapsto +_{\stream{A}}, z \mapsto \zm \}$.
+\end{itemize}
+
+We call the edge connecting $\zm$ to $\bigoplus$ a \emph{back-edge}.
+One can prove by induction on the structure of $C$ that the graph of 
+$C$ ignoring all back-edges is acyclic.
+
+$$
+\frac{
+C: \stream{A} \times \stream{B} \rightarrow \stream{A} \times \stream{C}
+}{
+\chook: \stream{A} \times \stream{B} \rightarrow \stream{C}
+}
+$$
+
+Since the source of a back-edge is always $\zm$, strict operator, and any circuit is causal, the
+composition has a well-defined semantics, according to Corollary~\ref{feedback-semantics}.
+
+$$
+\means{\chook}=  \lambda i_0, i'. \fix{i}{\means{C.O_0}(i_0, i' + \means{\zm}(i))}. \\
+$$
+\val{For notation $T,T_0$ please see my comment above. Which one of $T$ or $T_0$ is 
+$\means{C.O._0}$ in this definition? I think you intend it to be $T_0$ in order to produce the right output. But then, the well-definedness of the semantics of this construction does not follow from Corollary~\ref{feedback-semantics} because that result uses $T$ rather than $T_0$. I am working on the more general result that we need to justify this case.}
+\subsubsection{Lifting a circuit}
+
+\newcommand{\liftc}{\lift{C}\xspace}
+
+Given a circuit $C$ with scalar inputs and outputs, we can lift the entire circuit
+to operate on streams.  As before, we can assume WLOG that $C$ has
+a single input and output.
+If the circuit is a function: 
+$C: A \rightarrow B$,
+the lifted circuit $\liftc$ operates time-wise on streams: $\liftc: \stream{A} 
+\rightarrow \stream{B}$.
+
+\begin{tabular}{m{4cm}m{1cm}m{4cm}}
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$C$};
+\node (output) [right of=c, node distance=1.5cm] {};
+\node (input) [left=of c]  {};
+\draw[->,dotted] (c)  -- (output);
+\draw[->,dotted] (input) -- (c);
+\end{tikzpicture}
+&
+$\Rightarrow$
+&
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$\liftc$};
+\node (output) [right of=c, node distance=1.5cm] {};
+\node (input) [left=of c]  {};
+\draw[->] (c)  -- (output);
+\draw[->] (input) -- (c);
+\end{tikzpicture}
+\end{tabular}
+
+Formally the definition is given by:
+
+\begin{itemize}
+\item $(\liftc).I = C.I$.
+\item $(\liftc).O = C.O$.
+\item $(\liftc).V = C.V$.
+\item $(\liftc).E = C.E$.
+\item $(\liftc).M = \{ \lift{(C.M(v))} \st v \in C.V \}$.
+\end{itemize}
+
+$$\frac{
+C: A \rightarrow B
+}{
+\liftc: \stream{A} \rightarrow \stream{B}
+}$$
+
+If $C$ is a WFC, then $\llbracket \liftc \rrbracket = \lambda s . \llbracket C \rrbracket \circ s$,
+for $s: \N \rightarrow B = \stream{B}$, as described in Section~\ref{sec:notation}.
+
+\subsubsection{Bracketing}
+
+This construction uses nodes $\delta_0: A \rightarrow \stream{A}$ and 
+$\int: \stream{A} \rightarrow A$  which ``create'' and ``eliminate'' streams, 
+as defined in Section~\ref{sec:stream-intro-elim}.  These nodes are always used in pairs.
+
+Given a WFC $C$ computing on streams with a single input $i: \stream{A}$ and a single output of the
+exact same type $o: \stream{A}$, we can ``bracket'' this circuit with a pair of nodes $\delta_0$
+and $\int$ as follows:
+
+\begin{tabular}{m{3.6cm}m{.9cm}m{5.7cm}}
+\begin{tikzpicture}[auto,>=latex]
+\node (c) [block,minimum width=1cm, minimum height=1cm]  {$C$};
+\node (output) [right of=c, node distance=1.5cm] {$o$};
+\node (input) [left=of c]  {$i$};
+\draw[->] (c)  -- (output);
+\draw[->] (input) -- (c);
+\end{tikzpicture}
+&
+\begin{tabular}{c}
+$[C]$ \\
+$\Rightarrow$ 
+\end{tabular}
+&
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (input) {$i'$};
+    \node[block, right of=input] (delta) {$\delta_0$};
+    \node[block, right of=delta,minimum width=1cm, minimum height=1cm,node distance=1.5cm] (c) {$C$};
+    \draw[->] (input) -- (delta);
+    \draw[->] (delta) -- (c);
+
+    \node[block, right of=c,node distance=1.5cm] (S) {$\int$};
+    \node[right of=S] (output) {$o'$};
+    \draw[->] (c) -- (S);
+    \draw[->] (S) -- (output);
+\end{tikzpicture}
+\end{tabular}
+
+The types of the resulting input and given by $i': A$, and $o': A$.
+
+It is very important for $C$ to have a single input and output; this prevents
+connections to $C$ from going ``around'' the bracketing nodes.  If multiple 
+input or outputs are needed to $C$, they can be ``bundled'' into a single one using a
+pairing operator $\pair{\cdot}{\cdot}$.
+
+Formally the definition is given by:
+
+\begin{itemize}
+\item $[C].I = \{ i' \}$.
+\item $[C].O = \{ o' \}$.
+\item $[C].V = C.V \cup \{ d, s \}$.
+\item $[C].E = C.E \cup \{ (i', d), (s, o') \} \setminus \{ (i,v) \st v \in V \} \setminus \{ (v, o) \st v \in V \}
+  \cup \{ (d, v) \st (i, v) \in C.E \} \cup \{ (v, s) \st (v, o) \in C.E \}$.
+\item $[C].M = C.M \cup \{ d \mapsto \delta_0, s \mapsto \int \}$.
+\end{itemize}
+$$
+\frac{
+C: \stream{A} \rightarrow \stream{B}
+}{
+[C]: A \rightarrow B
+}$$
+
+The semantics of the resulting circuit is just the composition of the three functions:
+$\llbracket [C] \rrbracket = \llbracket \int \rrbracket \circ \llbracket C \rrbracket \circ \llbracket \delta_0 \rrbracket$.
+(However, note that the semantics of $\int$ is only defined for streams that are zero almost everywhere.)
+
+\begin{theorem}
+For any WFCs all inputs and outputs are streams of the same ``depth''.
+\end{theorem}
+\begin{proof}
+The proof proceeds by induction on the structure of the circuit.
+All construction rules maintain this invariant, assuming that it is true for all primitive nodes.
+\end{proof}
+
+\begin{comment}
+\subsection{Circuit equivalence}
+
+\begin{theorem}
+Given two WFCs $C$ and $D$, with the same semantics $\llbracket C \rrbracket = \llbracket D \rrbracket$,
+(which requires them to have the same type $I \rightarrow O$) and a context $H$ with a ``hole'' of a 
+type $I \rightarrow O$ such that $H[C]$ and $H[D]$ are WFC, then $\llbracket H[C] \rrbracket = \llbracket H[D] \rrbracket$.
+\end{theorem}
+\end{comment}
+
+\section{Implementing WFC as Dataflow Machines}
+
+In this section we give a compilation scheme that translates a WFC into a
+set of cooperating state machines that implement the WFC behavior.
+Each primitive node is translated into a state machine, each circuit
+is translated into a control element, and each edge is translated into
+a communication channel between two state machines, storing at most one value at
+any one time.  
+\mihai{I realize that this would be much simpler if we force the toplevel
+circuit to have exactly 1 input and output edge.  I will work on that.}
+
+There are essentially 6 kinds of nodes in our circuits:
+
+\begin{itemize}
+    \item Lifted scalar nodes.
+    \item Delay nodes $\zm$ operating on streams. 
+    \item Delay nodes $\zm$ operating on nested streams.
+    \item ``Loop entry'' nodes, corresponding to $\delta_0$.
+    \item ``Loop exit'' nodes, corresponding to $\int$.
+    \item Controller nodes, corresponding to circuits.
+\end{itemize}
+
+There are 4 types of events in our implementation:
+
+\begin{description}
+\item[Reset] events: cause a circuit to be initialized.  The main
+effect is to cause $\zm$ nodes to initialize their internal state to 0.
+The reset events have no effect on any other node.
+\item[Latch] events: these events cause $\zm$ nodes to emit their
+internal state as an output.  The latch events have no effect on
+any other node.
+\item[Data] events: these events signal to a node or circuit that data is
+present on one of the input channels.
+\item[Repeat] events: signal that a loop has to perform one more iteration.
+Only sent between $\int$ and corresponding $\delta_0$ nodes.
+\end{description}
+
+Here are the state machines of each of these nodes:
+\mihai{This is pseudocode, but it would probably look better as real code.}
+
+\paragraph{Environment state machine}
+
+The environment feeds data to the input edges of a top-level circuit
+and retrieves results from the output edges.
+The environment is expected to operate in epochs, executing the
+following infinite loop:
+
+\begin{itemize}
+    \item Send a reset event to circuit
+    \item Repeat forever
+    \begin{itemize}
+        \item Assign data to all input edges.
+        \item Wait for all output edges to receive a ``data'' event.
+        \item Collect results from all output edges.
+    \end{itemize}
+\end{itemize}
+
+\paragraph{Circuit state machine}
+
+\begin{enumerate}
+    \item On receipt of a reset event:
+    \begin{itemize}
+        \item Send a reset event to all nodes in the circuit.
+        \item Send a latch event to all nodes in the circuit.
+    \end{itemize}
+    \item On receipt of data on an input edge send a data
+    event to the destinations connected to the input edge.
+    The environment of the circuit should send     
+\end{enumerate}
+
+\paragraph{Primitive node state machine}
+
+\begin{enumerate}
+    \item On receipt of a ``data'' event check if all
+    inputs have received data.  If they have, compute
+    the output, and send it as a ``data'' event on 
+    all output wires.
+\end{enumerate}
+
+\paragraph{$\zm$ node state machine}
+
+Stores a value in the internal state.
+
+\begin{enumerate}
+    \item On receipt of ``reset'' event set internal state to 0.
+    \item On receipt of ``latch'' event, send a data event on the output
+    channel with the value that is already present there.
+    \item On receipt of ``data'' event, copy internal state to output channel and input to internal state.
+\end{enumerate}
+
+\paragraph{$\zm$ node operating on a nested stream state machine}
+
+This node internally stores a potentially 
+unbounded \emph{list} of values as internal state.
+It also maintains a counter ``time'' to index
+within this list.
+
+\begin{enumerate}
+    \item On receipt of a ``reset'' even set time to 0.
+    \item On receipt of a ``latch'' event, send the value in
+    list[time] as a ``data'' event to the output channel.
+    \item On receipt of a ``data'' event 
+    \begin{itemize}
+        \item Increment ``time''
+        \item Set the output channel to the list[time] value
+        (zero if the list is not long enough, and grow the list)
+        \item Store data value received in list[time].
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{Loop entry node state machine}
+
+\begin{enumerate}
+    \item On receipt of a ``data'' event 
+    \begin{itemize} 
+    \item Send a ``reset'' event to circuit that is connected as output
+    \item Send a ``data'' event to the circuit connected as output with
+    the data received
+    \end{itemize}
+    \item On receipt of a ``repeat'' event send a ``data'' event with value 0
+    to the circuit connected as output.
+\end{enumerate}
+
+\paragraph{Loop exit node state machine}
+
+Maintain an internal accumulator.
+
+\begin{enumerate}
+    \item On receipt of a ``reset'' event set the accumulator to 0.
+    \item On receipt of a ``data'' event: 
+    \begin{itemize} 
+        \item if the data value is 0, send a ``data'' event to the output 
+        channel with the current value of the accumulator.
+        \item otherwise add the input value to the accumulator and send a
+        ``repeat'' event to the corresponding $delta_0$ node.
+    \end{itemize}
+\end{enumerate}

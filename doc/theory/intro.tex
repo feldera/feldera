@@ -1,0 +1,252 @@
+\section{Introduction}\label{sec:introduction}
+%\tej{here's another attempt}
+
+Incremental view maintenance (IVM) is an important and well-studied problem in
+databases.  The IVM problem can be stated as follows: given a database $DB$ and
+a view $V$ defined as a function of the database contents
+(described by a query $Q$, i.e. $V = Q(DB)$),
+maintain the contents of $V$ in response to changes of the database,
+ideally more efficiently than by simply reevaluating $Q(DB)$ from scratch.  The goal is
+to provide an algorithm that can evaluate $Q$ over the changes $\Delta DB$ applied
+to the database, since in general the size of the changes is small $|\Delta DB| \ll |DB|$.
+
+This paper provides a new perspective by proposing a new definition
+of IVM based on a streaming model of computation\footnote{Our model is inspired by Digital Signal
+Processing~\cite{rabiner-book75}, applied to databases, hence the name \dbsp.}.  Whereas previous
+IVM solutions are based on defining a notion of a (partial) derivative of $Q$ with respect to its inputs,
+our definition only requires computing \emph{derivatives of streams} as functions of time.
+Derivatives of streams are always well-defined (assuming that the data computed on has a notion of difference
+that satisfies some simple mathematical properties --- i.e., it forms a commutative
+group.  Fortunately, it has long been known that relational databases can be modeled
+in such a way, e.g.~\cite{green-pods07, koch-pods10}.)
+
+\dbsp has several attractive properties:
+
+\begin{enumerate}
+\item is is \textbf{expressive}.  (a) It can be used to define
+precisely multiple concepts: traditional queries, streaming computations, and incremental
+computations.  (b) We have been able to express in \dbsp the full
+relational algebra, computations over sets and bags,
+nested relations, aggregation, flatmap, monotonic and nonmonotonic
+recursion, stratified negation, while-relational programs, window queries,
+streaming queries, streaming aggregation, and incremental versions of all
+of the above.  In fact, we have built a \dbsp implementation of the
+complete SQL language (\refsec{sec:implementation}).
+\item it is \textbf{simple}.
+\dbsp is built entirely on elementary concepts such as functions and algebraic groups.
+\item mathematically \textbf{precise}.  All the results in this paper have been
+formalized and checked using the Lean
+proof assistant~\cite{moura-cade15}.
+\item it is \textbf{modular}, in the following sense:
+(a) the incremental version of a complex query can be reduced
+recursively to incrementalizing its component subqueries.
+This gives a simple, syntactic,
+heuristic-free algorithm (Algorithm~\ref{algorithm-inc})
+that converts an arbitrary \dbsp query to its incremental form.
+(b) Extending \dbsp to support new primitive operators is easy,
+and they immediately benefit from the rest of the theory of
+incrementalization.
+An important consequence of modularity is that the theory
+can be efficiently implemented, as we
+briefly discuss in \refsec{sec:implementation}.
+\end{enumerate}
+
+The core concept of \dbsp is the \emph{stream}, which is used to model changes
+over time. We use $\stream{A}$ to denote the type of infinite streams with values of
+type $A$. If $s \in \stream{A}$ is a stream,
+then $s[t] \in A, t \in \mathbb{N}$ is the $t$th element of $s$, also referred to as the \emph{value of the stream at time $t$}.
+A streaming computation is a function that
+consumes one or more streams and produces another stream.  We show
+streaming computations with diagrams, also called ``circuits'',
+where boxes are computations and streams are arrows.  The following diagram
+shows a stream operator $T: \stream{A} \times \stream{B} \to \stream{C}$,
+consuming two input streams $s_0$ and $s_1$
+and producing one output stream $s$:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex,minimum width=.5cm]
+  \node[] (input0) {$s_0$};
+  \node[below of=input0,node distance=.3cm] (dummy) {};
+  \node[below of=dummy,node distance=.3cm] (input1) {$s_1$};
+  \node[block, right of=dummy] (T) {$T$};
+  \node[right of=T] (output) {$s$};
+  \draw[->] (input0) -- (T);
+  \draw[->] (input1) -- (T);
+  \draw[->] (T) -- (output);
+\end{tikzpicture}
+\vspace{-.2cm}
+\end{center}
+
+We generally think of streams as sequences of ``small'' values,
+such as insertions or deletions in a database.
+However, we also treat the whole database as a \emph{stream of database
+snapshots}.  We model a database as a
+stream $DB \in \stream{SCH}$, where $SCH$ is the database schema.
+Time is not wall-clock time, but counts
+the transactions applied to the database.
+(Since transactions are linearizable, they have a total order.)
+$DB[t]$ is the snapshot of the
+database contents after $t$ transactions have been applied.
+
+Database transactions also form a stream $\Delta DB$, this time a stream of \emph{changes},
+or \emph{deltas} that are applied to the database.  The values of
+this stream are defined by $(\Delta DB)[t] = DB[t] - DB[t-1]$, where ``$-$'' stands
+for the difference between two databases, a notion that we will soon make more precise.
+The $\Delta DB$ stream is produced from the $DB$ stream by
+the \emph{stream differentiation} operator $\D : \stream{A} \to \stream{A}$;
+this operator produces as its output the stream of changes from its input stream;
+we have thus $\D(DB) = \Delta DB$.
+
+Conversely, the database snapshot at time $t$ is the cumulative result of applying all
+transactions up to $t$: $DB[t] = \sum_{i \leq t} \Delta DB[i]$.
+The operation of adding up all changes is the inverse of differentiation,
+and is another basic stream operator, \emph{stream integration}: $\I: \stream{A} \to \stream{A}$.
+The following diagram expresses the relationship between the streams $\Delta DB$ and $DB$:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex,minimum width=.5cm]
+  \node[] (input) {$\Delta DB$};
+  \node[block, right of=input] (I) {$\I$};
+  \node[right of=I] (output) {$DB$};
+  \node[block, right of=output] (D) {$\D$};
+  \node[right of=D, node distance=1.2cm] (end) {$\Delta DB$};
+  \draw[->] (input) -- (I);
+  \draw[->] (I) -- (output);
+  \draw[->] (output) -- (D);
+  \draw[->] (D) -- (end);
+\end{tikzpicture}
+\end{center}
+
+Suppose we have a query $Q : SCH \to SCH$ defining a view $V$.  What is
+a view in a streaming model?  It is also a stream!  For each snapshot
+of the database stream we have a snapshot of the view: $V[t] = Q(DB[t])$.
+In general, given an arbitrary function $f: A \to B$, we define
+a streaming ``version'' of $f$, denoted by $\lift{f}$
+(read as ``$f$ lifted''), which applies
+$f$ to every element of the input stream independently.
+We can thus write $V = (\lift{Q})(DB)$.
+
+Armed with these basic definitions, we can now precisely define IVM.
+What does it mean to maintain a view incrementally?  We claim that an
+efficient maintenance algorithm needs to compute the \emph{changes} to
+the view given the changes to the database.  We thus define the IVM of
+a query $Q$ by chaining the above three definitions:
+$\Delta V \defn \D(V) = \D(\lift{Q}(DB)) = \D(\lift{Q}(\I(\Delta DB)))$.
+This can be shown as the following diagram, which is the central definition
+of this paper:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex,minimum width=.5cm]
+  \node[] (input) {$\Delta DB$};
+  \node[block, right of=input] (I) {$\I$};
+  \node[block, right of=I, node distance=1.3cm] (Q) {$\lift{Q}$};
+  \node[block, right of=Q, node distance=1.3cm] (D) {$\D$};
+  \node[right of=D] (output) {$\Delta V$};
+  \draw[->] (input) -- (I);
+  \draw[->] (I) -- node (db) {$DB$} (Q);
+  \draw[->] (Q) -- node (B) {$V$} (D);
+  \draw[->] (D) -- (output);
+\end{tikzpicture}
+\end{center}
+
+Given a query $Q$ we define its incremental version as
+$\inc{Q} \defn \D \circ \lift Q \circ \I$.  The incremental version
+of a query is a \emph{streaming operator} which computes directly on changes
+and produces changes.  The incremental version of a query is thus always
+well-defined.  The above definition shows one way to compute a query
+incrementally, but applying it naively will generally produce an inefficient
+execution plan, since it will reconstruct the database at each step.  In \refsec{sec:incremental}
+we show how algebraic properties of the $\inc{\cdot}$ transformation can be used to
+optimize the implementation of $\inc{Q}$. The first key property is that the
+composition of queries can be incrementalized by composing the incremental
+versions of its constituents, that is
+$\inc{(Q_1 \circ Q_2)} = \inc{Q_1} \circ \inc{Q_2}$.  The second key
+property is that essentially all primitive database operations have efficient incremental
+versions.
+
+Armed with this general theory of incremental computation, in \secref{sec:relational}
+we show how to model relational queries in \dbsp.  This immediately gives
+us a general algorithm to compute the incremental version of any relational query.
+These results were previously known, but they are cleanly modeled by \dbsp.
+\secref{sec:datalog} shows how recursive Datalog
+programs with stratified negation can be implemented in \dbsp, and \secref{sec:nested} gives
+\emph{incremental streaming computations for recursive programs}. For example, given an implementation of
+transitive closure in the natural recursive way, our algorithm produces a program that efficiently maintains the
+transitive closure of a graph as the graph is changed by adding and deleting edges.
+
+We have formalized the entire \dbsp theory in the Lean proof
+assistant~\mihai{Need a URL for this}; our formalization
+includes machine-checked proofs of correctness for all the theorems
+stated in this paper.
+
+This paper makes the following contributions:
+\begin{enumerate}
+  \item \dbsp, a \textbf{simple} but \textbf{expressive} language for streaming
+  computation. \dbsp gives an elegant formal foundation unifying the manipulation of
+  streaming and incremental computations.
+  \item An algorithm for incrementalizing any streaming computation expressed in
+  \dbsp.
+  \item An illustration of how \dbsp can be applied to various query classes, such as relational algebra,
+  nested relations, aggregations, flatmap, and stratified-monotonic Datalog.
+  \item We offer the first fully mechanically-verified theory of IVM.
+  \item We provide a high-performance open-source implementation of DBSP as a
+  general-purpose streaming query engine in Rust.
+\end{enumerate}
+
+The following tables summarize the mathematical notations used in the rest of this paper.
+
+\noindent
+\begin{center}
+\begin{tabular}{|c|p{10cm}|} \hline
+%\textbf{Notation} & \textbf{Meaning} \\ \hline
+
+\multicolumn{2}{|c|}{General notations} \\ \hline
+$\Z$ & The ring of integer numbers \\
+$\N$ & The set of natural numbers $0, 1, 2, \ldots$ \\
+$\B$ & The set of Boolean values \\
+$[n]$ & The natural numbers between 0 and $n-1$ \\
+$\id$ & The identity function over some domain $\id: A \to A$, $\id(x) = x$ \\
+$\means{Q}$ & Semantics of query (function) $Q$ \\
+$\pair{a}{b}$ & The pair containing values $a$ and $b$ \\
+fst$(p)$ & The operator that returns the first value of a pair $p$ \\
+snd$(p)$ & The operator that returns the second value of a pair $p$ \\
+$a \mapsto b$ & The function that maps $a$ to $b$ and everything else to 0 \\
+$\lambda x.M$ & An anonymous function with argument $x$ and body $M$ \\
+$\fix{x}{f}$ & The (unique) solution (fixed point) of the equation $f(x) = x$ \\
+\hline
+\end{tabular}
+
+\noindent
+\begin{tabular}{|c|p{10cm}|} \hline
+\multicolumn{2}{|c|}{Streams} \\ \hline
+$\stream{A}$ & The set of streams with elements from a group $A$; $\stream{A} = \{ f \,|\, f : \N \to A \}$ \\
+$\streamf{A}$ & Streams with elements from a group $A$ that are 0 almost everywhere \\
+$s[t]$ & The $t$-th element of a stream; $s[t] = s(t)$ \\
+$\lift{f}$ & An operator applied to a function $f: A \to B$ to produce a function $\lift{f}: \stream{A} \to \stream{B}$
+           operating pointwise \\
+$\zpp{f}$ & $\zpp{f}$ iff $f(0) = 0$ for $f: A \to B$ for $A, B$ groups \\
+$\zm$ & The stream delay operator $\zm: \stream{A} \to \stream{A}$, that outputs a 0 followed by the input stream \\
+$\I$ & The stream integration operator $\I: \stream{A} \to \stream{A}$ \\
+$\D$ & The stream differentiation operator $\D: \stream{A} \to \stream{A}$ \\
+$\inc{Q}$ & The incremental version of an operator $\inc{Q} = \D \circ Q \circ \I$ \\
+$\cut{s}{t}$ & A stream that has the same prefix as $s$ up to $t$, then it is all 0s \\
+$\scut{s}{t}$ & A stream that has the same prefix as $s$ up to $t-1$, then it is all 0s \\
+$\cong$ & Symbol that indicates that two circuits compute the same function \\
+$\delta_0$ & A function that produces a stream from a scalar: scalar, followed by zeros \\
+$\int$ & A function that produces a scalar by adding all elements of a stream \\
+$E$ & $E = \I \circ \delta_o$ \\
+$X$ & $X = \int \circ \D$ \\
+\hline
+\multicolumn{2}{|c|}{\zrs} \\ \hline
+$\Z[A]$ & \zrs: finite functions from $A \to \Z$ \\
+$DB$ & A database \\
+$\Delta DB$ & A change to a database \\
+$|s|$ & Size of \zr $s$ \\
+$\isset$ & A function $\isset: \Z[A] \to \B$ that determines whether its argument is a set \\
+$\distinct$ & A function $\distinct: \Z[A] \to \Z[A]$ that always returns a set \\
+$\ispositive$ & A function $\ispositive: \Z[A] \to \B$ that determines whether all elements of a \zr have positive weights \\
+toszet & Function converting a set to a \zr \\
+toset & Function converting a \zr into a set \\
+\hline
+\end{tabular}
+\end{center}

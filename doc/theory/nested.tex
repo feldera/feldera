@@ -1,0 +1,637 @@
+\section{Nested streams}\label{sec:nested}
+
+\subsection{Creating and destroying streams}\label{sec:stream-intro-elim}
+
+We introduce two new stream operators that are instrumental in
+expressing recursive query evaluation.  These operators allow us
+to build circuits implementing looping constructs, which
+are used to iterate computations until a fixed-point is reached.
+
+\subsubsection{Stream introduction}\label{sec:stream-introduction}
+
+\begin{definition}[Dirac delta]
+The delta function (named from the Dirac delta function) $\delta_0 : A \rightarrow \stream{A}$
+produces a stream from a scalar value.
+The output stream is produced as follows from the input scalar:
+
+$$\delta_0(v)[t] \defn \left\{
+\begin{array}{ll}
+  v & \mbox{if } t = 0 \\
+  0_A & \mbox{ otherwise}
+\end{array}
+\right.
+$$
+\end{definition}
+
+Here is a diagram showing a $\delta_0$ operator; note that the input is a scalar value,
+while the output is a stream:
+
+\begin{center}
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (input) {$i$};
+    \node[block, right of=input] (delta) {$\delta_0$};
+    \node[right of=delta] (output) {$o$};
+    \draw[->] (input) -- (delta);
+    \draw[->] (delta) -- (output);
+\end{tikzpicture}
+\end{center}
+
+For example, $\delta_0(5)$ is the stream $\sv{5 0 0 0 0}$.
+
+\subsubsection{Stream elimination}\label{sec:stream-elimination}
+
+Recall that $\streamf{A}$ was defined in Definition~\ref{def:zae} to be the set of
+$A$-streams over a group $A$ that are zero almost everywhere.
+
+\begin{definition}[indefinite integral]
+We define a function $\int : \streamf{A} \rightarrow
+A$ as $\int(s) \defn \sum_{t \geq 0} s[t]$.
+\end{definition}
+
+$\int$ is closely related to $\I$; if $\I$ is the
+indefinite integral, $\int$ is the definite integral on the
+interval $0 - \infty$.   Unlike $\I$
+$\int$ produces a scalar value, the ``last'' distinct value that would
+appear in the stream produced by $\I$.
+For example $\int(\cut{\id}{4}) = 0 + 1 + 2 + 3 = 6$, because
+$\I(\cut{\id}{4}) = \sv{0 1 3 6 6}$.
+
+An alternative definition for $\int$ for all streams $\stream{A}$
+would extend the set $A$ with an ``infinite'':
+$\overline{A} \defn A \cup \{ \top \}$, and define $\int{s} \defn
+\top$ for streams that are not zero a.e., $s \in \stream{A} \setminus \streamf{A}$.
+
+Here is a diagrams showing the $\int$ operator; note that  the result it
+produces is a scalar, and not a stream:
+
+\begin{center}
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (input) {$i$};
+    \node[block, right of=input] (S) {$\int$};
+    \node[right of=S] (output) {$o$};
+    \draw[->] (input) -- (S);
+    \draw[->] (S) -- (output);
+\end{tikzpicture}
+\end{center}
+
+$\delta_0$ is the left inverse of $\int$, i.e., the
+following equation holds: $\int \circ \;\delta_0 = \id_A$.
+
+\subsubsection{The $E$ and $X$ operators}
+
+The composition $\I \circ \delta_0$ is frequently used, so we
+will give it a name, denoting it by $E: A \to \stream{A}$, $E \defn \I \circ \delta_0$.
+
+\begin{center}
+\begin{tabular}{m{2cm}m{.5cm}m{4cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {};
+  \node[block, right of=input] (E) {$E$};
+  \node[right of=E] (output) {};
+  \draw[->] (input) -- (E);
+  \draw[->] (E) -- (output);
+\end{tikzpicture} &
+$\defn$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {};
+  \node[block, right of=input] (delta) {$\delta_0$};
+  \node[block, right of=delta] (i) {$\I$};
+  \node[right of=i] (output) {};
+  \draw[->] (input) -- (delta);
+  \draw[->] (delta) -- (i);
+  \draw[->] (i) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+Notice that the output of the $E$ operator is a constant infinite stream, consisting the scalar
+value at the input.  $E(5) = \sv{5 5 5 5 5}$.
+
+Similarly, we denote by $X: \stream{A} \to A$ the combination $X \defn \int \circ \D$.
+
+\begin{center}
+\begin{tabular}{m{2cm}m{.5cm}m{4cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {};
+  \node[block, right of=input] (X) {$X$};
+  \node[right of=X] (output) {};
+  \draw[->] (input) -- (X);
+  \draw[->] (E) -- (output);
+\end{tikzpicture} &
+$\defn$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {};
+  \node[block, right of=input] (D) {$\D$};
+  \node[block, right of=D] (i) {$\int$};
+  \node[right of=i] (output) {};
+  \draw[->] (input) -- (D);
+  \draw[->] (D) -- (i);
+  \draw[->] (i) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+\begin{proposition}
+For a monotone stream $o \in \stream{A}$ we have
+$X(o) = \lim_{n \to \infty} o[n]$, if the limit exists.
+\end{proposition}
+\begin{proof}
+$X(\cut{o}{n}) = (\int \circ \D)(\cut{o}{n}) = o[0] + (o[1] - o[0]) + \ldots + (o[n] - o[n-1]) = o(n)$.
+The result follows by taking limits on both sides.
+\end{proof}
+\mihai{This looks almost right, but it is not.}
+
+Clearly, $E$ is the left-inverse of $X$.
+
+\begin{proposition}
+$\delta_0$, $\int$, $E$, and $X$ are LTI.
+\end{proposition}
+\begin{proof}
+The proof is easy using simple algebraic manipulation of the definitions of these operators.
+\end{proof}
+
+\subsubsection{Time domains}\label{sec:time-domains}
+
+So far we had the tacit assumption that ``time'' is common for all
+streams in a program.  For example, when we add two streams,
+we assume that they use the same ``clock'' for the time dimension.
+However, the $\delta_0$ operator creates a streams with a ``new'', independent time
+dimension.  In Section~\ref{sec:wfc} we will define some well-formed circuit
+construction rules that will ensure that such time domains are always ``insulated'',
+by requiring each diagram that starts with a $\delta_0$ operator
+to end with a corresponding $\int$ operator:
+
+\begin{center}
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (input) {$i$};
+    \node[block, right of=input] (delta) {$\delta_0$};
+    \node[block, right of=delta] (f) {$Q$};
+    \draw[->] (input) -- (delta);
+    \draw[->] (delta) -- (f);
+
+    \node[block, right of=f] (S) {$\int$};
+    \node[right of=S] (output) {$o$};
+    \draw[->] (f) -- (S);
+    \draw[->] (S) -- (output);
+\end{tikzpicture}
+\end{center}
+
+
+\begin{proposition}
+If $Q$ is time-invariant, the circuit above has the zero-preservation
+property: $\zpp{\int \circ\; Q \circ \delta_o}$.
+\end{proposition}
+\begin{proof}
+  This follows from the fact that all three operators preserve zeros, and thus so
+  does their composition.
+\end{proof}
+
+\subsection{Streams of streams}\label{sec:nested}
+
+\subsubsection{Defining nested streams}
+
+Since all streams we work with are defined over abelian groups
+and streams themselves form an abelian group, as pointed in Section~\ref{sec:abelianstreams},
+it follows that we can naturally define streams of streams.
+$\stream{\stream{A}} = \N \rightarrow (\N \rightarrow A)$.  This construction
+can be iterated, but our applications do not require more than
+two-level nesting.  Box-and-arrow diagrams can be used equally to
+depict functions computing on nested streams; in this case an
+arrow represent a stream where each value is another stream.
+
+\newcommand{\ssa}[1]{
+\setsepchar{ }
+\readlist\arg{#1}
+\begin{bmatrix}
+   \begin{array}{ccccccc}
+        {[} & \arg[1] & \arg[2] & \arg[3] & \arg[4] & \cdots & {]} \\
+        {[} & \arg[5] & \arg[6] & \arg[7] & \arg[8] & \cdots & {]} \\
+        {[} & \arg[9] & \arg[10] & \arg[11] & \arg[12] & \cdots & {]} \\
+        {[} & \arg[13] & \arg[14] & \arg[15] & \arg[16] & \cdots & {]} \\
+        \multicolumn{7}{c}{\vdots}
+   \end{array}
+\end{bmatrix}
+}
+
+Equivalently, a nested stream in $\stream{\stream{A}}$ is a value in
+$\N \times \N \to A$, i.e., a ``matrix''
+with an infinite number of rows, where each row is a stream.
+For example, we can depict the nested stream
+$i \in \stream{\stream{\N}}$ defined by $i[t_0][t_1] = t_0 + 2 t_1$ as:
+$$ i = \ssa{0 1 2 3 2 3 4 5 4 5 6 7 6 7 8 9} $$
+
+\noindent ($t_0$ is the column index, and $t_1$ is the row index).
+
+\subsubsection{Lifting stream operators}
+
+We have originally defined lifting (Section~\ref{sec:lifting}) for scalar functions.
+We can generalize lifting to apply to stream operators as well.  Consider a
+stream operator $S: \stream{A} \to \stream{B}$.  We define $\lift{S}: \stream{\stream{A}}
+\to \stream{\stream{B}}$ as: $(\lift{S}(s))[t_0][t_1] \defn S(s[t_0])[t_1], \forall t_0, t_1 \in
+\N$.  Alternatively, we can write $(\lift{S})(s) = S \circ s$.
+
+In particular, a scalar function $f: A \rightarrow B$ can be can lifted twice to
+produce an operator between streams of streams: $\lift{\lift{f}}: \stream{\stream{A}}
+\rightarrow \stream{\stream{B}}$.
+
+Lifting twice a scalar function computes on elements of the matrix pointwise:
+
+$$(\lift{\lift{(x \mapsto x \bmod 2)}})(i) =
+  \ssa{0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}
+$$
+
+$\zm$ delays the rows of the matrix:
+
+$$\zm(i) = \ssa{0 0 0 0 0 1 2 3 2 3 4 5 4 5 6 7}$$
+
+\noindent while its lifted counterpart delays each column of the matrix:
+
+$$(\lift{\zm})(i) = \ssa{0 0 1 2 0 2 3 4 0 4 5 6 0 6 7 8}$$
+
+We can also apply both operators, and they commute:
+
+$$(\lift{\zm})(\zm(i)) = \zm((\lift{\zm})(i)) = \ssa{0 0 0 0 0 0 1 2 0 2 3 4 0 4 5 6}$$
+
+Similarly, we can apply $\D$ to nested streams $\D : \stream{\stream{A}} \to
+\stream{\stream{A}}$, computing on rows of the matrix:
+
+$$\D(i) = \ssa{0 1 2 3 2 2 2 2 2 2 2 2 2 2 2 2}$$
+
+\noindent while $\lift{\D} : \stream{\stream{A}} \to \stream{\stream{A}}$
+computes on the columns:
+
+$$(\lift{\D})(i) = \ssa{0 1 1 1 2 1 1 1 4 1 1 1 6 1 1 1}$$
+
+Similarly, we can apply both differentiation operators in sequence:
+
+$$(\D(\lift{\D}))(i) = \ssa{0 1 1 1 2 0 0 0 2 0 0 0 2 0 0 0}$$
+
+\begin{comment}
+\subsubsection{Matrix representations of nested streams}\label{sec:matrix-picture}
+
+Similar to the vector graphical representations from \refsec{sec:vector-picture},
+we can use a graphical representation of a nested stream $s$:
+
+$\mtrx{0 0 0 0}$
+
+The four rectangles correspond to the following expressions:
+$$
+\begin{aligned}
+\I(\lift{\I}(s))[t_0-1][t_1-1] = \I(\zm(\lift{\I}(\lift{\zm})))[t_0][t_1] =& \mtrx{1 0 0 0} \\
+\I(s)[t_0][t_1-1] = \I(\zm(s))[t_0][t_1] =& \mtrx{0 1 0 0} \\
+\lift{\I(s)}[t_0-1][t_1] = \lift{\I(\lift{\zm})}(s)[t_0][t_1] =& \mtrx{0 0 1 0} \\
+s[t_0][t_1] =& \mtrx{0 0 0 1}.
+\end{aligned}
+$$
+
+Lifting a vector we obtain a matrix, e.g.:
+$\lift{\strm{1 0}} = \mtrx{1 0 1 0}$.
+
+Consider a bilinear scalar operator $\times$.  Let us expand the following expression:
+$\inc{(\lift{(\inc{(\lift{(a \times b)})})})}$.
+
+In Section~\ref{sec:vector-picture} we expanded the inner term
+$$
+\begin{aligned}
+\inc{(\lift{a \times b})} = &\matmult{\strm{1 0}}{\strm{0 1}} \\
+&\matmult{\strm{0 1}}{\strm{1 0}} \\
+&\matmult{\strm{0 1}}{\strm{0 1}}
+\end{aligned}
+$$
+
+Lifting this term again we get:
+
+$$
+\begin{aligned}
+\lift{(\inc{(\lift{(a \times b)})})} =&
+\matmult{\mtrx{1 0 1 0}}{\mtrx{0 1 0 1}} +\\
+&\matmult{\mtrx{0 1 0 1}}{\mtrx{1 0 1 0}} +\\
+&\matmult{\mtrx{0 1 0 1}}{\mtrx{0 1 0 1}}
+\end{aligned}
+$$
+
+And now we apply incrementalize this again, by expanding each
+term into 3 other terms and regrouping due to distributivity of $\times$ over addition (bilinearity):
+
+$$
+\begin{aligned}
+\inc{(\lift{(\inc{(\lift{(a \times b)})})})} = \\
+%
+\matmult{\mtrx{1 0 0 0}}{\mtrx{0 0 0 1}} +
+\matmult{\mtrx{0 0 1 0}}{\mtrx{0 1 0 0}} + \\
+\matmult{\mtrx{0 0 1 0}}{\mtrx{0 0 0 1}} + \\
+%
+\matmult{\mtrx{0 1 0 0}}{\mtrx{0 0 1 0}} +
+\matmult{\mtrx{0 0 0 1}}{\mtrx{1 0 0 0}} +\\
+\matmult{\mtrx{0 0 0 1}}{\mtrx{0 0 1 0}} +\\
+%
+\matmult{\mtrx{0 1 0 0}}{\mtrx{0 0 0 1}} +
+\matmult{\mtrx{0 0 0 1}}{\mtrx{0 1 0 0}} + \\
+\matmult{\mtrx{0 0 0 1}}{\mtrx{0 0 0 1}} = \\
+%
+\matmult{\mtrx{1 1 1 1}}{\mtrx{0 0 0 1}} +
+\matmult{\mtrx{0 0 1 1}}{\mtrx{0 1 0 0}} + \\
+\matmult{\mtrx{0 0 0 1}}{\mtrx{1 0 0 0}} +
+\matmult{\mtrx{0 1 0 1}}{\mtrx{0 0 1 9}}.
+\end{aligned}
+$$
+\end{comment}
+
+\subsubsection{Strict operators on nested streams}
+
+In order to show that operators defined using feedback are well-defined on
+nested streams we need to extend the notion of strict operators from Section~\ref{sec:causal}.
+
+We define a partial order over timestamps: $(i_0, i_1)
+\leq (t_0, t_1)$ iff $i_0 \leq t_0$ and $i_1 \leq t_1$.  We extend the
+definition of strictness for operators over nested streams: a stream operator
+$F: \stream{\stream{A}} \to \stream{\stream{B}}$ is strict if for any $s, s' \in
+\stream{\stream{A}}$ and all times $t, i \in \N \times \N$ we have $\forall i <
+t, s[i] = s'[i]$ implies $F(s)[t] = F(s')[t]$.
+Proposition~\ref{prop-unique-fix} holds for this notion of strictness, i.e., the fixed point operator $\fix{\alpha}{F(\alpha)}$ is well defined for a strict operator $F$.
+\mihai{Should write down this proof.}
+
+\begin{proposition}\label{prop-liftz}
+The operator $\lift{\zm}: \stream{\stream{A}} \to \stream{\stream{A}}$ is strict.
+\end{proposition}
+
+The $\I$ operator on $\stream{\stream{A}}$ is well-defined: it operates on rows
+of the matrix, treating each row as a single value:
+
+$$\I(i) = \ssa{0 1 2 3 2 4 6 8 6 9 12 15 12 16 20 24}$$
+
+With this extended notion of strictness we have that the lifted integration operator
+is also well-defined: $\lift{\I}: \stream{\stream{A}} \to \stream{\stream{A}}.$
+This operator integrates each column of the stream matrix:
+
+$$(\lift{\I})(i) = \ssa{0 1 3 6 2 5 9 14 4 9 15 22 6 13 21 30}$$
+
+Notice the following commutativity properties for integration and differentiation
+on nested streams: $\I \circ (\lift{\I}) = (\lift{\I}) \circ \I$ and
+$\D \circ (\lift{\D}) = (\lift{\D}) \circ \D$.
+
+\begin{comment}
+\subsection{Multidimensional integrals and derivatives}
+
+We now define a generalized form of the $\I$ and $\D$ operators to compute on
+streams nested arbitrarily deep.
+We define these operators inductively on the structure of the type $A$ of elements that
+they compute on, as follows:
+
+\begin{definition}[Generalized integration] The generalized integration operator
+for values of type $A$ is denoted by $\I_A: A \to A$ and is defined as follows:
+$$
+\begin{aligned}
+\I_A &\defn \id & \mbox{ when $A$ is a scalar type}, \\
+\I_{\stream{A}} &\defn \I \circ \lift{\I_A} & \mbox{otherwise.}
+\end{aligned}
+$$
+\end{definition}
+
+
+\begin{definition}[Generalized differentiation] The generalized differentiation operator
+for values of type $A$ is denoted by $\D_A: A \to A$ and is defined as follows:
+$$
+\begin{aligned}
+\D_A &\defn \id & \mbox{when $A$ is a scalar type,} \\
+\D_{\stream{A}} &\defn \lift{\D_A} \circ \D &\mbox{otherwise}
+\end{aligned}
+$$
+\end{definition}
+
+
+$$\I_{\stream{\stream{\N}}}(i) = ((\lift{\I})(\I))(i)= \ssa{0 1 3 6 2 6 12 20 6 15 27 42 12 28 48 72}$$
+
+
+Recall the definition we gave for the incremental version of an operator $Q: \stream{A} \to \stream{B}$
+in Section~\ref{sec:incremental}: $\inc{Q} = \D \circ Q \circ \I$.  We want to generalize this
+definition so that it applies to arbitrary functions on streams of various nesting depths.
+
+\begin{definition}
+The incremental version of a function $f: A \to B$ is a function $\inc{f}: A \to B$ defined as
+$\inc{f} \defn \D_B \circ f \circ \I_A$.
+\end{definition}
+
+Clearly, this definition generalizes the one we gave before.
+
+Let us compute the incremental version of a twice-lifted scalar operator:
+$\inc{(\lift{\lift{f}})} = \D \circ (\lift{\D}) \circ
+(\lift{\lift{f}}) \circ (\lift{\I}) \circ \I$.
+
+This definition allows us to talk about the incremental forms of
+the two special stream creation and destruction operators from Section~\ref{sec:stream-intro-elim}:
+
+$\inc{\delta_0} = \D \circ \delta_0$.
+
+$\inc{\int} = \int \circ \I$.
+
+\subsubsection{Properties of the generalized incremental transform}
+
+All properties from Theorem~\ref{prop-inc-properties} hold true with our
+generalized definition, replacing the integrals and differentials
+with their generalized versions.  In addition we have:
+
+\begin{enumerate}
+\item $\inc{(\lift{Q})} = \D \circ \lift{(\inc{Q})} \circ \I$.
+\item $\inc{(\lift{\I})} = \lift{\I}$ since $\lift{\I}$ is linear, being
+the lifted version of a linear operator.
+\item $\inc{(\lift{\D})} = \lift{\D}$ since $\lift{\D}$ is linear.
+\item $\inc{(\lift{+})} = \lift{+} = +$.
+\item $\inc{(\lift{\zm})} = \lift{\zm}$ since $\lift{\zm}$ is linear.
+\end{enumerate}
+\end{comment}
+
+\subsubsection{Lifted cycles}
+
+\begin{proposition}[Lifting cycles]
+\label{prop-lift-cycle}
+For a binary, causal $T$ we have:
+$$\lift{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))} = \lambda s. \fix{\alpha}{(\lift{T})(s,(\lift{\zm})(\alpha))}$$
+\noindent i.e., lifting a circuit containing a ``cycle'' can be accomplished by
+lifting all operators independently.
+\end{proposition}
+\begin{proof}
+Consider a stream of streams $a =[a_0, a_1, a_2, \cdots ] \in \stream{\stream{A}}$
+(where each $a_i \in \stream{A}$).  The statement to prove becomes:
+$$
+\lift{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))}(a) =
+\fix{\alpha}{(\lift{T})(a,(\lift{\zm})(\alpha))}
+$$
+This follows if we show that the value defined as:
+$$
+\beta = \lift{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))}(a)
+$$
+satisfies
+$$
+\beta = (\lift{T})(a,(\lift{\zm})(\beta))
+$$
+Now, expanding the definition of lifting a function:
+$$
+\begin{aligned}
+\lift{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))}(a) &\defn
+\lift{(\lambda s. \fix{\alpha}{T(x,\zm(\alpha)}))}([a_0,a_1,\cdots]) \\
+&\defn [\fix{\alpha}{T(a_0,\zm(\alpha))}, \fix{\alpha}{T(a_1,\zm(\alpha))}, \cdots] \\
+&= [\alpha_0,\alpha_1,\alpha_2,\cdots]
+\end{aligned}
+$$
+where, $\forall i . \alpha_i$ is the unique solution of the equation
+$\alpha_i=T(a_i,\zm(\alpha_i))$.
+Finally, for $\beta =[\alpha_0,\alpha_1,\cdots]$ we have
+$$
+(\lift{T})([a_0,a_1,\ldots],(\lift{\zm})(\beta))
+= [T(a_0,\zm(\alpha_0)),T(a_1,\zm(\alpha_1)), \ldots]
+$$
+which finishes the proof.
+\end{proof}
+
+Proposition~\ref{prop-lift-cycle} gives us the tool to lift whole circuits.
+For example, we have:
+
+\begin{center}
+\begin{tabular}{m{2cm}m{.5cm}m{4cm}}
+\begin{tikzpicture}[>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\lift{\I}$};
+  \node[right of=I] (output)  {$o$};
+  \draw[->] (input) -- (I);
+  \draw[->] (I) -- (output);
+\end{tikzpicture}
+& $\cong$ &
+\begin{tikzpicture}[>=latex]
+  \node[] (input) {$i$};
+  \node[block, circle, right of=input, inner sep=0cm] (p) {$+$};
+  \node[right of=p, node distance=1.5cm] (output)  {$o$};
+  \node[block, below of=p, node distance=.8cm] (z) {$\lift{\zm}$};
+  \draw[->] (input) -- (p);
+  \draw[->] (p) -- node (mid) {} (output);
+  \draw[->] (z) -- (p);
+  \draw[->] (mid.center) |- (z);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+As another example, consider the following circuit $T: A \to B$ that represents a \emph{scalar} function:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (delta) {$\delta_0$};
+  \node[block, shape=circle, right of=delta, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (f) {$\lift{Q}$};
+  \node[block, right of=f, node distance=1.5cm] (S) {$\int$};
+  \node[right of=S] (output)  {$o$};
+  \draw[->] (input) -- (delta);
+  \draw[->] (delta) -- (plus);
+  \draw[->] (plus) -- (f);
+  \draw[->] (f) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, below of=f] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture}
+\end{center}
+
+Since this circuit represents a scalar function, it can be lifted like
+any other scalar function to create a stream computation\footnote{Notice that
++ is not shown lifted in this circuit, since there is in fact a + operator for any
+type, and we have that $\lift({+_A}) = +_{\stream{A}}$}:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (delta) {$\lift{\delta_0}$};
+  \node[block, shape=circle, right of=delta, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (f) {$\lift{\lift{Q}}$};
+  \node[block, right of=f, node distance=1.5cm] (S) {$\lift{\int}$};
+  \node[right of=S] (output)  {$o$};
+  \draw[->] (input) -- (delta);
+  \draw[->] (delta) -- (plus);
+  \draw[->] (plus) -- (f);
+  \draw[->] (f) -- node (o) {} (S);
+  \draw[->] (S) -- (output);
+  \node[block, below of=f] (z) {$\lift{\zm}$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Fixed-point computations}
+
+\begin{theorem}
+Given a scalar operator $Q: A \rightarrow A$, the output stream $o$ computed by the
+following diagram (using the lifted version of $Q$) is given by $\forall t \in \N . o[t] = Q^{t+1}(i)$, where $k$ is the composition
+of $Q$ with itself $k$ times.
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (delta) {$\delta_0$};
+  \node[block, shape=circle, right of=delta, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus, node distance=1cm] (q) {$\lift{Q}$};
+  \node[right of=q, node distance=2cm] (output)  {$o$};
+  \draw[->] (input) -- (delta);
+  \draw[->] (delta) -- (plus);
+  \draw[->] (plus) -- (q);
+  \draw[->] (q) -- node (o) {} (output);
+  \node[block, below of=q] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture}
+\end{center}
+\end{theorem}
+\begin{proof}
+  Let us compute $o[t]$.  We have that $o[0] =
+  Q(\delta_0(i)[0] + 0) = Q(i)$.  $o[1] =
+  Q(o[0] + \delta_0(i)[1]) =
+  Q(Q(i) + 0) = Q^2(i)$.  We can prove by induction
+  over $t$ that $o[t] = Q^{t+1}(i)$.
+\end{proof}
+
+\textbf{Observation}: in this circuit the ``plus'' operator behaves as an \code{if}, selecting between
+the base case and the inductive case in a recursive definition.
+This is because the left input contains a single non-zero
+element ($i$), in the first position, while the bottom input starts with a 0.
+
+
+\begin{comment}
+\subsection{Flattening nested streams}
+
+We now introduce two constructions that allow converting a stream of ``bounded'' streams into
+a simple stream.
+
+\paragraph{Time-indexed streams}
+
+We first introduce an operator that labels each element of a stream $\stream{A}$ with a ``time'' value.
+This is defined by the following circuit:
+
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$s$};
+  \node[block, right of=input, node distance=1.5cm] (c) {$\lift{(x \mapsto 1)}$};
+  \node[block, right of=c, node distance=1.5cm] (I) {$\I$};
+  \node[below of=I] (below) {};
+  \node[block, right of=below] (p) {$\pair{\cdot}{\cdot}$};
+  \node[right of=p] (output) {$o$};
+  \draw[->] (input) -- node (tap) {} (c);
+  \draw[->] (c) -- (I);
+  \draw[->] (I) -| (p);
+  \draw[->] (tap) |- (p);
+  \draw[->] (p) -- (output);
+\end{tikzpicture}
+
+The circuits starts from a stream $s$, then generates a stream of constant values $1 \in \N$ for
+each element of $s$, which it then integrates and pairs with the input stream.  Given a stream $\sv{a b c d e}$
+this produces the stream $\sv{\pair{a}{1} \pair{b}{2} \pair{c}{3} \pair{d}{4} \pair{e}{5}}$.
+
+\paragraph{Truncated finite streams}
+
+Given a stream that is zero almost everywhere $s \in \streamf{A}$, let us define an operator
+that returns the ``interesting'' prefix of the stream, containing all non-zero elements:
+$\trunc{\cdot}: \streamf{A} \rightarrow A[\N]$.  The result of this operator is a ``vector''
+having a finite length.
+
+\paragraph{Flattened streams}
+
+Consider a stream of streams where each inner stream is zero almost everywhere: $\stream{\streamf{A}}$.
+The we define the $\mbox{flat}$ operator $\mbox{flat}: \stream{\streamf{A}} \rightarrow \stream{A \times N}$.
+
+\end{comment}

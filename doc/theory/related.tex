@@ -1,0 +1,192 @@
+\section{Related work}\label{sec:related}
+
+\subsection{Incremental View Maintenance}
+
+Incremental view maintenance~\cite{gupta-sigmod93, griffin-sigmod95, chaudhuri-icde95,
+gupta-idb95, chirkova-book12} is a much studied problem in databases.
+A survey of results for Datalog queries is present in~\cite{motik-ai19}.
+The standard approach is as follows: given a query $Q$, discover a ``delta query'',
+a``differential'' version $\Delta Q$ that satisfies the equation:
+$Q(d+\Delta d)=Q(d)+\Delta Q(d,\Delta d)$, and which can be used to compute
+the change for a new input reusing the previous output.
+DBToaster introduced recursive recursive IVM~\cite{ahmad-vldb09, koch-pods10}, where
+the incrementalization process is repeated for the delta query.
+
+Many custom algorithms were published for various classes of queries: e.g.~\cite{koch-pods16}
+handles positive nested relational calculus.  DYN~\cite{idris-sigmod17}
+and IDYN~\cite{idris-vldb18, idris-sigmod19} focus on acyclic conjunctive queries.  Instead
+of keeping the output view materialized they build data structures that allow efficiently
+querying the output views.  PAI maps~\cite{abeysinghe-sigmod22} are specially
+designed for queries with correlated aggregations.
+AJU~\cite{wang-sigmod20} focuses on foreign-key joins.  It is a matter
+of future work to evaluate whether custom \dbsp operators
+can match the efficiency of systems specialized for narrow classes
+of queries.
+
+\dbsp is a bottom-up system, which always produces eagerly
+the\emph{changes} to the output views.
+Instead of maintaining the output view entirely, \dbsp proposes
+generating deltas as the output of the computation (similar to the kSQL~\cite{jafarpour-edbt19}
+\texttt{EMIT CHANGES} queries).  The idea that both
+inputs and outputs to an IVM system are streams of changes
+seems trivial, but this is key to the symmetry of our solution:
+both in our definition of IVM~(\ref{def:inc}), and the fundamental
+reason that the chain rule exists --- the chain rule is the one that makes our
+structural induction IVM algorithm possible.
+
+IVM algorithms for Datalog-like languages frequently use counting based
+approaches~\cite{Dewan-iis92,motik-aaai15} that maintain the number of derivations of each
+output fact: DRed~\cite{gupta-sigmod93} and its variants~\cite{Ceri-VLDB91,Wolfson-sigmod91,%
+Staudt-vldb96,Kotowski-rr11,Lu-sigmod95,Apt-sigmod87}, the backward-forward algorithm
+and variants~\cite{motik-aaai15,Harrison-wdd92,motik-ai19}.
+\dbsp is more general than these approaches,
+and our incrementalization algorithm handles arbitrary recursive queries and
+generates more efficient plans for recursive queries
+in the presence of arbitrary updates (especially deletions, where competing approaches
+may over-delete).  Interestingly, the \zrs multiplicities in \dbsp are related
+to the counting-number-of-derivations approaches, but our use of the $\distinct$
+operator shows that precise counting is not necessary.
+
+Picallo et al.~\cite{picallo-scop19} provide a general solution to IVM for
+rich languages.  \dbsp requires a group structure on the values operated on;
+this assumption has two major practical benefits: it simplifies the mathematics considerably
+(e.g., Picallo uses monoid actions to model changes), and it provides a general, simple
+algorithm (\ref{algorithm-inc}) for incrementalizing arbitrary programs.  The downside of
+\dbsp is that one has to find a suitable group structure (e.g., \zrs for sets) to ``embed''
+the computation.  Picallo's notion of ``derivative'' is not unique: they need creativity to choose
+the right derivative definition, we need creativity to find the right group structure.
+
+Finding a suitable group structure has proven easy for relations (both~\cite{koch-pods10}
+and~\cite{green-tcs11} use \zrs to uniformly model data and insertions/deletions), but it is
+not obvious how to do it for other data types, such as sorted collections, or tree-shaped
+collections (e.g., XML or JSON documents)~\cite{foster-planx08}.  An intriguing question
+is ``what other interesting group structures could this be applied to besides \zrs?''
+Papers such as~\cite{nikolic-icmd18} explore other possibilities, such as matrix algebra,
+linear ML models, or conjunctive queries.
+
+\cite{bonifati-iclp2018} implemented a verified IVM algorithm for a particular
+class of graph queries called Regular Datalog, with an implementation machine-checked in the
+Coq proof assistant. Their focus is on a particular algorithm and the approach does not
+consider other SQL operators, general recursion, or custom operators (although it is modular
+in the sense that it works on any query by incrementalizing it recursively). Furthermore,
+for all queries a deletion in the input change stream requires running the non-incremental
+query to recover.
+
+\dbsp does not do anything special for triangle queries~\cite{kara-tds20}.  Are there
+better algorithms for this case?
+
+In \secref{sec:extensions} we have briefly mentioned that \dbsp can easily
+model window and stream database queries~\cite{arasu-tr02,aurora}; it is an
+interesting question whether there are CQL queries that cannot be expressed in \dbsp
+(we conjecture that there aren't any).
+
+\begin{comment}
+The main problem that change structures address is that the types used in programs are not
+closed under subtraction (e.g., the delta between two sets is not a set).
+Although a relational \dbsp circuit computes
+only on positive \zr values, its incremental version may compute on negative
+values, but the equivalence of the two programs guarantees correctness even though the
+type system of \zrs does not.  \val{Safe to delete this para}
+\end{comment}
+
+
+\dbsp is also related to Differential Dataflow
+(DD)~\cite{mcsherry-cidr13, murray-sosp13} and its theoretical
+foundations~\cite{abadi-fossacs15} (and
+recently~\cite{mcsherry-vldb20,chothia-vldb16}).  DD's computational
+model is more powerful than \dbsp, since it allows past values in a
+stream to be "updated".  In fact, DD is the only other framework which
+we are aware of which can incrementalize recursive queries as
+efficiently as \dbsp does.  In contrast, our model assumes that the
+inputs of a computation arrive in the time order while allowing for
+nested time domains via the modular lifting transformer ($\lift{}$).
+\dbsp can express both incremental and non-incremental computations;
+in essence \dbsp is ``deconstructing'' DD into simple component
+building blocks.  Most importantly, \dbsp comes with
+Algorithm~\ref{algorithm-inc}, a syntax-directed translation that can
+convert any expressible query into an incremental version --- in DD
+users have to assemble incremental queries manually using incremental
+operators.  (materialize.com offers a product that automates
+incrementalization, but only for SQL queries.  Differential
+Datalog~\cite{ryzhyk-datalog19} does it for a Datalog dialect.)
+Unlike DD, \dbsp is a modular theory, which easily accommodates the
+addition of new operators.  In particular, we have given full
+mechanical proofs of \dbsp's correctness.
+
+\subsection{Stream computation models}
+
+\dbsp using non-nested streams is a simplified instance of a Kahn
+network~\cite{kahn-ifip74}.  Johnson~\cite{johnson-phd83} studies a
+very similar computational model without nested streams and its
+expressiveness. The implementation of such streaming models of
+computation and their relationship to dataflow machines has been
+studied by Lee~\cite{lee-ieee95}.  Lee~\cite{lee-ifip93} also
+introduced streams of streams and the $\lift{\zm}$ operator.
+
+\cite{gammie-acs13} surveys the connection between synchronous digital
+circuits and functional programs.  Our circuits are nothing but higher
+order functions computing on streams (functions themselves).  The
+paper's main focus are circuits processing numeric data, whereas,
+taking advantage of our circuits' ability to compute on arbitrary
+groups, we use circuits to implement incremental view maintenance for
+relational databases.
+
+Mamouras~\cite{mamouras-esop20} gives a formal theory of stream computation.
+
+\subsection{Connection to synchronous circuits}
+
+There is a vast literature on \defined{synchronous circuits}, which
+are well-defined models for hardware circuits
+e.g.~\cite{gammie-acs13}.  These circuits also compute over infinite
+streams of values, usually of Booleans $\stream{\B}$.  In a
+\defined{combinational circuit} the output values depend only on the
+current input values.  These are pure lifted streaming computations.
+A \defined{sequential circuit} can have outputs that depend on past
+input values.  These are always causal circuits.  Sequential
+synchronous circuits use latches or flip-flops to store state; the
+latches are controlled by a global clock signal.  These correspond to
+the $\zm$ operator.  In a well-formed sequential circuit all
+back-edges must go through some latch --- this corresponds to our
+circuit construction rule that requires a delay element on each
+back-edge.
+
+Languages such as Verilog or VHDL can be used to specify such
+circuits.  (However, both Verilog and VHDL are strictly more powerful,
+and can express richer classes of circuits than just synchronous
+sequential circuits.)
+
+There is a rich literature on synchronous circuits, and some of these
+results are directly applicable to the circuits we discuss.  Here are
+a few examples.
+
+Retiming~\cite{leiserson-algorithmica91} is an optimization that
+``moves'' around delay elements while preserving the circuit
+semantics.  Retiming is used traditionally to reduce the clock cycle
+by minimizing the signal propagation delay between any pair of
+latches.  In our case it could be used for minimizing the amount of
+internal circuit state.
+
+In a synchronous circuit the \emph{state} is entirely stored in the
+latches.  Saving and restoring the contents of the latches enables
+such circuits to take a snapshot of their state and resume
+computation.\footnote{In Boolean synchronous circuits this is achieved
+  by connecting all latches into a \emph{scan chain} which can be read
+  and written sequentially after stopping the circuit clock.}
+
+Fault tolerance of synchronous circuits is provided by replicating the
+state elements, to prevent accidental state changes caused by e.g.,
+cosmic rays.  We can borrow this idea for building redundant
+distributed computations.
+
+Pipelining digital circuits is an effective technique for increasing
+throughput through parallelization, by inserting additional latches
+and allowing different pipeline stages to compute concurrently on
+distinct stream values, at the expense of increased latency between
+the inputs and the corresponding outputs.
+
+Digital circuit latches depend on a special ``reset'' signal to
+initialize their state to a pre-established value; this corresponds to
+the special 0 value in our value domain.
+
+Our nested streams are related to the notion of delta-cycles in the
+definition of VHDL~\cite{baker-date96}.

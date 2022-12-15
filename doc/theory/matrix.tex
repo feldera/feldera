@@ -1,0 +1,44 @@
+\newcommand{\rectangle}[5]{
+\ifthenelse{\equal{#1}{1}}{
+    \draw[fill=black!20!white] (#2,#3) rectangle(#4, #5);
+}{
+    \draw (#2,#3) rectangle(#4, #5);
+}}
+
+% A single box
+\newcommand{\sngl}[1]{
+\vcenter{\hbox{
+\begin{tikzpicture}[scale=.4]
+\rectangle{#1}{0}{0}{1}{1}
+\end{tikzpicture}
+}}}
+
+% A column vector with two parts:
+% a large one and a small one (last element)
+% the two arguments are 0 for "empty" and 1 for "filled"
+% they correspond to the two parts.  These must be used
+% in math mode.
+\newcommand{\strm}[1]{
+\setsepchar{ }
+\readlist\arg{#1}
+\vcenter{\hbox{
+\begin{tikzpicture}[scale=.4]
+\rectangle{\arg[1]}{0}{0}{3}{-1}
+\rectangle{\arg[2]}{3}{0}{4}{-1}
+\end{tikzpicture}
+}}}
+
+% A block matrix with 4 zones
+\newcommand{\mtrx}[1]{
+\setsepchar{ }
+\readlist\arg{#1}
+\vcenter{\hbox{
+\begin{tikzpicture}[scale=.4]
+\rectangle{\arg[1]}{0}{0}{3}{-3}
+\rectangle{\arg[2]}{3}{0}{4}{-3}
+\rectangle{\arg[3]}{0}{-3}{3}{-4}
+\rectangle{\arg[4]}{3}{-3}{4}{-4}
+\end{tikzpicture}
+}}}
+
+\newcommand{\matmult}[2]{\left( #1 \times #2 \right)}

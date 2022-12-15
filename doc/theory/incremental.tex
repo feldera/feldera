@@ -1,0 +1,630 @@
+\section{Incremental computation}\label{sec:incremental}
+
+In this section we formally define incremental computations over
+streams and analyze their properties.
+
+\begin{definition}\label{def:inc}
+Given a unary stream operator $Q: \stream{A} \to \stream{B}$ we define the
+\defined{incremental version} of $Q$ as $\inc{Q} \defn \D \circ Q \circ \I$.
+$\inc{Q}$ has the same ``type'' as $Q$: $\inc{Q}: \stream{A} \to \stream{B}$.
+For an operator with multiple inputs we define
+the incremental version by applying $\I$ to each input independently:
+e.g., if $T: \stream{A} \times \stream{B} \rightarrow \stream{C}$ then
+$\inc{T}: \stream{A} \times \stream{B} \rightarrow \stream{C}$
+and $\inc{T}(a, b) \defn \D (T(\I(a), \I(b)))$.
+\end{definition}
+
+The following diagram illustrates the intuition behind this definition:
+
+\begin{center}
+\begin{tikzpicture}[auto,>=latex]
+    \node[] (input) {$\Delta s$};
+    \node[block, right of=input] (I) {$\I$};
+    \node[block, right of=I] (Q) {$Q$};
+    \node[block, right of=Q] (D) {$\D$};
+    \node[right of=D] (output) {$\Delta o$};
+    \draw[->] (input) -- (I);
+    \draw[->] (I) -- node (s) {$s$} (Q);
+    \draw[->] (Q) -- node (o) {$o$} (D);
+    \draw[->] (D) -- (output);
+\end{tikzpicture}
+\end{center}
+
+If $Q(s) = o$ is a computation, then $\inc{Q}$ performs
+the ``same'' computation as $Q$,
+but between streams of changes $\Delta s$ and $\Delta o$.
+This is the diagram from the
+introduction, substituting $\Delta s$ for the transaction stream $T$,
+and $o$ for the stream of view versions $V$.
+
+Notice that our definition of incremental computation is meaningful only for \emph{streaming}
+computations; this is in contrast to classic definitions, e.g.~\cite{gupta-idb95} which
+consider only one change.  Generalizing the definition to operate on streams gives us
+additional power, especially when operating with recursive queries.
+
+The following proposition is one of our central results.
+
+\begin{proposition}(Properties of the incremental version):\\
+\label{prop-inc-properties}
+For computations of appropriate types, the following hold:
+\begin{description}
+\item[inversion:] $Q\mapsto\inc{Q}$ is bijective; its inverse is $Q\mapsto \I\circ Q\circ\D$.
+\item[invariance:] $\inc{+} = +, \inc{(\zm)} = \zm, \inc{-} = -, \inc{\I}=\I, \inc{\D}=\D$
+\item[push/pull:]
+    $Q \circ \I = \I \circ \inc{Q}$; $\D\circ Q = \inc{Q}\circ\D$
+\item[chain:] $\inc{(Q_1\circ Q_2)} = \inc{Q_1}\circ\inc{Q_2}$ (This generalizes to operators with multiple inputs.)
+\item[add:] $\inc{(Q_1 + Q_2)} = \inc{Q_1} + \inc{Q_2}$
+\item[cycle:] $\inc{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))} = \lambda s. \fix{\alpha}{\inc{T}(s,\zm(\alpha)})$
+\end{description}
+\end{proposition}
+\begin{proof}
+
+The inversion and push-pull properties follow straightforwardly from the fact
+that $\I$ and $\D$ are inverses of each other.
+
+For proving invariance we have $\inc{+}(a, b) \defn \D(\I(a) + \I(b)) = a + b$, due to
+linearity of $\I$.
+$\inc{-}(a) = \D(-\I(a)) = \D(0 - \I(a)) = \D(\I(0) - \I(a)) = \D(\I(0 - a)) = -a$,
+also due to linearity of $\I$.
+
+The chain rule follows from push-pull. Indeed,
+$$
+\I\circ\inc{Q_1}\circ\inc{Q_2}=Q_1\circ\I\circ\inc{Q_2}=Q_1\circ Q_2\circ\I
+$$
+
+I.e., we have the following sequence of equivalent circuits:
+
+\begin{center}
+\begin{tabular}{m{7.5cm}m{1cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\I$};
+  \node[block, right of=I] (Q1) {$Q_1$};
+  \node[block, right of=Q1] (Q2) {$Q_2$};
+  \node[block, right of=Q2] (D) {$\D$};
+  \node[right of=D] (output)  {$o$};
+  \draw[->] (input) -- (I);
+  \draw[->] (I) -- (Q1);
+  \draw[->] (Q1) -- (Q2);
+  \draw[->] (Q2) -- (D);
+  \draw[->] (D) -- (output);
+\end{tikzpicture}
+& $\cong$ \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\I$};
+  \node[block, right of=I] (Q1) {$Q_1$};
+  \node[block, right of=Q1] (D1) {$\D$};
+  \node[block, right of=D1] (I1) {$\I$};
+  \node[block, right of=I1] (Q2) {$Q_2$};
+  \node[block, right of=Q2] (D) {$\D$};
+  \node[right of=D] (output)  {$o$};
+  \draw[->] (input) -- (I);
+  \draw[->] (I) -- (Q1);
+  \draw[->] (Q1) -- (D1);
+  \draw[->] (D1) -- (I1);
+  \draw[->] (I1) -- (Q2);
+  \draw[->] (Q2) -- (D);
+  \draw[->] (D) -- (output);
+\end{tikzpicture} & $\cong$ \\
+%\noindent which, due to associativity of function composition, is the same as:
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (Q1) {$\inc{Q_1}$};
+  \node[block, right of=Q1, node distance=1.5cm] (Q2) {$\inc{Q_2}$};
+  \node[right of=Q2] (output)  {$o$};
+  \draw[->] (input) -- (Q1);
+  \draw[->] (Q1) -- (Q2);
+  \draw[->] (Q2) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+Here is a version of the chain rule with a binary operator:
+
+\begin{center}
+\begin{tabular}{m{7.5cm}m{1cm}}
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (a) {$a$};
+    \node[block, right of=a] (ai) {$\I$};
+    \node[below of=a] (b) {$b$};
+    \node[block, right of=b] (bi) {$\I$};
+    \node[block, right of=ai] (q1) {$Q_1$};
+    \node[below of=q1, node distance=.5cm] (midway) {};
+    \node[block, right of=bi] (q2) {$Q_2$};
+    \node[block, right of=midway] (q) {$T$};
+    \node[block, right of=q] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \draw[->] (a) -- (ai);
+    \draw[->] (b) -- (bi);
+    \draw[->] (ai) -- (q1);
+    \draw[->] (bi) -- (q2);
+    \draw[->] (q1) -| (q);
+    \draw[->] (q2) -| (q);
+    \draw[->] (q) -- (D);
+    \draw[->] (D) -- (output);
+\end{tikzpicture}
+& $\cong$ \\
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (a) {$a$};
+    \node[block, right of=a] (ai) {$\I$};
+    \node[block, right of=ai] (q1) {$Q_1$};
+    \node[block, right of=q1] (d1) {$\D$};
+    \node[block, right of=d1] (i1) {$\I$};
+
+    \node[below of=a] (b) {$b$};
+    \node[block, right of=b] (bi) {$\I$};
+    \node[block, right of=bi] (q2) {$Q_2$};
+    \node[block, right of=q2] (d2) {$\D$};
+    \node[block, right of=d2] (i2) {$\I$};
+
+    \node[below of=i1, node distance=.5cm] (midway) {};
+    \node[block, right of=midway] (q) {$T$};
+    \node[block, right of=q] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \draw[->] (a) -- (ai);
+    \draw[->] (ai) -- (q1);
+    \draw[->] (q1) -- (d1);
+    \draw[->] (d1) -- (i1);
+
+    \draw[->] (b) -- (bi);
+    \draw[->] (bi) -- (q2);
+    \draw[->] (q2) -- (d2);
+    \draw[->] (d2) -- (i2);
+
+    \draw[->] (i1) -| (q);
+    \draw[->] (i2) -| (q);
+    \draw[->] (q) -- (D);
+    \draw[->] (D) -- (output);
+\end{tikzpicture} & $\cong$ \\
+\begin{tikzpicture}[auto,node distance=1cm,>=latex]
+    \node[] (a) {$a$};
+    \node[below of=a] (b) {$b$};
+    \node[block, right of=a] (q1) {$\inc{Q_1}$};
+    \node[below of=q1, node distance=.5cm] (midway) {};
+    \node[block, right of=b] (q2) {$\inc{Q_2}$};
+    \node[block, right of=midway] (q) {$\inc{T}$};
+    \node[right of=q] (output) {$o$};
+    \draw[->] (a) -- (q1);
+    \draw[->] (b) -- (q2);
+    \draw[->] (q1) -| (q);
+    \draw[->] (q2) -| (q);
+    \draw[->] (q) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+The add rule follows from push/pull and the linearity of $\I$ (or $\D$). Indeed,
+$$
+\I\circ(\inc{Q_1}+\inc{Q_2})=\I\circ\inc{Q_1}+\I\circ\inc{Q_2}=
+Q_1\circ\I+ Q_2\circ\I = (Q_1+Q_2)\circ\I
+$$
+
+I.e., the following diagrams are equivalent:
+
+\begin{center}
+\begin{tabular}{m{6cm}m{1cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\I$};
+  \node[block, above right=0cm and 1cm of I] (Q1) {$Q_1$};
+  \node[block, below right=0cm and 1cm of I] (Q2) {$Q_2$};
+  \node[block, shape=circle, right of=I, node distance=2.5cm, inner sep=0pt] (plus) {$+$};
+  \node[block, right of=plus,node distance=1cm] (D) {$\D$};
+  \node[right of=D] (output) {$o$};
+  \draw[->] (input) -- (I);
+  \draw[<-] (Q1.west) -- ++(-5mm,0) |- (I);
+  \draw[<-] (Q2.west) -- ++(-5mm,0) |- (I);
+  \draw[->] (Q1) -| (plus);
+  \draw[->] (Q2) -| (plus);
+  \draw[->] (plus) -- (D);
+  \draw[->] (D) -- (output);
+\end{tikzpicture}
+& $\cong$ \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, above right=0cm and 1cm of input] (I1) {$\I$};
+  \node[block, below right=0cm and 1cm of input] (I2) {$\I$};
+  \node[block, right of=I1] (Q1) {$Q_1$};
+  \node[block, right of=I2] (Q2) {$Q_2$};
+  \node[block, right of=Q1] (D1) {$\D$};
+  \node[block, right of=Q2] (D2) {$\D$};
+  \node[block, shape=circle, right of=input, node distance=4cm, inner sep=0pt] (plus) {$+$};
+  \node[right of=plus] (output) {$o$};
+  \draw[<-] (I1.west) -- ++(-5mm,0) |- (input);
+  \draw[<-] (I2.west) -- ++(-5mm,0) |- (input);
+  \draw[->] (I1) -- (Q1);
+  \draw[->] (I2) -- (Q2);
+  \draw[->] (Q1) -- (D1);
+  \draw[->] (Q2) -- (D2);
+  \draw[->] (D1) -| (plus);
+  \draw[->] (D2) -| (plus);
+  \draw[->] (plus) -- (output);
+\end{tikzpicture} & $\cong$ \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, above right=0cm and 1cm of input] (Q1) {$\inc{Q_1}$};
+  \node[block, below right=0cm and 1cm of input] (Q2) {$\inc{Q_2}$};
+  \node[block, shape=circle, right of=input, node distance=2.5cm, inner sep=0pt] (plus) {$+$};
+  \node[right of=plus] (output) {$o$};
+  \draw[<-] (Q1.west) -- ++(-5mm,0) |- (input);
+  \draw[<-] (Q2.west) -- ++(-5mm,0) |- (input);
+  \draw[->] (Q1) -| (plus);
+  \draw[->] (Q2) -| (plus);
+  \draw[->] (plus) -- (output);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+The cycle rule is most interesting. First, observe that if $T$ is causal then so is
+$\inc{T}$ thus both sides of the
+equality are well-defined. Next, we can use again push/pull to show the equality
+if we can check that
+$$
+\I\circ(\lambda s. \fix{\alpha}{\inc{T}(s,\zm(\alpha)}) =
+(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)})\circ\I
+$$
+that is, for any $s$,
+$$
+\I(\fix{\alpha}{\inc{T}(s,\zm(\alpha)}) =
+\fix{\alpha}{T(\I(s),\zm(\alpha)})
+$$
+This follows from the following lemma.
+\end{proof}
+
+\begin{lemma}
+\label{lemma-delta-fix}
+If the parameters $a$ and $b$ are related by $b=\D(a)$ (equivalently $a=\I(b)$)
+then the unique solutions of the fixed point equations
+$$
+\alpha~=~ T(a,\zm(\alpha))~~~~\mbox{and}~~~~
+\beta~=~\inc{T}(b,\zm(\beta))
+$$
+are related by $\alpha=\I(\beta)$ (equivalently $\beta=\D(\alpha)$).
+\end{lemma}
+\begin{proof} (Of Lemma~\ref{lemma-delta-fix})
+Let $\beta$ be the unique solution of $\beta~=~\inc{T}(\D(a),\zm(\beta))$. We verify that
+$\alpha=\I(\beta)$ satisfies the equation $\alpha~=~ T(a,\zm(\alpha))$. Indeed, using the fact that $\I$ and $\D$ are inverses as well as the time-invariance of $\I$ we have
+\begin{eqnarray*}
+\I(\beta) & = & \I(\inc{T}(\D(a),\zm(\beta)))\\
+          & = & \I(\D(T(\I(\D(a)),\I(\zm(\beta))))\\
+          & = & T(a,\I(\zm(\beta))\\
+          & = & T(a,\zm(\I(\beta))
+\end{eqnarray*}
+
+I.e., starting from this diagram we apply a sequence of term-rewriting se\-man\-tics-preserving
+transformations:
+
+\begin{center}
+\begin{tabular}{m{5.5cm}m{1cm}}
+\begin{tikzpicture}[>=latex]
+    \node[] (input) {$s$};
+    \node[block, right of=input] (I) {$\I$};
+    \node[block, right of=I] (f) {$T$};
+    \node[block, right of=f, node distance=1.5cm] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \node[block, below of=f] (z) {$\zm$};
+    \draw[->] (input) -- (I);
+    \draw[->] (I) -- (f);
+    \draw[->] (f) -- node (mid) {} (D);
+    \draw[->] (mid.center) |-  (z);
+    \draw[->] (z.west) -- ++(-.3,0) |- ([yshift=1mm]f.south west);
+    \draw[->] (D) -- (output);
+\end{tikzpicture} & $\cong$ \\
+\begin{tikzpicture}[>=latex]
+    \node[] (input) {$s$};
+    \node[block, right of=input] (I) {$\I$};
+    \node[block, below of=I] (D0) {$\D$};
+    \node[block, right of=D0] (I0) {$\I$};
+    \node[above of=I0, node distance=.5cm] (midway) {};
+
+    \node[block, right of=midway] (f) {$T$};
+    \node[block, right of=f] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \node[block, below of=f, node distance=1.5cm] (I1) {$\I$};
+    \node[block, left of=I1] (z) {$\zm$};
+    \draw[->] (input) -- (I);
+    \draw[->] (I) -| (f);
+    \draw[->] (D0) -- (I0);
+    \draw[->] (I0) -| (f);
+    \draw[->] (f) -- (D);
+    \draw[->] (D) -- node (mid) {} (output);
+    \draw[->] (mid.center) |-  (I1);
+    \draw[->] (I1) -- (z);
+    \draw[->] (z.west) -- ++(-1.5,0) |- (D0);
+\end{tikzpicture} & $\cong$ \\
+\begin{tikzpicture}[>=latex]
+    \node[] (input) {$s$};
+    \node[block, right of=input] (f) {$\inc{T}$};
+    \node[right of=f, node distance=1.5cm] (output) {$o$};
+    \node[block, below of=f] (z) {$\zm$};
+    \draw[->] (input) -- (f);
+    \draw[->] (f) -- node (mid) {} (output);
+    \draw[->] (mid.center) |-  (z);
+    \draw[->] (z.west) -- ++(-.3,0) |- ([yshift=1mm]f.south west);
+\end{tikzpicture}
+\end{tabular}
+\end{center}
+
+\end{proof}
+
+If we specialize the above formula for the case $T(a,b) = Q(a+b)$
+(for some time-invariant operator $Q$), by us the linearity of $\I$
+we get that:
+
+\noindent
+\begin{tabular}{m{6cm}m{0.5cm}m{4cm}}
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I0) {$\I$};
+  \node[block, shape=circle, right of=I0, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (q) {$Q$};
+  \node[block, right of=q, node distance=1.5cm] (D) {$\D$};
+  \node[right of=D] (output)  {$o$};
+  \draw[->] (input) -- (I0);
+  \draw[->] (I0) -- (plus);
+  \draw[->] (plus) -- (q);
+  \draw[->] (q) -- node (o) {} (D);
+  \draw[->] (D) -- (output);
+  \node[block, below of=q] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture} & $\cong$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, shape=circle, right of=input, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (q) {$\inc{Q}$};
+  \node[right of=q, node distance=1.5cm] (output)  {$o$};
+  \draw[->] (input) -- (plus);
+  \draw[->] (plus) -- (q);
+  \draw[->] (q) -- node (o) {} (output);
+  \node[block, below of=q] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture}
+\end{tabular}
+
+\begin{comment}
+& \mbox{Initial form} \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (D0) {$\D$};
+  \node[block, right of=D0] (I0) {$\I$};
+  \node[block, shape=circle, right of=I0, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (q) {$Q$};
+  \node[right of=q, node distance=4cm] (output)  {$o$};
+  \draw[->] (input) -- (D0);
+  \draw[->] (D0) -- (I0);
+  \draw[->] (I0) -- (plus);
+  \draw[->] (plus) -- (q);
+  \draw[->] (q) -- node [pos=0.8] (o) {} (output);
+  \node[block, below of=q] (I1) {$\I$};
+  \node[block, right of=I1] (D1) {$\D$};
+  \node[block, right of=D1] (z) {$\zm$};
+  \draw[->] (o) |- (z);
+  \draw[->] (z) -- (D1);
+  \draw[->] (D1) -- (I1);
+  \draw[->] (I1) -| (plus);
+\end{tikzpicture} & \I \circ \D = \id \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (D0) {$\D$};
+  \node[block, shape=circle, right of=D0, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (I) {$\I$};
+  \node[block, right of=I] (q) {$Q$};
+  \node[right of=q, node distance=2cm] (output)  {$o$};
+  \draw[->] (input) -- (D0);
+  \draw[->] (D0) -- (plus);
+  \draw[->] (plus) -- (I);
+  \draw[->] (I) -- (q);
+  \draw[->] (q) -- node (o) {} (output);
+  \node[block, below of=I] (z) {$\zm$};
+  \node[block, right of=z] (D1) {$\D$};
+  \draw[->] (o) |- (D1);
+  \draw[->] (D1) -- (z);
+  \draw[->] (z) -| (plus);but not
+\end{tikzpicture} & \mbox{Linearity of }\I  \\
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (D0) {$\D$};
+  \node[block, shape=circle, right of=D0, inner sep=0in] (plus) {$+$};
+  \node[block, right of=plus] (I) {$\I$};
+  \node[block, right of=I] (q) {$Q$};
+  \node[block, right of=q] (D1) {$\D$};
+  \node[block, right of=D1] (I2) {$\I$};
+  \node[right of=I2, node distance=2cm] (output)  {$o$};
+  \draw[->] (input) -- (D0);
+  \draw[->] (D0) -- (plus);
+  \draw[->] (plus) -- (I);
+  \draw[->] (I) -- (q);
+  \draw[->] (q) -- (D1);
+  \draw[->] (D1) -- (I2);
+  \draw[->] (I2) -- node (o) {} (output);
+  \node[block, below of=I] (z) {$\zm$};
+  \node[block, right of=z] (D1) {$\D$};
+  \draw[->] (o) |- (D1);
+  \draw[->] (D1) -- (z);
+  \draw[->] (z) -| (plus);
+\end{tikzpicture} & \D \circ \I = \id \\
+\end{comment}
+
+
+%\subsection{Linear operators}
+
+\begin{theorem}[Linear]\label{linear}
+For any LTI operator $Q$ we have $\inc{Q}=Q$.
+\end{theorem}
+
+\begin{proof}
+By the push/pull rule from Proposition~\ref{prop-inc-properties}
+it suffices to show that $Q$ commutes with differentiation:
+$$
+\begin{aligned}
+  \D(Q(s)) &= Q(s)-\zm(Q(s)) & \mbox{by definition of }\D \\
+  &= Q(s)-Q(\zm(s)) & \mbox{by time-invariance of }Q \\
+  &= Q(s-\zm(s)) & \mbox{by linearity of }Q \\
+  &= Q(\D(s)) & \mbox{by definition of }\D.
+\end{aligned}
+$$
+\end{proof}
+
+
+As we have shown, the incremental version of a linear unary operator equals the operator itself.
+However, this is not true, in general, for multilinear operators. Nonetheless, there is a useful relationship
+between the incremental version of a multilinear operator and the operator itself. We illustrate with bilinear
+operators.
+\begin{comment}
+\val{Such as join. from incremental maintenance literature recall the definition of "delta" for join:
+$\Delta(R\bowtie S) = R\bowtie(\Delta S) \cup (\Delta R)\bowtie S \cup (\Delta R)\bowtie(\Delta S)$.}
+\mihai{Indeed, the join is the main application.  Should we hint at this?  It's the first
+time the relational algebra will appear in this text.}
+\end{comment}
+
+\begin{theorem}[Bilinear]\label{bilinear}
+For any bilinear time-invariant operator $\times$ we have
+$\inc{(a \times b)} ~=~ a \times b ~+~ \I(\zm(a)) \times b ~+~ a \times \I(\zm(b))$.
+\end{theorem}
+
+By rewriting this statement using $\Delta a$ for the stream of changes to $a$ we
+get the familiar formula for incremental joins:
+$\Delta(a\times b) =\Delta a \times \Delta b + a\times(\Delta b) + (\Delta a)\times b$.
+
+In other words, the following three diagrams are equivalent:
+
+\noindent
+\begin{tabular}{m{3.0cm}m{0cm}m{3.5cm}m{0cm}m{3.5cm}}
+\begin{tikzpicture}[auto,node distance=.8cm,>=latex]
+    \node[] (a) {$a$};
+    \node[block, right of=a] (ai) {$\I$};
+    \node[below of=a, node distance=.8cm] (midway) {};
+    \node[below of=midway, node distance=.8cm] (b) {$b$};
+    \node[block, right of=b] (bi) {$\I$};
+    \node[block, right of=midway, node distance=1.4cm] (q) {$\times$};
+    \node[block, right of=q] (D) {$\D$};
+    \node[right of=D] (output) {$o$};
+    \draw[->] (a) -- (ai);
+    \draw[->] (b) -- (bi);
+    \draw[->] (ai) -| (q);
+    \draw[->] (bi) -| (q);
+    \draw[->] (q) -- (D);
+    \draw[->] (D) -- (output);
+\end{tikzpicture} &
+$\cong$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (a) {$a$};
+  \node[below of=input1, node distance=2cm] (b) {$b$};
+  \node[block, right of=a, node distance=.7cm] (I1) {$\I$};
+  \node[block, below of=I1] (ab) {$\times$};
+  \node[block, right of=b, node distance=.7cm] (I2) {$\I$};
+  \draw[->] (a) -- (I1);
+  \draw[->] (b) -- (I2);
+  \draw[->] (a) |- ([yshift=-1mm]ab.north west);
+  \draw[->] (b) |- ([yshift=1mm]ab.south west);
+  \node[block, right of=I1] (ZI1) {$\zm$};
+  \node[block, right of=I2] (ZI2) {$\zm$};
+  \draw[->] (I1) -- (ZI1);
+  \draw[->] (I2) -- (ZI2);
+  \node[block, right of=ZI1] (DI1) {$\times$};
+  \node[block, right of=ZI2] (DI2) {$\times$};
+  \draw[->] (ZI1) -- (DI1);
+  \draw[->] (ZI2) -- (DI2);
+  \node[block, circle, right of=ab, inner sep=0cm, node distance=2cm] (sum) {$+$};
+  \draw[->] (ab) -- (sum);
+  \draw[->] (DI1) -- (sum);
+  \draw[->] (DI2) -- (sum);
+  \node[right of=sum, node distance=.7cm] (output) {$o$};
+  \draw[->] (sum) -- (output);
+  \draw[->] (a) -- (DI2);
+  \draw[->] (b) -- (DI1);
+\end{tikzpicture} &
+$\cong$ &
+\begin{tikzpicture}[auto,>=latex]
+  \node[] (input1) {$a$};
+  \node[below of=input1, node distance=1.5cm] (input2) {$b$};
+  \node[block, right of=input1, node distance=.5cm] (I1) {$\I$};
+  \node[block, right of=input2, node distance=.5cm] (I2) {$\I$};
+  \draw[->] (input1) -- (I1);
+  \draw[->] (input2) -- (I2);
+  \node[block, right of=I2] (ZI2) {$\zm$};
+  \draw[->] (I2) -- (ZI2);
+  \node[block, right of=I1] (DI1) {$\times$};
+  \node[block, right of=ZI2] (DI2) {$\times$};
+  \draw[->] (I1) -- (DI1);
+  \draw[->] (ZI2) -- (DI2);
+  \node[block, circle, above of=DI2, inner sep=0cm, node distance=.8cm] (sum) {$+$};
+  \draw[->] (DI1) -- (sum);
+  \draw[->] (DI2) -- (sum);
+  \node[right of=sum, node distance=.7cm] (output) {$o$};
+  \draw[->] (sum) -- (output);
+  \draw[->] (input1) -- (DI2);
+  \draw[->] (input2) -- (DI1);
+\end{tikzpicture}
+\end{tabular}
+\begin{proof}
+$$
+\begin{aligned}
+\inc{(a \times b)} &= \D(\I(a) \times \I(b)) & \mbox{def of } \inc{\cdot} \\
+             &= (\I(a) \times \I(b)) ~-~  \zm(\I(a) \times \I(b)) & \mbox{def of } \D \\
+             &= \I(a) \times \I(b) ~-~  \zm(\I(a)) \times \zm(\I(b)) & \times \mbox{ time inv.}\\
+             &= (a + \zm(\I(a))) \times (b + \zm(\I(b))) ~-~ \zm(\I(a)) \times \zm(\I(b)) & \mbox { $\I$ fixpoint equation } \\
+             &= a \times b + \zm(\I(a)) \times b + a \times \zm(\I(b)) + \zm(\I(a)) \times \zm(\I(b)) & \\
+             &  ~~~~~~~~~~~~~~-~ \zm(\I(a)) \times \zm(\I(b)) & \mbox{bilinearity} \\
+             &= a \times b ~+~ \zm(\I(a)) \times b ~+~ a \times \zm(\I(b)) & \mbox{cancel} \\
+             &= a \times b ~+~ \I(\zm(a)) \times b ~+~ a \times \I(\zm(b)) & \mbox{$I$ time inv.} \\
+             &= (a + \I(\zm(a))) \times b ~+~ a \times \I(\zm(b)) & \mbox{commutativity} \\
+             &= \I(a) \times b ~+~ a \times \I(\zm(b)) & \mbox{def of } \I \\
+\end{aligned}
+$$
+\end{proof}
+
+\begin{comment}
+\subsection{Vector representations}\label{sec:vector-picture}
+
+Some formulas are easier to read as mathematical expressions over ``vectors''.
+We will use the following representation to depict a fragment of a stream $s$:
+
+$\strm{0}{0}$
+
+This ``vector'' representation fixes a time $t$ and shows the integral of the stream prefix
+up to $\I(s)[t-1]$ as a rectangle, and $s[t]$ as a square.  We will use a grey rectangle to
+show which part of a stream participates in a computation.  For example, we have the following
+notations:
+
+$$
+\begin{aligned}
+\strm{0 0} &= 0 \\
+\strm{0 1} &= s[t] \\
+\strm{1 0} &= \I(s)[t-1] = \zm(\I(s))[t] \\
+\strm{1 1} &= \I(s)[t-1] + s[t] = \I(s)[t]
+\end{aligned}
+$$
+
+Using this notation, the incremental version of a function $f$ is defined
+as $\inc{f}(\strm{0}{1}) = f(\strm{1}{1}) - f(\strm{1}{0})$.
+
+Theorem~\ref{linear} states that for a linear function $f$ we have: \\
+$f(\strm{1 1}) - f(\strm{1 0}) = f(\strm{0 1}).$
+
+The statement of Theorem~\ref{bilinear}, for a bilinear stream operation
+$\times$ can be written as:
+$$
+\begin{aligned}
+\strm{1 1} \times \strm{1 1} = &
+\matmult{\strm{1 0}}{\strm{1 0}} \\ + &
+\matmult{\strm{1 0}}{\strm{0 1}} \\ + &
+\matmult{\strm{0 1}}{\strm{1 0}} \\ + &
+\matmult{\strm{0 1}}{\strm{0 1}}.
+\end{aligned}
+$$
+
+By definition $\inc{\times}$ is:
+$$
+\begin{aligned}
+\matmult{\strm{1 1}}{\strm{1 1}} - \\
+\matmult{\strm{1 0}}{\strm{1 0}} = &
+\matmult{\strm{1 0}}{\strm{0 1}} \\ + &
+\matmult{\strm{0 1}}{\strm{1 0}} \\ + &
+\matmult{\strm{0 1}}{\strm{0 1}}.
+\end{aligned}
+$$
+\end{comment}
