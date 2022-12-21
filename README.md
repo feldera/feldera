@@ -7,23 +7,57 @@
 Database Stream Processor (DBSP) is a framework for computing over data streams
 that aims to be more expressive and performant than existing streaming engines.
 
-## Why DBSP?
+## DBSP Mission Statement
 
 Computing over streaming data is hard.  Streaming computations operate over
 changing inputs and must continuously update their outputs as new inputs arrive.
 They must do so in real time, processing new data and producing outputs with a
 bounded delay.
 
-Existing streaming engines have limited expressive power, which is why their use
-in the modern data stack is restricted to data preparation and visualization.
-Complex business intelligence tasks are left to traditional database systems
-where they run as periodic (e.g., daily) batch jobs.  This is inadequate in the
-world that increasingly relies on real-time alerts, recommendations, control, etc.
+We believe that software engineers and data scientists who build streaming data
+pipelines should not be exposed to this complexity.  They should be able to
+express their computations as declarative queries and use a streaming engine to
+evaluate these queries correctly and efficiently.  DBSP aims to be such an
+engine.  To this end we set the following high-level objectives:
 
-DBSP intends to change the situation by offering a simple promise: to **execute
-any query workload that can run in batch mode in streaming mode**.
+1. **Full SQL support and more.**  While SQL is just the first of potentially
+many DBSP frontends, it offers a reference point to chatacterize the
+expressiveness of the engine.  Our goal is to support the complete SQL syntax
+and semantics, including joins and aggregates, correlated subqueries, window
+functions, complex data types, time series operators, UDFs, etc.  Beyond
+standard SQL, DBSP supports recursive queries, which arise for instance in graph
+analytics problems.
 
-## Overview
+1. **Scalability in multiple dimensions.**  The engine scales with the number and
+complexity of queries, streaming data rate and the amount of state the system
+maintains in order to process the queries.
+
+1. **Performance out of the box.**  The user should be able to focus on the
+business logic of their application, leaving it to the system to evaluate this
+logic efficiently.
+
+## Theory
+
+The above objectives can only be achieved by building on a solid mathematical
+foundation.  The formal model that underpins our system, also called DBSP, is
+described in the accompanying paper:
+
+- [Budiu, McSherry, Ryzhyk, Tannen. DBSP: Automatic Incremental View Maintenance
+  for Rich Query Languages](https://arxiv.org/abs/2203.16684)
+
+The model provides two things:
+
+1. **Semantics.** DBSP defines a formal language of streaming operators and
+queries built out of these operators, and precisely specifies how these queries
+must transform input streams to output streams.
+
+1. **Algorithm.** DBSP also gives an algorithm that takes an arbitrary query and
+generates a dataflow program that implements this query correctly (in accordance
+with its formal semantics) and efficiently.  Efficiency here means, in a
+nutshell, that the cost of processing a set of input events is proportional to
+the size of the input rather than the entire state of the database.
+
+## DBSP Concepts
 
 DBSP unifies two kinds of streaming data: time series data and change data.
 
@@ -59,19 +93,31 @@ In addition, DBSP supports **windowing operators** that group time series data
 into time windows, including various forms of tumbling and sliding windows,
 windows driven by watermarks, etc.
 
-## Theory
+## Architecture
 
-Delivering this functionality with strong performance and correctness guarantees
-requires building on a solid foundation.  The theory behind DBSP is described in
-the accompanying paper:
+The following diagram shows the architecture of the DBSP platform.  Solid
+blocks indicate components that we are currently working on; white blocks with
+dashed borders are on our TODO list.
 
-- [Budiu, McSherry, Ryzhyk, Tannen. DBSP: Automatic Incremental View Maintenance
-  for Rich Query Languages](https://arxiv.org/abs/2203.16684)
+<p align="center">
+  <img src="architecture.png" width="400" alt="DBSP architecture">
+</p>
 
-## Front-end languages
+The DBSP core engine is written in Rust and provides a Rust API for building
+data-parallel dataflow programs by instantiating and connecting streaming
+operators.  Developers can use this API directly to implement complex
+streaming queries.  We are also developing a
+[compiler from SQL to DBSP](https://github.com/vmware/sql-to-dbsp-compiler) that
+enables engineers and data scientists to use the engine via a familiar
+query language.  In the future, we will add DBSP bindings for languages
+like Python and Scala.
 
-In case you don't like Rust, a compiler from SQL to DBSP is being
-developed: <https://github.com/vmware/sql-to-dbsp-compiler>
+At runtime, DBSP can consume inputs from and send outputs to
+event streams, e.g., Kafka, databases, e.g., Postgres, and data warehouses,
+e.g., Snowflake.
+
+The distributed runtime will extend DBSP's data-parallel execution model to
+multiple nodes for high availability and throughput.
 
 ## Applications
 
