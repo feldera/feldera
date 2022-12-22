@@ -20,7 +20,7 @@ this circuit is essentially a dataflow implementation of the query:
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
     \node[block, right of=s1] (d1) {$\distinct$};
-    \node[block, right of=d1] (p1) {$\pi_{x, d}$};
+    \node[block, right of=d1] (p1) {$\pi_{x, id}$};
     \node[block, right of=p1] (d11) {$\distinct$};
     \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
     \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
@@ -47,14 +47,14 @@ this circuit is essentially a dataflow implementation of the query:
     \draw[->] (d) -- (V);
 \end{tikzpicture}
 
-Step 2:  apply the rules to eliminate $\distinct$ operators;
-first rule~\ref{prop-distinct-once}:
+Step 2: apply the rules to eliminate $\distinct$ operators; first from
+Proposition~\ref{prop-distinct-once}:
 
 \noindent
 \begin{tikzpicture}[node distance=1.2cm,>=latex]
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
-    \node[block, right of=s1] (p1) {$\pi_{x, d}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
     \node[block, right of=p1] (d11) {$\distinct$};
     \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
     \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
@@ -78,13 +78,13 @@ first rule~\ref{prop-distinct-once}:
     \draw[->] (d) -- (V);
 \end{tikzpicture}
 
-From rule~\ref{prop-distinct-delay} we get:
+The rule from Proposition~\ref{prop-distinct-delay} gives:
 
 \noindent
 \begin{tikzpicture}[node distance=1.2cm,>=latex]
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
-    \node[block, right of=s1] (p1) {$\pi_{x, d}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
     \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
     \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
     \node[block, right of=s2] (p2) {$\pi_{y, id}$};
@@ -112,7 +112,7 @@ Applying again~\ref{prop-distinct-once} we get:
 \begin{tikzpicture}[node distance=1.2cm,>=latex]
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
-    \node[block, right of=s1] (p1) {$\pi_{x, d}$};
+    \node[block, right of=s1] (p1) {$\pi_{x, id}$};
     \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
     \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
     \node[block, right of=s2] (p2) {$\pi_{y, id}$};
@@ -141,7 +141,7 @@ obtain a circuit that computes over streams, i.e., for each new input pair of re
 \begin{tikzpicture}[node distance=1.3cm,>=latex]
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\lift{\sigma_{a > 2}}$};
-    \node[block, right of=s1] (p1) {$\lift{\pi_{x, d}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
     \node[below of=t1, node distance=1.2cm] (t2) {\code{t2}};
     \node[block, right of=t2, node distance=.9cm] (s2) {$\lift{\sigma_{s > 5}}$};
     \node[block, right of=s2] (p2) {$\lift{\pi_{y, id}}$};
@@ -170,7 +170,7 @@ such change it produces the corresponding change in the output view \code{V}:
     \node[] (t1) {$\Delta$\code{t1}};
     \node[block, right of=t1, node distance=.8cm] (I1) {$\I$};
     \node[block, right of=I1, node distance=.9cm] (s1) {$\lift{\sigma_{a > 2}}$};
-    \node[block, right of=s1] (p1) {$\lift{\pi_{x, d}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
     \node[below of=t1, node distance=1.2cm] (t2) {$\Delta$\code{t2}};
     \node[block, right of=t2, node distance=.8cm] (I2) {$\I$};
     \node[block, right of=I2, node distance=.9cm] (s2) {$\lift{\sigma_{s > 5}}$};
@@ -201,7 +201,7 @@ Step 5: apply the chain rule to rewrite the circuit as a composition of incremen
 \begin{tikzpicture}[node distance=1.6cm,>=latex]
     \node[] (t1) {$\Delta$\code{t1}};
     \node[block, right of=t1, node distance=1.2cm] (s1) {$\inc{(\lift{\sigma_{a > 2}})}$};
-    \node[block, right of=s1] (p1) {$\inc{(\lift{\pi_{x, d}})}$};
+    \node[block, right of=s1] (p1) {$\inc{(\lift{\pi_{x, id}})}$};
     \node[below of=t1, node distance=1.2cm] (t2) {$\Delta$\code{t2}};
     \node[block, right of=t2, node distance=1.2cm] (s2) {$\inc{(\lift{\sigma_{s > 5}})}$};
     \node[block, right of=s2] (p2) {$\inc{(\lift{\pi_{y, id}})}$};
@@ -228,7 +228,7 @@ all linear operators no longer have a $\inc{\cdot}$):
 \begin{tikzpicture}[node distance=1.6cm,>=latex]
     \node[] (t1) {$\Delta$\code{t1}};
     \node[block, right of=t1, node distance=1cm] (s1) {$\lift{\sigma_{a > 2}}$};
-    \node[block, right of=s1] (p1) {$\lift{\pi_{x, d}}$};
+    \node[block, right of=s1] (p1) {$\lift{\pi_{x, id}}$};
     \node[below of=t1, node distance=1.2cm] (t2) {$\Delta$\code{t2}};
     \node[block, right of=t2, node distance=1cm] (s2) {$\lift{\sigma_{s > 5}}$};
     \node[block, right of=s2] (p2) {$\lift{\pi_{y, id}}$};
