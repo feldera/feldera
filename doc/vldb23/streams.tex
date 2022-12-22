@@ -11,11 +11,15 @@ integration and differentiation.
 
 \subsection{Streams and stream operators}\label{sec:notation}
 
-$\N$ is the set of natural numbers, $\B$ is the set of Booleans, $\Z$ is the set of integers, and $\R$ is the set of real numbers.
+$\N$ is the set of natural numbers (from 0), $\B$ is the set of
+Booleans, $\Z$ is the set of integers, and $\R$ is the set of real
+numbers.
 
 \begin{definition}[stream]
-Given a set $A$, a \defined{stream} \emph{of values from $A$}, or an \emph{$A$-stream}, is a function $\N \rightarrow A$.
-We denote by $\stream{A} \defn \{ s \,|\, s : \N \to A \}$ the set of all $A$-streams.
+Given a set $A$, a \defined{stream} \emph{of values from $A$}, or an
+\emph{$A$-stream}, is a function $\N \rightarrow A$.  We denote by
+$\stream{A} \defn \{ s \,|\, s : \N \to A \}$ the set of all
+$A$-streams.
 \end{definition}
 
 When $s\in\stream{A}$ and $t\in\N$ we
@@ -29,7 +33,8 @@ $\sv{0 1 2 3 4}$.
 \fi
 
 \begin{definition}[stream operator]
-A \defined{stream operator} with $n$ inputs is a function $T:\stream{A_0}\times\cdots\times\stream{A_{n-1}}\to\stream{B}$.
+A \defined{stream operator} with $n$ inputs is a function
+$T:\stream{A_0}\times\cdots\times\stream{A_{n-1}}\to\stream{B}$.
 \end{definition}
 
 In general we use ``operator'' for functions on streams, and
@@ -212,7 +217,7 @@ A stream operator $S:\stream{A}\to\stream{B}$
 is \defined{causal} when for all $s,s'\in\stream{A}$,
 and all times $t$ we have:
 $
-(\forall i \leq t~s[i]=s'[i]) ~~\Rightarrow~~ S(s)[t]=S(s')[t].
+(\forall i \leq . t~s[i]=s'[i]) ~~\Rightarrow~~ S(s)[t]=S(s')[t].
 $
 \end{definition}
 

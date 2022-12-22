@@ -194,18 +194,23 @@ balance  % equalize columns on last page
 \email{val@seas.upenn.edu}
 
 \begin{abstract}
-Incremental view maintenance (IVM) has long been a central problem in database theory.
-Many solutions have been proposed for restricted classes of database languages,
-such as the relational algebra, or Datalog.  These techniques do not naturally generalize to
-richer languages.  In this paper we give a general, heuristic-free
-solution to this problem in 3 steps: (1) we describe a simple but expressive language
-called \dbsp for describing computations over data streams; (2) we give a new mathematical definition of IVM and
-a general algorithm for solving IVM for arbitrary \dbsp programs, and (3) we show
-how to model many rich database query languages (including the full relational algebra, queries over
-sets and multisets, arbitrarily nested relations, aggregation, flatmap (unnest), monotonic and non-monotonic
-recursion, streaming aggregation, and arbitrary compositions of all of these) using \dbsp.
-As a consequence, we obtain efficient
-incremental view maintenance algorithms for queries written in all these languages.
+Incremental view maintenance (IVM) has long been a central problem in
+database theory.  Many solutions have been proposed for restricted
+classes of database languages, such as the relational algebra, or
+Datalog.  These techniques do not naturally generalize to richer
+languages.  In this paper we give a general, heuristic-free solution
+to this problem in 3 steps: (1) we describe a simple but expressive
+language called \dbsp for describing computations over data streams;
+(2) we give a new mathematical definition of IVM and a general
+algorithm for solving IVM for arbitrary \dbsp programs, and (3) we
+show how to model many rich database query languages (including the
+full relational algebra, queries over sets and multisets, arbitrarily
+nested relations, aggregation, flatmap (unnest), monotonic and
+non-monotonic recursion, streaming aggregation, and arbitrary
+compositions of all of these) using \dbsp.  As a consequence, we
+obtain efficient incremental view maintenance algorithms for queries
+written in all these languages; SQL and Datalog can both be
+implemented in \dbsp.
 \end{abstract}
 
 \begin{document}
@@ -237,7 +242,6 @@ The source code, data, and/or other artifacts have been made available at \url{\
 %%% VLDB block end %%%
 
 
-%\input{intro}
 \input{intro2}
 \input{streams}
 \input{relational}

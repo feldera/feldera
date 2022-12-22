@@ -60,7 +60,7 @@ Since \zrs form a group, all the results from \secref{sec:streams} apply to stre
 \zrs generalize sets and bags.  A set with elements from $A$
 can be represented as a \zr by associating a weight of 1 with each element.
 Bags are \zrs where all weights are positive.  Crucially, \zrs
-can also represent arbirary \emph{changes} to sets and bags.
+can also represent arbitrary \emph{changes} to sets and bags.
 Negative weights in a change represent elements that are being ``removed''.
 
 \begin{definition}
@@ -412,10 +412,12 @@ For example, $a \cup b = \distinct(a + b)$, $a \setminus b =
 %(they can even be applied to queries before building the circuits).
 
 Notice that the use of the $\distinct$ operator allows \dbsp to model
-the \emph{full relational algebra}, including set difference (and not just the positive
-fragment).  Prior work (e.g., Proposition 6.13 in~\cite{green-tcs11}) has shown
-how some invocations of $\distinct$ can be eliminated from query plans
-without changing the query semantics.
+the \emph{full relational algebra}, including set difference (and not
+just the positive fragment).  Prior work (e.g., Proposition 6.13
+in~\cite{green-tcs11}) has shown how some invocations of $\distinct$
+can be eliminated from query plans without changing the query
+semantics; we will see that each use of an incremental distinct incurs
+significant space costs.
 
 \begin{proposition}\label{prop-distinct-delay}
 Let $Q$ be one of the following \zrs operators: filtering $\sigma$,
@@ -571,28 +573,35 @@ H(i, d)[x] \defn
 $$
 \end{proposition}
 
-He is the intuition why $\distinct$ is efficiently incrementalizable: the only elements that can appear in the output of
-$\inc{(\lift{\distinct})}$ must have changed in the input.  So the size of the output
-change cannot be bigger than the size of the input change.  In the diagram above, $i$
-is the previous version of the integral of all changes, i.e., the full \zr
-whose $\distinct$ value is being computed.
-The function $H$ detects whether the multiplicity of an element in
-$i$ is changing sign (positive to negative or vice-versa) when adding a new delta $d$.
+Here is the intuition why $\distinct$ is efficiently
+incrementalizable: the only elements that can appear in the output of
+$\inc{(\lift{\distinct})}$ must have changed in the input.  So the
+size of the output change cannot be bigger than the size of the input
+change.  In the diagram above, $i$ is the previous version of the
+integral of all changes, i.e., the full \zr whose $\distinct$ value is
+being computed.  The function $H$ detects whether the multiplicity of
+an element in $i$ is changing sign (positive to negative or
+vice-versa) when adding a new delta $d$.
+
 %\refsec{sec:relational-example} shows a concrete example of a relational query converted
 %into a circuit and then incrementalized using Algorithm~\ref{algorithm-inc}.
 
 \subsection{Complexity of incremental circuits}\label{sec:complexity}
 
-Incremental circuits are efficient.  We evaluate the cost of a circuit while processing the
-$t$-th input change.  We analyze cost from two points of view: the work performed, and the total memory used.
-Even if $Q$ is a pure function, $\inc{Q}$ is actually a streaming system, with internal state.
-This state is stored entirely in the delay operators $\zm$, some of which appear in $\I$ and $\D$ operators.
-The result produced by $\inc{Q}$ on the $t$-th input depends in general not only on the new
-$t$-th input, but also on all prior inputs it has received.
+Incremental circuits are efficient.  We evaluate the cost of a circuit
+while processing the $t$-th input change.  We analyze cost from two
+points of view: the work performed, and the total memory used.  Even
+if $Q$ is a pure function, $\inc{Q}$ is actually a streaming system,
+with internal state.  This state is stored entirely in the delay
+operators $\zm$, some of which appear in $\I$ and $\D$ operators.  The
+result produced by $\inc{Q}$ on the $t$-th input depends in general
+not only on the new $t$-th input, but also on all prior inputs it has
+received.
 
-We argue that each operator in the incremental version of a circuit is efficient in
-terms of work and space.  We make the standard IVM assumption that the input changes \emph{of each operator}
-are small: $|\Delta DB[t]| \ll |DB[t]| = |(\I(\Delta DB))[t]|$.
+We argue that each operator in the incremental version of a circuit is
+efficient in terms of work and space.  We make the standard IVM
+assumption that the input changes \emph{of each operator} are small:
+$|\Delta DB[t]| \ll |DB[t]| = |(\I(\Delta DB))[t]|$.
 
 An unoptimized incremental operator $\inc{Q} = \D \circ Q \circ \I$
 evaluates query $Q$ on the whole database $DB$, the integral of the input stream:
