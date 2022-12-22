@@ -1,14 +1,22 @@
 <!doctype html>
+<meta charset="utf-8">
+<html lang="en">
 <html>
   <head>
-    <title>DBSP server</title>
+    <title>DBSP pipeline status</title>
+    <link rel="stylesheet" href="static/dbsp.css">
+    <link rel="icon" href="static/favicon-64x64.png" type="image/png" />
+    <link rel="shortcut icon" href="static/favicon-64x64.png" />
+    <script src="https://ajax.googleapis.com/ajax/libs/dojo/1.10.4/dojo/dojo.js"></script>
+    <script src="static/app.js"></script>
+    <script>
+      function loaded() {
+        console.log("loaded");
+        window.created();
+      }
+    </script>
   </head>
-  <body>
-      <ul>
-          <li><a href="/start">start</a></li>
-          <li><a href="/pause">pause</a></li>
-          <li><a href="/shutdown">shutdown</a></li>
-          <li><a href="/status">status</a></li>
-      </ul>
+  <body id="body" onload="loaded()">
+    <h1>DBSP pipeline status</h1>
   </body>
 </html>
