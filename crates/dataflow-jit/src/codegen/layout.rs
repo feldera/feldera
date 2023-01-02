@@ -1,8 +1,8 @@
 use crate::ir::{RowLayout, RowType};
-use cranelift::prelude::{isa::TargetFrontendConfig, Type as ClifType};
+use cranelift::prelude::{isa::TargetFrontendConfig, types, Type as ClifType};
 use std::cmp::max;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     U8,
     U16,
@@ -18,8 +18,16 @@ pub enum Type {
 }
 
 impl Type {
-    fn cg_type(&self, target: &TargetFrontendConfig) -> ClifType {
-        todo!()
+    pub fn native_type(&self, target: &TargetFrontendConfig) -> ClifType {
+        match self {
+            Self::Ptr | Self::Usize => target.pointer_type(),
+            Self::U64 | Self::I64 => types::I64,
+            Self::U32 | Self::I32 => types::I32,
+            Self::F64 => types::F64,
+            Self::F32 => types::F32,
+            Self::U16 => types::I16,
+            Self::U8 | Self::Bool => types::I8,
+        }
     }
 
     fn size(&self, target: &TargetFrontendConfig) -> u32 {
@@ -42,6 +50,16 @@ impl Type {
         }
     }
 
+    fn bits(&self, target: &TargetFrontendConfig) -> u8 {
+        match self {
+            Self::Ptr | Self::Usize => target.pointer_bits(),
+            Self::U64 | Self::I64 | Self::F64 => 64,
+            Self::U32 | Self::I32 | Self::F32 => 32,
+            Self::U16 => 16,
+            Self::U8 | Self::Bool => 8,
+        }
+    }
+
     /// Returns `true` if the type is a [`U8`].
     ///
     /// [`U8`]: Type::U8
@@ -61,10 +79,32 @@ pub struct Layout {
     // we store values at
     index_mappings: Vec<u32>,
     bitflag_indices: Vec<u32>,
+    // A mapping from the source `RowLayout`'s indices to the index of
+    // the bitset and the bit offset containing its null-ness.
+    // Will be `None` if the row isn't nullable
+    bitflag_mappings: Vec<Option<(u32, u8)>>,
     is_unit: bool,
 }
 
 impl Layout {
+    /// Returns the offset of the given row
+    pub fn row_offset(&self, row: usize) -> u32 {
+        self.offsets[self.index_mappings[row] as usize]
+    }
+
+    /// Returns the type of the given row
+    pub fn row_type(&self, row: usize) -> Type {
+        self.types[self.index_mappings[row] as usize]
+    }
+
+    /// Returns the offset, type and bit offset of the given row's nullability
+    ///
+    /// Panics if `row` isn't nullable
+    pub fn row_nullability(&self, row: usize) -> (Type, u32, u8) {
+        let (idx, bit) = self.bitflag_mappings[row].unwrap();
+        (self.types[idx as usize], self.offsets[idx as usize], bit)
+    }
+
     // FIXME: All unit types should be eliminated before this point
     // TODO: We need to do layout optimization here
     pub fn from_row(layout: &RowLayout, target: &TargetFrontendConfig) -> Self {
@@ -151,6 +191,26 @@ impl Layout {
         }
         size += padding_needed_for(size, align);
 
+        let mut bitflag_mappings = vec![None; layout.rows().len()];
+        let (mut flag_idx, mut bit_idx) = (0, 0);
+        for (idx, nullable) in layout.nullability().iter().by_vals().enumerate() {
+            if !nullable {
+                continue;
+            }
+
+            let flag_offset = bitflag_indices[flag_idx];
+            let flag_bits = types[flag_offset as usize].bits(target);
+
+            if bit_idx < flag_bits {
+                bitflag_mappings[idx] = Some((bitflag_indices[flag_idx], bit_idx));
+                bit_idx += 1;
+            } else {
+                flag_idx += 1;
+                bit_idx = 0;
+                bitflag_mappings[idx] = Some((bitflag_indices[flag_idx], 0));
+            }
+        }
+
         Self {
             size,
             align,
@@ -158,6 +218,7 @@ impl Layout {
             offsets,
             index_mappings,
             bitflag_indices,
+            bitflag_mappings,
             is_unit,
         }
     }

@@ -54,9 +54,10 @@ mod tests {
         expr::{Constant, CopyRowTo, NullRow, UninitRow},
         function::FunctionBuilder,
         graph::Graph,
-        node::{Differentiate, Fold, IndexWith, Map, Neg, Source, Sum},
+        node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Source, Sum},
         types::{RowLayout, RowLayoutBuilder, RowType},
     };
+    use bitvec::index;
 
     // ```sql
     // CREATE VIEW V AS SELECT Sum(r.COL1 * r.COL5)
@@ -99,8 +100,7 @@ mod tests {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone())
                     .with_return_type(nullable_i32);
                 let input = func.add_input(source_row);
-
-                let output = func.add_expr(UninitRow::new(nullable_i32));
+                let output = func.add_mut_input(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 4);
@@ -110,7 +110,7 @@ mod tests {
                 let value = func.extract(input, 4);
                 func.insert(output, 0, value);
 
-                func.ret(output);
+                func.ret_unit();
                 func.build()
             },
             nullable_i32,
@@ -133,7 +133,7 @@ mod tests {
                 func.insert(key, 0, Constant::Unit);
 
                 // Set the output row to null if the input value is null
-                let value_is_null = func.is_null(input, 4);
+                let value_is_null = func.is_null(input, 0);
                 func.set_null(value, 0, value_is_null);
 
                 // Copy the value to the output row
@@ -234,8 +234,7 @@ mod tests {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone())
                     .with_return_type(nullable_i32);
                 let input = func.add_input(nullable_i32);
-
-                let output = func.add_expr(UninitRow::new(nullable_i32));
+                let output = func.add_mut_input(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 0);
@@ -245,7 +244,7 @@ mod tests {
                 let value = func.extract(input, 0);
                 func.insert(output, 0, value);
 
-                func.ret(output);
+                func.ret_unit();
                 func.seal();
 
                 func.build()
@@ -273,8 +272,7 @@ mod tests {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone())
                     .with_return_type(nullable_i32);
                 let input = func.add_input(stream7866_layout);
-
-                let output = func.add_expr(UninitRow::new(nullable_i32));
+                let output = func.add_mut_input(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 1);
@@ -304,8 +302,8 @@ mod tests {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone())
                     .with_return_type(nullable_i32);
                 let _input = func.add_input(nullable_i32);
+                let output = func.add_mut_input(nullable_i32);
 
-                let output = func.add_expr(UninitRow::new(nullable_i32));
                 func.set_null(output, 0, Constant::Bool(true));
                 func.ret(output);
                 func.build()
@@ -389,7 +387,7 @@ mod tests {
         println!("Post-opt: {graph:#?}");
 
         {
-            use crate::codegen::Layout;
+            use crate::codegen::{Codegen, Layout};
             use cranelift::codegen::{isa, settings};
             use target_lexicon::Triple;
 
@@ -402,6 +400,30 @@ mod tests {
             for row_layout in graph.layout_cache().layouts().iter() {
                 let layout = Layout::from_row(row_layout, &frontend_config);
                 println!("{layout:?}");
+            }
+
+            let mut codegen = Codegen::new(target_isa, graph.layout_cache().clone());
+            for node in graph.nodes.values() {
+                println!("{node:?}");
+
+                match node {
+                    Node::Map(map) => codegen.codegen_func(map.map_fn()),
+                    Node::Neg(_) => {}
+                    Node::Sum(_) => {}
+                    Node::Fold(fold) => {
+                        codegen.codegen_func(fold.step_fn());
+                        codegen.codegen_func(fold.finish_fn());
+                    }
+                    Node::Sink(_) => {}
+                    Node::Source(_) => {}
+                    Node::Filter(filter) => {
+                        codegen.codegen_func(filter.filter_fn());
+                    }
+                    Node::IndexWith(index_with) => {
+                        codegen.codegen_func(index_with.index_fn());
+                    }
+                    Node::Differentiate(_) => {}
+                }
             }
         }
     }
