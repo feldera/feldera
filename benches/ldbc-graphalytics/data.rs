@@ -389,7 +389,7 @@ macro_rules! datasets {
             $(
                 pub const $const: Self = Self::new(
                     $name,
-                    concat!("https://r2-public-worker.ldbc.workers.dev/graphalytics/", $name, ".tar.zst"),
+                    concat!("https://pub-383410a98aef4cb686f0c7601eddd25f.r2.dev/graphalytics/", $name, ".tar.zst"),
                     Scale::$scale,
                 );
             )*
