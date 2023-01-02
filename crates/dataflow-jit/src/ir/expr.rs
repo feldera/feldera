@@ -54,6 +54,10 @@ impl Branch {
         }
     }
 
+    pub const fn cond(&self) -> &RValue {
+        &self.cond
+    }
+
     pub const fn truthy(&self) -> BlockId {
         self.truthy
     }
@@ -85,6 +89,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct BinOp {
+    // TODO: Allow for immediates
     lhs: ExprId,
     rhs: ExprId,
     kind: BinOpKind,
@@ -94,9 +99,21 @@ impl BinOp {
     pub fn new(lhs: ExprId, rhs: ExprId, kind: BinOpKind) -> Self {
         Self { lhs, rhs, kind }
     }
+
+    pub const fn lhs(&self) -> ExprId {
+        self.lhs
+    }
+
+    pub const fn rhs(&self) -> ExprId {
+        self.rhs
+    }
+
+    pub const fn kind(&self) -> BinOpKind {
+        self.kind
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinOpKind {
     Add,
     Sub,
@@ -189,6 +206,14 @@ impl IsNull {
     pub fn new(value: ExprId, row: usize) -> Self {
         Self { value, row }
     }
+
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
+
+    pub const fn row(&self) -> usize {
+        self.row
+    }
 }
 
 #[derive(Debug)]
@@ -205,6 +230,18 @@ impl SetNull {
             row,
             is_null,
         }
+    }
+
+    pub const fn target(&self) -> ExprId {
+        self.target
+    }
+
+    pub const fn row(&self) -> usize {
+        self.row
+    }
+
+    pub const fn is_null(&self) -> &RValue {
+        &self.is_null
     }
 }
 
@@ -231,6 +268,18 @@ pub struct CopyRowTo {
 impl CopyRowTo {
     pub fn new(from: ExprId, to: ExprId, layout: LayoutId) -> Self {
         Self { from, to, layout }
+    }
+
+    pub const fn from(&self) -> ExprId {
+        self.from
+    }
+
+    pub const fn to(&self) -> ExprId {
+        self.to
+    }
+
+    pub const fn layout(&self) -> LayoutId {
+        self.layout
     }
 }
 

@@ -86,6 +86,10 @@ impl Map {
     pub const fn new(input: NodeId, map: Function, layout: LayoutId) -> Self {
         Self { input, map, layout }
     }
+
+    pub const fn map_fn(&self) -> &Function {
+        &self.map
+    }
 }
 
 impl DataflowNode for Map {
@@ -115,6 +119,10 @@ pub struct Filter {
 impl Filter {
     pub fn new(input: NodeId, filter: Function) -> Self {
         Self { input, filter }
+    }
+
+    pub const fn filter_fn(&self) -> &Function {
+        &self.filter
     }
 }
 
@@ -158,6 +166,10 @@ impl IndexWith {
             key_layout,
             value_layout,
         }
+    }
+
+    pub const fn index_fn(&self) -> &Function {
+        &self.index
     }
 }
 
@@ -225,6 +237,14 @@ impl Fold {
             step_layout,
             output_layout,
         }
+    }
+
+    pub const fn step_fn(&self) -> &Function {
+        &self.step
+    }
+
+    pub const fn finish_fn(&self) -> &Function {
+        &self.finish
     }
 }
 
