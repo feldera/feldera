@@ -843,7 +843,7 @@ impl InputConsumer for InputProbe {
 
     fn error(&mut self, fatal: bool, error: AnyError) {
         self.controller
-            .output_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
+            .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {
