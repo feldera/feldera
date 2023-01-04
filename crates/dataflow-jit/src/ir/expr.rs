@@ -258,24 +258,73 @@ pub enum Constant {
     String(String),
 }
 
+impl Constant {
+    /// Returns `true` if the constant is a [`U32`], [`I32`], [`U64`] or [`I64`].
+    ///
+    /// [`U32`]: Constant::U32
+    /// [`I32`]: Constant::I32
+    /// [`U64`]: Constant::U64
+    /// [`I64`]: Constant::I64
+    #[must_use]
+    pub const fn is_int(&self) -> bool {
+        matches!(
+            self,
+            Self::U32(_) | Self::I32(_) | Self::U64(_) | Self::I64(_),
+        )
+    }
+
+    /// Returns `true` if the constant is a [`F32`] or [`F64`].
+    ///
+    /// [`F32`]: Constant::F32
+    /// [`F64`]: Constant::F64
+    #[must_use]
+    pub const fn is_float(&self) -> bool {
+        matches!(self, Self::F32(_) | Self::F64(_))
+    }
+
+    /// Returns `true` if the constant is [`String`].
+    ///
+    /// [`String`]: Constant::String
+    #[must_use]
+    pub const fn is_string(&self) -> bool {
+        matches!(self, Self::String(..))
+    }
+
+    /// Returns `true` if the constant is [`Bool`].
+    ///
+    /// [`Bool`]: Constant::Bool
+    #[must_use]
+    pub const fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool(..))
+    }
+
+    /// Returns `true` if the constant is [`Unit`].
+    ///
+    /// [`Unit`]: Constant::Unit
+    #[must_use]
+    pub const fn is_unit(&self) -> bool {
+        matches!(self, Self::Unit)
+    }
+}
+
 #[derive(Debug)]
 pub struct CopyRowTo {
-    from: ExprId,
-    to: ExprId,
+    src: ExprId,
+    dest: ExprId,
     layout: LayoutId,
 }
 
 impl CopyRowTo {
-    pub fn new(from: ExprId, to: ExprId, layout: LayoutId) -> Self {
-        Self { from, to, layout }
+    pub fn new(src: ExprId, dest: ExprId, layout: LayoutId) -> Self {
+        Self { src, dest, layout }
     }
 
-    pub const fn from(&self) -> ExprId {
-        self.from
+    pub const fn src(&self) -> ExprId {
+        self.src
     }
 
-    pub const fn to(&self) -> ExprId {
-        self.to
+    pub const fn dest(&self) -> ExprId {
+        self.dest
     }
 
     pub const fn layout(&self) -> LayoutId {
@@ -298,6 +347,17 @@ impl UninitRow {
     }
 }
 
+/// Create a row containing all null values
+///
+/// Somewhat counter-intuitively, this does not
+/// necessarily mean that the row will contain any
+/// particular values, only that all nullish flags
+/// will be set to null. What "set" means also doesn't
+/// necessarily mean that they'll all be set to `1`, we
+/// reserve the right to assign `0` as our nullish
+/// sigil value since that could potentially be more efficient.
+/// In short: `NullRow` produces a row for which `IsNull` will
+/// always return `true`
 #[derive(Debug)]
 pub struct NullRow {
     layout: LayoutId,
