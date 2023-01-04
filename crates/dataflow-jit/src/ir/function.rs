@@ -227,11 +227,11 @@ impl FunctionBuilder {
         self.add_expr(Extract::new(target, row))
     }
 
-    pub fn insert<V>(&mut self, target: ExprId, row: usize, value: V) -> ExprId
+    pub fn insert<V>(&mut self, target: ExprId, row: usize, value: V)
     where
         V: Into<RValue>,
     {
-        self.add_expr(Insert::new(target, row, value.into()))
+        self.add_expr(Insert::new(target, row, value.into()));
     }
 
     pub fn and(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {

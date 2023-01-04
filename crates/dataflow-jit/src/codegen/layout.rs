@@ -78,7 +78,6 @@ pub struct Layout {
     // A mapping from the source `RowLayout`'s indices to the real indices
     // we store values at
     index_mappings: Vec<u32>,
-    bitflag_indices: Vec<u32>,
     // A mapping from the source `RowLayout`'s indices to the index of
     // the bitset and the bit offset containing its null-ness.
     // Will be `None` if the row isn't nullable
@@ -217,7 +216,6 @@ impl Layout {
             types,
             offsets,
             index_mappings,
-            bitflag_indices,
             bitflag_mappings,
             is_unit,
         }

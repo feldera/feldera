@@ -3,18 +3,22 @@ mod layout;
 pub use layout::{Layout, Type};
 
 use crate::ir::{
-    BinOpKind, BlockId, Constant, Expr, ExprId, Function, LayoutCache, LayoutId, RValue, Signature,
-    Terminator,
+    BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
+    RValue, Signature, Terminator,
 };
 use cranelift::{
-    codegen::ir::{Function as ClifFunction, StackSlot, UserExternalName, UserFuncName},
+    codegen::{
+        ir::{StackSlot, UserFuncName},
+        Context,
+    },
     prelude::{
         isa::{TargetFrontendConfig, TargetIsa},
-        types, AbiParam, Block as ClifBlock, EntityRef, FunctionBuilder, FunctionBuilderContext,
-        InstBuilder, IntCC, MemFlags, Signature as ClifSignature, StackSlotData, StackSlotKind,
-        Value, Variable,
+        types, AbiParam, Block as ClifBlock, FunctionBuilder, FunctionBuilderContext, InstBuilder,
+        IntCC, MemFlags, Signature as ClifSignature, StackSlotData, StackSlotKind, Value,
     },
 };
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{FuncId, Module};
 use std::collections::{BTreeMap, BTreeSet};
 
 struct NativeLayoutCache {
@@ -41,82 +45,60 @@ impl NativeLayoutCache {
 }
 
 pub struct Codegen {
-    target: Box<dyn TargetIsa>,
     layout_cache: NativeLayoutCache,
-    function_index: u32,
-    ctx: FunctionBuilderContext,
-}
-
-struct Ctx<'a> {
-    target: &'a dyn TargetIsa,
-    layout_cache: &'a mut NativeLayoutCache,
-    builder: FunctionBuilder<'a>,
-    blocks: BTreeMap<BlockId, ClifBlock>,
-    exprs: BTreeMap<ExprId, Value>,
-    expr_layouts: BTreeMap<ExprId, LayoutId>,
-    stack_slots: BTreeMap<ExprId, StackSlot>,
-}
-
-impl<'a> Ctx<'a> {
-    fn new(
-        target: &'a dyn TargetIsa,
-        layout_cache: &'a mut NativeLayoutCache,
-        builder: FunctionBuilder<'a>,
-    ) -> Self {
-        Self {
-            target,
-            layout_cache,
-            builder,
-            blocks: BTreeMap::new(),
-            exprs: BTreeMap::new(),
-            expr_layouts: BTreeMap::new(),
-            stack_slots: BTreeMap::new(),
-        }
-    }
+    module: JITModule,
+    module_ctx: Context,
+    function_ctx: FunctionBuilderContext,
+    null_sigil: NullSigil,
 }
 
 impl Codegen {
-    pub fn new(target: Box<dyn TargetIsa>, layout_cache: LayoutCache) -> Self {
+    pub fn new(
+        target: Box<dyn TargetIsa>,
+        layout_cache: LayoutCache,
+        null_sigil: NullSigil,
+    ) -> Self {
         let layout_cache = NativeLayoutCache::new(layout_cache, target.frontend_config());
 
-        Self {
+        let module = JITModule::new(JITBuilder::with_isa(
             target,
+            // TODO: We may want custom impls of things
+            cranelift_module::default_libcall_names(),
+        ));
+        let module_ctx = module.make_context();
+
+        Self {
             layout_cache,
-            function_index: 0,
-            ctx: FunctionBuilderContext::new(),
+            module,
+            module_ctx,
+            function_ctx: FunctionBuilderContext::new(),
+            null_sigil,
         }
     }
 
-    pub fn codegen_func(&mut self, function: &Function) {
+    pub fn finalize_definitions(mut self) -> JITModule {
+        self.module.finalize_definitions().unwrap();
+        self.module
+    }
+
+    pub fn codegen_func(&mut self, function: &Function) -> FuncId {
         let sig = self.build_signature(&function.signature());
 
-        let name = self.next_user_func_name();
-        let mut func = ClifFunction::with_name_signature(name, sig);
+        let func_id = self.module.declare_anonymous_function(&sig).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
 
-        let ptr_type = self.target.pointer_type();
+        self.module_ctx.func.signature = sig;
+        self.module_ctx.func.name = func_name;
 
         {
             let mut ctx = Ctx::new(
-                &*self.target,
+                self.module.isa(),
                 &mut self.layout_cache,
-                FunctionBuilder::new(&mut func, &mut self.ctx),
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx),
+                self.null_sigil,
             );
 
-            let entry_block = ctx.builder.create_block();
-            ctx.builder.switch_to_block(entry_block);
-            ctx.builder
-                .append_block_params_for_function_params(entry_block);
-            ctx.blocks.insert(function.entry_block(), entry_block);
-
-            for (idx, &(layout, expr, _)) in function.args().iter().enumerate() {
-                let value = ctx.builder.block_params(entry_block)[idx];
-
-                let prev = ctx.exprs.insert(expr, value);
-                debug_assert!(prev.is_none());
-
-                let prev = ctx.expr_layouts.insert(expr, layout);
-                debug_assert!(prev.is_none());
-            }
+            ctx.add_function_params(function);
 
             // FIXME: Doesn't work for loops/back edges
             let mut stack = vec![function.entry_block()];
@@ -126,11 +108,7 @@ impl Codegen {
                     continue;
                 }
 
-                let block = *ctx
-                    .blocks
-                    .entry(block_id)
-                    .or_insert_with(|| ctx.builder.create_block());
-                ctx.builder.switch_to_block(block);
+                let block = ctx.switch_to_block(block_id);
 
                 let block_contents = &function.blocks()[&block_id];
 
@@ -146,59 +124,25 @@ impl Codegen {
                             let value = match binop.kind() {
                                 BinOpKind::Add => ctx.builder.ins().iadd(lhs, rhs),
                                 BinOpKind::Sub => ctx.builder.ins().isub(lhs, rhs),
-                                BinOpKind::Mul => todo!(),
+                                BinOpKind::Mul => ctx.builder.ins().imul(lhs, rhs),
                                 BinOpKind::Eq => todo!(),
                                 BinOpKind::Neq => todo!(),
                                 BinOpKind::And => ctx.builder.ins().band(lhs, rhs),
                                 BinOpKind::Or => ctx.builder.ins().bor(lhs, rhs),
                             };
 
-                            let prev = ctx.exprs.insert(expr_id, value);
-                            debug_assert!(prev.is_none());
+                            ctx.add_expr(expr_id, value, None);
                         }
 
                         Expr::Insert(insert) => {
-                            let layout =
-                                ctx.layout_cache.compute(ctx.expr_layouts[&insert.target()]);
+                            debug_assert!(!ctx.is_readonly(insert.target()));
+
+                            let layout = ctx.layout_of(insert.target());
                             let offset = layout.row_offset(insert.row());
 
                             let value = match insert.value() {
                                 RValue::Expr(expr) => ctx.exprs[expr],
-                                RValue::Imm(imm) => {
-                                    if let Constant::String(_) = imm {
-                                        todo!()
-                                    } else if let Constant::F32(float) = *imm {
-                                        ctx.builder.ins().f32const(float)
-                                    } else if let Constant::F64(double) = *imm {
-                                        ctx.builder.ins().f64const(double)
-                                    } else {
-                                        let ty = match *imm {
-                                            Constant::U32(_) | Constant::I32(_) => types::I32,
-                                            Constant::U64(_) | Constant::I64(_) => types::I64,
-                                            Constant::Bool(_) => types::I8,
-
-                                            Constant::Unit
-                                            | Constant::F32(_)
-                                            | Constant::F64(_)
-                                            | Constant::String(_) => unreachable!(),
-                                        };
-
-                                        let val = match *imm {
-                                            Constant::U32(int) => int as i64,
-                                            Constant::I32(int) => int as i64,
-                                            Constant::U64(int) => int as i64,
-                                            Constant::I64(int) => int,
-                                            Constant::Bool(bool) => bool as i64,
-
-                                            Constant::Unit
-                                            | Constant::F32(_)
-                                            | Constant::F64(_)
-                                            | Constant::String(_) => unreachable!(),
-                                        };
-
-                                        ctx.builder.ins().iconst(ty, val)
-                                    }
-                                }
+                                RValue::Imm(imm) => ctx.constant(imm),
                             };
 
                             if let Some(&slot) = ctx.stack_slots.get(&insert.target()) {
@@ -207,20 +151,17 @@ impl Codegen {
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
                                 let addr = ctx.exprs[&insert.target()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for stores
-                                let flags = MemFlags::new();
+                                let flags = MemFlags::trusted();
                                 ctx.builder.ins().store(flags, value, addr, offset as i32);
                             }
                         }
 
                         Expr::Extract(extract) => {
-                            let layout = ctx
-                                .layout_cache
-                                .compute(ctx.expr_layouts[&extract.source()]);
+                            let layout = ctx.layout_of(extract.source());
                             let offset = layout.row_offset(extract.row());
                             let ty = layout
                                 .row_type(extract.row())
-                                .native_type(&self.target.frontend_config());
+                                .native_type(&self.module.isa().frontend_config());
 
                             let value = if let Some(&slot) = ctx.stack_slots.get(&extract.source())
                             {
@@ -229,21 +170,27 @@ impl Codegen {
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
                                 let addr = ctx.exprs[&extract.source()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for stores
-                                let flags = MemFlags::new();
+
+                                let mut flags = MemFlags::trusted();
+                                if ctx.is_readonly(extract.source()) {
+                                    flags.set_readonly();
+                                }
+
                                 ctx.builder.ins().load(ty, flags, addr, offset as i32)
                             };
 
-                            let prev = ctx.exprs.insert(expr_id, value);
-                            debug_assert!(prev.is_none());
+                            ctx.add_expr(expr_id, value, None);
                         }
 
+                        // TODO: If the given nullish flag is the only occupant of its bitset,
+                        // we can simplify the codegen a good bit by just checking if the bitset
+                        // is or isn't equal to zero
                         Expr::IsNull(is_null) => {
-                            let layout =
-                                ctx.layout_cache.compute(ctx.expr_layouts[&is_null.value()]);
+                            let layout = ctx.layout_of(is_null.value());
                             let (bitset_ty, bitset_offset, bit_idx) =
                                 layout.row_nullability(is_null.row());
-                            let bitset_ty = bitset_ty.native_type(&self.target.frontend_config());
+                            let bitset_ty =
+                                bitset_ty.native_type(&self.module.isa().frontend_config());
 
                             let bitset = if let Some(&slot) = ctx.stack_slots.get(&is_null.value())
                             {
@@ -254,27 +201,42 @@ impl Codegen {
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
                                 let addr = ctx.exprs[&is_null.value()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for stores
-                                let flags = MemFlags::new();
+
+                                let mut flags = MemFlags::trusted();
+                                if ctx.is_readonly(is_null.value()) {
+                                    flags.set_readonly();
+                                }
+
                                 ctx.builder
                                     .ins()
                                     .load(bitset_ty, flags, addr, bitset_offset as i32)
                             };
 
                             let masked = ctx.builder.ins().band_imm(bitset, 1i64 << bit_idx);
-                            let is_null = ctx.builder.ins().icmp_imm(IntCC::NotEqual, masked, 0);
-
-                            let prev = ctx.exprs.insert(expr_id, is_null);
-                            debug_assert!(prev.is_none());
+                            let is_null = ctx.builder.ins().icmp_imm(
+                                if ctx.null_sigil.is_one() {
+                                    IntCC::NotEqual
+                                } else {
+                                    IntCC::Equal
+                                },
+                                masked,
+                                0,
+                            );
+                            ctx.add_expr(expr_id, is_null, None);
                         }
 
+                        // TODO: If the given nullish flag is the only occupant of its bitset,
+                        // we can simplify the codegen a good bit by just storing a value with
+                        // our desired configuration instead of loading the bitset, toggling the
+                        // bit and then storing the bitset
                         Expr::SetNull(set_null) => {
-                            let layout = ctx
-                                .layout_cache
-                                .compute(ctx.expr_layouts[&set_null.target()]);
+                            debug_assert!(!ctx.is_readonly(set_null.target()));
+
+                            let layout = ctx.layout_of(set_null.target());
                             let (bitset_ty, bitset_offset, bit_idx) =
                                 layout.row_nullability(set_null.row());
-                            let bitset_ty = bitset_ty.native_type(&self.target.frontend_config());
+                            let bitset_ty =
+                                bitset_ty.native_type(&self.module.isa().frontend_config());
 
                             // Load the bitset's current value
                             let bitset = if let Some(&slot) =
@@ -304,12 +266,19 @@ impl Codegen {
                                     let mask = 1i64 << bit_idx;
                                     let set_bit = ctx.builder.ins().bor_imm(bitset, mask);
                                     let unset_bit = ctx.builder.ins().band_imm(bitset, !mask);
-                                    ctx.builder.ins().select(is_null, set_bit, unset_bit)
+
+                                    if ctx.null_sigil.is_one() {
+                                        ctx.builder.ins().select(is_null, set_bit, unset_bit)
+                                    } else {
+                                        ctx.builder.ins().select(is_null, unset_bit, set_bit)
+                                    }
                                 }
 
-                                &RValue::Imm(Constant::Bool(bool)) => {
+                                &RValue::Imm(Constant::Bool(set_null)) => {
                                     let mask = 1i64 << bit_idx;
-                                    if bool {
+                                    if (ctx.null_sigil.is_one() && set_null)
+                                        || (ctx.null_sigil.is_zero() && !set_null)
+                                    {
                                         ctx.builder.ins().bor_imm(bitset, mask)
                                     } else {
                                         ctx.builder.ins().band_imm(bitset, !mask)
@@ -327,8 +296,7 @@ impl Codegen {
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
                                 let addr = ctx.exprs[&set_null.target()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for stores
-                                let flags = MemFlags::new();
+                                let flags = MemFlags::trusted();
                                 ctx.builder
                                     .ins()
                                     .store(flags, masked, addr, bitset_offset as i32);
@@ -336,31 +304,37 @@ impl Codegen {
                         }
 
                         Expr::CopyRowTo(copy_row) => {
+                            debug_assert_eq!(
+                                ctx.layout_id(copy_row.src()),
+                                ctx.layout_id(copy_row.dest()),
+                            );
+                            debug_assert_eq!(ctx.layout_id(copy_row.src()), copy_row.layout());
+                            debug_assert!(!ctx.is_readonly(copy_row.dest()));
+
                             // Ignore noop copies
-                            if copy_row.from() == copy_row.to() {
+                            if copy_row.src() == copy_row.dest() {
                                 continue;
                             }
 
-                            let src = if let Some(&slot) = ctx.stack_slots.get(&copy_row.from()) {
+                            let src = if let Some(&slot) = ctx.stack_slots.get(&copy_row.src()) {
                                 ctx.builder
                                     .ins()
                                     .stack_addr(ctx.target.pointer_type(), slot, 0)
                             } else {
-                                ctx.exprs[&copy_row.from()]
+                                ctx.exprs[&copy_row.src()]
                             };
 
-                            let dest = if let Some(&slot) = ctx.stack_slots.get(&copy_row.to()) {
+                            let dest = if let Some(&slot) = ctx.stack_slots.get(&copy_row.dest()) {
                                 ctx.builder
                                     .ins()
                                     .stack_addr(ctx.target.pointer_type(), slot, 0)
                             } else {
-                                ctx.exprs[&copy_row.to()]
+                                ctx.exprs[&copy_row.dest()]
                             };
 
                             let layout = ctx.layout_cache.compute(copy_row.layout());
-                            let flags = MemFlags::new().with_aligned().with_notrap();
 
-                            // TODO: We probably want to replace this with our own impl, it currently
+                            // FIXME: We probably want to replace this with our own impl, it currently
                             // just emits a memcpy call on sizes greater than 4 when an inlined impl
                             // would perform much better
                             ctx.builder.emit_small_memory_copy(
@@ -371,121 +345,56 @@ impl Codegen {
                                 layout.align() as u8,
                                 layout.align() as u8,
                                 true,
-                                flags,
+                                MemFlags::trusted(),
                             );
                         }
 
-                        Expr::CopyVal(_) => {}
-                        Expr::NullRow(_) => {}
+                        Expr::CopyVal(copy_val) => {
+                            // FIXME: Check if the given value is a string and if so clone the string
+                            let value = ctx.exprs[&copy_val.value()];
+                            let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
+                            ctx.add_expr(expr_id, value, layout);
+                        }
 
-                        Expr::Constant(constant) => {
-                            let value = if let Constant::String(_) = constant {
-                                todo!()
-                            } else if let Constant::F32(float) = *constant {
-                                ctx.builder.ins().f32const(float)
-                            } else if let Constant::F64(double) = *constant {
-                                ctx.builder.ins().f64const(double)
-                            } else {
-                                let ty = match *constant {
-                                    Constant::U32(_) | Constant::I32(_) => types::I32,
-                                    Constant::U64(_) | Constant::I64(_) => types::I64,
-                                    Constant::Bool(_) => types::I8,
+                        // TODO: There's a couple optimizations we can do here:
+                        // - If our type is sub-word size, we can simply use a constant
+                        //   that's been set to all ones. This does require generalized
+                        //   handling for rows that aren't addressable, but that's a good
+                        //   thing we need in the future anyways
+                        // - If the null bits are sufficiently sparse and the row is sufficiently
+                        //   large (something something heuristics) then memset-ing the entire thing
+                        //   is just a waste and we should instead use more focused stores
+                        // - If our type doesn't contain any null flags, we don't need to
+                        //   do anything and can simply leave the row uninitialized. This
+                        //   does require that we actually follow our contract that `NullRow`
+                        //   only means "any well-defined `IsNull` call returns `true`" and
+                        //   don't depend on it being initialized to any degree further than
+                        //   what is required by that
+                        Expr::NullRow(null) => {
+                            // Create a stack slot
+                            let slot = ctx.stack_slot_for_layout(expr_id, null.layout());
+                            // Get the address of the stack slot
+                            let addr =
+                                ctx.builder
+                                    .ins()
+                                    .stack_addr(ctx.target.pointer_type(), slot, 0);
 
-                                    Constant::Unit
-                                    | Constant::F32(_)
-                                    | Constant::F64(_)
-                                    | Constant::String(_) => unreachable!(),
-                                };
-
-                                let val = match *constant {
-                                    Constant::U32(int) => int as i64,
-                                    Constant::I32(int) => int as i64,
-                                    Constant::U64(int) => int as i64,
-                                    Constant::I64(int) => int,
-                                    Constant::Bool(bool) => bool as i64,
-
-                                    Constant::Unit
-                                    | Constant::F32(_)
-                                    | Constant::F64(_)
-                                    | Constant::String(_) => unreachable!(),
-                                };
-
-                                ctx.builder.ins().iconst(ty, val)
-                            };
-
-                            let prev = ctx.exprs.insert(expr_id, value);
-                            debug_assert!(prev.is_none());
+                            // Fill the stack slot with whatever our nullish sigil is
+                            ctx.memset_imm(addr, ctx.null_sigil as u8, null.layout());
                         }
 
                         Expr::UninitRow(uninit) => {
-                            let layout_size = ctx.layout_cache.compute(uninit.layout()).size();
-                            // TODO: Slot alignment?
-                            let slot = ctx.builder.create_sized_stack_slot(StackSlotData::new(
-                                StackSlotKind::ExplicitSlot,
-                                layout_size,
-                            ));
+                            ctx.stack_slot_for_layout(expr_id, uninit.layout());
+                        }
 
-                            let prev = ctx.stack_slots.insert(expr_id, slot);
-                            debug_assert!(prev.is_none());
-
-                            let prev = ctx.expr_layouts.insert(expr_id, uninit.layout());
-                            debug_assert!(prev.is_none());
+                        Expr::Constant(constant) => {
+                            let value = ctx.constant(constant);
+                            ctx.add_expr(expr_id, value, None);
                         }
                     }
                 }
 
-                match block_contents.terminator() {
-                    Terminator::Return(ret) => match ret.value() {
-                        RValue::Expr(expr) => {
-                            dbg!(expr);
-                            let value = ctx.exprs[expr];
-                            ctx.builder.ins().return_(&[value]);
-                        }
-
-                        RValue::Imm(imm) => match imm {
-                            Constant::Unit => {
-                                ctx.builder.ins().return_(&[]);
-                            }
-                            Constant::U32(_) => todo!(),
-                            Constant::U64(_) => todo!(),
-                            Constant::I32(_) => todo!(),
-                            Constant::I64(_) => todo!(),
-                            Constant::F32(_) => todo!(),
-                            Constant::F64(_) => todo!(),
-                            Constant::Bool(_) => todo!(),
-                            Constant::String(_) => todo!(),
-                        },
-                    },
-
-                    Terminator::Jump(jump) => {
-                        let target = *ctx
-                            .blocks
-                            .entry(jump.target())
-                            .or_insert_with(|| ctx.builder.create_block());
-                        // FIXME: bb args
-                        ctx.builder.ins().jump(target, &[]);
-                    }
-
-                    Terminator::Branch(branch) => {
-                        let truthy = *ctx
-                            .blocks
-                            .entry(branch.truthy())
-                            .or_insert_with(|| ctx.builder.create_block());
-                        let falsy = *ctx
-                            .blocks
-                            .entry(branch.falsy())
-                            .or_insert_with(|| ctx.builder.create_block());
-
-                        let cond = match branch.cond() {
-                            RValue::Expr(expr) => ctx.exprs[expr],
-                            RValue::Imm(_) => todo!(),
-                        };
-
-                        // FIXME: bb args
-                        ctx.builder.ins().brz(cond, truthy, &[]);
-                        ctx.builder.ins().jump(falsy, &[]);
-                    }
-                }
+                ctx.codegen_terminator(block_contents.terminator());
 
                 ctx.builder.seal_block(block);
             }
@@ -496,27 +405,297 @@ impl Codegen {
             ctx.builder.finalize();
         }
 
-        println!("{}", func.display());
-    }
+        println!("{}", self.module_ctx.func.display());
 
-    fn next_user_func_name(&mut self) -> UserFuncName {
-        let name = UserFuncName::User(UserExternalName::new(0, self.function_index));
-        self.function_index += 1;
-        name
+        self.module
+            .define_function(func_id, &mut self.module_ctx)
+            .unwrap();
+        self.module.clear_context(&mut self.module_ctx);
+
+        func_id
     }
 
     fn build_signature(&mut self, signature: &Signature) -> ClifSignature {
-        let mut sig = ClifSignature::new(self.target.default_call_conv());
+        let mut sig = self.module.make_signature();
 
         let ret = self.layout_cache.compute(signature.ret());
         if !ret.is_unit() {
-            sig.returns.push(AbiParam::new(self.target.pointer_type()));
+            sig.returns
+                .push(AbiParam::new(self.module.isa().pointer_type()));
         }
 
         for _arg in signature.args() {
-            sig.params.push(AbiParam::new(self.target.pointer_type()));
+            sig.params
+                .push(AbiParam::new(self.module.isa().pointer_type()));
         }
 
         sig
+    }
+
+    pub(crate) fn layout_for(&mut self, layout_id: LayoutId) -> &Layout {
+        self.layout_cache.compute(layout_id)
+    }
+}
+
+struct Ctx<'a> {
+    target: &'a dyn TargetIsa,
+    layout_cache: &'a mut NativeLayoutCache,
+    builder: FunctionBuilder<'a>,
+    blocks: BTreeMap<BlockId, ClifBlock>,
+    exprs: BTreeMap<ExprId, Value>,
+    expr_layouts: BTreeMap<ExprId, LayoutId>,
+    stack_slots: BTreeMap<ExprId, StackSlot>,
+    function_inputs: BTreeMap<ExprId, InputFlags>,
+    null_sigil: NullSigil,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(
+        target: &'a dyn TargetIsa,
+        layout_cache: &'a mut NativeLayoutCache,
+        builder: FunctionBuilder<'a>,
+        null_sigil: NullSigil,
+    ) -> Self {
+        Self {
+            target,
+            layout_cache,
+            builder,
+            blocks: BTreeMap::new(),
+            exprs: BTreeMap::new(),
+            expr_layouts: BTreeMap::new(),
+            stack_slots: BTreeMap::new(),
+            function_inputs: BTreeMap::new(),
+            null_sigil,
+        }
+    }
+
+    fn add_function_params(&mut self, function: &Function) {
+        // Create the entry block
+        let entry_block = self.switch_to_block(function.entry_block());
+        // Add the function params as block params
+        self.builder
+            .append_block_params_for_function_params(entry_block);
+
+        // Add each param as an expression and register all function param flags
+        assert_eq!(
+            function.args().len(),
+            self.builder.block_params(entry_block).len()
+        );
+        for (idx, &(layout, expr_id, flags)) in function.args().iter().enumerate() {
+            let param = self.builder.block_params(entry_block)[idx];
+            self.add_expr(expr_id, param, layout);
+
+            self.function_inputs.insert(expr_id, flags);
+        }
+    }
+
+    /// Returns `true` if the given expression is a `readonly` row
+    fn is_readonly(&self, expr: ExprId) -> bool {
+        self.function_inputs
+            .get(&expr)
+            .map_or(false, |flags| !flags.contains(InputFlags::MUTABLE))
+    }
+
+    fn constant(&mut self, constant: &Constant) -> Value {
+        if constant.is_string() {
+            self.strconst(constant)
+        } else if constant.is_float() {
+            self.fconst(constant)
+        } else if constant.is_int() || constant.is_bool() {
+            self.iconst(constant)
+        } else {
+            unreachable!("cannot codegen for unit constants: {constant:?}")
+        }
+    }
+
+    fn strconst(&mut self, constant: &Constant) -> Value {
+        if let Constant::String(_string) = constant {
+            todo!()
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn fconst(&mut self, constant: &Constant) -> Value {
+        if let Constant::F32(float) = *constant {
+            self.builder.ins().f32const(float)
+        } else if let Constant::F64(double) = *constant {
+            self.builder.ins().f64const(double)
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn iconst(&mut self, constant: &Constant) -> Value {
+        let ty = match *constant {
+            Constant::U32(_) | Constant::I32(_) => types::I32,
+            Constant::U64(_) | Constant::I64(_) => types::I64,
+            Constant::Bool(_) => types::I8,
+
+            Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
+                unreachable!()
+            }
+        };
+
+        let val = match *constant {
+            Constant::U32(int) => int as i64,
+            Constant::I32(int) => int as i64,
+            Constant::U64(int) => int as i64,
+            Constant::I64(int) => int,
+            Constant::Bool(bool) => bool as i64,
+
+            Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
+                unreachable!()
+            }
+        };
+
+        self.builder.ins().iconst(ty, val)
+    }
+
+    fn add_expr<L>(&mut self, expr_id: ExprId, value: Value, layout: L)
+    where
+        L: Into<Option<LayoutId>>,
+    {
+        let prev = self.exprs.insert(expr_id, value);
+        debug_assert!(prev.is_none());
+
+        if let Some(layout) = layout.into() {
+            let prev = self.expr_layouts.insert(expr_id, layout);
+            debug_assert!(prev.is_none());
+        }
+    }
+
+    fn add_stack_slot(&mut self, expr_id: ExprId, slot: StackSlot, layout: LayoutId) {
+        let prev = self.stack_slots.insert(expr_id, slot);
+        debug_assert!(prev.is_none());
+
+        let prev = self.expr_layouts.insert(expr_id, layout);
+        debug_assert!(prev.is_none());
+    }
+
+    fn layout_id(&self, expr_id: ExprId) -> LayoutId {
+        self.expr_layouts[&expr_id]
+    }
+
+    fn layout_of(&mut self, expr_id: ExprId) -> &Layout {
+        self.layout_cache.compute(self.layout_id(expr_id))
+    }
+
+    fn block(&mut self, block: BlockId) -> ClifBlock {
+        *self
+            .blocks
+            .entry(block)
+            .or_insert_with(|| self.builder.create_block())
+    }
+
+    fn switch_to_block(&mut self, block: BlockId) -> ClifBlock {
+        let block = self.block(block);
+        self.builder.switch_to_block(block);
+        block
+    }
+
+    fn codegen_terminator(&mut self, terminator: &Terminator) {
+        match terminator {
+            Terminator::Return(ret) => match ret.value() {
+                RValue::Expr(expr) => {
+                    let value = self.exprs[expr];
+                    self.builder.ins().return_(&[value]);
+                }
+
+                RValue::Imm(imm) => {
+                    if imm.is_unit() {
+                        self.builder.ins().return_(&[]);
+                    } else if imm.is_string() {
+                        // How do we return strings from functions? Should we ever
+                        // actually allow them to be returned directly? (Probably not)
+                        todo!()
+                    } else {
+                        let value = self.constant(imm);
+                        self.builder.ins().return_(&[value]);
+                    }
+                }
+            },
+
+            Terminator::Jump(jump) => {
+                let target = *self
+                    .blocks
+                    .entry(jump.target())
+                    .or_insert_with(|| self.builder.create_block());
+                // FIXME: bb args
+                self.builder.ins().jump(target, &[]);
+            }
+
+            Terminator::Branch(branch) => {
+                let truthy = self.block(branch.truthy());
+                let falsy = self.block(branch.falsy());
+
+                let cond = match branch.cond() {
+                    RValue::Expr(expr) => self.exprs[expr],
+                    RValue::Imm(_) => todo!(),
+                };
+
+                // FIXME: bb args
+                self.builder.ins().brz(cond, truthy, &[]);
+                self.builder.ins().jump(falsy, &[]);
+            }
+        }
+    }
+
+    fn stack_slot_for_layout(&mut self, expr_id: ExprId, layout: LayoutId) -> StackSlot {
+        let layout_size = self.layout_cache.compute(layout).size();
+        // TODO: Slot alignment?
+        let slot = self
+            .builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, layout_size));
+
+        self.add_stack_slot(expr_id, slot, layout);
+
+        slot
+    }
+
+    /// Sets the given `buffer` to be filled with `value` bytes
+    /// according to `layout`'s size and alignment
+    fn memset_imm(&mut self, buffer: Value, value: u8, layout: LayoutId) {
+        let layout = self.layout_cache.compute(layout);
+
+        // FIXME: We probably want to replace this with our own impl, it currently
+        // just emits a memset call on sizes greater than 4 when an inlined impl
+        // would perform much better
+        self.builder.emit_small_memset(
+            self.target.frontend_config(),
+            buffer,
+            value,
+            layout.size() as u64,
+            layout.align().try_into().unwrap(),
+            MemFlags::trusted(),
+        );
+    }
+}
+
+/// The kind of null sigil for us to use
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum NullSigil {
+    /// Makes unset bits mean the corresponding row is null
+    Zero = 0,
+    /// Makes set bits mean the corresponding row is null
+    #[default]
+    One = 1,
+}
+
+impl NullSigil {
+    /// Returns `true` if the null sigil is [`Zero`].
+    ///
+    /// [`Zero`]: NullSigil::Zero
+    #[must_use]
+    pub const fn is_zero(&self) -> bool {
+        matches!(self, Self::Zero)
+    }
+
+    /// Returns `true` if the null sigil is [`One`].
+    ///
+    /// [`One`]: NullSigil::One
+    #[must_use]
+    pub const fn is_one(&self) -> bool {
+        matches!(self, Self::One)
     }
 }

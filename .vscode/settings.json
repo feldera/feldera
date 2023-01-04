@@ -2,5 +2,4 @@
     "testExplorer.addToEditorContextMenu": true,
     "testExplorer.showOnRun": true,
     "testExplorer.useNativeTesting": true,
-    "rust-analyzer.cargo.features": "all",
 }

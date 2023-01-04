@@ -61,6 +61,16 @@ pub struct Sink {
     input: NodeId,
 }
 
+impl Sink {
+    pub fn new(input: NodeId) -> Self {
+        Self { input }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+}
+
 impl DataflowNode for Sink {
     fn inputs(&self, inputs: &mut Vec<NodeId>) {
         inputs.push(self.input);
@@ -87,8 +97,16 @@ impl Map {
         Self { input, map, layout }
     }
 
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
     pub const fn map_fn(&self) -> &Function {
         &self.map
+    }
+
+    pub const fn layout(&self) -> LayoutId {
+        self.layout
     }
 }
 

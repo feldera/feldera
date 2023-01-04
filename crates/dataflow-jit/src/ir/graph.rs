@@ -50,14 +50,27 @@ impl Default for Graph {
 
 #[cfg(test)]
 mod tests {
-    use crate::ir::{
-        expr::{Constant, CopyRowTo, NullRow, UninitRow},
-        function::FunctionBuilder,
-        graph::Graph,
-        node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Source, Sum},
-        types::{RowLayout, RowLayoutBuilder, RowType},
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
     };
-    use bitvec::index;
+
+    use dbsp::{
+        operator::FilterMap,
+        trace::{BatchReader, Cursor},
+        Runtime,
+    };
+
+    use crate::{
+        codegen::NullSigil,
+        ir::{
+            expr::{Constant, CopyRowTo, NullRow},
+            function::FunctionBuilder,
+            graph::Graph,
+            node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Sink, Source, Sum},
+            types::{RowLayout, RowLayoutBuilder, RowType},
+        },
+    };
 
     // ```sql
     // CREATE VIEW V AS SELECT Sum(r.COL1 * r.COL5)
@@ -97,8 +110,7 @@ mod tests {
         let stream7850 = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone())
-                    .with_return_type(nullable_i32);
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(source_row);
                 let output = func.add_mut_input(nullable_i32);
 
@@ -269,8 +281,7 @@ mod tests {
         let stream7866 = graph.add_node(Map::new(
             stream7861,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone())
-                    .with_return_type(nullable_i32);
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(stream7866_layout);
                 let output = func.add_mut_input(nullable_i32);
 
@@ -299,8 +310,7 @@ mod tests {
         let stream7874 = graph.add_node(Map::new(
             stream7866,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone())
-                    .with_return_type(nullable_i32);
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let _input = func.add_input(nullable_i32);
                 let output = func.add_mut_input(nullable_i32);
 
@@ -402,12 +412,15 @@ mod tests {
                 println!("{layout:?}");
             }
 
-            let mut codegen = Codegen::new(target_isa, graph.layout_cache().clone());
+            let mut codegen =
+                Codegen::new(target_isa, graph.layout_cache().clone(), NullSigil::One);
             for node in graph.nodes.values() {
                 println!("{node:?}");
 
                 match node {
-                    Node::Map(map) => codegen.codegen_func(map.map_fn()),
+                    Node::Map(map) => {
+                        codegen.codegen_func(map.map_fn());
+                    }
                     Node::Neg(_) => {}
                     Node::Sum(_) => {}
                     Node::Fold(fold) => {
@@ -426,5 +439,196 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn mapping() {
+        use crate::codegen::Codegen;
+        use cranelift::codegen::{
+            isa,
+            settings::{self, Configurable},
+        };
+        use target_lexicon::Triple;
+
+        let mut graph = Graph::new();
+
+        let xy_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_row(RowType::U32, false)
+                .with_row(RowType::U32, false)
+                .build(),
+        );
+        let source = graph.add_node(Source::new(xy_layout));
+
+        let x_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_row(RowType::U32, false)
+                .build(),
+        );
+        let map = graph.add_node(Map::new(
+            source,
+            {
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let input = func.add_input(xy_layout);
+                let output = func.add_mut_input(x_layout);
+
+                let x = func.extract(input, 0);
+                let y = func.extract(input, 1);
+                let xy = func.mul(x, y);
+                func.insert(output, 0, xy);
+
+                func.ret_unit();
+                func.build()
+            },
+            x_layout,
+        ));
+
+        let sink = graph.add_node(Sink::new(map));
+
+        let mut settings = settings::builder();
+        settings.set("use_colocated_libcalls", "false").unwrap();
+        // FIXME: Set back to true once the x64 backend supports it.
+        settings.set("is_pic", "false").unwrap();
+
+        let target_isa = isa::lookup(Triple::host())
+            .unwrap()
+            .finish(settings::Flags::new(settings))
+            .unwrap();
+
+        let mut codegen = Codegen::new(target_isa, graph.layout_cache().clone(), NullSigil::One);
+
+        let src_layout = codegen.layout_for(xy_layout);
+        let (src_x_offset, src_y_offset) = (src_layout.row_offset(0), src_layout.row_offset(1));
+        let src_layout = std::alloc::Layout::from_size_align(
+            src_layout.size() as usize,
+            src_layout.align() as usize,
+        )
+        .unwrap();
+
+        let sink_layout = codegen.layout_for(x_layout);
+        let sink_x_offset = sink_layout.row_offset(0);
+        let sink_layout = std::alloc::Layout::from_size_align(
+            sink_layout.size() as usize,
+            sink_layout.align() as usize,
+        )
+        .unwrap();
+
+        let node_functions: BTreeMap<_, _> = graph
+            .nodes
+            .iter()
+            .filter_map(|(&node_id, node)| {
+                if let Node::Map(map) = node {
+                    let func_id = codegen.codegen_func(map.map_fn());
+                    let layout = codegen.layout_for(map.layout());
+                    Some((node_id, (func_id, layout.size(), layout.align())))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let jit_module = codegen.finalize_definitions();
+        let node_functions: BTreeMap<_, _> = node_functions
+            .into_iter()
+            .map(|(node_id, (func_id, size, align))| {
+                (
+                    node_id,
+                    (
+                        Ptr(jit_module.get_finalized_function(func_id) as *mut u8),
+                        size,
+                        align,
+                    ),
+                )
+            })
+            .collect();
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, size_of::SizeOf)]
+        #[repr(transparent)]
+        struct Ptr(*mut u8);
+
+        unsafe impl Send for Ptr {}
+        unsafe impl Sync for Ptr {}
+
+        let nodes = Arc::new(graph.nodes);
+        let (mut runtime, (mut inputs, outputs)) =
+            Runtime::init_circuit(1, move |circuit| {
+                let mut streams = BTreeMap::new();
+                let mut inputs = BTreeMap::new();
+                let mut outputs = BTreeMap::new();
+
+                for (&node_id, node) in nodes.iter() {
+                    match node {
+                        Node::Source(_source) => {
+                            let (stream, handle) = circuit.add_input_zset::<Ptr, i32>();
+                            streams.insert(node_id, stream);
+                            inputs.insert(node_id, handle);
+                        }
+
+                        Node::Sink(sink) => {
+                            let output = streams[&sink.input()].output();
+                            outputs.insert(node_id, output);
+                        }
+
+                        Node::Map(map) => {
+                            let input = &streams[&map.input()];
+
+                            let (map_fn, size, align) = node_functions[&node_id];
+                            let map_fn = unsafe {
+                                std::mem::transmute::<
+                                    *const u8,
+                                    unsafe extern "C" fn(*const u8, *mut u8),
+                                >(map_fn.0)
+                            };
+
+                            let layout =
+                                std::alloc::Layout::from_size_align(size as usize, align as usize)
+                                    .unwrap();
+                            let stream = input.map(move |&x| {
+                                let output = unsafe { std::alloc::alloc(layout) };
+                                assert!(!output.is_null());
+                                unsafe { map_fn(x.0, output) };
+                                Ptr(output)
+                            });
+                            streams.insert(node_id, stream);
+                        }
+
+                        _ => todo!(),
+                    }
+                }
+
+                (inputs, outputs)
+            })
+            .unwrap();
+
+        let mut values = Vec::new();
+        for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
+            unsafe {
+                let value = std::alloc::alloc(src_layout);
+                assert!(!value.is_null());
+
+                value.add(src_x_offset as usize).cast::<u32>().write(x);
+                value.add(src_y_offset as usize).cast::<u32>().write(y);
+
+                values.push((Ptr(value), 1i32));
+            }
+        }
+        inputs.get_mut(&source).unwrap().append(&mut values);
+
+        runtime.step().unwrap();
+
+        let output = outputs.get(&sink).unwrap().consolidate();
+        let mut cursor = output.cursor();
+        while cursor.key_valid() {
+            let (key, weight) = (*cursor.key(), cursor.weight());
+            let key_val = unsafe { key.0.add(sink_x_offset as usize).cast::<u32>().read() };
+            println!("{key_val}: {weight}");
+
+            unsafe { std::alloc::dealloc(key.0, sink_layout) }
+
+            cursor.step_key();
+        }
+
+        runtime.kill().unwrap();
+
+        unsafe { jit_module.free_memory() }
     }
 }
