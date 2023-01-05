@@ -21,6 +21,10 @@ impl Graph {
         }
     }
 
+    pub const fn nodes(&self) -> &BTreeMap<NodeId, Node> {
+        &self.nodes
+    }
+
     pub fn add_node<N>(&mut self, node: N) -> NodeId
     where
         N: Into<Node>,
@@ -50,27 +54,28 @@ impl Default for Graph {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-    };
-
-    use dbsp::{
-        operator::FilterMap,
-        trace::{BatchReader, Cursor},
-        Runtime,
-    };
-
     use crate::{
-        codegen::NullSigil,
+        codegen::{Codegen, Layout, NullSigil},
         ir::{
             expr::{Constant, CopyRowTo, NullRow},
             function::FunctionBuilder,
             graph::Graph,
             node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Sink, Source, Sum},
             types::{RowLayout, RowLayoutBuilder, RowType},
+            validate::Validator,
         },
     };
+    use cranelift::codegen::{
+        isa,
+        settings::{self, Configurable},
+    };
+    use dbsp::{
+        operator::FilterMap,
+        trace::{BatchReader, Cursor},
+        Runtime,
+    };
+    use std::{collections::BTreeMap, sync::Arc};
+    use target_lexicon::Triple;
 
     // ```sql
     // CREATE VIEW V AS SELECT Sum(r.COL1 * r.COL5)
@@ -234,7 +239,8 @@ mod tests {
                 func.seal();
 
                 func.move_to(acc_non_null);
-                let sum = func.add(accumulator, diff);
+                let acc = func.extract(accumulator, 0);
+                let sum = func.add(acc, diff);
                 func.insert(accumulator, 0, sum);
                 func.ret_unit();
                 func.seal();
@@ -243,8 +249,7 @@ mod tests {
             },
             // Just a unit closure
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone())
-                    .with_return_type(nullable_i32);
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
                 let output = func.add_mut_input(nullable_i32);
 
@@ -293,7 +298,7 @@ mod tests {
                 let value = func.extract(input, 1);
                 func.insert(output, 0, value);
 
-                func.ret(output);
+                func.ret_unit();
                 func.seal();
 
                 func.build()
@@ -315,7 +320,7 @@ mod tests {
                 let output = func.add_mut_input(nullable_i32);
 
                 func.set_null(output, 0, Constant::Bool(true));
-                func.ret(output);
+                func.ret_unit();
                 func.build()
             },
             nullable_i32,
@@ -324,7 +329,7 @@ mod tests {
         // ```
         // let stream7879: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7874.neg();
         // ```
-        let stream7879 = graph.add_node(Neg::new(stream7874));
+        let stream7879 = graph.add_node(Neg::new(stream7874, nullable_i32));
 
         // TODO: Constant sources/generators
         // ```
@@ -397,10 +402,6 @@ mod tests {
         println!("Post-opt: {graph:#?}");
 
         {
-            use crate::codegen::{Codegen, Layout};
-            use cranelift::codegen::{isa, settings};
-            use target_lexicon::Triple;
-
             let target_isa = isa::lookup(Triple::host())
                 .unwrap()
                 .finish(settings::Flags::new(settings::builder()))
@@ -443,13 +444,6 @@ mod tests {
 
     #[test]
     fn mapping() {
-        use crate::codegen::Codegen;
-        use cranelift::codegen::{
-            isa,
-            settings::{self, Configurable},
-        };
-        use target_lexicon::Triple;
-
         let mut graph = Graph::new();
 
         let xy_layout = graph.layout_cache().add(
@@ -485,10 +479,29 @@ mod tests {
 
         let sink = graph.add_node(Sink::new(map));
 
+        let mut validator = Validator::new();
+        validator.validate_graph(&graph);
+
+        graph.optimize();
+
+        validator.validate_graph(&graph);
+
         let mut settings = settings::builder();
-        settings.set("use_colocated_libcalls", "false").unwrap();
-        // FIXME: Set back to true once the x64 backend supports it.
-        settings.set("is_pic", "false").unwrap();
+
+        let options = &[
+            ("opt_level", "speed"),
+            ("use_egraphs", "true"),
+            ("enable_simd", "true"),
+            ("enable_verifier", "true"),
+            ("enable_jump_tables", "true"),
+            ("enable_alias_analysis", "true"),
+            ("use_colocated_libcalls", "false"),
+            // FIXME: Set back to true once the x64 backend supports it.
+            ("is_pic", "false"),
+        ];
+        for (name, value) in options {
+            settings.set(name, value).unwrap();
+        }
 
         let target_isa = isa::lookup(Triple::host())
             .unwrap()

@@ -2,7 +2,7 @@ use crate::ir::{function::InputFlags, LayoutId};
 use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RowType {
     Bool,
     U32,
@@ -101,6 +101,14 @@ impl RowLayout {
 
     pub fn rows(&self) -> &[RowType] {
         &self.rows
+    }
+
+    pub fn get_row_type(&self, row: usize) -> Option<RowType> {
+        self.rows.get(row).copied()
+    }
+
+    pub fn row_is_nullable(&self, row: usize) -> bool {
+        self.nullability[row]
     }
 
     pub fn nullability(&self) -> &BitVec {

@@ -1,14 +1,14 @@
-use crate::ir::{BlockId, ExprId, LayoutId};
+use crate::ir::{BlockId, ExprId, LayoutId, RowType};
 use derive_more::From;
 
-#[derive(Debug, From)]
+#[derive(Debug, From, PartialEq)]
 pub enum Terminator {
     Return(Return),
     Jump(Jump),
     Branch(Branch),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Return {
     value: RValue,
 }
@@ -23,7 +23,7 @@ impl Return {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Jump {
     target: BlockId,
 }
@@ -38,7 +38,7 @@ impl Jump {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Branch {
     cond: RValue,
     truthy: BlockId,
@@ -67,19 +67,19 @@ impl Branch {
     }
 }
 
-#[derive(Debug, From)]
+#[derive(Debug, From, PartialEq)]
 pub enum RValue {
     Expr(ExprId),
     Imm(Constant),
 }
 
-#[derive(Debug, From)]
+#[derive(Debug, From, PartialEq)]
 pub enum Expr {
+    Load(Load),
+    Store(Store),
     BinOp(BinOp),
-    Insert(Insert),
     IsNull(IsNull),
     CopyVal(CopyVal),
-    Extract(Extract),
     NullRow(NullRow),
     SetNull(SetNull),
     Constant(Constant),
@@ -87,7 +87,7 @@ pub enum Expr {
     UninitRow(UninitRow),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct BinOp {
     // TODO: Allow for immediates
     lhs: ExprId,
@@ -113,7 +113,7 @@ impl BinOp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOpKind {
     Add,
     Sub,
@@ -125,7 +125,7 @@ pub enum BinOpKind {
 }
 
 /// Copies a value
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CopyVal {
     /// The value to be copied
     value: ExprId,
@@ -142,15 +142,15 @@ impl CopyVal {
 }
 
 /// Extract a value from a row
-#[derive(Debug)]
-pub struct Extract {
+#[derive(Debug, PartialEq)]
+pub struct Load {
     /// The row to extract from
     source: ExprId,
     /// The index of the row to extract from
     row: usize,
 }
 
-impl Extract {
+impl Load {
     pub fn new(target: ExprId, row: usize) -> Self {
         Self {
             source: target,
@@ -168,8 +168,8 @@ impl Extract {
 }
 
 /// Insert a value into a row
-#[derive(Debug)]
-pub struct Insert {
+#[derive(Debug, PartialEq)]
+pub struct Store {
     /// The row to insert into
     target: ExprId,
     /// The index of the row to insert into
@@ -178,7 +178,7 @@ pub struct Insert {
     value: RValue,
 }
 
-impl Insert {
+impl Store {
     pub fn new(target: ExprId, row: usize, value: RValue) -> Self {
         Self { target, row, value }
     }
@@ -196,7 +196,7 @@ impl Insert {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IsNull {
     value: ExprId,
     row: usize,
@@ -216,7 +216,7 @@ impl IsNull {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SetNull {
     target: ExprId,
     row: usize,
@@ -245,7 +245,7 @@ impl SetNull {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Constant {
     Unit,
     U32(u32),
@@ -305,9 +305,23 @@ impl Constant {
     pub const fn is_unit(&self) -> bool {
         matches!(self, Self::Unit)
     }
+
+    pub const fn row_type(&self) -> RowType {
+        match self {
+            Self::Unit => RowType::Unit,
+            Self::U32(_) => RowType::U32,
+            Self::U64(_) => RowType::U64,
+            Self::I32(_) => RowType::I32,
+            Self::I64(_) => RowType::I64,
+            Self::F32(_) => RowType::F32,
+            Self::F64(_) => RowType::F64,
+            Self::Bool(_) => RowType::Bool,
+            Self::String(_) => RowType::String,
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CopyRowTo {
     src: ExprId,
     dest: ExprId,
@@ -332,7 +346,7 @@ impl CopyRowTo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct UninitRow {
     layout: LayoutId,
 }
@@ -358,7 +372,7 @@ impl UninitRow {
 /// sigil value since that could potentially be more efficient.
 /// In short: `NullRow` produces a row for which `IsNull` will
 /// always return `true`
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NullRow {
     layout: LayoutId,
 }

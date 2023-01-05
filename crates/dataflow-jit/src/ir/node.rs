@@ -34,13 +34,18 @@ pub enum Node {
 
 #[derive(Debug)]
 pub struct Source {
-    /// The type of the source stream
+    /// The type of the source's produced stream
     layout: LayoutId,
 }
 
 impl Source {
     pub const fn new(layout: LayoutId) -> Self {
         Self { layout }
+    }
+
+    /// The type of the source's produced stream
+    pub const fn layout(&self) -> LayoutId {
+        self.layout
     }
 }
 
@@ -288,11 +293,23 @@ impl DataflowNode for Fold {
 #[derive(Debug)]
 pub struct Neg {
     input: NodeId,
+    output_layout: LayoutId,
 }
 
 impl Neg {
-    pub fn new(input: NodeId) -> Self {
-        Self { input }
+    pub fn new(input: NodeId, output_layout: LayoutId) -> Self {
+        Self {
+            input,
+            output_layout,
+        }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
+    pub const fn output_layout(&self) -> LayoutId {
+        self.output_layout
     }
 }
 
@@ -347,6 +364,10 @@ pub struct Sum {
 impl Sum {
     pub fn new(inputs: Vec<NodeId>) -> Self {
         Self { inputs }
+    }
+
+    pub fn inputs(&self) -> &[NodeId] {
+        &self.inputs
     }
 }
 
