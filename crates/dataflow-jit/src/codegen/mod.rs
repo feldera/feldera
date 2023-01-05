@@ -125,8 +125,8 @@ impl Codegen {
                                 BinOpKind::Add => ctx.builder.ins().iadd(lhs, rhs),
                                 BinOpKind::Sub => ctx.builder.ins().isub(lhs, rhs),
                                 BinOpKind::Mul => ctx.builder.ins().imul(lhs, rhs),
-                                BinOpKind::Eq => todo!(),
-                                BinOpKind::Neq => todo!(),
+                                BinOpKind::Eq => ctx.builder.ins().icmp(IntCC::Equal, lhs, rhs),
+                                BinOpKind::Neq => ctx.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
                                 BinOpKind::And => ctx.builder.ins().band(lhs, rhs),
                                 BinOpKind::Or => ctx.builder.ins().bor(lhs, rhs),
                             };
@@ -134,45 +134,44 @@ impl Codegen {
                             ctx.add_expr(expr_id, value, None);
                         }
 
-                        Expr::Insert(insert) => {
-                            debug_assert!(!ctx.is_readonly(insert.target()));
+                        Expr::Store(store) => {
+                            debug_assert!(!ctx.is_readonly(store.target()));
 
-                            let layout = ctx.layout_of(insert.target());
-                            let offset = layout.row_offset(insert.row());
+                            let layout = ctx.layout_of(store.target());
+                            let offset = layout.row_offset(store.row());
 
-                            let value = match insert.value() {
+                            let value = match store.value() {
                                 RValue::Expr(expr) => ctx.exprs[expr],
                                 RValue::Imm(imm) => ctx.constant(imm),
                             };
 
-                            if let Some(&slot) = ctx.stack_slots.get(&insert.target()) {
+                            if let Some(&slot) = ctx.stack_slots.get(&store.target()) {
                                 ctx.builder.ins().stack_store(value, slot, offset as i32);
 
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
-                                let addr = ctx.exprs[&insert.target()];
+                                let addr = ctx.exprs[&store.target()];
                                 let flags = MemFlags::trusted();
                                 ctx.builder.ins().store(flags, value, addr, offset as i32);
                             }
                         }
 
-                        Expr::Extract(extract) => {
-                            let layout = ctx.layout_of(extract.source());
-                            let offset = layout.row_offset(extract.row());
+                        Expr::Load(load) => {
+                            let layout = ctx.layout_of(load.source());
+                            let offset = layout.row_offset(load.row());
                             let ty = layout
-                                .row_type(extract.row())
+                                .row_type(load.row())
                                 .native_type(&self.module.isa().frontend_config());
 
-                            let value = if let Some(&slot) = ctx.stack_slots.get(&extract.source())
-                            {
+                            let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
                                 ctx.builder.ins().stack_load(ty, slot, offset as i32)
 
                             // If it's not a stack slot it must be a pointer via function parameter
                             } else {
-                                let addr = ctx.exprs[&extract.source()];
+                                let addr = ctx.exprs[&load.source()];
 
                                 let mut flags = MemFlags::trusted();
-                                if ctx.is_readonly(extract.source()) {
+                                if ctx.is_readonly(load.source()) {
                                     flags.set_readonly();
                                 }
 
@@ -394,7 +393,7 @@ impl Codegen {
                     }
                 }
 
-                ctx.codegen_terminator(block_contents.terminator());
+                ctx.codegen_terminator(block_contents.terminator(), &mut stack);
 
                 ctx.builder.seal_block(block);
             }
@@ -405,11 +404,15 @@ impl Codegen {
             ctx.builder.finalize();
         }
 
-        println!("{}", self.module_ctx.func.display());
+        println!("pre-opt: {}", self.module_ctx.func.display());
 
         self.module
             .define_function(func_id, &mut self.module_ctx)
             .unwrap();
+
+        self.module_ctx.optimize(self.module.isa()).unwrap();
+        println!("post-opt: {}", self.module_ctx.func.display());
+
         self.module.clear_context(&mut self.module_ctx);
 
         func_id
@@ -432,6 +435,7 @@ impl Codegen {
         sig
     }
 
+    #[cfg(test)]
     pub(crate) fn layout_for(&mut self, layout_id: LayoutId) -> &Layout {
         self.layout_cache.compute(layout_id)
     }
@@ -594,7 +598,7 @@ impl<'a> Ctx<'a> {
         block
     }
 
-    fn codegen_terminator(&mut self, terminator: &Terminator) {
+    fn codegen_terminator(&mut self, terminator: &Terminator, stack: &mut Vec<BlockId>) {
         match terminator {
             Terminator::Return(ret) => match ret.value() {
                 RValue::Expr(expr) => {
@@ -621,8 +625,11 @@ impl<'a> Ctx<'a> {
                     .blocks
                     .entry(jump.target())
                     .or_insert_with(|| self.builder.create_block());
+
                 // FIXME: bb args
                 self.builder.ins().jump(target, &[]);
+
+                stack.push(jump.target());
             }
 
             Terminator::Branch(branch) => {
@@ -637,6 +644,8 @@ impl<'a> Ctx<'a> {
                 // FIXME: bb args
                 self.builder.ins().brz(cond, truthy, &[]);
                 self.builder.ins().jump(falsy, &[]);
+
+                stack.extend([branch.truthy(), branch.falsy()]);
             }
         }
     }

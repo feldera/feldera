@@ -1,7 +1,7 @@
 use crate::ir::{
     block::{Block, UnsealedBlock},
     expr::{
-        BinOp, BinOpKind, Branch, Constant, Expr, Extract, Insert, IsNull, RValue, Return, SetNull,
+        BinOp, BinOpKind, Branch, Constant, Expr, IsNull, Load, RValue, Return, SetNull, Store,
         Terminator,
     },
     layout_cache::LayoutCache,
@@ -18,7 +18,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Function {
     args: Vec<(LayoutId, ExprId, InputFlags)>,
     ret: LayoutId,
@@ -42,6 +42,10 @@ impl Function {
 
     pub fn blocks(&self) -> &BTreeMap<BlockId, Block> {
         &self.blocks
+    }
+
+    pub const fn return_type(&self) -> LayoutId {
+        self.ret
     }
 
     pub fn signature(&self) -> Signature {
@@ -84,11 +88,11 @@ impl Function {
                     false
                 }
 
-                Expr::Extract(extract) => {
-                    let row_layout = row_exprs[&extract.source()];
+                Expr::Load(load) => {
+                    let row_layout = row_exprs[&load.source()];
                     let layout = layout_cache.get(row_layout);
 
-                    if layout.rows()[extract.row()].is_unit() {
+                    if layout.rows()[load.row()].is_unit() {
                         unit_exprs.insert(expr_id);
                         false
                     } else {
@@ -96,10 +100,10 @@ impl Function {
                     }
                 }
 
-                Expr::Insert(insert) => {
-                    let row_layout = row_exprs[&insert.target()];
+                Expr::Store(store) => {
+                    let row_layout = row_exprs[&store.target()];
                     let layout = layout_cache.get(row_layout);
-                    !layout.rows()[insert.row()].is_unit()
+                    !layout.rows()[store.row()].is_unit()
                 }
 
                 Expr::CopyVal(copy) => {
@@ -224,14 +228,14 @@ impl FunctionBuilder {
     }
 
     pub fn extract(&mut self, target: ExprId, row: usize) -> ExprId {
-        self.add_expr(Extract::new(target, row))
+        self.add_expr(Load::new(target, row))
     }
 
     pub fn insert<V>(&mut self, target: ExprId, row: usize, value: V)
     where
         V: Into<RValue>,
     {
-        self.add_expr(Insert::new(target, row, value.into()));
+        self.add_expr(Store::new(target, row, value.into()));
     }
 
     pub fn and(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
