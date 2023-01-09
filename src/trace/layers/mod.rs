@@ -4,6 +4,8 @@
 //! elements in the next layer. Similarly, ranges of elements in the layer
 //! itself may correspond to single elements in the layer above.
 
+mod advance;
+
 pub mod column_layer;
 pub mod ordered;
 pub mod ordered_leaf;
@@ -12,10 +14,11 @@ pub mod unordered;
 // pub mod weighted;
 // pub mod unordered;
 
+pub use advance::{advance, advance_erased, advance_raw};
+
 use crate::algebra::HasZero;
 use size_of::SizeOf;
 use std::{
-    cmp::min,
     fmt::Debug,
     ops::{Add, Sub},
 };
@@ -237,49 +240,6 @@ where
     #[inline]
     fn into_usize(self) -> usize {
         self.try_into().unwrap()
-    }
-}
-
-/// Reports the number of elements satisfying the predicate.
-///
-/// This methods *relies strongly* on the assumption that the predicate
-/// stays false once it becomes false, a joint property of the predicate
-/// and the slice. This allows `advance` to use exponential search to
-/// count the number of elements in time logarithmic in the result.
-pub fn advance<T, F>(slice: &[T], function: F) -> usize
-where
-    F: Fn(&T) -> bool,
-{
-    let small_limit = 8;
-
-    // Exponential search if the answer isn't within `small_limit`.
-    if slice.len() > small_limit && function(&slice[small_limit]) {
-        // start with no advance
-        let mut index = small_limit + 1;
-        if index < slice.len() && function(&slice[index]) {
-            // advance in exponentially growing steps.
-            let mut step = 1;
-            while index + step < slice.len() && function(&slice[index + step]) {
-                index += step;
-                step <<= 1;
-            }
-
-            // advance in exponentially shrinking steps.
-            step >>= 1;
-            while step > 0 {
-                if index + step < slice.len() && function(&slice[index + step]) {
-                    index += step;
-                }
-                step >>= 1;
-            }
-
-            index += 1;
-        }
-
-        index
-    } else {
-        let limit = min(slice.len(), small_limit);
-        slice[..limit].iter().filter(|x| function(*x)).count()
     }
 }
 
