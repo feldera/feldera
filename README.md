@@ -86,7 +86,7 @@ one record at a time.
 aggregate, etc.
 
 1. **Recursion**: Recursive queries express iterative computations, e.g.,
-partitioning a graph into strongly connected components.  Like all DPSP queries,
+partitioning a graph into strongly connected components.  Like all DBSP queries,
 recursive queries update their outputs incrementally as new data arrives.
 
 In addition, DBSP supports **windowing operators** that group time series data
