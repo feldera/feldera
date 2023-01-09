@@ -5,8 +5,10 @@ use std::fmt::{self, Debug, Display, Write};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RowType {
     Bool,
+    U16,
     U32,
     U64,
+    I16,
     I32,
     I64,
     F32,
@@ -30,15 +32,17 @@ impl RowType {
 
     fn to_str(&self) -> &'static str {
         match self {
-            RowType::Bool => "bool",
-            RowType::U32 => "u32",
-            RowType::U64 => "u64",
-            RowType::I32 => "i32",
-            RowType::I64 => "i64",
-            RowType::F32 => "f32",
-            RowType::F64 => "f64",
-            RowType::Unit => "unit",
-            RowType::String => "str",
+            Self::Bool => "bool",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Unit => "unit",
+            Self::String => "str",
         }
     }
 }

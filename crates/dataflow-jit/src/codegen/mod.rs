@@ -497,7 +497,7 @@ impl<'a> Ctx<'a> {
     fn is_readonly(&self, expr: ExprId) -> bool {
         self.function_inputs
             .get(&expr)
-            .map_or(false, |flags| !flags.contains(InputFlags::MUTABLE))
+            .map_or(false, InputFlags::is_readonly)
     }
 
     fn constant(&mut self, constant: &Constant) -> Value {

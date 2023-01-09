@@ -204,11 +204,7 @@ impl DataflowNode for IndexWith {
     fn signature(&self, inputs: &[LayoutId], layout_cache: &LayoutCache) -> Signature {
         Signature::new(
             vec![inputs[0], self.key_layout, self.value_layout],
-            vec![
-                InputFlags::empty(),
-                InputFlags::MUTABLE,
-                InputFlags::MUTABLE,
-            ],
+            vec![InputFlags::INPUT, InputFlags::OUTPUT, InputFlags::OUTPUT],
             layout_cache.unit(),
         )
     }

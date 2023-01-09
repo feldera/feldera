@@ -14,7 +14,31 @@ use std::{
 
 bitflags::bitflags! {
     pub struct InputFlags: u8 {
-        const MUTABLE = 1 << 0;
+        /// The parameter can be used as an input
+        const INPUT = 1 << 0;
+        /// The parameter can be used as an output
+        const OUTPUT = 1 << 1;
+        /// The parameter can be used as both an input and output
+        const INOUT = Self::INPUT.bits | Self::OUTPUT.bits;
+    }
+}
+
+impl InputFlags {
+    pub const fn is_input(&self) -> bool {
+        self.contains(Self::INPUT)
+    }
+
+    pub const fn is_output(&self) -> bool {
+        self.contains(Self::OUTPUT)
+    }
+
+    pub const fn is_inout(&self) -> bool {
+        self.contains(Self::INOUT)
+    }
+
+    /// Returns `true` if the parameter is only a input and not an output
+    pub const fn is_readonly(&self) -> bool {
+        self.is_input() && !self.is_output()
     }
 }
 
@@ -151,12 +175,10 @@ pub struct FunctionBuilder {
 
     expr_id: ExprIdGen,
     block_id: BlockIdGen,
-
-    layout_cache: LayoutCache,
 }
 
 impl FunctionBuilder {
-    pub fn new(layout_cache: LayoutCache) -> Self {
+    pub fn new(layout_cache: &LayoutCache) -> Self {
         Self {
             args: Vec::new(),
             ret: layout_cache.unit(),
@@ -167,7 +189,6 @@ impl FunctionBuilder {
             current: None,
             expr_id: ExprIdGen::new(),
             block_id: BlockIdGen::new(),
-            layout_cache,
         }
     }
 
@@ -177,11 +198,15 @@ impl FunctionBuilder {
     }
 
     pub fn add_input(&mut self, input_row: LayoutId) -> ExprId {
-        self.add_input_with_flags(input_row, InputFlags::empty())
+        self.add_input_with_flags(input_row, InputFlags::INPUT)
     }
 
-    pub fn add_mut_input(&mut self, input_row: LayoutId) -> ExprId {
-        self.add_input_with_flags(input_row, InputFlags::MUTABLE)
+    pub fn add_output(&mut self, input_row: LayoutId) -> ExprId {
+        self.add_input_with_flags(input_row, InputFlags::OUTPUT)
+    }
+
+    pub fn add_input_output(&mut self, input_row: LayoutId) -> ExprId {
+        self.add_input_with_flags(input_row, InputFlags::INOUT)
     }
 
     pub fn add_input_with_flags(&mut self, input_row: LayoutId, flags: InputFlags) -> ExprId {
@@ -227,11 +252,11 @@ impl FunctionBuilder {
         self.add_expr(SetNull::new(target, row, is_null.into()));
     }
 
-    pub fn extract(&mut self, target: ExprId, row: usize) -> ExprId {
+    pub fn load(&mut self, target: ExprId, row: usize) -> ExprId {
         self.add_expr(Load::new(target, row))
     }
 
-    pub fn insert<V>(&mut self, target: ExprId, row: usize, value: V)
+    pub fn store<V>(&mut self, target: ExprId, row: usize, value: V)
     where
         V: Into<RValue>,
     {
