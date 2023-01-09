@@ -115,17 +115,17 @@ mod tests {
         let stream7850 = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(source_row);
-                let output = func.add_mut_input(nullable_i32);
+                let output = func.add_output(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 4);
                 func.set_null(output, 0, value_is_null);
 
                 // Copy the value to the output row
-                let value = func.extract(input, 4);
-                func.insert(output, 0, value);
+                let value = func.load(input, 4);
+                func.store(output, 0, value);
 
                 func.ret_unit();
                 func.build()
@@ -142,20 +142,20 @@ mod tests {
         let stream7856 = graph.add_node(IndexWith::new(
             stream7850,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(nullable_i32);
-                let key = func.add_mut_input(unit_layout);
-                let value = func.add_mut_input(nullable_i32);
+                let key = func.add_output(unit_layout);
+                let value = func.add_output(nullable_i32);
 
-                func.insert(key, 0, Constant::Unit);
+                func.store(key, 0, Constant::Unit);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 0);
                 func.set_null(value, 0, value_is_null);
 
                 // Copy the value to the output row
-                let input_val = func.extract(input, 0);
-                func.insert(value, 0, input_val);
+                let input_val = func.load(input, 0);
+                func.store(value, 0, input_val);
 
                 func.ret_unit();
                 func.build()
@@ -205,8 +205,8 @@ mod tests {
             // }
             // ```
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let accumulator = func.add_mut_input(nullable_i32);
+                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let accumulator = func.add_output(nullable_i32);
                 let current = func.add_input(nullable_i32);
                 let weight = func.add_input(weight_layout);
 
@@ -227,21 +227,21 @@ mod tests {
                 let acc_non_null = func.create_block();
 
                 func.move_to(current_non_null);
-                let current = func.extract(current, 0);
-                let weight = func.extract(weight, 0);
+                let current = func.load(current, 0);
+                let weight = func.load(weight, 0);
                 let diff = func.mul(current, weight);
                 func.branch(acc_is_null, acc_null, acc_non_null);
                 func.seal();
 
                 func.move_to(acc_null);
-                func.insert(accumulator, 0, diff);
+                func.store(accumulator, 0, diff);
                 func.ret_unit();
                 func.seal();
 
                 func.move_to(acc_non_null);
-                let acc = func.extract(accumulator, 0);
+                let acc = func.load(accumulator, 0);
                 let sum = func.add(acc, diff);
-                func.insert(accumulator, 0, sum);
+                func.store(accumulator, 0, sum);
                 func.ret_unit();
                 func.seal();
 
@@ -249,17 +249,17 @@ mod tests {
             },
             // Just a unit closure
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(nullable_i32);
-                let output = func.add_mut_input(nullable_i32);
+                let output = func.add_output(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 0);
                 func.set_null(output, 0, value_is_null);
 
                 // Unconditionally copy the value into the output row
-                let value = func.extract(input, 0);
-                func.insert(output, 0, value);
+                let value = func.load(input, 0);
+                func.store(output, 0, value);
 
                 func.ret_unit();
                 func.seal();
@@ -286,17 +286,17 @@ mod tests {
         let stream7866 = graph.add_node(Map::new(
             stream7861,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(stream7866_layout);
-                let output = func.add_mut_input(nullable_i32);
+                let output = func.add_output(nullable_i32);
 
                 // Set the output row to null if the input value is null
                 let value_is_null = func.is_null(input, 1);
                 func.set_null(output, 0, value_is_null);
 
                 // Unconditionally copy the value into the output row
-                let value = func.extract(input, 1);
-                func.insert(output, 0, value);
+                let value = func.load(input, 1);
+                func.store(output, 0, value);
 
                 func.ret_unit();
                 func.seal();
@@ -315,9 +315,9 @@ mod tests {
         let stream7874 = graph.add_node(Map::new(
             stream7866,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let _input = func.add_input(nullable_i32);
-                let output = func.add_mut_input(nullable_i32);
+                let output = func.add_output(nullable_i32);
 
                 func.set_null(output, 0, Constant::Bool(true));
                 func.ret_unit();
@@ -358,12 +358,12 @@ mod tests {
         let stream7892 = graph.add_node(IndexWith::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(source_row);
-                let key = func.add_mut_input(unit_layout);
-                let value = func.add_mut_input(source_row);
+                let key = func.add_output(unit_layout);
+                let value = func.add_output(source_row);
 
-                func.insert(key, 0, Constant::Unit);
+                func.store(key, 0, Constant::Unit);
 
                 func.add_expr(CopyRowTo::new(input, value, source_row));
                 func.ret_unit();
@@ -382,12 +382,12 @@ mod tests {
         let stream7897 = graph.add_node(IndexWith::new(
             stream7887,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(nullable_i32);
-                let key = func.add_mut_input(unit_layout);
-                let value = func.add_mut_input(nullable_i32);
+                let key = func.add_output(unit_layout);
+                let value = func.add_output(nullable_i32);
 
-                func.insert(key, 0, Constant::Unit);
+                func.store(key, 0, Constant::Unit);
 
                 func.add_expr(CopyRowTo::new(input, value, nullable_i32));
                 func.ret_unit();
@@ -462,14 +462,14 @@ mod tests {
         let map = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let mut func = FunctionBuilder::new(graph.layout_cache());
                 let input = func.add_input(xy_layout);
-                let output = func.add_mut_input(x_layout);
+                let output = func.add_output(x_layout);
 
-                let x = func.extract(input, 0);
-                let y = func.extract(input, 1);
+                let x = func.load(input, 0);
+                let y = func.load(input, 1);
                 let xy = func.mul(x, y);
-                func.insert(output, 0, xy);
+                func.store(output, 0, xy);
 
                 func.ret_unit();
                 func.build()

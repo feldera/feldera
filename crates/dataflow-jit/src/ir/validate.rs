@@ -94,7 +94,7 @@ impl Validator {
                         );
 
                         assert_eq!(
-                            flags.contains(InputFlags::MUTABLE),
+                            flags.contains(InputFlags::OUTPUT),
                             is_mutable,
                             "the {idx}th argument to a map function was {}mutable when it should {}have been",
                             if is_mutable { "not" } else { "" },
@@ -179,7 +179,7 @@ impl FunctionValidator {
 
             self.expr_types.insert(expr_id, Err(layout_id));
             self.expr_row_mutability
-                .insert(expr_id, flags.contains(InputFlags::MUTABLE));
+                .insert(expr_id, flags.contains(InputFlags::OUTPUT));
         }
 
         // Infer expression types
