@@ -55,3 +55,16 @@ pub(crate) fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
     // Create a new vec with the different type
     unsafe { Vec::from_raw_parts(ptr.cast::<MaybeUninit<T>>(), len, cap) }
 }
+
+#[inline]
+#[cfg(test)]
+pub(crate) fn bytes_of<T>(slice: &[T]) -> &[MaybeUninit<u8>] {
+    // Safety: It's always sound to interpret possibly uninitialized bytes as
+    // `MaybeUninit<u8>`
+    unsafe {
+        std::slice::from_raw_parts(
+            slice.as_ptr().cast(),
+            slice.len() * std::mem::size_of::<T>(),
+        )
+    }
+}
