@@ -1,6 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    utils::DynVecVTable,
+    utils::{self, DynVecVTable},
 };
 use core::slice;
 use size_of::{Context, SizeOf};
@@ -177,7 +177,7 @@ where
             unsafe {
                 let src = slice::from_raw_parts(src.cast(), count);
                 let dest = slice::from_raw_parts_mut(dest.cast(), count);
-                MaybeUninit::<T>::write_slice_cloned(dest, src);
+                utils::write_uninit_slice_cloned::<T>(dest, src);
             }
         }
 
