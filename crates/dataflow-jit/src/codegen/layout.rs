@@ -106,7 +106,7 @@ impl LayoutConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Layout {
     size: u32,
     align: u32,
@@ -123,6 +123,13 @@ pub struct Layout {
 }
 
 impl Layout {
+    pub fn rows(&self) -> impl Iterator<Item = (u32, Type)> + '_ {
+        self.offsets
+            .iter()
+            .zip(&self.types)
+            .map(|(&offset, &ty)| (offset, ty))
+    }
+
     /// Returns the offset of the given row
     pub fn row_offset(&self, row: usize) -> u32 {
         self.offsets[self.index_mappings[row] as usize]
