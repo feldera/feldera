@@ -1,11 +1,15 @@
+mod dyn_vec;
 pub(crate) mod tests;
 mod vec_ext;
+
+pub use dyn_vec::{DynIter, DynVec, DynVecVTable};
 
 pub(crate) use vec_ext::VecExt;
 
 use std::{
     hint::unreachable_unchecked,
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::{forget, ManuallyDrop, MaybeUninit},
+    ptr,
 };
 
 /// Tells the optimizer that a condition is always true
@@ -45,6 +49,72 @@ pub(crate) fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
 
     // Create a new vec with the different type
     unsafe { Vec::from_raw_parts(ptr.cast::<MaybeUninit<T>>(), len, cap) }
+}
+
+/// Creates a `Vec<MaybeUninit<T>>` with the given length
+#[inline]
+pub(crate) fn uninit_vec<T>(length: usize) -> Vec<MaybeUninit<T>> {
+    let mut buf: Vec<MaybeUninit<T>> = Vec::with_capacity(length);
+    // Safety: `buf` is initialized with uninitalized elements up to `length`
+    unsafe { buf.set_len(length) };
+    buf
+}
+
+// TODO: Replace with `MaybeUninit::write_slice_cloned()` via rust/#79995
+#[inline]
+pub(crate) fn write_uninit_slice_cloned<'a, T>(
+    this: &'a mut [MaybeUninit<T>],
+    src: &[T],
+) -> &'a mut [T]
+where
+    T: Clone,
+{
+    // unlike copy_from_slice this does not call clone_from_slice on the slice
+    // this is because `MaybeUninit<T: Clone>` does not implement Clone.
+
+    struct Guard<'a, T> {
+        slice: &'a mut [MaybeUninit<T>],
+        initialized: usize,
+    }
+
+    impl<'a, T> Drop for Guard<'a, T> {
+        fn drop(&mut self) {
+            let initialized_part = &mut self.slice[..self.initialized];
+            // SAFETY: this raw slice will contain only initialized objects
+            // that's why, it is allowed to drop it.
+            unsafe {
+                ptr::drop_in_place(&mut *(initialized_part as *mut [MaybeUninit<T>] as *mut [T]));
+            }
+        }
+    }
+
+    assert_eq!(
+        this.len(),
+        src.len(),
+        "destination and source slices have different lengths"
+    );
+    // NOTE: We need to explicitly slice them to the same length
+    // for bounds checking to be elided, and the optimizer will
+    // generate memcpy for simple cases (for example T = u8).
+    let len = this.len();
+    let src = &src[..len];
+
+    // guard is needed b/c panic might happen during a clone
+    let mut guard = Guard {
+        slice: this,
+        initialized: 0,
+    };
+
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..len {
+        guard.slice[i].write(src[i].clone());
+        guard.initialized += 1;
+    }
+
+    forget(guard);
+
+    // SAFETY: Valid elements have just been written into `this` so it is initialized
+    unsafe { &mut *(this as *mut [MaybeUninit<T>] as *mut [T]) }
 }
 
 #[inline]
