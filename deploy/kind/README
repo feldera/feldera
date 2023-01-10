@@ -1,0 +1,25 @@
+
+### Requirements
+
+* kind: https://kind.sigs.k8s.io/
+* kubectl
+* docker
+* Helm: https://helm.sh/docs/intro/install/
+
+### Instructions
+
+First, set up a kind cluster, the required Helm charts and the demo pod docker container with this script:
+
+```
+$: ./setup.sh
+```
+
+Next, launch and login to the demo pod and run the demo script:
+
+```
+# Will take a while the first time it is run
+$: ./login.sh
+
+# From within the demo pod
+$: database-stream-processor/demo/demo.sh
+```
