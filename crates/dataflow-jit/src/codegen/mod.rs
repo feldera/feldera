@@ -19,7 +19,10 @@ use cranelift::{
 };
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Module};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroU8,
+};
 
 struct NativeLayoutCache {
     layout_cache: LayoutCache,
@@ -405,7 +408,6 @@ impl Codegen {
         }
 
         println!("pre-opt: {}", self.module_ctx.func.display());
-
         self.module
             .define_function(func_id, &mut self.module_ctx)
             .unwrap();
@@ -438,6 +440,81 @@ impl Codegen {
     #[cfg(test)]
     pub(crate) fn layout_for(&mut self, layout_id: LayoutId) -> &Layout {
         self.layout_cache.compute(layout_id)
+    }
+
+    /// Generates a function comparing two of the given layout for equality
+    // FIXME: I took the really lazy route here and pretend that uninit data
+    //        either doesn't exist or is always zeroed, if padding bytes
+    //        or otherwise uninitialized data doesn't conform to that this'll
+    //        spuriously error
+    // FIXME: This also ignores the existence of strings
+    pub fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*const u8, *const u8) -> bool
+        let mut signature = self.module.make_signature();
+        signature.returns.push(AbiParam::new(types::I8));
+        signature.params.extend([
+            AbiParam::new(self.module.isa().pointer_type()),
+            AbiParam::new(self.module.isa().pointer_type()),
+        ]);
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
+
+            let layout = self.layout_cache.compute(layout_id);
+
+            // Zero sized types are always equal
+            let are_equal = if layout.is_zero_sized() {
+                builder.ins().iconst(types::I8, true as i64)
+
+            // Otherwise we emit a memcpy
+            } else {
+                let params = builder.block_params(entry_block);
+                let (lhs, rhs) = (params[0], params[1]);
+
+                let align = NonZeroU8::new(layout.align() as u8).unwrap();
+                builder.emit_small_memory_compare(
+                    self.module.isa().frontend_config(),
+                    IntCC::Equal,
+                    lhs,
+                    rhs,
+                    layout.size() as u64,
+                    align,
+                    align,
+                    MemFlags::trusted().with_readonly(),
+                )
+            };
+
+            builder.ins().return_(&[are_equal]);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        println!("pre-opt: {}", self.module_ctx.func.display());
+        self.module
+            .define_function(func_id, &mut self.module_ctx)
+            .unwrap();
+
+        self.module_ctx.optimize(self.module.isa()).unwrap();
+        println!("post-opt: {}", self.module_ctx.func.display());
+
+        self.module.clear_context(&mut self.module_ctx);
+
+        func_id
     }
 }
 

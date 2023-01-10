@@ -7,6 +7,7 @@
 mod advance;
 
 pub mod column_layer;
+pub mod erased;
 pub mod ordered;
 pub mod ordered_leaf;
 pub mod unordered;
