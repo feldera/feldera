@@ -7,7 +7,7 @@ use std::{cmp::max, marker::PhantomData};
 /// Relative time offset.
 ///
 /// Specifies relative time as an offset.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RelOffset<TS> {
     Before(TS),
     After(TS),
@@ -16,7 +16,7 @@ pub enum RelOffset<TS> {
 /// Relative time range.
 ///
 /// Specifies a time interval relative to a given point in time.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RelRange<TS> {
     from: RelOffset<TS>,
     to: RelOffset<TS>,
@@ -31,32 +31,36 @@ where
     }
 
     /// Computes relative range of timestamp `ts`.
-    pub fn range_of(&self, ts: &TS) -> Range<TS> {
+    ///
+    /// Returns `None` if the range is completely outside the range of type
+    /// `TS`.
+    pub fn range_of(&self, ts: &TS) -> Option<Range<TS>> {
         let from = match self.from {
             RelOffset::Before(off) => ts.saturating_sub(off),
-            RelOffset::After(off) => ts.saturating_add(off),
+            RelOffset::After(off) => ts.checked_add(&off)?,
         };
         let to = match self.to {
-            RelOffset::Before(off) => ts.saturating_sub(off),
+            RelOffset::Before(off) => ts.checked_sub(&off)?,
             RelOffset::After(off) => ts.saturating_add(off),
         };
 
-        Range { from, to }
+        Some(Range { from, to })
     }
 
     /// Returns a range containing all times `t` such that `ts ∈
-    /// self.range_of(t)`.
-    pub fn affected_range_of(&self, ts: &TS) -> Range<TS> {
+    /// self.range_of(t)` or `None` if the range is completely outside
+    /// the range of type `TS`.
+    pub fn affected_range_of(&self, ts: &TS) -> Option<Range<TS>> {
         let from = match self.to {
-            RelOffset::Before(off) => ts.saturating_add(off),
+            RelOffset::Before(off) => ts.checked_add(&off)?,
             RelOffset::After(off) => ts.saturating_sub(off),
         };
         let to = match self.from {
             RelOffset::Before(off) => ts.saturating_add(off),
-            RelOffset::After(off) => ts.saturating_sub(off),
+            RelOffset::After(off) => ts.checked_sub(&off)?,
         };
 
-        Range::new(from, to)
+        Some(Range::new(from, to))
     }
 }
 
@@ -64,7 +68,7 @@ where
 ///
 /// Specifies a time range containing all timestamps in the closed interval
 /// `[from..to]`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Range<TS: PrimInt> {
     pub from: TS,
     pub to: TS,
@@ -82,7 +86,7 @@ where
 }
 
 /// Multiple non-overlapping ordered time ranges.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ranges<TS: PrimInt>(Vec<Range<TS>>);
 
 impl<TS> Ranges<TS>
@@ -91,6 +95,10 @@ where
 {
     pub fn new() -> Self {
         Self(Vec::new())
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
     }
 
     /// Returns the number of non-overlapping ranges in `self`.
@@ -105,8 +113,37 @@ where
         &self.0[idx]
     }
 
+    /// Merge two ordered sets of ranges.
+    pub fn merge(&self, other: &Self) -> Self {
+        let mut result = Self::with_capacity(self.len() + other.len());
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < self.len() && j < other.len() {
+            if self.range(i).from <= other.range(j).from {
+                result.push_monotonic(self.range(i).clone());
+                i += 1;
+            } else {
+                result.push_monotonic(other.range(j).clone());
+                j += 1;
+            }
+        }
+
+        while i < self.len() {
+            result.push_monotonic(self.range(i).clone());
+            i += 1;
+        }
+
+        while j < other.len() {
+            result.push_monotonic(other.range(j).clone());
+            j += 1;
+        }
+
+        result
+    }
+
     /// Add a range whose lower bound is greater than or equal than the
-    /// lowe bound of the last range in `self`.
+    /// lower bound of the last range in `self`.
     ///
     /// Precondition: `self.len() == 0 || range.from <=
     /// self.last.unwrap().from`.
@@ -245,5 +282,39 @@ where
 
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::operator::time_series::range::{Range, Ranges};
+    use num::PrimInt;
+
+    fn ranges_from_bounds<T: PrimInt>(bounds: &[(T, T)]) -> Ranges<T> {
+        let mut ranges = Ranges::new();
+
+        for (from, to) in bounds.iter() {
+            ranges.push_monotonic(Range::new(*from, *to));
+        }
+
+        ranges
+    }
+
+    #[test]
+    fn test_merge() {
+        let bounds1 = [(0, 0), (1, 3), (5, 10), (15, 15)];
+        let ranges1 = ranges_from_bounds(&bounds1);
+
+        let bounds2 = [(0, 0), (2, 4), (5, 7), (8, 11), (12, 13), (20, 30)];
+        let ranges2 = ranges_from_bounds(&bounds2);
+
+        let expected_bounds = [(0, 0), (1, 4), (5, 11), (12, 13), (15, 15), (20, 30)];
+        let expected = ranges_from_bounds(&expected_bounds);
+
+        let merged = ranges1.merge(&ranges2);
+        assert_eq!(merged, expected);
+
+        let merged = ranges2.merge(&ranges1);
+        assert_eq!(merged, expected);
     }
 }

@@ -9,7 +9,7 @@ use crate::{
     operator::{
         time_series::{
             radix_tree::{PartitionedRadixTreeReader, RadixTreeCursor},
-            range::{RangeCursor, Ranges, RelRange},
+            range::{Range, RangeCursor, Ranges, RelRange},
             OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
             PartitionedIndexedZSet,
         },
@@ -271,14 +271,21 @@ impl<TS, S, V> PartitionedRollingAggregate<TS, S, V> {
         C: Cursor<'a, TS, V, (), R>,
         TS: PrimInt,
     {
-        let mut ranges = Ranges::new();
+        let mut affected_ranges = Ranges::new();
+        let mut delta_ranges = Ranges::new();
 
         while delta_cursor.key_valid() {
-            ranges.push_monotonic(self.range.affected_range_of(delta_cursor.key()));
+            if let Some(range) = self.range.affected_range_of(delta_cursor.key()) {
+                affected_ranges.push_monotonic(range);
+            }
+            // If `delta_cursor.key()` is a new key that doesn't yet occur in the input
+            // z-set, we need to compute its aggregate even if it is outside
+            // affected range.
+            delta_ranges.push_monotonic(Range::new(*delta_cursor.key(), *delta_cursor.key()));
             delta_cursor.step_key();
         }
 
-        ranges
+        affected_ranges.merge(&delta_ranges)
     }
 }
 
@@ -326,6 +333,7 @@ where
         let mut retraction_builder = O::Builder::new_builder(());
         let mut insertion_builder = O::Builder::with_capacity((), input_delta.len());
 
+        // println!("delta: {input_delta:#x?}");
         // println!("radix tree: {radix_tree:#x?}");
         // println!("aggregate_range({range:x?})");
         // let mut treestr = String::new();
@@ -381,7 +389,12 @@ where
                 // For all affected times, seek them in `input_trace`, compute aggregates using
                 // using radix_tree.
                 while input_range_cursor.key_valid() {
-                    let range = self.range.range_of(input_range_cursor.key());
+                    let range = if let Some(range) = self.range.range_of(input_range_cursor.key()) {
+                        range
+                    } else {
+                        input_range_cursor.step_key();
+                        continue;
+                    };
                     tree_partition_cursor.rewind_keys();
 
                     // println!("aggregate_range({range:x?})");
@@ -487,7 +500,12 @@ mod test {
                     while cursor.val_valid() {
                         let partition = *cursor.key();
                         let (ts, _val) = *cursor.val();
-                        let range = range_spec.range_of(&ts);
+                        let range = if let Some(range) = range_spec.range_of(&ts) {
+                            range
+                        } else {
+                            cursor.step_val();
+                            continue;
+                        };
                         let agg = aggregate_range_slow(batch, partition, range);
                         tuples.push(((partition, (ts, agg)), 1));
                         cursor.step_val();
@@ -539,7 +557,10 @@ mod test {
             let expected_500_500 =
                 partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
             let output_500_500 = input_stream
-                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec.clone())
+                .partitioned_rolling_aggregate::<u64, i64, _>(
+                    aggregator.clone(),
+                    range_spec.clone(),
+                )
                 .gather(0)
                 .integrate();
             expected_500_500.apply2(&output_500_500, |expected, actual| {
@@ -551,6 +572,17 @@ mod test {
                 .gather(0)
                 .integrate();
             expected_500_500.apply2(&output_500_500_linear, |expected, actual| {
+                assert_eq!(expected, actual)
+            });
+
+            let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::Before(100));
+            let expected_500_100 =
+                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
+            let output_500_100 = input_stream
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec.clone())
+                .gather(0)
+                .integrate();
+            expected_500_100.apply2(&output_500_100, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
