@@ -129,15 +129,20 @@ pub enum BinOpKind {
 pub struct CopyVal {
     /// The value to be copied
     value: ExprId,
+    ty: RowType,
 }
 
 impl CopyVal {
-    pub fn new(value: ExprId) -> Self {
-        Self { value }
+    pub fn new(value: ExprId, ty: RowType) -> Self {
+        Self { value, ty }
     }
 
     pub const fn value(&self) -> ExprId {
         self.value
+    }
+
+    pub const fn ty(&self) -> RowType {
+        self.ty
     }
 }
 
@@ -259,7 +264,8 @@ pub enum Constant {
 }
 
 impl Constant {
-    /// Returns `true` if the constant is a [`U32`], [`I32`], [`U64`] or [`I64`].
+    /// Returns `true` if the constant is a [`U32`], [`I32`], [`U64`] or
+    /// [`I64`].
     ///
     /// [`U32`]: Constant::U32
     /// [`I32`]: Constant::I32

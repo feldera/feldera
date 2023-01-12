@@ -1,37 +1,43 @@
 mod layout;
+mod vtable;
 
 pub use layout::{Layout, Type};
 
-use crate::ir::{
-    BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
-    RValue, Signature, Terminator,
+use crate::{
+    ir::{
+        BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
+        RValue, RowType, Signature, Terminator,
+    },
+    ThinStr,
 };
 use cranelift::{
     codegen::{
-        ir::{StackSlot, UserFuncName},
+        ir::{FuncRef, StackSlot, UserFuncName},
         Context,
     },
     prelude::{
-        isa::{TargetFrontendConfig, TargetIsa},
-        types, AbiParam, Block as ClifBlock, FunctionBuilder, FunctionBuilderContext, InstBuilder,
-        IntCC, MemFlags, Signature as ClifSignature, StackSlotData, StackSlotKind, Value,
+        isa::{self, TargetFrontendConfig, TargetIsa},
+        settings, types, AbiParam, Block as ClifBlock, Configurable, FunctionBuilder,
+        FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature as ClifSignature,
+        StackSlotData, StackSlotKind, Value,
     },
 };
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{FuncId, Linkage, Module};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    num::NonZeroU8,
+    mem::ManuallyDrop,
 };
+use target_lexicon::Triple;
 
-struct NativeLayoutCache {
-    layout_cache: LayoutCache,
+pub struct NativeLayoutCache {
+    pub(crate) layout_cache: LayoutCache,
     layouts: BTreeMap<LayoutId, Layout>,
     frontend_config: TargetFrontendConfig,
 }
 
 impl NativeLayoutCache {
-    pub fn new(layout_cache: LayoutCache, frontend_config: TargetFrontendConfig) -> Self {
+    fn new(layout_cache: LayoutCache, frontend_config: TargetFrontendConfig) -> Self {
         Self {
             layout_cache,
             layouts: BTreeMap::new(),
@@ -45,6 +51,41 @@ impl NativeLayoutCache {
             Layout::from_row(&row_layout, &self.frontend_config)
         })
     }
+
+    pub fn row_layout_cache(&self) -> &LayoutCache {
+        &self.layout_cache
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CodegenConfig {
+    pub null_sigil: NullSigil,
+    pub debug_assertions: bool,
+}
+
+impl CodegenConfig {
+    pub const fn new(null_sigil: NullSigil, debug_assertions: bool) -> Self {
+        Self {
+            null_sigil,
+            debug_assertions,
+        }
+    }
+
+    pub const fn debug() -> Self {
+        Self {
+            null_sigil: NullSigil::One,
+            debug_assertions: true,
+        }
+    }
+}
+
+impl Default for CodegenConfig {
+    fn default() -> Self {
+        Self {
+            null_sigil: NullSigil::One,
+            debug_assertions: false,
+        }
+    }
 }
 
 pub struct Codegen {
@@ -52,22 +93,67 @@ pub struct Codegen {
     module: JITModule,
     module_ctx: Context,
     function_ctx: FunctionBuilderContext,
-    null_sigil: NullSigil,
+    config: CodegenConfig,
+    clone_string: FuncId,
+    string_lt: FuncId,
 }
 
 impl Codegen {
-    pub fn new(
-        target: Box<dyn TargetIsa>,
-        layout_cache: LayoutCache,
-        null_sigil: NullSigil,
-    ) -> Self {
+    pub fn new(layout_cache: LayoutCache, config: CodegenConfig) -> Self {
+        let target = Self::target_isa();
+
         let layout_cache = NativeLayoutCache::new(layout_cache, target.frontend_config());
 
-        let module = JITModule::new(JITBuilder::with_isa(
+        let mut builder = JITBuilder::with_isa(
             target,
             // TODO: We may want custom impls of things
             cranelift_module::default_libcall_names(),
-        ));
+        );
+
+        // FIXME: Technically this can unwind
+        // FIXME: Use ThinStrRef as the input type
+        extern "C" fn dataflow_jit_clone_string(string: ManuallyDrop<ThinStr>) -> ThinStr {
+            (*string).clone()
+        }
+        builder.symbol(
+            "dataflow_jit_clone_string",
+            dataflow_jit_clone_string as *const u8,
+        );
+        // FIXME: Technically this can unwind
+        // FIXME: Use ThinStrRef as the input type
+        extern "C" fn dataflow_jit_string_lt(
+            lhs: ManuallyDrop<ThinStr>,
+            rhs: ManuallyDrop<ThinStr>,
+        ) -> bool {
+            lhs < rhs
+        }
+        builder.symbol(
+            "dataflow_jit_string_lt",
+            dataflow_jit_string_lt as *const u8,
+        );
+
+        let mut module = JITModule::new(builder);
+        let clone_string = module
+            .declare_function("dataflow_jit_clone_string", Linkage::Import, &{
+                let pointer_type = module.isa().pointer_type();
+
+                let mut sig = ClifSignature::new(module.isa().default_call_conv());
+                sig.params.push(AbiParam::new(pointer_type));
+                sig.returns.push(AbiParam::new(pointer_type));
+                sig
+            })
+            .unwrap();
+        let string_lt = module
+            .declare_function("dataflow_jit_string_lt", Linkage::Import, &{
+                let pointer_type = module.isa().pointer_type();
+
+                let mut sig = ClifSignature::new(module.isa().default_call_conv());
+                sig.params.extend([AbiParam::new(pointer_type); 2]);
+                sig.returns.push(AbiParam::new(types::I8));
+                sig
+            })
+            .unwrap();
+
         let module_ctx = module.make_context();
 
         Self {
@@ -75,13 +161,43 @@ impl Codegen {
             module,
             module_ctx,
             function_ctx: FunctionBuilderContext::new(),
-            null_sigil,
+            config,
+            clone_string,
+            string_lt,
         }
     }
 
-    pub fn finalize_definitions(mut self) -> JITModule {
+    fn target_isa() -> Box<dyn TargetIsa> {
+        let mut settings = settings::builder();
+
+        let options = &[
+            ("opt_level", "speed"),
+            ("use_egraphs", "true"),
+            ("enable_simd", "true"),
+            ("enable_verifier", "true"),
+            ("enable_jump_tables", "true"),
+            ("enable_alias_analysis", "true"),
+            ("use_colocated_libcalls", "false"),
+            // FIXME: Set back to true once the x64 backend supports it.
+            ("is_pic", "false"),
+        ];
+        for (name, value) in options {
+            settings.set(name, value).unwrap();
+        }
+
+        isa::lookup(Triple::host())
+            .unwrap()
+            .finish(settings::Flags::new(settings))
+            .unwrap()
+    }
+
+    pub fn native_layout_cache(&self) -> &NativeLayoutCache {
+        &self.layout_cache
+    }
+
+    pub fn finalize_definitions(mut self) -> (JITModule, NativeLayoutCache) {
         self.module.finalize_definitions().unwrap();
-        self.module
+        (self.module, self.layout_cache)
     }
 
     pub fn codegen_func(&mut self, function: &Function) -> FuncId {
@@ -94,11 +210,16 @@ impl Codegen {
         self.module_ctx.func.name = func_name;
 
         {
+            let clone_string = self
+                .module
+                .declare_func_in_func(self.clone_string, &mut self.module_ctx.func);
+
             let mut ctx = Ctx::new(
                 self.module.isa(),
                 &mut self.layout_cache,
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx),
-                self.null_sigil,
+                self.config.null_sigil,
+                clone_string,
             );
 
             ctx.add_function_params(function);
@@ -151,7 +272,8 @@ impl Codegen {
                             if let Some(&slot) = ctx.stack_slots.get(&store.target()) {
                                 ctx.builder.ins().stack_store(value, slot, offset as i32);
 
-                            // If it's not a stack slot it must be a pointer via function parameter
+                            // If it's not a stack slot it must be a pointer via
+                            // function parameter
                             } else {
                                 let addr = ctx.exprs[&store.target()];
                                 let flags = MemFlags::trusted();
@@ -169,7 +291,8 @@ impl Codegen {
                             let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
                                 ctx.builder.ins().stack_load(ty, slot, offset as i32)
 
-                            // If it's not a stack slot it must be a pointer via function parameter
+                            // If it's not a stack slot it must be a pointer via
+                            // function parameter
                             } else {
                                 let addr = ctx.exprs[&load.source()];
 
@@ -200,7 +323,8 @@ impl Codegen {
                                     .ins()
                                     .stack_load(bitset_ty, slot, bitset_offset as i32)
 
-                            // If it's not a stack slot it must be a pointer via function parameter
+                            // If it's not a stack slot it must be a pointer via
+                            // function parameter
                             } else {
                                 let addr = ctx.exprs[&is_null.value()];
 
@@ -248,10 +372,12 @@ impl Codegen {
                                     .ins()
                                     .stack_load(bitset_ty, slot, bitset_offset as i32)
 
-                            // If it's not a stack slot it must be a pointer via function parameter
+                            // If it's not a stack slot it must be a pointer via
+                            // function parameter
                             } else {
                                 let addr = ctx.exprs[&set_null.target()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for stores
+                                // TODO: We can probably add the `notrap` and `aligned` flags for
+                                // stores
                                 let flags = MemFlags::new();
                                 ctx.builder
                                     .ins()
@@ -260,8 +386,9 @@ impl Codegen {
 
                             // Set the given bit, these use `bitset | (1 << bit_idx)` to set the bit
                             // and `bitset & !(1 << bit_idx)` to unset the bit.
-                            // For non-constant inputs this computes both results and then selects the
-                            // correct one based off of the value of `is_null`
+                            // For non-constant inputs this computes both results and then selects
+                            // the correct one based off of the value of
+                            // `is_null`
                             let masked = match set_null.is_null() {
                                 RValue::Expr(expr) => {
                                     let is_null = ctx.exprs[expr];
@@ -295,7 +422,8 @@ impl Codegen {
                                     .ins()
                                     .stack_store(masked, slot, bitset_offset as i32);
 
-                            // If it's not a stack slot it must be a pointer via function parameter
+                            // If it's not a stack slot it must be a pointer via
+                            // function parameter
                             } else {
                                 let addr = ctx.exprs[&set_null.target()];
                                 let flags = MemFlags::trusted();
@@ -336,8 +464,9 @@ impl Codegen {
 
                             let layout = ctx.layout_cache.compute(copy_row.layout());
 
-                            // FIXME: We probably want to replace this with our own impl, it currently
-                            // just emits a memcpy call on sizes greater than 4 when an inlined impl
+                            // FIXME: We probably want to replace this with our own impl, it
+                            // currently just emits a memcpy call on
+                            // sizes greater than 4 when an inlined impl
                             // would perform much better
                             ctx.builder.emit_small_memory_copy(
                                 ctx.target.frontend_config(),
@@ -352,26 +481,31 @@ impl Codegen {
                         }
 
                         Expr::CopyVal(copy_val) => {
-                            // FIXME: Check if the given value is a string and if so clone the string
                             let value = ctx.exprs[&copy_val.value()];
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
+
+                            let value = if copy_val.ty() == RowType::String {
+                                ctx.call_clone_string(value)
+                            } else {
+                                value
+                            };
+
                             ctx.add_expr(expr_id, value, layout);
                         }
 
                         // TODO: There's a couple optimizations we can do here:
-                        // - If our type is sub-word size, we can simply use a constant
-                        //   that's been set to all ones. This does require generalized
-                        //   handling for rows that aren't addressable, but that's a good
-                        //   thing we need in the future anyways
+                        // - If our type is sub-word size, we can simply use a constant that's been
+                        //   set to all ones. This does require generalized handling for rows that
+                        //   aren't addressable, but that's a good thing we need in the future
+                        //   anyways
                         // - If the null bits are sufficiently sparse and the row is sufficiently
                         //   large (something something heuristics) then memset-ing the entire thing
                         //   is just a waste and we should instead use more focused stores
-                        // - If our type doesn't contain any null flags, we don't need to
-                        //   do anything and can simply leave the row uninitialized. This
-                        //   does require that we actually follow our contract that `NullRow`
-                        //   only means "any well-defined `IsNull` call returns `true`" and
-                        //   don't depend on it being initialized to any degree further than
-                        //   what is required by that
+                        // - If our type doesn't contain any null flags, we don't need to do
+                        //   anything and can simply leave the row uninitialized. This does require
+                        //   that we actually follow our contract that `NullRow` only means "any
+                        //   well-defined `IsNull` call returns `true`" and don't depend on it being
+                        //   initialized to any degree further than what is required by that
                         Expr::NullRow(null) => {
                             // Create a stack slot
                             let slot = ctx.stack_slot_for_layout(expr_id, null.layout());
@@ -407,15 +541,7 @@ impl Codegen {
             ctx.builder.finalize();
         }
 
-        println!("pre-opt: {}", self.module_ctx.func.display());
-        self.module
-            .define_function(func_id, &mut self.module_ctx)
-            .unwrap();
-
-        self.module_ctx.optimize(self.module.isa()).unwrap();
-        println!("post-opt: {}", self.module_ctx.func.display());
-
-        self.module.clear_context(&mut self.module_ctx);
+        self.finalize_function(func_id);
 
         func_id
     }
@@ -442,68 +568,7 @@ impl Codegen {
         self.layout_cache.compute(layout_id)
     }
 
-    /// Generates a function comparing two of the given layout for equality
-    // FIXME: I took the really lazy route here and pretend that uninit data
-    //        either doesn't exist or is always zeroed, if padding bytes
-    //        or otherwise uninitialized data doesn't conform to that this'll
-    //        spuriously error
-    // FIXME: This also ignores the existence of strings
-    pub fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
-        // fn(*const u8, *const u8) -> bool
-        let mut signature = self.module.make_signature();
-        signature.returns.push(AbiParam::new(types::I8));
-        signature.params.extend([
-            AbiParam::new(self.module.isa().pointer_type()),
-            AbiParam::new(self.module.isa().pointer_type()),
-        ]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
-        {
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let layout = self.layout_cache.compute(layout_id);
-
-            // Zero sized types are always equal
-            let are_equal = if layout.is_zero_sized() {
-                builder.ins().iconst(types::I8, true as i64)
-
-            // Otherwise we emit a memcpy
-            } else {
-                let params = builder.block_params(entry_block);
-                let (lhs, rhs) = (params[0], params[1]);
-
-                let align = NonZeroU8::new(layout.align() as u8).unwrap();
-                builder.emit_small_memory_compare(
-                    self.module.isa().frontend_config(),
-                    IntCC::Equal,
-                    lhs,
-                    rhs,
-                    layout.size() as u64,
-                    align,
-                    align,
-                    MemFlags::trusted().with_readonly(),
-                )
-            };
-
-            builder.ins().return_(&[are_equal]);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
+    fn finalize_function(&mut self, func_id: FuncId) {
         println!("pre-opt: {}", self.module_ctx.func.display());
         self.module
             .define_function(func_id, &mut self.module_ctx)
@@ -513,8 +578,6 @@ impl Codegen {
         println!("post-opt: {}", self.module_ctx.func.display());
 
         self.module.clear_context(&mut self.module_ctx);
-
-        func_id
     }
 }
 
@@ -528,6 +591,7 @@ struct Ctx<'a> {
     stack_slots: BTreeMap<ExprId, StackSlot>,
     function_inputs: BTreeMap<ExprId, InputFlags>,
     null_sigil: NullSigil,
+    clone_string: FuncRef,
 }
 
 impl<'a> Ctx<'a> {
@@ -536,6 +600,7 @@ impl<'a> Ctx<'a> {
         layout_cache: &'a mut NativeLayoutCache,
         builder: FunctionBuilder<'a>,
         null_sigil: NullSigil,
+        clone_string: FuncRef,
     ) -> Self {
         Self {
             target,
@@ -547,7 +612,13 @@ impl<'a> Ctx<'a> {
             stack_slots: BTreeMap::new(),
             function_inputs: BTreeMap::new(),
             null_sigil,
+            clone_string,
         }
+    }
+
+    fn call_clone_string(&mut self, string: Value) -> Value {
+        let call = self.builder.ins().call(self.clone_string, &[string]);
+        self.builder.func.dfg.first_result(call)
     }
 
     fn add_function_params(&mut self, function: &Function) {

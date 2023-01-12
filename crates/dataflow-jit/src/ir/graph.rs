@@ -55,7 +55,7 @@ impl Default for Graph {
 #[cfg(test)]
 mod tests {
     use crate::{
-        codegen::{Codegen, Layout, NullSigil},
+        codegen::{Codegen, CodegenConfig, NullSigil},
         ir::{
             expr::{Constant, CopyRowTo, NullRow},
             function::FunctionBuilder,
@@ -65,17 +65,12 @@ mod tests {
             validate::Validator,
         },
     };
-    use cranelift::codegen::{
-        isa,
-        settings::{self, Configurable},
-    };
     use dbsp::{
         operator::FilterMap,
         trace::{BatchReader, Cursor},
         Runtime,
     };
     use std::{collections::BTreeMap, sync::Arc};
-    use target_lexicon::Triple;
 
     // ```sql
     // CREATE VIEW V AS SELECT Sum(r.COL1 * r.COL5)
@@ -107,10 +102,11 @@ mod tests {
         let source = graph.add_node(Source::new(source_row));
 
         // ```
-        // let stream7850: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
-        //     T.map(move |t: &Tuple6<i32, F64, bool, String, Option<i32>, Option<F64>>| -> Tuple1<Option<i32>> {
+        // let stream7850: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = T.map(
+        //     move |t: &Tuple6<i32, F64, bool, String, Option<i32>, Option<F64>>| -> Tuple1<Option<i32>> {
         //         Tuple1::new(t.4)
-        //     });
+        //     },
+        // );
         // ```
         let stream7850 = graph.add_node(Map::new(
             source,
@@ -134,10 +130,10 @@ mod tests {
         ));
 
         // ```
-        // let stream7856: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> =
-        //     stream7850.index_with(move |t: &Tuple1<Option<i32>>| -> ((), Tuple1<Option<i32>>) {
-        //         ((), Tuple1::new(t.0))
-        //     });
+        // let stream7856: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> = stream7850
+        //     .index_with(
+        //         move |t: &Tuple1<Option<i32>>| -> ((), Tuple1<Option<i32>>) { ((), Tuple1::new(t.0)) },
+        //     );
         // ```
         let stream7856 = graph.add_node(IndexWith::new(
             stream7850,
@@ -165,12 +161,15 @@ mod tests {
         ));
 
         // ```
-        // let stream7861: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> =
-        //     stream7856.aggregate::<(), _>(
+        // let stream7861: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> = stream7856
+        //     .aggregate::<(), _>(
         //         Fold::<_, UnimplementedSemigroup<Tuple1<Option<i32>>>, _, _>::with_output(
-        //             (None::<i32>, ),
+        //             (None::<i32>,),
         //             move |a: &mut (Option<i32>,), v: &Tuple1<Option<i32>>, w: Weight| {
-        //                 *a = (move |a: Option<i32>, v: &Tuple1<Option<i32>>, w: Weight| -> Option<i32> {
+        //                 *a = (move |a: Option<i32>,
+        //                             v: &Tuple1<Option<i32>>,
+        //                             w: Weight|
+        //                       -> Option<i32> {
         //                     agg_plus_N_N(a, v.0.mul_by_ref(&w))
         //                 }(a.0, v, w),)
         //             },
@@ -272,10 +271,9 @@ mod tests {
         ));
 
         // ```
-        // let stream7866: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
-        //     stream7861.map(move |(k, v): (&(), &Tuple1<Option<i32>>)| -> Tuple1<Option<i32>> {
-        //         Tuple1::new(v.0)
-        //     });
+        // let stream7866: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7861.map(
+        //     move |(k, v): (&(), &Tuple1<Option<i32>>)| -> Tuple1<Option<i32>> { Tuple1::new(v.0) },
+        // );
         // ```
         let stream7866_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
@@ -308,9 +306,7 @@ mod tests {
 
         // ```
         // let stream7874: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
-        //     stream7866.map(move |_t: _| -> Tuple1<Option<i32>> {
-        //         Tuple1::new(None::<i32>)
-        //     });
+        //     stream7866.map(move |_t: _| -> Tuple1<Option<i32>> { Tuple1::new(None::<i32>) });
         // ```
         let stream7874 = graph.add_node(Map::new(
             stream7866,
@@ -345,7 +341,8 @@ mod tests {
         let stream7883 = graph.add_node(Differentiate::new(stream7130));
 
         // ```
-        // let stream7887: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7883.sum([&stream7879, &stream7866]);
+        // let stream7887: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
+        //     stream7883.sum([&stream7879, &stream7866]);
         // ```
         let stream7887 = graph.add_node(Sum::new(vec![stream7883, stream7879, stream7866]));
 
@@ -374,10 +371,10 @@ mod tests {
         ));
 
         // ```
-        // let stream7897: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> =
-        //     stream7887.index_with(move |r: &Tuple1<Option<i32>>| -> ((), Tuple1<Option<i32>>) {
-        //         ((), Tuple1::new(r.0))
-        //     });
+        // let stream7897: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> = stream7887
+        //     .index_with(
+        //         move |r: &Tuple1<Option<i32>>| -> ((), Tuple1<Option<i32>>) { ((), Tuple1::new(r.0)) },
+        //     );
         // ```
         let stream7897 = graph.add_node(IndexWith::new(
             stream7887,
@@ -402,19 +399,8 @@ mod tests {
         println!("Post-opt: {graph:#?}");
 
         {
-            let target_isa = isa::lookup(Triple::host())
-                .unwrap()
-                .finish(settings::Flags::new(settings::builder()))
-                .unwrap();
-            let frontend_config = target_isa.frontend_config();
+            let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
-            for row_layout in graph.layout_cache().layouts().iter() {
-                let layout = Layout::from_row(row_layout, &frontend_config);
-                println!("{layout:?}");
-            }
-
-            let mut codegen =
-                Codegen::new(target_isa, graph.layout_cache().clone(), NullSigil::One);
             for node in graph.nodes.values() {
                 println!("{node:?}");
 
@@ -486,29 +472,7 @@ mod tests {
 
         validator.validate_graph(&graph);
 
-        let mut settings = settings::builder();
-
-        let options = &[
-            ("opt_level", "speed"),
-            ("use_egraphs", "true"),
-            ("enable_simd", "true"),
-            ("enable_verifier", "true"),
-            ("enable_jump_tables", "true"),
-            ("enable_alias_analysis", "true"),
-            ("use_colocated_libcalls", "false"),
-            // FIXME: Set back to true once the x64 backend supports it.
-            ("is_pic", "false"),
-        ];
-        for (name, value) in options {
-            settings.set(name, value).unwrap();
-        }
-
-        let target_isa = isa::lookup(Triple::host())
-            .unwrap()
-            .finish(settings::Flags::new(settings))
-            .unwrap();
-
-        let mut codegen = Codegen::new(target_isa, graph.layout_cache().clone(), NullSigil::One);
+        let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
         let src_layout = codegen.layout_for(xy_layout);
         let (src_x_offset, src_y_offset) = (src_layout.row_offset(0), src_layout.row_offset(1));
@@ -539,7 +503,7 @@ mod tests {
                 }
             })
             .collect();
-        let jit_module = codegen.finalize_definitions();
+        let (jit_module, _) = codegen.finalize_definitions();
         let node_functions: BTreeMap<_, _> = node_functions
             .into_iter()
             .map(|(node_id, (func_id, size, align))| {

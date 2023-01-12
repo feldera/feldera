@@ -18,15 +18,15 @@ use std::{
 pub struct ErasedVTable {
     pub size_of: usize,
     pub align_of: NonZeroUsize,
-    pub eq: unsafe fn(*const u8, *const u8) -> bool,
-    pub lt: unsafe fn(*const u8, *const u8) -> bool,
-    pub cmp: unsafe fn(*const u8, *const u8) -> Ordering,
-    pub clone: unsafe fn(*const u8, *mut u8),
-    pub clone_into_slice: unsafe fn(*const u8, *mut u8, usize),
-    pub size_of_children: unsafe fn(*const u8, &mut Context),
+    pub eq: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+    pub lt: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+    pub cmp: unsafe extern "C" fn(*const u8, *const u8) -> Ordering,
+    pub clone: unsafe extern "C" fn(*const u8, *mut u8),
+    pub clone_into_slice: unsafe extern "C" fn(*const u8, *mut u8, usize),
+    pub size_of_children: unsafe extern "C" fn(*const u8, &mut Context),
     pub debug: unsafe fn(*const u8, *mut fmt::Formatter<'_>) -> fmt::Result,
-    pub drop_in_place: unsafe fn(*mut u8),
-    pub drop_slice_in_place: unsafe fn(*mut u8, usize),
+    pub drop_in_place: unsafe extern "C" fn(*mut u8),
+    pub drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     pub type_id: fn() -> TypeId,
     pub type_name: fn() -> &'static str,
 }
@@ -153,23 +153,27 @@ where
     T: Sized + Eq + Ord + Clone + Send + SizeOf + Debug + 'static, // + Sync
 {
     const ERASED_VTABLE: ErasedVTable = {
-        unsafe fn eq<T: PartialEq>(lhs: *const u8, rhs: *const u8) -> bool {
+        unsafe extern "C" fn eq<T: PartialEq>(lhs: *const u8, rhs: *const u8) -> bool {
             unsafe { T::eq(&*lhs.cast(), &*rhs.cast()) }
         }
 
-        unsafe fn lt<T: Ord>(lhs: *const u8, rhs: *const u8) -> bool {
+        unsafe extern "C" fn lt<T: Ord>(lhs: *const u8, rhs: *const u8) -> bool {
             unsafe { T::lt(&*lhs.cast(), &*rhs.cast()) }
         }
 
-        unsafe fn cmp<T: Ord>(lhs: *const u8, rhs: *const u8) -> Ordering {
+        unsafe extern "C" fn cmp<T: Ord>(lhs: *const u8, rhs: *const u8) -> Ordering {
             unsafe { T::cmp(&*lhs.cast(), &*rhs.cast()) }
         }
 
-        unsafe fn clone<T: Clone>(src: *const u8, dest: *mut u8) {
+        unsafe extern "C" fn clone<T: Clone>(src: *const u8, dest: *mut u8) {
             unsafe { dest.cast::<T>().write(T::clone(&*src.cast())) };
         }
 
-        unsafe fn clone_into_slice<T: Clone>(src: *const u8, dest: *mut u8, count: usize) {
+        unsafe extern "C" fn clone_into_slice<T: Clone>(
+            src: *const u8,
+            dest: *mut u8,
+            count: usize,
+        ) {
             if count == 0 {
                 return;
             }
@@ -181,7 +185,7 @@ where
             }
         }
 
-        unsafe fn size_of_children<T: SizeOf>(value: *const u8, context: &mut Context) {
+        unsafe extern "C" fn size_of_children<T: SizeOf>(value: *const u8, context: &mut Context) {
             unsafe { T::size_of_children(&*value.cast(), context) }
         }
 
@@ -189,11 +193,11 @@ where
             unsafe { <T as Debug>::fmt(&*value.cast(), &mut *f) }
         }
 
-        unsafe fn drop_in_place<T>(value: *mut u8) {
+        unsafe extern "C" fn drop_in_place<T>(value: *mut u8) {
             unsafe { ptr::drop_in_place(value.cast::<T>()) }
         }
 
-        unsafe fn drop_slice_in_place<T>(ptr: *mut u8, length: usize) {
+        unsafe extern "C" fn drop_slice_in_place<T>(ptr: *mut u8, length: usize) {
             unsafe { ptr::drop_in_place(slice::from_raw_parts_mut(ptr.cast::<T>(), length)) }
         }
 

@@ -113,7 +113,8 @@ where
 
     forget(guard);
 
-    // SAFETY: Valid elements have just been written into `this` so it is initialized
+    // SAFETY: Valid elements have just been written into `this` so it is
+    // initialized
     unsafe { &mut *(this as *mut [MaybeUninit<T>] as *mut [T]) }
 }
 

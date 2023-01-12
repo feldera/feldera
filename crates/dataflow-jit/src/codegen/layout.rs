@@ -1,6 +1,9 @@
 use crate::ir::{RowLayout, RowType};
 use cranelift::prelude::{isa::TargetFrontendConfig, types, Type as ClifType};
-use std::cmp::{max, Reverse};
+use std::{
+    cmp::{max, Reverse},
+    ptr::NonNull,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -363,6 +366,26 @@ impl Layout {
 
     pub fn align(&self) -> u32 {
         self.align
+    }
+
+    pub fn alloc(&self) -> Option<NonNull<u8>> {
+        if self.size == 0 {
+            Some(NonNull::dangling())
+        } else {
+            let layout =
+                std::alloc::Layout::from_size_align(self.size as usize, self.align as usize)
+                    .unwrap();
+            NonNull::new(unsafe { std::alloc::alloc(layout) })
+        }
+    }
+
+    pub unsafe fn dealloc(&self, ptr: *mut u8) {
+        if self.size != 0 {
+            let layout =
+                std::alloc::Layout::from_size_align(self.size as usize, self.align as usize)
+                    .unwrap();
+            unsafe { std::alloc::dealloc(ptr, layout) }
+        }
     }
 }
 
