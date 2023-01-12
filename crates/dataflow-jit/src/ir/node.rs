@@ -170,7 +170,8 @@ impl DataflowNode for Filter {
 #[derive(Debug)]
 pub struct IndexWith {
     input: NodeId,
-    /// Expects a function with a signature of `fn(input_layout, mut key_layout, mut value_layout)`
+    /// Expects a function with a signature of `fn(input_layout, mut key_layout,
+    /// mut value_layout)`
     index: Function,
     key_layout: LayoutId,
     value_layout: LayoutId,

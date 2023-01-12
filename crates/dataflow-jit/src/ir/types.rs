@@ -26,11 +26,15 @@ impl RowType {
         matches!(self, Self::Unit)
     }
 
-    pub fn needs_drop(&self) -> bool {
+    pub const fn needs_drop(&self) -> bool {
         matches!(self, Self::String)
     }
 
-    fn to_str(&self) -> &'static str {
+    pub const fn requires_nontrivial_clone(&self) -> bool {
+        matches!(self, Self::String)
+    }
+
+    const fn to_str(self) -> &'static str {
         match self {
             Self::Bool => "bool",
             Self::U16 => "u16",
@@ -124,11 +128,8 @@ impl RowLayout {
     }
 
     pub fn is_zero_sized(&self) -> bool {
-        self.rows.iter().all(RowType::is_unit) && self.nullability.not_any()
-    }
-
-    pub fn needs_drop(&self) -> bool {
-        self.rows.iter().any(RowType::needs_drop)
+        self.rows.is_empty()
+            || (self.rows.iter().all(RowType::is_unit) && self.nullability.not_any())
     }
 
     pub fn unit() -> Self {
@@ -149,6 +150,26 @@ impl RowLayout {
             rows: vec![RowType::I32],
             nullability,
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (RowType, bool)> + '_ {
+        assert_eq!(self.rows.len(), self.nullability.len());
+        self.rows
+            .iter()
+            .copied()
+            .zip(self.nullability.iter().by_vals())
+    }
+
+    /// Returns `true` if the current row requires any sort of non-trivial
+    /// drop operation, e.g. containing a string
+    pub fn needs_drop(&self) -> bool {
+        self.rows.iter().any(RowType::needs_drop)
+    }
+
+    /// Returns `true` if the current row requires any sort of non-trivial
+    /// cloning operation, e.g. containing a string
+    pub fn requires_nontrivial_clone(&self) -> bool {
+        self.rows.iter().any(RowType::requires_nontrivial_clone)
     }
 }
 
