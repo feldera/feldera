@@ -63,16 +63,17 @@ impl<V, T, R, A, S, O, SF, OF> Aggregator<V, T, R> for Fold<A, S, SF, OF>
 where
     T: Timestamp,
     R: MonoidValue,
-    A: Clone + 'static,
+    A: DBData,
     SF: Fn(&mut A, &V, R) + Clone + 'static,
     OF: Fn(A) -> O + Clone + 'static,
-    S: Semigroup<O> + Clone + 'static,
+    S: Semigroup<A> + Clone + 'static,
     O: DBData,
 {
+    type Accumulator = A;
     type Output = O;
     type Semigroup = S;
 
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
         C: Cursor<'s, V, (), T, R>,
     {
@@ -91,8 +92,10 @@ where
             cursor.step_key();
         }
 
-        // Aggregator must return None iff the input cursor is empty (all keys have
-        // weight 0).
-        non_empty.then(|| (self.output)(acc))
+        non_empty.then_some(acc)
+    }
+
+    fn finalize(&self, acc: Self::Accumulator) -> Self::Output {
+        (self.output)(acc)
     }
 }

@@ -369,19 +369,19 @@ pub(super) fn radix_tree_update<'a, 'b, TS, V, R, Agg, UC, IC, TC, OR>(
     mut input: IC,
     tree: TC,
     aggregator: &Agg,
-    output_updates: &'a mut Vec<TreeNodeUpdate<TS, Agg::Output>>,
+    output_updates: &'a mut Vec<TreeNodeUpdate<TS, Agg::Accumulator>>,
 ) where
     TS: PrimInt + Debug,
     R: MonoidValue,
     Agg: Aggregator<V, (), R>,
-    Agg::Output: Clone + Default + Eq + Debug,
+    Agg::Accumulator: Clone + Default + Eq + Debug,
     UC: Cursor<'b, TS, V, (), R>,
     IC: Cursor<'b, TS, V, (), R>,
-    TC: RadixTreeCursor<'b, TS, Agg::Output, OR>,
+    TC: RadixTreeCursor<'b, TS, Agg::Accumulator, OR>,
     OR: MonoidValue,
 {
     let mut tree_updater =
-        <TreeUpdater<'a, TS, Agg::Output, OR, Agg::Semigroup, TC>>::new(tree, output_updates);
+        <TreeUpdater<'a, TS, Agg::Accumulator, OR, Agg::Semigroup, TC>>::new(tree, output_updates);
 
     while input_delta.key_valid() {
         //println!("affected key {:x?}", input_delta.key());

@@ -195,8 +195,8 @@ struct Args {
 type Weight = i32;
 
 type EnrichedTransactions = OrdIndexedZSet<(F64, i64), (Transaction, Demographics), Weight>;
-type AverageSpendingPerWeek = OrdPartitionedIndexedZSet<F64, i64, Option<Avg<F64, i32>>, Weight>;
-type AverageSpendingPerMonth = OrdPartitionedIndexedZSet<F64, i64, Option<Avg<F64, i32>>, Weight>;
+type AverageSpendingPerWeek = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
+type AverageSpendingPerMonth = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
 type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, Option<i32>, Weight>;
 
 struct FraudBenchmark {
@@ -233,16 +233,12 @@ impl FraudBenchmark {
             let avg_spend_pw: Stream<_, AverageSpendingPerWeek> = amounts
                 .partitioned_rolling_aggregate_linear(
                     |amt| Avg::new(*amt, 1),
+                    |avg| avg.compute_avg().unwrap(),
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 7), RelOffset::Before(1)),
                 );
 
-            // TODO: this should be returned directly by `partitioned_rolling_aggregate`
-            let avg_spend_pw_indexed = avg_spend_pw.map_index(|(cc_num, (ts, avg_amt))| {
-                (
-                    (*cc_num, *ts),
-                    avg_amt.as_ref().and_then(|avg| avg.compute_avg()),
-                )
-            });
+            let avg_spend_pw_indexed =
+                avg_spend_pw.map_index(|(cc_num, (ts, avg_amt))| ((*cc_num, *ts), *avg_amt));
 
             // AVG(amt) OVER(
             //     PARTITION BY  CAST(cc_num AS NUMERIC)
@@ -252,15 +248,12 @@ impl FraudBenchmark {
             let avg_spend_pm: Stream<_, AverageSpendingPerMonth> = amounts
                 .partitioned_rolling_aggregate_linear(
                     |amt| Avg::new(*amt, 1),
+                    |avg| avg.compute_avg().unwrap(),
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
                 );
 
-            let avg_spend_pm_indexed = avg_spend_pm.map_index(|(cc_num, (ts, avg_amt))| {
-                (
-                    (*cc_num, *ts),
-                    avg_amt.as_ref().and_then(|avg| avg.compute_avg()),
-                )
-            });
+            let avg_spend_pm_indexed =
+                avg_spend_pm.map_index(|(cc_num, (ts, avg_amt))| ((*cc_num, *ts), *avg_amt));
 
             // COUNT(*) OVER(
             //     PARTITION BY  CAST(cc_num AS NUMERIC)
@@ -270,6 +263,7 @@ impl FraudBenchmark {
             let trans_freq_24: Stream<_, TransactionFrequency> = amounts
                 .partitioned_rolling_aggregate_linear(
                     |_amt| 1,
+                    |cnt| cnt,
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
                 );
 

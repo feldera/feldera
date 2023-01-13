@@ -28,11 +28,12 @@ where
     T: Timestamp,
     R: MonoidValue,
 {
+    type Accumulator = V;
     type Output = V;
     type Semigroup = MaxSemigroup<V>;
 
     // TODO: this can be more efficient with reverse iterator.
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
         C: Cursor<'s, V, (), T, R>,
     {
@@ -51,5 +52,9 @@ where
         }
 
         result
+    }
+
+    fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
+        accumulator
     }
 }

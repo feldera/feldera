@@ -115,15 +115,15 @@ where
     pub fn partitioned_tree_aggregate<TS, V, Agg>(
         &self,
         aggregator: Agg,
-    ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Output, isize>
+    ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Accumulator, isize>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
         TS: DBData + PrimInt,
         V: DBData,
         Agg: Aggregator<V, (), Z::R>,
-        Agg::Output: Default,
+        Agg::Accumulator: Default,
     {
-        self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Output, isize>>(
+        self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Accumulator, isize>>(
             aggregator,
         )
     }
@@ -139,8 +139,8 @@ where
         TS: DBData + PrimInt,
         V: DBData,
         Agg: Aggregator<V, (), Z::R>,
-        Agg::Output: Default,
-        O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
+        Agg::Accumulator: Default,
+        O: PartitionedRadixTreeBatch<TS, Agg::Accumulator, Key = Z::Key>,
         O::R: ZRingValue,
     {
         self.circuit()
@@ -345,10 +345,10 @@ where
     TS: DBData + PrimInt,
     V: DBData,
     IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone,
-    OT: PartitionedRadixTreeReader<TS, Agg::Output, Key = Z::Key, R = O::R> + Clone,
+    OT: PartitionedRadixTreeReader<TS, Agg::Accumulator, Key = Z::Key, R = O::R> + Clone,
     Agg: Aggregator<V, (), Z::R>,
-    Agg::Output: Default,
-    O: PartitionedRadixTreeBatch<TS, Agg::Output, Key = Z::Key>,
+    Agg::Accumulator: Default,
+    O: PartitionedRadixTreeBatch<TS, Agg::Accumulator, Key = Z::Key>,
     O::R: ZRingValue,
 {
     fn eval<'a>(

@@ -30,6 +30,7 @@ where
     T: Timestamp,
     R: MonoidValue,
 {
+    type Accumulator = V;
     type Output = V;
     type Semigroup = MinSemigroup<V>;
 
@@ -52,5 +53,9 @@ where
         }
 
         None
+    }
+
+    fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
+        accumulator
     }
 }
