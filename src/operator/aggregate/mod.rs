@@ -39,13 +39,42 @@ pub use min::Min;
 /// A trait for aggregator objects.  An aggregator summarizes the contents
 /// of a Z-set into a single value.
 ///
+/// This trait supports two aggregation methods that can be combined in
+/// various ways to compute the aggregate efficiently.  First, the
+/// [`aggregate`](`Self::aggregate`) method takes a cursor pointing to
+/// the first key of a Z-set and scans the cursor to compute the aggregate
+/// over all values in the cursor.  Second, the
+/// [`Semigroup`](`Self::Semigroup`) associated type allows aggregating
+/// partitioned Z-sets by combining aggregates computed over individual
+/// partitions (e.g., computed by different worker threads).
+///
+/// This design requires aggregate values to form a semigroup with a `+`
+/// operation such that `Agg(x + y) = Agg(x) + Agg(y)`, i.e., aggregating
+/// a union of two Z-sets must produce the same result as the sum of
+/// individual aggregates.  Not all aggregates have this property.  E.g.,
+/// the average value of a Z-set cannot be computed by combining the
+/// averages of its subsets.  We can get around this problem by representing
+/// average as `(sum, count)` tuple with point-wise `+` operator
+/// `(sum1, count1) + (sum2, count2) = (sum1+sum2, count1+count2)`.
+/// The final result is converted to an actual average value by dividing
+/// the first element of the tuple by the second.  This is a general technique
+/// that works for all aggregators (although it may not always be optimal).
+///
+/// To support such aggregates, this trait distinguishes between the
+/// `Accumulator` type returned by [`aggregate`](`Self::aggregate`),
+/// which must implement
+/// [`trait Semigroup`](`crate::algebra::Semigroup`), and the final
+/// [`Output`](`Self::Output`) of the aggregator.  The latter is
+/// computed by applying the [`finalize`](`Self::finalize`) method
+/// to the final value of the accumulator.
+///
 /// This is a low-level trait that is mostly used to build libraries of
 /// aggregators.  Users will typicaly work with ready-made implementations
 /// like [`Min`] and [`Fold`].
 // TODO: Owned aggregation using `Consumer`
 pub trait Aggregator<K, T, R>: Clone + 'static {
-    /// Aggregate type output by this aggregator.
-    type Output: DBData;
+    /// Accumulator type returned by
+    type Accumulator: DBData;
 
     /// Semigroup structure over aggregate values.
     ///
@@ -61,10 +90,11 @@ pub trait Aggregator<K, T, R>: Clone + 'static {
     // per-worker aggregates computes over arbitrary subsets of values,
     // which additionally requires commutativity.  Do we want to introduce
     // the `CommutativeSemigroup` trait?
-    type Semigroup: Semigroup<Self::Output>;
+    type Semigroup: Semigroup<Self::Accumulator>;
 
-    /// Compute an aggregate over a Z-set.
-    ///
+    /// Aggregate type produced by this aggregator.
+    type Output: DBData;
+
     /// Takes a cursor pointing to the first key of a Z-set and outputs
     /// an aggregate of the Z-set.
     ///
@@ -75,9 +105,20 @@ pub trait Aggregator<K, T, R>: Clone + 'static {
     ///
     /// * The method must return `None` if the total weight of each key is zero.
     ///   It must return `Some` otherwise.
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
         C: Cursor<'s, K, (), T, R>;
+
+    /// Compute the final value of the aggregate.
+    fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output;
+
+    /// Applies `aggregate` to `cursor` followed by `finalize`.
+    fn aggregate_and_finalize<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    where
+        C: Cursor<'s, K, (), T, R>,
+    {
+        self.aggregate(cursor).map(|x| self.finalize(x))
+    }
 }
 
 /// Aggregator used internally by [`Stream::aggregate_linear`].  Computes
@@ -90,6 +131,7 @@ where
     T: Timestamp,
     R: DBWeight,
 {
+    type Accumulator = R;
     type Output = R;
     type Semigroup = DefaultSemigroup<R>;
 
@@ -106,6 +148,10 @@ where
         } else {
             Some(weight)
         }
+    }
+
+    fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
+        accumulator
     }
 }
 
@@ -329,7 +375,7 @@ where
         while cursor.key_valid() {
             if let Some(agg) = self
                 .aggregator
-                .aggregate(&mut CursorGroup::new(&mut cursor, ()))
+                .aggregate_and_finalize(&mut CursorGroup::new(&mut cursor, ()))
             {
                 builder.push((O::item_from(cursor.key().clone(), agg), O::R::one()));
             }
@@ -461,7 +507,7 @@ where
             // Z-set associated with `input_cursor.key()` at time `self.time`.
             if let Some(aggregate) = self
                 .aggregator
-                .aggregate(&mut CursorGroup::new(input_cursor, self.time.clone()))
+                .aggregate_and_finalize(&mut CursorGroup::new(input_cursor, self.time.clone()))
             {
                 output.push((key.clone(), Some(aggregate)));
             } else {

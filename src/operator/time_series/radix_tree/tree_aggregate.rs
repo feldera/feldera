@@ -55,14 +55,16 @@ where
     pub fn tree_aggregate<Agg>(
         &self,
         aggregator: Agg,
-    ) -> Stream<Circuit<P>, OrdRadixTree<Z::Key, Agg::Output, isize>>
+    ) -> Stream<Circuit<P>, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
-        Agg::Output: Default,
+        Agg::Accumulator: Default,
     {
-        self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Output, isize>>(aggregator)
+        self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>(
+            aggregator,
+        )
     }
 
     /// Like [`Self::tree_aggregate`], but can return any batch type.
@@ -71,8 +73,8 @@ where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
-        Agg::Output: Default,
-        O: RadixTreeBatch<Z::Key, Agg::Output>,
+        Agg::Accumulator: Default,
+        O: RadixTreeBatch<Z::Key, Agg::Accumulator>,
         O::R: ZRingValue,
     {
         self.circuit()
@@ -186,10 +188,10 @@ where
     Z: IndexedZSet,
     Z::Key: PrimInt,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone,
-    OT: RadixTreeReader<Z::Key, Agg::Output, R = O::R> + Clone,
+    OT: RadixTreeReader<Z::Key, Agg::Accumulator, R = O::R> + Clone,
     Agg: Aggregator<Z::Val, (), Z::R>,
-    Agg::Output: Default,
-    O: RadixTreeBatch<Z::Key, Agg::Output>,
+    Agg::Accumulator: Default,
+    O: RadixTreeBatch<Z::Key, Agg::Accumulator>,
     O::R: ZRingValue,
 {
     fn eval<'a>(
