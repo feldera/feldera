@@ -1,9 +1,8 @@
-use std::ptr::drop_in_place;
-
 use crate::{thin_str::ThinStrRef, ThinStr};
 use cranelift::prelude::{types, AbiParam, Signature as ClifSignature};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use std::{cmp::Ordering, ptr::drop_in_place};
 
 macro_rules! intrinsics {
     ($($intrinsic:ident = fn($($arg:tt),*) $(-> $ret:tt)?),+ $(,)?) => {
@@ -49,6 +48,7 @@ macro_rules! intrinsics {
     };
 
     (@type $ptr_type:ident ptr) => { $ptr_type };
+    (@type $ptr_type:ident i8) => { types::I8 };
     (@type $ptr_type:ident bool) => { types::I8 };
 }
 
@@ -56,6 +56,8 @@ intrinsics! {
     dataflow_jit_string_clone = fn(ptr) -> ptr,
     dataflow_jit_string_lt = fn(ptr, ptr) -> bool,
     dataflow_jit_string_drop_in_place = fn(ptr),
+    dataflow_jit_string_cmp = fn(ptr, ptr) -> i8,
+    dataflow_jit_string_size_of_children = fn(ptr, ptr),
 }
 
 /// Clones a thin string
@@ -70,8 +72,21 @@ extern "C" fn dataflow_jit_string_lt(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
     lhs < rhs
 }
 
+/// Compares the given strings
+// FIXME: Technically this can unwind
+extern "C" fn dataflow_jit_string_cmp(lhs: ThinStrRef, rhs: ThinStrRef) -> Ordering {
+    lhs.cmp(&rhs)
+}
+
 /// Drops the given [`ThinStr`]
 // FIXME: Technically this can unwind
 unsafe extern "C" fn dataflow_jit_string_drop_in_place(string: &mut ThinStr) {
     drop_in_place(string);
+}
+
+unsafe extern "C" fn dataflow_jit_string_size_of_children(
+    string: ThinStrRef,
+    context: &mut size_of::Context,
+) {
+    string.owned_size_of_children(context);
 }

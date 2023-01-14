@@ -28,7 +28,21 @@ pub struct ErasedVTable {
     pub drop_in_place: unsafe extern "C" fn(*mut u8),
     pub drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     pub type_id: fn() -> TypeId,
-    pub type_name: fn() -> &'static str,
+    // Writes the string's length to the out pointer and returns the string's start
+    pub type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
+}
+
+impl ErasedVTable {
+    pub fn type_name(&self) -> &'static str {
+        unsafe {
+            let mut len = 0;
+            let ptr = (self.type_name)(&mut len);
+
+            let bytes = slice::from_raw_parts(ptr, len);
+            debug_assert!(std::str::from_utf8(bytes).is_ok());
+            std::str::from_utf8_unchecked(bytes)
+        }
+    }
 }
 
 impl PartialEq for ErasedVTable {
@@ -79,7 +93,7 @@ unsafe impl DynVecVTable for DataVTable {
     }
 
     fn type_name(&self) -> &'static str {
-        (self.common.type_name)()
+        self.common.type_name()
     }
 
     unsafe fn clone_slice(&self, src: *const u8, dest: *mut u8, count: usize) {
@@ -123,7 +137,7 @@ unsafe impl DynVecVTable for DiffVTable {
     }
 
     fn type_name(&self) -> &'static str {
-        (self.common.type_name)()
+        self.common.type_name()
     }
 
     unsafe fn clone_slice(&self, src: *const u8, dest: *mut u8, count: usize) {
@@ -154,18 +168,22 @@ where
 {
     const ERASED_VTABLE: ErasedVTable = {
         unsafe extern "C" fn eq<T: PartialEq>(lhs: *const u8, rhs: *const u8) -> bool {
+            debug_assert!(!lhs.is_null() && !rhs.is_null());
             unsafe { T::eq(&*lhs.cast(), &*rhs.cast()) }
         }
 
         unsafe extern "C" fn lt<T: Ord>(lhs: *const u8, rhs: *const u8) -> bool {
+            debug_assert!(!lhs.is_null() && !rhs.is_null());
             unsafe { T::lt(&*lhs.cast(), &*rhs.cast()) }
         }
 
         unsafe extern "C" fn cmp<T: Ord>(lhs: *const u8, rhs: *const u8) -> Ordering {
+            debug_assert!(!lhs.is_null() && !rhs.is_null());
             unsafe { T::cmp(&*lhs.cast(), &*rhs.cast()) }
         }
 
         unsafe extern "C" fn clone<T: Clone>(src: *const u8, dest: *mut u8) {
+            debug_assert!(!src.is_null() && !dest.is_null());
             unsafe { dest.cast::<T>().write(T::clone(&*src.cast())) };
         }
 
@@ -174,6 +192,8 @@ where
             dest: *mut u8,
             count: usize,
         ) {
+            debug_assert!(!src.is_null() && !dest.is_null());
+
             if count == 0 {
                 return;
             }
@@ -186,19 +206,31 @@ where
         }
 
         unsafe extern "C" fn size_of_children<T: SizeOf>(value: *const u8, context: &mut Context) {
+            debug_assert!(!value.is_null());
             unsafe { T::size_of_children(&*value.cast(), context) }
         }
 
         unsafe fn debug<T: Debug>(value: *const u8, f: *mut fmt::Formatter<'_>) -> fmt::Result {
+            debug_assert!(!value.is_null() && !f.is_null());
             unsafe { <T as Debug>::fmt(&*value.cast(), &mut *f) }
         }
 
         unsafe extern "C" fn drop_in_place<T>(value: *mut u8) {
+            debug_assert!(!value.is_null());
             unsafe { ptr::drop_in_place(value.cast::<T>()) }
         }
 
         unsafe extern "C" fn drop_slice_in_place<T>(ptr: *mut u8, length: usize) {
+            debug_assert!(!ptr.is_null());
             unsafe { ptr::drop_in_place(slice::from_raw_parts_mut(ptr.cast::<T>(), length)) }
+        }
+
+        unsafe extern "C" fn type_name<T>(length: *mut usize) -> *const u8 {
+            debug_assert!(!length.is_null());
+
+            let name = any::type_name::<T>();
+            length.write(name.len());
+            name.as_ptr()
         }
 
         ErasedVTable {
@@ -217,7 +249,7 @@ where
             drop_in_place: drop_in_place::<Self>,
             drop_slice_in_place: drop_slice_in_place::<Self>,
             type_id: TypeId::of::<Self>,
-            type_name: any::type_name::<Self>,
+            type_name: type_name::<Self>,
         }
     };
 }

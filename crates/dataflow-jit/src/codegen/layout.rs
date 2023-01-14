@@ -126,6 +126,11 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Returns `true` if the given column is nullable
+    pub fn is_nullable(&self, column: usize) -> bool {
+        self.bitflag_mappings[column].is_some()
+    }
+
     pub fn rows(&self) -> impl Iterator<Item = (u32, Type)> + '_ {
         self.offsets
             .iter()

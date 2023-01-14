@@ -1,12 +1,14 @@
+use size_of::{Context, SizeOf};
 use std::{
     alloc::Layout,
-    cmp::Ordering,
+    cmp::{max, Ordering},
     fmt::{self, Debug, Display},
     marker::PhantomData,
-    mem::{align_of, ManuallyDrop},
+    mem::{align_of, size_of, ManuallyDrop},
     ops::{Deref, DerefMut},
     ptr::{self, addr_of, addr_of_mut, NonNull},
-    slice, str,
+    slice,
+    str::{self, Utf8Error},
 };
 
 static EMPTY: StrHeader = StrHeader {
@@ -84,13 +86,13 @@ impl ThinStr {
 
     #[inline]
     pub unsafe fn set_len(&mut self, length: usize) {
-        debug_assert!(self.buf != NonNull::from(&EMPTY));
+        debug_assert!(!self.is_sigil());
         unsafe { addr_of_mut!((*self.buf.as_ptr()).length).write(length) }
     }
 
     #[inline]
-    pub unsafe fn set_capacity(&mut self, capacity: usize) {
-        debug_assert!(self.buf != NonNull::from(&EMPTY));
+    unsafe fn set_capacity(&mut self, capacity: usize) {
+        debug_assert!(!self.is_sigil());
         unsafe { addr_of_mut!((*self.buf.as_ptr()).capacity).write(capacity) }
     }
 
@@ -128,17 +130,20 @@ impl ThinStr {
 
         unsafe {
             let length = string.len();
-
-            let mut this = Self::with_capacity_uninit(length);
+            let mut this = Self::with_capacity_uninit(length, length);
             ptr::copy_nonoverlapping(string.as_ptr(), this.as_mut_ptr(), length);
-            this.set_capacity(string.len());
-            this.set_len(string.len());
-
             this
         }
     }
 
-    unsafe fn with_capacity_uninit(capacity: usize) -> Self {
+    /// Allocates a `ThinStr` with capacity for `capacity` string bytes
+    /// and writes `length` and `capacity` to the header
+    ///
+    /// # Safety
+    ///
+    /// This leaves all of the allocated capacity uninitialized, so all
+    /// elements up to `length` must be initialized after calling this
+    unsafe fn with_capacity_uninit(capacity: usize, length: usize) -> Self {
         let layout = Self::layout_for(capacity);
 
         let ptr = unsafe { std::alloc::alloc(layout) };
@@ -147,6 +152,11 @@ impl ThinStr {
             None => std::alloc::handle_alloc_error(layout),
         };
 
+        unsafe {
+            addr_of_mut!((*buf.as_ptr()).length).write(length);
+            addr_of_mut!((*buf.as_ptr()).capacity).write(capacity);
+        }
+
         Self { buf }
     }
 
@@ -154,7 +164,7 @@ impl ThinStr {
         let header = Layout::new::<StrHeader>();
 
         let align = align_of::<usize>();
-        let bytes = Layout::from_size_align(round_to_align(capacity, align), align)
+        let bytes = Layout::from_size_align(capacity, align)
             .expect("failed to create layout for string bytes");
 
         let (layout, _) = header
@@ -163,6 +173,127 @@ impl ThinStr {
 
         // Pad out the layout
         layout.pad_to_align()
+    }
+
+    fn grow(&mut self, additional: usize) {
+        debug_assert!(additional > 0);
+
+        let current_cap = self.capacity();
+        let capacity = current_cap.checked_add(additional).unwrap();
+        let capacity = max(max(current_cap * 2, capacity), 16);
+
+        // For sigil values, allocate
+        if self.is_sigil() {
+            debug_assert_eq!(self.capacity(), 0);
+            unsafe { *self = Self::with_capacity_uninit(additional, 0) };
+
+        // Otherwise realloc
+        } else {
+            debug_assert!(!self.is_sigil());
+
+            let current_layout = Self::layout_for(self.capacity());
+            let new_layout = Self::layout_for(capacity);
+
+            let ptr = unsafe {
+                std::alloc::realloc(self.buf.as_ptr().cast(), current_layout, new_layout.size())
+            };
+            let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
+                Some(buf) => buf,
+                None => std::alloc::handle_alloc_error(new_layout),
+            };
+
+            self.buf = buf;
+            unsafe { self.set_capacity(capacity) };
+        }
+    }
+
+    fn grow_exact(&mut self, capacity: usize) {
+        debug_assert!(capacity > 0);
+
+        // For sigil values, allocate
+        if self.is_sigil() {
+            debug_assert_eq!(self.capacity(), 0);
+            unsafe { *self = Self::with_capacity_uninit(capacity, 0) };
+
+        // Otherwise realloc
+        } else {
+            debug_assert!(!self.is_sigil());
+
+            let current_layout = Self::layout_for(self.capacity());
+            let new_layout = Self::layout_for(capacity);
+
+            let ptr = unsafe {
+                std::alloc::realloc(self.buf.as_ptr().cast(), current_layout, new_layout.size())
+            };
+            let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
+                Some(buf) => buf,
+                None => std::alloc::handle_alloc_error(new_layout),
+            };
+
+            self.buf = buf;
+            unsafe { self.set_capacity(capacity) };
+        }
+    }
+
+    pub fn push(&mut self, char: char) {
+        let mut buf = [0; 4];
+        let char_str = char.encode_utf8(&mut buf);
+        self.push_str(char_str);
+    }
+
+    pub fn push_str(&mut self, string: &str) {
+        let len = self.len();
+        let string_len = string.len();
+        let remaining = self.capacity() - len;
+
+        if string_len > remaining {
+            self.grow(string_len - remaining);
+        }
+
+        unsafe {
+            debug_assert!(!self.is_sigil());
+            ptr::copy_nonoverlapping(string.as_ptr(), self.as_mut_ptr().add(len), string_len);
+        }
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        if self.capacity() > self.len() {
+            debug_assert!(!self.is_sigil());
+
+            let current_layout = Self::layout_for(self.capacity());
+            let new_layout = Self::layout_for(self.len());
+
+            unsafe {
+                let ptr = std::alloc::realloc(
+                    self.buf.as_ptr().cast(),
+                    current_layout,
+                    new_layout.size(),
+                );
+                let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
+                    Some(buf) => buf,
+                    None => std::alloc::handle_alloc_error(new_layout),
+                };
+
+                self.buf = buf;
+                self.set_capacity(self.len());
+            }
+        }
+    }
+
+    #[inline]
+    pub fn from_utf8(bytes: &[u8]) -> Result<Self, Utf8Error> {
+        std::str::from_utf8(bytes).map(Self::from_str)
+    }
+
+    #[inline]
+    pub unsafe fn from_utf8_unchecked(bytes: &[u8]) -> Self {
+        debug_assert!(std::str::from_utf8(bytes).is_ok());
+        Self::from_str(std::str::from_utf8_unchecked(bytes))
+    }
+
+    #[inline]
+    fn is_sigil(&self) -> bool {
+        self.buf == NonNull::from(&EMPTY)
     }
 }
 
@@ -181,26 +312,26 @@ impl Clone for ThinStr {
 
     fn clone_from(&mut self, source: &Self) {
         if source.is_empty() {
-            *self = Self::new();
+            unsafe { self.set_len(0) };
             return;
         }
 
-        if self.capacity() >= source.len() {
-            unsafe {
-                let length = source.len();
-                ptr::copy_nonoverlapping(source.as_ptr(), self.as_mut_ptr(), length);
-                self.set_len(length);
-            }
-        } else {
-            // FIXME: Resize the allocation
-            *self = source.clone();
+        // If the current string's capacity is insufficent, grow it
+        if self.capacity() < source.len() {
+            self.grow_exact(source.len());
+        }
+
+        unsafe {
+            let length = source.len();
+            ptr::copy_nonoverlapping(source.as_ptr(), self.as_mut_ptr(), length);
+            self.set_len(length);
         }
     }
 }
 
 impl Drop for ThinStr {
     fn drop(&mut self) {
-        if self.buf != NonNull::from(&EMPTY) {
+        if !self.is_sigil() {
             let layout = Self::layout_for(self.capacity());
             unsafe { std::alloc::dealloc(self.buf.as_ptr().cast(), layout) };
         }
@@ -258,9 +389,21 @@ impl DerefMut for ThinStr {
     }
 }
 
-#[inline]
-const fn round_to_align(size: usize, align: usize) -> usize {
-    size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
+impl From<&str> for ThinStr {
+    #[inline]
+    fn from(string: &str) -> Self {
+        Self::from_str(string)
+    }
+}
+
+impl SizeOf for ThinStr {
+    fn size_of_children(&self, context: &mut Context) {
+        if !self.is_sigil() {
+            context
+                .add(size_of::<StrHeader>())
+                .add_vectorlike(self.len(), self.capacity(), 1);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -310,6 +453,21 @@ impl<'a> ThinStrRef<'a> {
     #[inline]
     pub fn to_owned(self) -> ThinStr {
         ThinStr::from_str(self.as_str())
+    }
+
+    #[inline]
+    fn is_sigil(&self) -> bool {
+        self.buf == NonNull::from(&EMPTY)
+    }
+
+    /// Returns [`SizeOf::size_of_children()`] as if this was an owned
+    /// [`ThinStr`]
+    pub fn owned_size_of_children(&self, context: &mut Context) {
+        if !self.is_sigil() {
+            context
+                .add(size_of::<StrHeader>())
+                .add_vectorlike(self.len(), self.capacity(), 1);
+        }
     }
 }
 
