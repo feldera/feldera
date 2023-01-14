@@ -14,6 +14,7 @@ use std::{cmp::min, marker::PhantomData};
 #[derive(Clone)]
 pub struct Min;
 
+#[derive(Clone)]
 pub struct MinSemigroup<V>(PhantomData<V>);
 
 impl<V> Semigroup<V> for MinSemigroup<V>
