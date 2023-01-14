@@ -1,14 +1,15 @@
+mod intrinsics;
 mod layout;
 mod vtable;
 
 pub use layout::{Layout, Type};
 
 use crate::{
+    codegen::intrinsics::Intrinsics,
     ir::{
         BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
         RValue, RowType, Signature, Terminator,
     },
-    ThinStr,
 };
 use cranelift::{
     codegen::{
@@ -23,11 +24,8 @@ use cranelift::{
     },
 };
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{FuncId, Linkage, Module};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    mem::ManuallyDrop,
-};
+use cranelift_module::{FuncId, Module};
+use std::collections::{BTreeMap, BTreeSet};
 use target_lexicon::Triple;
 
 pub struct NativeLayoutCache {
@@ -57,6 +55,7 @@ impl NativeLayoutCache {
     }
 }
 
+// TODO: Config option for packed null flags or 1 byte booleans
 #[derive(Debug, Clone)]
 pub struct CodegenConfig {
     pub null_sigil: NullSigil,
@@ -94,8 +93,7 @@ pub struct Codegen {
     module_ctx: Context,
     function_ctx: FunctionBuilderContext,
     config: CodegenConfig,
-    clone_string: FuncId,
-    string_lt: FuncId,
+    intrinsics: Intrinsics,
 }
 
 impl Codegen {
@@ -109,51 +107,10 @@ impl Codegen {
             // TODO: We may want custom impls of things
             cranelift_module::default_libcall_names(),
         );
-
-        // FIXME: Technically this can unwind
-        // FIXME: Use ThinStrRef as the input type
-        extern "C" fn dataflow_jit_clone_string(string: ManuallyDrop<ThinStr>) -> ThinStr {
-            (*string).clone()
-        }
-        builder.symbol(
-            "dataflow_jit_clone_string",
-            dataflow_jit_clone_string as *const u8,
-        );
-        // FIXME: Technically this can unwind
-        // FIXME: Use ThinStrRef as the input type
-        extern "C" fn dataflow_jit_string_lt(
-            lhs: ManuallyDrop<ThinStr>,
-            rhs: ManuallyDrop<ThinStr>,
-        ) -> bool {
-            lhs < rhs
-        }
-        builder.symbol(
-            "dataflow_jit_string_lt",
-            dataflow_jit_string_lt as *const u8,
-        );
+        Intrinsics::register(&mut builder);
 
         let mut module = JITModule::new(builder);
-        let clone_string = module
-            .declare_function("dataflow_jit_clone_string", Linkage::Import, &{
-                let pointer_type = module.isa().pointer_type();
-
-                let mut sig = ClifSignature::new(module.isa().default_call_conv());
-                sig.params.push(AbiParam::new(pointer_type));
-                sig.returns.push(AbiParam::new(pointer_type));
-                sig
-            })
-            .unwrap();
-        let string_lt = module
-            .declare_function("dataflow_jit_string_lt", Linkage::Import, &{
-                let pointer_type = module.isa().pointer_type();
-
-                let mut sig = ClifSignature::new(module.isa().default_call_conv());
-                sig.params.extend([AbiParam::new(pointer_type); 2]);
-                sig.returns.push(AbiParam::new(types::I8));
-                sig
-            })
-            .unwrap();
-
+        let intrinsics = Intrinsics::new(&mut module);
         let module_ctx = module.make_context();
 
         Self {
@@ -162,8 +119,7 @@ impl Codegen {
             module_ctx,
             function_ctx: FunctionBuilderContext::new(),
             config,
-            clone_string,
-            string_lt,
+            intrinsics,
         }
     }
 
@@ -210,9 +166,10 @@ impl Codegen {
         self.module_ctx.func.name = func_name;
 
         {
-            let clone_string = self
-                .module
-                .declare_func_in_func(self.clone_string, &mut self.module_ctx.func);
+            let clone_string = self.module.declare_func_in_func(
+                self.intrinsics.dataflow_jit_string_clone,
+                &mut self.module_ctx.func,
+            );
 
             let mut ctx = Ctx::new(
                 self.module.isa(),

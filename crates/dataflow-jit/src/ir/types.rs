@@ -25,6 +25,10 @@ impl RowType {
     pub const fn is_unit(&self) -> bool {
         matches!(self, Self::Unit)
     }
+    #[must_use]
+    pub const fn is_string(&self) -> bool {
+        matches!(self, Self::String)
+    }
 
     pub const fn needs_drop(&self) -> bool {
         matches!(self, Self::String)
