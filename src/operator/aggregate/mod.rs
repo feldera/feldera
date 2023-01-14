@@ -33,8 +33,8 @@ mod min;
 
 pub use average::Avg;
 pub use fold::Fold;
-pub use max::Max;
-pub use min::Min;
+pub use max::{Max, MaxSemigroup};
+pub use min::{Min, MinSemigroup};
 
 /// A trait for aggregator objects.  An aggregator summarizes the contents
 /// of a Z-set into a single value.

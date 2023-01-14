@@ -11,6 +11,7 @@ use std::{cmp::max, marker::PhantomData};
 #[derive(Clone)]
 pub struct Max;
 
+#[derive(Clone)]
 pub struct MaxSemigroup<V>(PhantomData<V>);
 
 impl<V> Semigroup<V> for MaxSemigroup<V>
