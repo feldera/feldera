@@ -4,6 +4,7 @@ use std::{
     fmt::{self, Debug, Display},
     marker::PhantomData,
     mem::{align_of, ManuallyDrop},
+    ops::{Deref, DerefMut},
     ptr::{self, addr_of, addr_of_mut, NonNull},
     slice, str,
 };
@@ -19,12 +20,6 @@ struct StrHeader {
     length: usize,
     capacity: usize,
     _data: [u8; 0],
-}
-
-#[repr(transparent)]
-pub struct ThinStrRef<'a> {
-    buf: NonNull<StrHeader>,
-    __lifetime: PhantomData<&'a ()>,
 }
 
 #[repr(transparent)]
@@ -66,19 +61,37 @@ impl ThinStr {
     }
 
     #[inline]
-    pub fn as_str(&self) -> &str {
-        unsafe { str::from_utf8_unchecked(self.as_bytes()) }
-    }
-
-    #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         // Safety: All bytes up to self.len() are valid
         unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
     }
 
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(self.as_bytes()) }
+    }
+
+    #[inline]
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        // Safety: All bytes up to self.len() are valid
+        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) }
+    }
+
+    #[inline]
+    pub fn as_mut_str(&mut self) -> &mut str {
+        unsafe { str::from_utf8_unchecked_mut(self.as_mut_bytes()) }
+    }
+
+    #[inline]
     pub unsafe fn set_len(&mut self, length: usize) {
         debug_assert!(self.buf != NonNull::from(&EMPTY));
         unsafe { addr_of_mut!((*self.buf.as_ptr()).length).write(length) }
+    }
+
+    #[inline]
+    pub unsafe fn set_capacity(&mut self, capacity: usize) {
+        debug_assert!(self.buf != NonNull::from(&EMPTY));
+        unsafe { addr_of_mut!((*self.buf.as_ptr()).capacity).write(capacity) }
     }
 
     #[inline]
@@ -99,6 +112,32 @@ impl ThinStr {
         }
     }
 
+    #[inline]
+    pub const fn as_thin_ref(&self) -> ThinStrRef<'_> {
+        ThinStrRef {
+            buf: self.buf,
+            __lifetime: PhantomData,
+        }
+    }
+
+    #[inline]
+    fn from_str(string: &str) -> Self {
+        if string.is_empty() {
+            return Self::new();
+        }
+
+        unsafe {
+            let length = string.len();
+
+            let mut this = Self::with_capacity_uninit(length);
+            ptr::copy_nonoverlapping(string.as_ptr(), this.as_mut_ptr(), length);
+            this.set_capacity(string.len());
+            this.set_len(string.len());
+
+            this
+        }
+    }
+
     unsafe fn with_capacity_uninit(capacity: usize) -> Self {
         let layout = Self::layout_for(capacity);
 
@@ -107,13 +146,6 @@ impl ThinStr {
             Some(buf) => buf,
             None => std::alloc::handle_alloc_error(layout),
         };
-
-        // Write the length (zero) and capacity to the allocation
-        unsafe {
-            let ptr = buf.as_ptr();
-            addr_of_mut!((*ptr).length).write(0);
-            addr_of_mut!((*ptr).capacity).write(capacity);
-        }
 
         Self { buf }
     }
@@ -142,20 +174,9 @@ impl Default for ThinStr {
 }
 
 impl Clone for ThinStr {
+    #[inline]
     fn clone(&self) -> Self {
-        if self.is_empty() {
-            return Self::new();
-        }
-
-        unsafe {
-            let length = self.len();
-
-            let mut new = Self::with_capacity_uninit(length);
-            ptr::copy_nonoverlapping(self.as_ptr(), new.as_mut_ptr(), length);
-            new.set_len(length);
-
-            new
-        }
+        Self::from_str(self.as_str())
     }
 
     fn clone_from(&mut self, source: &Self) {
@@ -171,7 +192,17 @@ impl Clone for ThinStr {
                 self.set_len(length);
             }
         } else {
+            // FIXME: Resize the allocation
             *self = source.clone();
+        }
+    }
+}
+
+impl Drop for ThinStr {
+    fn drop(&mut self) {
+        if self.buf != NonNull::from(&EMPTY) {
+            let layout = Self::layout_for(self.capacity());
+            unsafe { std::alloc::dealloc(self.buf.as_ptr().cast(), layout) };
         }
     }
 }
@@ -211,6 +242,117 @@ impl Ord for ThinStr {
     }
 }
 
+impl Deref for ThinStr {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl DerefMut for ThinStr {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_str()
+    }
+}
+
+#[inline]
 const fn round_to_align(size: usize, align: usize) -> usize {
     size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
+}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct ThinStrRef<'a> {
+    buf: NonNull<StrHeader>,
+    __lifetime: PhantomData<&'a ()>,
+}
+
+impl<'a> ThinStrRef<'a> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        unsafe { (*self.buf.as_ptr()).length }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        unsafe { (*self.buf.as_ptr()).capacity }
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *const u8 {
+        unsafe { addr_of!((*self.buf.as_ptr())._data).cast() }
+    }
+
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        unsafe { addr_of_mut!((*self.buf.as_ptr())._data).cast() }
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        // Safety: All bytes up to self.len() are valid
+        unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(self.as_bytes()) }
+    }
+
+    #[inline]
+    pub fn to_owned(self) -> ThinStr {
+        ThinStr::from_str(self.as_str())
+    }
+}
+
+impl Deref for ThinStrRef<'_> {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl Debug for ThinStrRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl Display for ThinStrRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq for ThinStrRef<'_> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str().eq(other.as_str())
+    }
+}
+
+impl Eq for ThinStrRef<'_> {}
+
+impl PartialOrd for ThinStrRef<'_> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.as_str().partial_cmp(other.as_str())
+    }
+}
+
+impl Ord for ThinStrRef<'_> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
 }

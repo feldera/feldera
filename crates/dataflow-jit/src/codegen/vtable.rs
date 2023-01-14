@@ -224,9 +224,10 @@ impl Codegen {
         self.module_ctx.func.signature = signature;
         self.module_ctx.func.name = func_name;
 
-        let string_lt = self
-            .module
-            .declare_func_in_func(self.string_lt, &mut self.module_ctx.func);
+        let string_lt = self.module.declare_func_in_func(
+            self.intrinsics.dataflow_jit_string_lt,
+            &mut self.module_ctx.func,
+        );
 
         {
             let mut builder =
@@ -295,7 +296,8 @@ impl Codegen {
                             (lhs, rhs)
                         };
 
-                        // Zero is true (the value isn't null), non-zero is false (the value is null)
+                        // Zero is true (the value isn't null), non-zero is false (the value is
+                        // null)
                         let (lhs_non_null, rhs_non_null) = if self.config.null_sigil.is_one() {
                             // x & (1 << bit)
                             let lhs = builder.ins().band_imm(lhs_bitset, 1i64 << bit_idx);
@@ -313,8 +315,8 @@ impl Codegen {
                             (lhs, rhs)
                         };
 
-                        // // FIXME: We could use the masked values directly (zero vs. non-zero) to get
-                        // // rid of the intermediate comparisons
+                        // // FIXME: We could use the masked values directly (zero vs. non-zero) to
+                        // get // rid of the intermediate comparisons
                         // let lhs_masked = builder.ins().band_imm(lhs_bitset, 1i64 << bit_idx);
                         // let rhs_masked = builder.ins().band_imm(rhs_bitset, 1i64 << bit_idx);
                         //
@@ -428,6 +430,195 @@ impl Codegen {
             builder.switch_to_block(return_not_less_than);
             let false_val = builder.ins().iconst(types::I8, false as i64);
             builder.ins().return_(&[false_val]);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.finalize_function(func_id);
+
+        func_id
+    }
+}
+
+/// Macro to codegen the actual dropping of a layout, couldn't be turned into a
+/// function since `FunctionBuilder` takes a mutable ref out on `self`
+macro_rules! drop_layout {
+    ($self:ident, $row_layout:ident, $layout:ident, $ptr:ident, $builder:ident, $string_drop_in_place:ident) => {{
+        for (idx, (ty, nullable)) in $row_layout
+            .iter()
+            .enumerate()
+            .filter(|(_, (ty, _))| ty.is_string())
+        {
+            debug_assert_eq!(ty, RowType::String);
+
+            let next_drop = if nullable {
+                let (bitset_ty, bitset_offset, bit_idx) = $layout.row_nullability(idx);
+                let bitset_ty = bitset_ty.native_type(&$self.module.isa().frontend_config());
+
+                let flags = MemFlags::trusted().with_readonly();
+                let bitset = $builder
+                    .ins()
+                    .load(bitset_ty, flags, $ptr, bitset_offset as i32);
+
+                let string_non_null = if $self.config.null_sigil.is_one() {
+                    // x & (1 << bit)
+                    $builder.ins().band_imm(bitset, 1i64 << bit_idx)
+                } else {
+                    // !x & (1 << bit)
+                    let not_bitset = $builder.ins().bnot(bitset);
+                    $builder.ins().band_imm(not_bitset, 1i64 << bit_idx)
+                };
+
+                // If the string is null, jump to the `next_drop` block and don't drop
+                // the current string. Otherwise (if the string isn't null) drop it and
+                // then continue dropping any other fields
+                let drop_string = $builder.create_block();
+                let next_drop = $builder.create_block();
+                $builder.ins().brnz(string_non_null, next_drop, &[]);
+                $builder.ins().jump(drop_string, &[]);
+
+                $builder.switch_to_block(drop_string);
+
+                Some(next_drop)
+            } else {
+                None
+            };
+
+            // Load the string
+            let offset = $layout.row_offset(idx) as i32;
+            let native_ty = $layout
+                .row_type(idx)
+                .native_type(&$self.module.isa().frontend_config());
+            // Readonly isn't transitive and doesn't apply to the data pointed to
+            // by the pointer we're loading
+            let flags = MemFlags::trusted().with_readonly();
+            let string = $builder.ins().load(native_ty, flags, $ptr, offset);
+            // Drop the string
+            $builder.ins().call($string_drop_in_place, &[string]);
+
+            if let Some(next_drop) = next_drop {
+                $builder.ins().jump(next_drop, &[]);
+                $builder.switch_to_block(next_drop);
+            }
+        }
+    }};
+}
+
+impl Codegen {
+    pub fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*mut u8)
+        let mut signature = self.module.make_signature();
+        signature
+            .params
+            .push(AbiParam::new(self.module.isa().pointer_type()));
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        let string_drop_in_place = self.module.declare_func_in_func(
+            self.intrinsics.dataflow_jit_string_drop_in_place,
+            &mut self.module_ctx.func,
+        );
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.switch_to_block(entry_block);
+
+            // TODO: Add debug assertion that src != dest when
+            // `self.config.debug_assertions` is set
+
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
+
+            let row_layout = self.layout_cache.layout_cache.get(layout_id).clone();
+            let layout = self.layout_cache.compute(layout_id);
+
+            if row_layout.needs_drop() {
+                let ptr = builder.block_params(entry_block)[0];
+                drop_layout!(self, row_layout, layout, ptr, builder, string_drop_in_place);
+            }
+
+            builder.ins().return_(&[]);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.finalize_function(func_id);
+
+        func_id
+    }
+
+    pub fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*mut u8, usize)
+        let mut signature = self.module.make_signature();
+        let ptr_ty = self.module.isa().pointer_type();
+        signature.params.extend([AbiParam::new(ptr_ty); 2]);
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        let string_drop_in_place = self.module.declare_func_in_func(
+            self.intrinsics.dataflow_jit_string_drop_in_place,
+            &mut self.module_ctx.func,
+        );
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.switch_to_block(entry_block);
+
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
+
+            let row_layout = self.layout_cache.layout_cache.get(layout_id).clone();
+            let layout = self.layout_cache.compute(layout_id);
+
+            if row_layout.needs_drop() {
+                let ptr = builder.block_params(entry_block)[0];
+                let length = builder.block_params(entry_block)[1];
+
+                let tail = builder.create_block();
+                let body = builder.create_block();
+                builder.append_block_param(body, ptr_ty);
+
+                let length_bytes = builder.ins().imul_imm(length, layout.size() as i64);
+                let end_ptr = builder.ins().iadd(ptr, length_bytes);
+
+                let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
+                builder.ins().brz(ptr_inbounds, tail, &[]);
+                builder.ins().jump(body, &[ptr]);
+
+                builder.switch_to_block(body);
+
+                let ptr = builder.block_params(body)[0];
+                drop_layout!(self, row_layout, layout, ptr, builder, string_drop_in_place);
+
+                let ptr = builder.ins().iadd_imm(ptr, layout.size() as i64);
+                let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
+                builder.ins().brnz(ptr_inbounds, body, &[ptr]);
+                builder.ins().jump(tail, &[]);
+
+                builder.switch_to_block(tail);
+            }
+
+            builder.ins().return_(&[]);
 
             // Finish building the function
             builder.seal_all_blocks();

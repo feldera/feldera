@@ -27,6 +27,16 @@ mod tests {
                 .with_row(RowType::Unit, true)
                 .build(),
         );
+        let string_layout_id = layout_cache.add(
+            RowLayoutBuilder::new()
+                .with_row(RowType::U32, false)
+                .with_row(RowType::U32, true)
+                .with_row(RowType::Unit, false)
+                .with_row(RowType::Unit, true)
+                .with_row(RowType::String, false)
+                .with_row(RowType::String, true)
+                .build(),
+        );
 
         let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
 
@@ -42,8 +52,13 @@ mod tests {
         let clone = codegen.codegen_layout_clone(layout_id);
         let clone_into_slice = codegen.codegen_layout_clone_into_slice(layout_id);
         let lt = codegen.codegen_layout_lt(layout_id);
+        let drop_in_place = codegen.codegen_layout_drop_in_place(layout_id);
+        let drop_slice_in_place = codegen.codegen_layout_drop_slice_in_place(layout_id);
 
         let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
+        let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
+        let _string_drop_slice_in_place =
+            codegen.codegen_layout_drop_slice_in_place(string_layout_id);
 
         let (jit_module, mut layout_cache) = codegen.finalize_definitions();
 
@@ -65,6 +80,16 @@ mod tests {
         let lt = unsafe {
             transmute::<*const u8, unsafe extern "C" fn(*const u8, *const u8) -> bool>(
                 jit_module.get_finalized_function(lt),
+            )
+        };
+        let drop_in_place = unsafe {
+            transmute::<*const u8, extern "C" fn(*mut u8)>(
+                jit_module.get_finalized_function(drop_in_place),
+            )
+        };
+        let drop_slice_in_place = unsafe {
+            transmute::<*const u8, extern "C" fn(*mut u8, usize)>(
+                jit_module.get_finalized_function(drop_slice_in_place),
             )
         };
 
@@ -116,8 +141,8 @@ mod tests {
                 clone_into_slice,
                 size_of_children: todo!(),
                 debug: todo!(),
-                drop_in_place: todo!(),
-                drop_slice_in_place: todo!(),
+                drop_in_place,
+                drop_slice_in_place,
                 type_id: todo!(),
                 type_name: todo!(),
             },
