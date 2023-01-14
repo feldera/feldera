@@ -7,7 +7,7 @@ mod tests {
         ir::{LayoutCache, RowLayoutBuilder, RowType},
     };
     use dbsp::trace::layers::erased::{DataVTable, ErasedVTable};
-    use std::{mem::transmute, num::NonZeroUsize};
+    use std::{any::TypeId, cmp::Ordering, mem::transmute, num::NonZeroUsize};
 
     #[test]
     fn dynamic_erased_sets() {
@@ -52,8 +52,10 @@ mod tests {
         let clone = codegen.codegen_layout_clone(layout_id);
         let clone_into_slice = codegen.codegen_layout_clone_into_slice(layout_id);
         let lt = codegen.codegen_layout_lt(layout_id);
+        let cmp = codegen.codegen_layout_cmp(layout_id);
         let drop_in_place = codegen.codegen_layout_drop_in_place(layout_id);
         let drop_slice_in_place = codegen.codegen_layout_drop_slice_in_place(layout_id);
+        let type_name = codegen.codegen_layout_type_name(layout_id);
 
         let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
         let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
@@ -67,6 +69,16 @@ mod tests {
                 jit_module.get_finalized_function(eq),
             )
         };
+        let lt = unsafe {
+            transmute::<*const u8, unsafe extern "C" fn(*const u8, *const u8) -> bool>(
+                jit_module.get_finalized_function(lt),
+            )
+        };
+        let cmp = unsafe {
+            transmute::<*const u8, unsafe extern "C" fn(*const u8, *const u8) -> Ordering>(
+                jit_module.get_finalized_function(cmp),
+            )
+        };
         let clone = unsafe {
             transmute::<*const u8, unsafe extern "C" fn(*const u8, *mut u8)>(
                 jit_module.get_finalized_function(clone),
@@ -77,11 +89,6 @@ mod tests {
                 jit_module.get_finalized_function(clone_into_slice),
             )
         };
-        let lt = unsafe {
-            transmute::<*const u8, unsafe extern "C" fn(*const u8, *const u8) -> bool>(
-                jit_module.get_finalized_function(lt),
-            )
-        };
         let drop_in_place = unsafe {
             transmute::<*const u8, extern "C" fn(*mut u8)>(
                 jit_module.get_finalized_function(drop_in_place),
@@ -90,6 +97,11 @@ mod tests {
         let drop_slice_in_place = unsafe {
             transmute::<*const u8, extern "C" fn(*mut u8, usize)>(
                 jit_module.get_finalized_function(drop_slice_in_place),
+            )
+        };
+        let type_name = unsafe {
+            transmute::<*const u8, extern "C" fn(*mut usize) -> *const u8>(
+                jit_module.get_finalized_function(type_name),
             )
         };
 
@@ -114,7 +126,9 @@ mod tests {
 
             assert!(!eq(lhs, rhs));
             assert!(lt(lhs, rhs));
+            assert_eq!(cmp(lhs, rhs), Ordering::Less);
             assert!(!lt(rhs, lhs));
+            assert_eq!(cmp(rhs, lhs), Ordering::Greater);
 
             rhs.add(layout.row_offset(0) as usize)
                 .cast::<u32>()
@@ -125,9 +139,34 @@ mod tests {
 
             assert!(eq(lhs, rhs));
             assert!(!lt(rhs, lhs));
+            assert_eq!(cmp(lhs, rhs), Ordering::Equal);
+            assert_eq!(cmp(rhs, lhs), Ordering::Equal);
+
+            rhs.add(layout.row_offset(0) as usize)
+                .cast::<u32>()
+                .write(0);
+            rhs.add(layout.row_offset(1) as usize)
+                .cast::<u32>()
+                .write(0);
+
+            assert!(!eq(lhs, rhs));
+            assert!(!lt(lhs, rhs));
+            assert!(lt(rhs, lhs));
+            assert_eq!(cmp(lhs, rhs), Ordering::Greater);
+            assert_eq!(cmp(rhs, lhs), Ordering::Less);
 
             layout.dealloc(lhs);
             layout.dealloc(rhs);
+        }
+
+        // This is just a dummy function since we can't meaningfully create type ids at
+        // runtime (we could technically ignore the existence of other types and hope
+        // they never cross paths with the unholy abominations created here so that we
+        // could make our own TypeIds that tell which layout a row originated from,
+        // allowing us to check that two rows are of the same layout)
+        fn type_id() -> TypeId {
+            struct DataflowJitRow;
+            TypeId::of::<DataflowJitRow>()
         }
 
         let vtable = DataVTable {
@@ -136,16 +175,29 @@ mod tests {
                 align_of,
                 eq,
                 lt,
-                cmp: todo!(),
+                cmp,
                 clone,
                 clone_into_slice,
-                size_of_children: todo!(),
-                debug: todo!(),
+                size_of_children: {
+                    unsafe extern "C" fn size_of_children(_: *const u8, _: &mut size_of::Context) {}
+                    size_of_children
+                },
+                debug: {
+                    unsafe fn debug(
+                        _: *const u8,
+                        _: *mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        Ok(())
+                    }
+                    debug
+                },
                 drop_in_place,
                 drop_slice_in_place,
-                type_id: todo!(),
-                type_name: todo!(),
+                type_id,
+                type_name,
             },
         };
+
+        println!("type name: {}", vtable.common.type_name());
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     codegen::intrinsics::Intrinsics,
     ir::{
         BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
-        RValue, RowType, Signature, Terminator,
+        RValue, RowLayout, RowType, Signature, Terminator,
     },
 };
 use cranelift::{
@@ -25,7 +25,10 @@ use cranelift::{
 };
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Module};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cell::Ref,
+    collections::{BTreeMap, BTreeSet},
+};
 use target_lexicon::Triple;
 
 pub struct NativeLayoutCache {
@@ -41,6 +44,16 @@ impl NativeLayoutCache {
             layouts: BTreeMap::new(),
             frontend_config,
         }
+    }
+
+    pub fn get_layouts(&mut self, layout_id: LayoutId) -> (&Layout, Ref<'_, RowLayout>) {
+        let row_layout = self.layout_cache.get(layout_id);
+        let native_layout = self
+            .layouts
+            .entry(layout_id)
+            .or_insert_with(|| Layout::from_row(&row_layout, &self.frontend_config));
+
+        (native_layout, row_layout)
     }
 
     pub fn compute(&mut self, layout_id: LayoutId) -> &Layout {
@@ -128,8 +141,9 @@ impl Codegen {
 
         let options = &[
             ("opt_level", "speed"),
-            ("use_egraphs", "true"),
             ("enable_simd", "true"),
+            ("use_egraphs", "true"),
+            ("unwind_info", "true"),
             ("enable_verifier", "true"),
             ("enable_jump_tables", "true"),
             ("enable_alias_analysis", "true"),

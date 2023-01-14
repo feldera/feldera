@@ -1,14 +1,38 @@
 use crate::{
-    codegen::Codegen,
-    ir::{LayoutId, RowType},
+    codegen::{Codegen, CodegenConfig, Layout},
+    ir::{LayoutId, RowLayout, RowType},
 };
 use cranelift::{
-    codegen::ir::UserFuncName,
-    prelude::{types, AbiParam, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags},
+    codegen::ir::{FuncRef, UserFuncName},
+    prelude::{
+        types, AbiParam, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value as ClifValue,
+    },
 };
+use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
-use std::num::NonZeroU8;
+use std::{cmp::Ordering, num::NonZeroU8};
 
+macro_rules! vtable {
+    ($($func:ident: $ty:ty),+ $(,)?) => {
+        pub struct LayoutVTable {
+            $(pub $func: FuncId,)+
+        }
+    };
+}
+
+vtable! {
+    eq: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+    lt: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+    cmp: unsafe extern "C" fn(*const u8, *const u8) -> Ordering,
+    clone: unsafe extern "C" fn(*const u8, *mut u8),
+    clone_into_slice: unsafe extern "C" fn(*const u8, *mut u8, usize),
+    size_of_children: unsafe extern "C" fn(*const u8, &mut Context),
+    debug: unsafe fn(*const u8, *mut fmt::Formatter<'_>) -> fmt::Result,
+    drop_in_place: unsafe extern "C" fn(*mut u8),
+    drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
+}
+
+// TODO: Memoize these functions so we don't create multiple instances of them
 impl Codegen {
     /// Generates a function comparing two of the given layout for equality
     // FIXME: I took the really lazy route here and pretend that uninit data
@@ -243,20 +267,17 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
-            let layout_size = self.layout_cache.compute(layout_id).size();
-
             let return_not_less_than = builder.create_block();
 
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+
             // ZSTs always return `false`, they're always equal
-            if layout_size != 0 {
+            if !layout.is_zero_sized() {
                 // Create a block to house our `true` return
                 let return_less_than = builder.create_block();
 
                 let params = builder.block_params(entry_block);
                 let (lhs, rhs) = (params[0], params[1]);
-
-                let row_layout = self.layout_cache.layout_cache.get(layout_id).clone();
-                let layout = self.layout_cache.compute(layout_id);
 
                 // If the type is nullable, the algorithm is as follows:
                 // - If both values are non-null, compare their innards
@@ -278,42 +299,24 @@ impl Codegen {
                     }
 
                     if nullable {
-                        let (bitset_ty, bitset_offset, bit_idx) = layout.row_nullability(idx);
-                        let bitset_ty = bitset_ty.native_type(&self.module.isa().frontend_config());
-
-                        let (lhs_bitset, rhs_bitset) = {
-                            let flags = MemFlags::trusted().with_readonly();
-
-                            let lhs =
-                                builder
-                                    .ins()
-                                    .load(bitset_ty, flags, lhs, bitset_offset as i32);
-                            let rhs =
-                                builder
-                                    .ins()
-                                    .load(bitset_ty, flags, rhs, bitset_offset as i32);
-
-                            (lhs, rhs)
-                        };
-
-                        // Zero is true (the value isn't null), non-zero is false (the value is
-                        // null)
-                        let (lhs_non_null, rhs_non_null) = if self.config.null_sigil.is_one() {
-                            // x & (1 << bit)
-                            let lhs = builder.ins().band_imm(lhs_bitset, 1i64 << bit_idx);
-                            let rhs = builder.ins().band_imm(rhs_bitset, 1i64 << bit_idx);
-
-                            (lhs, rhs)
-                        } else {
-                            // !x & (1 << bit)
-                            let lhs = builder.ins().bnot(lhs_bitset);
-                            let rhs = builder.ins().bnot(rhs_bitset);
-
-                            let lhs = builder.ins().band_imm(lhs, 1i64 << bit_idx);
-                            let rhs = builder.ins().band_imm(rhs, 1i64 << bit_idx);
-
-                            (lhs, rhs)
-                        };
+                        let lhs_non_null = column_non_null(
+                            idx,
+                            lhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+                        let rhs_non_null = column_non_null(
+                            idx,
+                            rhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
 
                         // // FIXME: We could use the masked values directly (zero vs. non-zero) to
                         // get // rid of the intermediate comparisons
@@ -440,70 +443,270 @@ impl Codegen {
 
         func_id
     }
-}
 
-/// Macro to codegen the actual dropping of a layout, couldn't be turned into a
-/// function since `FunctionBuilder` takes a mutable ref out on `self`
-macro_rules! drop_layout {
-    ($self:ident, $row_layout:ident, $layout:ident, $ptr:ident, $builder:ident, $string_drop_in_place:ident) => {{
-        for (idx, (ty, nullable)) in $row_layout
-            .iter()
-            .enumerate()
-            .filter(|(_, (ty, _))| ty.is_string())
+    pub fn codegen_layout_cmp(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*const u8, *const u8) -> Ordering
+        // Ordering is represented as an i8 where -1 = Less, 0 = Equal and 1 = Greater
+        let mut signature = self.module.make_signature();
+        signature
+            .params
+            .extend([AbiParam::new(self.module.isa().pointer_type()); 2]);
+        signature.returns.push(AbiParam::new(types::I8));
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        let string_cmp = self.module.declare_func_in_func(
+            self.intrinsics.dataflow_jit_string_cmp,
+            &mut self.module_ctx.func,
+        );
+
         {
-            debug_assert_eq!(ty, RowType::String);
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
-            let next_drop = if nullable {
-                let (bitset_ty, bitset_offset, bit_idx) = $layout.row_nullability(idx);
-                let bitset_ty = bitset_ty.native_type(&$self.module.isa().frontend_config());
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.switch_to_block(entry_block);
 
-                let flags = MemFlags::trusted().with_readonly();
-                let bitset = $builder
-                    .ins()
-                    .load(bitset_ty, flags, $ptr, bitset_offset as i32);
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
 
-                let string_non_null = if $self.config.null_sigil.is_one() {
-                    // x & (1 << bit)
-                    $builder.ins().band_imm(bitset, 1i64 << bit_idx)
-                } else {
-                    // !x & (1 << bit)
-                    let not_bitset = $builder.ins().bnot(bitset);
-                    $builder.ins().band_imm(not_bitset, 1i64 << bit_idx)
-                };
+            let less_than = builder.ins().iconst(types::I8, Ordering::Less as i64);
+            let equal_to = builder.ins().iconst(types::I8, Ordering::Equal as i64);
+            let greater_than = builder.ins().iconst(types::I8, Ordering::Greater as i64);
 
-                // If the string is null, jump to the `next_drop` block and don't drop
-                // the current string. Otherwise (if the string isn't null) drop it and
-                // then continue dropping any other fields
-                let drop_string = $builder.create_block();
-                let next_drop = $builder.create_block();
-                $builder.ins().brnz(string_non_null, next_drop, &[]);
-                $builder.ins().jump(drop_string, &[]);
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
-                $builder.switch_to_block(drop_string);
+            // ZSTs are always equal
+            if layout.is_zero_sized() {
+                builder.ins().return_(&[equal_to]);
 
-                Some(next_drop)
+            // Otherwise we have to do actual work
+            // The basic algo follows this pattern:
+            // ```
+            // for column in layout {
+            //     match lhs[column].cmp(rhs[column]) {
+            //         // If both are equal, compare the next column
+            //         Equal => {}
+            //         // If one is less or greater than the other, return that
+            //         // ordering immediately
+            //         order @ (Less | Greater) => return order,
+            //     }
+            // }
+            //
+            // // If all fields were equal, the values are equal
+            // return Equal;
+            // ```
+            // Additionally, null values are equal, non-null values are greater
+            // than null ones and null values are less than non-null ones
             } else {
-                None
-            };
+                // Get the input pointers
+                let params = builder.block_params(entry_block);
+                let (lhs, rhs) = (params[0], params[1]);
 
-            // Load the string
-            let offset = $layout.row_offset(idx) as i32;
-            let native_ty = $layout
-                .row_type(idx)
-                .native_type(&$self.module.isa().frontend_config());
-            // Readonly isn't transitive and doesn't apply to the data pointed to
-            // by the pointer we're loading
-            let flags = MemFlags::trusted().with_readonly();
-            let string = $builder.ins().load(native_ty, flags, $ptr, offset);
-            // Drop the string
-            $builder.ins().call($string_drop_in_place, &[string]);
+                // The final block in the function will return the ordering
+                let return_block = builder.create_block();
+                builder.append_block_param(return_block, types::I8);
 
-            if let Some(next_drop) = next_drop {
-                $builder.ins().jump(next_drop, &[]);
-                $builder.switch_to_block(next_drop);
+                for (idx, (row_type, nullable)) in row_layout.iter().enumerate() {
+                    if row_type.is_unit() && !nullable {
+                        continue;
+                    }
+
+                    let mut next_compare = builder.create_block();
+
+                    if nullable {
+                        // Zero = non-null, non-zero = null
+                        let lhs_non_null = column_non_null(
+                            idx,
+                            lhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+                        let rhs_non_null = column_non_null(
+                            idx,
+                            rhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+
+                        let check_null = builder.create_block();
+
+                        // Compare the nullability of the fields before comparing their innards
+                        // What we do here boils down to this:
+                        // ```
+                        // %eq = icmp eq lhs_non_null, rhs_non_null
+                        // %less = icmp ult lhs_non_null, rhs_non_null
+                        // // If the values aren't equal
+                        // %less_or_greater = select i8 less, -1, 1
+                        // ```
+                        let eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
+                        let less =
+                            builder
+                                .ins()
+                                .icmp(IntCC::UnsignedLessThan, lhs_non_null, rhs_non_null);
+                        let ordering = builder.ins().select(less, less_than, greater_than);
+                        builder.ins().brz(eq, return_block, &[ordering]);
+                        builder.ins().jump(check_null, &[]);
+                        builder.seal_block(builder.current_block().unwrap());
+
+                        let after_compare = builder.create_block();
+
+                        // In this block we check if either are null and decide whether or not to
+                        // compare their inner value
+                        builder.switch_to_block(check_null);
+                        let either_null = builder.ins().bor(lhs_non_null, rhs_non_null);
+                        builder.ins().brnz(either_null, after_compare, &[]);
+                        builder.ins().jump(next_compare, &[]);
+                        builder.seal_block(check_null);
+
+                        builder.switch_to_block(next_compare);
+                        next_compare = after_compare;
+                    }
+
+                    let native_ty = layout
+                        .row_type(idx)
+                        .native_type(&self.module.isa().frontend_config());
+
+                    // Load the column's values
+                    let (lhs, rhs) = {
+                        let offset = layout.row_offset(idx) as i32;
+                        let flags = MemFlags::trusted().with_readonly();
+
+                        let lhs = builder.ins().load(native_ty, flags, lhs, offset);
+                        let rhs = builder.ins().load(native_ty, flags, rhs, offset);
+
+                        (lhs, rhs)
+                    };
+
+                    match row_type {
+                        // Unsigned integers
+                        RowType::Bool | RowType::U16 | RowType::U32 | RowType::U64 => {
+                            let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
+                            let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
+                            let ordering = builder.ins().select(less, less_than, greater_than);
+
+                            builder.ins().brz(eq, return_block, &[ordering]);
+                        }
+
+                        // Signed integers
+                        RowType::I16 | RowType::I32 | RowType::I64 => {
+                            let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
+                            let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+                            let ordering = builder.ins().select(less, less_than, greater_than);
+
+                            builder.ins().brz(eq, return_block, &[ordering]);
+                        }
+
+                        // Floats
+                        RowType::F32 | RowType::F64 => {
+                            let eq = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
+                            let less = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
+                            let ordering = builder.ins().select(less, less_than, greater_than);
+
+                            builder.ins().brz(eq, return_block, &[ordering]);
+                        }
+
+                        RowType::Unit => {}
+
+                        RowType::String => {
+                            // -1 for less, 0 for equal, 1 for greater
+                            let cmp = builder.ins().call(string_cmp, &[lhs, rhs]);
+                            let cmp = builder.func.dfg.first_result(cmp);
+
+                            // Zero is equal so if the value is non-zero we can return the ordering
+                            // directly
+                            builder.ins().brnz(cmp, return_block, &[cmp]);
+                        }
+                    }
+
+                    builder.ins().jump(next_compare, &[]);
+                    builder.seal_block(builder.current_block().unwrap());
+                    builder.switch_to_block(next_compare);
+                }
+
+                builder.ins().jump(return_block, &[equal_to]);
+                builder.seal_block(builder.current_block().unwrap());
+
+                // Make the final block return the ordering it's given
+                builder.switch_to_block(return_block);
+                let final_ordering = builder.block_params(return_block)[0];
+                builder.ins().return_(&[final_ordering]);
+                builder.seal_block(return_block);
             }
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
         }
-    }};
+
+        self.finalize_function(func_id);
+
+        func_id
+    }
+
+    pub fn codegen_layout_type_name(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*mut usize) -> *const u8
+        let ptr_ty = self.module.isa().pointer_type();
+        let mut signature = self.module.make_signature();
+        signature.params.push(AbiParam::new(ptr_ty));
+        signature.returns.push(AbiParam::new(ptr_ty));
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.append_block_params_for_function_params(entry_block);
+            builder.switch_to_block(entry_block);
+
+            // Build the layout's type name and leak it so that it's static
+            // FIXME: Don't leak this, store them along with the code that backs the
+            // functions so we can deallocate them at the same time
+            let layout = self.layout_cache.layout_cache.get(layout_id);
+            let type_name = Box::leak(String::into_boxed_str(format!(
+                "DataflowJitRow({layout:?})",
+            )));
+
+            // Get the length and pointer to the type name
+            let type_name_len = builder.ins().iconst(ptr_ty, type_name.len() as i64);
+            let type_name_ptr = builder.ins().iconst(ptr_ty, type_name.as_ptr() as i64);
+
+            // Write the string's length to the out param
+            let length_out = builder.block_params(entry_block)[0];
+            builder
+                .ins()
+                .store(MemFlags::trusted(), type_name_len, length_out, 0);
+
+            // Return the string's pointer
+            builder.ins().return_(&[type_name_ptr]);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.finalize_function(func_id);
+
+        func_id
+    }
 }
 
 impl Codegen {
@@ -539,12 +742,19 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
-            let row_layout = self.layout_cache.layout_cache.get(layout_id).clone();
-            let layout = self.layout_cache.compute(layout_id);
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
             if row_layout.needs_drop() {
                 let ptr = builder.block_params(entry_block)[0];
-                drop_layout!(self, row_layout, layout, ptr, builder, string_drop_in_place);
+                drop_layout(
+                    ptr,
+                    layout,
+                    &row_layout,
+                    &mut builder,
+                    string_drop_in_place,
+                    &self.module,
+                    &self.config,
+                );
             }
 
             builder.ins().return_(&[]);
@@ -587,8 +797,7 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
-            let row_layout = self.layout_cache.layout_cache.get(layout_id).clone();
-            let layout = self.layout_cache.compute(layout_id);
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
             if row_layout.needs_drop() {
                 let ptr = builder.block_params(entry_block)[0];
@@ -608,7 +817,15 @@ impl Codegen {
                 builder.switch_to_block(body);
 
                 let ptr = builder.block_params(body)[0];
-                drop_layout!(self, row_layout, layout, ptr, builder, string_drop_in_place);
+                drop_layout(
+                    ptr,
+                    layout,
+                    &row_layout,
+                    &mut builder,
+                    string_drop_in_place,
+                    &self.module,
+                    &self.config,
+                );
 
                 let ptr = builder.ins().iadd_imm(ptr, layout.size() as i64);
                 let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
@@ -628,5 +845,99 @@ impl Codegen {
         self.finalize_function(func_id);
 
         func_id
+    }
+}
+
+/// Checks if the given row is currently null, returns zero for non-null and
+/// non-zero for null
+fn column_non_null(
+    column: usize,
+    row_ptr: ClifValue,
+    layout: &Layout,
+    builder: &mut FunctionBuilder,
+    config: &CodegenConfig,
+    module: &JITModule,
+    readonly: bool,
+) -> ClifValue {
+    debug_assert!(layout.is_nullable(column));
+
+    let (bitset_ty, bitset_offset, bit_idx) = layout.row_nullability(column);
+    let bitset_ty = bitset_ty.native_type(&module.isa().frontend_config());
+
+    // Create the flags for the load
+    let mut flags = MemFlags::trusted();
+    if readonly {
+        flags.set_readonly();
+    }
+
+    // Load the bitset containing the given column's nullability
+    let bitset = builder
+        .ins()
+        .load(bitset_ty, flags, row_ptr, bitset_offset as i32);
+
+    // Zero is true (the value isn't null), non-zero is false (the value is
+    // null)
+    if config.null_sigil.is_one() {
+        // x & (1 << bit)
+        builder.ins().band_imm(bitset, 1i64 << bit_idx)
+    } else {
+        // !x & (1 << bit)
+        let bitset = builder.ins().bnot(bitset);
+        builder.ins().band_imm(bitset, 1i64 << bit_idx)
+    }
+}
+
+fn drop_layout(
+    ptr: ClifValue,
+    layout: &Layout,
+    row_layout: &RowLayout,
+    builder: &mut FunctionBuilder,
+    string_drop_in_place: FuncRef,
+    module: &JITModule,
+    config: &CodegenConfig,
+) {
+    for (idx, (ty, nullable)) in row_layout
+        .iter()
+        .enumerate()
+        // Strings are the only thing that need dropping right now
+        .filter(|(_, (ty, _))| ty.is_string())
+    {
+        debug_assert_eq!(ty, RowType::String);
+
+        let next_drop = if nullable {
+            // Zero = string isn't null, non-zero = string is null
+            let string_non_null = column_non_null(idx, ptr, layout, builder, config, module, true);
+
+            // If the string is null, jump to the `next_drop` block and don't drop
+            // the current string. Otherwise (if the string isn't null) drop it and
+            // then continue dropping any other fields
+            let drop_string = builder.create_block();
+            let next_drop = builder.create_block();
+            builder.ins().brnz(string_non_null, next_drop, &[]);
+            builder.ins().jump(drop_string, &[]);
+
+            builder.switch_to_block(drop_string);
+
+            Some(next_drop)
+        } else {
+            None
+        };
+
+        // Load the string
+        let offset = layout.row_offset(idx) as i32;
+        let native_ty = layout
+            .row_type(idx)
+            .native_type(&module.isa().frontend_config());
+        // Readonly isn't transitive and doesn't apply to the data pointed to
+        // by the pointer we're loading
+        let flags = MemFlags::trusted().with_readonly();
+        let string = builder.ins().load(native_ty, flags, ptr, offset);
+        // Drop the string
+        builder.ins().call(string_drop_in_place, &[string]);
+
+        if let Some(next_drop) = next_drop {
+            builder.ins().jump(next_drop, &[]);
+            builder.switch_to_block(next_drop);
+        }
     }
 }
