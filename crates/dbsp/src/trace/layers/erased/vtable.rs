@@ -24,7 +24,7 @@ pub struct ErasedVTable {
     pub clone: unsafe extern "C" fn(*const u8, *mut u8),
     pub clone_into_slice: unsafe extern "C" fn(*const u8, *mut u8, usize),
     pub size_of_children: unsafe extern "C" fn(*const u8, &mut Context),
-    pub debug: unsafe fn(*const u8, *mut fmt::Formatter<'_>) -> fmt::Result,
+    pub debug: unsafe extern "C" fn(*const u8, *mut fmt::Formatter<'_>) -> bool,
     pub drop_in_place: unsafe extern "C" fn(*mut u8),
     pub drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     pub type_id: fn() -> TypeId,
@@ -41,6 +41,17 @@ impl ErasedVTable {
             let bytes = slice::from_raw_parts(ptr, len);
             debug_assert!(std::str::from_utf8(bytes).is_ok());
             std::str::from_utf8_unchecked(bytes)
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `value` must be a valid pointer to a value associated with the current vtable
+    pub unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if (self.debug)(value, f) {
+            Ok(())
+        } else {
+            Err(fmt::Error)
         }
     }
 }
@@ -109,7 +120,7 @@ unsafe impl DynVecVTable for DataVTable {
     }
 
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (self.common.debug)(value, f)
+        self.common.debug(value, f)
     }
 }
 
@@ -153,7 +164,7 @@ unsafe impl DynVecVTable for DiffVTable {
     }
 
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (self.common.debug)(value, f)
+        self.common.debug(value, f)
     }
 }
 
@@ -210,9 +221,9 @@ where
             unsafe { T::size_of_children(&*value.cast(), context) }
         }
 
-        unsafe fn debug<T: Debug>(value: *const u8, f: *mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe extern "C" fn debug<T: Debug>(value: *const u8, f: *mut fmt::Formatter<'_>) -> bool {
             debug_assert!(!value.is_null() && !f.is_null());
-            unsafe { <T as Debug>::fmt(&*value.cast(), &mut *f) }
+            unsafe { <T as Debug>::fmt(&*value.cast(), &mut *f).is_ok() }
         }
 
         unsafe extern "C" fn drop_in_place<T>(value: *mut u8) {

@@ -33,12 +33,16 @@ impl Debug for ErasedLayer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugPtr(
             *const u8,
-            unsafe fn(*const u8, *mut fmt::Formatter<'_>) -> fmt::Result,
+            unsafe extern "C" fn(*const u8, *mut fmt::Formatter<'_>) -> bool,
         );
 
         impl Debug for DebugPtr {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                unsafe { (self.1)(self.0, f) }
+                if unsafe { (self.1)(self.0, f) } {
+                    Ok(())
+                } else {
+                    Err(fmt::Error)
+                }
             }
         }
 

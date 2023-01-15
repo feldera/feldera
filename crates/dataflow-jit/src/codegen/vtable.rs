@@ -1,5 +1,5 @@
 use crate::{
-    codegen::{Codegen, CodegenConfig, Layout},
+    codegen::{intrinsics::ImportIntrinsics, Codegen, CodegenConfig, Layout},
     ir::{LayoutId, RowLayout, RowType},
 };
 use cranelift::{
@@ -11,6 +11,10 @@ use cranelift::{
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use std::{cmp::Ordering, num::NonZeroU8};
+
+// TODO: The unwinding issues can be solved by creating unwind table entries for
+// our generated functions, this'll also make our code more debug-able
+// https://github.com/bytecodealliance/wasmtime/issues/5574
 
 macro_rules! vtable {
     ($($func:ident: $ty:ty),+ $(,)?) => {
@@ -194,9 +198,6 @@ impl Codegen {
             let entry_block = builder.create_block();
             builder.switch_to_block(entry_block);
 
-            // TODO: Add debug assertion that src != dest when
-            // `self.config.debug_assertions` is set
-
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
@@ -248,10 +249,7 @@ impl Codegen {
         self.module_ctx.func.signature = signature;
         self.module_ctx.func.name = func_name;
 
-        let string_lt = self.module.declare_func_in_func(
-            self.intrinsics.dataflow_jit_string_lt,
-            &mut self.module_ctx.func,
-        );
+        let mut imports = self.intrinsics.import();
 
         {
             let mut builder =
@@ -260,9 +258,6 @@ impl Codegen {
             // Create the entry block
             let entry_block = builder.create_block();
             builder.switch_to_block(entry_block);
-
-            // TODO: Add debug assertion that src != dest when
-            // `self.config.debug_assertions` is set
 
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
@@ -409,6 +404,8 @@ impl Codegen {
                         RowType::Unit => unreachable!(),
 
                         RowType::String => {
+                            let string_lt =
+                                imports.dataflow_jit_string_lt(&mut self.module, builder.func);
                             let lt = builder.ins().call(string_lt, &[lhs, rhs]);
                             builder.func.dfg.first_result(lt)
                         }
@@ -459,10 +456,7 @@ impl Codegen {
         self.module_ctx.func.signature = signature;
         self.module_ctx.func.name = func_name;
 
-        let string_cmp = self.module.declare_func_in_func(
-            self.intrinsics.dataflow_jit_string_cmp,
-            &mut self.module_ctx.func,
-        );
+        let mut imports = self.intrinsics.import();
 
         {
             let mut builder =
@@ -620,6 +614,9 @@ impl Codegen {
                         RowType::Unit => {}
 
                         RowType::String => {
+                            let string_cmp =
+                                imports.dataflow_jit_string_cmp(&mut self.module, builder.func);
+
                             // -1 for less, 0 for equal, 1 for greater
                             let cmp = builder.ins().call(string_cmp, &[lhs, rhs]);
                             let cmp = builder.func.dfg.first_result(cmp);
@@ -680,6 +677,7 @@ impl Codegen {
             // Build the layout's type name and leak it so that it's static
             // FIXME: Don't leak this, store them along with the code that backs the
             // functions so we can deallocate them at the same time
+            // FIXME: Should do this as a static included in the jit code
             let layout = self.layout_cache.layout_cache.get(layout_id);
             let type_name = Box::leak(String::into_boxed_str(format!(
                 "DataflowJitRow({layout:?})",
@@ -707,6 +705,350 @@ impl Codegen {
 
         func_id
     }
+
+    pub fn codegen_layout_size_of_children(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*const u8, *mut Context)
+        let mut signature = self.module.make_signature();
+        let ptr_ty = self.module.isa().pointer_type();
+        signature.params.extend([AbiParam::new(ptr_ty); 2]);
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        let mut imports = self.intrinsics.import();
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.switch_to_block(entry_block);
+
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
+
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+
+            if row_layout.rows().iter().any(RowType::is_string) {
+                let params = builder.block_params(entry_block);
+                let (ptr, context) = (params[0], params[1]);
+
+                for (idx, (ty, nullable)) in row_layout
+                    .iter()
+                    .enumerate()
+                    // Strings are the only thing that have children sizes right now
+                    .filter(|(_, (ty, _))| ty.is_string())
+                {
+                    debug_assert_eq!(ty, RowType::String);
+
+                    let next_size_of = if nullable {
+                        // Zero = string isn't null, non-zero = string is null
+                        let string_non_null = column_non_null(
+                            idx,
+                            ptr,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+
+                        // If the string is null, jump to the `next_size_of` block and don't
+                        // get the size of the current string (since it's null). Otherwise
+                        // (if the string isn't null) get its size and then continue recording
+                        // any other fields
+                        let size_of_string = builder.create_block();
+                        let next_size_of = builder.create_block();
+                        builder.ins().brnz(string_non_null, next_size_of, &[]);
+                        builder.ins().jump(size_of_string, &[]);
+
+                        builder.switch_to_block(size_of_string);
+
+                        Some(next_size_of)
+                    } else {
+                        None
+                    };
+
+                    // Load the string
+                    let offset = layout.row_offset(idx) as i32;
+                    let native_ty = layout
+                        .row_type(idx)
+                        .native_type(&self.module.isa().frontend_config());
+                    let flags = MemFlags::trusted().with_readonly();
+                    let string = builder.ins().load(native_ty, flags, ptr, offset);
+
+                    // Get the size of the string's children
+                    let string_size_of_children = imports
+                        .dataflow_jit_string_size_of_children(&mut self.module, builder.func);
+                    builder
+                        .ins()
+                        .call(string_size_of_children, &[string, context]);
+
+                    if let Some(next_drop) = next_size_of {
+                        builder.ins().jump(next_drop, &[]);
+                        builder.switch_to_block(next_drop);
+                    }
+                }
+            }
+
+            builder.ins().return_(&[]);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.finalize_function(func_id);
+
+        func_id
+    }
+
+    pub fn codegen_layout_debug(&mut self, layout_id: LayoutId) -> FuncId {
+        // fn(*const u8, *mut fmt::Formatter) -> bool
+        let mut signature = self.module.make_signature();
+        let ptr_ty = self.module.isa().pointer_type();
+        signature.params.extend([AbiParam::new(ptr_ty); 2]);
+        signature.returns.push(AbiParam::new(types::I8));
+
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        let mut imports = self.intrinsics.import();
+
+        {
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+            let str_debug = imports.dataflow_jit_str_debug(&mut self.module, builder.func);
+
+            // Create the entry block
+            let entry_block = builder.create_block();
+            builder.switch_to_block(entry_block);
+
+            // Add the function params as block params
+            builder.append_block_params_for_function_params(entry_block);
+
+            let return_block = builder.create_block();
+            builder.append_block_params_for_function_returns(return_block);
+
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+
+            let params = builder.block_params(entry_block);
+            let (ptr, fmt) = (params[0], params[1]);
+
+            // If the row is empty we can just write an empty row
+            if row_layout.is_empty() {
+                // TODO: Should be a static within the jit code
+                static EMPTY: &str = "{}";
+
+                // Write an empty row to the output
+                let empty_ptr = builder.ins().iconst(ptr_ty, EMPTY.as_ptr() as i64);
+                let empty_len = builder.ins().iconst(ptr_ty, EMPTY.len() as i64);
+                let call = builder.ins().call(str_debug, &[empty_ptr, empty_len, fmt]);
+                let result = builder.func.dfg.first_result(call);
+
+                builder.ins().jump(return_block, &[result]);
+                builder.seal_block(entry_block);
+
+            // Otherwise, write each row to the output
+            } else {
+                // TODO: Should be a static within the jit code
+                static START: &str = "{ ";
+
+                // Write the start of a row to the output
+                let start_ptr = builder.ins().iconst(ptr_ty, START.as_ptr() as i64);
+                let start_len = builder.ins().iconst(ptr_ty, START.len() as i64);
+                let call = builder.ins().call(str_debug, &[start_ptr, start_len, fmt]);
+                let result = builder.func.dfg.first_result(call);
+
+                let debug_start = builder.create_block();
+                let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                builder.ins().brz(result, return_block, &[debug_failed]);
+                builder.ins().jump(debug_start, &[]);
+                builder.seal_block(entry_block);
+
+                builder.switch_to_block(debug_start);
+
+                for (idx, (ty, nullable)) in row_layout.iter().enumerate() {
+                    let after_debug = builder.create_block();
+
+                    if nullable {
+                        // Zero = value isn't null, non-zero = value is null
+                        let non_null = column_non_null(
+                            idx,
+                            ptr,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+
+                        // If the value is null, jump to the `write_null` block and debug a null
+                        // value (since it's null). Otherwise (if the value isn't null) debug it
+                        // and then continue debugging any other fields
+                        let debug_value = builder.create_block();
+                        let write_null = builder.create_block();
+                        builder.ins().brnz(non_null, write_null, &[]);
+                        builder.ins().jump(debug_value, &[]);
+                        builder.seal_block(builder.current_block().unwrap());
+
+                        // TODO: Should be a static within the jit code
+                        static NULL: &str = "null";
+
+                        builder.switch_to_block(write_null);
+
+                        // Write `null` to the output
+                        let null_ptr = builder.ins().iconst(ptr_ty, NULL.as_ptr() as i64);
+                        let null_len = builder.ins().iconst(ptr_ty, NULL.len() as i64);
+                        let call = builder.ins().call(str_debug, &[null_ptr, null_len, fmt]);
+                        let call = builder.func.dfg.first_result(call);
+
+                        // If writing `null` failed, return an error
+                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                        builder.ins().brz(call, return_block, &[debug_failed]);
+                        builder.ins().jump(after_debug, &[]);
+                        builder.seal_block(write_null);
+
+                        builder.switch_to_block(debug_value);
+                    }
+
+                    let result = if ty.is_unit() {
+                        // TODO: Should be a static within the jit code
+                        static UNIT: &str = "()";
+
+                        // Write `()` to the output
+                        let unit_ptr = builder.ins().iconst(ptr_ty, UNIT.as_ptr() as i64);
+                        let unit_len = builder.ins().iconst(ptr_ty, UNIT.len() as i64);
+                        let call = builder.ins().call(str_debug, &[unit_ptr, unit_len, fmt]);
+                        builder.func.dfg.first_result(call)
+                    } else {
+                        // Load the value
+                        let offset = layout.row_offset(idx) as i32;
+                        let native_ty = layout
+                            .row_type(idx)
+                            .native_type(&self.module.isa().frontend_config());
+                        let flags = MemFlags::trusted().with_readonly();
+                        let value = builder.ins().load(native_ty, flags, ptr, offset);
+
+                        let call = match ty {
+                            RowType::Bool => {
+                                let bool_debug =
+                                    imports.dataflow_jit_bool_debug(&mut self.module, builder.func);
+                                builder.ins().call(bool_debug, &[value, fmt])
+                            }
+
+                            RowType::U16 | RowType::U32 => {
+                                let uint_debug =
+                                    imports.dataflow_jit_uint_debug(&mut self.module, builder.func);
+                                let extended = builder.ins().uextend(types::I64, value);
+                                builder.ins().call(uint_debug, &[extended, fmt])
+                            }
+                            RowType::U64 => {
+                                let uint_debug =
+                                    imports.dataflow_jit_uint_debug(&mut self.module, builder.func);
+                                builder.ins().call(uint_debug, &[value, fmt])
+                            }
+
+                            RowType::I16 | RowType::I32 => {
+                                let int_debug =
+                                    imports.dataflow_jit_int_debug(&mut self.module, builder.func);
+                                let extended = builder.ins().sextend(types::I64, value);
+                                builder.ins().call(int_debug, &[extended, fmt])
+                            }
+                            RowType::I64 => {
+                                let int_debug =
+                                    imports.dataflow_jit_int_debug(&mut self.module, builder.func);
+                                builder.ins().call(int_debug, &[value, fmt])
+                            }
+
+                            RowType::F32 => {
+                                let f32_debug =
+                                    imports.dataflow_jit_f32_debug(&mut self.module, builder.func);
+                                builder.ins().call(f32_debug, &[value, fmt])
+                            }
+                            RowType::F64 => {
+                                let f64_debug =
+                                    imports.dataflow_jit_f64_debug(&mut self.module, builder.func);
+                                builder.ins().call(f64_debug, &[value, fmt])
+                            }
+
+                            RowType::String => {
+                                let string_debug = imports
+                                    .dataflow_jit_string_debug(&mut self.module, builder.func);
+                                builder.ins().call(string_debug, &[value, fmt])
+                            }
+
+                            RowType::Unit => unreachable!(),
+                        };
+                        builder.func.dfg.first_result(call)
+                    };
+
+                    // If writing the value failed, return an error
+                    let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                    builder.ins().brz(result, return_block, &[debug_failed]);
+                    builder.ins().jump(after_debug, &[]);
+                    builder.seal_block(builder.current_block().unwrap());
+                    builder.switch_to_block(after_debug);
+
+                    // If this is the last column in the row, finish it off with ` }`
+                    if idx == row_layout.len() - 1 {
+                        // TODO: Should be a static within the jit code
+                        static END: &str = " }";
+
+                        // Write the end of a row to the output
+                        let end_ptr = builder.ins().iconst(ptr_ty, END.as_ptr() as i64);
+                        let end_len = builder.ins().iconst(ptr_ty, END.len() as i64);
+                        let call = builder.ins().call(str_debug, &[end_ptr, end_len, fmt]);
+                        let result = builder.func.dfg.first_result(call);
+
+                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                        let debug_success = builder.ins().iconst(types::I8, true as i64);
+                        builder.ins().brz(result, return_block, &[debug_failed]);
+                        builder.ins().jump(return_block, &[debug_success]);
+
+                    // Otherwise comma-separate each column
+                    } else {
+                        // TODO: Should be a static within the jit code
+                        static COMMA: &str = ", ";
+
+                        let next_debug = builder.create_block();
+                        let comma_ptr = builder.ins().iconst(ptr_ty, COMMA.as_ptr() as i64);
+                        let comma_len = builder.ins().iconst(ptr_ty, COMMA.len() as i64);
+                        let call = builder.ins().call(str_debug, &[comma_ptr, comma_len, fmt]);
+                        let result = builder.func.dfg.first_result(call);
+
+                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                        builder.ins().brz(result, return_block, &[debug_failed]);
+                        builder.ins().jump(next_debug, &[]);
+                        builder.switch_to_block(next_debug);
+                    }
+
+                    builder.seal_block(after_debug);
+                }
+            }
+
+            builder.switch_to_block(return_block);
+            let result = builder.block_params(return_block)[0];
+            builder.ins().return_(&[result]);
+            builder.seal_block(return_block);
+
+            // Finish building the function
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        println!("{}", self.module_ctx.func.display());
+        self.finalize_function(func_id);
+
+        func_id
+    }
 }
 
 impl Codegen {
@@ -723,10 +1065,7 @@ impl Codegen {
         self.module_ctx.func.signature = signature;
         self.module_ctx.func.name = func_name;
 
-        let string_drop_in_place = self.module.declare_func_in_func(
-            self.intrinsics.dataflow_jit_string_drop_in_place,
-            &mut self.module_ctx.func,
-        );
+        let mut imports = self.intrinsics.import();
 
         {
             let mut builder =
@@ -751,8 +1090,8 @@ impl Codegen {
                     layout,
                     &row_layout,
                     &mut builder,
-                    string_drop_in_place,
-                    &self.module,
+                    &mut imports,
+                    &mut self.module,
                     &self.config,
                 );
             }
@@ -781,10 +1120,7 @@ impl Codegen {
         self.module_ctx.func.signature = signature;
         self.module_ctx.func.name = func_name;
 
-        let string_drop_in_place = self.module.declare_func_in_func(
-            self.intrinsics.dataflow_jit_string_drop_in_place,
-            &mut self.module_ctx.func,
-        );
+        let mut imports = self.intrinsics.import();
 
         {
             let mut builder =
@@ -822,8 +1158,8 @@ impl Codegen {
                     layout,
                     &row_layout,
                     &mut builder,
-                    string_drop_in_place,
-                    &self.module,
+                    &mut imports,
+                    &mut self.module,
                     &self.config,
                 );
 
@@ -892,8 +1228,8 @@ fn drop_layout(
     layout: &Layout,
     row_layout: &RowLayout,
     builder: &mut FunctionBuilder,
-    string_drop_in_place: FuncRef,
-    module: &JITModule,
+    imports: &mut ImportIntrinsics,
+    module: &mut JITModule,
     config: &CodegenConfig,
 ) {
     for (idx, (ty, nullable)) in row_layout
@@ -932,7 +1268,9 @@ fn drop_layout(
         // by the pointer we're loading
         let flags = MemFlags::trusted().with_readonly();
         let string = builder.ins().load(native_ty, flags, ptr, offset);
+
         // Drop the string
+        let string_drop_in_place = imports.dataflow_jit_string_drop_in_place(module, builder.func);
         builder.ins().call(string_drop_in_place, &[string]);
 
         if let Some(next_drop) = next_drop {

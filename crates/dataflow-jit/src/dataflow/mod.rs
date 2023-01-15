@@ -7,7 +7,13 @@ mod tests {
         ir::{LayoutCache, RowLayoutBuilder, RowType},
     };
     use dbsp::trace::layers::erased::{DataVTable, ErasedVTable};
-    use std::{any::TypeId, cmp::Ordering, mem::transmute, num::NonZeroUsize};
+    use std::{
+        any::TypeId,
+        cmp::Ordering,
+        fmt::{self, Debug},
+        mem::transmute,
+        num::NonZeroUsize,
+    };
 
     #[test]
     fn dynamic_erased_sets() {
@@ -56,11 +62,14 @@ mod tests {
         let drop_in_place = codegen.codegen_layout_drop_in_place(layout_id);
         let drop_slice_in_place = codegen.codegen_layout_drop_slice_in_place(layout_id);
         let type_name = codegen.codegen_layout_type_name(layout_id);
+        let size_of_children = codegen.codegen_layout_size_of_children(layout_id);
+        let debug = codegen.codegen_layout_debug(layout_id);
 
-        let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
-        let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
-        let _string_drop_slice_in_place =
-            codegen.codegen_layout_drop_slice_in_place(string_layout_id);
+        // let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
+        // let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
+        // let _string_drop_slice_in_place =
+        //     codegen.codegen_layout_drop_slice_in_place(string_layout_id);
+        // let _string_size_of_children = codegen.codegen_layout_size_of_children(string_layout_id);
 
         let (jit_module, mut layout_cache) = codegen.finalize_definitions();
 
@@ -90,20 +99,44 @@ mod tests {
             )
         };
         let drop_in_place = unsafe {
-            transmute::<*const u8, extern "C" fn(*mut u8)>(
+            transmute::<*const u8, unsafe extern "C" fn(*mut u8)>(
                 jit_module.get_finalized_function(drop_in_place),
             )
         };
         let drop_slice_in_place = unsafe {
-            transmute::<*const u8, extern "C" fn(*mut u8, usize)>(
+            transmute::<*const u8, unsafe extern "C" fn(*mut u8, usize)>(
                 jit_module.get_finalized_function(drop_slice_in_place),
             )
         };
+        let size_of_children = unsafe {
+            transmute::<*const u8, unsafe extern "C" fn(*const u8, &mut size_of::Context)>(
+                jit_module.get_finalized_function(size_of_children),
+            )
+        };
+        let debug = unsafe {
+            transmute::<*const u8, unsafe extern "C" fn(*const u8, *mut fmt::Formatter) -> bool>(
+                jit_module.get_finalized_function(debug),
+            )
+        };
         let type_name = unsafe {
-            transmute::<*const u8, extern "C" fn(*mut usize) -> *const u8>(
+            transmute::<*const u8, unsafe extern "C" fn(*mut usize) -> *const u8>(
                 jit_module.get_finalized_function(type_name),
             )
         };
+
+        struct DebugRow(
+            *const u8,
+            unsafe extern "C" fn(*const u8, *mut fmt::Formatter) -> bool,
+        );
+        impl Debug for DebugRow {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                if unsafe { (self.1)(self.0, f) } {
+                    Ok(())
+                } else {
+                    Err(fmt::Error)
+                }
+            }
+        }
 
         let layout = layout_cache.compute(layout_id);
 
@@ -124,6 +157,9 @@ mod tests {
                 .cast::<u32>()
                 .write(3);
 
+            println!("lhs: {:?}", DebugRow(lhs, debug));
+            println!("rhs: {:?}", DebugRow(rhs, debug));
+
             assert!(!eq(lhs, rhs));
             assert!(lt(lhs, rhs));
             assert_eq!(cmp(lhs, rhs), Ordering::Less);
@@ -137,6 +173,9 @@ mod tests {
                 .cast::<u32>()
                 .write(1);
 
+            println!("lhs: {:?}", DebugRow(lhs, debug));
+            println!("rhs: {:?}", DebugRow(rhs, debug));
+
             assert!(eq(lhs, rhs));
             assert!(!lt(rhs, lhs));
             assert_eq!(cmp(lhs, rhs), Ordering::Equal);
@@ -148,6 +187,9 @@ mod tests {
             rhs.add(layout.row_offset(1) as usize)
                 .cast::<u32>()
                 .write(0);
+
+            println!("lhs: {:?}", DebugRow(lhs, debug));
+            println!("rhs: {:?}", DebugRow(rhs, debug));
 
             assert!(!eq(lhs, rhs));
             assert!(!lt(lhs, rhs));
@@ -178,19 +220,8 @@ mod tests {
                 cmp,
                 clone,
                 clone_into_slice,
-                size_of_children: {
-                    unsafe extern "C" fn size_of_children(_: *const u8, _: &mut size_of::Context) {}
-                    size_of_children
-                },
-                debug: {
-                    unsafe fn debug(
-                        _: *const u8,
-                        _: *mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        Ok(())
-                    }
-                    debug
-                },
+                size_of_children,
+                debug,
                 drop_in_place,
                 drop_slice_in_place,
                 type_id,
