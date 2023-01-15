@@ -5,7 +5,7 @@ mod vtable;
 pub use layout::{Layout, Type};
 
 use crate::{
-    codegen::intrinsics::Intrinsics,
+    codegen::intrinsics::{ImportIntrinsics, Intrinsics},
     ir::{
         BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
         RValue, RowLayout, RowType, Signature, Terminator,
@@ -180,17 +180,12 @@ impl Codegen {
         self.module_ctx.func.name = func_name;
 
         {
-            let clone_string = self.module.declare_func_in_func(
-                self.intrinsics.dataflow_jit_string_clone,
-                &mut self.module_ctx.func,
-            );
-
             let mut ctx = Ctx::new(
-                self.module.isa(),
+                &mut self.module,
                 &mut self.layout_cache,
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx),
                 self.config.null_sigil,
-                clone_string,
+                self.intrinsics.import(),
             );
 
             ctx.add_function_params(function);
@@ -257,7 +252,7 @@ impl Codegen {
                             let offset = layout.row_offset(load.row());
                             let ty = layout
                                 .row_type(load.row())
-                                .native_type(&self.module.isa().frontend_config());
+                                .native_type(&ctx.module.isa().frontend_config());
 
                             let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
                                 ctx.builder.ins().stack_load(ty, slot, offset as i32)
@@ -286,7 +281,7 @@ impl Codegen {
                             let (bitset_ty, bitset_offset, bit_idx) =
                                 layout.row_nullability(is_null.row());
                             let bitset_ty =
-                                bitset_ty.native_type(&self.module.isa().frontend_config());
+                                bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
                             let bitset = if let Some(&slot) = ctx.stack_slots.get(&is_null.value())
                             {
@@ -333,7 +328,7 @@ impl Codegen {
                             let (bitset_ty, bitset_offset, bit_idx) =
                                 layout.row_nullability(set_null.row());
                             let bitset_ty =
-                                bitset_ty.native_type(&self.module.isa().frontend_config());
+                                bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
                             // Load the bitset's current value
                             let bitset = if let Some(&slot) =
@@ -418,17 +413,21 @@ impl Codegen {
                             }
 
                             let src = if let Some(&slot) = ctx.stack_slots.get(&copy_row.src()) {
-                                ctx.builder
-                                    .ins()
-                                    .stack_addr(ctx.target.pointer_type(), slot, 0)
+                                ctx.builder.ins().stack_addr(
+                                    ctx.module.isa().pointer_type(),
+                                    slot,
+                                    0,
+                                )
                             } else {
                                 ctx.exprs[&copy_row.src()]
                             };
 
                             let dest = if let Some(&slot) = ctx.stack_slots.get(&copy_row.dest()) {
-                                ctx.builder
-                                    .ins()
-                                    .stack_addr(ctx.target.pointer_type(), slot, 0)
+                                ctx.builder.ins().stack_addr(
+                                    ctx.module.isa().pointer_type(),
+                                    slot,
+                                    0,
+                                )
                             } else {
                                 ctx.exprs[&copy_row.dest()]
                             };
@@ -440,7 +439,7 @@ impl Codegen {
                             // sizes greater than 4 when an inlined impl
                             // would perform much better
                             ctx.builder.emit_small_memory_copy(
-                                ctx.target.frontend_config(),
+                                ctx.module.isa().frontend_config(),
                                 dest,
                                 src,
                                 layout.size() as u64,
@@ -456,7 +455,11 @@ impl Codegen {
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
 
                             let value = if copy_val.ty() == RowType::String {
-                                ctx.call_clone_string(value)
+                                let clone_string = ctx
+                                    .imports
+                                    .dataflow_jit_string_clone(ctx.module, ctx.builder.func);
+                                let call = ctx.builder.ins().call(clone_string, &[value]);
+                                ctx.builder.func.dfg.first_result(call)
                             } else {
                                 value
                             };
@@ -481,10 +484,11 @@ impl Codegen {
                             // Create a stack slot
                             let slot = ctx.stack_slot_for_layout(expr_id, null.layout());
                             // Get the address of the stack slot
-                            let addr =
-                                ctx.builder
-                                    .ins()
-                                    .stack_addr(ctx.target.pointer_type(), slot, 0);
+                            let addr = ctx.builder.ins().stack_addr(
+                                ctx.module.isa().pointer_type(),
+                                slot,
+                                0,
+                            );
 
                             // Fill the stack slot with whatever our nullish sigil is
                             ctx.memset_imm(addr, ctx.null_sigil as u8, null.layout());
@@ -539,6 +543,7 @@ impl Codegen {
         self.layout_cache.compute(layout_id)
     }
 
+    #[track_caller]
     fn finalize_function(&mut self, func_id: FuncId) {
         println!("pre-opt: {}", self.module_ctx.func.display());
         self.module
@@ -553,7 +558,7 @@ impl Codegen {
 }
 
 struct Ctx<'a> {
-    target: &'a dyn TargetIsa,
+    module: &'a mut JITModule,
     layout_cache: &'a mut NativeLayoutCache,
     builder: FunctionBuilder<'a>,
     blocks: BTreeMap<BlockId, ClifBlock>,
@@ -562,19 +567,19 @@ struct Ctx<'a> {
     stack_slots: BTreeMap<ExprId, StackSlot>,
     function_inputs: BTreeMap<ExprId, InputFlags>,
     null_sigil: NullSigil,
-    clone_string: FuncRef,
+    imports: ImportIntrinsics,
 }
 
 impl<'a> Ctx<'a> {
     fn new(
-        target: &'a dyn TargetIsa,
+        module: &'a mut JITModule,
         layout_cache: &'a mut NativeLayoutCache,
         builder: FunctionBuilder<'a>,
         null_sigil: NullSigil,
-        clone_string: FuncRef,
+        imports: ImportIntrinsics,
     ) -> Self {
         Self {
-            target,
+            module,
             layout_cache,
             builder,
             blocks: BTreeMap::new(),
@@ -583,13 +588,8 @@ impl<'a> Ctx<'a> {
             stack_slots: BTreeMap::new(),
             function_inputs: BTreeMap::new(),
             null_sigil,
-            clone_string,
+            imports,
         }
-    }
-
-    fn call_clone_string(&mut self, string: Value) -> Value {
-        let call = self.builder.ins().call(self.clone_string, &[string]);
-        self.builder.func.dfg.first_result(call)
     }
 
     fn add_function_params(&mut self, function: &Function) {
@@ -790,7 +790,7 @@ impl<'a> Ctx<'a> {
         // just emits a memset call on sizes greater than 4 when an inlined impl
         // would perform much better
         self.builder.emit_small_memset(
-            self.target.frontend_config(),
+            self.module.isa().frontend_config(),
             buffer,
             value,
             layout.size() as u64,
