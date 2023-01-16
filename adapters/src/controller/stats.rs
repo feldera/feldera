@@ -301,8 +301,8 @@ impl ControllerStatus {
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let old = endpoint_stats.output_batch(num_records);
-            if old < endpoint_stats.config.max_buffered_records
-                && old + num_records as u64 >= endpoint_stats.config.max_buffered_records
+            if old - (num_records as u64) <= endpoint_stats.config.max_buffered_records
+                && old >= endpoint_stats.config.max_buffered_records
             {
                 circuit_thread_unparker.unpark();
             }
@@ -317,11 +317,11 @@ impl ControllerStatus {
 
     pub fn output_buffers_full(&self) -> bool {
         self.output_status().values().any(|endpoint_stats| {
-            endpoint_stats
+            let num_buffered_records = endpoint_stats
                 .metrics
                 .buffered_records
-                .load(Ordering::Acquire)
-                >= endpoint_stats.config.max_buffered_records
+                .load(Ordering::Acquire);
+            num_buffered_records >= endpoint_stats.config.max_buffered_records
         })
     }
 

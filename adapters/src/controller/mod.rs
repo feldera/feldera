@@ -44,6 +44,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::DBSPHandle;
+use log::debug;
 use num_traits::FromPrimitive;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -237,7 +238,9 @@ impl Controller {
                     // Backpressure in the output pipeline: wait for room in output buffers to
                     // become available.
                     if controller.output_buffers_full() {
+                        debug!("circuit thread: park waiting for output buffer space");
                         parker.park();
+                        debug!("circuit thread: unparked");
                         continue;
                     }
 
@@ -257,9 +260,11 @@ impl Controller {
                         // Wake up the backpressure thread to unpause endpoints blocked due to
                         // backpressure.
                         controller.unpark_backpressure();
+                        debug!("circuit thread: calling 'circuit.step'");
                         circuit
                             .step()
                             .unwrap_or_else(|e| controller.error(ControllerError::dbsp_error(e)));
+                        debug!("circuit thread: 'circuit.step' returned");
 
                         // Push output batches to output pipelines.
                         let outputs = controller.outputs.read().unwrap();
@@ -286,7 +291,9 @@ impl Controller {
                         }
                         parker.park_timeout(Duration::from_millis(1));
                     } else {
+                        debug!("circuit thread: park: input buffers empty");
                         parker.park();
+                        debug!("circuit thread: unparked");
                     }
                 }
                 PipelineState::Terminated => {
