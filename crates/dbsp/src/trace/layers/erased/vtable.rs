@@ -46,7 +46,8 @@ impl ErasedVTable {
 
     /// # Safety
     ///
-    /// `value` must be a valid pointer to a value associated with the current vtable
+    /// `value` must be a valid pointer to a value associated with the current
+    /// vtable
     pub unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if (self.debug)(value, f) {
             Ok(())

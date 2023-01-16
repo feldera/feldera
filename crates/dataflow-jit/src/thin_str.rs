@@ -353,7 +353,7 @@ impl Display for ThinStr {
 impl PartialEq for ThinStr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.as_str().eq(other.as_str())
+        self.buf == other.buf || self.as_str().eq(other.as_str())
     }
 }
 
@@ -495,7 +495,7 @@ impl Display for ThinStrRef<'_> {
 impl PartialEq for ThinStrRef<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.as_str().eq(other.as_str())
+        self.buf == other.buf || self.as_str().eq(other.as_str())
     }
 }
 

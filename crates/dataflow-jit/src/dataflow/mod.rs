@@ -22,6 +22,7 @@ mod tests {
             RowLayoutBuilder::new()
                 .with_row(RowType::U32, false)
                 .with_row(RowType::U32, false)
+                .with_row(RowType::Unit, false)
                 .build(),
         );
 
@@ -65,11 +66,12 @@ mod tests {
         let size_of_children = codegen.codegen_layout_size_of_children(layout_id);
         let debug = codegen.codegen_layout_debug(layout_id);
 
-        // let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
-        // let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
-        // let _string_drop_slice_in_place =
-        //     codegen.codegen_layout_drop_slice_in_place(string_layout_id);
-        // let _string_size_of_children = codegen.codegen_layout_size_of_children(string_layout_id);
+        let _nullable_lt = codegen.codegen_layout_lt(nullable_layout_id);
+        let _string_drop_in_place = codegen.codegen_layout_drop_in_place(string_layout_id);
+        let _string_drop_slice_in_place =
+            codegen.codegen_layout_drop_slice_in_place(string_layout_id);
+        let _string_size_of_children = codegen.codegen_layout_size_of_children(string_layout_id);
+        let _string_eq = codegen.codegen_layout_eq(string_layout_id);
 
         let (jit_module, mut layout_cache) = codegen.finalize_definitions();
 

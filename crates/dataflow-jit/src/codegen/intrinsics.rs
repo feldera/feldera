@@ -101,10 +101,11 @@ macro_rules! intrinsics {
 }
 
 intrinsics! {
-    dataflow_jit_string_clone = fn(ptr) -> ptr,
+    dataflow_jit_string_eq = fn(ptr, ptr) -> bool,
     dataflow_jit_string_lt = fn(ptr, ptr) -> bool,
-    dataflow_jit_string_drop_in_place = fn(ptr),
     dataflow_jit_string_cmp = fn(ptr, ptr) -> i8,
+    dataflow_jit_string_clone = fn(ptr) -> ptr,
+    dataflow_jit_string_drop_in_place = fn(ptr),
     dataflow_jit_string_size_of_children = fn(ptr, ptr),
     dataflow_jit_string_debug = fn(ptr, ptr) -> bool,
     dataflow_jit_str_debug = fn(ptr, ptr, ptr) -> bool,
@@ -115,10 +116,10 @@ intrinsics! {
     dataflow_jit_f64_debug = fn(f64, ptr) -> bool,
 }
 
-/// Clones a thin string
+/// Returns `true` if `lhs` is equal to `rhs`
 // FIXME: Technically this can unwind
-extern "C" fn dataflow_jit_string_clone(string: ThinStrRef) -> ThinStr {
-    string.to_owned()
+extern "C" fn dataflow_jit_string_eq(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
+    lhs == rhs
 }
 
 /// Returns `true` if `lhs` is less than `rhs`
@@ -131,6 +132,12 @@ extern "C" fn dataflow_jit_string_lt(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
 // FIXME: Technically this can unwind
 extern "C" fn dataflow_jit_string_cmp(lhs: ThinStrRef, rhs: ThinStrRef) -> Ordering {
     lhs.cmp(&rhs)
+}
+
+/// Clones a thin string
+// FIXME: Technically this can unwind
+extern "C" fn dataflow_jit_string_clone(string: ThinStrRef) -> ThinStr {
+    string.to_owned()
 }
 
 /// Drops the given [`ThinStr`]
