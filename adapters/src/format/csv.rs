@@ -86,7 +86,11 @@ impl CsvParser {
 
             let mut deserializer = byte_record_deserializer(&record, None);
             let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            input_stream.insert(&mut deserializer)?;
+            input_stream.insert(&mut deserializer).map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to deserialize csv record '{record:?}': {e}"
+                ))
+            })?;
             num_records += 1;
         }
 
@@ -109,9 +113,10 @@ impl CsvParser {
 
 impl Parser for CsvParser {
     fn input(&mut self, data: &[u8]) -> AnyResult<usize> {
-        // println!("input {} bytes: {}, self.leftover: {}", data.len(),
-        // std::str::from_utf8(data).unwrap(),
-        // std::str::from_utf8(&self.leftover).unwrap());
+        // println!("input {} bytes:\n{}\nself.leftover:\n{}", data.len(),
+        //    std::str::from_utf8(data).map(|s| s.to_string()).unwrap_or_else(|e|
+        // format!("invalid csv: {e}")),    std::str::from_utf8(&self.leftover).
+        // map(|s| s.to_string()).unwrap_or_else(|e| format!("invalid csv: {e}")));
 
         let leftover = Self::split_on_newline(data);
 
