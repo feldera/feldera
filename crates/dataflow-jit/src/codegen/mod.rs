@@ -13,7 +13,7 @@ use crate::{
 };
 use cranelift::{
     codegen::{
-        ir::{FuncRef, StackSlot, UserFuncName},
+        ir::{StackSlot, UserFuncName},
         Context,
     },
     prelude::{

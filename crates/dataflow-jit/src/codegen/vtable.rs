@@ -3,9 +3,10 @@ use crate::{
     ir::{LayoutId, RowLayout, RowType},
 };
 use cranelift::{
-    codegen::ir::{FuncRef, UserFuncName},
+    codegen::ir::UserFuncName,
     prelude::{
-        types, AbiParam, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value as ClifValue,
+        types, AbiParam, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Type as ClifType,
+        Value as ClifValue,
     },
 };
 use cranelift_jit::JITModule;
@@ -38,25 +39,39 @@ vtable! {
 
 // TODO: Memoize these functions so we don't create multiple instances of them
 impl Codegen {
+    fn new_function<P>(&mut self, params: P, ret: Option<ClifType>) -> FuncId
+    where
+        P: IntoIterator<Item = ClifType>,
+    {
+        // Create the function's signature
+        let mut signature = self.module.make_signature();
+        signature
+            .params
+            .extend(params.into_iter().map(AbiParam::new));
+        if let Some(ret) = ret {
+            signature.returns.push(AbiParam::new(ret));
+        }
+
+        // Declare the function
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        // Set the current context to operate over that function
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        func_id
+    }
+
     /// Generates a function comparing two of the given layout for equality
     // FIXME: I took the really lazy route here and pretend that uninit data
     //        either doesn't exist or is always zeroed, if padding bytes
     //        or otherwise uninitialized data doesn't conform to that this'll
     //        spuriously error
-    // FIXME: This also ignores the existence of strings
     pub fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *const u8) -> bool
-        let mut signature = self.module.make_signature();
-        signature.returns.push(AbiParam::new(types::I8));
-        signature
-            .params
-            .extend([AbiParam::new(self.module.isa().pointer_type()); 2]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
+        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let mut imports = self.intrinsics.import();
 
         {
             let mut builder =
@@ -69,17 +84,159 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
-            let layout = self.layout_cache.compute(layout_id);
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+            let params = builder.block_params(entry_block);
+            let (lhs, rhs) = (params[0], params[1]);
 
             // Zero sized types are always equal
-            let are_equal = if layout.is_zero_sized() {
+            let are_equal = if layout.is_zero_sized() || row_layout.is_empty() {
                 builder.ins().iconst(types::I8, true as i64)
 
-            // Otherwise we emit a memcmp
-            } else {
-                let params = builder.block_params(entry_block);
-                let (lhs, rhs) = (params[0], params[1]);
+            // If there's any strings then comparisons are non-trivial
+            } else if row_layout.rows().iter().any(RowType::is_string) {
+                let return_block = builder.create_block();
+                builder.append_block_params_for_function_returns(return_block);
 
+                // We compare the fields of the struct in an order determined by three criteria:
+                // - Whether or not it has a non-trivial comparison function (strings)
+                // - Whether or not it's nullable
+                // - Where it lies within the struct
+                // This allows us to do the trivial work (like comparing integers) before we
+                // compare the more heavyweight things like strings as well as being marginally
+                // more data-local and giving the code generator more flexibility to reduce the
+                // number of loads performed
+                let mut fields: Vec<_> = (0..row_layout.len()).collect();
+                fields.sort_by_key(|&idx| {
+                    (
+                        row_layout.rows()[idx].is_string(),
+                        row_layout.row_is_nullable(idx),
+                        layout.row_offset(idx),
+                    )
+                });
+
+                // Iterate over each field within the struct, comparing them
+                for idx in fields {
+                    let row_ty = row_layout.rows()[idx];
+                    if row_ty.is_unit() && !layout.is_nullable(idx) {
+                        continue;
+                    }
+
+                    let next_compare = builder.create_block();
+
+                    if layout.is_nullable(idx) {
+                        // Zero = value isn't null, non-zero = value is null
+                        let lhs_non_null = column_non_null(
+                            idx,
+                            lhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+                        let rhs_non_null = column_non_null(
+                            idx,
+                            rhs,
+                            layout,
+                            &mut builder,
+                            &self.config,
+                            &self.module,
+                            true,
+                        );
+
+                        let check_nulls = builder.create_block();
+                        let null_eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
+                        // If one is null and one is false, return inequal (`null_eq` will always
+                        // hold `false` in this case)
+                        builder.ins().brz(null_eq, return_block, &[null_eq]);
+                        builder.ins().jump(check_nulls, &[]);
+                        builder.seal_block(builder.current_block().unwrap());
+                        builder.switch_to_block(check_nulls);
+
+                        // For nullable unit values, we're done
+                        if row_ty.is_unit() {
+                            continue;
+
+                        // For non-unit values we have to compare the inner
+                        // value
+                        } else {
+                            let compare_innards = builder.create_block();
+
+                            // At this point we know both `lhs_non_null` and `rhs_non_null` are
+                            // equal, so we just test if the inner value
+                            // is null or not
+                            builder.ins().brnz(lhs_non_null, next_compare, &[]);
+                            builder.ins().jump(compare_innards, &[]);
+
+                            builder.seal_block(check_nulls);
+                            builder.switch_to_block(compare_innards);
+                        }
+                    }
+
+                    debug_assert!(!row_ty.is_unit());
+
+                    // Load both values
+                    let (lhs, rhs) = {
+                        let offset = layout.row_offset(idx) as i32;
+                        let native_ty = layout
+                            .row_type(idx)
+                            .native_type(&self.module.isa().frontend_config());
+                        let flags = MemFlags::trusted().with_readonly();
+
+                        let lhs = builder.ins().load(native_ty, flags, lhs, offset);
+                        let rhs = builder.ins().load(native_ty, flags, rhs, offset);
+
+                        (lhs, rhs)
+                    };
+
+                    let are_equal = match row_ty {
+                        // Compare integers
+                        RowType::Bool
+                        | RowType::U16
+                        | RowType::U32
+                        | RowType::U64
+                        | RowType::I16
+                        | RowType::I32
+                        | RowType::I64 => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+
+                        // Compare floats
+                        RowType::F32 | RowType::F64 => builder.ins().fcmp(FloatCC::Equal, lhs, rhs),
+
+                        // Compare strings
+                        // TODO: If we ever intern or reference count strings, we can partially inline
+                        // their comparison by comparing the string's pointers within jit code. This
+                        // this could potentially let us skip function calls for the happy path of
+                        // comparing two of the same (either via deduplication or cloning) string
+                        RowType::String => {
+                            let string_eq =
+                                imports.dataflow_jit_string_eq(&mut self.module, builder.func);
+                            let call = builder.ins().call(string_eq, &[lhs, rhs]);
+                            builder.func.dfg.first_result(call)
+                        }
+
+                        // Unit values have already been handled
+                        RowType::Unit => unreachable!(),
+                    };
+
+                    // If the values aren't equal, return false (`are_equal` should contain `false`)
+                    builder.ins().brz(are_equal, return_block, &[are_equal]);
+                    builder.ins().jump(next_compare, &[]);
+                    builder.seal_block(builder.current_block().unwrap());
+
+                    builder.switch_to_block(next_compare);
+                }
+
+                // If all fields were equal, return `true`
+                let true_val = builder.ins().iconst(types::I8, true as i64);
+                builder.ins().jump(return_block, &[true_val]);
+                builder.seal_block(builder.current_block().unwrap());
+
+                builder.switch_to_block(return_block);
+                builder.block_params(return_block)[0]
+
+            // Otherwise we emit a memcmp
+            // TODO: Is this valid in the presence of padding?
+            } else {
                 let align = NonZeroU8::new(layout.align() as u8).unwrap();
                 builder.emit_small_memory_compare(
                     self.module.isa().frontend_config(),
@@ -109,16 +266,7 @@ impl Codegen {
     // FIXME: This also ignores the existence of strings
     pub fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8)
-        let mut signature = self.module.make_signature();
-        signature
-            .params
-            .extend([AbiParam::new(self.module.isa().pointer_type()); 2]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
+        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
 
         {
             let mut builder =
@@ -180,15 +328,7 @@ impl Codegen {
     // FIXME: This also ignores the existence of strings
     pub fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8, usize)
-        let mut signature = self.module.make_signature();
-        let ptr_type = self.module.isa().pointer_type();
-        signature.params.extend([AbiParam::new(ptr_type); 3]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
+        let func_id = self.new_function([self.module.isa().pointer_type(); 3], None);
 
         {
             let mut builder =
@@ -237,18 +377,7 @@ impl Codegen {
 
     pub fn codegen_layout_lt(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *const u8) -> bool
-        let mut signature = self.module.make_signature();
-        signature
-            .params
-            .extend([AbiParam::new(self.module.isa().pointer_type()); 2]);
-        signature.returns.push(AbiParam::new(types::I8));
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
         let mut imports = self.intrinsics.import();
 
         {
@@ -444,18 +573,7 @@ impl Codegen {
     pub fn codegen_layout_cmp(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *const u8) -> Ordering
         // Ordering is represented as an i8 where -1 = Less, 0 = Equal and 1 = Greater
-        let mut signature = self.module.make_signature();
-        signature
-            .params
-            .extend([AbiParam::new(self.module.isa().pointer_type()); 2]);
-        signature.returns.push(AbiParam::new(types::I8));
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
         let mut imports = self.intrinsics.import();
 
         {
@@ -655,15 +773,7 @@ impl Codegen {
     pub fn codegen_layout_type_name(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*mut usize) -> *const u8
         let ptr_ty = self.module.isa().pointer_type();
-        let mut signature = self.module.make_signature();
-        signature.params.push(AbiParam::new(ptr_ty));
-        signature.returns.push(AbiParam::new(ptr_ty));
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
+        let func_id = self.new_function([ptr_ty], Some(ptr_ty));
 
         {
             let mut builder =
@@ -708,16 +818,7 @@ impl Codegen {
 
     pub fn codegen_layout_size_of_children(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut Context)
-        let mut signature = self.module.make_signature();
-        let ptr_ty = self.module.isa().pointer_type();
-        signature.params.extend([AbiParam::new(ptr_ty); 2]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
         let mut imports = self.intrinsics.import();
 
         {
@@ -809,17 +910,8 @@ impl Codegen {
 
     pub fn codegen_layout_debug(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut fmt::Formatter) -> bool
-        let mut signature = self.module.make_signature();
         let ptr_ty = self.module.isa().pointer_type();
-        signature.params.extend([AbiParam::new(ptr_ty); 2]);
-        signature.returns.push(AbiParam::new(types::I8));
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([ptr_ty; 2], Some(types::I8));
         let mut imports = self.intrinsics.import();
 
         {
@@ -1054,17 +1146,7 @@ impl Codegen {
 impl Codegen {
     pub fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*mut u8)
-        let mut signature = self.module.make_signature();
-        signature
-            .params
-            .push(AbiParam::new(self.module.isa().pointer_type()));
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([self.module.isa().pointer_type()], None);
         let mut imports = self.intrinsics.import();
 
         {
@@ -1110,16 +1192,8 @@ impl Codegen {
 
     pub fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*mut u8, usize)
-        let mut signature = self.module.make_signature();
         let ptr_ty = self.module.isa().pointer_type();
-        signature.params.extend([AbiParam::new(ptr_ty); 2]);
-
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
+        let func_id = self.new_function([ptr_ty; 2], None);
         let mut imports = self.intrinsics.import();
 
         {
@@ -1186,6 +1260,13 @@ impl Codegen {
 
 /// Checks if the given row is currently null, returns zero for non-null and
 /// non-zero for null
+// TODO: If we make sure that memory is zeroed (or at the very least that
+// padding bytes are zeroed), we can simplify checks for null flags that are the
+// only occupant of their given bitset. This'd allow us to go from
+// `x = load; x1 = and x, 1` to just `x = load` for what should be a fairly
+// common case. We could also do our best to distribute null flags across
+// padding bytes when possible to try and make that happy path occur as much
+// as possible
 fn column_non_null(
     column: usize,
     row_ptr: ClifValue,
