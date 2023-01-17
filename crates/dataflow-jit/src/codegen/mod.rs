@@ -20,16 +20,18 @@ use cranelift::{
         isa::{self, TargetFrontendConfig, TargetIsa},
         settings, types, AbiParam, Block as ClifBlock, Configurable, FunctionBuilder,
         FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature as ClifSignature,
-        StackSlotData, StackSlotKind, Value,
+        StackSlotData, StackSlotKind, TrapCode, Value,
     },
 };
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{DataContext, FuncId, Module};
 use std::{
     cell::Ref,
     collections::{BTreeMap, BTreeSet},
 };
 use target_lexicon::Triple;
+
+const TRAP_NULL_PTR: TrapCode = TrapCode::User(500);
 
 pub struct NativeLayoutCache {
     pub(crate) layout_cache: LayoutCache,
@@ -104,6 +106,7 @@ pub struct Codegen {
     layout_cache: NativeLayoutCache,
     module: JITModule,
     module_ctx: Context,
+    data_ctx: DataContext,
     function_ctx: FunctionBuilderContext,
     config: CodegenConfig,
     intrinsics: Intrinsics,
@@ -130,6 +133,7 @@ impl Codegen {
             layout_cache,
             module,
             module_ctx,
+            data_ctx: DataContext::new(),
             function_ctx: FunctionBuilderContext::new(),
             config,
             intrinsics,

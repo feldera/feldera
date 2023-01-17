@@ -1,5 +1,5 @@
 use crate::{
-    codegen::{intrinsics::ImportIntrinsics, Codegen, CodegenConfig, Layout},
+    codegen::{intrinsics::ImportIntrinsics, Codegen, CodegenConfig, Layout, TRAP_NULL_PTR},
     ir::{LayoutId, RowLayout, RowType},
 };
 use cranelift::{
@@ -10,7 +10,7 @@ use cranelift::{
     },
 };
 use cranelift_jit::JITModule;
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{DataContext, DataId, FuncId, Module};
 use std::{cmp::Ordering, num::NonZeroU8};
 
 // TODO: The unwinding issues can be solved by creating unwind table entries for
@@ -32,9 +32,20 @@ vtable! {
     clone: unsafe extern "C" fn(*const u8, *mut u8),
     clone_into_slice: unsafe extern "C" fn(*const u8, *mut u8, usize),
     size_of_children: unsafe extern "C" fn(*const u8, &mut Context),
-    debug: unsafe fn(*const u8, *mut fmt::Formatter<'_>) -> fmt::Result,
+    debug: unsafe extern "C" fn(*const u8, *mut fmt::Formatter<'_>) -> bool,
     drop_in_place: unsafe extern "C" fn(*mut u8),
     drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
+}
+
+fn create_data<D>(data: D, module: &mut JITModule, data_ctx: &mut DataContext) -> DataId
+where
+    D: Into<Box<[u8]>>,
+{
+    data_ctx.define(data.into());
+    let data_id = module.declare_anonymous_data(false, false).unwrap();
+    module.define_data(data_id, data_ctx).unwrap();
+    data_ctx.clear();
+    data_id
 }
 
 // TODO: Memoize these functions so we don't create multiple instances of them
@@ -87,6 +98,11 @@ impl Codegen {
             let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
             let params = builder.block_params(entry_block);
             let (lhs, rhs) = (params[0], params[1]);
+
+            if self.config.debug_assertions {
+                builder.ins().trapz(lhs, TRAP_NULL_PTR);
+                builder.ins().trapz(rhs, TRAP_NULL_PTR);
+            }
 
             // Zero sized types are always equal
             let are_equal = if layout.is_zero_sized() || row_layout.is_empty() {
@@ -282,14 +298,19 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
+            let params = builder.block_params(entry_block);
+            let (src, dest) = (params[0], params[1]);
+
+            if self.config.debug_assertions {
+                builder.ins().trapz(src, TRAP_NULL_PTR);
+                builder.ins().trapz(dest, TRAP_NULL_PTR);
+            }
+
             let layout = self.layout_cache.compute(layout_id);
             let (layout_size, layout_align) = (layout.size(), layout.align());
 
             // Zero sized types have nothing to clone
             if layout_size != 0 {
-                let params = builder.block_params(entry_block);
-                let (src, dest) = (params[0], params[1]);
-
                 let row_layout = self.layout_cache.layout_cache.get(layout_id);
 
                 if row_layout.requires_nontrivial_clone() {
@@ -789,16 +810,23 @@ impl Codegen {
             // functions so we can deallocate them at the same time
             // FIXME: Should do this as a static included in the jit code
             let layout = self.layout_cache.layout_cache.get(layout_id);
-            let type_name = Box::leak(String::into_boxed_str(format!(
-                "DataflowJitRow({layout:?})",
-            )));
+
+            let type_name = format!("DataflowJitRow({layout:?})").into_bytes();
+            let type_name_len = type_name.len();
+            let name_id = create_data(type_name, &mut self.module, &mut self.data_ctx);
+            let name = self.module.declare_data_in_func(name_id, builder.func);
 
             // Get the length and pointer to the type name
-            let type_name_len = builder.ins().iconst(ptr_ty, type_name.len() as i64);
-            let type_name_ptr = builder.ins().iconst(ptr_ty, type_name.as_ptr() as i64);
+            let type_name_ptr = builder.ins().symbol_value(ptr_ty, name);
+            let type_name_len = builder.ins().iconst(ptr_ty, type_name_len as i64);
 
             // Write the string's length to the out param
             let length_out = builder.block_params(entry_block)[0];
+
+            if self.config.debug_assertions {
+                builder.ins().trapz(length_out, TRAP_NULL_PTR);
+            }
+
             builder
                 .ins()
                 .store(MemFlags::trusted(), type_name_len, length_out, 0);
@@ -832,12 +860,17 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
+            let params = builder.block_params(entry_block);
+            let (ptr, context) = (params[0], params[1]);
+
+            if self.config.debug_assertions {
+                builder.ins().trapz(ptr, TRAP_NULL_PTR);
+                builder.ins().trapz(context, TRAP_NULL_PTR);
+            }
+
             let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
             if row_layout.rows().iter().any(RowType::is_string) {
-                let params = builder.block_params(entry_block);
-                let (ptr, context) = (params[0], params[1]);
-
                 for (idx, (ty, nullable)) in row_layout
                     .iter()
                     .enumerate()
@@ -926,22 +959,31 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
+            let params = builder.block_params(entry_block);
+            let (ptr, fmt) = (params[0], params[1]);
+
+            if self.config.debug_assertions {
+                builder.ins().trapz(ptr, TRAP_NULL_PTR);
+                builder.ins().trapz(fmt, TRAP_NULL_PTR);
+            }
+
             let return_block = builder.create_block();
             builder.append_block_params_for_function_returns(return_block);
 
             let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
-            let params = builder.block_params(entry_block);
-            let (ptr, fmt) = (params[0], params[1]);
-
             // If the row is empty we can just write an empty row
             if row_layout.is_empty() {
-                // TODO: Should be a static within the jit code
-                static EMPTY: &str = "{}";
+                // Declare the data within the function
+                // TODO: Deduplicate data entries within the module
+                let empty_data = b"{}";
+                let empty_id =
+                    create_data(empty_data.to_owned(), &mut self.module, &mut self.data_ctx);
+                let empty = self.module.declare_data_in_func(empty_id, builder.func);
 
                 // Write an empty row to the output
-                let empty_ptr = builder.ins().iconst(ptr_ty, EMPTY.as_ptr() as i64);
-                let empty_len = builder.ins().iconst(ptr_ty, EMPTY.len() as i64);
+                let empty_ptr = builder.ins().symbol_value(ptr_ty, empty);
+                let empty_len = builder.ins().iconst(ptr_ty, empty_data.len() as i64);
                 let call = builder.ins().call(str_debug, &[empty_ptr, empty_len, fmt]);
                 let result = builder.func.dfg.first_result(call);
 
@@ -950,12 +992,14 @@ impl Codegen {
 
             // Otherwise, write each row to the output
             } else {
-                // TODO: Should be a static within the jit code
-                static START: &str = "{ ";
+                let start_data = b"{ ";
+                let start_id =
+                    create_data(start_data.to_owned(), &mut self.module, &mut self.data_ctx);
+                let start = self.module.declare_data_in_func(start_id, builder.func);
 
                 // Write the start of a row to the output
-                let start_ptr = builder.ins().iconst(ptr_ty, START.as_ptr() as i64);
-                let start_len = builder.ins().iconst(ptr_ty, START.len() as i64);
+                let start_ptr = builder.ins().symbol_value(ptr_ty, start);
+                let start_len = builder.ins().iconst(ptr_ty, start_data.len() as i64);
                 let call = builder.ins().call(str_debug, &[start_ptr, start_len, fmt]);
                 let result = builder.func.dfg.first_result(call);
 
@@ -991,14 +1035,16 @@ impl Codegen {
                         builder.ins().jump(debug_value, &[]);
                         builder.seal_block(builder.current_block().unwrap());
 
-                        // TODO: Should be a static within the jit code
-                        static NULL: &str = "null";
-
                         builder.switch_to_block(write_null);
 
+                        let null_data = b"null";
+                        let null_id =
+                            create_data(null_data.to_owned(), &mut self.module, &mut self.data_ctx);
+                        let null = self.module.declare_data_in_func(null_id, builder.func);
+
                         // Write `null` to the output
-                        let null_ptr = builder.ins().iconst(ptr_ty, NULL.as_ptr() as i64);
-                        let null_len = builder.ins().iconst(ptr_ty, NULL.len() as i64);
+                        let null_ptr = builder.ins().symbol_value(ptr_ty, null);
+                        let null_len = builder.ins().iconst(ptr_ty, null_data.len() as i64);
                         let call = builder.ins().call(str_debug, &[null_ptr, null_len, fmt]);
                         let call = builder.func.dfg.first_result(call);
 
@@ -1012,12 +1058,14 @@ impl Codegen {
                     }
 
                     let result = if ty.is_unit() {
-                        // TODO: Should be a static within the jit code
-                        static UNIT: &str = "()";
+                        let unit_data = b"unit";
+                        let unit_id =
+                            create_data(unit_data.to_owned(), &mut self.module, &mut self.data_ctx);
+                        let unit = self.module.declare_data_in_func(unit_id, builder.func);
 
                         // Write `()` to the output
-                        let unit_ptr = builder.ins().iconst(ptr_ty, UNIT.as_ptr() as i64);
-                        let unit_len = builder.ins().iconst(ptr_ty, UNIT.len() as i64);
+                        let unit_ptr = builder.ins().symbol_value(ptr_ty, unit);
+                        let unit_len = builder.ins().iconst(ptr_ty, unit_data.len() as i64);
                         let call = builder.ins().call(str_debug, &[unit_ptr, unit_len, fmt]);
                         builder.func.dfg.first_result(call)
                     } else {
@@ -1091,12 +1139,14 @@ impl Codegen {
 
                     // If this is the last column in the row, finish it off with ` }`
                     if idx == row_layout.len() - 1 {
-                        // TODO: Should be a static within the jit code
-                        static END: &str = " }";
+                        let end_data = b" }";
+                        let end_id =
+                            create_data(end_data.to_owned(), &mut self.module, &mut self.data_ctx);
+                        let end = self.module.declare_data_in_func(end_id, builder.func);
 
                         // Write the end of a row to the output
-                        let end_ptr = builder.ins().iconst(ptr_ty, END.as_ptr() as i64);
-                        let end_len = builder.ins().iconst(ptr_ty, END.len() as i64);
+                        let end_ptr = builder.ins().symbol_value(ptr_ty, end);
+                        let end_len = builder.ins().iconst(ptr_ty, end_data.len() as i64);
                         let call = builder.ins().call(str_debug, &[end_ptr, end_len, fmt]);
                         let result = builder.func.dfg.first_result(call);
 
@@ -1107,12 +1157,18 @@ impl Codegen {
 
                     // Otherwise comma-separate each column
                     } else {
-                        // TODO: Should be a static within the jit code
-                        static COMMA: &str = ", ";
-
                         let next_debug = builder.create_block();
-                        let comma_ptr = builder.ins().iconst(ptr_ty, COMMA.as_ptr() as i64);
-                        let comma_len = builder.ins().iconst(ptr_ty, COMMA.len() as i64);
+
+                        let comma_data = b", ";
+                        let comma_id = create_data(
+                            comma_data.to_owned(),
+                            &mut self.module,
+                            &mut self.data_ctx,
+                        );
+                        let comma = self.module.declare_data_in_func(comma_id, builder.func);
+
+                        let comma_ptr = builder.ins().symbol_value(ptr_ty, comma);
+                        let comma_len = builder.ins().iconst(ptr_ty, comma_data.len() as i64);
                         let call = builder.ins().call(str_debug, &[comma_ptr, comma_len, fmt]);
                         let result = builder.func.dfg.first_result(call);
 
