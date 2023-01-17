@@ -5,7 +5,6 @@ mod error;
 mod hash;
 mod num_entries;
 mod ref_pair;
-mod utils;
 
 #[macro_use]
 pub mod circuit;
@@ -16,6 +15,7 @@ pub mod operator;
 pub mod profile;
 pub mod time;
 pub mod trace;
+pub mod utils;
 
 pub use crate::error::Error;
 pub use crate::hash::default_hash;

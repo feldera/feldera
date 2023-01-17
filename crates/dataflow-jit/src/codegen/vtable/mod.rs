@@ -15,11 +15,12 @@ use cranelift::{
 };
 use cranelift_jit::JITModule;
 use cranelift_module::{DataContext, DataId, FuncId, Module};
+use dbsp::trace::layers::erased::ErasedVTable;
 use std::{
+    any::TypeId,
     cmp::Ordering,
     fmt::{self, Debug},
-    num::NonZeroU8,
-    slice,
+    num::{NonZeroU8, NonZeroUsize},
 };
 
 // TODO: The unwinding issues can be solved by creating unwind table entries for
@@ -30,18 +31,33 @@ macro_rules! vtable {
     ($($func:ident: $ty:ty),+ $(,)?) => {
         #[derive(Debug, Clone, Copy)]
         pub struct LayoutVTable {
+            size_of: usize,
+            align_of: NonZeroUsize,
             $(pub $func: FuncId,)+
         }
 
         impl LayoutVTable {
-            pub fn marshall(&self, jit: &JITModule) -> MarshalledVTable {
+            pub fn marshall(&self, jit: &JITModule) -> ErasedVTable {
+                // This is just a dummy function since we can't meaningfully create type ids at
+                // runtime (we could technically ignore the existence of other types and hope
+                // they never cross paths with the unholy abominations created here so that we
+                // could make our own TypeIds that tell which layout a row originated from,
+                // allowing us to check that two rows are of the same layout)
+                fn type_id() -> TypeId {
+                    struct DataflowJitRow;
+                    TypeId::of::<DataflowJitRow>()
+                }
+
                 unsafe {
-                    MarshalledVTable {
+                    ErasedVTable {
+                        size_of: self.size_of,
+                        align_of: self.align_of,
                         $(
                             $func: std::mem::transmute::<*const u8, $ty>(
                                 jit.get_finalized_function(self.$func),
                             ),
                         )+
+                        type_id,
                     }
                 }
             }
@@ -60,22 +76,20 @@ macro_rules! vtable {
                 }
 
                 fn make_vtable_for(&mut self, layout_id: LayoutId) -> LayoutVTable {
+                    let (size_of, align_of) = {
+                        let layout = self.layout_cache.compute(layout_id);
+                        (
+                            layout.size() as usize,
+                            NonZeroUsize::new(layout.align() as usize).unwrap(),
+                        )
+                    };
+
                     LayoutVTable {
+                        size_of,
+                        align_of,
                         $($func: self.[<codegen_layout_ $func>](layout_id),)+
                     }
                 }
-            }
-        }
-
-        pub struct MarshalledVTable {
-            $(pub $func: $ty,)+
-        }
-
-        impl Debug for MarshalledVTable {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("MarshalledVTable")
-                    $(.field(stringify!($func), &(self.$func as *const u8)))+
-                    .finish()
             }
         }
     };
@@ -92,19 +106,6 @@ vtable! {
     drop_in_place: unsafe extern "C" fn(*mut u8),
     drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
-}
-
-impl MarshalledVTable {
-    pub fn type_name(&self) -> &str {
-        let mut length = 0;
-        let ptr = unsafe { (self.type_name)(&mut length) };
-        debug_assert!(!ptr.is_null());
-
-        let bytes = unsafe { slice::from_raw_parts(ptr, length) };
-        debug_assert!(std::str::from_utf8(bytes).is_ok());
-
-        unsafe { std::str::from_utf8_unchecked(bytes) }
-    }
 }
 
 fn create_data<D>(data: D, module: &mut JITModule, data_ctx: &mut DataContext) -> DataId
@@ -989,7 +990,7 @@ impl Codegen {
                         let write_null = builder.create_block();
                         builder.ins().brnz(non_null, write_null, &[]);
                         builder.ins().jump(debug_value, &[]);
-                        builder.seal_block(builder.current_block().unwrap());
+                        builder.seal_current();
 
                         builder.switch_to_block(write_null);
 

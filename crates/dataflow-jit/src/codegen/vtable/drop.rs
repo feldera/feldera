@@ -167,7 +167,6 @@ fn drop_layout(
             let next_drop = builder.create_block();
             builder.ins().brnz(string_non_null, next_drop, &[]);
             builder.ins().jump(drop_string, &[]);
-            builder.seal_current();
 
             builder.switch_to_block(drop_string);
 
@@ -192,7 +191,6 @@ fn drop_layout(
 
         if let Some(next_drop) = next_drop {
             builder.ins().jump(next_drop, &[]);
-            builder.seal_current();
             builder.switch_to_block(next_drop);
         }
     }

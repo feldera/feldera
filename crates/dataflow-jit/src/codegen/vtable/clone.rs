@@ -185,11 +185,10 @@ impl Codegen {
                     // Calculate the slice's end pointer
                     let length_bytes = builder.ins().imul_imm(length, layout.size() as i64);
                     let src_end = builder.ins().iadd(src, length_bytes);
-                    let dest_end = builder.ins().iadd(dest, length_bytes);
 
                     // Check that `length` isn't zero and if so jump to the end
                     builder.ins().brz(length, tail, &[]);
-                    builder.ins().jump(body, &[src_end, dest_end]);
+                    builder.ins().jump(body, &[src, dest]);
 
                     builder.seal_block(entry_block);
                     builder.switch_to_block(body);
@@ -272,19 +271,11 @@ fn clone_layout(
             continue;
         }
 
+        // TODO: For nullable scalar values we can unconditionally copy them over, we
+        // only need to branch for non-trivial clones
         let next_clone = if nullable {
             // Zero = value isn't null, non-zero = value is null
             let value_non_null = column_non_null(idx, src, layout, builder, config, module, true);
-
-            // If the value is null, jump to a block to set the cloned value to null.
-            // Otherwise, clone the actual inner value
-            let clone_innards = builder.create_block();
-            let set_null = builder.create_block();
-            builder.ins().brnz(value_non_null, set_null, &[]);
-            builder.ins().jump(clone_innards, &[]);
-
-            builder.seal_current();
-            builder.switch_to_block(set_null);
 
             // If the value is null, set the cloned value to null
             let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
@@ -297,31 +288,31 @@ fn clone_layout(
                     .ins()
                     .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
 
-            // Set this column's null to true
+            debug_assert!(config.null_sigil.is_one());
             let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
+            let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
+            let bitset =
+                builder
+                    .ins()
+                    .select(value_non_null, bitset_with_null, bitset_with_non_null);
 
             // Store the newly modified bitset back into the row
-            builder.ins().store(
-                dest_flags,
-                bitset_with_null,
-                bitset_with_null,
-                bitset_offset as i32,
-            );
+            builder
+                .ins()
+                .store(dest_flags, bitset, dest, bitset_offset as i32);
 
             // For nullable unit types we don't need to do anything else
             if ty.is_unit() {
-                builder.switch_to_block(clone_innards);
                 continue;
 
             // For everything else we have to actually clone their inner value
             } else {
-                // Jump to the next clone impl
+                let clone_innards = builder.create_block();
                 let next_clone = builder.create_block();
-                builder.ins().jump(next_clone, &[]);
+                builder.ins().brnz(value_non_null, next_clone, &[]);
+                builder.ins().jump(clone_innards, &[]);
 
-                builder.seal_block(set_null);
                 builder.switch_to_block(clone_innards);
-
                 Some(next_clone)
             }
         } else {
@@ -366,7 +357,6 @@ fn clone_layout(
 
         if let Some(next_clone) = next_clone {
             builder.ins().jump(next_clone, &[]);
-            builder.seal_current();
             builder.switch_to_block(next_clone);
         }
     }

@@ -1,6 +1,7 @@
 use crate::ir::{RowLayout, RowType};
 use cranelift::prelude::{isa::TargetFrontendConfig, types, Type as ClifType};
 use std::{
+    alloc::Layout as StdLayout,
     cmp::{max, Reverse},
     ptr::NonNull,
 };
@@ -369,8 +370,7 @@ impl Layout {
             Some(NonNull::dangling())
         } else {
             let layout =
-                std::alloc::Layout::from_size_align(self.size as usize, self.align as usize)
-                    .unwrap();
+                StdLayout::from_size_align(self.size as usize, self.align as usize).unwrap();
             NonNull::new(unsafe { std::alloc::alloc(layout) })
         }
     }
@@ -378,8 +378,37 @@ impl Layout {
     pub unsafe fn dealloc(&self, ptr: *mut u8) {
         if !self.is_zero_sized() {
             let layout =
-                std::alloc::Layout::from_size_align(self.size as usize, self.align as usize)
-                    .unwrap();
+                StdLayout::from_size_align(self.size as usize, self.align as usize).unwrap();
+            unsafe { std::alloc::dealloc(ptr, layout) }
+        }
+    }
+
+    pub fn alloc_array(&self, length: usize) -> Option<NonNull<u8>> {
+        if self.is_zero_sized() || length == 0 {
+            Some(NonNull::dangling())
+        } else {
+            let single =
+                StdLayout::from_size_align(self.size as usize, self.align as usize).unwrap();
+
+            let mut layout = single;
+            for _ in 1..length {
+                layout = layout.extend(single).unwrap().0;
+            }
+
+            NonNull::new(unsafe { std::alloc::alloc(layout) })
+        }
+    }
+
+    pub unsafe fn dealloc_array(&self, ptr: *mut u8, length: usize) {
+        if !self.is_zero_sized() && length != 0 {
+            let single =
+                StdLayout::from_size_align(self.size as usize, self.align as usize).unwrap();
+
+            let mut layout = single;
+            for _ in 1..length {
+                layout = layout.extend(single).unwrap().0;
+            }
+
             unsafe { std::alloc::dealloc(ptr, layout) }
         }
     }

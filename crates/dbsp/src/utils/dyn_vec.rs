@@ -2,7 +2,7 @@ use size_of::{Context, SizeOf};
 use std::{
     alloc,
     any::{self, TypeId},
-    fmt::{self, Display},
+    fmt::{self, Debug, Display},
     iter::FusedIterator,
     marker::PhantomData,
     mem::MaybeUninit,
@@ -17,7 +17,6 @@ use std::{
 };
 
 // TODO: Drop, Clone, Debug
-#[derive(Debug)]
 pub struct DynVec<VTable: DynVecVTable> {
     ptr: NonNull<u8>,
     length: usize,
@@ -521,6 +520,28 @@ unsafe impl<VTable: DynVecVTable> Send for DynVec<VTable> {}
 // Safety: `DynVecVTable` requires that the type its associated with is Sync
 unsafe impl<VTable: DynVecVTable> Sync for DynVec<VTable> {}
 
+impl<VTable> Debug for DynVec<VTable>
+where
+    VTable: DynVecVTable,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct DebugErased<'a, VTable>(*const u8, &'a VTable);
+
+        impl<VTable> Debug for DebugErased<'_, VTable>
+        where
+            VTable: DynVecVTable,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                unsafe { self.1.debug(self.0, f) }
+            }
+        }
+
+        f.debug_list()
+            .entries(self.iter().map(|x| DebugErased(x, self.vtable)))
+            .finish()
+    }
+}
+
 #[cold]
 #[inline(never)]
 fn index_out_of_bounds(index: usize, length: usize) -> ! {
@@ -572,6 +593,36 @@ fn range_out_of_bounds(start: Bound<usize>, end: Bound<usize>, length: usize) ->
     )
 }
 
+impl<VTable> PartialEq for DynVec<VTable>
+where
+    VTable: DynVecVTable,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.vtable().type_id() != other.vtable().type_id() {
+            mismatched_push_type_ids(other.vtable().type_name(), self.vtable().type_name());
+        } else if self.len() != other.len() {
+            return false;
+        }
+
+        // TODO: I wonder if this occurs enough to warrant a `slice_eq` function. It's
+        // only really beneficial for inner types which consist entirely of
+        // scalar values, but in that instance it can consist of a single `memcmp()`
+        debug_assert_eq!(self.len(), other.len());
+        for idx in 0..self.len() {
+            // TODO: `.index_unchecked()`?
+            let lhs = self.index(idx);
+            let rhs = other.index(idx);
+
+            // Safety: Both vtable's types are the same
+            if unsafe { !self.vtable.eq(lhs, rhs) } {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 /// A [`DynVec`]'s vtable
 ///
 /// # Safety
@@ -594,6 +645,8 @@ pub unsafe trait DynVecVTable: Copy + Send + Sync + Sized + 'static {
     unsafe fn size_of_children(&self, ptr: *const u8, context: &mut Context);
 
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    unsafe fn eq(&self, lhs: *const u8, rhs: *const u8) -> bool;
 
     fn is_zst(&self) -> bool {
         self.size_of() == 0

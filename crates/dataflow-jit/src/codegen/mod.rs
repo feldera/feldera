@@ -4,7 +4,7 @@ mod utils;
 mod vtable;
 
 pub use layout::{Layout, Type};
-pub use vtable::{LayoutVTable, MarshalledVTable};
+pub use vtable::LayoutVTable;
 
 use crate::{
     codegen::{
