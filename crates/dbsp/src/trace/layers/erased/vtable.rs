@@ -123,6 +123,10 @@ unsafe impl DynVecVTable for DataVTable {
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.common.debug(value, f)
     }
+
+    unsafe fn eq(&self, lhs: *const u8, rhs: *const u8) -> bool {
+        (self.common.eq)(lhs, rhs)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SizeOf)]
@@ -166,6 +170,10 @@ unsafe impl DynVecVTable for DiffVTable {
 
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.common.debug(value, f)
+    }
+
+    unsafe fn eq(&self, lhs: *const u8, rhs: *const u8) -> bool {
+        (self.common.eq)(lhs, rhs)
     }
 }
 
