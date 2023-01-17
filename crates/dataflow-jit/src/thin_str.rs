@@ -398,11 +398,7 @@ impl From<&str> for ThinStr {
 
 impl SizeOf for ThinStr {
     fn size_of_children(&self, context: &mut Context) {
-        if !self.is_sigil() {
-            context
-                .add(size_of::<StrHeader>())
-                .add_vectorlike(self.len(), self.capacity(), 1);
-        }
+        self.as_thin_ref().owned_size_of_children(context);
     }
 }
 
@@ -462,9 +458,10 @@ impl<'a> ThinStrRef<'a> {
 
     /// Returns [`SizeOf::size_of_children()`] as if this was an owned
     /// [`ThinStr`]
-    pub fn owned_size_of_children(&self, context: &mut Context) {
+    pub(crate) fn owned_size_of_children(&self, context: &mut Context) {
         if !self.is_sigil() {
             context
+                .add_distinct_allocation()
                 .add(size_of::<StrHeader>())
                 .add_vectorlike(self.len(), self.capacity(), 1);
         }

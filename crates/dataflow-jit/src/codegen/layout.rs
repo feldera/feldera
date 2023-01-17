@@ -122,7 +122,6 @@ pub struct Layout {
     // the bitset and the bit offset containing its null-ness.
     // Will be `None` if the row isn't nullable
     bitflag_mappings: Vec<Option<(u32, u8)>>,
-    is_unit: bool,
 }
 
 impl Layout {
@@ -131,36 +130,35 @@ impl Layout {
         self.bitflag_mappings[column].is_some()
     }
 
-    pub fn rows(&self) -> impl Iterator<Item = (u32, Type)> + '_ {
+    pub fn columns(&self) -> impl Iterator<Item = (u32, Type)> + '_ {
         self.offsets
             .iter()
             .zip(&self.types)
             .map(|(&offset, &ty)| (offset, ty))
     }
 
-    /// Returns the offset of the given row
-    pub fn row_offset(&self, row: usize) -> u32 {
-        self.offsets[self.index_mappings[row] as usize]
+    /// Returns the offset of the given column
+    pub fn offset_of(&self, column: usize) -> u32 {
+        self.offsets[self.index_mappings[column] as usize]
     }
 
-    /// Returns the type of the given row
-    pub fn row_type(&self, row: usize) -> Type {
-        self.types[self.index_mappings[row] as usize]
+    /// Returns the type of the given column
+    pub fn type_of(&self, column: usize) -> Type {
+        self.types[self.index_mappings[column] as usize]
     }
 
-    /// Returns the offset, type and bit offset of the given row's nullability
+    /// Returns the offset, type and bit offset of the given column's
+    /// nullability
     ///
-    /// Panics if `row` isn't nullable
-    pub fn row_nullability(&self, row: usize) -> (Type, u32, u8) {
-        let (idx, bit) = self.bitflag_mappings[row].unwrap();
+    /// Panics if `column` isn't nullable
+    pub fn nullability_of(&self, column: usize) -> (Type, u32, u8) {
+        let (idx, bit) = self.bitflag_mappings[column].unwrap();
         (self.types[idx as usize], self.offsets[idx as usize], bit)
     }
 
     // FIXME: All unit types should be eliminated before this point
     // TODO: We need to do layout optimization here
     pub fn from_row(layout: &RowLayout, target: &TargetFrontendConfig) -> Self {
-        let is_unit = layout.is_unit();
-
         // The number of bitflag niches we have to fill
         // FIXME: Instead of just splitting the number of required bitflags into
         // bytes up front, we should probably take advantage of differently sized
@@ -271,7 +269,6 @@ impl Layout {
             offsets,
             index_mappings,
             bitflag_mappings,
-            is_unit,
         }
     }
 
@@ -352,13 +349,7 @@ impl Layout {
 
         dbg!(memory_index, offsets, types, size, align);
 
-        let is_unit = layout.rows().is_empty() || layout.rows().iter().all(RowType::is_unit);
-
         todo!()
-    }
-
-    pub fn is_unit(&self) -> bool {
-        self.is_unit
     }
 
     pub fn size(&self) -> u32 {
@@ -374,7 +365,7 @@ impl Layout {
     }
 
     pub fn alloc(&self) -> Option<NonNull<u8>> {
-        if self.size == 0 {
+        if self.is_zero_sized() {
             Some(NonNull::dangling())
         } else {
             let layout =
@@ -385,7 +376,7 @@ impl Layout {
     }
 
     pub unsafe fn dealloc(&self, ptr: *mut u8) {
-        if self.size != 0 {
+        if !self.is_zero_sized() {
             let layout =
                 std::alloc::Layout::from_size_align(self.size as usize, self.align as usize)
                     .unwrap();

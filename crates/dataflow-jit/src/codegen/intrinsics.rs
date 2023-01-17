@@ -8,6 +8,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug},
+    mem::ManuallyDrop,
     ptr::drop_in_place,
     slice,
 };
@@ -30,20 +31,22 @@ macro_rules! intrinsics {
                 let ptr_type = module.isa().pointer_type();
                 let call_conv = module.isa().default_call_conv();
 
-                $(
-                    // Ensure all functions have `extern "C"` abi
-                    let _: unsafe extern "C" fn($(intrinsics!(@replace $arg _),)+) $(-> intrinsics!(@replace $ret _))?
-                        = $intrinsic;
-
-                    let $intrinsic = module
-                        .declare_function(stringify!($intrinsic), Linkage::Import, &{
-                            let mut sig = ClifSignature::new(call_conv);
-                            $(sig.params.push(AbiParam::new(intrinsics!(@type ptr_type $arg)));)*
-                            $(sig.returns.push(AbiParam::new(intrinsics!(@type ptr_type $ret)));)?
-                            sig
-                        })
-                        .unwrap();
-                )+
+                paste::paste! {
+                    $(
+                        let $intrinsic = module
+                            .declare_function(
+                                stringify!([<dataflow_jit_ $intrinsic>]),
+                                Linkage::Import,
+                                &{
+                                    let mut sig = ClifSignature::new(call_conv);
+                                    $(sig.params.push(AbiParam::new(intrinsics!(@type ptr_type $arg)));)*
+                                    $(sig.returns.push(AbiParam::new(intrinsics!(@type ptr_type $ret)));)?
+                                    sig
+                                },
+                            )
+                            .unwrap();
+                    )+
+                }
 
                 Self { $($intrinsic,)+ }
             }
@@ -52,9 +55,19 @@ macro_rules! intrinsics {
             ///
             /// Should be called before [`Intrinsics::new()`]
             pub fn register(builder: &mut JITBuilder) {
-                $(
-                    builder.symbol(stringify!($intrinsic), $intrinsic as *const u8);
-                )+
+                paste::paste! {
+                    $(
+                        // Ensure all functions have `extern "C"` abi
+                        let _: unsafe extern "C" fn($(intrinsics!(@replace $arg _),)+) $(-> intrinsics!(@replace $ret _))?
+                            = [<dataflow_jit_ $intrinsic>];
+
+                        builder.symbol(
+                            stringify!([<dataflow_jit_ $intrinsic>]),
+                            [<dataflow_jit_ $intrinsic>] as *const u8,
+                        );
+                    )+
+                }
+
             }
 
             pub fn import(&self) -> ImportIntrinsics {
@@ -101,19 +114,19 @@ macro_rules! intrinsics {
 }
 
 intrinsics! {
-    dataflow_jit_string_eq = fn(ptr, ptr) -> bool,
-    dataflow_jit_string_lt = fn(ptr, ptr) -> bool,
-    dataflow_jit_string_cmp = fn(ptr, ptr) -> i8,
-    dataflow_jit_string_clone = fn(ptr) -> ptr,
-    dataflow_jit_string_drop_in_place = fn(ptr),
-    dataflow_jit_string_size_of_children = fn(ptr, ptr),
-    dataflow_jit_string_debug = fn(ptr, ptr) -> bool,
-    dataflow_jit_str_debug = fn(ptr, ptr, ptr) -> bool,
-    dataflow_jit_bool_debug = fn(bool, ptr) -> bool,
-    dataflow_jit_int_debug = fn(i64, ptr) -> bool,
-    dataflow_jit_uint_debug = fn(u64, ptr) -> bool,
-    dataflow_jit_f32_debug = fn(f32, ptr) -> bool,
-    dataflow_jit_f64_debug = fn(f64, ptr) -> bool,
+    string_eq = fn(ptr, ptr) -> bool,
+    string_lt = fn(ptr, ptr) -> bool,
+    string_cmp = fn(ptr, ptr) -> i8,
+    string_clone = fn(ptr) -> ptr,
+    string_drop_in_place = fn(ptr),
+    string_size_of_children = fn(ptr, ptr),
+    string_debug = fn(ptr, ptr) -> bool,
+    str_debug = fn(ptr, ptr, ptr) -> bool,
+    bool_debug = fn(bool, ptr) -> bool,
+    int_debug = fn(i64, ptr) -> bool,
+    uint_debug = fn(u64, ptr) -> bool,
+    f32_debug = fn(f32, ptr) -> bool,
+    f64_debug = fn(f64, ptr) -> bool,
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -142,8 +155,8 @@ extern "C" fn dataflow_jit_string_clone(string: ThinStrRef) -> ThinStr {
 
 /// Drops the given [`ThinStr`]
 // FIXME: Technically this can unwind
-unsafe extern "C" fn dataflow_jit_string_drop_in_place(string: &mut ThinStr) {
-    drop_in_place(string);
+unsafe extern "C" fn dataflow_jit_string_drop_in_place(mut string: ManuallyDrop<ThinStr>) {
+    drop_in_place(&mut string);
 }
 
 unsafe extern "C" fn dataflow_jit_string_size_of_children(

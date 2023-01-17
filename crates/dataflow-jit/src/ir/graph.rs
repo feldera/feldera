@@ -475,7 +475,7 @@ mod tests {
         let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
         let src_layout = codegen.layout_for(xy_layout);
-        let (src_x_offset, src_y_offset) = (src_layout.row_offset(0), src_layout.row_offset(1));
+        let (src_x_offset, src_y_offset) = (src_layout.offset_of(0), src_layout.offset_of(1));
         let src_layout = std::alloc::Layout::from_size_align(
             src_layout.size() as usize,
             src_layout.align() as usize,
@@ -483,7 +483,7 @@ mod tests {
         .unwrap();
 
         let sink_layout = codegen.layout_for(x_layout);
-        let sink_x_offset = sink_layout.row_offset(0);
+        let sink_x_offset = sink_layout.offset_of(0);
         let sink_layout = std::alloc::Layout::from_size_align(
             sink_layout.size() as usize,
             sink_layout.align() as usize,
