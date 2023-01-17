@@ -38,6 +38,8 @@ use target_lexicon::Triple;
 
 const TRAP_NULL_PTR: TrapCode = TrapCode::User(500);
 
+// TODO: Pretty function debugging <https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs>
+
 pub struct NativeLayoutCache {
     pub(crate) layout_cache: LayoutCache,
     layouts: BTreeMap<LayoutId, Layout>,

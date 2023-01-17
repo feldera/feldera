@@ -1,3 +1,4 @@
+mod erased_set;
 mod map;
 
 #[cfg(test)]
