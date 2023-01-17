@@ -1,8 +1,10 @@
+mod clone;
+mod drop;
 mod tests;
 
 use crate::{
-    codegen::{intrinsics::ImportIntrinsics, Codegen, CodegenConfig, Layout, TRAP_NULL_PTR},
-    ir::{LayoutId, RowLayout, RowType},
+    codegen::{utils::FunctionBuilderExt, Codegen, CodegenConfig, Layout, TRAP_NULL_PTR},
+    ir::{LayoutId, RowType},
 };
 use cranelift::{
     codegen::ir::UserFuncName,
@@ -13,7 +15,12 @@ use cranelift::{
 };
 use cranelift_jit::JITModule;
 use cranelift_module::{DataContext, DataId, FuncId, Module};
-use std::{cmp::Ordering, num::NonZeroU8};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Debug},
+    num::NonZeroU8,
+    slice,
+};
 
 // TODO: The unwinding issues can be solved by creating unwind table entries for
 // our generated functions, this'll also make our code more debug-able
@@ -21,8 +28,55 @@ use std::{cmp::Ordering, num::NonZeroU8};
 
 macro_rules! vtable {
     ($($func:ident: $ty:ty),+ $(,)?) => {
+        #[derive(Debug, Clone, Copy)]
         pub struct LayoutVTable {
             $(pub $func: FuncId,)+
+        }
+
+        impl LayoutVTable {
+            pub fn marshall(&self, jit: &JITModule) -> MarshalledVTable {
+                unsafe {
+                    MarshalledVTable {
+                        $(
+                            $func: std::mem::transmute::<*const u8, $ty>(
+                                jit.get_finalized_function(self.$func),
+                            ),
+                        )+
+                    }
+                }
+            }
+        }
+
+        paste::paste! {
+            impl Codegen {
+                pub fn vtable_for(&mut self, layout_id: LayoutId) -> LayoutVTable {
+                    if let Some(&vtable) = self.vtables.get(&layout_id) {
+                        vtable
+                    } else {
+                        let vtable = self.make_vtable_for(layout_id);
+                        self.vtables.insert(layout_id, vtable);
+                        vtable
+                    }
+                }
+
+                fn make_vtable_for(&mut self, layout_id: LayoutId) -> LayoutVTable {
+                    LayoutVTable {
+                        $($func: self.[<codegen_layout_ $func>](layout_id),)+
+                    }
+                }
+            }
+        }
+
+        pub struct MarshalledVTable {
+            $(pub $func: $ty,)+
+        }
+
+        impl Debug for MarshalledVTable {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("MarshalledVTable")
+                    $(.field(stringify!($func), &(self.$func as *const u8)))+
+                    .finish()
+            }
         }
     };
 }
@@ -33,10 +87,24 @@ vtable! {
     cmp: unsafe extern "C" fn(*const u8, *const u8) -> Ordering,
     clone: unsafe extern "C" fn(*const u8, *mut u8),
     clone_into_slice: unsafe extern "C" fn(*const u8, *mut u8, usize),
-    size_of_children: unsafe extern "C" fn(*const u8, &mut Context),
+    size_of_children: unsafe extern "C" fn(*const u8, &mut size_of::Context),
     debug: unsafe extern "C" fn(*const u8, *mut fmt::Formatter<'_>) -> bool,
     drop_in_place: unsafe extern "C" fn(*mut u8),
     drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
+    type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
+}
+
+impl MarshalledVTable {
+    pub fn type_name(&self) -> &str {
+        let mut length = 0;
+        let ptr = unsafe { (self.type_name)(&mut length) };
+        debug_assert!(!ptr.is_null());
+
+        let bytes = unsafe { slice::from_raw_parts(ptr, length) };
+        debug_assert!(std::str::from_utf8(bytes).is_ok());
+
+        unsafe { std::str::from_utf8_unchecked(bytes) }
+    }
 }
 
 fn create_data<D>(data: D, module: &mut JITModule, data_ctx: &mut DataContext) -> DataId
@@ -108,7 +176,7 @@ impl Codegen {
 
             // Zero sized types are always equal
             let are_equal = if layout.is_zero_sized() || row_layout.is_empty() {
-                builder.ins().iconst(types::I8, true as i64)
+                builder.true_byte()
 
             // If there's any strings then comparisons are non-trivial
             } else if row_layout.rows().iter().any(RowType::is_string) {
@@ -128,7 +196,7 @@ impl Codegen {
                     (
                         row_layout.rows()[idx].is_string(),
                         row_layout.row_is_nullable(idx),
-                        layout.row_offset(idx),
+                        layout.offset_of(idx),
                     )
                 });
 
@@ -195,9 +263,9 @@ impl Codegen {
 
                     // Load both values
                     let (lhs, rhs) = {
-                        let offset = layout.row_offset(idx) as i32;
+                        let offset = layout.offset_of(idx) as i32;
                         let native_ty = layout
-                            .row_type(idx)
+                            .type_of(idx)
                             .native_type(&self.module.isa().frontend_config());
                         let flags = MemFlags::trusted().with_readonly();
 
@@ -221,15 +289,14 @@ impl Codegen {
                         RowType::F32 | RowType::F64 => builder.ins().fcmp(FloatCC::Equal, lhs, rhs),
 
                         // Compare strings
-                        // TODO: If we ever intern or reference count strings, we can partially inline
-                        // their comparison by comparing the string's pointers within jit code. This
-                        // this could potentially let us skip function calls for the happy path of
+                        // TODO: If we ever intern or reference count strings, we can partially
+                        // inline their comparison by comparing the string's
+                        // pointers within jit code. This this could
+                        // potentially let us skip function calls for the happy path of
                         // comparing two of the same (either via deduplication or cloning) string
                         RowType::String => {
-                            let string_eq =
-                                imports.dataflow_jit_string_eq(&mut self.module, builder.func);
-                            let call = builder.ins().call(string_eq, &[lhs, rhs]);
-                            builder.func.dfg.first_result(call)
+                            let string_eq = imports.string_eq(&mut self.module, builder.func);
+                            builder.call_fn(string_eq, &[lhs, rhs])
                         }
 
                         // Unit values have already been handled
@@ -245,7 +312,7 @@ impl Codegen {
                 }
 
                 // If all fields were equal, return `true`
-                let true_val = builder.ins().iconst(types::I8, true as i64);
+                let true_val = builder.true_byte();
                 builder.ins().jump(return_block, &[true_val]);
                 builder.seal_block(builder.current_block().unwrap());
 
@@ -280,124 +347,6 @@ impl Codegen {
         func_id
     }
 
-    /// Generates a function cloning the given layout
-    // FIXME: This also ignores the existence of strings
-    pub fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
-        // fn(*const u8, *mut u8)
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
-
-        {
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // TODO: Add debug assertion that src != dest when
-            // `self.config.debug_assertions` is set
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let params = builder.block_params(entry_block);
-            let (src, dest) = (params[0], params[1]);
-
-            if self.config.debug_assertions {
-                builder.ins().trapz(src, TRAP_NULL_PTR);
-                builder.ins().trapz(dest, TRAP_NULL_PTR);
-            }
-
-            let layout = self.layout_cache.compute(layout_id);
-            let (layout_size, layout_align) = (layout.size(), layout.align());
-
-            // Zero sized types have nothing to clone
-            if layout_size != 0 {
-                let row_layout = self.layout_cache.layout_cache.get(layout_id);
-
-                if row_layout.requires_nontrivial_clone() {
-                    todo!()
-                } else {
-                    let align = layout_align.try_into().unwrap();
-
-                    // TODO: We can make our own more efficient memcpy here, the one that ships with
-                    // cranelift is eh
-                    builder.emit_small_memory_copy(
-                        self.module.isa().frontend_config(),
-                        src,
-                        dest,
-                        layout_size as u64,
-                        align,
-                        align,
-                        true,
-                        MemFlags::trusted(),
-                    );
-                }
-            }
-
-            builder.ins().return_(&[]);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.finalize_function(func_id);
-
-        func_id
-    }
-
-    /// Generates a function cloning a slice of the given layout
-    // FIXME: This also ignores the existence of strings
-    pub fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
-        // fn(*const u8, *mut u8, usize)
-        let func_id = self.new_function([self.module.isa().pointer_type(); 3], None);
-
-        {
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let layout_size = self.layout_cache.compute(layout_id).size();
-
-            // Zero sized types have nothing to clone
-            if layout_size != 0 {
-                let params = builder.block_params(entry_block);
-                let (src, dest, length) = (params[0], params[1], params[2]);
-
-                let row_layout = self.layout_cache.layout_cache.get(layout_id);
-
-                if row_layout.requires_nontrivial_clone() {
-                    todo!()
-
-                // For types consisting entirely of scalar values we can simply
-                // emit a memcpy
-                } else {
-                    // The total size we need to copy is size_of(layout) * length
-                    // TODO: Should we add a size assertion here? Just for `debug_assertions`?
-                    let size = builder.ins().imul_imm(length, layout_size as i64);
-                    builder.call_memcpy(self.module.isa().frontend_config(), src, dest, size);
-                }
-            }
-
-            builder.ins().return_(&[]);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.finalize_function(func_id);
-
-        func_id
-    }
-
     pub fn codegen_layout_lt(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *const u8) -> bool
         let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
@@ -408,20 +357,14 @@ impl Codegen {
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
             // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let return_not_less_than = builder.create_block();
+            let entry_block = builder.create_entry_block();
 
             let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
             // ZSTs always return `false`, they're always equal
             if !layout.is_zero_sized() {
-                // Create a block to house our `true` return
-                let return_less_than = builder.create_block();
+                let return_block = builder.create_block();
+                builder.append_block_params_for_function_returns(return_block);
 
                 let params = builder.block_params(entry_block);
                 let (lhs, rhs) = (params[0], params[1]);
@@ -490,11 +433,13 @@ impl Codegen {
 
                             // if isnt_less { continue }
                             let next = builder.create_block();
+                            let true_val = builder.true_byte();
                             builder.ins().brz(isnt_less, next, &[]);
 
                             // else { return true }
-                            builder.ins().jump(return_less_than, &[]);
+                            builder.ins().jump(return_block, &[true_val]);
 
+                            builder.seal_current();
                             builder.switch_to_block(next);
                             continue;
                         }
@@ -506,7 +451,11 @@ impl Codegen {
                         builder.ins().brnz(both_non_null, neither_null, &[]);
                         builder.ins().jump(secondary_branch, &[]);
 
+                        builder.seal_current();
                         builder.switch_to_block(secondary_branch);
+
+                        let true_val = builder.true_byte();
+                        let false_val = builder.false_byte();
 
                         // if lhs_non_null && !rhs_non_null { return true }
                         let non_null_and_null = builder.ins().icmp(
@@ -514,13 +463,16 @@ impl Codegen {
                             lhs_non_null,
                             rhs_non_null,
                         );
-                        builder.ins().brnz(non_null_and_null, return_less_than, &[]);
+                        builder
+                            .ins()
+                            .brnz(non_null_and_null, return_block, &[true_val]);
 
                         // if (!lhs_non_null && rhs_non_null) || (!lhs_non_null && !rhs_non_null) {
                         // return false }
-                        builder.ins().jump(return_not_less_than, &[]);
+                        builder.ins().jump(return_block, &[false_val]);
 
                         // Switch to the neither null block so that we can compare both values
+                        builder.seal_block(secondary_branch);
                         builder.switch_to_block(neither_null);
                     }
 
@@ -528,9 +480,9 @@ impl Codegen {
 
                     // Load each row's value
                     let (lhs, rhs) = {
-                        let offset = layout.row_offset(idx) as i32;
+                        let offset = layout.offset_of(idx) as i32;
                         let native_ty = layout
-                            .row_type(idx)
+                            .type_of(idx)
                             .native_type(&self.module.isa().frontend_config());
                         let flags = MemFlags::trusted().with_readonly();
 
@@ -556,32 +508,38 @@ impl Codegen {
                         RowType::Unit => unreachable!(),
 
                         RowType::String => {
-                            let string_lt =
-                                imports.dataflow_jit_string_lt(&mut self.module, builder.func);
-                            let lt = builder.ins().call(string_lt, &[lhs, rhs]);
-                            builder.func.dfg.first_result(lt)
+                            let string_lt = imports.string_lt(&mut self.module, builder.func);
+                            builder.call_fn(string_lt, &[lhs, rhs])
                         }
                     };
 
                     let next = builder.create_block();
-                    builder.ins().brnz(is_less, return_less_than, &[]);
+                    let true_val = builder.true_byte();
+                    builder.ins().brnz(is_less, return_block, &[true_val]);
                     builder.ins().jump(next, &[]);
+
+                    builder.seal_current();
                     builder.switch_to_block(next);
                 }
 
-                builder.ins().jump(return_not_less_than, &[]);
+                // If control flow reaches this point then either all fields are >= and
+                // therefore not less than
+                let false_val = builder.false_byte();
+                builder.ins().jump(return_block, &[false_val]);
+                builder.seal_current();
 
-                builder.switch_to_block(return_less_than);
-                let true_val = builder.ins().iconst(types::I8, true as i64);
-                builder.ins().return_(&[true_val]);
-                builder.seal_block(return_less_than);
+                // Build our return block
+                builder.switch_to_block(return_block);
+                let is_less = builder.block_params(return_block)[0];
+                builder.ins().return_(&[is_less]);
+                builder.seal_block(return_block);
+
+            // For zsts we always return false, they're always equal
+            } else {
+                let false_val = builder.false_byte();
+                builder.ins().return_(&[false_val]);
+                builder.seal_block(entry_block);
             }
-
-            // If control flow reaches this point then either all fields are >= or the type
-            // is just unit values
-            builder.switch_to_block(return_not_less_than);
-            let false_val = builder.ins().iconst(types::I8, false as i64);
-            builder.ins().return_(&[false_val]);
 
             // Finish building the function
             builder.seal_all_blocks();
@@ -710,12 +668,12 @@ impl Codegen {
                     }
 
                     let native_ty = layout
-                        .row_type(idx)
+                        .type_of(idx)
                         .native_type(&self.module.isa().frontend_config());
 
                     // Load the column's values
                     let (lhs, rhs) = {
-                        let offset = layout.row_offset(idx) as i32;
+                        let offset = layout.offset_of(idx) as i32;
                         let flags = MemFlags::trusted().with_readonly();
 
                         let lhs = builder.ins().load(native_ty, flags, lhs, offset);
@@ -755,12 +713,10 @@ impl Codegen {
                         RowType::Unit => {}
 
                         RowType::String => {
-                            let string_cmp =
-                                imports.dataflow_jit_string_cmp(&mut self.module, builder.func);
+                            let string_cmp = imports.string_cmp(&mut self.module, builder.func);
 
                             // -1 for less, 0 for equal, 1 for greater
-                            let cmp = builder.ins().call(string_cmp, &[lhs, rhs]);
-                            let cmp = builder.func.dfg.first_result(cmp);
+                            let cmp = builder.call_fn(string_cmp, &[lhs, rhs]);
 
                             // Zero is equal so if the value is non-zero we can return the ordering
                             // directly
@@ -910,16 +866,16 @@ impl Codegen {
                     };
 
                     // Load the string
-                    let offset = layout.row_offset(idx) as i32;
+                    let offset = layout.offset_of(idx) as i32;
                     let native_ty = layout
-                        .row_type(idx)
+                        .type_of(idx)
                         .native_type(&self.module.isa().frontend_config());
                     let flags = MemFlags::trusted().with_readonly();
                     let string = builder.ins().load(native_ty, flags, ptr, offset);
 
                     // Get the size of the string's children
-                    let string_size_of_children = imports
-                        .dataflow_jit_string_size_of_children(&mut self.module, builder.func);
+                    let string_size_of_children =
+                        imports.string_size_of_children(&mut self.module, builder.func);
                     builder
                         .ins()
                         .call(string_size_of_children, &[string, context]);
@@ -952,7 +908,7 @@ impl Codegen {
         {
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-            let str_debug = imports.dataflow_jit_str_debug(&mut self.module, builder.func);
+            let str_debug = imports.str_debug(&mut self.module, builder.func);
 
             // Create the entry block
             let entry_block = builder.create_block();
@@ -986,8 +942,7 @@ impl Codegen {
                 // Write an empty row to the output
                 let empty_ptr = builder.ins().symbol_value(ptr_ty, empty);
                 let empty_len = builder.ins().iconst(ptr_ty, empty_data.len() as i64);
-                let call = builder.ins().call(str_debug, &[empty_ptr, empty_len, fmt]);
-                let result = builder.func.dfg.first_result(call);
+                let result = builder.call_fn(str_debug, &[empty_ptr, empty_len, fmt]);
 
                 builder.ins().jump(return_block, &[result]);
                 builder.seal_block(entry_block);
@@ -1002,11 +957,10 @@ impl Codegen {
                 // Write the start of a row to the output
                 let start_ptr = builder.ins().symbol_value(ptr_ty, start);
                 let start_len = builder.ins().iconst(ptr_ty, start_data.len() as i64);
-                let call = builder.ins().call(str_debug, &[start_ptr, start_len, fmt]);
-                let result = builder.func.dfg.first_result(call);
+                let result = builder.call_fn(str_debug, &[start_ptr, start_len, fmt]);
 
                 let debug_start = builder.create_block();
-                let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                let debug_failed = builder.false_byte();
                 builder.ins().brz(result, return_block, &[debug_failed]);
                 builder.ins().jump(debug_start, &[]);
                 builder.seal_block(entry_block);
@@ -1047,11 +1001,10 @@ impl Codegen {
                         // Write `null` to the output
                         let null_ptr = builder.ins().symbol_value(ptr_ty, null);
                         let null_len = builder.ins().iconst(ptr_ty, null_data.len() as i64);
-                        let call = builder.ins().call(str_debug, &[null_ptr, null_len, fmt]);
-                        let call = builder.func.dfg.first_result(call);
+                        let call = builder.call_fn(str_debug, &[null_ptr, null_len, fmt]);
 
                         // If writing `null` failed, return an error
-                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                        let debug_failed = builder.false_byte();
                         builder.ins().brz(call, return_block, &[debug_failed]);
                         builder.ins().jump(after_debug, &[]);
                         builder.seal_block(write_null);
@@ -1068,72 +1021,63 @@ impl Codegen {
                         // Write `()` to the output
                         let unit_ptr = builder.ins().symbol_value(ptr_ty, unit);
                         let unit_len = builder.ins().iconst(ptr_ty, unit_data.len() as i64);
-                        let call = builder.ins().call(str_debug, &[unit_ptr, unit_len, fmt]);
-                        builder.func.dfg.first_result(call)
+                        builder.call_fn(str_debug, &[unit_ptr, unit_len, fmt])
                     } else {
                         // Load the value
-                        let offset = layout.row_offset(idx) as i32;
+                        let offset = layout.offset_of(idx) as i32;
                         let native_ty = layout
-                            .row_type(idx)
+                            .type_of(idx)
                             .native_type(&self.module.isa().frontend_config());
                         let flags = MemFlags::trusted().with_readonly();
                         let value = builder.ins().load(native_ty, flags, ptr, offset);
 
-                        let call = match ty {
+                        match ty {
                             RowType::Bool => {
-                                let bool_debug =
-                                    imports.dataflow_jit_bool_debug(&mut self.module, builder.func);
-                                builder.ins().call(bool_debug, &[value, fmt])
+                                let bool_debug = imports.bool_debug(&mut self.module, builder.func);
+                                builder.call_fn(bool_debug, &[value, fmt])
                             }
 
                             RowType::U16 | RowType::U32 => {
-                                let uint_debug =
-                                    imports.dataflow_jit_uint_debug(&mut self.module, builder.func);
+                                let uint_debug = imports.uint_debug(&mut self.module, builder.func);
                                 let extended = builder.ins().uextend(types::I64, value);
-                                builder.ins().call(uint_debug, &[extended, fmt])
+                                builder.call_fn(uint_debug, &[extended, fmt])
                             }
                             RowType::U64 => {
-                                let uint_debug =
-                                    imports.dataflow_jit_uint_debug(&mut self.module, builder.func);
-                                builder.ins().call(uint_debug, &[value, fmt])
+                                let uint_debug = imports.uint_debug(&mut self.module, builder.func);
+                                builder.call_fn(uint_debug, &[value, fmt])
                             }
 
                             RowType::I16 | RowType::I32 => {
-                                let int_debug =
-                                    imports.dataflow_jit_int_debug(&mut self.module, builder.func);
+                                let int_debug = imports.int_debug(&mut self.module, builder.func);
                                 let extended = builder.ins().sextend(types::I64, value);
-                                builder.ins().call(int_debug, &[extended, fmt])
+                                builder.call_fn(int_debug, &[extended, fmt])
                             }
                             RowType::I64 => {
-                                let int_debug =
-                                    imports.dataflow_jit_int_debug(&mut self.module, builder.func);
-                                builder.ins().call(int_debug, &[value, fmt])
+                                let int_debug = imports.int_debug(&mut self.module, builder.func);
+                                builder.call_fn(int_debug, &[value, fmt])
                             }
 
                             RowType::F32 => {
-                                let f32_debug =
-                                    imports.dataflow_jit_f32_debug(&mut self.module, builder.func);
-                                builder.ins().call(f32_debug, &[value, fmt])
+                                let f32_debug = imports.f32_debug(&mut self.module, builder.func);
+                                builder.call_fn(f32_debug, &[value, fmt])
                             }
                             RowType::F64 => {
-                                let f64_debug =
-                                    imports.dataflow_jit_f64_debug(&mut self.module, builder.func);
-                                builder.ins().call(f64_debug, &[value, fmt])
+                                let f64_debug = imports.f64_debug(&mut self.module, builder.func);
+                                builder.call_fn(f64_debug, &[value, fmt])
                             }
 
                             RowType::String => {
-                                let string_debug = imports
-                                    .dataflow_jit_string_debug(&mut self.module, builder.func);
-                                builder.ins().call(string_debug, &[value, fmt])
+                                let string_debug =
+                                    imports.string_debug(&mut self.module, builder.func);
+                                builder.call_fn(string_debug, &[value, fmt])
                             }
 
                             RowType::Unit => unreachable!(),
-                        };
-                        builder.func.dfg.first_result(call)
+                        }
                     };
 
                     // If writing the value failed, return an error
-                    let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                    let debug_failed = builder.false_byte();
                     builder.ins().brz(result, return_block, &[debug_failed]);
                     builder.ins().jump(after_debug, &[]);
                     builder.seal_block(builder.current_block().unwrap());
@@ -1149,11 +1093,10 @@ impl Codegen {
                         // Write the end of a row to the output
                         let end_ptr = builder.ins().symbol_value(ptr_ty, end);
                         let end_len = builder.ins().iconst(ptr_ty, end_data.len() as i64);
-                        let call = builder.ins().call(str_debug, &[end_ptr, end_len, fmt]);
-                        let result = builder.func.dfg.first_result(call);
+                        let result = builder.call_fn(str_debug, &[end_ptr, end_len, fmt]);
 
-                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
-                        let debug_success = builder.ins().iconst(types::I8, true as i64);
+                        let debug_failed = builder.false_byte();
+                        let debug_success = builder.true_byte();
                         builder.ins().brz(result, return_block, &[debug_failed]);
                         builder.ins().jump(return_block, &[debug_success]);
 
@@ -1171,10 +1114,9 @@ impl Codegen {
 
                         let comma_ptr = builder.ins().symbol_value(ptr_ty, comma);
                         let comma_len = builder.ins().iconst(ptr_ty, comma_data.len() as i64);
-                        let call = builder.ins().call(str_debug, &[comma_ptr, comma_len, fmt]);
-                        let result = builder.func.dfg.first_result(call);
+                        let result = builder.call_fn(str_debug, &[comma_ptr, comma_len, fmt]);
 
-                        let debug_failed = builder.ins().iconst(types::I8, false as i64);
+                        let debug_failed = builder.false_byte();
                         builder.ins().brz(result, return_block, &[debug_failed]);
                         builder.ins().jump(next_debug, &[]);
                         builder.switch_to_block(next_debug);
@@ -1201,121 +1143,6 @@ impl Codegen {
     }
 }
 
-impl Codegen {
-    pub fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
-        // fn(*mut u8)
-        let func_id = self.new_function([self.module.isa().pointer_type()], None);
-        let mut imports = self.intrinsics.import();
-
-        {
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // TODO: Add debug assertion that src != dest when
-            // `self.config.debug_assertions` is set
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
-
-            if row_layout.needs_drop() {
-                let ptr = builder.block_params(entry_block)[0];
-                drop_layout(
-                    ptr,
-                    layout,
-                    &row_layout,
-                    &mut builder,
-                    &mut imports,
-                    &mut self.module,
-                    &self.config,
-                );
-            }
-
-            builder.ins().return_(&[]);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.finalize_function(func_id);
-
-        func_id
-    }
-
-    pub fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
-        // fn(*mut u8, usize)
-        let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_function([ptr_ty; 2], None);
-        let mut imports = self.intrinsics.import();
-
-        {
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
-
-            if row_layout.needs_drop() {
-                let ptr = builder.block_params(entry_block)[0];
-                let length = builder.block_params(entry_block)[1];
-
-                let tail = builder.create_block();
-                let body = builder.create_block();
-                builder.append_block_param(body, ptr_ty);
-
-                let length_bytes = builder.ins().imul_imm(length, layout.size() as i64);
-                let end_ptr = builder.ins().iadd(ptr, length_bytes);
-
-                let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
-                builder.ins().brz(ptr_inbounds, tail, &[]);
-                builder.ins().jump(body, &[ptr]);
-
-                builder.switch_to_block(body);
-
-                let ptr = builder.block_params(body)[0];
-                drop_layout(
-                    ptr,
-                    layout,
-                    &row_layout,
-                    &mut builder,
-                    &mut imports,
-                    &mut self.module,
-                    &self.config,
-                );
-
-                let ptr = builder.ins().iadd_imm(ptr, layout.size() as i64);
-                let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
-                builder.ins().brnz(ptr_inbounds, body, &[ptr]);
-                builder.ins().jump(tail, &[]);
-
-                builder.switch_to_block(tail);
-            }
-
-            builder.ins().return_(&[]);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.finalize_function(func_id);
-
-        func_id
-    }
-}
-
 /// Checks if the given row is currently null, returns zero for non-null and
 /// non-zero for null
 // TODO: If we make sure that memory is zeroed (or at the very least that
@@ -1336,7 +1163,7 @@ fn column_non_null(
 ) -> ClifValue {
     debug_assert!(layout.is_nullable(column));
 
-    let (bitset_ty, bitset_offset, bit_idx) = layout.row_nullability(column);
+    let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
     let bitset_ty = bitset_ty.native_type(&module.isa().frontend_config());
 
     // Create the flags for the load
@@ -1359,62 +1186,5 @@ fn column_non_null(
         // !x & (1 << bit)
         let bitset = builder.ins().bnot(bitset);
         builder.ins().band_imm(bitset, 1i64 << bit_idx)
-    }
-}
-
-fn drop_layout(
-    ptr: ClifValue,
-    layout: &Layout,
-    row_layout: &RowLayout,
-    builder: &mut FunctionBuilder,
-    imports: &mut ImportIntrinsics,
-    module: &mut JITModule,
-    config: &CodegenConfig,
-) {
-    for (idx, (ty, nullable)) in row_layout
-        .iter()
-        .enumerate()
-        // Strings are the only thing that need dropping right now
-        .filter(|(_, (ty, _))| ty.is_string())
-    {
-        debug_assert_eq!(ty, RowType::String);
-
-        let next_drop = if nullable {
-            // Zero = string isn't null, non-zero = string is null
-            let string_non_null = column_non_null(idx, ptr, layout, builder, config, module, true);
-
-            // If the string is null, jump to the `next_drop` block and don't drop
-            // the current string. Otherwise (if the string isn't null) drop it and
-            // then continue dropping any other fields
-            let drop_string = builder.create_block();
-            let next_drop = builder.create_block();
-            builder.ins().brnz(string_non_null, next_drop, &[]);
-            builder.ins().jump(drop_string, &[]);
-
-            builder.switch_to_block(drop_string);
-
-            Some(next_drop)
-        } else {
-            None
-        };
-
-        // Load the string
-        let offset = layout.row_offset(idx) as i32;
-        let native_ty = layout
-            .row_type(idx)
-            .native_type(&module.isa().frontend_config());
-        // Readonly isn't transitive and doesn't apply to the data pointed to
-        // by the pointer we're loading
-        let flags = MemFlags::trusted().with_readonly();
-        let string = builder.ins().load(native_ty, flags, ptr, offset);
-
-        // Drop the string
-        let string_drop_in_place = imports.dataflow_jit_string_drop_in_place(module, builder.func);
-        builder.ins().call(string_drop_in_place, &[string]);
-
-        if let Some(next_drop) = next_drop {
-            builder.ins().jump(next_drop, &[]);
-            builder.switch_to_block(next_drop);
-        }
     }
 }

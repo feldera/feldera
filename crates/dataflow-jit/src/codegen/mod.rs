@@ -1,11 +1,16 @@
 mod intrinsics;
 mod layout;
+mod utils;
 mod vtable;
 
 pub use layout::{Layout, Type};
+pub use vtable::{LayoutVTable, MarshalledVTable};
 
 use crate::{
-    codegen::intrinsics::{ImportIntrinsics, Intrinsics},
+    codegen::{
+        intrinsics::{ImportIntrinsics, Intrinsics},
+        utils::FunctionBuilderExt,
+    },
     ir::{
         BinOpKind, BlockId, Constant, Expr, ExprId, Function, InputFlags, LayoutCache, LayoutId,
         RValue, RowLayout, RowType, Signature, Terminator,
@@ -91,6 +96,13 @@ impl CodegenConfig {
             debug_assertions: true,
         }
     }
+
+    pub const fn release() -> Self {
+        Self {
+            null_sigil: NullSigil::One,
+            debug_assertions: false,
+        }
+    }
 }
 
 impl Default for CodegenConfig {
@@ -110,6 +122,7 @@ pub struct Codegen {
     function_ctx: FunctionBuilderContext,
     config: CodegenConfig,
     intrinsics: Intrinsics,
+    vtables: BTreeMap<LayoutId, LayoutVTable>,
 }
 
 impl Codegen {
@@ -137,6 +150,7 @@ impl Codegen {
             function_ctx: FunctionBuilderContext::new(),
             config,
             intrinsics,
+            vtables: BTreeMap::new(),
         }
     }
 
@@ -232,7 +246,7 @@ impl Codegen {
                             debug_assert!(!ctx.is_readonly(store.target()));
 
                             let layout = ctx.layout_of(store.target());
-                            let offset = layout.row_offset(store.row());
+                            let offset = layout.offset_of(store.row());
 
                             let value = match store.value() {
                                 RValue::Expr(expr) => ctx.exprs[expr],
@@ -253,9 +267,9 @@ impl Codegen {
 
                         Expr::Load(load) => {
                             let layout = ctx.layout_of(load.source());
-                            let offset = layout.row_offset(load.row());
+                            let offset = layout.offset_of(load.row());
                             let ty = layout
-                                .row_type(load.row())
+                                .type_of(load.row())
                                 .native_type(&ctx.module.isa().frontend_config());
 
                             let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
@@ -283,7 +297,7 @@ impl Codegen {
                         Expr::IsNull(is_null) => {
                             let layout = ctx.layout_of(is_null.value());
                             let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.row_nullability(is_null.row());
+                                layout.nullability_of(is_null.row());
                             let bitset_ty =
                                 bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
@@ -330,7 +344,7 @@ impl Codegen {
 
                             let layout = ctx.layout_of(set_null.target());
                             let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.row_nullability(set_null.row());
+                                layout.nullability_of(set_null.row());
                             let bitset_ty =
                                 bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
@@ -459,11 +473,9 @@ impl Codegen {
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
 
                             let value = if copy_val.ty() == RowType::String {
-                                let clone_string = ctx
-                                    .imports
-                                    .dataflow_jit_string_clone(ctx.module, ctx.builder.func);
-                                let call = ctx.builder.ins().call(clone_string, &[value]);
-                                ctx.builder.func.dfg.first_result(call)
+                                let clone_string =
+                                    ctx.imports.string_clone(ctx.module, ctx.builder.func);
+                                ctx.builder.call_fn(clone_string, &[value])
                             } else {
                                 value
                             };
@@ -529,7 +541,8 @@ impl Codegen {
         let mut sig = self.module.make_signature();
 
         let ret = self.layout_cache.compute(signature.ret());
-        if !ret.is_unit() {
+        // FIXME: Scalar returns for things like `filter`
+        if !ret.is_zero_sized() {
             sig.returns
                 .push(AbiParam::new(self.module.isa().pointer_type()));
         }

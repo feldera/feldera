@@ -144,20 +144,12 @@ mod tests {
 
         unsafe {
             let lhs = layout.alloc().unwrap().as_ptr();
-            lhs.add(layout.row_offset(0) as usize)
-                .cast::<u32>()
-                .write(0);
-            lhs.add(layout.row_offset(1) as usize)
-                .cast::<u32>()
-                .write(1);
+            lhs.add(layout.offset_of(0) as usize).cast::<u32>().write(0);
+            lhs.add(layout.offset_of(1) as usize).cast::<u32>().write(1);
 
             let rhs = layout.alloc().unwrap().as_ptr();
-            rhs.add(layout.row_offset(0) as usize)
-                .cast::<u32>()
-                .write(2);
-            rhs.add(layout.row_offset(1) as usize)
-                .cast::<u32>()
-                .write(3);
+            rhs.add(layout.offset_of(0) as usize).cast::<u32>().write(2);
+            rhs.add(layout.offset_of(1) as usize).cast::<u32>().write(3);
 
             println!("lhs: {:?}", DebugRow(lhs, debug));
             println!("rhs: {:?}", DebugRow(rhs, debug));
@@ -168,12 +160,8 @@ mod tests {
             assert!(!lt(rhs, lhs));
             assert_eq!(cmp(rhs, lhs), Ordering::Greater);
 
-            rhs.add(layout.row_offset(0) as usize)
-                .cast::<u32>()
-                .write(0);
-            rhs.add(layout.row_offset(1) as usize)
-                .cast::<u32>()
-                .write(1);
+            rhs.add(layout.offset_of(0) as usize).cast::<u32>().write(0);
+            rhs.add(layout.offset_of(1) as usize).cast::<u32>().write(1);
 
             println!("lhs: {:?}", DebugRow(lhs, debug));
             println!("rhs: {:?}", DebugRow(rhs, debug));
@@ -183,12 +171,8 @@ mod tests {
             assert_eq!(cmp(lhs, rhs), Ordering::Equal);
             assert_eq!(cmp(rhs, lhs), Ordering::Equal);
 
-            rhs.add(layout.row_offset(0) as usize)
-                .cast::<u32>()
-                .write(0);
-            rhs.add(layout.row_offset(1) as usize)
-                .cast::<u32>()
-                .write(0);
+            rhs.add(layout.offset_of(0) as usize).cast::<u32>().write(0);
+            rhs.add(layout.offset_of(1) as usize).cast::<u32>().write(0);
 
             println!("lhs: {:?}", DebugRow(lhs, debug));
             println!("rhs: {:?}", DebugRow(rhs, debug));
