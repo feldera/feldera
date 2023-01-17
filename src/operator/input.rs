@@ -65,7 +65,7 @@ impl Circuit<()> {
     /// [`CollectionHandle::append`] any number of times to add values to
     /// the input Z-set. These values are distributed across all worker
     /// threads (when running in a multithreaded [`Runtime`]) in a round-robin
-    /// faction and buffered until the start of the next clock
+    /// fashion and buffered until the start of the next clock
     /// cycle.  At the start of a clock cycle (triggered by
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
     /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)), the circuit
