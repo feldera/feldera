@@ -1,3 +1,5 @@
+mod tests;
+
 use crate::{
     codegen::{intrinsics::ImportIntrinsics, Codegen, CodegenConfig, Layout, TRAP_NULL_PTR},
     ir::{LayoutId, RowLayout, RowType},
