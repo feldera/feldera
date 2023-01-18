@@ -200,12 +200,9 @@ unsafe fn fill_indices_x86_avx2(original_length: usize, indices: &mut Vec<usize>
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Vec<usize>) {
-    use std::{
-        arch::aarch64::{
-            uint32x4_t, uint64x2_t, vaddq_u32, vaddq_u64, vdupq_n_u32, vdupq_n_u64, vst1q_u32,
-            vst1q_u64,
-        },
-        mem::transmute,
+    use std::arch::aarch64::{
+        uint32x4_t, uint64x2_t, vaddq_u32, vaddq_u64, vdupq_n_u32, vdupq_n_u64, vst1q_u32,
+        vst1q_u64,
     };
 
     if original_length == 0 {
@@ -222,7 +219,7 @@ pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Ve
         let four = vdupq_n_u32(4);
 
         let mut indices_ptr = indices.as_mut_ptr().cast::<u32>();
-        let indices_end = indices_ptr.add(length / 4);
+        let indices_end = indices_ptr.add(length);
 
         while indices_ptr < indices_end {
             // Store the indices into the vec
@@ -243,7 +240,7 @@ pub unsafe fn fill_indices_aarch64_neon(original_length: usize, indices: &mut Ve
         let two = vdupq_n_u64(2);
 
         let mut indices_ptr = indices.as_mut_ptr().cast::<u64>();
-        let indices_end = indices_ptr.add(length / 2);
+        let indices_end = indices_ptr.add(length);
 
         while indices_ptr < indices_end {
             // Store the indices into the vec

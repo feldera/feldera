@@ -169,11 +169,11 @@ fn offset_retain() {
 
 #[test]
 fn fill_indices() {
-    let length = 2352;
+    for &length in &[0, 1, 2, 42, 128, 333, 1400, 2352] {
+        let mut output = Vec::new();
+        fill_indices::fill_indices(length, &mut output);
 
-    let mut output = Vec::new();
-    fill_indices::fill_indices(length, &mut output);
-
-    let expected: Vec<usize> = (0..length).collect();
-    assert_eq!(expected, output);
+        let expected: Vec<usize> = (0..length).collect();
+        assert_eq!(expected, output);
+    }
 }
