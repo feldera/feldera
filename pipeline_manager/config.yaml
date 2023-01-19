@@ -1,0 +1,7 @@
+port: 8080
+pg_connection_string: "host=localhost user=dbsp"
+working_directory: "./pipeline_data"
+sql_compiler_home: "../../sql-to-dbsp-compiler"
+dbsp_override_path: "../"
+with_prometheus: true
+# debug: true
