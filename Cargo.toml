@@ -9,7 +9,10 @@ license = "MIT OR Apache-2.0"
     rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = ["adapters"]
+members = [
+    "adapters",
+    "pipeline_manager"
+]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
