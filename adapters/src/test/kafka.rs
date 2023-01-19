@@ -25,7 +25,7 @@ pub struct KafkaResources {
     topics: Vec<String>,
 }
 
-/// An object that creates a couple of topics on startup and deletes them
+/// An object that creates Kafka topics on startup and deletes them
 /// on drop.  Helps make sure that test runs don't leave garbage behind.
 impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {

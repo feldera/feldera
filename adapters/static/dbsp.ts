@@ -1,4 +1,4 @@
-import { ErrorDisplay } from "./errReporter"
+import { ErrorDisplay, WebClient } from "./errReporter"
 import { IHtmlElement, SpecialChars, removeAllChildren, formatJson } from "./ui"
 
 /*
@@ -61,6 +61,7 @@ class IOArray implements IHtmlElement {
             block.style.margin = "2px";
             block.style.flexGrow = "1";
             block.id = name + inputNo;
+            inputNo++;
             let text = document.createElement("span");
             if (name == "input") {
                 text.textContent = block.id + SpecialChars.rightArrow;
@@ -86,7 +87,7 @@ class IOArray implements IHtmlElement {
 /**
  * Represents the visualization of a running DBSP pipeline.
  */
-class Pipeline implements IHtmlElement {
+class Pipeline extends WebClient implements IHtmlElement {
     private root: HTMLElement;
     private inputs: IOArray | null;
     private outputs: IOArray | null;
@@ -98,7 +99,8 @@ class Pipeline implements IHtmlElement {
      */
     private lastClickedID: string | null;
 
-    public constructor(private display: ErrorDisplay) {
+    public constructor(display: ErrorDisplay) {
+        super(display)
         this.root = document.createElement("div");
         this.root.style.display = "flex";
         this.root.style.flexDirection = "row";
@@ -125,25 +127,12 @@ class Pipeline implements IHtmlElement {
         return this.root;
     }
 
-    public get(url: string, continuation: (response: Response) => void): void {
-        fetch(url, {
-            method: 'GET',
-            headers: {
-              Accept: 'application/json',
-            },
-          }).then(response => continuation(response));
-    }
-
     public status(): void {
         this.get("status", response => this.status_received(response));
     }
 
     response_received(response: Response): void {
-        if (response.ok) {
-            response.text().then(r => this.show(r));
-            return;
-        }
-        this.error(response);
+        response.text().then(r => this.show(r));
     }
 
     shutdown(): void {
@@ -155,16 +144,12 @@ class Pipeline implements IHtmlElement {
     }
 
     error(response: Response): void {
-        this.display.reportError("Error received: " + response.status);
+        super.error(response);
         clearInterval(this.timer);
     }
 
     status_received(response: Response): void {
-        if (response.ok) {
-            response.json().then(v => this.status_decoded(v));
-            return;
-        }
-        this.error(response);
+        response.json().then(v => this.status_decoded(v));
     }
 
     createFiller(): HTMLDivElement {
@@ -226,12 +211,11 @@ class Pipeline implements IHtmlElement {
     }
 }
 
-class DBSP {
+class DBSP extends WebClient {
     private pipeline: Pipeline;
-    private display: ErrorDisplay;
     
     constructor() {
-        this.display = new ErrorDisplay();
+        super(new ErrorDisplay());
         this.pipeline = new Pipeline(this.display);
         console.log("Created");
     }

@@ -145,12 +145,12 @@ pub enum ControllerError {
         error: AnyError,
     },
 
-    /// Encoder error.
+    /// Encode error.
     ///
     /// Error encoding the last output batch.  Encoder errors are expected to
     /// be recoverable, i.e., the encoder should be able to successfully parse
     /// new valid inputs after an error.
-    EncoderError {
+    EncodeError {
         endpoint_name: String,
         error: AnyError,
     },
@@ -212,7 +212,7 @@ impl Display for ControllerError {
                     "parse error on input endpoint '{endpoint_name}': '{error}'"
                 )
             }
-            Self::EncoderError {
+            Self::EncodeError {
                 endpoint_name,
                 error,
             } => {
@@ -308,8 +308,8 @@ impl ControllerError {
         }
     }
 
-    pub fn encoder_error(endpoint_name: &str, error: AnyError) -> Self {
-        Self::EncoderError {
+    pub fn encode_error(endpoint_name: &str, error: AnyError) -> Self {
+        Self::EncodeError {
             endpoint_name: endpoint_name.to_owned(),
             error,
         }

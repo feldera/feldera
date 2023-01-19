@@ -44,12 +44,12 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::DBSPHandle;
-use log::debug;
+use log::{debug, error, info};
 use num_traits::FromPrimitive;
 use std::{
     collections::{BTreeMap, HashSet},
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
     thread::{spawn, JoinHandle},
@@ -65,9 +65,9 @@ pub use config::{
     OutputEndpointConfig,
 };
 pub use error::ControllerError;
-pub use stats::ControllerStatus;
+pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
-type EndpointId = u64;
+pub(crate) type EndpointId = u64;
 
 /// Controller that coordinates the creation, reconfiguration, teardown of
 /// input/output adapters, and implements runtime flow control.
@@ -116,7 +116,7 @@ impl Controller {
     ///
     /// * One or more of the endpoints fails to initialize.
     pub fn with_config(
-        circuit: DBSPHandle,
+        mut circuit: DBSPHandle,
         catalog: Catalog,
         config: &ControllerConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -134,6 +134,12 @@ impl Controller {
             backpressure_thread_unparker,
             error_cb,
         ));
+
+        if config.global.cpu_profiler {
+            circuit
+                .enable_cpu_profiler()
+                .map_err(|e| AnyError::msg(format!("error enabling CPU profiler: {e}")))?;
+        }
 
         let backpressure_thread_handle = {
             let inner = inner.clone();
@@ -205,6 +211,10 @@ impl Controller {
         &self.inner.status
     }
 
+    pub fn dump_profile(&self) {
+        self.inner.dump_profile();
+    }
+
     /// Terminate the controller, stop all input endpoints and destroy the
     /// circuit.
     pub fn stop(self) -> AnyResult<()> {
@@ -233,6 +243,24 @@ impl Controller {
         let min_batch_size_records = controller.status.global_config.min_batch_size_records;
 
         loop {
+            let dump_profile = controller
+                .dump_profile_request
+                .swap(false, Ordering::AcqRel);
+            if dump_profile {
+                // Generate profile in the current working directory.
+                // TODO: make this location configurable.
+                match circuit.dump_profile("profile") {
+                    Ok(path) => {
+                        info!(
+                            "circuit profile dump created in '{}'",
+                            path.canonicalize().unwrap_or_default().display()
+                        );
+                    }
+                    Err(e) => {
+                        error!("failed to dump circuit profile: {e}");
+                    }
+                }
+            }
             match controller.state() {
                 PipelineState::Running | PipelineState::Paused => {
                     // Backpressure in the output pipeline: wait for room in output buffers to
@@ -453,6 +481,7 @@ impl OutputEndpointDescr {
 struct ControllerInner {
     status: ControllerStatus,
     state: AtomicU32,
+    dump_profile_request: AtomicBool,
     catalog: Arc<Mutex<Catalog>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
     outputs: ShardedLock<BTreeMap<EndpointId, OutputEndpointDescr>>,
@@ -471,10 +500,12 @@ impl ControllerInner {
     ) -> Self {
         let status = ControllerStatus::new(global_config);
         let state = AtomicU32::new(PipelineState::Paused as u32);
+        let dump_profile_request = AtomicBool::new(false);
 
         Self {
             status,
             state,
+            dump_profile_request,
             catalog: Arc::new(Mutex::new(catalog)),
             inputs: Mutex::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
@@ -670,9 +701,9 @@ impl ControllerInner {
             if let Some(data) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
 
-                encoder.encode(data.as_slice()).unwrap_or_else(|e| {
-                    controller.error(ControllerError::encoder_error(&endpoint_name, e))
-                });
+                encoder
+                    .encode(data.as_slice())
+                    .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
 
                 // `num_records` output records have been transmitted --
                 // update output stats, wake up the circuit thread if the
@@ -721,6 +752,11 @@ impl ControllerInner {
         self.unpark_backpressure();
     }
 
+    fn dump_profile(&self) {
+        self.dump_profile_request.store(true, Ordering::Release);
+        self.unpark_circuit();
+    }
+
     fn error(&self, error: ControllerError) {
         (self.error_cb)(error);
     }
@@ -742,6 +778,16 @@ impl ControllerInner {
             fatal,
             error,
         ));
+    }
+
+    fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
+        self.status.parse_error(endpoint_id);
+        self.error(ControllerError::parse_error(endpoint_name, error));
+    }
+
+    fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
+        self.status.encode_error(endpoint_id);
+        self.error(ControllerError::encode_error(endpoint_name, error));
     }
 
     /// Process an output transport error.
@@ -820,7 +866,7 @@ impl InputConsumer for InputProbe {
             Err(error) => {
                 self.parser.clear();
                 self.controller
-                    .error(ControllerError::parse_error(&self.endpoint_name, error));
+                    .parse_error(self.endpoint_id, &self.endpoint_name, error);
             }
         }
     }
