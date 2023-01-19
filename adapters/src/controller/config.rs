@@ -16,6 +16,11 @@ const fn default_max_buffered_records() -> u64 {
     1_000_000
 }
 
+/// Default number of DBSP worker threads.
+const fn default_workers() -> u16 {
+    1
+}
+
 /// Controller configuration specified by the user when creating
 /// a new controller instance.
 #[derive(Clone, Serialize, Deserialize)]
@@ -35,6 +40,14 @@ pub struct ControllerConfig {
 /// Global controller configuration settings.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GlobalControllerConfig {
+    /// Number of DBSP worker threads.
+    #[serde(default = "default_workers")]
+    pub workers: u16,
+
+    /// Enable CPU profiler.
+    #[serde(default)]
+    pub cpu_profiler: bool,
+
     /// Minimal input batch size.
     ///
     /// The controller delays pushing input records to the circuit until at

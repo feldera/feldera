@@ -81,11 +81,13 @@ outputs:
         }
     });
 
-    // Create circuit
-    let (circuit, catalog) = test_circuit(4);
-
-    println!("Starting HTTP server on port 8080");
-    let _server = server::run(circuit, catalog, &config_str, 8080);
+    server::run_server(
+        &test_circuit,
+        &config_str,
+        "{\"name\": \"example\"}".to_string(),
+        Some(8080),
+    )
+    .unwrap();
 
     drop(kafka_resources);
 }

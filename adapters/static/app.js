@@ -1,7 +1,7 @@
 define("ui", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.removeAllChildren = exports.px = exports.SpecialChars = exports.formatJson = void 0;
+    exports.beep = exports.removeAllChildren = exports.px = exports.SpecialChars = exports.formatJson = void 0;
     function formatJson(json) {
         return JSON.stringify(json, null, 4);
     }
@@ -39,11 +39,27 @@ define("ui", ["require", "exports"], function (require, exports) {
             h.removeChild(h.lastChild);
     }
     exports.removeAllChildren = removeAllChildren;
+    function beep() {
+        const audioCtx = new window.AudioContext();
+        var oscillator = audioCtx.createOscillator();
+        var gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        gainNode.gain.value = 10;
+        oscillator.frequency.value = 800;
+        oscillator.type = "sine";
+        oscillator.start();
+        setTimeout(function () {
+            oscillator.stop();
+        }, 100);
+    }
+    exports.beep = beep;
+    ;
 });
 define("errReporter", ["require", "exports", "ui"], function (require, exports, ui_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.ErrorDisplay = exports.ConsoleErrorReporter = void 0;
+    exports.WebClient = exports.ErrorDisplay = exports.runAfterDelay = exports.ConsoleErrorReporter = void 0;
     /**
      * An error reporter that writes messages to the JavaScript browser console.
      */
@@ -57,6 +73,16 @@ define("errReporter", ["require", "exports", "ui"], function (require, exports, 
     }
     exports.ConsoleErrorReporter = ConsoleErrorReporter;
     ConsoleErrorReporter.instance = new ConsoleErrorReporter();
+    /**
+     * Wait the specified time then run the supplied closure.
+     * @param milliseconds  Number of milliseconds.
+     * @param closure       Closure to run after this delay.
+     */
+    function runAfterDelay(milliseconds, closure) {
+        new Promise(resolve => setTimeout(resolve, 1000))
+            .then(() => closure());
+    }
+    exports.runAfterDelay = runAfterDelay;
     /**
      * This class is used to display error messages in the browser window.
      */
@@ -90,6 +116,7 @@ define("errReporter", ["require", "exports", "ui"], function (require, exports, 
             return this.topLevel;
         }
         reportError(message) {
+            console.log(message);
             this.console.innerText = message;
             this.clearButton.style.display = "block";
             this.copyButton.style.display = "block";
@@ -101,9 +128,58 @@ define("errReporter", ["require", "exports", "ui"], function (require, exports, 
         }
         copy() {
             navigator.clipboard.writeText(this.console.innerText);
+            (0, ui_1.beep)();
         }
     }
     exports.ErrorDisplay = ErrorDisplay;
+    /**
+     * A Class which knows how to handle get and put requests.
+     */
+    class WebClient {
+        constructor(display) {
+            this.display = display;
+        }
+        get(url, continuation) {
+            fetch(url, {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                },
+            }).then(response => {
+                if (response.ok) {
+                    continuation(response);
+                    return;
+                }
+                this.error(response);
+            });
+        }
+        post(url, data, continuation) {
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    "content-type": 'application/json',
+                },
+                body: JSON.stringify(data),
+            })
+                .then(response => {
+                if (response.ok) {
+                    continuation(response);
+                    return;
+                }
+                this.error(response);
+            });
+        }
+        error(response) {
+            this.display.reportError("Error received: " + response.status + "\n" + response.text);
+        }
+        showText(response) {
+            response.text().then(t => this.display.reportError(t));
+        }
+        showJson(response) {
+            response.json().then(t => this.display.reportError(t));
+        }
+    }
+    exports.WebClient = WebClient;
 });
 define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, exports, errReporter_1, ui_2) {
     "use strict";
@@ -123,6 +199,7 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
                 block.style.margin = "2px";
                 block.style.flexGrow = "1";
                 block.id = name + inputNo;
+                inputNo++;
                 let text = document.createElement("span");
                 if (name == "input") {
                     text.textContent = block.id + ui_2.SpecialChars.rightArrow;
@@ -136,7 +213,7 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
                 this.root.appendChild(block);
                 block.onclick = () => {
                     parent.setLastClicked(block.id);
-                    this.display.reportError(ui_2.formatJson(desc));
+                    this.display.reportError((0, ui_2.formatJson)(desc));
                 };
             }
         }
@@ -147,9 +224,9 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
     /**
      * Represents the visualization of a running DBSP pipeline.
      */
-    class Pipeline {
+    class Pipeline extends errReporter_1.WebClient {
         constructor(display) {
-            this.display = display;
+            super(display);
             this.root = document.createElement("div");
             this.root.style.display = "flex";
             this.root.style.flexDirection = "row";
@@ -173,23 +250,11 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
         getHTMLRepresentation() {
             return this.root;
         }
-        get(url, continuation) {
-            fetch(url, {
-                method: 'GET',
-                headers: {
-                    Accept: 'application/json',
-                },
-            }).then(response => continuation(response));
-        }
         status() {
             this.get("status", response => this.status_received(response));
         }
         response_received(response) {
-            if (response.ok) {
-                response.text().then(r => this.show(r));
-                return;
-            }
-            this.error(response);
+            response.text().then(r => this.show(r));
         }
         shutdown() {
             this.get("shutdown", response => this.response_received(response));
@@ -198,15 +263,11 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
             this.get("pause", response => this.response_received(response));
         }
         error(response) {
-            this.display.reportError("Error received: " + response.status);
+            super.error(response);
             clearInterval(this.timer);
         }
         status_received(response) {
-            if (response.ok) {
-                response.json().then(v => this.status_decoded(v));
-                return;
-            }
-            this.error(response);
+            response.json().then(v => this.status_decoded(v));
         }
         createFiller() {
             const filler = document.createElement("div");
@@ -216,7 +277,7 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
         showBody() {
             if (this.config == null)
                 return;
-            const data = ui_2.formatJson(this.config.global_config);
+            const data = (0, ui_2.formatJson)(this.config.global_config);
             this.show(data);
         }
         setConfig(config) {
@@ -225,7 +286,7 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
             if (config == null) {
                 return;
             }
-            ui_2.removeAllChildren(this.root);
+            (0, ui_2.removeAllChildren)(this.root);
             let filler = this.createFiller();
             this.root.appendChild(filler);
             this.inputs = new IOArray("input", config.inputs, this.display, this);
@@ -261,9 +322,9 @@ define("dbsp", ["require", "exports", "errReporter", "ui"], function (require, e
             this.get("start", r => this.response_received(r));
         }
     }
-    class DBSP {
+    class DBSP extends errReporter_1.WebClient {
         constructor() {
-            this.display = new errReporter_1.ErrorDisplay();
+            super(new errReporter_1.ErrorDisplay());
             this.pipeline = new Pipeline(this.display);
             console.log("Created");
         }

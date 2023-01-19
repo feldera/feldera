@@ -3,7 +3,13 @@ use crate::{
     RuntimeError, SchedulerError,
 };
 use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
-use std::{fs, fs::create_dir_all, path::Path, thread::Result as ThreadResult, time::Instant};
+use std::{
+    fs,
+    fs::create_dir_all,
+    path::{Path, PathBuf},
+    thread::Result as ThreadResult,
+    time::Instant,
+};
 
 impl Runtime {
     /// Instantiate a circuit in a multithreaded runtime.
@@ -259,7 +265,7 @@ impl DBSPHandle {
     /// [`Self::enable_cpu_profiler`]), the profile will contain both CPU and
     /// memory usage information; otherwise only memory usage details are
     /// reported.
-    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<(), DBSPError> {
+    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DBSPError> {
         let elapsed = self.start_time.elapsed().as_micros();
         let mut profiles = Vec::with_capacity(self.num_workers());
 
@@ -276,7 +282,7 @@ impl DBSPHandle {
             fs::write(dir_path.join(format!("{worker}.dot")), profile)?;
         }
 
-        Ok(())
+        Ok(dir_path)
     }
 
     /// Terminate the execution of the circuit, exiting all worker threads.

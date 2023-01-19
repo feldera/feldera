@@ -6,7 +6,9 @@
 }
 
 button {
-    margin: 5px;
+    margin: 4px;
 }
 
-
+table, th, td {
+    border-collapse: collapse;
+}

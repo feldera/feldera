@@ -1,4 +1,4 @@
-import { IHtmlElement, SpecialChars } from "./ui";
+import { beep, IHtmlElement, SpecialChars } from "./ui";
 /**
  * Core interface for reporting errors.
  */
@@ -28,6 +28,16 @@ export class ConsoleErrorReporter implements ErrorReporter {
     public clear(): void {
         // We cannot clear the console
     }
+}
+
+/**
+ * Wait the specified time then run the supplied closure.
+ * @param milliseconds  Number of milliseconds.
+ * @param closure       Closure to run after this delay.
+ */
+export function runAfterDelay(milliseconds: number, closure: () => void) {
+    new Promise(resolve => setTimeout(resolve, 1000))
+    .then(() => closure());
 }
 
 /**
@@ -73,6 +83,7 @@ export class ErrorDisplay implements IHtmlElement, ErrorReporter {
     }
 
     public reportError(message: string): void {
+        console.log(message);
         this.console.innerText = message;
         this.clearButton.style.display = "block";
         this.copyButton.style.display = "block";
@@ -86,5 +97,58 @@ export class ErrorDisplay implements IHtmlElement, ErrorReporter {
 
     public copy(): void {
         navigator.clipboard.writeText(this.console.innerText);
+        beep();
     }
 }
+
+/**
+ * A Class which knows how to handle get and put requests.
+ */
+export class WebClient {
+    constructor(public display: ErrorDisplay) {    }
+
+    public get(url: string, continuation: (response: Response) => void): void {
+        fetch(url, {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+            },
+          }).then(response => {
+            if (response.ok) {
+                continuation(response);
+                return;
+            }
+            this.error(response);
+          });
+    }
+
+    public post(url: string, data: object, continuation: (response: Response) => void): void {
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                "content-type": 'application/json',
+            },
+            body: JSON.stringify(data),
+        })
+        .then(response => {
+            if (response.ok) {
+                continuation(response);
+                return;
+            }
+            this.error(response);
+        });
+    }
+
+    error(response: Response): void {
+        response.text().then(t => this.display.reportError("Error received: " + response.status + "\n" + t));
+    }
+
+    showText(response: Response): void {
+        response.text().then(t => this.display.reportError(t));
+    }
+
+    showJson(response: Response): void {
+        response.json().then(t => this.display.reportError(t));
+    }
+}
+
