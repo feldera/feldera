@@ -1,0 +1,24 @@
+workers: 8
+cpu_profiler: true
+inputs:
+    GREEN_TRIPDATA:
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                auto.offset.reset: "earliest"
+                topics: [green_trip_demo_large_input]
+        format:
+            name: csv
+            config:
+                input_stream: GREEN_TRIPDATA
+outputs:
+    FEATURES:
+        stream: FEATURES
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                topic: green_trip_demo_large_output
+        format:
+            name: csv

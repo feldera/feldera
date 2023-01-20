@@ -1,0 +1,22 @@
+inputs:
+    USERS:
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                auto.offset.reset: "earliest"
+                topics: [null_demo_input]
+        format:
+            name: csv
+            config:
+                input_stream: USERS
+outputs:
+    OUTPUT_USERS:
+        stream: OUTPUT_USERS
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                topic: null_demo_output
+        format:
+            name: csv

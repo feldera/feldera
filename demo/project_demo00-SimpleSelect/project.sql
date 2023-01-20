@@ -1,0 +1,5 @@
+CREATE TABLE USERS (
+    name varchar
+);
+
+CREATE VIEW OUTPUT_USERS as SELECT * from USERS;
