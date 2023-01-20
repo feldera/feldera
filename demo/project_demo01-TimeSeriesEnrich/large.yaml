@@ -1,0 +1,34 @@
+workers: 8
+inputs:
+    DEMOGRAPHICS:
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                auto.offset.reset: "earliest"
+                topics: [fraud_demo_large_demographics]
+        format:
+            name: csv
+            config:
+                input_stream: DEMOGRAPHICS
+    TRANSACTIONS:
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                auto.offset.reset: "earliest"
+                topics: [fraud_demo_large_transactions]
+        format:
+            name: csv
+            config:
+                input_stream: TRANSACTIONS
+outputs:
+    TRANSACTIONS_WITH_DEMOGRAPHICS:
+        stream: TRANSACTIONS_WITH_DEMOGRAPHICS
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: "localhost"
+                topic: fraud_demo_large_enriched
+        format:
+            name: csv
