@@ -16,8 +16,10 @@ pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::Graph;
 pub use ids::{BlockId, ExprId, LayoutId, NodeId};
 pub use layout_cache::LayoutCache;
-pub use node::{IndexWith, Neg, Node, Sink, Source, Sum};
-pub use types::{RowLayout, RowLayoutBuilder, RowType, Signature};
+pub use node::{
+    DataflowNode, Filter, IndexWith, Map, Neg, Node, Sink, Source, Stream, StreamKind, Sum,
+};
+pub use types::{ColumnType, RowLayout, RowLayoutBuilder, Signature};
 pub use validate::Validator;
 
 pub(crate) use ids::{BlockIdGen, ExprIdGen, LayoutIdGen, NodeIdGen};

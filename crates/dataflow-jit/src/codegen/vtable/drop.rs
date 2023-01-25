@@ -1,16 +1,16 @@
 use crate::{
     codegen::{
         intrinsics::ImportIntrinsics, utils::FunctionBuilderExt, vtable::column_non_null, Codegen,
-        CodegenConfig, Layout, TRAP_NULL_PTR,
+        NativeLayout, TRAP_NULL_PTR,
     },
-    ir::{LayoutId, RowLayout, RowType},
+    ir::{ColumnType, LayoutId, RowLayout},
 };
 use cranelift::prelude::{FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 
 impl Codegen {
-    pub fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+    pub(super) fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*mut u8)
         let func_id = self.new_function([self.module.isa().pointer_type()], None);
         let mut imports = self.intrinsics.import();
@@ -31,7 +31,6 @@ impl Codegen {
                     &mut builder,
                     &mut imports,
                     &mut self.module,
-                    &self.config,
                 );
             }
 
@@ -47,7 +46,7 @@ impl Codegen {
         func_id
     }
 
-    pub fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+    pub(super) fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.new_function([ptr_ty; 2], None);
@@ -114,7 +113,6 @@ impl Codegen {
                     &mut builder,
                     &mut imports,
                     &mut self.module,
-                    &self.config,
                 );
 
                 let ptr = builder.ins().iadd_imm(ptr, layout.size() as i64);
@@ -141,12 +139,11 @@ impl Codegen {
 
 fn drop_layout(
     ptr: Value,
-    layout: &Layout,
+    layout: &NativeLayout,
     row_layout: &RowLayout,
     builder: &mut FunctionBuilder,
     imports: &mut ImportIntrinsics,
     module: &mut JITModule,
-    config: &CodegenConfig,
 ) {
     for (idx, (ty, nullable)) in row_layout
         .iter()
@@ -154,11 +151,11 @@ fn drop_layout(
         .filter(|(_, (ty, _))| ty.needs_drop())
     {
         // Strings are the only thing that need dropping right now
-        debug_assert_eq!(ty, RowType::String);
+        debug_assert_eq!(ty, ColumnType::String);
 
         let next_drop = if nullable {
             // Zero = string isn't null, non-zero = string is null
-            let string_non_null = column_non_null(idx, ptr, layout, builder, config, module, true);
+            let string_non_null = column_non_null(idx, ptr, layout, builder, module, true);
 
             // If the string is null, jump to the `next_drop` block and don't drop
             // the current string. Otherwise (if the string isn't null) drop it and

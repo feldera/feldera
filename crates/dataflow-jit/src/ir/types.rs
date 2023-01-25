@@ -3,13 +3,13 @@ use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RowType {
+pub enum ColumnType {
     Bool,
     U16,
-    U32,
-    U64,
     I16,
+    U32,
     I32,
+    U64,
     I64,
     F32,
     F64,
@@ -17,7 +17,7 @@ pub enum RowType {
     String,
 }
 
-impl RowType {
+impl ColumnType {
     /// Returns `true` if the row type is [`Unit`].
     ///
     /// [`Unit`]: RowType::Unit
@@ -56,14 +56,14 @@ impl RowType {
     }
 }
 
-impl Display for RowType {
+impl Display for ColumnType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.to_str())
     }
 }
 
 pub struct RowLayoutBuilder {
-    rows: Vec<RowType>,
+    rows: Vec<ColumnType>,
     nullability: BitVec,
 }
 
@@ -75,12 +75,12 @@ impl RowLayoutBuilder {
         }
     }
 
-    pub fn with_row(mut self, row_type: RowType, nullable: bool) -> Self {
+    pub fn with_row(mut self, row_type: ColumnType, nullable: bool) -> Self {
         self.add_row(row_type, nullable);
         self
     }
 
-    pub fn add_row(&mut self, row_type: RowType, nullable: bool) -> &mut Self {
+    pub fn add_row(&mut self, row_type: ColumnType, nullable: bool) -> &mut Self {
         self.rows.push(row_type);
         self.nullability.push(nullable);
         self
@@ -90,7 +90,7 @@ impl RowLayoutBuilder {
         debug_assert_eq!(self.rows.len(), self.nullability.len());
 
         RowLayout {
-            rows: self.rows,
+            columns: self.rows,
             nullability: self.nullability,
         }
     }
@@ -98,29 +98,29 @@ impl RowLayoutBuilder {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RowLayout {
-    rows: Vec<RowType>,
+    columns: Vec<ColumnType>,
     nullability: BitVec,
 }
 
 impl RowLayout {
     pub fn len(&self) -> usize {
-        debug_assert_eq!(self.rows.len(), self.nullability.len());
-        self.rows.len()
+        debug_assert_eq!(self.columns.len(), self.nullability.len());
+        self.columns.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn rows(&self) -> &[RowType] {
-        &self.rows
+    pub fn columns(&self) -> &[ColumnType] {
+        &self.columns
     }
 
-    pub fn get_row_type(&self, row: usize) -> Option<RowType> {
-        self.rows.get(row).copied()
+    pub fn get_row_type(&self, row: usize) -> Option<ColumnType> {
+        self.columns.get(row).copied()
     }
 
-    pub fn row_is_nullable(&self, row: usize) -> bool {
+    pub fn column_nullable(&self, row: usize) -> bool {
         self.nullability[row]
     }
 
@@ -129,12 +129,12 @@ impl RowLayout {
     }
 
     pub fn is_unit(&self) -> bool {
-        self.rows == [RowType::Unit] && self.nullability.not_any()
+        self.columns == [ColumnType::Unit] && self.nullability.not_any()
     }
 
     pub fn is_zero_sized(&self) -> bool {
-        self.rows.is_empty()
-            || (self.rows.iter().all(RowType::is_unit) && self.nullability.not_any())
+        self.columns.is_empty()
+            || (self.columns.iter().all(ColumnType::is_unit) && self.nullability.not_any())
     }
 
     pub fn unit() -> Self {
@@ -142,7 +142,7 @@ impl RowLayout {
         nullability.push(false);
 
         Self {
-            rows: vec![RowType::Unit],
+            columns: vec![ColumnType::Unit],
             nullability,
         }
     }
@@ -152,14 +152,14 @@ impl RowLayout {
         nullability.push(false);
 
         Self {
-            rows: vec![RowType::I32],
+            columns: vec![ColumnType::I32],
             nullability,
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (RowType, bool)> + '_ {
-        assert_eq!(self.rows.len(), self.nullability.len());
-        self.rows
+    pub fn iter(&self) -> impl Iterator<Item = (ColumnType, bool)> + '_ {
+        assert_eq!(self.columns.len(), self.nullability.len());
+        self.columns
             .iter()
             .copied()
             .zip(self.nullability.iter().by_vals())
@@ -168,19 +168,26 @@ impl RowLayout {
     /// Returns `true` if the current row requires any sort of non-trivial
     /// drop operation, e.g. containing a string
     pub fn needs_drop(&self) -> bool {
-        self.rows.iter().any(RowType::needs_drop)
+        self.columns.iter().any(ColumnType::needs_drop)
     }
 
     /// Returns `true` if the current row requires any sort of non-trivial
     /// cloning operation, e.g. containing a string
     pub fn requires_nontrivial_clone(&self) -> bool {
-        self.rows.iter().any(RowType::requires_nontrivial_clone)
+        self.columns
+            .iter()
+            .any(ColumnType::requires_nontrivial_clone)
+    }
+
+    /// Return the number of columns that are null
+    pub fn total_null_columns(&self) -> usize {
+        self.nullability.count_ones()
     }
 }
 
 impl Debug for RowLayout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct DebugRowLayout<'a>(&'a RowType, bool);
+        struct DebugRowLayout<'a>(&'a ColumnType, bool);
         impl Debug for DebugRowLayout<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let Self(row, nullable) = *self;
@@ -194,7 +201,7 @@ impl Debug for RowLayout {
 
         f.debug_set()
             .entries(
-                self.rows
+                self.columns
                     .iter()
                     .zip(self.nullability.iter().by_vals())
                     .map(|(row, nullable)| DebugRowLayout(row, nullable)),
@@ -207,11 +214,11 @@ impl Debug for RowLayout {
 pub struct Signature {
     args: Vec<LayoutId>,
     arg_flags: Vec<InputFlags>,
-    ret: LayoutId,
+    ret: ColumnType,
 }
 
 impl Signature {
-    pub fn new(args: Vec<LayoutId>, arg_flags: Vec<InputFlags>, ret: LayoutId) -> Self {
+    pub fn new(args: Vec<LayoutId>, arg_flags: Vec<InputFlags>, ret: ColumnType) -> Self {
         Self {
             args,
             arg_flags,
@@ -227,7 +234,7 @@ impl Signature {
         &self.arg_flags
     }
 
-    pub fn ret(&self) -> LayoutId {
+    pub fn ret(&self) -> ColumnType {
         self.ret
     }
 }

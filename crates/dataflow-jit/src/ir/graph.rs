@@ -25,6 +25,10 @@ impl Graph {
         &self.nodes
     }
 
+    pub fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
+        &mut self.nodes
+    }
+
     pub fn add_node<N>(&mut self, node: N) -> NodeId
     where
         N: Into<Node>,
@@ -55,20 +59,21 @@ impl Default for Graph {
 #[cfg(test)]
 mod tests {
     use crate::{
-        codegen::{Codegen, CodegenConfig, NullSigil},
+        codegen::{Codegen, CodegenConfig},
         ir::{
             expr::{Constant, CopyRowTo, NullRow},
             function::FunctionBuilder,
             graph::Graph,
             node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Sink, Source, Sum},
-            types::{RowLayout, RowLayoutBuilder, RowType},
+            types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
+        row::Row,
     };
     use dbsp::{
         operator::FilterMap,
-        trace::{BatchReader, Cursor},
-        Runtime,
+        trace::{Batch, BatchReader, Builder, Cursor},
+        OrdZSet, Runtime,
     };
     use std::{collections::BTreeMap, sync::Arc};
 
@@ -84,19 +89,21 @@ mod tests {
 
         let unit_layout = graph.layout_cache().unit();
         let weight_layout = graph.layout_cache().add(RowLayout::weight());
-        let nullable_i32 = graph
-            .layout_cache()
-            .add(RowLayoutBuilder::new().with_row(RowType::I32, true).build());
+        let nullable_i32 = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_row(ColumnType::I32, true)
+                .build(),
+        );
 
         // let T = circuit.add_source(T);
         let source_row = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(RowType::I32, false)
-                .with_row(RowType::F64, false)
-                .with_row(RowType::Bool, false)
-                .with_row(RowType::String, false)
-                .with_row(RowType::I32, true)
-                .with_row(RowType::F64, true)
+                .with_row(ColumnType::I32, false)
+                .with_row(ColumnType::F64, false)
+                .with_row(ColumnType::Bool, false)
+                .with_row(ColumnType::String, false)
+                .with_row(ColumnType::I32, true)
+                .with_row(ColumnType::F64, true)
                 .build(),
         );
         let source = graph.add_node(Source::new(source_row));
@@ -111,7 +118,7 @@ mod tests {
         let stream7850 = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(source_row);
                 let output = func.add_output(nullable_i32);
 
@@ -138,7 +145,7 @@ mod tests {
         let stream7856 = graph.add_node(IndexWith::new(
             stream7850,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(nullable_i32);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(nullable_i32);
@@ -204,7 +211,7 @@ mod tests {
             // }
             // ```
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let accumulator = func.add_output(nullable_i32);
                 let current = func.add_input(nullable_i32);
                 let weight = func.add_input(weight_layout);
@@ -248,7 +255,7 @@ mod tests {
             },
             // Just a unit closure
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(nullable_i32);
                 let output = func.add_output(nullable_i32);
 
@@ -277,14 +284,14 @@ mod tests {
         // ```
         let stream7866_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(RowType::Unit, false)
-                .with_row(RowType::I32, true)
+                .with_row(ColumnType::Unit, false)
+                .with_row(ColumnType::I32, true)
                 .build(),
         );
         let stream7866 = graph.add_node(Map::new(
             stream7861,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(stream7866_layout);
                 let output = func.add_output(nullable_i32);
 
@@ -311,7 +318,7 @@ mod tests {
         let stream7874 = graph.add_node(Map::new(
             stream7866,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let _input = func.add_input(nullable_i32);
                 let output = func.add_output(nullable_i32);
 
@@ -355,7 +362,7 @@ mod tests {
         let stream7892 = graph.add_node(IndexWith::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(source_row);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(source_row);
@@ -379,7 +386,7 @@ mod tests {
         let stream7897 = graph.add_node(IndexWith::new(
             stream7887,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(nullable_i32);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(nullable_i32);
@@ -434,21 +441,21 @@ mod tests {
 
         let xy_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(RowType::U32, false)
-                .with_row(RowType::U32, false)
+                .with_row(ColumnType::U32, false)
+                .with_row(ColumnType::U32, false)
                 .build(),
         );
         let source = graph.add_node(Source::new(xy_layout));
 
         let x_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(RowType::U32, false)
+                .with_row(ColumnType::U32, false)
                 .build(),
         );
         let map = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new(graph.layout_cache());
+                let mut func = FunctionBuilder::new();
                 let input = func.add_input(xy_layout);
                 let output = func.add_output(x_layout);
 
@@ -474,21 +481,17 @@ mod tests {
 
         let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
-        let src_layout = codegen.layout_for(xy_layout);
-        let (src_x_offset, src_y_offset) = (src_layout.offset_of(0), src_layout.offset_of(1));
-        let src_layout = std::alloc::Layout::from_size_align(
-            src_layout.size() as usize,
-            src_layout.align() as usize,
-        )
-        .unwrap();
+        let xy_vtable = codegen.vtable_for(xy_layout);
+        let x_vtable = codegen.vtable_for(x_layout);
 
-        let sink_layout = codegen.layout_for(x_layout);
-        let sink_x_offset = sink_layout.offset_of(0);
-        let sink_layout = std::alloc::Layout::from_size_align(
-            sink_layout.size() as usize,
-            sink_layout.align() as usize,
-        )
-        .unwrap();
+        let xy_layout = codegen.layout_for(xy_layout);
+        let (xy_x_offset, xy_y_offset) = (
+            xy_layout.offset_of(0) as usize,
+            xy_layout.offset_of(1) as usize,
+        );
+
+        let x_layout = codegen.layout_for(x_layout);
+        let x_x_offset = x_layout.offset_of(0) as usize;
 
         let node_functions: BTreeMap<_, _> = graph
             .nodes
@@ -496,38 +499,34 @@ mod tests {
             .filter_map(|(&node_id, node)| {
                 if let Node::Map(map) = node {
                     let func_id = codegen.codegen_func(map.map_fn());
-                    let layout = codegen.layout_for(map.layout());
-                    Some((node_id, (func_id, layout.size(), layout.align())))
+                    Some((node_id, func_id))
                 } else {
                     None
                 }
             })
             .collect();
-        let (jit_module, _) = codegen.finalize_definitions();
-        let node_functions: BTreeMap<_, _> = node_functions
-            .into_iter()
-            .map(|(node_id, (func_id, size, align))| {
-                (
-                    node_id,
-                    (
-                        Ptr(jit_module.get_finalized_function(func_id) as *mut u8),
-                        size,
-                        align,
-                    ),
-                )
-            })
-            .collect();
+        let (jit, _) = codegen.finalize_definitions();
 
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, size_of::SizeOf)]
-        #[repr(transparent)]
-        struct Ptr(*mut u8);
+        {
+            let xy_vtable = Ptr(Box::into_raw(Box::new(xy_vtable.marshalled(&jit))));
+            let x_vtable = Ptr(Box::into_raw(Box::new(x_vtable.marshalled(&jit))));
 
-        unsafe impl Send for Ptr {}
-        unsafe impl Sync for Ptr {}
+            let node_functions: BTreeMap<_, _> = node_functions
+                .into_iter()
+                .map(|(node_id, func_id)| {
+                    (node_id, Ptr(jit.get_finalized_function(func_id) as *mut u8))
+                })
+                .collect();
 
-        let nodes = Arc::new(graph.nodes);
-        let (mut runtime, (mut inputs, outputs)) =
-            Runtime::init_circuit(1, move |circuit| {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, size_of::SizeOf)]
+            #[repr(transparent)]
+            struct Ptr<T>(*mut T);
+
+            unsafe impl<T: Send> Send for Ptr<T> {}
+            unsafe impl<T: Sync> Sync for Ptr<T> {}
+
+            let nodes = Arc::new(graph.nodes);
+            let (mut runtime, (mut inputs, outputs)) = Runtime::init_circuit(1, move |circuit| {
                 let mut streams = BTreeMap::new();
                 let mut inputs = BTreeMap::new();
                 let mut outputs = BTreeMap::new();
@@ -535,7 +534,7 @@ mod tests {
                 for (&node_id, node) in nodes.iter() {
                     match node {
                         Node::Source(_source) => {
-                            let (stream, handle) = circuit.add_input_zset::<Ptr, i32>();
+                            let (stream, handle) = circuit.add_input_zset::<Row, i32>();
                             streams.insert(node_id, stream);
                             inputs.insert(node_id, handle);
                         }
@@ -548,7 +547,7 @@ mod tests {
                         Node::Map(map) => {
                             let input = &streams[&map.input()];
 
-                            let (map_fn, size, align) = node_functions[&node_id];
+                            let map_fn = node_functions[&node_id];
                             let map_fn = unsafe {
                                 std::mem::transmute::<
                                     *const u8,
@@ -556,14 +555,10 @@ mod tests {
                                 >(map_fn.0)
                             };
 
-                            let layout =
-                                std::alloc::Layout::from_size_align(size as usize, align as usize)
-                                    .unwrap();
-                            let stream = input.map(move |&x| {
-                                let output = unsafe { std::alloc::alloc(layout) };
-                                assert!(!output.is_null());
-                                unsafe { map_fn(x.0, output) };
-                                Ptr(output)
+                            let stream = input.map(move |x| unsafe {
+                                let mut output = Row::uninit(&*{ x_vtable }.0);
+                                map_fn(x.as_ptr(), output.as_mut_ptr());
+                                output
                             });
                             streams.insert(node_id, stream);
                         }
@@ -576,36 +571,49 @@ mod tests {
             })
             .unwrap();
 
-        let mut values = Vec::new();
-        for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
+            let mut values = Vec::new();
+            for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
+                unsafe {
+                    let mut row = Row::uninit(&*xy_vtable.0);
+                    row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
+                    row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
+
+                    values.push((row, 1i32));
+                }
+            }
+            inputs.get_mut(&source).unwrap().append(&mut values);
+
+            runtime.step().unwrap();
+
+            let output = outputs.get(&sink).unwrap().consolidate();
+            let mut cursor = output.cursor();
+            while cursor.key_valid() {
+                let weight = cursor.weight();
+                let key = cursor.key();
+                println!("{key:?}: {weight}");
+
+                cursor.step_key();
+            }
+
+            let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
+            for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
+                unsafe {
+                    let mut row = Row::uninit(&*x_vtable.0);
+                    row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
+
+                    expected.push((row, weight));
+                }
+            }
+            assert_eq!(output, expected.done());
+
+            runtime.kill().unwrap();
+
             unsafe {
-                let value = std::alloc::alloc(src_layout);
-                assert!(!value.is_null());
-
-                value.add(src_x_offset as usize).cast::<u32>().write(x);
-                value.add(src_y_offset as usize).cast::<u32>().write(y);
-
-                values.push((Ptr(value), 1i32));
+                drop(Box::from_raw(xy_vtable.0));
+                drop(Box::from_raw(x_vtable.0));
             }
         }
-        inputs.get_mut(&source).unwrap().append(&mut values);
 
-        runtime.step().unwrap();
-
-        let output = outputs.get(&sink).unwrap().consolidate();
-        let mut cursor = output.cursor();
-        while cursor.key_valid() {
-            let (key, weight) = (*cursor.key(), cursor.weight());
-            let key_val = unsafe { key.0.add(sink_x_offset as usize).cast::<u32>().read() };
-            println!("{key_val}: {weight}");
-
-            unsafe { std::alloc::dealloc(key.0, sink_layout) }
-
-            cursor.step_key();
-        }
-
-        runtime.kill().unwrap();
-
-        unsafe { jit_module.free_memory() }
+        unsafe { jit.free_memory() }
     }
 }

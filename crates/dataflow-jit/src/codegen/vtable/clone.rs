@@ -1,9 +1,9 @@
 use crate::{
     codegen::{
         intrinsics::ImportIntrinsics, utils::FunctionBuilderExt, vtable::column_non_null, Codegen,
-        CodegenConfig, Layout, TRAP_NULL_PTR,
+        NativeLayout, TRAP_NULL_PTR,
     },
-    ir::{LayoutId, RowLayout, RowType},
+    ir::{ColumnType, LayoutId, RowLayout},
 };
 use cranelift::prelude::{FunctionBuilder, InstBuilder, IntCC, MemFlags, TrapCode, Value};
 use cranelift_jit::JITModule;
@@ -22,7 +22,7 @@ use cranelift_module::{FuncId, Module};
 impl Codegen {
     /// Generates a function cloning the given layout
     // FIXME: This also ignores the existence of strings
-    pub fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
+    pub(super) fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8)
         let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
         let mut imports = self.intrinsics.import();
@@ -63,7 +63,6 @@ impl Codegen {
                         &mut builder,
                         &mut imports,
                         &mut self.module,
-                        &self.config,
                     );
 
                 // If the row is just scalar types we can simply memcpy it
@@ -74,8 +73,8 @@ impl Codegen {
                     // cranelift is eh
                     builder.emit_small_memory_copy(
                         self.module.isa().frontend_config(),
-                        src,
                         dest,
+                        src,
                         layout.size() as u64,
                         align,
                         align,
@@ -99,7 +98,7 @@ impl Codegen {
 
     /// Generates a function cloning a slice of the given layout
     // FIXME: This also ignores the existence of strings
-    pub fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
+    pub(super) fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.new_function([ptr_ty; 3], None);
@@ -139,18 +138,21 @@ impl Codegen {
                     // // layout is a `{ string, u32 }`
                     // memcpy(src, dest, sizeof(layout) * length);
                     //
-                    // let mut current = dest;
-                    // let end = dest.add(length);
-                    // while current < end {
-                    //     let place = current.add(offsetof(layout.0));
-                    //
-                    //     let current_val = place.read();
+                    // let (mut current_src, mut current_dest) = (src, dest);
+                    // let src_end = src.add(length);
+                    // while current_src < src_end {
+                    //     let current_val = current_src.add(offsetof(layout.0)).read();
                     //     let cloned = clone_string(current_val);
-                    //     place.write(cloned);
+                    //     current_dest.add(offsetof(layout.0)).write(cloned);
                     //
-                    //     current = current.add(sizeof(layout));
+                    //     current_src = current_src.add(sizeof(layout));
+                    //     current_dest = current_dest.add(sizeof(layout));
                     // }
                     // ```
+                    //
+                    // For layouts like `{ string }` this is objectively worse, but there's likely a
+                    // tipping point of string vs. scalar memory that makes this
+                    // profitable, probably needs experimentation
 
                     // Build a tail-controlled loop to clone all elements
                     // ```
@@ -203,7 +205,6 @@ impl Codegen {
                         &mut builder,
                         &mut imports,
                         &mut self.module,
-                        &self.config,
                     );
 
                     // Increment both pointers
@@ -228,7 +229,7 @@ impl Codegen {
                     // TODO: Should we add a size/overflow assertion here? Just for
                     // `debug_assertions`?
                     let size = builder.ins().imul_imm(length, layout.size() as i64);
-                    builder.call_memcpy(self.module.isa().frontend_config(), src, dest, size);
+                    builder.call_memcpy(self.module.isa().frontend_config(), dest, src, size);
                 }
             }
 
@@ -250,12 +251,11 @@ impl Codegen {
 fn clone_layout(
     src: Value,
     dest: Value,
-    layout: &Layout,
+    layout: &NativeLayout,
     row_layout: &RowLayout,
     builder: &mut FunctionBuilder,
     imports: &mut ImportIntrinsics,
     module: &mut JITModule,
-    config: &CodegenConfig,
 ) {
     debug_assert!(row_layout.requires_nontrivial_clone());
 
@@ -275,7 +275,7 @@ fn clone_layout(
         // only need to branch for non-trivial clones
         let next_clone = if nullable {
             // Zero = value isn't null, non-zero = value is null
-            let value_non_null = column_non_null(idx, src, layout, builder, config, module, true);
+            let value_non_null = column_non_null(idx, src, layout, builder, module, true);
 
             // If the value is null, set the cloned value to null
             let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
@@ -288,7 +288,7 @@ fn clone_layout(
                     .ins()
                     .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
 
-            debug_assert!(config.null_sigil.is_one());
+            // debug_assert!(config.null_sigil.is_one());
             let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
             let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
             let bitset =
@@ -305,8 +305,9 @@ fn clone_layout(
             if ty.is_unit() {
                 continue;
 
-            // For everything else we have to actually clone their inner value
-            } else {
+            // For non-scalar values we need to conditionally clone their
+            // innards, we can't clone uninit data without causing UB
+            } else if ty.requires_nontrivial_clone() {
                 let clone_innards = builder.create_block();
                 let next_clone = builder.create_block();
                 builder.ins().brnz(value_non_null, next_clone, &[]);
@@ -314,6 +315,12 @@ fn clone_layout(
 
                 builder.switch_to_block(clone_innards);
                 Some(next_clone)
+
+            // For scalar values we can unconditionally copy over the inner
+            // value, it doesn't matter if it's uninit or not since we'll never
+            // observe it
+            } else {
+                None
             }
         } else {
             None
@@ -332,24 +339,24 @@ fn clone_layout(
         // Clone the source value
         let cloned = match ty {
             // For scalar types we just copy the value directly
-            RowType::Bool
-            | RowType::U16
-            | RowType::U32
-            | RowType::U64
-            | RowType::I16
-            | RowType::I32
-            | RowType::I64
-            | RowType::F32
-            | RowType::F64 => src_value,
+            ColumnType::Bool
+            | ColumnType::U16
+            | ColumnType::U32
+            | ColumnType::U64
+            | ColumnType::I16
+            | ColumnType::I32
+            | ColumnType::I64
+            | ColumnType::F32
+            | ColumnType::F64 => src_value,
 
             // Strings need their clone function called
-            RowType::String => {
+            ColumnType::String => {
                 let clone_string = imports.string_clone(module, builder.func);
                 builder.call_fn(clone_string, &[src_value])
             }
 
             // Unit types have been handled
-            RowType::Unit => unreachable!(),
+            ColumnType::Unit => unreachable!(),
         };
 
         // Store the cloned value

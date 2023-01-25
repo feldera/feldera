@@ -207,7 +207,7 @@ impl ErasedLayer {
                         );
 
                         // If the produced diff is not zero, push the key and its merged diff
-                        if dbg!(!(self.diffs.vtable().is_zero)(diff_buf.as_ptr().cast())) {
+                        if !(self.diffs.vtable().is_zero)(diff_buf.as_ptr().cast()) {
                             // Clone the element at `lhs[lower1]` into `key_buf`
                             (key_common.clone)(lhs.keys.index(lower1), key_buf.as_mut_ptr().cast());
 

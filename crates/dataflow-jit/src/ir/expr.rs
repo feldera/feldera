@@ -1,4 +1,4 @@
-use crate::ir::{BlockId, ExprId, LayoutId, RowType};
+use crate::ir::{BlockId, ColumnType, ExprId, LayoutId};
 use derive_more::From;
 
 #[derive(Debug, From, PartialEq)]
@@ -20,6 +20,10 @@ impl Return {
 
     pub fn value(&self) -> &RValue {
         &self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut RValue {
+        &mut self.value
     }
 }
 
@@ -56,6 +60,10 @@ impl Branch {
 
     pub const fn cond(&self) -> &RValue {
         &self.cond
+    }
+
+    pub fn cond_mut(&mut self) -> &mut RValue {
+        &mut self.cond
     }
 
     pub const fn truthy(&self) -> BlockId {
@@ -129,11 +137,11 @@ pub enum BinOpKind {
 pub struct CopyVal {
     /// The value to be copied
     value: ExprId,
-    ty: RowType,
+    ty: ColumnType,
 }
 
 impl CopyVal {
-    pub fn new(value: ExprId, ty: RowType) -> Self {
+    pub fn new(value: ExprId, ty: ColumnType) -> Self {
         Self { value, ty }
     }
 
@@ -141,7 +149,7 @@ impl CopyVal {
         self.value
     }
 
-    pub const fn ty(&self) -> RowType {
+    pub const fn ty(&self) -> ColumnType {
         self.ty
     }
 }
@@ -312,17 +320,17 @@ impl Constant {
         matches!(self, Self::Unit)
     }
 
-    pub const fn row_type(&self) -> RowType {
+    pub const fn row_type(&self) -> ColumnType {
         match self {
-            Self::Unit => RowType::Unit,
-            Self::U32(_) => RowType::U32,
-            Self::U64(_) => RowType::U64,
-            Self::I32(_) => RowType::I32,
-            Self::I64(_) => RowType::I64,
-            Self::F32(_) => RowType::F32,
-            Self::F64(_) => RowType::F64,
-            Self::Bool(_) => RowType::Bool,
-            Self::String(_) => RowType::String,
+            Self::Unit => ColumnType::Unit,
+            Self::U32(_) => ColumnType::U32,
+            Self::U64(_) => ColumnType::U64,
+            Self::I32(_) => ColumnType::I32,
+            Self::I64(_) => ColumnType::I64,
+            Self::F32(_) => ColumnType::F32,
+            Self::F64(_) => ColumnType::F64,
+            Self::Bool(_) => ColumnType::Bool,
+            Self::String(_) => ColumnType::String,
         }
     }
 }

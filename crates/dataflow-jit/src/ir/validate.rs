@@ -1,6 +1,6 @@
 use crate::ir::{
-    BinOpKind, BlockId, Expr, ExprId, Function, Graph, InputFlags, LayoutCache, LayoutId, Node,
-    NodeId, RValue, RowType,
+    BinOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags, LayoutCache,
+    LayoutId, Node, NodeId, RValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -72,11 +72,10 @@ impl Validator {
             }
         }
 
-        let unit_ty = graph.layout_cache().unit();
         for (&node_id, node) in graph.nodes() {
             match node {
                 Node::Map(map) => {
-                    assert_eq!(map.map_fn().return_type(), unit_ty);
+                    assert_eq!(map.map_fn().return_type(), ColumnType::Unit);
 
                     let input_layout = self.get_expected_input(node_id, map.input());
                     let expected = &[(input_layout, false), (map.layout(), true)];
@@ -137,7 +136,7 @@ pub struct FunctionValidator {
     exprs: BTreeSet<ExprId>,
     /// Expressions that produce values will have a type which will
     /// either be a row type or an entire row
-    expr_types: BTreeMap<ExprId, Result<RowType, LayoutId>>,
+    expr_types: BTreeMap<ExprId, Result<ColumnType, LayoutId>>,
     /// A map from all expressions containing row types to their mutability
     expr_row_mutability: BTreeMap<ExprId, bool>,
     /// Expressions that don't produce any outputs, like stores
@@ -303,7 +302,7 @@ impl FunctionValidator {
 
                         match binop.kind() {
                             BinOpKind::Eq | BinOpKind::Neq => {
-                                let prev = self.expr_types.insert(expr_id, Ok(RowType::Bool));
+                                let prev = self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
                                 assert!(prev.is_none());
                             }
 
@@ -312,7 +311,7 @@ impl FunctionValidator {
                             | BinOpKind::Mul
                             | BinOpKind::And
                             | BinOpKind::Or => {
-                                assert_ne!(lhs_ty, RowType::String);
+                                assert_ne!(lhs_ty, ColumnType::String);
 
                                 let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
                                 assert!(prev.is_none());
@@ -338,7 +337,7 @@ impl FunctionValidator {
         }
     }
 
-    fn get_rval_type(&self, rvalue: &RValue) -> Result<RowType, LayoutId> {
+    fn get_rval_type(&self, rvalue: &RValue) -> Result<ColumnType, LayoutId> {
         match rvalue {
             RValue::Expr(expr_id) => self.expr_types[expr_id],
             RValue::Imm(constant) => Ok(constant.row_type()),

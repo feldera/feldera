@@ -3,19 +3,35 @@ use crate::ir::{
     function::{Function, InputFlags},
     layout_cache::LayoutCache,
     types::Signature,
-    LayoutId, NodeId,
+    ColumnType, LayoutId, NodeId,
 };
 use enum_dispatch::enum_dispatch;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StreamKind {
+    Set,
+    Map,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Stream {
+    Set(LayoutId),
+    Map(LayoutId, LayoutId),
+}
 
 #[enum_dispatch]
 pub trait DataflowNode {
     fn inputs(&self, inputs: &mut Vec<NodeId>);
 
-    fn signature(&self, inputs: &[LayoutId], layout_cache: &LayoutCache) -> Signature;
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind>;
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache);
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream>;
 
-    fn optimize(&mut self, inputs: &[LayoutId], layout_cache: &LayoutCache);
+    fn signature(&self, inputs: &[Stream], layout_cache: &LayoutCache) -> Signature;
+
+    fn validate(&self, inputs: &[Stream], layout_cache: &LayoutCache);
+
+    fn optimize(&mut self, inputs: &[Stream], layout_cache: &LayoutCache);
 }
 
 #[enum_dispatch(DataflowNode)]
@@ -52,13 +68,21 @@ impl Source {
 impl DataflowNode for Source {
     fn inputs(&self, _inputs: &mut Vec<NodeId>) {}
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
-        Signature::new(Vec::new(), Vec::new(), self.layout)
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+        Some(StreamKind::Set)
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+        Some(Stream::Set(self.layout))
+    }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
+        todo!()
+    }
+
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
+
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 }
 
 #[derive(Debug)]
@@ -81,13 +105,21 @@ impl DataflowNode for Sink {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+        None
+    }
+
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+        None
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 }
 
 #[derive(Debug)]
@@ -120,15 +152,29 @@ impl DataflowNode for Map {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
+        Some(match inputs[0] {
+            Stream::Set(_) => StreamKind::Set,
+            Stream::Map(..) => StreamKind::Map,
+        })
+    }
+
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
+        Some(match inputs[0] {
+            Stream::Set(_) => Stream::Set(self.layout),
+            Stream::Map(key_layout, _) => Stream::Map(key_layout, self.layout),
+        })
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], layout_cache: &LayoutCache) {
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {
         self.map.optimize(layout_cache);
     }
 }
@@ -144,6 +190,10 @@ impl Filter {
         Self { input, filter }
     }
 
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
     pub const fn filter_fn(&self) -> &Function {
         &self.filter
     }
@@ -154,15 +204,29 @@ impl DataflowNode for Filter {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
+        Some(match inputs[0] {
+            Stream::Set(_) => StreamKind::Set,
+            Stream::Map(..) => StreamKind::Map,
+        })
+    }
+
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
+        Some(match inputs[0] {
+            Stream::Set(value) => Stream::Set(value),
+            Stream::Map(key, value) => Stream::Map(key, value),
+        })
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], layout_cache: &LayoutCache) {
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {
         self.filter.optimize(layout_cache);
     }
 }
@@ -192,8 +256,20 @@ impl IndexWith {
         }
     }
 
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
     pub const fn index_fn(&self) -> &Function {
         &self.index
+    }
+
+    pub const fn key_layout(&self) -> LayoutId {
+        self.key_layout
+    }
+
+    pub const fn value_layout(&self) -> LayoutId {
+        self.value_layout
     }
 }
 
@@ -202,19 +278,41 @@ impl DataflowNode for IndexWith {
         inputs.push(self.input);
     }
 
-    fn signature(&self, inputs: &[LayoutId], layout_cache: &LayoutCache) -> Signature {
-        Signature::new(
-            vec![inputs[0], self.key_layout, self.value_layout],
-            vec![InputFlags::INPUT, InputFlags::OUTPUT, InputFlags::OUTPUT],
-            layout_cache.unit(),
-        )
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+        Some(StreamKind::Map)
     }
 
-    fn validate(&self, inputs: &[LayoutId], layout_cache: &LayoutCache) {
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+        Some(Stream::Map(self.key_layout, self.value_layout))
+    }
+
+    fn signature(&self, inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
+        debug_assert_eq!(inputs.len(), 1);
+
+        let (args, flags) = match inputs[0] {
+            Stream::Set(value) => (
+                vec![value, self.key_layout, self.value_layout],
+                vec![InputFlags::INPUT, InputFlags::OUTPUT, InputFlags::OUTPUT],
+            ),
+            Stream::Map(key, value) => (
+                vec![key, value, self.key_layout, self.value_layout],
+                vec![
+                    InputFlags::INPUT,
+                    InputFlags::INPUT,
+                    InputFlags::OUTPUT,
+                    InputFlags::OUTPUT,
+                ],
+            ),
+        };
+
+        Signature::new(args, flags, ColumnType::Unit)
+    }
+
+    fn validate(&self, inputs: &[Stream], layout_cache: &LayoutCache) {
         assert_eq!(self.signature(inputs, layout_cache), self.index.signature());
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], layout_cache: &LayoutCache) {
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {
         self.index.optimize(layout_cache);
     }
 }
@@ -225,7 +323,7 @@ pub struct Fold {
     /// The initial value of the fold, should be the same layout as `acc_layout`
     init: Expr,
     /// The step function, should have a signature of
-    /// `fn(acc_layout,input_layout, weight_layout) -> acc_layout`
+    /// `fn(acc_layout, input_layout, weight_layout) -> acc_layout`
     step: Function,
     /// The finish function, should have a signature of
     /// `fn(acc_layout) -> output_layout`
@@ -273,15 +371,23 @@ impl DataflowNode for Fold {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], layout_cache: &LayoutCache) {
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
+        todo!()
+    }
+
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
+        todo!()
+    }
+
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {
         self.step.optimize(layout_cache);
         self.finish.optimize(layout_cache);
     }
@@ -315,15 +421,29 @@ impl DataflowNode for Neg {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
+        Some(match inputs[0] {
+            Stream::Set(_) => StreamKind::Set,
+            Stream::Map(..) => StreamKind::Map,
+        })
+    }
+
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
+        Some(match inputs[0] {
+            Stream::Set(value) => Stream::Set(value),
+            Stream::Map(key, value) => Stream::Map(key, value),
+        })
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 }
 
 #[derive(Debug)]
@@ -342,15 +462,29 @@ impl DataflowNode for Differentiate {
         inputs.push(self.input);
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
+        Some(match inputs[0] {
+            Stream::Set(_) => StreamKind::Set,
+            Stream::Map(..) => StreamKind::Map,
+        })
+    }
+
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
+        Some(match inputs[0] {
+            Stream::Set(value) => Stream::Set(value),
+            Stream::Map(key, value) => Stream::Map(key, value),
+        })
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 }
 
 #[derive(Debug)]
@@ -373,13 +507,27 @@ impl DataflowNode for Sum {
         inputs.extend(self.inputs.iter().copied());
     }
 
-    fn signature(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) -> Signature {
+    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
+        Some(match inputs[0] {
+            Stream::Set(_) => StreamKind::Set,
+            Stream::Map(..) => StreamKind::Map,
+        })
+    }
+
+    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
+        Some(match inputs[0] {
+            Stream::Set(value) => Stream::Set(value),
+            Stream::Map(key, value) => Stream::Map(key, value),
+        })
+    }
+
+    fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {
+    fn validate(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[LayoutId], _layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 }

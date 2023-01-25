@@ -16,8 +16,16 @@ impl Block {
         &self.body
     }
 
+    pub fn body_mut(&mut self) -> &mut [ExprId] {
+        &mut self.body
+    }
+
     pub fn terminator(&self) -> &Terminator {
         &self.terminator
+    }
+
+    pub fn terminator_mut(&mut self) -> &mut Terminator {
+        &mut self.terminator
     }
 }
 
