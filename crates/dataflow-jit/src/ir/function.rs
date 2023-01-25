@@ -5,7 +5,7 @@ use crate::ir::{
         Terminator,
     },
     layout_cache::LayoutCache,
-    BlockId, BlockIdGen, ExprId, ExprIdGen, LayoutId, Signature,
+    BlockId, BlockIdGen, ColumnType, ExprId, ExprIdGen, LayoutId, Signature,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -45,7 +45,7 @@ impl InputFlags {
 #[derive(Debug, PartialEq)]
 pub struct Function {
     args: Vec<(LayoutId, ExprId, InputFlags)>,
-    ret: LayoutId,
+    ret: ColumnType,
     entry_block: BlockId,
     exprs: BTreeMap<ExprId, Expr>,
     blocks: BTreeMap<BlockId, Block>,
@@ -68,7 +68,7 @@ impl Function {
         &self.blocks
     }
 
-    pub const fn return_type(&self) -> LayoutId {
+    pub const fn return_type(&self) -> ColumnType {
         self.ret
     }
 
@@ -82,6 +82,115 @@ impl Function {
 
     pub fn optimize(&mut self, layout_cache: &LayoutCache) {
         self.remove_unit_memory_operations(layout_cache);
+        // self.remove_noop_copies(layout_cache)
+    }
+
+    fn remove_noop_copies(&mut self, layout_cache: &LayoutCache) {
+        let mut scalar_exprs = BTreeSet::new();
+        let mut row_exprs = BTreeMap::new();
+        for &(layout, expr, _) in &self.args {
+            row_exprs.insert(expr, layout);
+        }
+
+        let mut substitutions = BTreeMap::new();
+
+        // FIXME: Doesn't work for back edges/loops
+        let mut stack = vec![self.entry_block];
+        while let Some(block_id) = stack.pop() {
+            let block = self.blocks.get_mut(&block_id).unwrap();
+
+            block.body.retain(|&expr_id| {
+                match &self.exprs[&expr_id] {
+                    Expr::UninitRow(uninit) => {
+                        row_exprs.insert(expr_id, uninit.layout());
+                    }
+
+                    Expr::NullRow(null) => {
+                        row_exprs.insert(expr_id, null.layout());
+                    }
+
+                    Expr::Constant(constant) => {
+                        if constant.is_unit() || constant.is_bool() || constant.is_int() {
+                            scalar_exprs.insert(expr_id);
+                        }
+                    }
+
+                    Expr::Load(load) => {
+                        let row_layout = row_exprs[&load.source()];
+                        let layout = layout_cache.get(row_layout);
+
+                        if !layout.columns()[load.row()].requires_nontrivial_clone() {
+                            scalar_exprs.insert(expr_id);
+                        }
+                    }
+
+                    Expr::CopyVal(copy) => {
+                        if scalar_exprs.contains(&copy.value()) {
+                            scalar_exprs.insert(expr_id);
+                            substitutions.insert(expr_id, copy.value());
+                            return false;
+                        }
+                    }
+
+                    Expr::BinOp(binop) => {
+                        if scalar_exprs.contains(&binop.lhs())
+                            || scalar_exprs.contains(&binop.rhs())
+                        {
+                            scalar_exprs.insert(expr_id);
+                        }
+                    }
+
+                    _ => {}
+                }
+
+                true
+            });
+
+            match &mut block.terminator {
+                Terminator::Return(_) => {}
+                Terminator::Jump(jump) => stack.push(jump.target()),
+                Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
+            }
+        }
+
+        if !substitutions.is_empty() {
+            for block in self.blocks.values_mut() {
+                for expr_id in block.body() {
+                    match self.exprs.get_mut(expr_id).unwrap() {
+                        Expr::Load(_) => todo!(),
+                        Expr::Store(_) => todo!(),
+                        Expr::BinOp(_) => todo!(),
+                        Expr::IsNull(_) => todo!(),
+                        Expr::CopyVal(_) => todo!(),
+                        Expr::NullRow(_) => todo!(),
+                        Expr::SetNull(_) => todo!(),
+                        Expr::Constant(_) => {}
+                        Expr::CopyRowTo(_) => todo!(),
+                        Expr::UninitRow(_) => todo!(),
+                    }
+                }
+
+                match block.terminator_mut() {
+                    Terminator::Return(ret) => {
+                        if let &RValue::Expr(value) = ret.value() {
+                            if let Some(&subst) = substitutions.get(&value) {
+                                *ret.value_mut() = RValue::Expr(subst);
+                            }
+                        }
+                    }
+
+                    Terminator::Branch(branch) => {
+                        if let &RValue::Expr(value) = branch.cond() {
+                            if let Some(&subst) = substitutions.get(&value) {
+                                *branch.cond_mut() = RValue::Expr(subst);
+                            }
+                        }
+                    }
+
+                    Terminator::Jump(_) => {}
+                }
+            }
+        }
     }
 
     fn remove_unit_memory_operations(&mut self, layout_cache: &LayoutCache) {
@@ -116,7 +225,7 @@ impl Function {
                     let row_layout = row_exprs[&load.source()];
                     let layout = layout_cache.get(row_layout);
 
-                    if layout.rows()[load.row()].is_unit() {
+                    if layout.columns()[load.row()].is_unit() {
                         unit_exprs.insert(expr_id);
                         false
                     } else {
@@ -127,7 +236,7 @@ impl Function {
                 Expr::Store(store) => {
                     let row_layout = row_exprs[&store.target()];
                     let layout = layout_cache.get(row_layout);
-                    !layout.rows()[store.row()].is_unit()
+                    !layout.columns()[store.row()].is_unit()
                 }
 
                 Expr::CopyVal(copy) => {
@@ -143,7 +252,7 @@ impl Function {
             });
 
             match &mut block.terminator {
-                // Normalize unit returns to return unit contants
+                // Normalize unit returns to return unit contents
                 Terminator::Return(ret) => {
                     if let &RValue::Expr(expr) = ret.value() {
                         if unit_exprs.contains(&expr) {
@@ -164,7 +273,7 @@ impl Function {
 // rows
 pub struct FunctionBuilder {
     args: Vec<(LayoutId, ExprId, InputFlags)>,
-    ret: LayoutId,
+    ret: ColumnType,
     entry_block: Option<BlockId>,
 
     exprs: BTreeMap<ExprId, Expr>,
@@ -178,10 +287,10 @@ pub struct FunctionBuilder {
 }
 
 impl FunctionBuilder {
-    pub fn new(layout_cache: &LayoutCache) -> Self {
+    pub fn new() -> Self {
         Self {
             args: Vec::new(),
-            ret: layout_cache.unit(),
+            ret: ColumnType::Unit,
             entry_block: None,
             exprs: BTreeMap::new(),
             blocks: BTreeMap::new(),
@@ -192,7 +301,7 @@ impl FunctionBuilder {
         }
     }
 
-    pub fn with_return_type(mut self, return_type: LayoutId) -> Self {
+    pub fn with_return_type(mut self, return_type: ColumnType) -> Self {
         self.ret = return_type;
         self
     }

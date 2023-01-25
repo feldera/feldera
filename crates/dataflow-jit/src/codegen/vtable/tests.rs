@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use crate::{
-    codegen::{Codegen, CodegenConfig, Type},
-    ir::{LayoutCache, RowLayoutBuilder, RowType},
+    codegen::{BitSetType, Codegen, CodegenConfig},
+    ir::{ColumnType, LayoutCache, RowLayoutBuilder},
     thin_str::ThinStrRef,
     ThinStr,
 };
@@ -22,11 +22,11 @@ fn empty() {
     let empty_layout = layout_cache.add(RowLayoutBuilder::new().build());
 
     {
-        let mut codegen = Codegen::new(layout_cache.clone(), CodegenConfig::debug());
+        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
         let vtable = codegen.vtable_for(empty_layout);
 
         let (module, mut layouts) = codegen.finalize_definitions();
-        let vtable = vtable.marshall(&module);
+        let vtable = vtable.erased(&module);
 
         let layout = layouts.compute(empty_layout);
         assert_eq!(layout.size(), 0);
@@ -36,14 +36,6 @@ fn empty() {
             layout.alloc().unwrap().as_ptr(),
             layout.alloc().unwrap().as_ptr(),
         );
-
-        // clone
-        // clone_into_slice
-        // size_of_children
-        // debug
-        // drop_in_place
-        // drop_slice_in_place
-        // type_name
 
         unsafe {
             assert!((vtable.eq)(lhs, rhs));
@@ -81,7 +73,7 @@ fn string() {
     let layout_cache = LayoutCache::new();
     let string_layout = layout_cache.add(
         RowLayoutBuilder::new()
-            .with_row(RowType::String, false)
+            .with_row(ColumnType::String, false)
             .build(),
     );
 
@@ -90,7 +82,7 @@ fn string() {
         let vtable = codegen.vtable_for(string_layout);
 
         let (module, mut layouts) = codegen.finalize_definitions();
-        let vtable = vtable.marshall(&module);
+        let vtable = vtable.erased(&module);
 
         let layout = layouts.compute(string_layout);
         let (lhs, rhs) = (
@@ -183,17 +175,17 @@ fn string() {
 #[test]
 fn dyn_vec() {
     let types = [
-        RowType::Bool,
-        RowType::U16,
-        RowType::U32,
-        RowType::U64,
-        RowType::I16,
-        RowType::I32,
-        RowType::I64,
-        RowType::F32,
-        RowType::F64,
-        RowType::Unit,
-        RowType::String,
+        ColumnType::Bool,
+        ColumnType::U16,
+        ColumnType::U32,
+        ColumnType::U64,
+        ColumnType::I16,
+        ColumnType::I32,
+        ColumnType::I64,
+        ColumnType::F32,
+        ColumnType::F64,
+        ColumnType::Unit,
+        ColumnType::String,
     ];
 
     // TODO: Proptest data generation
@@ -244,7 +236,7 @@ fn dyn_vec() {
 
         let layout = layout_cache.compute(layout_id);
         let vtable = Box::into_raw(Box::new(DataVTable {
-            common: vtable.marshall(&jit),
+            common: vtable.erased(&jit),
         }));
 
         {
@@ -272,12 +264,10 @@ fn dyn_vec() {
                             let (ty, bit_offset, bit) = layout.nullability_of(offset);
                             let bitset = place.add(bit_offset as usize);
                             let mut mask = match ty {
-                                Type::U8 | Type::I8 => bitset.read() as u64,
-                                Type::U16 | Type::I16 => bitset.cast::<u16>().read() as u64,
-                                Type::U32 | Type::I32 => bitset.cast::<u32>().read() as u64,
-                                Type::U64 | Type::I64 => bitset.cast::<u64>().read() as u64,
-                                Type::Usize => bitset.cast::<usize>().read() as u64,
-                                Type::F32 | Type::F64 | Type::Ptr | Type::Bool => unreachable!(),
+                                BitSetType::U8 => bitset.read() as u64,
+                                BitSetType::U16 => bitset.cast::<u16>().read() as u64,
+                                BitSetType::U32 => bitset.cast::<u32>().read() as u64,
+                                BitSetType::U64 => bitset.cast::<u64>().read() as u64,
                             };
                             if $value.1.is_some() {
                                 mask &= !(1 << bit);
@@ -285,12 +275,10 @@ fn dyn_vec() {
                                 mask |= 1 << bit;
                             }
                             match ty {
-                                Type::U8 | Type::I8 => bitset.write(mask as u8),
-                                Type::U16 | Type::I16 => bitset.cast::<u16>().write(mask as u16),
-                                Type::U32 | Type::I32 => bitset.cast::<u32>().write(mask as u32),
-                                Type::U64 | Type::I64 => bitset.cast::<u64>().write(mask as u64),
-                                Type::Usize => bitset.cast::<usize>().write(mask as usize),
-                                Type::F32 | Type::F64 | Type::Ptr | Type::Bool => unreachable!(),
+                                BitSetType::U8 => bitset.write(mask as u8),
+                                BitSetType::U16  => bitset.cast::<u16>().write(mask as u16),
+                                BitSetType::U32  => bitset.cast::<u32>().write(mask as u32),
+                                BitSetType::U64  => bitset.cast::<u64>().write(mask as u64),
                             }
 
                             if let Some(val) = $value.1.clone() {
@@ -372,5 +360,426 @@ struct FailWriter;
 impl Write for FailWriter {
     fn write_str(&mut self, _: &str) -> fmt::Result {
         Err(fmt::Error)
+    }
+}
+
+mod proptests {
+    use crate::{
+        codegen::{BitSetType, Codegen, CodegenConfig, NativeLayout},
+        ir::{ColumnType, LayoutCache, RowLayout, RowLayoutBuilder},
+        row::Row,
+        ThinStr,
+    };
+    use proptest::{
+        prelude::any, prop_assert, prop_assert_eq, prop_assert_ne, proptest,
+        test_runner::TestCaseResult,
+    };
+    use proptest_derive::Arbitrary;
+    use size_of::SizeOf;
+    use std::{cmp::Ordering, mem::align_of};
+
+    #[derive(Debug, Clone, Arbitrary)]
+    enum Column {
+        Unit,
+        // U8(u8),
+        // I8(i8),
+        U16(u16),
+        I16(i16),
+        U32(u32),
+        I32(i32),
+        U64(u64),
+        I64(i64),
+        F32(f32),
+        F64(f64),
+        Bool(bool),
+        // Usize(usize),
+        String(String),
+    }
+
+    impl Column {
+        fn row_type(&self) -> ColumnType {
+            match self {
+                Column::Unit => ColumnType::Unit,
+                // Column::U8(_) => todo!(),
+                // Column::I8(_) => todo!(),
+                Column::U16(_) => ColumnType::U16,
+                Column::I16(_) => ColumnType::I16,
+                Column::U32(_) => ColumnType::U32,
+                Column::I32(_) => ColumnType::I32,
+                Column::U64(_) => ColumnType::U64,
+                Column::I64(_) => ColumnType::I64,
+                Column::F32(_) => ColumnType::F32,
+                Column::F64(_) => ColumnType::F64,
+                Column::Bool(_) => ColumnType::Bool,
+                // Column::Usize(_) => todo!(),
+                Column::String(_) => ColumnType::String,
+            }
+        }
+
+        unsafe fn write_to(self, ptr: *mut u8) -> TestCaseResult {
+            prop_assert!(!ptr.is_null());
+
+            match self {
+                Column::Unit => {
+                    prop_assert_eq!(ptr as usize % align_of::<()>(), 0);
+                    ptr.cast::<()>().write(());
+                }
+                Column::U16(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u16>(), 0);
+                    ptr.cast::<u16>().write(value);
+                }
+                Column::I16(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i16>(), 0);
+                    ptr.cast::<i16>().write(value);
+                }
+                Column::U32(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u32>(), 0);
+                    ptr.cast::<u32>().write(value);
+                }
+                Column::I32(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
+                    ptr.cast::<i32>().write(value);
+                }
+                Column::U64(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u64>(), 0);
+                    ptr.cast::<u64>().write(value);
+                }
+                Column::I64(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
+                    ptr.cast::<i64>().write(value);
+                }
+                Column::F32(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<f32>(), 0);
+                    ptr.cast::<f32>().write(value);
+                }
+                Column::F64(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<f64>(), 0);
+                    ptr.cast::<f64>().write(value);
+                }
+                Column::Bool(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<bool>(), 0);
+                    ptr.cast::<bool>().write(value);
+                }
+                Column::String(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<ThinStr>(), 0);
+                    ptr.cast::<ThinStr>().write(ThinStr::from(&*value));
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    impl PartialEq for Column {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                // (Self::U8(l0), Self::U8(r0)) => l0 == r0,
+                // (Self::I8(l0), Self::I8(r0)) => l0 == r0,
+                (Self::U16(l0), Self::U16(r0)) => l0 == r0,
+                (Self::I16(l0), Self::I16(r0)) => l0 == r0,
+                (Self::U32(l0), Self::U32(r0)) => l0 == r0,
+                (Self::I32(l0), Self::I32(r0)) => l0 == r0,
+                (Self::U64(l0), Self::U64(r0)) => l0 == r0,
+                (Self::I64(l0), Self::I64(r0)) => l0 == r0,
+                (Self::F32(l0), Self::F32(r0)) => l0.total_cmp(r0).is_eq(),
+                (Self::F64(l0), Self::F64(r0)) => l0.total_cmp(r0).is_eq(),
+                (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+                // (Self::Usize(l0), Self::Usize(r0)) => l0 == r0,
+                (Self::String(l0), Self::String(r0)) => l0 == r0,
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    impl Eq for Column {}
+
+    impl PartialOrd for Column {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for Column {
+        fn cmp(&self, other: &Self) -> Ordering {
+            match (self, other) {
+                // (Self::U8(l0), Self::U8(r0)) => l0.cmp(r0),
+                // (Self::I8(l0), Self::I8(r0)) => l0.cmp(r0),
+                (Self::U16(l0), Self::U16(r0)) => l0.cmp(r0),
+                (Self::I16(l0), Self::I16(r0)) => l0.cmp(r0),
+                (Self::U32(l0), Self::U32(r0)) => l0.cmp(r0),
+                (Self::I32(l0), Self::I32(r0)) => l0.cmp(r0),
+                (Self::U64(l0), Self::U64(r0)) => l0.cmp(r0),
+                (Self::I64(l0), Self::I64(r0)) => l0.cmp(r0),
+                (Self::F32(l0), Self::F32(r0)) => l0.total_cmp(r0),
+                (Self::F64(l0), Self::F64(r0)) => l0.total_cmp(r0),
+                (Self::Bool(l0), Self::Bool(r0)) => l0.cmp(r0),
+                // (Self::Usize(l0), Self::Usize(r0)) => l0.cmp(r0),
+                (Self::String(l0), Self::String(r0)) => l0.cmp(r0),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Arbitrary)]
+    enum MaybeColumn {
+        Nonnull(Column),
+        Nullable(Column, bool),
+    }
+
+    impl MaybeColumn {
+        fn row_type(&self) -> ColumnType {
+            match self {
+                Self::Nonnull(column) | Self::Nullable(column, _) => column.row_type(),
+            }
+        }
+
+        fn nullable(&self) -> bool {
+            matches!(self, Self::Nullable(..))
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Arbitrary)]
+    struct PropLayout {
+        columns: Vec<MaybeColumn>,
+    }
+
+    impl PropLayout {
+        fn new(columns: Vec<MaybeColumn>) -> Self {
+            Self { columns }
+        }
+
+        fn row_layout(&self) -> RowLayout {
+            let mut builder = RowLayoutBuilder::new();
+            for column in &self.columns {
+                builder.add_row(column.row_type(), column.nullable());
+            }
+
+            builder.build()
+        }
+    }
+
+    fn set_column_nullness(
+        row: &mut Row,
+        column: usize,
+        layout: &NativeLayout,
+        null: bool,
+    ) -> TestCaseResult {
+        let (ty, bit_offset, bit) = layout.nullability_of(column);
+
+        unsafe {
+            let bitset = row.as_mut_ptr().add(bit_offset as usize);
+
+            let mut mask = match ty {
+                BitSetType::U8 => {
+                    prop_assert_eq!(bitset as usize % align_of::<u8>(), 0);
+                    bitset.read() as u64
+                }
+                BitSetType::U16 => {
+                    prop_assert_eq!(bitset as usize % align_of::<u16>(), 0);
+                    bitset.cast::<u16>().read() as u64
+                }
+                BitSetType::U32 => {
+                    prop_assert_eq!(bitset as usize % align_of::<u32>(), 0);
+                    bitset.cast::<u32>().read() as u64
+                }
+                BitSetType::U64 => {
+                    prop_assert_eq!(bitset as usize % align_of::<u64>(), 0);
+                    bitset.cast::<u64>().read()
+                }
+            };
+
+            if null {
+                mask |= 1 << bit;
+            } else {
+                mask &= !(1 << bit);
+            }
+
+            match ty {
+                BitSetType::U8 => bitset.write(mask as u8),
+                BitSetType::U16 => bitset.cast::<u16>().write(mask as u16),
+                BitSetType::U32 => bitset.cast::<u32>().write(mask as u32),
+                BitSetType::U64 => bitset.cast::<u64>().write(mask),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn test_layout(value: PropLayout, debug: bool) -> TestCaseResult {
+        println!("{value:?}");
+
+        let cache = LayoutCache::new();
+        let layout_id = cache.add(value.row_layout());
+
+        let config = if debug {
+            CodegenConfig::debug()
+        } else {
+            CodegenConfig::release()
+        };
+        let mut codegen = Codegen::new(cache, config);
+        let vtable = codegen.vtable_for(layout_id);
+
+        let (jit, mut cache) = codegen.finalize_definitions();
+        let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
+        let layout = cache.compute(layout_id);
+        prop_assert_ne!(layout.align(), 0);
+        prop_assert!(layout.align().is_power_of_two());
+
+        println!("{layout:?}");
+
+        println!("0");
+
+        let mut row = unsafe { Row::uninit(&*vtable) };
+        for (idx, column) in value.columns.into_iter().enumerate() {
+            let offset = layout.offset_of(idx) as usize;
+
+            unsafe {
+                match column {
+                    MaybeColumn::Nonnull(value) => {
+                        // Write the column's value
+                        let column = row.as_mut_ptr().add(offset);
+                        value.write_to(column)?;
+                    }
+
+                    MaybeColumn::Nullable(value, false) => {
+                        // Set the column to not be null
+                        set_column_nullness(&mut row, idx, layout, false)?;
+
+                        // Write the column's value
+                        let column = row.as_mut_ptr().add(offset);
+                        value.write_to(column)?;
+                    }
+
+                    MaybeColumn::Nullable(_, true) => {
+                        // Set the column to be null
+                        set_column_nullness(&mut row, idx, layout, true)?;
+                    }
+                }
+            }
+        }
+
+        println!("1");
+        let clone = row.clone();
+        println!("eq");
+        prop_assert_eq!(&row, &clone);
+        println!("partial cmp");
+        prop_assert_eq!(row.partial_cmp(&clone), Some(Ordering::Equal));
+        println!("cmp");
+        prop_assert_eq!(row.cmp(&clone), Ordering::Equal);
+        println!("ne");
+        prop_assert!(!row.ne(&clone));
+        println!("lt");
+        prop_assert!(!row.lt(&clone));
+        println!("le");
+        prop_assert!(row.le(&clone));
+        println!("gt");
+        prop_assert!(!row.gt(&clone));
+        println!("ge");
+        prop_assert!(row.ge(&clone));
+        println!("2");
+
+        // TODO: Assert that these are correct
+        let _debug = format!("{row:?}");
+        let _size_of = row.size_of();
+        let _type_name = row.type_name();
+        println!("3");
+
+        // TODO: Test clone_into_slice and drop_slice
+
+        unsafe {
+            drop(row);
+            println!("4");
+            drop(Box::from_raw(vtable));
+            println!("5");
+            jit.free_memory();
+            println!("6");
+        }
+
+        Ok(())
+    }
+
+    proptest! {
+        #[test]
+        fn vtables(value in any::<PropLayout>(), debug in any::<bool>()) {
+            test_layout(value, debug)?;
+        }
+    }
+
+    macro_rules! corpus {
+        ($($test:ident = [$($column:expr),* $(,)?]),+ $(,)?) => {
+            mod corpus {
+                use super::{test_layout, Column::*, MaybeColumn::*, PropLayout};
+
+                $(
+                    #[test]
+                    fn $test() {
+                        let layout = PropLayout::new(vec![$($column,)*]);
+                        test_layout(layout, true).unwrap();
+
+                        let layout = PropLayout::new(vec![$($column,)*]);
+                        test_layout(layout, false).unwrap();
+                    }
+                )+
+            }
+        };
+    }
+
+    corpus! {
+        empty_layout = [],
+        null_string = [Nullable(String("".to_owned()), true)],
+        prop1 = [Nullable(U16(0), false), Nonnull(U32(0)), Nullable(Unit, false)],
+        prop2 =  [
+            Nullable(F32(4.8600124e-10), false), Nonnull(I64(2232805474518099604)),
+            Nonnull(String("𐭁𐣬¹+<🕴'B7&Ó".to_owned())), Nonnull(U64(487956905190284356)), Nonnull(Unit),
+            Nonnull(F32(-3.953167e-39)), Nullable(Unit, true), Nonnull(F32(-0.0)),
+            Nullable(F64(2.754179169397046e291), true), Nonnull(Unit),
+            Nullable(I64(-7367344613201638534), false), Nonnull(F32(-3.0101515e-7)),
+            Nonnull(Bool(true)), Nonnull(Unit), Nullable(U16(42881), true),
+            Nullable(F32(1.9122925e-36), true), Nullable(I32(358538438), true),
+            Nonnull(U64(11955347133353482063)), Nullable(Bool(false), false),
+            Nonnull(I64(6482597537832823096)), Nonnull(I16(4496)), Nonnull(U64(3550115232309980997)),
+            Nonnull(U32(2261946021)), Nullable(Unit, false), Nonnull(I16(26910)),
+            Nullable(I16(-19084), false), Nullable(U32(2936118268), false), Nullable(I16(-30350), true),
+            Nonnull(U16(43532)), Nullable(I64(-785993172122454184), true), Nullable(U16(43117), true),
+            Nonnull(I16(4328)), Nonnull(U16(43791)), Nonnull(F32(-0.0)), Nullable(U32(1389196361), true),
+            Nullable(Unit, false), Nonnull(I32(-1048961965)), Nonnull(I32(-1959357799)), Nullable(Unit, false),
+            Nonnull(U16(36978)), Nullable(F64(1.354132361276038e-13), true), Nonnull(U32(3885263228)),
+            Nullable(F32(-22546940000.0), true), Nullable(I64(-9195538540107804925), true),
+            Nullable(String("𒒖വbȺ࿙డ:𑊍\"𐺰 ힼ ቘ<*ವ{𫟀�R\u{c55}�X𑃑?𑵔=$n~".to_owned()), true),
+            Nonnull(String("÷.`&Ѩ𞁐\u{acd}𐳧kI𞟤ðਸ਼𖩎bf:𐞟ጟ".to_owned())), Nonnull(Unit), Nonnull(Unit),
+            Nonnull(F64(-2.559548142729777e-169)), Nullable(I16(-15518), true), Nullable(I64(8983696900450479918), true),
+            Nonnull(U64(11828502426741007917)), Nonnull(Unit), Nonnull(U64(2125243705778231595)), Nullable(U16(19333), true),
+            Nullable(String("Z=¥*]bgÖ".to_owned()), true), Nullable(U32(4022893128), false),
+        ],
+        prop3 = [
+            Nonnull(U32(3909529098)), Nonnull(U64(10605666329718850673)), Nonnull(I64(-2314311395266768928)),
+            Nonnull(F64(-1.823927764512688e-308)), Nonnull(U64(2869405416292076595)), Nonnull(String("3\\%\"𐖹b.p{K𐌸𞹾".to_owned())),
+            Nullable(String("f🝩%𖫁𐤿#ú🪢`&L&r𞹉.n𐖻{𑤕𞸤𖽺\\%<౷".to_owned()), true), Nonnull(U16(32779)), Nonnull(I16(-30881)),
+            Nullable(Unit, true), Nullable(I32(2146881542), true), Nonnull(Unit), Nonnull(String("F`🕴M?Y_'Ê`>𐡓`ⶴ/`*¥𑽙ኾ$ඎ<y`𑊦ଭ:Ѩ�".to_owned())),
+            Nullable(String("$6".to_owned()), true), Nullable(Unit, true), Nonnull(F32(272125960000000.0)), Nonnull(U16(56778)),
+            Nonnull(String("I𐼻ßr$=\u{c04}�\u{b57}7\\ኼk䂒ௐ=🨩N𞹛Oîᯉ'C?\u{1e01c}".to_owned())), Nullable(Bool(true), true),
+            Nullable(F32(5.305297e19), true), Nullable(Unit, true), Nonnull(U32(3654367315)), Nullable(I64(-7238850361520039905), false),
+            Nullable(F32(-0.0), false), Nullable(String("ᝃ?𐋄ÖR2𞸻cഌ{j*h5G\\`F\u{c56}6᧘𞺣:?`e?*\u{ccd}=¥<".to_owned()), true),
+            Nullable(Bool(false), false), Nullable(Bool(false), true), Nonnull(I16(-19542)), Nullable(I32(-1060354183), true),
+            Nullable(U32(2418426440), true), Nullable(Unit, false), Nonnull(I64(144516911663848025)), Nullable(F32(237023740.0), false),
+            Nullable(I64(-4647334442770949597), true), Nullable(Unit, true), Nonnull(Bool(true)), Nullable(I64(-8550750707006844420), true),
+            Nullable(U64(5260375725616250552), false), Nonnull(Unit), Nullable(String("Ⱥ᠃D|<ৈT\u{1e08f}".to_owned()), false),
+            Nonnull(I64(4295936019938857040)), Nonnull(String("ఖ𐄁<A𞹭kA𭌆𒑁)\"".to_owned())), Nonnull(U32(1896902802)), Nonnull(U32(3505270827)),
+            Nonnull(U64(9940296529824199105)), Nonnull(I64(8170460105644749421)), Nonnull(F32(-7.9133356e-36)), Nullable(U32(4086615590), false),
+            Nonnull(I16(-31848)), Nullable(I16(-6716), false), Nonnull(I16(5356)), Nonnull(String("^9\"﹩ꬉAਲA.*𐕛៸/௸\"%Ⱥ𐮩𖩥,=0\u{b43}*".to_owned())),
+            Nonnull(U16(64272)), Nonnull(I64(-6402860959690993697)), Nonnull(String("<🢡?ᜨ8²%R𑵤Uໄ<Ä=".to_owned())), Nullable(U64(6535961236791020282), true),
+            Nonnull(F64(-4.073033910186329e-232)), Nonnull(F64(3.544570087127284e230)), Nonnull(Unit), Nonnull(U16(58524)),
+            Nonnull(String("ⳃ?h¥&p`Ê\"d𑌲\"D𐨕Ꞃ?*%&🕴$𐂦ዄ🕴𐰃w\"\"Ѩ'd.".to_owned())), Nullable(I32(1233491127), true), Nonnull(F32(-1.4334434e-9)),
+            Nullable(F32(8.5936e-41), false), Nonnull(I16(27159)), Nonnull(F64(4.162877932852521e52)), Nullable(Unit, true), Nullable(Bool(true), true),
+            Nonnull(I16(-31852)), Nonnull(U16(4098)), Nonnull(F32(6.021699e33)), Nullable(I64(8794997021803162938), true), Nonnull(F32(-7.201521e-39)),
+            Nullable(Unit, true), Nullable(Unit, true), Nonnull(String("𞸹l\u{16f90}*\u{f84}<&/ௐ/0=:¥O០".to_owned())), Nonnull(String("𐴜T?*:ই{UH".to_owned())),
+            Nullable(U16(43135), true), Nullable(I64(7543280535653552197), false), Nonnull(U32(1032940059)), Nonnull(F64(-4.036630120788224e-309)),
+            Nonnull(F64(-2.4875724249312143e278)), Nullable(I64(3022650268638072993), true), Nonnull(I64(1464328889940382111)),
+            Nonnull(I64(2999178767494140240)), Nullable(I64(6013727988339051187), true), Nonnull(U64(18310463897315494354)),
+            Nonnull(U64(12850858043488381073)), Nullable(U64(14852611330729036951), false), Nonnull(U64(173283812513893613)),
+            Nullable(I16(20711), false), Nonnull(Bool(true)), Nonnull(I64(-716704178666587603)), Nonnull(U64(8296114501989671217)),
+            Nonnull(U16(40022)), Nullable(I64(6376951496006352246), true), Nonnull(F32(-8.540973e-39)), Nullable(String("\"*wⷎ".to_owned()), false),
+            Nullable(F64(0.0), false),
+        ],
     }
 }

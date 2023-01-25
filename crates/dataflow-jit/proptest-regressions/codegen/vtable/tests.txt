@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f5aeea4849fd7bbad7a037aea3a077957cfa66d2a1e2201779f4c2a74bb3fc97 # shrinks to value = PropLayout { columns: [Nullable(U16(0), false), Nonnull(U32(0)), Nullable(Unit, false)] }, debug = false
