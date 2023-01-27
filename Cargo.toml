@@ -125,6 +125,11 @@ harness = false
 required-features = ["with-nexmark"]
 
 [[bench]]
+name = "nexmark-gen"
+harness = false
+required-features = ["with-nexmark"]
+
+[[bench]]
 name = "consolidation"
 harness = false
 
