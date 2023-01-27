@@ -1,35 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_PROMETHEUS",
-      "label": "Prometheus",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "__elements": {},
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "9.3.2"
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -55,14 +24,14 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
+  "id": 7,
   "links": [],
   "liveNow": true,
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "description": "",
       "fieldConfig": {
@@ -140,7 +109,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "sum by(endpoint) (rate(input_total_bytes{pipeline_id=\"$pipeline_id\"}[$__rate_interval]))",
@@ -155,7 +124,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -232,7 +201,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "sum by(endpoint) (rate(input_total_records{pipeline_id=\"$pipeline_id\"}[$__rate_interval]))",
@@ -247,7 +216,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -324,7 +293,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "sum by(endpoint) (rate(output_transmitted_bytes{pipeline_id=\"$pipeline_id\"}[$__rate_interval]))",
@@ -339,7 +308,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -416,7 +385,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "sum by(endpoint) (rate(output_transmitted_records{pipeline_id=\"$pipeline_id\"}[$__rate_interval]))",
@@ -431,7 +400,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -533,7 +502,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "input_num_transport_errors{pipeline_id=\"$pipeline_id\"}",
@@ -544,7 +513,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "input_num_parse_errors{pipeline_id=\"$pipeline_id\"}",
@@ -556,7 +525,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "output_num_transport_errors{pipeline_id=\"$pipeline_id\"}",
@@ -568,7 +537,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "output_num_encode_errors{pipeline_id=\"$pipeline_id\"}",
@@ -584,7 +553,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -626,8 +595,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -661,7 +629,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "input_buffered_bytes{pipeline_id=\"$pipeline_id\"}",
@@ -676,7 +644,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "description": "",
       "fieldConfig": {
@@ -719,8 +687,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -754,7 +721,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "input_buffered_records{pipeline_id=\"$pipeline_id\"}",
@@ -769,7 +736,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -811,8 +778,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -846,7 +812,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "output_buffered_batches{pipeline_id=\"$pipeline_id\"}",
@@ -861,7 +827,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus_localhost"
       },
       "fieldConfig": {
         "defaults": {
@@ -903,8 +869,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -938,7 +903,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus_localhost"
           },
           "editorMode": "builder",
           "expr": "output_buffered_records{pipeline_id=\"$pipeline_id\"}",
@@ -958,10 +923,14 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": {
+          "selected": false,
+          "text": "demo01-TimeSeriesEnrich",
+          "value": "demo01-TimeSeriesEnrich"
+        },
         "datasource": {
           "type": "prometheus",
-          "uid": "${DS_PROMETHEUS}"
+          "uid": "prometheus_localhost"
         },
         "definition": "label_values(project_name)",
         "hide": 0,
@@ -980,10 +949,14 @@
         "type": "query"
       },
       {
-        "current": {},
+        "current": {
+          "selected": false,
+          "text": "5",
+          "value": "5"
+        },
         "datasource": {
           "type": "prometheus",
-          "uid": "${DS_PROMETHEUS}"
+          "uid": "prometheus_localhost"
         },
         "definition": "label_values(input_total_bytes{project_name=~\"$project_name\"}, pipeline_id)",
         "hide": 0,
@@ -1035,8 +1008,8 @@
     "type": "timepicker"
   },
   "timezone": "browser",
-  "title": "DBSP",
-  "uid": "v16JN3h4k",
-  "version": 6,
+  "title": "DBSP2",
+  "uid": "dbsp",
+  "version": 1,
   "weekStart": ""
 }
