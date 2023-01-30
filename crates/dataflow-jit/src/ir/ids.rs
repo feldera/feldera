@@ -3,7 +3,6 @@
 /// Creates an id type and a corresponding id generator
 macro_rules! create_ids {
     ($($name:ident = $prefix:literal),* $(,)?) => {
-
         ::paste::paste! {
             $(
                 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,22 +32,24 @@ macro_rules! create_ids {
 
                 #[doc = "A generator for [`" $name "`]s"]
                 pub struct [<$name Gen>] {
-                    id: u32,
+                    id: ::std::cell::Cell<u32>,
                 }
 
                 impl [<$name Gen>] {
                     #[doc = "Creates a new `" [<$name Gen>] "` to generate [`" $name "`]s"]
                     pub const fn new() -> Self {
-                        Self { id: 1 }
+                        Self {
+                            id: ::std::cell::Cell::new(1),
+                        }
                     }
 
                     #[doc = "Generates the next [`" $name "`]\n\n## Panics\n\nPanics if more than `2³²-1` ids are created"]
-                    pub fn next(&mut self) -> $name {
-                        let id = self.id;
-                        self.id = match id.checked_add(1) {
+                    pub fn next(&self) -> $name {
+                        let id = self.id.get();
+                        self.id.set(match id.checked_add(1) {
                             Some(id) => id,
                             None => id_generator_overflow(stringify!($name)),
-                        };
+                        });
                         debug_assert_ne!(id, 0);
 
                         // Safety: `id` starts at 1 and will never overflow

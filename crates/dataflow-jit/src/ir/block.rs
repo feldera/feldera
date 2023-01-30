@@ -1,6 +1,6 @@
 use crate::ir::{expr::Terminator, BlockId, ExprId};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub(crate) id: BlockId,
     pub(crate) body: Vec<ExprId>,

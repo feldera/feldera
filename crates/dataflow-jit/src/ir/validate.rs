@@ -1,6 +1,6 @@
 use crate::ir::{
-    BinOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags, LayoutCache,
-    LayoutId, Node, NodeId, RValue,
+    graph::GraphExt, BinOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags,
+    LayoutCache, LayoutId, Node, NodeId, RValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,10 +53,10 @@ impl Validator {
                     self.node_inputs.insert(node_id, vec![neg.input()]);
                     self.node_outputs.insert(node_id, neg.output_layout());
                 }
+
                 Node::Sum(sum) => {
                     self.node_inputs.insert(node_id, sum.inputs().to_vec());
                 }
-                Node::Fold(_) => todo!(),
 
                 Node::Sink(sink) => {
                     self.node_inputs.insert(node_id, vec![sink.input()]);
@@ -66,9 +66,7 @@ impl Validator {
                     self.node_outputs.insert(node_id, source.layout());
                 }
 
-                Node::Filter(_) => todo!(),
-                Node::IndexWith(_) => todo!(),
-                Node::Differentiate(_) => todo!(),
+                _ => todo!(),
             }
         }
 
@@ -110,14 +108,7 @@ impl Validator {
                     assert_eq!(input_layout, neg.output_layout());
                 }
 
-                Node::Sum(_) => {}
-
-                Node::Fold(_) => {}
-                Node::Sink(_) => {}
-                Node::Source(_) => {}
-                Node::Filter(_) => {}
-                Node::IndexWith(_) => {}
-                Node::Differentiate(_) => {}
+                _ => {}
             }
         }
     }

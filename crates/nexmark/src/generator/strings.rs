@@ -18,13 +18,13 @@ pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> ArcStr {
 /// average the desired average size.
 fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: usize) -> ArcStr {
     if current_size > desired_average_size {
-        return String::new().into();
+        return arcstr::literal!("");
     }
 
     let avg_extra_size = desired_average_size - current_size;
     let delta = (avg_extra_size as f32 * 0.2).round() as usize;
     if delta == 0 {
-        return String::new().into();
+        return arcstr::literal!("");
     }
 
     let desired_size =
