@@ -30,6 +30,12 @@ pub enum DataflowNode {
     JoinCore(JoinCore),
     Subgraph(DataflowSubgraph),
     Export(Export),
+    Noop(Noop),
+}
+
+#[derive(Debug, Clone)]
+pub struct Noop {
+    pub input: NodeId,
 }
 
 #[derive(Debug, Clone)]

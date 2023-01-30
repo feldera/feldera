@@ -23,6 +23,15 @@ pub enum Stream {
     Map(LayoutId, LayoutId),
 }
 
+impl Stream {
+    pub const fn kind(self) -> StreamKind {
+        match self {
+            Self::Set(_) => StreamKind::Set,
+            Self::Map(_, _) => StreamKind::Map,
+        }
+    }
+}
+
 #[enum_dispatch]
 pub trait DataflowNode {
     fn inputs(&self, inputs: &mut Vec<NodeId>);
@@ -98,8 +107,8 @@ impl Subgraph {
         delta0
     }
 
-    pub fn export(&mut self, output: NodeId) -> NodeId {
-        let export = self.add_node(Export::new(output));
+    pub fn export(&mut self, output: NodeId, layout: Stream) -> NodeId {
+        let export = self.add_node(Export::new(output, layout));
         self.outputs.insert(output, export);
         export
     }
@@ -294,11 +303,16 @@ impl DataflowNode for JoinCore {
 pub struct ExportedNode {
     subgraph: NodeId,
     input: NodeId,
+    layout: Stream,
 }
 
 impl ExportedNode {
-    pub fn new(subgraph: NodeId, input: NodeId) -> Self {
-        Self { subgraph, input }
+    pub fn new(subgraph: NodeId, input: NodeId, layout: Stream) -> Self {
+        Self {
+            subgraph,
+            input,
+            layout,
+        }
     }
 
     pub fn subgraph(&self) -> NodeId {
@@ -308,6 +322,10 @@ impl ExportedNode {
     pub fn input(&self) -> NodeId {
         self.input
     }
+
+    pub fn layout(&self) -> Stream {
+        self.layout
+    }
 }
 
 impl DataflowNode for ExportedNode {
@@ -315,15 +333,12 @@ impl DataflowNode for ExportedNode {
         inputs.extend([self.subgraph]);
     }
 
-    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+        Some(self.layout.kind())
     }
 
-    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+        Some(self.layout)
     }
 
     fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
@@ -340,15 +355,20 @@ impl DataflowNode for ExportedNode {
 #[derive(Debug, Clone)]
 pub struct Export {
     input: NodeId,
+    layout: Stream,
 }
 
 impl Export {
-    pub fn new(input: NodeId) -> Self {
-        Self { input }
+    pub fn new(input: NodeId, layout: Stream) -> Self {
+        Self { input, layout }
     }
 
     pub fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub fn layout(&self) -> Stream {
+        self.layout
     }
 }
 
@@ -357,15 +377,12 @@ impl DataflowNode for Export {
         inputs.push(self.input);
     }
 
-    fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+        Some(self.layout.kind())
     }
 
-    fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+        Some(self.layout)
     }
 
     fn signature(&self, _inputs: &[Stream], _layout_cache: &LayoutCache) -> Signature {
@@ -441,10 +458,7 @@ impl DataflowNode for Min {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -459,7 +473,7 @@ impl DataflowNode for Min {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
 }
@@ -485,10 +499,7 @@ impl DataflowNode for Distinct {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -503,7 +514,7 @@ impl DataflowNode for Distinct {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &LayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &LayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
 }
@@ -569,10 +580,7 @@ impl DataflowNode for Delta0 {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -706,10 +714,7 @@ impl DataflowNode for Map {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -766,10 +771,7 @@ impl DataflowNode for Filter {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -795,7 +797,7 @@ impl DataflowNode for Filter {
         functions.push(self.filter_fn());
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {}
+    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
 }
 
 #[derive(Debug, Clone)]
@@ -1008,10 +1010,7 @@ impl DataflowNode for Neg {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -1053,10 +1052,7 @@ impl DataflowNode for Differentiate {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {
@@ -1100,10 +1096,7 @@ impl DataflowNode for Sum {
     }
 
     fn output_kind(&self, inputs: &[Stream]) -> Option<StreamKind> {
-        Some(match inputs[0] {
-            Stream::Set(_) => StreamKind::Set,
-            Stream::Map(..) => StreamKind::Map,
-        })
+        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[Stream]) -> Option<Stream> {

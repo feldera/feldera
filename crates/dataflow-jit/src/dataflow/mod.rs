@@ -6,7 +6,7 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         DataflowSubgraph, DelayedFeedback, Delta0, Distinct, Export, FilterIndex, JoinCore,
-        MapIndex, Min,
+        MapIndex, Min, Noop,
     },
     ir::{
         graph, ColumnType, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId,
@@ -143,22 +143,10 @@ impl CompiledDataflow {
                 continue;
             }
 
-            let node = dbg!(&graph.nodes()[&node_id]);
+            let node = &graph.nodes()[&node_id];
 
             node.inputs(&mut input_nodes);
-            inputs.extend(input_nodes.iter().map(|input| {
-                if graph.nodes()[input].is_exported_node() {
-                    NodeStream::Set(
-                        graph.layout_cache().add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::U64, false)
-                                .build(),
-                        ),
-                    )
-                } else {
-                    node_streams[input].unwrap()
-                }
-            }));
+            inputs.extend(input_nodes.iter().filter_map(|input| node_streams[input]));
 
             node_kinds.insert(node_id, node.output_kind(&inputs));
             node_streams.insert(node_id, node.output_stream(&inputs));
@@ -193,7 +181,7 @@ impl CompiledDataflow {
 
                 let node = &graph.nodes()[&node_id];
                 node.inputs(input_nodes);
-                inputs.extend(input_nodes.iter().map(|input| node_streams[input].unwrap()));
+                inputs.extend(input_nodes.iter().filter_map(|input| node_streams[input]));
 
                 node_kinds.insert(node_id, node.output_kind(inputs));
                 node_streams.insert(node_id, node.output_stream(inputs));
@@ -529,7 +517,12 @@ impl CompiledDataflow {
                         nodes.insert(*node_id, node);
                     }
 
-                    Node::ExportedNode(_) => {}
+                    Node::ExportedNode(exported) => {
+                        let node = DataflowNode::Noop(Noop {
+                            input: exported.input(),
+                        });
+                        nodes.insert(*node_id, node);
+                    }
                 }
             }
 
@@ -565,12 +558,9 @@ impl CompiledDataflow {
         let mut inputs = BTreeMap::new();
         let mut outputs = BTreeMap::new();
 
-        // FIXME: Instead of this we should make `nodes` be an ordered
-        // `Vec<(NodeId, DataflowNode)>` where all of a node's predecessors
-        // occur before it
         let order = algo::toposort(&self.edges, None).unwrap();
         for node_id in order {
-            let node = &self.nodes[&node_id];
+            let node = &self.nodes[&dbg!(node_id)];
             match node {
                 DataflowNode::Map(map) => {
                     let input = &streams[&map.input];
@@ -962,7 +952,13 @@ impl CompiledDataflow {
                                         substreams.insert(node_id, min);
                                     }
 
-                                    DataflowNode::Distinct(_) => todo!(),
+                                    DataflowNode::Distinct(distinct) => {
+                                        let distinct = match &substreams[&distinct.input] {
+                                            RowStream::Set(input) => RowStream::Set(input.distinct_trace()),
+                                            RowStream::Map(_input) => todo!(),
+                                        };
+                                        substreams.insert(node_id, distinct);
+                                    }
 
                                     DataflowNode::JoinCore(join) => {
                                         let lhs = substreams[&join.lhs].clone();
@@ -1010,6 +1006,8 @@ impl CompiledDataflow {
                                     }
 
                                     DataflowNode::Subgraph(_) => todo!(),
+
+                                    DataflowNode::Noop(_) => {}
                                 }
                             }
 
@@ -1041,6 +1039,8 @@ impl CompiledDataflow {
                         streams.insert(node_id, consolidated);
                     }
                 }
+
+                DataflowNode::Noop(_) => {}
             }
         }
 
@@ -1054,8 +1054,8 @@ mod tests {
         codegen::CodegenConfig,
         dataflow::{CompiledDataflow, RowOutput},
         ir::{
-            graph::GraphExt, ColumnType, Constant, FunctionBuilder, Graph, IndexWith, JoinCore,
-            Map, Min, RowLayoutBuilder, Sink, Source, SourceMap, StreamKind, Sum,
+            graph::GraphExt, ColumnType, Constant, Distinct, FunctionBuilder, Graph, IndexWith,
+            JoinCore, Map, Min, RowLayoutBuilder, Sink, Source, SourceMap, Stream, StreamKind, Sum,
         },
         row::Row,
     };
@@ -1242,7 +1242,7 @@ mod tests {
         let roots = graph.add_node(Source::new(u64x2));
         let edges = graph.add_node(SourceMap::new(u64x1, u64x1));
 
-        let (recursive, distances) = graph.subgraph(|subgraph| {
+        let (_recursive, distances) = graph.subgraph(|subgraph| {
             let nodes = subgraph.delayed_feedback(u64x2);
 
             let roots = subgraph.delta0(roots);
@@ -1333,8 +1333,9 @@ mod tests {
                 },
                 u64x2,
             ));
-            subgraph.connect_feedback(min_set, nodes);
-            subgraph.export(min_set)
+            let min_set_distinct = subgraph.add_node(Distinct::new(min_set));
+            subgraph.connect_feedback(min_set_distinct, nodes);
+            subgraph.export(min_set_distinct, Stream::Set(u64x2))
         });
 
         let sink = graph.add_node(Sink::new(distances));
