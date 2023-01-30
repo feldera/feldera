@@ -4,7 +4,7 @@ use crate::ir::{
         BinOp, BinOpKind, Branch, Constant, Expr, IsNull, Load, RValue, Return, SetNull, Store,
         Terminator,
     },
-    layout_cache::LayoutCache,
+    layout_cache::RowLayoutCache,
     BlockId, BlockIdGen, ColumnType, ExprId, ExprIdGen, LayoutId, Signature,
 };
 use std::{
@@ -80,12 +80,13 @@ impl Function {
         )
     }
 
-    pub fn optimize(&mut self, layout_cache: &LayoutCache) {
+    pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.remove_unit_memory_operations(layout_cache);
         // self.remove_noop_copies(layout_cache)
+        // TODO: Tree shaking to remove unreachable nodes
     }
 
-    fn remove_noop_copies(&mut self, layout_cache: &LayoutCache) {
+    fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
         let mut scalar_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();
         for &(layout, expr, _) in &self.args {
@@ -193,7 +194,7 @@ impl Function {
         }
     }
 
-    fn remove_unit_memory_operations(&mut self, layout_cache: &LayoutCache) {
+    fn remove_unit_memory_operations(&mut self, layout_cache: &RowLayoutCache) {
         let mut unit_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();
         for &(layout, expr, _) in &self.args {

@@ -1,20 +1,23 @@
 mod intrinsics;
 mod layout;
+mod layout_cache;
 mod utils;
 mod vtable;
 
 pub use layout::{BitSetType, InvalidBitsetType, NativeLayout, NativeType};
+pub use layout_cache::NativeLayoutCache;
 pub use vtable::{LayoutVTable, VTable};
+
+pub(crate) use layout::LayoutConfig;
 
 use crate::{
     codegen::{
         intrinsics::{ImportIntrinsics, Intrinsics},
-        layout::LayoutConfig,
         utils::FunctionBuilderExt,
     },
     ir::{
-        BinOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags, LayoutCache,
-        LayoutId, RValue, RowLayout, Signature, Terminator,
+        BinOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags, LayoutId,
+        RValue, RowLayoutCache, Signature, Terminator,
     },
 };
 use cranelift::{
@@ -23,10 +26,10 @@ use cranelift::{
         Context,
     },
     prelude::{
-        isa::{self, TargetIsa},
+        isa::{self, TargetFrontendConfig, TargetIsa},
         settings, types, AbiParam, Block as ClifBlock, Configurable, FunctionBuilder,
         FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature as ClifSignature,
-        StackSlotData, StackSlotKind, TrapCode, Value,
+        StackSlotData, StackSlotKind, TrapCode, Type, Value,
     },
 };
 use cranelift_jit::{JITBuilder, JITModule};
@@ -38,48 +41,12 @@ use std::{
 use target_lexicon::Triple;
 
 const TRAP_NULL_PTR: TrapCode = TrapCode::User(500);
+const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(501);
 
 // TODO: Pretty function debugging <https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs>
 
-pub struct NativeLayoutCache {
-    pub(crate) layout_cache: LayoutCache,
-    layouts: BTreeMap<LayoutId, NativeLayout>,
-    layout_config: LayoutConfig,
-}
-
-impl NativeLayoutCache {
-    fn new(layout_cache: LayoutCache, layout_config: LayoutConfig) -> Self {
-        Self {
-            layout_cache,
-            layouts: BTreeMap::new(),
-            layout_config,
-        }
-    }
-
-    pub fn get_layouts(&mut self, layout_id: LayoutId) -> (&NativeLayout, Ref<'_, RowLayout>) {
-        let row_layout = self.layout_cache.get(layout_id);
-        let native_layout = self
-            .layouts
-            .entry(layout_id)
-            .or_insert_with(|| NativeLayout::from_row(&row_layout, &self.layout_config));
-
-        (native_layout, row_layout)
-    }
-
-    pub fn compute(&mut self, layout_id: LayoutId) -> &NativeLayout {
-        self.layouts.entry(layout_id).or_insert_with(|| {
-            let row_layout = self.layout_cache.get(layout_id);
-            NativeLayout::from_row(&row_layout, &self.layout_config)
-        })
-    }
-
-    pub fn row_layout_cache(&self) -> &LayoutCache {
-        &self.layout_cache
-    }
-}
-
 // TODO: Config option for packed null flags or 1 byte booleans
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CodegenConfig {
     /// Whether or not to add invariant assertions into generated code
     pub debug_assertions: bool,
@@ -160,7 +127,7 @@ pub struct Codegen {
 }
 
 impl Codegen {
-    pub fn new(layout_cache: LayoutCache, config: CodegenConfig) -> Self {
+    pub fn new(layout_cache: RowLayoutCache, config: CodegenConfig) -> Self {
         let target = Self::target_isa();
 
         let layout_cache = NativeLayoutCache::new(
@@ -236,11 +203,13 @@ impl Codegen {
         self.module_ctx.func.name = func_name;
 
         {
+            let layout_cache = self.layout_cache.clone();
             let mut ctx = CodegenCtx::new(
+                self.config,
                 &mut self.module,
                 &mut self.data_ctx,
                 &mut self.data,
-                &mut self.layout_cache,
+                self.layout_cache.clone(),
                 self.intrinsics.import(),
             );
             let mut builder =
@@ -257,6 +226,17 @@ impl Codegen {
                 }
 
                 let block = ctx.switch_to_block(block_id, &mut builder);
+
+                // Ensure that all input pointers are valid
+                // TODO: This may need changes if we ever have scalar function inputs
+                if ctx.debug_assertions() && block_id == function.entry_block() {
+                    for &(layout_id, arg_id, _) in function.args() {
+                        debug_assert_eq!(ctx.layout_id(arg_id), layout_id);
+                        let layout = layout_cache.layout_of(layout_id);
+                        let arg = ctx.value(arg_id);
+                        ctx.assert_ptr_valid(arg, layout.align(), &mut builder);
+                    }
+                }
 
                 let block_contents = &function.blocks()[&block_id];
 
@@ -285,7 +265,7 @@ impl Codegen {
                         Expr::Store(store) => {
                             debug_assert!(!ctx.is_readonly(store.target()));
 
-                            let layout = ctx.layout_of(store.target());
+                            let layout = layout_cache.layout_of(ctx.layout_id(store.target()));
                             let offset = layout.offset_of(store.row());
 
                             let value = match store.value() {
@@ -306,7 +286,7 @@ impl Codegen {
                         }
 
                         Expr::Load(load) => {
-                            let layout = ctx.layout_of(load.source());
+                            let layout = layout_cache.layout_of(ctx.layout_id(load.source()));
                             let offset = layout.offset_of(load.row());
                             let ty = layout
                                 .type_of(load.row())
@@ -335,7 +315,7 @@ impl Codegen {
                         // we can simplify the codegen a good bit by just checking if the bitset
                         // is or isn't equal to zero
                         Expr::IsNull(is_null) => {
-                            let layout = ctx.layout_of(is_null.value());
+                            let layout = layout_cache.layout_of(ctx.layout_id(is_null.value()));
                             let (bitset_ty, bitset_offset, bit_idx) =
                                 layout.nullability_of(is_null.row());
                             let bitset_ty =
@@ -493,7 +473,7 @@ impl Codegen {
                                 ctx.exprs[&copy_row.dest()]
                             };
 
-                            let layout = ctx.layout_cache.compute(copy_row.layout());
+                            let layout = ctx.layout_cache.layout_of(copy_row.layout());
 
                             // FIXME: We probably want to replace this with our own impl, it
                             // currently just emits a memcpy call on
@@ -598,11 +578,6 @@ impl Codegen {
         sig
     }
 
-    #[cfg(test)]
-    pub(crate) fn layout_for(&mut self, layout_id: LayoutId) -> &NativeLayout {
-        self.layout_cache.compute(layout_id)
-    }
-
     #[track_caller]
     fn finalize_function(&mut self, func_id: FuncId) {
         // println!("pre-opt: {}", self.module_ctx.func.display());
@@ -618,11 +593,12 @@ impl Codegen {
 }
 
 struct CodegenCtx<'a> {
+    config: CodegenConfig,
     module: &'a mut JITModule,
     data_ctx: &'a mut DataContext,
     // TODO: Use an interner
     data: &'a mut HashMap<Box<[u8]>, DataId>,
-    layout_cache: &'a mut NativeLayoutCache,
+    layout_cache: NativeLayoutCache,
     blocks: BTreeMap<BlockId, ClifBlock>,
     exprs: BTreeMap<ExprId, Value>,
     expr_layouts: BTreeMap<ExprId, LayoutId>,
@@ -634,13 +610,15 @@ struct CodegenCtx<'a> {
 
 impl<'a> CodegenCtx<'a> {
     fn new(
+        config: CodegenConfig,
         module: &'a mut JITModule,
         data_ctx: &'a mut DataContext,
         data: &'a mut HashMap<Box<[u8]>, DataId>,
-        layout_cache: &'a mut NativeLayoutCache,
+        layout_cache: NativeLayoutCache,
         imports: ImportIntrinsics,
     ) -> Self {
         Self {
+            config,
             module,
             data_ctx,
             data,
@@ -653,6 +631,34 @@ impl<'a> CodegenCtx<'a> {
             imports,
             data_imports: BTreeMap::new(),
         }
+    }
+
+    /// Get the value of an expression
+    #[track_caller]
+    fn value(&self, expr_id: ExprId) -> Value {
+        self.exprs[&expr_id]
+    }
+
+    /// Returns `true` if the given expression is a `readonly` row
+    fn is_readonly(&self, expr: ExprId) -> bool {
+        self.function_inputs
+            .get(&expr)
+            .map_or(false, InputFlags::is_readonly)
+    }
+
+    /// Returns `true` if debug assertions are enabled
+    const fn debug_assertions(&self) -> bool {
+        self.config.debug_assertions
+    }
+
+    /// Returns the current arch's pointer type
+    fn pointer_type(&self) -> Type {
+        self.module.isa().pointer_type()
+    }
+
+    /// Returns the current arch's [`TargetFrontendConfig`]
+    fn frontend_config(&self) -> TargetFrontendConfig {
+        self.module.isa().frontend_config()
     }
 
     fn add_function_params(&mut self, function: &Function, builder: &mut FunctionBuilder<'_>) {
@@ -669,16 +675,8 @@ impl<'a> CodegenCtx<'a> {
         for (idx, &(layout, expr_id, flags)) in function.args().iter().enumerate() {
             let param = builder.block_params(entry_block)[idx];
             self.add_expr(expr_id, param, layout);
-
             self.function_inputs.insert(expr_id, flags);
         }
-    }
-
-    /// Returns `true` if the given expression is a `readonly` row
-    fn is_readonly(&self, expr: ExprId) -> bool {
-        self.function_inputs
-            .get(&expr)
-            .map_or(false, InputFlags::is_readonly)
     }
 
     fn create_data<D>(&mut self, data: D) -> DataId
@@ -714,9 +712,10 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
-    // FIXME: This isn't really what we want, we either need to distinguish between constant
-    // strings and dynamic strings (preferable, causes less allocation) or just unconditionally
-    // turn constant strings into `ThinStr`s while also keeping track of them so we can deallocate them
+    // FIXME: This isn't really what we want, we either need to distinguish between
+    // constant strings and dynamic strings (preferable, causes less allocation)
+    // or just unconditionally turn constant strings into `ThinStr`s while also
+    // keeping track of them so we can deallocate them
     fn strconst(&mut self, constant: &Constant, builder: &mut FunctionBuilder<'_>) -> Value {
         if let Constant::String(string) = constant {
             // Define the data backing the string
@@ -728,7 +727,7 @@ impl<'a> CodegenCtx<'a> {
             // Get the value of the string
             builder
                 .ins()
-                .symbol_value(self.module.isa().pointer_type(), string_value)
+                .symbol_value(self.pointer_type(), string_value)
         } else {
             unreachable!()
         }
@@ -791,12 +790,14 @@ impl<'a> CodegenCtx<'a> {
         debug_assert!(prev.is_none());
     }
 
+    /// Get the [`LayoutId`] associated with the given expression
     fn layout_id(&self, expr_id: ExprId) -> LayoutId {
         self.expr_layouts[&expr_id]
     }
 
-    fn layout_of(&mut self, expr_id: ExprId) -> &NativeLayout {
-        self.layout_cache.compute(self.layout_id(expr_id))
+    /// Get the layout of the given expression
+    fn layout_of(&self, expr_id: ExprId) -> Ref<'_, NativeLayout> {
+        self.layout_cache.layout_of(self.layout_id(expr_id))
     }
 
     /// Returns `block`, creating it if it doesn't yet exist
@@ -874,7 +875,7 @@ impl<'a> CodegenCtx<'a> {
         layout: LayoutId,
         builder: &mut FunctionBuilder<'_>,
     ) -> StackSlot {
-        let layout_size = self.layout_cache.compute(layout).size();
+        let layout_size = self.layout_cache.layout_of(layout).size();
         // TODO: Slot alignment?
         let slot = builder
             .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, layout_size));
@@ -893,19 +894,61 @@ impl<'a> CodegenCtx<'a> {
         layout: LayoutId,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let layout = self.layout_cache.compute(layout);
+        // Ensure that `buffer` is a pointer
+        debug_assert_eq!(builder.func.dfg.value_type(buffer), self.pointer_type());
+
+        let layout = self.layout_cache.layout_of(layout);
+
+        // Ensure that the given buffer is a valid pointer
+        self.debug_assert_ptr_valid(buffer, layout.align(), builder);
 
         // FIXME: We probably want to replace this with our own impl, it currently
         // just emits a memset call on sizes greater than 4 when an inlined impl
         // would perform much better
         builder.emit_small_memset(
-            self.module.isa().frontend_config(),
+            self.frontend_config(),
             buffer,
             value,
             layout.size() as u64,
             layout.align().try_into().unwrap(),
             MemFlags::trusted(),
         );
+    }
+
+    /// Traps if the given pointer is null or not aligned to `align`
+    fn assert_ptr_valid(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
+        self.assert_ptr_non_null(ptr, builder);
+        self.assert_ptr_aligned(ptr, align, builder);
+    }
+
+    /// Traps if the given pointer is null or not aligned to `align` when
+    /// `debug_assertions` is enabled
+    fn debug_assert_ptr_valid(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
+        if self.debug_assertions() {
+            self.assert_ptr_valid(ptr, align, builder);
+        }
+    }
+
+    /// Traps if the given pointer is null
+    fn assert_ptr_non_null(&self, ptr: Value, builder: &mut FunctionBuilder<'_>) {
+        debug_assert_eq!(builder.func.dfg.value_type(ptr), self.pointer_type());
+
+        // Trap if `ptr` is null
+        builder.ins().trapz(ptr, TRAP_NULL_PTR);
+    }
+
+    /// Traps if the given pointer is not aligned to `align`
+    fn assert_ptr_aligned(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
+        debug_assert_eq!(builder.func.dfg.value_type(ptr), self.pointer_type());
+        debug_assert_ne!(align, 0);
+        debug_assert!(align.is_power_of_two());
+
+        // We check alignment using `(align - 1) & ptr.addr() == 0` since we know that
+        // `align` is always non-zero and a power of two. `align - 1` will never
+        // underflow since align is always greater than zero
+        let masked = builder.ins().band_imm(ptr, (align - 1) as i64);
+        // Masked will be zero if the pointer is aligned, so we trap on non-zero values
+        builder.ins().trapnz(masked, TRAP_UNALIGNED_PTR);
     }
 }
 

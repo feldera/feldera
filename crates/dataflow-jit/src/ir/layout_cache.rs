@@ -7,14 +7,15 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct LayoutCache {
-    inner: Rc<RefCell<LayoutCacheInner>>,
+pub struct RowLayoutCache {
+    inner: Rc<RefCell<RowLayoutCacheInner>>,
 }
 
-impl LayoutCache {
+impl RowLayoutCache {
+    /// Creates a new row layout cache
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(LayoutCacheInner::new())),
+            inner: Rc::new(RefCell::new(RowLayoutCacheInner::new())),
         }
     }
 
@@ -35,7 +36,13 @@ impl LayoutCache {
     }
 }
 
-struct LayoutCacheInner {
+impl Default for RowLayoutCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct RowLayoutCacheInner {
     idx_to_id: BTreeMap<u32, LayoutId>,
     id_to_idx: BTreeMap<LayoutId, u32>,
     layouts: Vec<RowLayout>,
@@ -43,7 +50,7 @@ struct LayoutCacheInner {
     unit_layout: LayoutId,
 }
 
-impl LayoutCacheInner {
+impl RowLayoutCacheInner {
     fn new() -> Self {
         let mut this = Self {
             idx_to_id: BTreeMap::new(),
@@ -101,7 +108,7 @@ impl LayoutCacheInner {
     }
 }
 
-impl Debug for LayoutCacheInner {
+impl Debug for RowLayoutCacheInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_set().entries(&self.layouts).finish()
     }

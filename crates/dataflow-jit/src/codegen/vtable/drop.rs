@@ -26,7 +26,7 @@ impl Codegen {
                 let ptr = builder.block_params(entry_block)[0];
                 drop_layout(
                     ptr,
-                    layout,
+                    &layout,
                     &row_layout,
                     &mut builder,
                     &mut imports,
@@ -108,7 +108,7 @@ impl Codegen {
                 let ptr = builder.block_params(body)[0];
                 drop_layout(
                     ptr,
-                    layout,
+                    &layout,
                     &row_layout,
                     &mut builder,
                     &mut imports,

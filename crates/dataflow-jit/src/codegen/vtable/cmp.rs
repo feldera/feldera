@@ -78,9 +78,9 @@ impl Codegen {
                     if layout.is_nullable(idx) {
                         // Zero = value isn't null, non-zero = value is null
                         let lhs_non_null =
-                            column_non_null(idx, lhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, lhs, &layout, &mut builder, &self.module, true);
                         let rhs_non_null =
-                            column_non_null(idx, rhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, rhs, &layout, &mut builder, &self.module, true);
 
                         let check_nulls = builder.create_block();
                         let null_eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
@@ -252,9 +252,9 @@ impl Codegen {
 
                     if nullable {
                         let lhs_non_null =
-                            column_non_null(idx, lhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, lhs, &layout, &mut builder, &self.module, true);
                         let rhs_non_null =
-                            column_non_null(idx, rhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, rhs, &layout, &mut builder, &self.module, true);
 
                         if row_type.is_unit() {
                             // `lhs_non_null < rhs_non_null` gives us our proper ordering, making
@@ -456,9 +456,9 @@ impl Codegen {
                     if nullable {
                         // Zero = non-null, non-zero = null
                         let lhs_non_null =
-                            column_non_null(idx, lhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, lhs, &layout, &mut builder, &self.module, true);
                         let rhs_non_null =
-                            column_non_null(idx, rhs, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, rhs, &layout, &mut builder, &self.module, true);
 
                         let check_null = builder.create_block();
 

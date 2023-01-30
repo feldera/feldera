@@ -4,7 +4,9 @@ mod drop;
 mod tests;
 
 use crate::{
-    codegen::{utils::FunctionBuilderExt, Codegen, CodegenCtx, NativeLayout, TRAP_NULL_PTR},
+    codegen::{
+        utils::FunctionBuilderExt, Codegen, CodegenCtx, NativeLayout, NativeType, TRAP_NULL_PTR,
+    },
     ir::{ColumnType, LayoutId},
 };
 use cranelift::{
@@ -21,6 +23,7 @@ use std::{
     any::TypeId,
     cmp::Ordering,
     fmt::{self, Debug},
+    mem::align_of,
     num::NonZeroUsize,
 };
 
@@ -95,7 +98,7 @@ macro_rules! vtable {
 
                 fn make_vtable_for(&mut self, layout_id: LayoutId) -> LayoutVTable {
                     let (size_of, align_of) = {
-                        let layout = self.layout_cache.compute(layout_id);
+                        let layout = self.layout_cache.layout_of(layout_id);
                         (
                             layout.size() as usize,
                             NonZeroUsize::new(layout.align() as usize).unwrap(),
@@ -194,12 +197,12 @@ impl Codegen {
         let func_id = self.new_function([ptr_ty], Some(ptr_ty));
 
         {
-            let layout_cache = self.layout_cache.layout_cache.clone();
             let mut ctx = CodegenCtx::new(
+                self.config,
                 &mut self.module,
                 &mut self.data_ctx,
                 &mut self.data,
-                &mut self.layout_cache,
+                self.layout_cache.clone(),
                 self.intrinsics.import(),
             );
             let mut builder =
@@ -210,13 +213,19 @@ impl Codegen {
             builder.append_block_params_for_function_params(entry_block);
             builder.switch_to_block(entry_block);
 
-            // Build the layout's type name and leak it so that it's static
-            // FIXME: Don't leak this, store them along with the code that backs the
-            // functions so we can deallocate them at the same time
-            // FIXME: Should do this as a static included in the jit code
-            let layout = layout_cache.get(layout_id);
+            // Write the string's length to the out param
+            let length_out = builder.block_params(entry_block)[0];
+            ctx.debug_assert_ptr_valid(
+                length_out,
+                NativeType::Usize.align(&ctx.frontend_config()),
+                &mut builder,
+            );
 
-            let type_name = format!("DataflowJitRow({layout:?})").into_bytes();
+            let type_name = format!(
+                "DataflowJitRow({:?})",
+                ctx.layout_cache.row_layout(layout_id),
+            )
+            .into_bytes();
             let type_name_len = type_name.len();
             let name_id = ctx.create_data(type_name);
             let name_value = ctx.import_data(name_id, &mut builder);
@@ -224,9 +233,6 @@ impl Codegen {
             // Get the length and pointer to the type name
             let type_name_ptr = builder.ins().symbol_value(ptr_ty, name_value);
             let type_name_len = builder.ins().iconst(ptr_ty, type_name_len as i64);
-
-            // Write the string's length to the out param
-            let length_out = builder.block_params(entry_block)[0];
 
             if self.config.debug_assertions {
                 builder.ins().trapz(length_out, TRAP_NULL_PTR);
@@ -255,6 +261,14 @@ impl Codegen {
         let mut imports = self.intrinsics.import();
 
         {
+            let ctx = CodegenCtx::new(
+                self.config,
+                &mut self.module,
+                &mut self.data_ctx,
+                &mut self.data,
+                self.layout_cache.clone(),
+                self.intrinsics.import(),
+            );
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
@@ -265,15 +279,16 @@ impl Codegen {
             // Add the function params as block params
             builder.append_block_params_for_function_params(entry_block);
 
+            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+
             let params = builder.block_params(entry_block);
             let (ptr, context) = (params[0], params[1]);
-
-            if self.config.debug_assertions {
-                builder.ins().trapz(ptr, TRAP_NULL_PTR);
-                builder.ins().trapz(context, TRAP_NULL_PTR);
-            }
-
-            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+            ctx.debug_assert_ptr_valid(ptr, layout.align(), &mut builder);
+            ctx.debug_assert_ptr_valid(
+                context,
+                align_of::<size_of::Context>() as u32,
+                &mut builder,
+            );
 
             if row_layout.columns().iter().any(ColumnType::is_string) {
                 for (idx, (ty, nullable)) in row_layout
@@ -287,7 +302,7 @@ impl Codegen {
                     let next_size_of = if nullable {
                         // Zero = string isn't null, non-zero = string is null
                         let string_non_null =
-                            column_non_null(idx, ptr, layout, &mut builder, &self.module, true);
+                            column_non_null(idx, ptr, &layout, &mut builder, &self.module, true);
 
                         // If the string is null, jump to the `next_size_of` block and don't
                         // get the size of the current string (since it's null). Otherwise
@@ -346,12 +361,13 @@ impl Codegen {
         let mut imports = self.intrinsics.import();
 
         {
-            let layout_cache = self.layout_cache.layout_cache.clone();
+            let layout_cache = self.layout_cache.clone();
             let mut ctx = CodegenCtx::new(
+                self.config,
                 &mut self.module,
                 &mut self.data_ctx,
                 &mut self.data,
-                &mut self.layout_cache,
+                self.layout_cache.clone(),
                 self.intrinsics.import(),
             );
 
@@ -369,16 +385,22 @@ impl Codegen {
             let params = builder.block_params(entry_block);
             let (ptr, fmt) = (params[0], params[1]);
 
-            if self.config.debug_assertions {
-                builder.ins().trapz(ptr, TRAP_NULL_PTR);
-                builder.ins().trapz(fmt, TRAP_NULL_PTR);
+            // Ensure that the given pointers are valid
+            if ctx.debug_assertions() {
+                let ptr_align = ctx.layout_cache.layout_of(layout_id).align();
+                ctx.assert_ptr_valid(ptr, ptr_align, &mut builder);
+                ctx.assert_ptr_valid(
+                    fmt,
+                    align_of::<std::fmt::Formatter<'_>>() as u32,
+                    &mut builder,
+                );
             }
 
             let return_block = builder.create_block();
             builder.append_block_params_for_function_returns(return_block);
 
             // If the row is empty we can just write an empty row
-            let row_layout = layout_cache.get(layout_id);
+            let row_layout = layout_cache.row_layout(layout_id);
             if row_layout.is_empty() {
                 // Declare the data within the function
                 // TODO: Deduplicate data entries within the module
@@ -417,10 +439,10 @@ impl Codegen {
                     let after_debug = builder.create_block();
 
                     if nullable {
-                        let layout = ctx.layout_cache.compute(layout_id);
+                        let layout = layout_cache.layout_of(layout_id);
                         // Zero = value isn't null, non-zero = value is null
                         let non_null =
-                            column_non_null(idx, ptr, layout, &mut builder, ctx.module, true);
+                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
 
                         // If the value is null, jump to the `write_null` block and debug a null
                         // value (since it's null). Otherwise (if the value isn't null) debug it
@@ -462,7 +484,7 @@ impl Codegen {
                         builder.call_fn(str_debug, &[unit_ptr, unit_len, fmt])
                     } else {
                         // Load the value
-                        let layout = ctx.layout_cache.compute(layout_id);
+                        let layout = ctx.layout_cache.layout_of(layout_id);
                         let offset = layout.offset_of(idx) as i32;
                         let native_ty = layout
                             .type_of(idx)
