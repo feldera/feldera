@@ -126,7 +126,11 @@ impl GraphExt for Subgraph {
         // Add all exports to the containing graph
         // FIXME: Remove this clone
         for (&input, &exported) in subgraph.output_nodes() {
-            self.create_node(exported, ExportedNode::new(subgraph_id, input));
+            let export = subgraph.nodes()[&exported].clone().unwrap_export();
+            self.create_node(
+                exported,
+                ExportedNode::new(subgraph_id, input, export.layout()),
+            );
         }
 
         (self.create_node(subgraph_id, subgraph), result)
