@@ -1,14 +1,14 @@
 use crate::ir::{BlockId, ColumnType, ExprId, LayoutId};
 use derive_more::From;
 
-#[derive(Debug, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq)]
 pub enum Terminator {
     Return(Return),
     Jump(Jump),
     Branch(Branch),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Return {
     value: RValue,
 }
@@ -27,7 +27,7 @@ impl Return {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Jump {
     target: BlockId,
 }
@@ -42,7 +42,7 @@ impl Jump {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Branch {
     cond: RValue,
     truthy: BlockId,
@@ -75,13 +75,13 @@ impl Branch {
     }
 }
 
-#[derive(Debug, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq)]
 pub enum RValue {
     Expr(ExprId),
     Imm(Constant),
 }
 
-#[derive(Debug, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq)]
 pub enum Expr {
     Load(Load),
     Store(Store),
@@ -95,7 +95,7 @@ pub enum Expr {
     UninitRow(UninitRow),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinOp {
     // TODO: Allow for immediates
     lhs: ExprId,
@@ -133,7 +133,7 @@ pub enum BinOpKind {
 }
 
 /// Copies a value
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CopyVal {
     /// The value to be copied
     value: ExprId,
@@ -155,7 +155,7 @@ impl CopyVal {
 }
 
 /// Extract a value from a row
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Load {
     /// The row to extract from
     source: ExprId,
@@ -181,7 +181,7 @@ impl Load {
 }
 
 /// Insert a value into a row
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Store {
     /// The row to insert into
     target: ExprId,
@@ -209,7 +209,7 @@ impl Store {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IsNull {
     value: ExprId,
     row: usize,
@@ -229,7 +229,7 @@ impl IsNull {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SetNull {
     target: ExprId,
     row: usize,
@@ -258,7 +258,7 @@ impl SetNull {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Constant {
     Unit,
     U32(u32),
@@ -335,7 +335,7 @@ impl Constant {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CopyRowTo {
     src: ExprId,
     dest: ExprId,
@@ -360,7 +360,7 @@ impl CopyRowTo {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UninitRow {
     layout: LayoutId,
 }
@@ -386,7 +386,7 @@ impl UninitRow {
 /// sigil value since that could potentially be more efficient.
 /// In short: `NullRow` produces a row for which `IsNull` will
 /// always return `true`
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NullRow {
     layout: LayoutId,
 }

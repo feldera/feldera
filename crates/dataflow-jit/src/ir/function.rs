@@ -42,7 +42,7 @@ impl InputFlags {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     args: Vec<(LayoutId, ExprId, InputFlags)>,
     ret: ColumnType,
@@ -386,6 +386,10 @@ impl FunctionBuilder {
 
     pub fn mul(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
         self.add_expr(BinOp::new(lhs, rhs, BinOpKind::Mul))
+    }
+
+    pub fn constant(&mut self, constant: Constant) -> ExprId {
+        self.add_expr(constant)
     }
 
     pub fn set_terminator<T>(&mut self, terminator: T)

@@ -1,52 +1,203 @@
 use crate::ir::{
     layout_cache::LayoutCache,
-    node::{DataflowNode, Node},
-    NodeId, NodeIdGen,
+    node::{Node, Subgraph as SubgraphNode},
+    DataflowNode, ExportedNode, Function, LayoutId, NodeId, NodeIdGen,
 };
-use std::collections::BTreeMap;
+use petgraph::prelude::DiGraphMap;
+use std::{collections::BTreeMap, rc::Rc};
+
+pub trait GraphExt {
+    fn layout_cache(&self) -> &LayoutCache;
+
+    fn nodes(&self) -> &BTreeMap<NodeId, Node>;
+
+    fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node>;
+
+    fn next_node(&self) -> NodeId;
+
+    fn create_node<N>(&mut self, node_id: NodeId, node: N) -> NodeId
+    where
+        N: Into<Node>;
+
+    fn add_node<N>(&mut self, node: N) -> NodeId
+    where
+        N: Into<Node>,
+    {
+        let node_id = self.next_node();
+        self.create_node(node_id, node)
+    }
+
+    fn subgraph<F, T>(&mut self, build: F) -> (NodeId, T)
+    where
+        F: FnOnce(&mut SubgraphNode) -> T;
+
+    fn optimize(&mut self);
+
+    fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
+        for node in self.nodes().values() {
+            node.functions(functions);
+        }
+    }
+
+    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
+        for node in self.nodes().values() {
+            node.layouts(layouts);
+        }
+    }
+
+    fn edges(&self) -> &DiGraphMap<NodeId, ()>;
+}
+
+#[derive(Debug, Clone)]
+struct GraphContext {
+    layout_cache: LayoutCache,
+    node_id: Rc<NodeIdGen>,
+}
+
+impl GraphContext {
+    fn new() -> Self {
+        Self {
+            layout_cache: LayoutCache::new(),
+            node_id: Rc::new(NodeIdGen::new()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Subgraph {
+    edges: DiGraphMap<NodeId, ()>,
+    nodes: BTreeMap<NodeId, Node>,
+    ctx: GraphContext,
+}
+
+impl Subgraph {
+    fn new(ctx: GraphContext) -> Self {
+        Self {
+            edges: DiGraphMap::new(),
+            nodes: BTreeMap::new(),
+            ctx,
+        }
+    }
+}
+
+impl GraphExt for Subgraph {
+    fn layout_cache(&self) -> &LayoutCache {
+        &self.ctx.layout_cache
+    }
+
+    fn nodes(&self) -> &BTreeMap<NodeId, Node> {
+        &self.nodes
+    }
+
+    fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
+        &mut self.nodes
+    }
+
+    fn next_node(&self) -> NodeId {
+        self.ctx.node_id.next()
+    }
+
+    fn create_node<N>(&mut self, node_id: NodeId, node: N) -> NodeId
+    where
+        N: Into<Node>,
+    {
+        let node = node.into();
+
+        let mut inputs = Vec::new();
+        node.inputs(&mut inputs);
+        for input in inputs {
+            self.edges.add_edge(input, node_id, ());
+        }
+
+        self.nodes.insert(node_id, node);
+
+        node_id
+    }
+
+    fn subgraph<F, T>(&mut self, build: F) -> (NodeId, T)
+    where
+        F: FnOnce(&mut SubgraphNode) -> T,
+    {
+        let mut subgraph = SubgraphNode::new(Subgraph::new(self.ctx.clone()));
+        let subgraph_id = self.next_node();
+
+        let result = build(&mut subgraph);
+
+        // Add all exports to the containing graph
+        // FIXME: Remove this clone
+        for (&input, &exported) in subgraph.output_nodes() {
+            self.create_node(exported, ExportedNode::new(subgraph_id, input));
+        }
+
+        (self.create_node(subgraph_id, subgraph), result)
+    }
+
+    fn optimize(&mut self) {
+        // TODO: Validate before and after optimizing
+        for node in self.nodes.values_mut() {
+            node.optimize(&[], &self.ctx.layout_cache);
+        }
+    }
+
+    fn edges(&self) -> &DiGraphMap<NodeId, ()> {
+        &self.edges
+    }
+}
 
 #[derive(Debug)]
 pub struct Graph {
-    nodes: BTreeMap<NodeId, Node>,
-    layout_cache: LayoutCache,
-    node_id: NodeIdGen,
+    graph: Subgraph,
 }
 
 impl Graph {
     pub fn new() -> Self {
         Self {
-            nodes: BTreeMap::new(),
-            layout_cache: LayoutCache::new(),
-            node_id: NodeIdGen::new(),
+            graph: Subgraph::new(GraphContext::new()),
         }
     }
 
-    pub const fn nodes(&self) -> &BTreeMap<NodeId, Node> {
-        &self.nodes
+    pub fn graph(&self) -> &Subgraph {
+        &self.graph
+    }
+}
+
+impl GraphExt for Graph {
+    fn layout_cache(&self) -> &LayoutCache {
+        self.graph.layout_cache()
     }
 
-    pub fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
-        &mut self.nodes
+    fn nodes(&self) -> &BTreeMap<NodeId, Node> {
+        self.graph.nodes()
     }
 
-    pub fn add_node<N>(&mut self, node: N) -> NodeId
+    fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
+        self.graph.nodes_mut()
+    }
+
+    fn next_node(&self) -> NodeId {
+        self.graph.next_node()
+    }
+
+    fn create_node<N>(&mut self, node_id: NodeId, node: N) -> NodeId
     where
         N: Into<Node>,
     {
-        let node = node.into();
-        let node_id = self.node_id.next();
-        self.nodes.insert(node_id, node);
-        node_id
+        self.graph.create_node(node_id, node)
     }
 
-    pub fn layout_cache(&self) -> &LayoutCache {
-        &self.layout_cache
+    fn subgraph<F, T>(&mut self, build: F) -> (NodeId, T)
+    where
+        F: FnOnce(&mut SubgraphNode) -> T,
+    {
+        self.graph.subgraph(build)
     }
 
-    pub fn optimize(&mut self) {
-        for node in self.nodes.values_mut() {
-            node.optimize(&[], &self.layout_cache);
-        }
+    fn optimize(&mut self) {
+        self.graph.optimize();
+    }
+
+    fn edges(&self) -> &DiGraphMap<NodeId, ()> {
+        self.graph.edges()
     }
 }
 
@@ -60,22 +211,21 @@ impl Default for Graph {
 mod tests {
     use crate::{
         codegen::{Codegen, CodegenConfig},
+        dataflow::CompiledDataflow,
         ir::{
             expr::{Constant, CopyRowTo, NullRow},
             function::FunctionBuilder,
-            graph::Graph,
-            node::{Differentiate, Fold, IndexWith, Map, Neg, Node, Sink, Source, Sum},
+            graph::{Graph, GraphExt},
+            node::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
         row::Row,
     };
     use dbsp::{
-        operator::FilterMap,
         trace::{Batch, BatchReader, Builder, Cursor},
         OrdZSet, Runtime,
     };
-    use std::{collections::BTreeMap, sync::Arc};
 
     // ```sql
     // CREATE VIEW V AS SELECT Sum(r.COL1 * r.COL5)
@@ -91,19 +241,19 @@ mod tests {
         let weight_layout = graph.layout_cache().add(RowLayout::weight());
         let nullable_i32 = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(ColumnType::I32, true)
+                .with_column(ColumnType::I32, true)
                 .build(),
         );
 
         // let T = circuit.add_source(T);
         let source_row = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(ColumnType::I32, false)
-                .with_row(ColumnType::F64, false)
-                .with_row(ColumnType::Bool, false)
-                .with_row(ColumnType::String, false)
-                .with_row(ColumnType::I32, true)
-                .with_row(ColumnType::F64, true)
+                .with_column(ColumnType::I32, false)
+                .with_column(ColumnType::F64, false)
+                .with_column(ColumnType::Bool, false)
+                .with_column(ColumnType::String, false)
+                .with_column(ColumnType::I32, true)
+                .with_column(ColumnType::F64, true)
                 .build(),
         );
         let source = graph.add_node(Source::new(source_row));
@@ -284,8 +434,8 @@ mod tests {
         // ```
         let stream7866_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(ColumnType::Unit, false)
-                .with_row(ColumnType::I32, true)
+                .with_column(ColumnType::Unit, false)
+                .with_column(ColumnType::I32, true)
                 .build(),
         );
         let stream7866 = graph.add_node(Map::new(
@@ -408,29 +558,12 @@ mod tests {
         {
             let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
-            for node in graph.nodes.values() {
-                println!("{node:?}");
+            let mut functions = Vec::new();
+            graph.functions(&mut functions);
 
-                match node {
-                    Node::Map(map) => {
-                        codegen.codegen_func(map.map_fn());
-                    }
-                    Node::Neg(_) => {}
-                    Node::Sum(_) => {}
-                    Node::Fold(fold) => {
-                        codegen.codegen_func(fold.step_fn());
-                        codegen.codegen_func(fold.finish_fn());
-                    }
-                    Node::Sink(_) => {}
-                    Node::Source(_) => {}
-                    Node::Filter(filter) => {
-                        codegen.codegen_func(filter.filter_fn());
-                    }
-                    Node::IndexWith(index_with) => {
-                        codegen.codegen_func(index_with.index_fn());
-                    }
-                    Node::Differentiate(_) => {}
-                }
+            // TODO: Deduplicate functions
+            for func in functions {
+                codegen.codegen_func(func);
             }
         }
     }
@@ -441,15 +574,15 @@ mod tests {
 
         let xy_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(ColumnType::U32, false)
-                .with_row(ColumnType::U32, false)
+                .with_column(ColumnType::U32, false)
+                .with_column(ColumnType::U32, false)
                 .build(),
         );
         let source = graph.add_node(Source::new(xy_layout));
 
         let x_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
-                .with_row(ColumnType::U32, false)
+                .with_column(ColumnType::U32, false)
                 .build(),
         );
         let map = graph.add_node(Map::new(
@@ -481,139 +614,63 @@ mod tests {
 
         let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
 
-        let xy_vtable = codegen.vtable_for(xy_layout);
-        let x_vtable = codegen.vtable_for(x_layout);
+        let (dataflow, jit_handle, mut layout_cache) =
+            CompiledDataflow::new(&graph, CodegenConfig::debug());
+        let (mut runtime, (mut inputs, outputs)) =
+            Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
-        let xy_layout = codegen.layout_for(xy_layout);
-        let (xy_x_offset, xy_y_offset) = (
-            xy_layout.offset_of(0) as usize,
-            xy_layout.offset_of(1) as usize,
-        );
+        let (xy_x_offset, xy_y_offset) = {
+            let xy_layout = layout_cache.compute(xy_layout);
+            (
+                xy_layout.offset_of(0) as usize,
+                xy_layout.offset_of(1) as usize,
+            )
+        };
 
-        let x_layout = codegen.layout_for(x_layout);
-        let x_x_offset = x_layout.offset_of(0) as usize;
-
-        let node_functions: BTreeMap<_, _> = graph
-            .nodes
-            .iter()
-            .filter_map(|(&node_id, node)| {
-                if let Node::Map(map) = node {
-                    let func_id = codegen.codegen_func(map.map_fn());
-                    Some((node_id, func_id))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let (jit, _) = codegen.finalize_definitions();
-
-        {
-            let xy_vtable = Ptr(Box::into_raw(Box::new(xy_vtable.marshalled(&jit))));
-            let x_vtable = Ptr(Box::into_raw(Box::new(x_vtable.marshalled(&jit))));
-
-            let node_functions: BTreeMap<_, _> = node_functions
-                .into_iter()
-                .map(|(node_id, func_id)| {
-                    (node_id, Ptr(jit.get_finalized_function(func_id) as *mut u8))
-                })
-                .collect();
-
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, size_of::SizeOf)]
-            #[repr(transparent)]
-            struct Ptr<T>(*mut T);
-
-            unsafe impl<T: Send> Send for Ptr<T> {}
-            unsafe impl<T: Sync> Sync for Ptr<T> {}
-
-            let nodes = Arc::new(graph.nodes);
-            let (mut runtime, (mut inputs, outputs)) = Runtime::init_circuit(1, move |circuit| {
-                let mut streams = BTreeMap::new();
-                let mut inputs = BTreeMap::new();
-                let mut outputs = BTreeMap::new();
-
-                for (&node_id, node) in nodes.iter() {
-                    match node {
-                        Node::Source(_source) => {
-                            let (stream, handle) = circuit.add_input_zset::<Row, i32>();
-                            streams.insert(node_id, stream);
-                            inputs.insert(node_id, handle);
-                        }
-
-                        Node::Sink(sink) => {
-                            let output = streams[&sink.input()].output();
-                            outputs.insert(node_id, output);
-                        }
-
-                        Node::Map(map) => {
-                            let input = &streams[&map.input()];
-
-                            let map_fn = node_functions[&node_id];
-                            let map_fn = unsafe {
-                                std::mem::transmute::<
-                                    *const u8,
-                                    unsafe extern "C" fn(*const u8, *mut u8),
-                                >(map_fn.0)
-                            };
-
-                            let stream = input.map(move |x| unsafe {
-                                let mut output = Row::uninit(&*{ x_vtable }.0);
-                                map_fn(x.as_ptr(), output.as_mut_ptr());
-                                output
-                            });
-                            streams.insert(node_id, stream);
-                        }
-
-                        _ => todo!(),
-                    }
-                }
-
-                (inputs, outputs)
-            })
-            .unwrap();
-
-            let mut values = Vec::new();
-            for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
-                unsafe {
-                    let mut row = Row::uninit(&*xy_vtable.0);
-                    row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
-                    row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
-
-                    values.push((row, 1i32));
-                }
-            }
-            inputs.get_mut(&source).unwrap().append(&mut values);
-
-            runtime.step().unwrap();
-
-            let output = outputs.get(&sink).unwrap().consolidate();
-            let mut cursor = output.cursor();
-            while cursor.key_valid() {
-                let weight = cursor.weight();
-                let key = cursor.key();
-                println!("{key:?}: {weight}");
-
-                cursor.step_key();
-            }
-
-            let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
-            for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
-                unsafe {
-                    let mut row = Row::uninit(&*x_vtable.0);
-                    row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
-
-                    expected.push((row, weight));
-                }
-            }
-            assert_eq!(output, expected.done());
-
-            runtime.kill().unwrap();
-
+        let mut values = Vec::new();
+        for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
             unsafe {
-                drop(Box::from_raw(xy_vtable.0));
-                drop(Box::from_raw(x_vtable.0));
+                let mut row = Row::uninit(&*jit_handle.vtables()[&xy_layout]);
+                row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
+                row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
+
+                values.push((row, 1i32));
             }
         }
+        inputs
+            .get_mut(&source)
+            .unwrap()
+            .as_set_mut()
+            .unwrap()
+            .append(&mut values);
 
-        unsafe { jit.free_memory() }
+        runtime.step().unwrap();
+
+        let output = outputs.get(&sink).unwrap().as_set().unwrap().consolidate();
+        let mut cursor = output.cursor();
+        while cursor.key_valid() {
+            let weight = cursor.weight();
+            let key = cursor.key();
+            println!("{key:?}: {weight}");
+
+            cursor.step_key();
+        }
+
+        let x_x_offset = layout_cache.compute(x_layout).offset_of(0) as usize;
+
+        let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
+        for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
+            unsafe {
+                let mut row = Row::uninit(&*jit_handle.vtables()[&x_layout]);
+                row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
+
+                expected.push((row, weight));
+            }
+        }
+        assert_eq!(output, expected.done());
+
+        runtime.kill().unwrap();
+
+        unsafe { jit_handle.free_memory() }
     }
 }

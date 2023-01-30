@@ -1,7 +1,8 @@
+pub mod graph;
+
 mod block;
 mod expr;
 mod function;
-mod graph;
 mod ids;
 mod layout_cache;
 mod node;
@@ -13,11 +14,13 @@ pub use expr::{
     RValue, Return, SetNull, Store, Terminator, UninitRow,
 };
 pub use function::{Function, FunctionBuilder, InputFlags};
-pub use graph::Graph;
+pub use graph::{Graph, GraphExt};
 pub use ids::{BlockId, ExprId, LayoutId, NodeId};
 pub use layout_cache::LayoutCache;
 pub use node::{
-    DataflowNode, Filter, IndexWith, Map, Neg, Node, Sink, Source, Stream, StreamKind, Sum,
+    DataflowNode, DelayedFeedback, Delta0, Differentiate, Distinct, Export, ExportedNode, Filter,
+    IndexWith, JoinCore, Map, Min, Neg, Node, Sink, Source, SourceMap, Stream, StreamKind,
+    Subgraph, Sum,
 };
 pub use types::{ColumnType, RowLayout, RowLayoutBuilder, Signature};
 pub use validate::Validator;

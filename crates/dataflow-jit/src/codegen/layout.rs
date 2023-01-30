@@ -772,21 +772,21 @@ mod tests {
         };
 
         let row = RowLayoutBuilder::new()
-            .with_row(ColumnType::U32, false)
-            .with_row(ColumnType::U16, false)
-            .with_row(ColumnType::U64, false)
-            .with_row(ColumnType::U16, false)
-            .with_row(ColumnType::Unit, false)
+            .with_column(ColumnType::U32, false)
+            .with_column(ColumnType::U16, false)
+            .with_column(ColumnType::U64, false)
+            .with_column(ColumnType::U16, false)
+            .with_column(ColumnType::Unit, false)
             .build();
         let layout = NativeLayout::from_row(&row, &config);
         println!("{layout}");
 
         let row = RowLayoutBuilder::new()
-            .with_row(ColumnType::U32, true)
-            .with_row(ColumnType::U16, false)
-            .with_row(ColumnType::U64, false)
-            .with_row(ColumnType::U16, false)
-            .with_row(ColumnType::String, true)
+            .with_column(ColumnType::U32, true)
+            .with_column(ColumnType::U16, false)
+            .with_column(ColumnType::U64, false)
+            .with_column(ColumnType::U16, false)
+            .with_column(ColumnType::String, true)
             .build();
         let layout = NativeLayout::from_row(&row, &config);
         println!("{layout}");
@@ -805,8 +805,8 @@ mod tests {
             ColumnType::Unit,
             ColumnType::String,
         ] {
-            builder.add_row(ty, false);
-            builder.add_row(ty, true);
+            builder.add_column(ty, false);
+            builder.add_column(ty, true);
         }
         let row = builder.build();
         let layout = NativeLayout::from_row(&row, &config);

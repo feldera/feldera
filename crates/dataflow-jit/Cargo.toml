@@ -15,11 +15,12 @@ target-lexicon = "0.12.5"
 dbsp = { path = "../../" }
 cranelift-module = "0.92.0"
 cranelift-native = "0.92.0"
+petgraph = { version = "0.6.2", features = ["graphmap"] }
 
     [dependencies.derive_more]
     version = "0.99.17"
     default-features = false
-    features = ["from"]
+    features = ["from", "is_variant", "unwrap"]
 
     [dependencies.tinyvec]
     version = "1.6.0"

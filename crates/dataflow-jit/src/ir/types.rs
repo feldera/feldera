@@ -75,12 +75,12 @@ impl RowLayoutBuilder {
         }
     }
 
-    pub fn with_row(mut self, row_type: ColumnType, nullable: bool) -> Self {
-        self.add_row(row_type, nullable);
+    pub fn with_column(mut self, row_type: ColumnType, nullable: bool) -> Self {
+        self.add_column(row_type, nullable);
         self
     }
 
-    pub fn add_row(&mut self, row_type: ColumnType, nullable: bool) -> &mut Self {
+    pub fn add_column(&mut self, row_type: ColumnType, nullable: bool) -> &mut Self {
         self.rows.push(row_type);
         self.nullability.push(nullable);
         self

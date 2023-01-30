@@ -73,7 +73,7 @@ fn string() {
     let layout_cache = LayoutCache::new();
     let string_layout = layout_cache.add(
         RowLayoutBuilder::new()
-            .with_row(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
             .build(),
     );
 
@@ -225,7 +225,7 @@ fn dyn_vec() {
 
     let mut builder = RowLayoutBuilder::new();
     for ty in types {
-        builder.add_row(ty, false).add_row(ty, true);
+        builder.add_column(ty, false).add_column(ty, true);
     }
     let layout_id = layout_cache.add(builder.build());
 
@@ -551,7 +551,7 @@ mod proptests {
         fn row_layout(&self) -> RowLayout {
             let mut builder = RowLayoutBuilder::new();
             for column in &self.columns {
-                builder.add_row(column.row_type(), column.nullable());
+                builder.add_column(column.row_type(), column.nullable());
             }
 
             builder.build()
