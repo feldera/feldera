@@ -58,7 +58,7 @@ impl Codegen {
                     clone_layout(
                         src,
                         dest,
-                        layout,
+                        &layout,
                         &row_layout,
                         &mut builder,
                         &mut imports,
@@ -200,7 +200,7 @@ impl Codegen {
                     clone_layout(
                         src,
                         dest,
-                        layout,
+                        &layout,
                         &row_layout,
                         &mut builder,
                         &mut imports,

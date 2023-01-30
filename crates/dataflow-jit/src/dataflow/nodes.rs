@@ -31,6 +31,14 @@ pub enum DataflowNode {
     Subgraph(DataflowSubgraph),
     Export(Export),
     Noop(Noop),
+    Minus(Minus),
+    MonotonicJoin(MonotonicJoin),
+}
+
+#[derive(Debug, Clone)]
+pub struct Minus {
+    pub lhs: NodeId,
+    pub rhs: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +67,14 @@ pub struct JoinCore {
     pub key_vtable: &'static VTable,
     pub value_vtable: &'static VTable,
     pub output_kind: StreamKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct MonotonicJoin {
+    pub lhs: NodeId,
+    pub rhs: NodeId,
+    pub join_fn: unsafe extern "C" fn(*const u8, *const u8, *const u8, *mut u8),
+    pub key_vtable: &'static VTable,
 }
 
 #[derive(Debug, Clone)]

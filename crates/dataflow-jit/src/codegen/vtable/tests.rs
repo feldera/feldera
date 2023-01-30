@@ -2,7 +2,7 @@
 
 use crate::{
     codegen::{BitSetType, Codegen, CodegenConfig},
-    ir::{ColumnType, LayoutCache, RowLayoutBuilder},
+    ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
     thin_str::ThinStrRef,
     ThinStr,
 };
@@ -18,17 +18,17 @@ use std::{
 
 #[test]
 fn empty() {
-    let layout_cache = LayoutCache::new();
+    let layout_cache = RowLayoutCache::new();
     let empty_layout = layout_cache.add(RowLayoutBuilder::new().build());
 
     {
         let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
         let vtable = codegen.vtable_for(empty_layout);
 
-        let (module, mut layouts) = codegen.finalize_definitions();
+        let (module, layouts) = codegen.finalize_definitions();
         let vtable = vtable.erased(&module);
 
-        let layout = layouts.compute(empty_layout);
+        let layout = layouts.layout_of(empty_layout);
         assert_eq!(layout.size(), 0);
         assert!(layout.is_zero_sized());
 
@@ -70,7 +70,7 @@ fn empty() {
 
 #[test]
 fn string() {
-    let layout_cache = LayoutCache::new();
+    let layout_cache = RowLayoutCache::new();
     let string_layout = layout_cache.add(
         RowLayoutBuilder::new()
             .with_column(ColumnType::String, false)
@@ -81,10 +81,10 @@ fn string() {
         let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
         let vtable = codegen.vtable_for(string_layout);
 
-        let (module, mut layouts) = codegen.finalize_definitions();
+        let (module, layouts) = codegen.finalize_definitions();
         let vtable = vtable.erased(&module);
 
-        let layout = layouts.compute(string_layout);
+        let layout = layouts.layout_of(string_layout);
         let (lhs, rhs) = (
             layout.alloc().unwrap().as_ptr(),
             layout.alloc().unwrap().as_ptr(),
@@ -221,7 +221,7 @@ fn dyn_vec() {
         ),
     ];
 
-    let layout_cache = LayoutCache::new();
+    let layout_cache = RowLayoutCache::new();
 
     let mut builder = RowLayoutBuilder::new();
     for ty in types {
@@ -232,9 +232,9 @@ fn dyn_vec() {
     {
         let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
         let vtable = codegen.vtable_for(layout_id);
-        let (jit, mut layout_cache) = codegen.finalize_definitions();
+        let (jit, layout_cache) = codegen.finalize_definitions();
 
-        let layout = layout_cache.compute(layout_id);
+        let layout = layout_cache.layout_of(layout_id);
         let vtable = Box::into_raw(Box::new(DataVTable {
             common: vtable.erased(&jit),
         }));
@@ -366,7 +366,7 @@ impl Write for FailWriter {
 mod proptests {
     use crate::{
         codegen::{BitSetType, Codegen, CodegenConfig, NativeLayout},
-        ir::{ColumnType, LayoutCache, RowLayout, RowLayoutBuilder},
+        ir::{ColumnType, RowLayout, RowLayoutBuilder, RowLayoutCache},
         row::Row,
         ThinStr,
     };
@@ -608,7 +608,7 @@ mod proptests {
     fn test_layout(value: PropLayout, debug: bool) -> TestCaseResult {
         println!("{value:?}");
 
-        let cache = LayoutCache::new();
+        let cache = RowLayoutCache::new();
         let layout_id = cache.add(value.row_layout());
 
         let config = if debug {
@@ -619,9 +619,9 @@ mod proptests {
         let mut codegen = Codegen::new(cache, config);
         let vtable = codegen.vtable_for(layout_id);
 
-        let (jit, mut cache) = codegen.finalize_definitions();
+        let (jit, cache) = codegen.finalize_definitions();
         let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
-        let layout = cache.compute(layout_id);
+        let layout = cache.layout_of(layout_id);
         prop_assert_ne!(layout.align(), 0);
         prop_assert!(layout.align().is_power_of_two());
 
@@ -643,7 +643,7 @@ mod proptests {
 
                     MaybeColumn::Nullable(value, false) => {
                         // Set the column to not be null
-                        set_column_nullness(&mut row, idx, layout, false)?;
+                        set_column_nullness(&mut row, idx, &layout, false)?;
 
                         // Write the column's value
                         let column = row.as_mut_ptr().add(offset);
@@ -652,7 +652,7 @@ mod proptests {
 
                     MaybeColumn::Nullable(_, true) => {
                         // Set the column to be null
-                        set_column_nullness(&mut row, idx, layout, true)?;
+                        set_column_nullness(&mut row, idx, &layout, true)?;
                     }
                 }
             }

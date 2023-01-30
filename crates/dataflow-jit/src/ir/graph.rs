@@ -1,5 +1,5 @@
 use crate::ir::{
-    layout_cache::LayoutCache,
+    layout_cache::RowLayoutCache,
     node::{Node, Subgraph as SubgraphNode},
     DataflowNode, ExportedNode, Function, LayoutId, NodeId, NodeIdGen,
 };
@@ -7,7 +7,7 @@ use petgraph::prelude::DiGraphMap;
 use std::{collections::BTreeMap, rc::Rc};
 
 pub trait GraphExt {
-    fn layout_cache(&self) -> &LayoutCache;
+    fn layout_cache(&self) -> &RowLayoutCache;
 
     fn nodes(&self) -> &BTreeMap<NodeId, Node>;
 
@@ -50,14 +50,14 @@ pub trait GraphExt {
 
 #[derive(Debug, Clone)]
 struct GraphContext {
-    layout_cache: LayoutCache,
+    layout_cache: RowLayoutCache,
     node_id: Rc<NodeIdGen>,
 }
 
 impl GraphContext {
     fn new() -> Self {
         Self {
-            layout_cache: LayoutCache::new(),
+            layout_cache: RowLayoutCache::new(),
             node_id: Rc::new(NodeIdGen::new()),
         }
     }
@@ -81,7 +81,7 @@ impl Subgraph {
 }
 
 impl GraphExt for Subgraph {
-    fn layout_cache(&self) -> &LayoutCache {
+    fn layout_cache(&self) -> &RowLayoutCache {
         &self.ctx.layout_cache
     }
 
@@ -166,7 +166,7 @@ impl Graph {
 }
 
 impl GraphExt for Graph {
-    fn layout_cache(&self) -> &LayoutCache {
+    fn layout_cache(&self) -> &RowLayoutCache {
         self.graph.layout_cache()
     }
 
@@ -624,7 +624,7 @@ mod tests {
             Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
         let (xy_x_offset, xy_y_offset) = {
-            let xy_layout = layout_cache.compute(xy_layout);
+            let xy_layout = layout_cache.layout_of(xy_layout);
             (
                 xy_layout.offset_of(0) as usize,
                 xy_layout.offset_of(1) as usize,
@@ -660,7 +660,7 @@ mod tests {
             cursor.step_key();
         }
 
-        let x_x_offset = layout_cache.compute(x_layout).offset_of(0) as usize;
+        let x_x_offset = layout_cache.layout_of(x_layout).offset_of(0) as usize;
 
         let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
         for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {

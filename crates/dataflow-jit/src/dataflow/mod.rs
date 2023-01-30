@@ -1,16 +1,18 @@
 mod nodes;
 
-pub use nodes::{DataflowNode, Filter, IndexWith, Map, Neg, Sink, Source, SourceMap, Sum};
+pub use nodes::{
+    DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
+};
 
 use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         DataflowSubgraph, DelayedFeedback, Delta0, Distinct, Export, FilterIndex, JoinCore,
-        MapIndex, Min, Noop,
+        MapIndex, Min, Minus, Noop,
     },
     ir::{
-        graph, ColumnType, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId,
-        RowLayoutBuilder, Stream as NodeStream, StreamKind, Subgraph as SubgraphNode,
+        graph, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId, Stream as NodeStream,
+        StreamKind, Subgraph as SubgraphNode,
     },
     row::Row,
 };
@@ -120,6 +122,7 @@ impl JitHandle {
         for &vtable in self.vtables.values() {
             drop(Box::from_raw(vtable));
         }
+
         self.vtables.clear();
         self.jit.free_memory();
     }
@@ -268,6 +271,15 @@ impl CompiledDataflow {
                             .or_insert_with(|| codegen.vtable_for(join.value_layout()));
                     }
 
+                    Node::MonotonicJoin(join) => {
+                        let join_fn = codegen.codegen_func(join.join_fn());
+                        functions.insert(node_id, vec![join_fn]);
+
+                        vtables
+                            .entry(join.key_layout())
+                            .or_insert_with(|| codegen.vtable_for(join.key_layout()));
+                    }
+
                     Node::Subgraph(subgraph) => {
                         collect_functions(codegen, functions, vtables, subgraph.subgraph());
                     }
@@ -281,7 +293,8 @@ impl CompiledDataflow {
                     | Node::Differentiate(_)
                     | Node::Sink(_)
                     | Node::Export(_)
-                    | Node::ExportedNode(_) => {}
+                    | Node::ExportedNode(_)
+                    | Node::Minus(_) => {}
                 }
             }
         }
@@ -347,6 +360,16 @@ impl CompiledDataflow {
                             *node_id,
                             DataflowNode::Sum(Sum {
                                 inputs: sum.inputs().to_vec(),
+                            }),
+                        );
+                    }
+
+                    Node::Minus(minus) => {
+                        nodes.insert(
+                            *node_id,
+                            DataflowNode::Minus(Minus {
+                                lhs: minus.lhs(),
+                                rhs: minus.rhs(),
                             }),
                         );
                     }
@@ -494,6 +517,25 @@ impl CompiledDataflow {
                         nodes.insert(*node_id, node);
                     }
 
+                    Node::MonotonicJoin(join) => {
+                        let (lhs, rhs) = (join.lhs(), join.rhs());
+                        let join_fn = jit.get_finalized_function(node_functions[node_id][0]);
+                        let key_vtable = unsafe { &*vtables[&join.key_layout()] };
+
+                        let node = DataflowNode::MonotonicJoin(MonotonicJoin {
+                            lhs,
+                            rhs,
+                            join_fn: unsafe {
+                                transmute::<
+                                    _,
+                                    unsafe extern "C" fn(*const u8, *const u8, *const u8, *mut u8),
+                                >(join_fn)
+                            },
+                            key_vtable,
+                        });
+                        nodes.insert(*node_id, node);
+                    }
+
                     Node::Subgraph(subgraph) => {
                         let node = DataflowNode::Subgraph(DataflowSubgraph {
                             edges: subgraph.edges().clone(),
@@ -552,7 +594,7 @@ impl CompiledDataflow {
         )
     }
 
-    pub fn construct(&self, circuit: &mut Circuit<()>) -> (Inputs, Outputs) {
+    pub fn construct(self, circuit: &mut Circuit<()>) -> (Inputs, Outputs) {
         let mut streams = BTreeMap::<NodeId, RowStream<Circuit<()>>>::new();
 
         let mut inputs = BTreeMap::new();
@@ -560,7 +602,7 @@ impl CompiledDataflow {
 
         let order = algo::toposort(&self.edges, None).unwrap();
         for node_id in order {
-            let node = &self.nodes[&dbg!(node_id)];
+            let node = &self.nodes[&node_id];
             match node {
                 DataflowNode::Map(map) => {
                     let input = &streams[&map.input];
@@ -570,7 +612,6 @@ impl CompiledDataflow {
                             RowStream::Set(input.map(move |input| {
                                 let mut output = unsafe { Row::uninit(vtable) };
                                 unsafe { map_fn(input.as_ptr(), output.as_mut_ptr()) };
-                                // println!("Map: {input:?} -> {output:?}");
                                 output
                             }))
                         }
@@ -650,9 +691,6 @@ impl CompiledDataflow {
                                 );
                             }
 
-                            // println!(
-                            //     "IndexWith: {input:?} -> {key_output:?}: {value_output:?}",
-                            // );
                             (key_output, value_output)
                         }),
 
@@ -687,6 +725,16 @@ impl CompiledDataflow {
                     streams.insert(node_id, sum);
                 }
 
+                DataflowNode::Minus(minus) => {
+                    let lhs = &streams[&minus.lhs];
+                    let rhs = streams[&minus.rhs].clone();
+                    let difference = match lhs {
+                        RowStream::Set(first) => RowStream::Set(first.minus(&rhs.unwrap_set())),
+                        RowStream::Map(first) => RowStream::Map(first.minus(&rhs.unwrap_map())),
+                    };
+                    streams.insert(node_id, difference);
+                }
+
                 DataflowNode::Neg(neg) => {
                     let input = &streams[&neg.input];
                     let negated = match input {
@@ -715,7 +763,6 @@ impl CompiledDataflow {
                             let mut cursor = row.cursor();
                             while cursor.key_valid() {
                                 let key = cursor.key();
-                                // println!("Source: {key:?}");
                                 assert_eq!(key.vtable().layout_id, source.output_vtable.layout_id);
                                 cursor.step_key();
                             }
@@ -728,19 +775,6 @@ impl CompiledDataflow {
 
                 DataflowNode::SourceMap(_source) => {
                     let (stream, handle) = circuit.add_input_indexed_zset::<Row, Row, i32>();
-
-                    // if cfg!(debug_assertions) {
-                    //     stream.inspect(|row| {
-                    //         let mut cursor = row.cursor();
-                    //         while cursor.key_valid() {
-                    //             let key = cursor.key();
-                    //             // println!("Source: {key:?}");
-                    //             assert_eq!(key.vtable().layout_id, source.key_vtable.layout_id);
-                    //             cursor.step_key();
-                    //         }
-                    //     });
-                    // }
-
                     streams.insert(node_id, RowStream::Map(stream));
                     inputs.insert(node_id, RowInput::Map(handle));
                 }
@@ -753,7 +787,84 @@ impl CompiledDataflow {
 
                 DataflowNode::Distinct(_) => todo!(),
 
-                DataflowNode::JoinCore(_) => todo!(),
+                DataflowNode::JoinCore(join) => {
+                    let lhs = streams[&join.lhs].clone();
+                    let rhs = streams[&join.rhs].clone();
+                    let (join_fn, key_vtable, _value_vtable) =
+                        (join.join_fn, join.key_vtable, join.value_vtable);
+
+                    let joined = match join.output_kind {
+                        StreamKind::Set => {
+                            RowStream::Set(lhs.unwrap_map().join_generic::<(), _, _, _, _>(
+                                &rhs.unwrap_map(),
+                                move |key, lhs_val, rhs_val| {
+                                    let mut output = unsafe { Row::uninit(key_vtable) };
+                                    unsafe {
+                                        join_fn(
+                                            key.as_ptr(),
+                                            lhs_val.as_ptr(),
+                                            rhs_val.as_ptr(),
+                                            output.as_mut_ptr(),
+                                            NonNull::<u8>::dangling().as_ptr(),
+                                        );
+                                    }
+
+                                    iter::once((output, ()))
+                                },
+                            ))
+                        }
+
+                        StreamKind::Map => todo!(),
+                    };
+                    streams.insert(node_id, joined);
+                }
+
+                DataflowNode::MonotonicJoin(join) => {
+                    let lhs = &streams[&join.lhs];
+                    let rhs = streams[&join.rhs].clone();
+                    let (join_fn, key_vtable) = (join.join_fn, join.key_vtable);
+
+                    let joined = match lhs {
+                        RowStream::Set(lhs) => {
+                            RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                &rhs.unwrap_set(),
+                                move |key, lhs_val, rhs_val| {
+                                    let mut output = unsafe { Row::uninit(key_vtable) };
+                                    unsafe {
+                                        join_fn(
+                                            key.as_ptr(),
+                                            lhs_val as *const () as *const u8,
+                                            rhs_val as *const () as *const u8,
+                                            output.as_mut_ptr(),
+                                        )
+                                    }
+
+                                    output
+                                },
+                            ))
+                        }
+
+                        RowStream::Map(lhs) => {
+                            RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                &rhs.unwrap_map(),
+                                move |key, lhs_val, rhs_val| {
+                                    let mut output = unsafe { Row::uninit(key_vtable) };
+                                    unsafe {
+                                        join_fn(
+                                            key.as_ptr(),
+                                            lhs_val.as_ptr(),
+                                            rhs_val.as_ptr(),
+                                            output.as_mut_ptr(),
+                                        )
+                                    }
+
+                                    output
+                                },
+                            ))
+                        }
+                    };
+                    streams.insert(node_id, joined);
+                }
 
                 DataflowNode::Export(_) => todo!(),
 
@@ -783,7 +894,6 @@ impl CompiledDataflow {
                                                     unsafe {
                                                         map_fn(input.as_ptr(), output.as_mut_ptr());
                                                     }
-                                                    // println!("Map: {input:?} -> {output:?}");
                                                     output
                                                 }))
                                             }
@@ -870,9 +980,6 @@ impl CompiledDataflow {
                                                     );
                                                 }
 
-                                                // println!(
-                                                //     "IndexWith: {input:?} -> {key_output:?}: {value_output:?}",
-                                                // );
                                                 (key_output, value_output)
                                             }),
 
@@ -905,6 +1012,16 @@ impl CompiledDataflow {
                                             )),
                                         };
                                         substreams.insert(node_id, sum);
+                                    }
+
+                                    DataflowNode::Minus(minus) => {
+                                        let lhs = &substreams[&minus.lhs];
+                                        let rhs = substreams[&minus.rhs].clone();
+                                        let difference = match lhs {
+                                            RowStream::Set(first) => RowStream::Set(first.minus(&rhs.unwrap_set())),
+                                            RowStream::Map(first) => RowStream::Map(first.minus(&rhs.unwrap_map())),
+                                        };
+                                        substreams.insert(node_id, difference);
                                     }
 
                                     DataflowNode::Neg(neg) => {
@@ -992,6 +1109,53 @@ impl CompiledDataflow {
                                         substreams.insert(node_id, joined);
                                     }
 
+                                    DataflowNode::MonotonicJoin(join) => {
+                                        let lhs = &substreams[&join.lhs];
+                                        let rhs = substreams[&join.rhs].clone();
+                                        let (join_fn, key_vtable) = (join.join_fn, join.key_vtable);
+
+                                        let joined = match lhs {
+                                            RowStream::Set(lhs) => {
+                                                RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                                    &rhs.unwrap_set(),
+                                                    move |key, lhs_val, rhs_val| {
+                                                        let mut output = unsafe { Row::uninit(key_vtable) };
+                                                        unsafe {
+                                                            join_fn(
+                                                                key.as_ptr(),
+                                                                lhs_val as *const () as *const u8,
+                                                                rhs_val as *const () as *const u8,
+                                                                output.as_mut_ptr(),
+                                                            )
+                                                        }
+
+                                                        output
+                                                    },
+                                                ))
+                                            }
+
+                                            RowStream::Map(lhs) => {
+                                                RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                                    &rhs.unwrap_map(),
+                                                    move |key, lhs_val, rhs_val| {
+                                                        let mut output = unsafe { Row::uninit(key_vtable) };
+                                                        unsafe {
+                                                            join_fn(
+                                                                key.as_ptr(),
+                                                                lhs_val.as_ptr(),
+                                                                rhs_val.as_ptr(),
+                                                                output.as_mut_ptr(),
+                                                            )
+                                                        }
+
+                                                        output
+                                                    },
+                                                ))
+                                            }
+                                        };
+                                        substreams.insert(node_id, joined);
+                                    }
+
                                     DataflowNode::Export(export) => {
                                         let exported = match &substreams[&export.input] {
                                             RowStream::Set(input) => {
@@ -1014,15 +1178,6 @@ impl CompiledDataflow {
                             // Connect all feedback nodes
                             for (source, feedback) in subgraph.feedback_connections.iter() {
                                 let source = substreams[source].clone().unwrap_set();
-                                source.inspect(|source| {
-                                    let mut cursor = source.cursor();
-                                    while cursor.key_valid() {
-                                        let weight = cursor.weight();
-                                        let key = cursor.key();
-                                        println!("Feedback: {key:?}: {weight}");
-                                        cursor.step_key();
-                                    }
-                                });
                                 let feedback = feedbacks.remove(feedback).unwrap();
                                 feedback.connect(&source);
                             }
@@ -1055,7 +1210,8 @@ mod tests {
         dataflow::{CompiledDataflow, RowOutput},
         ir::{
             graph::GraphExt, ColumnType, Constant, Distinct, FunctionBuilder, Graph, IndexWith,
-            JoinCore, Map, Min, RowLayoutBuilder, Sink, Source, SourceMap, Stream, StreamKind, Sum,
+            JoinCore, Map, Min, Minus, MonotonicJoin, RowLayoutBuilder, Sink, Source, SourceMap,
+            Stream, StreamKind, Sum,
         },
         row::Row,
     };
@@ -1148,14 +1304,14 @@ mod tests {
 
         // validator.validate_graph(&graph);
 
-        let (dataflow, jit_handle, mut layout_cache) =
+        let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());
 
         let (mut runtime, (mut inputs, outputs)) =
             Runtime::init_circuit(1, move |circuit| dbg!(dataflow).construct(circuit)).unwrap();
 
         let mut values = Vec::new();
-        let layout = layout_cache.compute(xy_layout);
+        let layout = layout_cache.layout_of(xy_layout);
         for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
             unsafe {
                 let mut row = Row::uninit(&*jit_handle.vtables[&xy_layout]);
@@ -1241,6 +1397,7 @@ mod tests {
 
         let roots = graph.add_node(Source::new(u64x2));
         let edges = graph.add_node(SourceMap::new(u64x1, u64x1));
+        let vertices = graph.add_node(Source::new(u64x1));
 
         let (_recursive, distances) = graph.subgraph(|subgraph| {
             let nodes = subgraph.delayed_feedback(u64x2);
@@ -1338,16 +1495,73 @@ mod tests {
             subgraph.export(min_set_distinct, Stream::Set(u64x2))
         });
 
+        let reachable_nodes = graph.add_node(Map::new(
+            distances,
+            {
+                let mut func = FunctionBuilder::new();
+                let distance = func.add_input(u64x2);
+                let output = func.add_output(u64x1);
+
+                let node = func.load(distance, 0);
+                func.store(output, 0, node);
+
+                func.ret_unit();
+                func.build()
+            },
+            u64x1,
+        ));
+
+        let reachable_nodes = graph.add_node(MonotonicJoin::new(
+            vertices,
+            reachable_nodes,
+            {
+                let mut func = FunctionBuilder::new();
+                let key = func.add_input(u64x1);
+                let _lhs_val = func.add_input(unit);
+                let _rhs_val = func.add_input(unit);
+                let output = func.add_output(u64x1);
+
+                let key = func.load(key, 0);
+                func.store(output, 0, key);
+
+                func.ret_unit();
+                func.build()
+            },
+            u64x1,
+        ));
+        let unreachable_nodes = graph.add_node(Minus::new(vertices, reachable_nodes));
+        let unreachable_nodes = graph.add_node(Map::new(
+            unreachable_nodes,
+            {
+                let mut func = FunctionBuilder::new();
+                let node = func.add_input(u64x1);
+                let output = func.add_output(u64x2);
+
+                let node = func.load(node, 0);
+                func.store(output, 0, node);
+
+                let weight = func.constant(Constant::U64(i64::MAX as u64));
+                func.store(output, 1, weight);
+
+                func.ret_unit();
+                func.build()
+            },
+            u64x2,
+        ));
+
+        let distances = graph.add_node(Sum::new(vec![distances, unreachable_nodes]));
         let sink = graph.add_node(Sink::new(distances));
 
-        let (dataflow, jit_handle, mut layout_cache) =
+        let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());
         let (mut runtime, (mut inputs, outputs)) =
             Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
         {
+            let u64x1_vtable = unsafe { &*jit_handle.vtables()[&u64x1] };
+            let u64x1_offset = layout_cache.layout_of(u64x1).offset_of(0) as usize;
             let u64x2_vtable = unsafe { &*jit_handle.vtables()[&u64x2] };
-            let u64x2_layout = layout_cache.compute(u64x2);
+            let u64x2_layout = layout_cache.layout_of(u64x2);
 
             let roots = inputs.get_mut(&roots).unwrap().as_set_mut().unwrap();
             let mut source_vertex = unsafe { Row::uninit(u64x2_vtable) };
@@ -1364,6 +1578,20 @@ mod tests {
                     .write(0);
             }
             roots.push(source_vertex, 1);
+
+            let vertices_data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+            let vertices = inputs.get_mut(&vertices).unwrap().as_set_mut().unwrap();
+            for &vertex in vertices_data {
+                let mut key = unsafe { Row::uninit(u64x1_vtable) };
+                unsafe {
+                    key.as_mut_ptr()
+                        .add(u64x1_offset)
+                        .cast::<u64>()
+                        .write(vertex);
+                }
+
+                vertices.push(key, 1);
+            }
 
             let edge_data = &[
                 (1, 3),
@@ -1384,10 +1612,6 @@ mod tests {
                 (8, 1),
                 (9, 4),
             ];
-
-            let u64x1_vtable = unsafe { &*jit_handle.vtables()[&u64x1] };
-            let u64x1_offset = layout_cache.compute(u64x1).offset_of(0) as usize;
-
             let edges = inputs.get_mut(&edges).unwrap().as_map_mut().unwrap();
             for &(src, dest) in edge_data {
                 let (mut key, mut value) =
@@ -1411,14 +1635,46 @@ mod tests {
         runtime.kill().unwrap();
 
         {
+            let u64x2_layout = layout_cache.layout_of(u64x2);
+            let mut produced = Vec::new();
+
             let outputs = outputs[&sink].as_set().unwrap().consolidate();
             let mut cursor = outputs.cursor();
             while cursor.key_valid() {
                 let weight = cursor.weight();
                 let key = cursor.key();
                 println!("Output: {key:?}: {weight}");
+
+                unsafe {
+                    let node = *key
+                        .as_ptr()
+                        .add(u64x2_layout.offset_of(0) as usize)
+                        .cast::<u64>();
+                    let distance = *key
+                        .as_ptr()
+                        .add(u64x2_layout.offset_of(1) as usize)
+                        .cast::<u64>();
+                    produced.push((node, distance));
+                }
+
                 cursor.step_key();
             }
+
+            produced.sort_by_key(|&(node, _)| node);
+
+            let expected = &[
+                (1, 0),
+                (2, 9223372036854775807),
+                (3, 1),
+                (4, 2),
+                (5, 1),
+                (6, 9223372036854775807),
+                (7, 9223372036854775807),
+                (8, 2),
+                (9, 9223372036854775807),
+                (10, 2),
+            ];
+            assert_eq!(produced, expected);
         }
 
         unsafe { jit_handle.free_memory() };

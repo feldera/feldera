@@ -30,7 +30,7 @@ pub enum NativeType {
 }
 
 impl NativeType {
-    pub fn native_type(self, target: &TargetFrontendConfig) -> ClifType {
+    pub(crate) fn native_type(self, target: &TargetFrontendConfig) -> ClifType {
         match self {
             Self::Ptr | Self::Usize => target.pointer_type(),
             Self::U64 | Self::I64 => types::I64,
@@ -42,7 +42,7 @@ impl NativeType {
         }
     }
 
-    fn size(self, target: &TargetFrontendConfig) -> u32 {
+    pub(crate) fn size(self, target: &TargetFrontendConfig) -> u32 {
         match self {
             Self::Ptr | Self::Usize => target.pointer_bytes() as u32,
             Self::U64 | Self::I64 | Self::F64 => 8,
@@ -52,7 +52,7 @@ impl NativeType {
         }
     }
 
-    fn align(self, target: &TargetFrontendConfig) -> u32 {
+    pub(crate) fn align(self, target: &TargetFrontendConfig) -> u32 {
         match self {
             Self::Ptr | Self::Usize => target.pointer_bytes() as u32,
             Self::U64 | Self::I64 | Self::F64 => 8,
@@ -62,7 +62,7 @@ impl NativeType {
         }
     }
 
-    fn bits(self, target: &TargetFrontendConfig) -> u8 {
+    pub(crate) fn bits(self, target: &TargetFrontendConfig) -> u8 {
         match self {
             Self::Ptr | Self::Usize => target.pointer_bits(),
             Self::U64 | Self::I64 | Self::F64 => 64,
@@ -73,7 +73,7 @@ impl NativeType {
     }
 
     /// Computes `log2(effective_align)`
-    fn effective_align(self, target: &TargetFrontendConfig) -> u32 {
+    pub(crate) fn effective_align(self, target: &TargetFrontendConfig) -> u32 {
         self.align(target).max(self.size(target)).trailing_zeros()
     }
 
@@ -217,6 +217,16 @@ pub struct LayoutConfig {
     optimize_layouts: bool,
 }
 
+impl Debug for LayoutConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LayoutConfig")
+            .field("call_config", &self.target.default_call_conv)
+            .field("pointer_width", &self.target.pointer_width)
+            .field("optimize_layouts", &self.optimize_layouts)
+            .finish()
+    }
+}
+
 impl LayoutConfig {
     pub const fn new(target: TargetFrontendConfig, optimize_layouts: bool) -> Self {
         Self {
@@ -238,10 +248,12 @@ pub struct NativeLayout {
     /// The offset of each column's data
     /// For zsts this is meaningless
     offsets: Vec<u32>,
-    /// The bitset associated with each column, will be `None` if the given column doesn't have a bitset.
-    /// If the row has no nullable columns, this will be empty
+    /// The bitset associated with each column, will be `None` if the given
+    /// column doesn't have a bitset. If the row has no nullable columns,
+    /// this will be empty
     bitsets: Vec<Option<(BitSetType, u32, u8)>>,
-    /// Each field of the layout (columns and bitsets) in the order they appear within the concrete layout
+    /// Each field of the layout (columns and bitsets) in the order they appear
+    /// within the concrete layout
     memory_order: Vec<MemoryEntry>,
     /// The offsets of all padding bytes within the layout
     padding_bytes: Vec<u32>,
@@ -325,9 +337,10 @@ impl NativeLayout {
     ///
     /// # Safety
     ///
-    /// - `ptr` must denote a block of memory currently allocated via [`NativeLayout::alloc()`]
-    /// - The current layout must be the same layout that was used to allocate that block of memory
-    ///
+    /// - `ptr` must denote a block of memory currently allocated via
+    ///   [`NativeLayout::alloc()`]
+    /// - The current layout must be the same layout that was used to allocate
+    ///   that block of memory
     pub unsafe fn dealloc(&self, ptr: *mut u8) {
         debug_assert!(!ptr.is_null());
 
@@ -357,10 +370,11 @@ impl NativeLayout {
     ///
     /// # Safety
     ///
-    /// - `ptr` must denote a block of memory currently allocated via [`NativeLayout::alloc_array()`]
-    /// - The current layout must be the same layout that was used to allocate that block of memory
+    /// - `ptr` must denote a block of memory currently allocated via
+    ///   [`NativeLayout::alloc_array()`]
+    /// - The current layout must be the same layout that was used to allocate
+    ///   that block of memory
     /// - `length` must be the same length that the pointer was allocated with
-    ///
     pub unsafe fn dealloc_array(&self, ptr: *mut u8, length: usize) {
         debug_assert!(!ptr.is_null());
 
@@ -586,7 +600,8 @@ mod algorithm {
         let (mut align, mut offset) = (1, 0u32);
         let mut offsets = vec![0; layout.len()];
         let mut types = vec![NativeType::U8; layout.len()];
-        // If the row doesn't have any nullable columns we use an empty bitsets vec as an optimization
+        // If the row doesn't have any nullable columns we use an empty bitsets vec as
+        // an optimization
         let mut bitsets = if null_columns == 0 {
             Vec::new()
         } else {

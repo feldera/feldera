@@ -1,6 +1,6 @@
 use crate::ir::{
     graph::GraphExt, BinOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags,
-    LayoutCache, LayoutId, Node, NodeId, RValue,
+    LayoutId, Node, NodeId, RValue, RowLayoutCache,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -156,7 +156,7 @@ impl FunctionValidator {
         self.blocks.clear();
     }
 
-    pub fn validate_function(&mut self, func: &Function, layout_cache: &LayoutCache) {
+    pub fn validate_function(&mut self, func: &Function, layout_cache: &RowLayoutCache) {
         self.clear();
 
         self.exprs.extend(func.exprs().keys().copied());
