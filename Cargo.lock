@@ -1180,6 +1180,7 @@ dependencies = [
  "crossbeam-utils",
  "csv",
  "hashbrown 0.12.3",
+ "hdrhist",
  "impl-trait-for-tuples",
  "indicatif",
  "itertools",
@@ -1607,6 +1608,12 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash",
 ]
+
+[[package]]
+name = "hdrhist"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b22edfb537aaffec56e77d3116a1dd0a0fa8bb5a8bd7d6d4a522132c9bb383"
 
 [[package]]
 name = "heck"
