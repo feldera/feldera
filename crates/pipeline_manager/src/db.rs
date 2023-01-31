@@ -81,7 +81,6 @@ impl Version {
 #[derive(Debug)]
 pub(crate) enum DBError {
     UnknownProject(ProjectId),
-    DuplicateProjectName(String),
     OutdatedProjectVersion(Version),
     UnknownConfig(ConfigId),
     UnknownPipeline(PipelineId),
@@ -91,9 +90,6 @@ impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DBError::UnknownProject(project_id) => write!(f, "Unknown project id '{project_id}'"),
-            DBError::DuplicateProjectName(name) => {
-                write!(f, "A project named '{name}' already exists")
-            }
             DBError::OutdatedProjectVersion(version) => {
                 write!(f, "Outdated project version '{version}'")
             }
@@ -119,19 +115,9 @@ impl ProjectStatus {
             None => Ok(Self::None),
             Some("success") => Ok(Self::Success),
             Some("pending") => Ok(Self::Pending),
-            Some("compiling_sql") => Ok(Self::CompilingSql),
-            Some("compiling_rust") => Ok(Self::CompilingRust),
-            Some("sql_error") => {
-                let error = error_string.unwrap_or_default();
-                if let Ok(messages) = serde_json::from_str(&error) {
-                    Ok(Self::SqlError(messages))
-                } else {
-                    error!("Expected valid json for SqlCompilerMessage but got {:?}, did you update the struct without adjusting the database?", error);
-                    Ok(Self::SystemError(error))
-                }
-            }
+            Some("compiling") => Ok(Self::Compiling),
+            Some("sql_error") => Ok(Self::SqlError(error_string.unwrap_or_default())),
             Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
-            Some("system_error") => Ok(Self::SystemError(error_string.unwrap_or_default())),
             Some(status) => Err(AnyError::msg(format!("invalid status string '{status}'"))),
         }
     }
@@ -140,21 +126,10 @@ impl ProjectStatus {
             ProjectStatus::None => (None, None),
             ProjectStatus::Success => (Some("success".to_string()), None),
             ProjectStatus::Pending => (Some("pending".to_string()), None),
-            ProjectStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
-            ProjectStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
-            ProjectStatus::SqlError(error) => {
-                if let Ok(error_string) = serde_json::to_string(&error) {
-                    (Some("sql_error".to_string()), Some(error_string))
-                } else {
-                    error!("Expected valid json for SqlError, but got {:?}", error);
-                    (Some("sql_error".to_string()), None)
-                }
-            }
+            ProjectStatus::Compiling => (Some("compiling".to_string()), None),
+            ProjectStatus::SqlError(error) => (Some("sql_error".to_string()), Some(error.clone())),
             ProjectStatus::RustError(error) => {
                 (Some("rust_error".to_string()), Some(error.clone()))
-            }
-            ProjectStatus::SystemError(error) => {
-                (Some("system_error".to_string()), Some(error.clone()))
             }
         }
     }
@@ -167,46 +142,14 @@ pub(crate) struct ProjectDescr {
     pub project_id: ProjectId,
     /// Project name (doesn't have to be unique).
     pub name: String,
-    /// Project description.
-    pub description: String,
     /// Project version, incremented every time project code is modified.
     pub version: Version,
     /// Project compilation status.
     pub status: ProjectStatus,
-    /// A JSON description of the SQL tables and view declarations including
-    /// field names and types.
-    ///
-    /// The schema is set/updated whenever the `status` field reaches >=
-    /// `ProjectStatus::CompilingRust`.
-    ///
-    /// # Example
-    ///
-    /// The given SQL program:
-    ///
-    /// ```no_run
-    /// CREATE TABLE USERS ( name varchar );
-    /// CREATE VIEW OUTPUT_USERS as SELECT * FROM USERS;
-    /// ```
-    ///
-    /// Would lead the following JSON string in `schema`:
-    ///
-    /// ```no_run
-    /// {
-    ///   "inputs": [{
-    ///       "name": "USERS",
-    ///       "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
-    ///     }],
-    ///   "outputs": [{
-    ///       "name": "OUTPUT_USERS",
-    ///       "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
-    ///     }]
-    /// }
-    /// ```
-    pub schema: Option<String>,
 }
 
 /// Project configuration descriptor.
-#[derive(Serialize, ToSchema, Debug)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct ConfigDescr {
     pub config_id: ConfigId,
     pub project_id: ProjectId,
@@ -216,7 +159,7 @@ pub(crate) struct ConfigDescr {
 }
 
 /// Pipeline descriptor.
-#[derive(Serialize, ToSchema, Debug)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
     pub project_id: ProjectId,
@@ -304,7 +247,7 @@ impl ProjectDB {
             } else {
                 log::warn!("initial SQL file '{}' does not exist", initial_sql_file);
             }
-        }
+        });
 
         Ok(Self { conn })
     }
@@ -408,7 +351,6 @@ impl ProjectDB {
     pub(crate) async fn new_project(
         &self,
         project_name: &str,
-        project_description: &str,
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
         debug!("new_project {project_name} {project_description} {project_code}");
@@ -438,7 +380,6 @@ impl ProjectDB {
         &self,
         project_id: ProjectId,
         project_name: &str,
-        project_description: &str,
         project_code: &Option<String>,
     ) -> AnyResult<Version> {
         let (mut version, old_code): (Version, String) =
@@ -501,7 +442,7 @@ impl ProjectDB {
             let error: Option<String> = to_option(row.get(4));
             let schema: Option<String> = to_option(row.get(5));
 
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+            let status = ProjectStatus::from_columns(status, error)?;
 
             Ok(Some(ProjectDescr {
                 project_id,
@@ -543,7 +484,6 @@ impl ProjectDB {
                 description,
                 version,
                 status,
-                schema,
             }))
         } else {
             Ok(None)
@@ -668,7 +608,7 @@ impl ProjectDB {
         // Do nothing if the project is already pending (we don't want to bump its
         // `status_since` field, which would move it to the end of the queue) or
         // if compilation is alread in progress.
-        if descr.status == ProjectStatus::Pending || descr.status.is_compiling() {
+        if descr.status == ProjectStatus::Pending || descr.status == ProjectStatus::Compiling {
             return Ok(());
         }
 
@@ -691,7 +631,7 @@ impl ProjectDB {
             .get_project_guarded(project_id, expected_version)
             .await?;
 
-        if descr.status != ProjectStatus::Pending || !descr.status.is_compiling() {
+        if descr.status != ProjectStatus::Pending || descr.status != ProjectStatus::Compiling {
             return Ok(());
         }
 
@@ -733,6 +673,11 @@ impl ProjectDB {
         } else {
             Ok(None)
         }
+
+        let project_id: ProjectId = ProjectId(rows[0].try_get(0)?);
+        let version: Version = Version(rows[0].try_get(1)?);
+
+        Ok(Some((project_id, version)))
     }
 
     /// List configs associated with `project_id`.
@@ -793,7 +738,6 @@ impl ProjectDB {
         config_name: &str,
         config: &str,
     ) -> AnyResult<(ConfigId, Version)> {
-        debug!("new_config {project_id} {config_name} {config}");
         // Check that the project exists, so we return correct error status
         // instead of Internal Server Error due to the next query failing.
         let _descr = self.get_project(project_id).await?;
@@ -846,9 +790,21 @@ impl ProjectDB {
         }
     }
 
+    /// Allocate a unique pipeline id.
+    pub(crate) async fn alloc_pipeline_id(&self) -> AnyResult<PipelineId> {
+        let row = self
+            .dbclient
+            .query_one("SELECT nextval('pipeline_id_seq')", &[])
+            .await?;
+        let id: PipelineId = PipelineId(row.try_get(0)?);
+
+        Ok(id)
+    }
+
     /// Insert a new record to the `pipeline` table.
     pub(crate) async fn new_pipeline(
         &self,
+        pipeline_id: PipelineId,
         project_id: ProjectId,
         project_version: Version,
     ) -> AnyResult<PipelineId> {
@@ -936,6 +892,7 @@ impl ProjectDB {
                     ))
                 })?;
 
+        for row in rows.into_iter() {
             result.push(PipelineDescr {
                 pipeline_id: PipelineId(row.get(0)),
                 project_id,
