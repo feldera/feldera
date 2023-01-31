@@ -951,31 +951,3 @@ impl<'a> CodegenCtx<'a> {
         builder.ins().trapnz(masked, TRAP_UNALIGNED_PTR);
     }
 }
-
-/// The kind of null sigil for us to use
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum NullSigil {
-    /// Makes unset bits mean the corresponding row is null
-    Zero = 0,
-    /// Makes set bits mean the corresponding row is null
-    #[default]
-    One = 1,
-}
-
-impl NullSigil {
-    /// Returns `true` if the null sigil is [`Zero`].
-    ///
-    /// [`Zero`]: NullSigil::Zero
-    #[must_use]
-    pub const fn is_zero(&self) -> bool {
-        matches!(self, Self::Zero)
-    }
-
-    /// Returns `true` if the null sigil is [`One`].
-    ///
-    /// [`One`]: NullSigil::One
-    #[must_use]
-    pub const fn is_one(&self) -> bool {
-        matches!(self, Self::One)
-    }
-}

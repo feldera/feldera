@@ -616,9 +616,7 @@ mod tests {
 
         validator.validate_graph(&graph);
 
-        let mut codegen = Codegen::new(graph.layout_cache().clone(), CodegenConfig::debug());
-
-        let (dataflow, jit_handle, mut layout_cache) =
+        let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());
         let (mut runtime, (mut inputs, outputs)) =
             Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
