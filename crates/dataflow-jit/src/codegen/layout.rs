@@ -268,7 +268,7 @@ impl NativeLayout {
             .map(|(&offset, &ty)| (offset, ty))
     }
 
-    /// Returns all constituent
+    /// Returns all constituent memory entries that make up the current layout
     pub fn memory_order(&self) -> &[MemoryEntry] {
         &self.memory_order
     }
@@ -471,6 +471,7 @@ pub enum MemoryEntry {
         /// The column associated with this entry
         column: u32,
     },
+
     /// The data associated with a bitset
     BitSet {
         /// The offset this bitset resides at
@@ -480,6 +481,7 @@ pub enum MemoryEntry {
         /// The columns which use this bitset to store nullability
         columns: TinyVec<[u32; 8]>,
     },
+
     /// Padding bytes
     Padding {
         /// The memory offset the padding bytes reside at

@@ -55,24 +55,24 @@ pub trait DataflowNode {
 #[derive(Debug, Clone, IsVariant, Unwrap)]
 pub enum Node {
     Map(Map),
+    Min(Min),
     Neg(Neg),
     Sum(Sum),
     Fold(Fold),
     Sink(Sink),
+    Minus(Minus),
+    Filter(Filter),
     Source(Source),
     SourceMap(SourceMap),
-    Filter(Filter),
     IndexWith(IndexWith),
     Differentiate(Differentiate),
     Delta0(Delta0),
     DelayedFeedback(DelayedFeedback),
-    Min(Min),
     Distinct(Distinct),
     JoinCore(JoinCore),
     Subgraph(Subgraph),
     Export(Export),
     ExportedNode(ExportedNode),
-    Minus(Minus),
     MonotonicJoin(MonotonicJoin),
 }
 
@@ -290,7 +290,9 @@ impl DataflowNode for JoinCore {
         }
     }
 
-    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &RowLayoutCache) {
+        self.join_fn.optimize(layout_cache);
+    }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         functions.push(&self.join_fn);
@@ -356,7 +358,9 @@ impl DataflowNode for MonotonicJoin {
 
     fn validate(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &RowLayoutCache) {
+        self.join_fn.optimize(layout_cache);
+    }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         functions.push(&self.join_fn);
