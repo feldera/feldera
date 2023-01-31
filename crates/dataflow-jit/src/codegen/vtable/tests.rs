@@ -10,7 +10,9 @@ use dbsp::{trace::layers::erased::DataVTable, utils::DynVec};
 use size_of::{Context, SizeOf, TotalSize};
 use std::{
     cmp::Ordering,
+    collections::hash_map::DefaultHasher,
     fmt::{self, Debug, Write},
+    hash::{BuildHasher, BuildHasherDefault, Hasher},
 };
 
 // TODO: Test nullable fields
@@ -55,6 +57,25 @@ fn empty() {
             let mut ctx = Context::new();
             (vtable.size_of_children)(lhs, &mut ctx);
             assert_eq!(ctx.total_size(), TotalSize::zero());
+
+            let builder = BuildHasherDefault::<DefaultHasher>::default();
+            let lhs_hash_1 = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), lhs);
+                hasher.finish()
+            };
+            let lhs_hash_2 = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), lhs);
+                hasher.finish()
+            };
+            let rhs_hash = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), rhs);
+                hasher.finish()
+            };
+            assert_eq!(lhs_hash_1, lhs_hash_2);
+            assert_eq!(lhs_hash_1, rhs_hash);
 
             (vtable.drop_slice_in_place)(lhs, 1);
             (vtable.drop_in_place)(rhs);
@@ -125,6 +146,25 @@ fn string() {
                 ctx.total_size()
             };
             assert_eq!(ctx.total_size(), expected);
+
+            let builder = BuildHasherDefault::<DefaultHasher>::default();
+            let lhs_hash_1 = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), lhs);
+                hasher.finish()
+            };
+            let lhs_hash_2 = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), lhs);
+                hasher.finish()
+            };
+            let rhs_hash = {
+                let mut hasher = builder.build_hasher();
+                (vtable.hash)(&mut (&mut hasher as &mut dyn Hasher), rhs);
+                hasher.finish()
+            };
+            assert_eq!(lhs_hash_1, lhs_hash_2);
+            assert_eq!(lhs_hash_1, rhs_hash);
 
             (vtable.drop_slice_in_place)(lhs, 1);
             (vtable.drop_in_place)(rhs);
@@ -376,7 +416,12 @@ mod proptests {
     };
     use proptest_derive::Arbitrary;
     use size_of::SizeOf;
-    use std::{cmp::Ordering, mem::align_of};
+    use std::{
+        cmp::Ordering,
+        collections::hash_map::DefaultHasher,
+        hash::{BuildHasher, BuildHasherDefault, Hash, Hasher},
+        mem::align_of,
+    };
 
     #[derive(Debug, Clone, Arbitrary)]
     enum Column {
@@ -606,8 +651,6 @@ mod proptests {
     }
 
     fn test_layout(value: PropLayout, debug: bool) -> TestCaseResult {
-        println!("{value:?}");
-
         let cache = RowLayoutCache::new();
         let layout_id = cache.add(value.row_layout());
 
@@ -624,10 +667,6 @@ mod proptests {
         let layout = cache.layout_of(layout_id);
         prop_assert_ne!(layout.align(), 0);
         prop_assert!(layout.align().is_power_of_two());
-
-        println!("{layout:?}");
-
-        println!("0");
 
         let mut row = unsafe { Row::uninit(&*vtable) };
         for (idx, column) in value.columns.into_iter().enumerate() {
@@ -658,41 +697,47 @@ mod proptests {
             }
         }
 
-        println!("1");
         let clone = row.clone();
-        println!("eq");
         prop_assert_eq!(&row, &clone);
-        println!("partial cmp");
         prop_assert_eq!(row.partial_cmp(&clone), Some(Ordering::Equal));
-        println!("cmp");
         prop_assert_eq!(row.cmp(&clone), Ordering::Equal);
-        println!("ne");
         prop_assert!(!row.ne(&clone));
-        println!("lt");
         prop_assert!(!row.lt(&clone));
-        println!("le");
         prop_assert!(row.le(&clone));
-        println!("gt");
         prop_assert!(!row.gt(&clone));
-        println!("ge");
         prop_assert!(row.ge(&clone));
-        println!("2");
+
+        let builder = BuildHasherDefault::<DefaultHasher>::default();
+        let row_hash_1 = {
+            let mut hasher = builder.build_hasher();
+            row.hash(&mut hasher);
+            hasher.finish()
+        };
+        let row_hash_2 = {
+            let mut hasher = builder.build_hasher();
+            row.hash(&mut hasher);
+            hasher.finish()
+        };
+        let clone_hash = {
+            let mut hasher = builder.build_hasher();
+            clone.hash(&mut hasher);
+            hasher.finish()
+        };
+        prop_assert_eq!(row_hash_1, row_hash_2);
+        prop_assert_eq!(row_hash_1, clone_hash);
 
         // TODO: Assert that these are correct
         let _debug = format!("{row:?}");
         let _size_of = row.size_of();
         let _type_name = row.type_name();
-        println!("3");
 
         // TODO: Test clone_into_slice and drop_slice
 
         unsafe {
             drop(row);
-            println!("4");
+            drop(clone);
             drop(Box::from_raw(vtable));
-            println!("5");
             jit.free_memory();
-            println!("6");
         }
 
         Ok(())

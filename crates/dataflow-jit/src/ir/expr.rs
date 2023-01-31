@@ -88,11 +88,13 @@ pub enum Expr {
     BinOp(BinOp),
     IsNull(IsNull),
     CopyVal(CopyVal),
+    UnaryOp(UnaryOp),
     NullRow(NullRow),
     SetNull(SetNull),
     Constant(Constant),
     CopyRowTo(CopyRowTo),
     UninitRow(UninitRow),
+    // TODO: Select, cast
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,10 +128,58 @@ pub enum BinOpKind {
     Add,
     Sub,
     Mul,
+    Div,
     Eq,
     Neq,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
     And,
     Or,
+    Xor,
+    Min,
+    Max,
+    // TODO: shr, shl, rem, mod, sqrt, rotl, rotr
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnaryOp {
+    value: RValue,
+    kind: UnaryOpKind,
+}
+
+impl UnaryOp {
+    pub fn new(value: RValue, kind: UnaryOpKind) -> Self {
+        Self { value, kind }
+    }
+
+    pub const fn value(&self) -> &RValue {
+        &self.value
+    }
+
+    pub const fn kind(&self) -> UnaryOpKind {
+        self.kind
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOpKind {
+    Abs,
+    Neg,
+    Not,
+    Ceil,
+    Floor,
+    Trunc,
+    Sqrt,
+    CountOnes,
+    CountZeroes,
+    LeadingOnes,
+    LeadingZeroes,
+    TrailingOnes,
+    TrailingZeroes,
+    BitReverse,
+    ByteReverse,
 }
 
 /// Copies a value
@@ -320,7 +370,7 @@ impl Constant {
         matches!(self, Self::Unit)
     }
 
-    pub const fn row_type(&self) -> ColumnType {
+    pub const fn column_type(&self) -> ColumnType {
         match self {
             Self::Unit => ColumnType::Unit,
             Self::U32(_) => ColumnType::U32,

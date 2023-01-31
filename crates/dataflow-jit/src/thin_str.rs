@@ -3,6 +3,7 @@ use std::{
     alloc::Layout,
     cmp::{max, Ordering},
     fmt::{self, Debug, Display},
+    hash::{Hash, Hasher},
     marker::PhantomData,
     mem::{align_of, size_of, ManuallyDrop},
     ops::{Deref, DerefMut},
@@ -10,6 +11,14 @@ use std::{
     slice,
     str::{self, Utf8Error},
 };
+
+// Ensure that `ThinStr` and `ThinStrRef` have layouts identical to a pointer
+const _: () = assert!(
+    size_of::<ThinStr>() == size_of::<*const u8>()
+        && align_of::<ThinStr>() == align_of::<*const u8>()
+        && size_of::<ThinStr>() == size_of::<ThinStrRef<'_>>()
+        && align_of::<ThinStr>() == align_of::<ThinStrRef<'_>>(),
+);
 
 static EMPTY: StrHeader = StrHeader {
     length: 0,
@@ -350,6 +359,16 @@ impl Display for ThinStr {
     }
 }
 
+impl Hash for ThinStr {
+    #[inline]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.as_thin_ref().hash(state);
+    }
+}
+
 impl PartialEq for ThinStr {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -486,6 +505,16 @@ impl Debug for ThinStrRef<'_> {
 impl Display for ThinStrRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl Hash for ThinStrRef<'_> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // TODO: `Hasher::write_str()` via rust/#96762
+        // state.write_str(self.as_str());
+        state.write(self.as_bytes());
+        state.write_u8(0xff);
     }
 }
 

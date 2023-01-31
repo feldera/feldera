@@ -89,8 +89,8 @@ impl Ord for Row {
 }
 
 impl Hash for Row {
-    fn hash<H: Hasher>(&self, _state: &mut H) {
-        todo!()
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        unsafe { (self.vtable.hash)(&mut (state as &mut dyn Hasher), self.as_ptr()) }
     }
 }
 

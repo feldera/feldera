@@ -202,7 +202,7 @@ impl FunctionValidator {
 
                                 Err(src_layout) => {
                                     let layout = layout_cache.get(src_layout);
-                                    if let Some(row_ty) = layout.get_row_type(load.row()) {
+                                    if let Some(row_ty) = layout.column_type(load.row()) {
                                         let prev = self.expr_types.insert(expr_id, Ok(row_ty));
                                         assert_eq!(prev, None, "declared load expr twice: {expr_id}");
                                     } else {
@@ -241,7 +241,7 @@ impl FunctionValidator {
 
                                 Err(row_layout) => {
                                     let layout = layout_cache.get(row_layout);
-                                    if let Some(row_ty) = layout.get_row_type(store.row()) {
+                                    if let Some(row_ty) = layout.column_type(store.row()) {
                                         let rval_ty = self.get_rval_type(store.value()).unwrap_or_else(|layout| {
                                             panic!(
                                                 "store {expr_id} attempted to store a row value with a layout {:?}",
@@ -292,7 +292,12 @@ impl FunctionValidator {
                         assert_eq!(lhs_ty, rhs_ty);
 
                         match binop.kind() {
-                            BinOpKind::Eq | BinOpKind::Neq => {
+                            BinOpKind::Eq
+                            | BinOpKind::Neq
+                            | BinOpKind::LessThan
+                            | BinOpKind::GreaterThan
+                            | BinOpKind::LessThanOrEqual
+                            | BinOpKind::GreaterThanOrEqual => {
                                 let prev = self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
                                 assert!(prev.is_none());
                             }
@@ -300,8 +305,12 @@ impl FunctionValidator {
                             BinOpKind::Add
                             | BinOpKind::Sub
                             | BinOpKind::Mul
+                            | BinOpKind::Div
                             | BinOpKind::And
-                            | BinOpKind::Or => {
+                            | BinOpKind::Or
+                            | BinOpKind::Xor
+                            | BinOpKind::Min
+                            | BinOpKind::Max => {
                                 assert_ne!(lhs_ty, ColumnType::String);
 
                                 let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
@@ -310,19 +319,14 @@ impl FunctionValidator {
                         }
                     }
 
-                    Expr::IsNull(_) => todo!(),
-
-                    Expr::CopyVal(_) => todo!(),
-
-                    Expr::NullRow(_) => todo!(),
-
-                    Expr::SetNull(_) => todo!(),
-
-                    Expr::Constant(_) => todo!(),
-
-                    Expr::CopyRowTo(_) => todo!(),
-
-                    Expr::UninitRow(_) => todo!(),
+                    Expr::UnaryOp(_)
+                    | Expr::IsNull(_)
+                    | Expr::CopyVal(_)
+                    | Expr::NullRow(_)
+                    | Expr::SetNull(_)
+                    | Expr::Constant(_)
+                    | Expr::CopyRowTo(_)
+                    | Expr::UninitRow(_) => todo!(),
                 }
             }
         }
@@ -331,7 +335,7 @@ impl FunctionValidator {
     fn get_rval_type(&self, rvalue: &RValue) -> Result<ColumnType, LayoutId> {
         match rvalue {
             RValue::Expr(expr_id) => self.expr_types[expr_id],
-            RValue::Imm(constant) => Ok(constant.row_type()),
+            RValue::Imm(constant) => Ok(constant.column_type()),
         }
     }
 }

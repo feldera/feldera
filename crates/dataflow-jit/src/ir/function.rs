@@ -161,6 +161,7 @@ impl Function {
                         Expr::Load(_) => todo!(),
                         Expr::Store(_) => todo!(),
                         Expr::BinOp(_) => todo!(),
+                        Expr::UnaryOp(_) => todo!(),
                         Expr::IsNull(_) => todo!(),
                         Expr::CopyVal(_) => todo!(),
                         Expr::NullRow(_) => todo!(),

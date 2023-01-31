@@ -21,7 +21,6 @@ use cranelift_module::{FuncId, Module};
 
 impl Codegen {
     /// Generates a function cloning the given layout
-    // FIXME: This also ignores the existence of strings
     pub(super) fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8)
         let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
@@ -97,7 +96,6 @@ impl Codegen {
     }
 
     /// Generates a function cloning a slice of the given layout
-    // FIXME: This also ignores the existence of strings
     pub(super) fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
         // fn(*const u8, *mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
