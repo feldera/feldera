@@ -318,7 +318,7 @@ where
                 )),
                 move || {
                     let stream1 = self.shard();
-                    let stream2 = other.distinct_incremental().shard();
+                    let stream2 = other.distinct::<TS>().shard();
 
                     stream1
                         .minus(
@@ -1019,7 +1019,7 @@ mod test {
 
             let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<(usize, usize), isize>>| {
                 // ```text
-                //                          distinct_trace
+                //                             distinct
                 //               ┌───┐          ┌───┐
                 // edges         │   │          │   │  paths
                 // ────┬────────►│ + ├──────────┤   ├────────┬───►
@@ -1046,7 +1046,7 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
         })

@@ -133,7 +133,7 @@ pub fn pagerank(
     // Find all dangling nodes (nodes without outgoing edges)
     let dangling_nodes = weighted_vertices.minus(
         &outgoing_edge_counts
-            .distinct()
+            .stream_distinct()
             .semijoin_stream::<_, OrdZSet<_, _>>(&weighted_vertices)
             .map(|&(node, _)| node),
     );

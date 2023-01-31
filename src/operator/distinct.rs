@@ -1,35 +1,43 @@
 //! Distinct operator.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, IndexedZSet, ZRingValue, ZSet},
+    algebra::{AddByRef, HasOne, HasZero, IndexedZSet, Lattice, PartialOrder, Present, ZRingValue},
     circuit::{
         metadata::{MetaItem, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, GlobalNodeId, Scope, Stream,
     },
     circuit_cache_key,
-    time::NestedTimestamp32,
-    trace::{ord::OrdKeySpine, BatchReader, Builder, Cursor as TraceCursor, Trace},
+    trace::{ord::OrdValSpine, Batch, BatchReader, Builder, Cursor as TraceCursor, Trace},
+    DBTimestamp, OrdIndexedZSet, Timestamp,
 };
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
-    cmp::Ordering,
-    collections::{BTreeSet, HashMap},
+    cmp::{min, Ordering},
+    collections::BTreeMap,
     marker::PhantomData,
-    ops::{Add, Neg},
+    ops::Neg,
 };
 
 circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(DistinctTraceId<C, D>(GlobalNodeId => Stream<C, D>));
 
 impl<P, Z> Stream<Circuit<P>, Z>
 where
     P: Clone + 'static,
 {
-    /// Apply [`Distinct`] operator to `self`.
-    pub fn distinct(&self) -> Stream<Circuit<P>, Z>
+    /// Reduces input batches to one occurrence of each element.
+    ///
+    /// For each input batch `B`, the operator produces an output batch
+    /// that contains at most one occurrence of each tuple in `B`.
+    /// Specifically, for each input tuple `(key, value, weight)` with
+    /// `weight > 0` the operator produces an output tuple `(key, value, 1)`.
+    /// Tuples whose `weight` si `<= 0` are dropped.
+    ///
+    /// Intuitively, the operator converts the input multiset into a set
+    /// by eliminating duplicates.
+    pub fn stream_distinct(&self) -> Stream<Circuit<P>, Z>
     where
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
@@ -43,84 +51,62 @@ where
             .clone()
     }
 
-    /// Incremental version of the [`Distinct`] operator.
+    /// Incrementally deduplicate input stream.
     ///
-    /// This is equivalent to `self.integrate().distinct().differentiate()`, but
-    /// is more efficient.
-    pub fn distinct_incremental(&self) -> Stream<Circuit<P>, Z>
+    /// This is an incremental version of the
+    /// [`stream_distinct`](`Self::stream_distinct`) operator.
+    /// Given a stream of changes to relation `A`, it computes a stream of
+    /// changes to relation `A'`, that for each `(key, value, weight)` tuple
+    /// in `A` with `weight > 0`, contains a tuple `(key, value, 1)`.
+    ///
+    /// Intuitively, the operator converts the input multiset into a set
+    /// by eliminating duplicates.
+    ///
+    /// `TS` is the timestamp type used by the circuit where the operator
+    /// is instantiated, e.g., `()` in the top-level circuit,
+    /// `NestedTimestamp32` in a nested circuit, `Product<NestedTimestamp32,
+    /// u32>` in a third-level circuit, etc.
+    pub fn distinct<TS>(&self) -> Stream<Circuit<P>, Z>
     where
+        TS: DBTimestamp,
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
     {
-        self.shard().distinct_incremental_inner().mark_sharded()
-    }
-
-    fn distinct_incremental_inner(&self) -> Stream<Circuit<P>, Z>
-    where
-        Z: IndexedZSet,
-        Z::R: ZRingValue,
-    {
-        self.circuit()
+        let circuit = self.circuit();
+        circuit
             .cache_get_or_insert_with(
                 DistinctIncrementalId::new(self.origin_node_id().clone()),
                 || {
-                    self.circuit().add_binary_operator(
-                        DistinctIncremental::new(),
-                        self,
-                        &self.integrate_trace().delay_trace(),
-                    )
+                    let stream = self.shard();
+
+                    circuit.region("distinct", || {
+                        if circuit.root_scope() == 0 {
+                            // Use an implementation optimized to work in the root scope.
+                            circuit.add_binary_operator(
+                                DistinctIncrementalTotal::new(),
+                                &stream,
+                                &stream.integrate_trace().delay_trace(),
+                            )
+                        } else {
+                            // ```
+                            //          ┌────────────────────────────────────┐
+                            //          │                                    │
+                            //          │                                    ▼
+                            //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
+                            // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
+                            //                └─────┘                  └───────────────────┘
+                            // ```
+                            circuit.add_binary_operator(
+                                DistinctIncremental::new(circuit),
+                                &stream,
+                                // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
+                                &stream.trace::<OrdValSpine<Z::Key, Z::Val, TS, Z::R>>(),
+                            )
+                        }
+                        .mark_sharded()
+                    })
                 },
             )
-            .clone()
-    }
-
-    /// Incremental nested version of the [`Distinct`] operator.
-    // TODO: remove this method.
-    pub fn distinct_incremental_nested(&self) -> Stream<Circuit<P>, Z>
-    where
-        Z: ZSet + Send,
-        Z::R: ZRingValue,
-    {
-        self.shard()
-            .integrate_nested()
-            .distinct_incremental_inner()
-            .differentiate_nested()
-            .mark_sharded()
-    }
-}
-
-impl<P, Z> Stream<Circuit<P>, Z>
-where
-    P: Clone + 'static,
-{
-    // TODO: Rename this method.
-    // TODO: Document it better (we need a better framework to explain nested
-    // incremental computations).
-    /// Incremental nested version of the [`Distinct`] operator.
-    ///
-    /// This implementation integrates the input stream into a trace and should
-    /// be more CPU and memory efficient than
-    /// [`Stream::distinct_incremental_nested`].
-    pub fn distinct_trace(&self) -> Stream<Circuit<P>, Z>
-    where
-        Z: ZSet + Send,
-        Z::R: ZRingValue,
-    {
-        self.circuit()
-            .cache_get_or_insert_with(DistinctTraceId::new(self.origin_node_id().clone()), || {
-                let stream = self.shard();
-
-                self.circuit()
-                    .add_binary_operator(
-                        DistinctTrace::new(),
-                        &stream,
-                        &stream
-                            .trace::<OrdKeySpine<Z::Key, NestedTimestamp32, Z::R>>()
-                            .delay_trace(),
-                    )
-                    // We shard the input stream so the output is sharded
-                    .mark_sharded()
-            })
             .clone()
     }
 }
@@ -169,35 +155,36 @@ where
     }
 }
 
-/// Incremental version of the distinct operator.
+/// Incremental version of the distinct operator that only works in the
+/// top-level scope (i.e., for totally ordered timestamps).
 ///
 /// Takes a stream `a` of changes to relation `A` and a stream with delayed
 /// value of `A`: `z^-1(A) = a.integrate().delay()` and computes
 /// `distinct(A) - distinct(z^-1(A))` incrementally, by only considering
 /// values in the support of `a`.
-struct DistinctIncremental<Z, I> {
+struct DistinctIncrementalTotal<Z, I> {
     _type: PhantomData<(Z, I)>,
 }
 
-impl<Z, I> DistinctIncremental<Z, I> {
+impl<Z, I> DistinctIncrementalTotal<Z, I> {
     pub fn new() -> Self {
         Self { _type: PhantomData }
     }
 }
 
-impl<Z, I> Default for DistinctIncremental<Z, I> {
+impl<Z, I> Default for DistinctIncrementalTotal<Z, I> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<Z, I> Operator for DistinctIncremental<Z, I>
+impl<Z, I> Operator for DistinctIncrementalTotal<Z, I>
 where
     Z: 'static,
     I: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("DistinctIncremental")
+        Cow::from("DistinctIncrementalTotal")
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -205,7 +192,7 @@ where
     }
 }
 
-impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncremental<Z, I>
+impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncrementalTotal<Z, I>
 where
     Z: IndexedZSet,
     Z::R: ZRingValue,
@@ -281,177 +268,248 @@ where
     }
 }
 
-pub struct DistinctTrace<Z, T>
+/// Track key/value pairs that must be recomputed at
+/// future times.  Represent them as `((key, value), Present)`
+/// tuples so we can use the `Batcher` API to compile them
+/// into a batch.
+type KeysOfInterest<TS, K, V> = BTreeMap<TS, Vec<((K, V), Present)>>;
+
+#[derive(SizeOf)]
+struct DistinctIncremental<Z, T>
 where
-    Z: ZSet,
-    T: BatchReader<Key = Z::Key, Val = (), R = Z::R>,
+    Z: IndexedZSet,
+    T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
 {
-    // Keeps track of keys that need to be considered at future times.
-    // Specifically, `future_updates[i]` accumulates all keys observed during
-    // the current epoch whose weight can change at time `i`.
-    future_updates: HashMap<u32, BTreeSet<Z::Key>>,
+    // Keys that may need updating at future times.
+    keys_of_interest: KeysOfInterest<T::Time, Z::Key, Z::Val>,
+    // Current time.
     // TODO: not needed once timekeeping is handled by the circuit.
-    time: u32,
+    time: T::Time,
+    // True if the operator received empty input during the last clock
+    // tick.
     empty_input: bool,
+    // True if the operator produced empty output at the last clock tick.
     empty_output: bool,
+    // Used in computing partial derivatives
+    // (we keep it here to reuse allocations across `eval_keyval` calls).
+    distinct_vals: Vec<(Option<T::Time>, Z::R)>,
     _type: PhantomData<(Z, T)>,
 }
 
-impl<Z, T> DistinctTrace<Z, T>
+impl<Z, T> DistinctIncremental<Z, T>
 where
-    Z: ZSet,
-    T: BatchReader<Key = Z::Key, Val = (), R = Z::R>,
+    Z: IndexedZSet,
+    T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
+    Z::R: ZRingValue,
 {
-    fn new() -> Self {
+    fn new<P: Clone + 'static>(circuit: &Circuit<P>) -> Self {
         Self {
-            future_updates: HashMap::new(),
-            time: HasZero::zero(),
+            keys_of_interest: BTreeMap::new(),
+            time: <T::Time as Timestamp>::clock_start(),
             empty_input: false,
             empty_output: false,
+            distinct_vals: vec![(None, HasZero::zero()); 2 << circuit.root_scope()],
             _type: PhantomData,
         }
     }
-}
 
-impl<Z, T> DistinctTrace<Z, T>
-where
-    Z: ZSet,
-    Z::R: ZRingValue,
-    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
-{
-    // Evaluate nested incremental distinct for a single value.
-    //
-    // In the following diagram,
-    //
-    // * `w1` - the sum of weights with which `value` appears in previous epochs at
-    //   times `t < self.time`.
-    // * `w2` - the sum of weight with which `value` appers in previous epochs at
-    //   time `self.time`.
-    // * `w3` - the sum of weights with which `value` appears in the current epoch
-    //   at times `t < self.time`.
-    // * `w4` - the weight with which `value` appears in the current epoch at times
-    //   `self.time`, i.e., in the current input `delta` being processed.
-    //
-    // ```
-    // ┌─────────────────────┬─────┐
-    // │                     │     │
-    // │                     │     │
-    // │         w1          │  w2 │
-    // │                     │     │
-    // │                     │     │
-    // ├─────────────────────┼─────┤
-    // │         w3          │  w4 │
-    // └─────────────────────┴─────┘
-    // ```
-    //
-    // Then `value` is added to the output batch with weight
-    // `w_output = delta_new - delta_old` where
-    //
-    // ```
-    // delta_old = if w1 <= 0 && w1 + w2 > 0 {
-    //      1
-    // } else if w1 > 0 && w1 + w2 <= 0 {
-    //     -1
-    // } else {
-    //      0
-    // }
-    //
-    // delta_new = if w1 + w3 <= 0 && w1 + w2 + w3 + w4 > 0 {
-    //      1
-    // } else if w1 + w3 > 0 && w1 + w2 + w3 + w4 <= 0 {
-    //      -1
-    // } else {
-    //      0
-    // }
-    // ```
-    //
-    // This is just the definition of `(↑((↑distinct)∆))∆`.
-    #[allow(clippy::type_complexity)]
-    fn eval_value<'s>(
+    /// Compute the output of the operator for a single key/value pair.
+    ///
+    /// # Theory
+    ///
+    /// According to the definition of a lifted incremental operator, we are
+    /// computing a partial derivative:
+    ///
+    /// ```text
+    ///     ∂^n                      ∂^(n-1)                      ∂^(n-1)
+    ///  ------------f(t1,..,tn) = ------------f(t1,..,tn)  -  ------------f(t1-1,..,tn).
+    ///  ∂_t1 .. ∂_tn              ∂_t2 .. ∂_tn                ∂_t2 .. ∂_tn
+    /// ```
+    ///
+    /// where `n` is the nesting level of the circuit, i.e., 1 for the top-level
+    /// circuit, 2 for its subcircuit, etc., `ti` is the i'th component of
+    /// the n-dimensional timestamp, and `f(t1..tn)` is the value of the
+    /// function we want to compute (in this case `distinct`) at time
+    /// `t1..tn`.
+    ///
+    /// For example, for a twice nested circuit, we get:
+    ///
+    /// ```text
+    ///      ∂^3                        ∂^2                         ∂^2
+    ///  --------------f(t1,t2,t3) = -----------f(t1,t2,t3)  -  -----------f(t1-1,t2,t3) =
+    ///  ∂_t1 ∂_t2 ∂_t3               ∂_t2 ∂_t3                  ∂_t2 ∂_t3
+    ///
+    ///   ┌─                                     ─┐   ┌─                                          ─┐
+    ///   │   ∂                   ∂               │   │   ∂                    ∂                   │
+    ///   │ -----f(t1,t2,t3)  - -----f(t1,t2-1,t3)│ - │ -----f(t1-1,t2,t3)  - -----f(t1-1,t2-1,t3) │ =
+    /// = │ ∂_t3                 ∂_t3             │   │ ∂_t3                  ∂_t3                 │
+    ///   └─                                     ─┘   └─                                          ─┘
+    ///
+    /// = ((f(t1,t2,t3) - f(t1,t2,t3-1)) - (f(t1,t2-1,t2) - f(t1,t2-1,t3-1))) -
+    ///   ((f(t1-1,t2,t3) - f(t1-1,t2,t3-1)) - (f(t1-1,t2-1,t2) - f(t1-1,t2-1,t3-1))).
+    /// ```
+    ///
+    /// In general, in order to compute the partial derivative, we need to know
+    /// the values of `f` for all times within the n-dimensional cube with
+    /// edge 1 of the current time `t1..tn` (i.e., all `2^n` possible
+    /// combinations of `ti`'s and `ti-1`'s).
+    ///
+    /// Computing the value of `f` at time `t`, in turn, requires first
+    /// computing the sum of all updates with time `t' < t` in the input
+    /// stream:
+    ///
+    /// ```text
+    ///              __
+    ///              \
+    /// f(t) =dist(  / stream[t'][k][v].weight )
+    ///              --
+    ///              t'<=t
+    /// ```
+    ///
+    /// where `stream[t'][k][v].weight` is pseudocode for selecting the weight
+    /// of the update at time `t'` for key `k` and value `v`, and
+    ///
+    /// ```text
+    ///            ┌
+    ///            │  1, if w > 0
+    /// dist(w) = <
+    ///            │  0, otherwise
+    ///            └
+    /// ```
+    ///
+    /// We compute `f(t)` for all `2^n` times `t` of interest simultaneously in
+    /// a single run of the cursor by maintaining an array of `2^n`
+    /// accumulators and updating a subset of them at each step.
+    ///
+    /// # `keys_of_interest` map.
+    ///
+    /// The `distinct` operator does not have nice properties like linearity
+    /// that help with incremental evaluation: computing an update for each
+    /// key/value pair requires inspecting the entire history of updates for
+    /// this pair.  Fortunately, we do not need to look at all key/value pairs
+    /// in the trace.  Specifically, a key/value pair `(k, v)` can only
+    /// appear in the output of the operator at time `t` if it satisfies one
+    /// of the following conditions:
+    /// * `(k,v)` occurs in the current input `delta`
+    /// * there exist `t1<t` and `t2<t` such that `t = t1 /\ t2` and `(k,v)`
+    ///   occurs in the inputs of the operator at times `t1` and `t2`.
+    ///
+    /// To efficiently compute tuples that satisfy the second condition, we use
+    /// the `keys_of_interest` map.  For each `(k,v)` observed at time `t1`
+    /// we lookup the smallest time `t'` such that `t' = t1 /\ t2` for some
+    /// `t2` such that `not (t2 <= t1)` at which we've encountered `(k,v)`
+    /// and record `(k,v)` in `keys_of_interest[t']`.  When evaluating the
+    /// operator at time `t'` we simply scan all tuples in
+    /// `keys_of_interest[t2]` for candidates.
+    fn eval_keyval(
         &mut self,
-        trace_cursor: &mut T::Cursor<'s>,
-        _trace: &'s T,
-        value: &Z::Key,
-        weight: Z::R,
-        builder: &mut Z::Builder,
+        key: &Z::Key,
+        val: &Z::Val,
+        trace_cursor: &mut T::Cursor<'_>,
+        output: &mut Z::Builder,
     ) {
-        //eprintln!("value: {:?}, weight: {:?}", value, weight);
-        trace_cursor.seek_key(value);
+        if trace_cursor.get_key() == Some(key) {
+            trace_cursor.seek_val(val);
 
-        if trace_cursor.key_valid() && trace_cursor.key() == value {
-            let mut w1: Z::R = HasZero::zero();
-            let mut w2: Z::R = HasZero::zero();
-            let mut w3: Z::R = HasZero::zero();
-            let mut next_ts: Option<T::Time> = None;
-            trace_cursor.map_times(|t, w| {
-                if !t.epoch() {
-                    if t.inner() < self.time {
-                        w1.add_assign_by_ref(w);
-                    } else if t.inner() == self.time {
-                        w2.add_assign_by_ref(w);
-                    } else if next_ts.is_none() || t < next_ts.as_ref().unwrap() {
-                        next_ts = Some(t.clone());
+            if trace_cursor.get_val() == Some(val) {
+                // The nearest future timestamp when we need to update this
+                // key/value pair.
+                let mut time_of_interest = None;
+
+                // Reset all counters to 0.
+                self.clear_distinct_vals();
+
+                trace_cursor.map_times(|trace_ts, weight| {
+                    // Update weights in `distinct_vals`.
+                    for (ts, total_weight) in self.distinct_vals.iter_mut() {
+                        if let Some(ts) = ts {
+                            if trace_ts.less_equal(ts) {
+                                *total_weight += weight.clone();
+                            }
+                        }
                     }
-                } else if t.inner() < self.time {
-                    w3.add_assign_by_ref(w);
+                    // Timestamp in the future - update `time_of_interest`.
+                    if !trace_ts.less_equal(&self.time) {
+                        time_of_interest = match time_of_interest.take() {
+                            None => Some(self.time.join(trace_ts)),
+                            Some(time_of_interest) => {
+                                Some(min(time_of_interest, self.time.join(trace_ts)))
+                            }
+                        }
+                    }
+                });
+
+                // Compute `dist` for each entry in `distinct_vals`.
+                for (_time, weight) in self.distinct_vals.iter_mut() {
+                    if weight.le0() {
+                        *weight = HasZero::zero();
+                    } else {
+                        *weight = HasOne::one();
+                    }
                 }
-            });
 
-            //eprintln!("w1: {:?}, w2: {:?}, w3: {:?}", w1, w2, w3);
-            // w1 + w2
-            let w12 = w1.add_by_ref(&w2);
-            // w1 + w3
-            let w13 = w1.add_by_ref(&w3);
-            // w1 + w2 + w3 + w4
-            let w1234 = w12.add_by_ref(&w3).add(weight);
+                // We have computed `f` at all the relevant point in times; we can now
+                // compute the partial derivative.
+                let output_weight = Self::partial_derivative(&self.distinct_vals);
+                if !output_weight.is_zero() {
+                    output.push((Z::item_from(key.clone(), val.clone()), output_weight));
+                }
 
-            let delta_old = if w1.le0() && w12.ge0() && !w12.is_zero() {
-                HasOne::one()
-            } else if w1.ge0() && !w1.is_zero() && w12.le0() {
-                Z::R::one().neg()
-            } else {
-                HasZero::zero()
-            };
-
-            let delta_new = if w13.le0() && w1234.ge0() && !w1234.is_zero() {
-                HasOne::one()
-            } else if w13.ge0() && !w13.is_zero() && w1234.le0() {
-                Z::R::one().neg()
-            } else {
-                HasZero::zero()
-            };
-
-            // Update output.
-            if delta_old != delta_new {
-                builder.push((Z::item_from(value.clone(), ()), delta_new + delta_old.neg()));
+                if let Some(t) = time_of_interest {
+                    self.keys_of_interest
+                        .entry(t)
+                        .or_insert_with(Vec::new)
+                        .push(((key.clone(), val.clone()), Present));
+                }
             }
+        }
+    }
 
-            // Record next_ts in `self.future_updates`.
-            if let Some(next_ts) = next_ts {
-                let idx: usize = next_ts.inner() as usize;
-                self.future_updates
-                    .entry(idx as u32)
-                    .or_insert_with(BTreeSet::new)
-                    .insert(value.clone());
-            }
-        } else if weight.ge0() && !weight.is_zero() {
-            builder.push((Z::item_from(value.clone(), ()), HasOne::one()));
+    fn init_distinct_vals(vals: &mut [(Option<T::Time>, Z::R)], ts: Option<T::Time>) {
+        if vals.len() == 1 {
+            vals[0] = (ts, HasZero::zero());
+        } else {
+            let half_len = vals.len() >> 1;
+            Self::init_distinct_vals(
+                &mut vals[0..half_len],
+                ts.as_ref()
+                    .and_then(|ts| ts.checked_recede(half_len.ilog2() as Scope)),
+            );
+            Self::init_distinct_vals(&mut vals[half_len..], ts);
+        }
+    }
+
+    fn clear_distinct_vals(&mut self) {
+        for (_time, val) in self.distinct_vals.iter_mut() {
+            *val = HasZero::zero();
+        }
+    }
+
+    /// Compute partial derivative.
+    fn partial_derivative(vals: &[(Option<T::Time>, Z::R)]) -> Z::R {
+        // Split vals in two halves.  Compute `partial_derivative` recursively
+        // for each half, return the difference.
+        if vals.len() == 1 {
+            vals[0].1.clone()
+        } else {
+            Self::partial_derivative(&vals[vals.len() >> 1..])
+                + Self::partial_derivative(&vals[0..vals.len() >> 1]).neg()
         }
     }
 }
 
-impl<Z, T> Operator for DistinctTrace<Z, T>
+impl<Z, T> Operator for DistinctIncremental<Z, T>
 where
-    Z: ZSet,
-    T: BatchReader<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
+    Z: IndexedZSet,
+    T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("DistinctTrace")
+        Cow::Borrowed("DistinctIncremental")
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let size: usize = self.future_updates.values().map(BTreeSet::len).sum();
-        let bytes = self.future_updates.size_of();
+        let size: usize = self.keys_of_interest.values().map(Vec::len).sum();
+        let bytes = self.size_of();
 
         meta.extend(metadata! {
             "total updates" => MetaItem::bytes(size),
@@ -463,132 +521,195 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.time = 0;
-        }
-    }
-
-    fn clock_end(&mut self, scope: Scope) {
-        if scope == 0 {
-            self.future_updates.clear();
             self.empty_input = false;
             self.empty_output = false;
         }
     }
 
+    fn clock_end(&mut self, scope: Scope) {
+        debug_assert!(self.keys_of_interest.keys().all(|ts| {
+            if ts.less_equal(&self.time.epoch_end(scope)) {
+                eprintln!("ts: {ts:?}, epoch_end: {:?}", self.time.epoch_end(scope));
+            }
+            !ts.less_equal(&self.time.epoch_end(scope))
+        }));
+
+        self.time = self.time.advance(scope + 1);
+    }
+
     fn fixedpoint(&self, scope: Scope) -> bool {
-        // TODO: generalize `DistinctTrace` to support arbitrarily nested scopes.
-        assert_eq!(scope, 0);
+        let epoch_end = self.time.epoch_end(scope);
+
         self.empty_input
             && self.empty_output
-            && self.future_updates.values().all(|vals| vals.is_empty())
+            && self
+                .keys_of_interest
+                .keys()
+                .all(|ts| !ts.less_equal(&epoch_end))
     }
 }
 
-impl<Z, T> BinaryOperator<Z, T, Z> for DistinctTrace<Z, T>
+impl<Z, T> BinaryOperator<Z, T, Z> for DistinctIncremental<Z, T>
 where
-    Z: ZSet,
+    Z: IndexedZSet,
     Z::R: ZRingValue,
-    T: Trace<Key = Z::Key, Val = (), Time = NestedTimestamp32, R = Z::R>,
+    T: Trace<Key = Z::Key, Val = Z::Val, R = Z::R>,
 {
-    // Distinct does not have nice properties like linearity that help with
-    // incremental evaluation: computing an update for each key requires inspecting
-    // the entire history of this key.  Fortunately, we do not need to look at all
-    // keys in the trace.  In particular, only those keys that appeared in input
-    // deltas during the current clock epoch can appear in the output of this
-    // operator with non-zero weights.  So, as a simple heuristic, we could track
-    // the set of keys that appeared since the start of the epoch and only consider
-    // those.
-    //
-    // But we can restrict the set of keys to consider even more by using a stronger
-    // property: only the keys `k` that satisfy one of the following conditions can
-    // appear in the output of the operator at local time `t`:
-    // * keys in the current input `delta`
-    // * keys from earlier inputs observed during the current clock epoch that
-    //   appeared in one of the previous epochs at time `t`.
-    //
-    // To efficiently compute keys that satisfy the second condition, we use the
-    // `future_updates` map, where for each key observed in the current epoch
-    // at time `t1` we lookup the smallest time `t2 > t1` (if any) at which we saw
-    // the key during any previous epochs and record this key in
-    // `future_updates[t2]`. Then when evaluating an operatpr at time `t` we
-    // simply scan all keys in `delta` and all keys in `future_updates[t]` for
-    // candidates.
-    //
-    // TODO: Add example.
-    //
+    // TODO: add eval_owned, so we can use keys and values from `delta` without
+    // cloning.
     fn eval(&mut self, delta: &Z, trace: &T) -> Z {
-        //eprintln!("distinct_trace {}", self.time);
+        Self::init_distinct_vals(&mut self.distinct_vals, Some(self.time.clone()));
+        self.empty_input = delta.is_empty();
 
-        self.empty_input = delta.is_zero();
+        // We iterate over keys and values in order, so it is safe to use `Builder`.
+        let mut result_builder = Z::Builder::with_capacity((), delta.len());
 
-        let mut builder = Z::Builder::with_capacity((), delta.len());
-
+        let mut delta_cursor = delta.cursor();
         let mut trace_cursor = trace.cursor();
 
-        // For all keys in delta, for all keys in future_updates[time].
-        let mut delta_cursor = delta.cursor();
-        let candidates = self.future_updates.remove(&self.time).unwrap_or_default();
-        let mut cand_iterator = candidates.iter();
+        // Previously encountered keys that may affect output at the
+        // current time.
+        let keys_of_interest = self.keys_of_interest.remove(&self.time).unwrap_or_default();
 
-        let mut candidate = cand_iterator.next();
+        let keys_of_interest =
+            <OrdIndexedZSet<Z::Key, Z::Val, Present>>::from_tuples((), keys_of_interest);
+        let mut keys_of_interest_cursor = keys_of_interest.cursor();
 
-        // Iterate over keys that appear in either `future_updates[self.time]` or
-        // `delta`.
-        while delta_cursor.key_valid() && candidate.is_some() {
-            let cand_val = candidate.unwrap();
-            let w = delta_cursor.weight();
-            let k = delta_cursor.key();
-            match k.cmp(cand_val) {
+        // Iterate over all keys in `delta_cursor` and `keys_of_interest`.
+        while delta_cursor.key_valid() && keys_of_interest_cursor.key_valid() {
+            match delta_cursor.key().cmp(keys_of_interest_cursor.key()) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
+                    trace_cursor.seek_key(delta_cursor.key());
+
+                    while delta_cursor.val_valid() {
+                        self.eval_keyval(
+                            delta_cursor.key(),
+                            delta_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                        );
+                        delta_cursor.step_val();
+                    }
                     delta_cursor.step_key();
                 }
-                // Key only appears in `future_updates`.
+                // Key only appears in `keys_of_interest`.
                 Ordering::Greater => {
-                    self.eval_value(
-                        &mut trace_cursor,
-                        trace,
-                        cand_val,
-                        HasZero::zero(),
-                        &mut builder,
-                    );
-                    candidate = cand_iterator.next();
+                    trace_cursor.seek_key(keys_of_interest_cursor.key());
+
+                    while keys_of_interest_cursor.val_valid() {
+                        self.eval_keyval(
+                            keys_of_interest_cursor.key(),
+                            keys_of_interest_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                        );
+                        keys_of_interest_cursor.step_val();
+                    }
+                    keys_of_interest_cursor.step_key();
                 }
-                // Key appears in both `delta` and `future_updates`.
+                // Key appears in both `delta` and `keys_of_interest`:
+                // Iterate over all values in both cursors.
                 Ordering::Equal => {
-                    self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
+                    trace_cursor.seek_key(keys_of_interest_cursor.key());
+
+                    while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
+                        match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
+                            Ordering::Less => {
+                                self.eval_keyval(
+                                    delta_cursor.key(),
+                                    delta_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                );
+                                delta_cursor.step_val();
+                            }
+                            Ordering::Greater => {
+                                self.eval_keyval(
+                                    keys_of_interest_cursor.key(),
+                                    keys_of_interest_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                );
+                                keys_of_interest_cursor.step_val();
+                            }
+                            Ordering::Equal => {
+                                self.eval_keyval(
+                                    delta_cursor.key(),
+                                    delta_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                );
+                                delta_cursor.step_val();
+                                keys_of_interest_cursor.step_val();
+                            }
+                        }
+                    }
+
+                    // Iterate over remaining `delta_cursor` values.
+                    while delta_cursor.val_valid() {
+                        self.eval_keyval(
+                            delta_cursor.key(),
+                            delta_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                        );
+                        delta_cursor.step_val();
+                    }
+
+                    // Iterate over remaining `keys_of_interest` values.
+                    while keys_of_interest_cursor.val_valid() {
+                        self.eval_keyval(
+                            keys_of_interest_cursor.key(),
+                            keys_of_interest_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                        );
+                        keys_of_interest_cursor.step_val();
+                    }
+
                     delta_cursor.step_key();
-                    candidate = cand_iterator.next();
+                    keys_of_interest_cursor.step_key();
                 }
             }
         }
 
-        // One of the cursors is empty; iterate over whatever remains in the other
-        // cursor.
-
+        // Iterate over remaining `delta_cursor` keys.
         while delta_cursor.key_valid() {
-            let w = delta_cursor.weight();
-            let k = delta_cursor.key();
+            trace_cursor.seek_key(delta_cursor.key());
 
-            self.eval_value(&mut trace_cursor, trace, k, w, &mut builder);
+            while delta_cursor.val_valid() {
+                self.eval_keyval(
+                    delta_cursor.key(),
+                    delta_cursor.val(),
+                    &mut trace_cursor,
+                    &mut result_builder,
+                );
+                delta_cursor.step_val();
+            }
             delta_cursor.step_key();
         }
-        while candidate.is_some() {
-            self.eval_value(
-                &mut trace_cursor,
-                trace,
-                candidate.unwrap(),
-                HasZero::zero(),
-                &mut builder,
-            );
-            candidate = cand_iterator.next();
+
+        // Iterate over remaining `keys_of_interest_cursor` keys.
+        while keys_of_interest_cursor.key_valid() {
+            trace_cursor.seek_key(keys_of_interest_cursor.key());
+
+            while keys_of_interest_cursor.val_valid() {
+                self.eval_keyval(
+                    keys_of_interest_cursor.key(),
+                    keys_of_interest_cursor.val(),
+                    &mut trace_cursor,
+                    &mut result_builder,
+                );
+                keys_of_interest_cursor.step_val();
+            }
+            keys_of_interest_cursor.step_key();
         }
 
-        self.time += 1;
+        let result = result_builder.done();
+        self.empty_output = result.is_empty();
+        self.time = self.time.advance(0);
 
-        let result = builder.done();
-        self.empty_output = result.key_count() == 0;
         result
     }
 }
@@ -602,28 +723,31 @@ mod test {
     };
 
     use crate::{
-        indexed_zset, operator::GeneratorNested, trace::Batch, zset, Circuit, OrdIndexedZSet,
-        OrdZSet, Runtime,
+        indexed_zset,
+        operator::{Generator, GeneratorNested},
+        time::NestedTimestamp32,
+        trace::Batch,
+        zset, Circuit, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
 
-    fn do_distinct_incremental_nested_test_mt(workers: usize) {
+    fn do_distinct_inc_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
-            distinct_incremental_nested_test();
+            distinct_inc_test();
         });
 
         hruntime.join().unwrap();
     }
 
     #[test]
-    fn distinct_incremental_nested_test_mt() {
-        do_distinct_incremental_nested_test_mt(1);
-        do_distinct_incremental_nested_test_mt(2);
-        do_distinct_incremental_nested_test_mt(4);
-        do_distinct_incremental_nested_test_mt(16);
+    fn distinct_inc_test_mt() {
+        do_distinct_inc_test_mt(1);
+        do_distinct_inc_test_mt(2);
+        do_distinct_inc_test_mt(4);
+        do_distinct_inc_test_mt(16);
     }
 
     #[test]
-    fn distinct_incremental_nested_test() {
+    fn distinct_inc_test() {
         let circuit = Circuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
@@ -651,94 +775,12 @@ mod test {
                         }
                     })));
 
-                    let distinct_inc = input.distinct_incremental_nested().gather(0);
+                    let distinct_inc = input.distinct::<crate::time::NestedTimestamp32>().gather(0);
                     let distinct_noninc = input
                         // Non-incremental implementation of distinct_nested_incremental.
                         .integrate()
                         .integrate_nested()
-                        .distinct()
-                        .differentiate()
-                        .differentiate_nested()
-                        .gather(0);
-
-                    distinct_inc
-                        .apply2(
-                            &distinct_noninc,
-                            |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
-                                (d1.clone(), d2.clone())
-                            },
-                        )
-                        .inspect(|(d1, d2)| assert_eq!(d1, d2));
-
-                    Ok((
-                        move || {
-                            *counter.borrow_mut() += 1;
-                            Ok(*counter.borrow() == 4)
-                        },
-                        (),
-                    ))
-                })
-                .unwrap();
-        })
-        .unwrap()
-        .0;
-
-        for _ in 0..3 {
-            circuit.step().unwrap();
-        }
-    }
-
-    fn do_distinct_trace_test_mt(workers: usize) {
-        let hruntime = Runtime::run(workers, || {
-            distinct_trace_test();
-        });
-
-        hruntime.join().unwrap();
-    }
-
-    #[test]
-    fn distinct_trace_test_mt() {
-        do_distinct_trace_test_mt(1);
-        do_distinct_trace_test_mt(2);
-        do_distinct_trace_test_mt(4);
-        do_distinct_trace_test_mt(16);
-    }
-
-    #[test]
-    fn distinct_trace_test() {
-        let circuit = Circuit::build(move |circuit| {
-            let mut inputs = vec![
-                vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
-                vec![zset! { 2 => 1, 3 => 1 }, zset! { 3 => -2, 4 => -1 }],
-                vec![
-                    zset! { 5 => 1, 6 => 1 },
-                    zset! { 2 => -1, 7 => 1 },
-                    zset! { 2 => 1, 7 => -1, 8 => 2, 9 => 1 },
-                ],
-            ]
-            .into_iter();
-
-            circuit
-                .iterate(|child| {
-                    let counter = Rc::new(RefCell::new(0));
-                    let counter_clone = counter.clone();
-
-                    let input = child.add_source(GeneratorNested::new(Box::new(move || {
-                        *counter_clone.borrow_mut() = 0;
-                        if Runtime::worker_index() == 0 {
-                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
-                        } else {
-                            Box::new(|| zset! {})
-                        }
-                    })));
-
-                    let distinct_inc = input.distinct_trace().gather(0);
-                    let distinct_noninc = input
-                        // Non-incremental implementation of distinct_nested_incremental.
-                        .integrate()
-                        .integrate_nested()
-                        .distinct()
+                        .stream_distinct()
                         .differentiate()
                         .differentiate_nested()
                         .gather(0);
@@ -783,7 +825,7 @@ mod test {
 
             input
                 .integrate()
-                .distinct()
+                .stream_distinct()
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
@@ -792,7 +834,7 @@ mod test {
                 });
 
             input
-                .distinct_incremental()
+                .distinct::<()>()
                 .integrate()
                 .gather(0)
                 .inspect(move |batch| {
@@ -835,5 +877,196 @@ mod test {
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
         circuit.kill().unwrap();
+    }
+
+    use proptest::{collection, prelude::*};
+
+    type TestZSet = OrdZSet<usize, isize>;
+    type TestIndexedZSet = OrdIndexedZSet<usize, isize, isize>;
+
+    const MAX_ROUNDS: usize = 15;
+    const MAX_ITERATIONS: usize = 15;
+    const NUM_KEYS: usize = 10;
+    const MAX_VAL: isize = 3;
+    const MAX_TUPLES: usize = 10;
+
+    fn test_zset() -> impl Strategy<Value = TestZSet> {
+        collection::vec((0..NUM_KEYS, -1..=1isize), 0..MAX_TUPLES)
+            .prop_map(|tuples| OrdZSet::from_tuples((), tuples))
+    }
+
+    fn test_input() -> impl Strategy<Value = Vec<TestZSet>> {
+        collection::vec(test_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
+    }
+
+    fn test_indexed_zset() -> impl Strategy<Value = TestIndexedZSet> {
+        collection::vec(
+            ((0..NUM_KEYS, -MAX_VAL..MAX_VAL), -1..=1isize),
+            0..MAX_TUPLES,
+        )
+        .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))
+    }
+
+    fn test_indexed_input() -> impl Strategy<Value = Vec<TestIndexedZSet>> {
+        collection::vec(test_indexed_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
+    }
+
+    fn test_indexed_nested_input() -> impl Strategy<Value = Vec<Vec<TestIndexedZSet>>> {
+        collection::vec(
+            collection::vec(test_indexed_zset(), 0..MAX_ITERATIONS),
+            0..MAX_ROUNDS,
+        )
+    }
+
+    fn distinct_test_circuit(
+        circuit: &mut Circuit<()>,
+        inputs: Vec<TestZSet>,
+    ) -> (OutputHandle<TestZSet>, OutputHandle<TestZSet>) {
+        let mut inputs = inputs.into_iter();
+
+        let input = circuit.add_source(Generator::new(Box::new(move || {
+            if Runtime::worker_index() == 0 {
+                inputs.next().unwrap_or_default()
+            } else {
+                zset! {}
+            }
+        })));
+
+        let distinct_inc = input.distinct::<()>().output();
+        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
+
+        (distinct_inc, distinct_noninc)
+    }
+
+    fn distinct_indexed_test_circuit(
+        circuit: &mut Circuit<()>,
+        inputs: Vec<TestIndexedZSet>,
+    ) -> (OutputHandle<TestIndexedZSet>, OutputHandle<TestIndexedZSet>) {
+        let mut inputs = inputs.into_iter();
+
+        let input = circuit.add_source(Generator::new(Box::new(move || {
+            if Runtime::worker_index() == 0 {
+                inputs.next().unwrap_or_default()
+            } else {
+                indexed_zset! {}
+            }
+        })));
+
+        let distinct_inc = input.distinct::<()>().output();
+        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
+
+        (distinct_inc, distinct_noninc)
+    }
+
+    fn distinct_indexed_nested_test_circuit(
+        circuit: &mut Circuit<()>,
+        inputs: Vec<Vec<TestIndexedZSet>>,
+    ) {
+        let mut inputs = inputs.into_iter();
+
+        circuit
+            .iterate(|child| {
+                let counter = Rc::new(RefCell::new(0));
+                let counter_clone = counter.clone();
+
+                let input = child.add_source(GeneratorNested::new(Box::new(move || {
+                    *counter_clone.borrow_mut() = 0;
+                    if Runtime::worker_index() == 0 {
+                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                        Box::new(move || deltas.next().unwrap_or_else(|| indexed_zset! {}))
+                    } else {
+                        Box::new(|| indexed_zset! {})
+                    }
+                })));
+
+                let distinct_inc = input.distinct::<NestedTimestamp32>().gather(0);
+                let distinct_noninc = input
+                    .integrate_nested()
+                    .integrate()
+                    .stream_distinct()
+                    .differentiate()
+                    .differentiate_nested()
+                    .gather(0);
+
+                // Compare outputs of all three implementations.
+                distinct_inc
+                    .apply2(
+                        &distinct_noninc,
+                        |d1: &TestIndexedZSet, d2: &TestIndexedZSet| (d1.clone(), d2.clone()),
+                    )
+                    .inspect(|(d1, d2)| {
+                        // if d1 != d2 {
+                        //     println!("{}: incremental: {d1}", Runtime::worker_index());
+                        //     println!("{}: non-incremental: {d2}", Runtime::worker_index());
+                        // }
+                        assert_eq!(d1, d2);
+                    });
+
+                Ok((
+                    move || {
+                        *counter.borrow_mut() += 1;
+                        Ok(*counter.borrow() == MAX_ITERATIONS)
+                    },
+                    (),
+                ))
+            })
+            .unwrap();
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_distinct_test_st(inputs in test_input()) {
+            let iterations = inputs.len();
+            let (circuit, (inc_output, noninc_output)) = Circuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+            }
+        }
+
+        #[test]
+        fn proptest_distinct_test_mt(inputs in test_input(), workers in (2..=16usize)) {
+            let iterations = inputs.len();
+            let (mut circuit, (inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+            }
+
+            circuit.kill().unwrap();
+        }
+
+        #[test]
+        fn proptest_distinct_indexed_test_mt(inputs in test_indexed_input(), workers in (2..=4usize)) {
+            let iterations = inputs.len();
+            let (mut circuit, (inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+            }
+
+            circuit.kill().unwrap();
+        }
+
+        #[test]
+        fn proptest_distinct_indexed_nested_test_mt(inputs in test_indexed_nested_input(), workers in (2..=4usize)) {
+            let iterations = inputs.len();
+            // for input in inputs.iter() {
+            //     println!("round");
+            //     for batch in input.iter() {
+            //          println!("inputs: {batch}");
+            //     }
+            // }
+            let mut circuit = Runtime::init_circuit(workers, |circuit| distinct_indexed_nested_test_circuit(circuit, inputs)).unwrap().0;
+
+            for _ in 0..iterations {
+                circuit.step().unwrap();
+            }
+
+            circuit.kill().unwrap();
+        }
     }
 }

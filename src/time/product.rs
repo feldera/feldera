@@ -105,6 +105,18 @@ where
         }
     }
 
+    fn checked_recede(&self, scope: Scope) -> Option<Self> {
+        if scope == 0 {
+            self.inner
+                .checked_recede(0)
+                .map(|inner| Self::new(self.outer.clone(), inner))
+        } else {
+            self.outer
+                .checked_recede(scope - 1)
+                .map(|outer| Self::new(outer, self.inner.clone()))
+        }
+    }
+
     fn epoch_start(&self, scope: Scope) -> Self {
         if scope == 0 {
             Self::new(self.outer.clone(), TInner::minimum())

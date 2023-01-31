@@ -1,9 +1,10 @@
 //! Convenience API for defining recursive computations.
 
 use crate::{
-    algebra::{ZRingValue, ZSet},
+    algebra::{IndexedZSet, ZRingValue},
     circuit::{schedule::Error as SchedulerError, Circuit, Stream},
     operator::DelayedFeedback,
+    time::NestedTimestamp32,
     trace::Spine,
 };
 use impl_trait_for_tuples::impl_for_tuples;
@@ -47,13 +48,9 @@ pub trait RecursiveStreams<C> {
     fn consolidate(exports: Self::Export) -> Self::Output;
 }
 
-// TODO: Generalize this impl to support arbitrarily nested circuits by
-// fixing `distinct_trace` to work for any nesting depth.
-// Additionally, if we generalize `distinct_trace` to work on arbitrary
-// batches, we can ditch the `B::Val = ()` constraint.
 impl<B> RecursiveStreams<Circuit<Circuit<()>>> for Stream<Circuit<Circuit<()>>, B>
 where
-    B: ZSet + Send,
+    B: IndexedZSet + Send,
     B::R: ZRingValue,
     Spine<B>: SizeOf,
 {
@@ -68,7 +65,7 @@ where
     }
 
     fn distinct(self) -> Self {
-        self.distinct_trace()
+        Stream::distinct::<NestedTimestamp32>(&self)
     }
 
     fn connect(&self, vars: Self::Feedback) {
@@ -345,7 +342,7 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
         })
@@ -413,11 +410,11 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
 
-            reverse_paths.map(|(x, y)| (*y, *x)).integrate().distinct().inspect(move |ps: &OrdZSet<_,_>| {
+            reverse_paths.map(|(x, y)| (*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_,_>| {
                 assert_eq!(*ps, outputs2.next().unwrap());
             });
         })

@@ -211,7 +211,7 @@ mod test {
                             let suc =
                                 feedback_indexed.stream_join(&edges_indexed, |_node, &(), &to| to);
 
-                            let reachable = init.plus(&suc).distinct();
+                            let reachable = init.plus(&suc).stream_distinct();
                             feedback.connect(&reachable);
                             let condition = reachable.differentiate().condition(|z| z.is_empty());
                             (condition, reachable.export())
