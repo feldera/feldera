@@ -8,6 +8,7 @@ use std::{
     any::{self, TypeId},
     cmp::Ordering,
     fmt::{self, Debug},
+    hash::{Hash, Hasher},
     mem::{self, align_of, size_of, MaybeUninit},
     num::NonZeroUsize,
     ops::{AddAssign, Neg},
@@ -30,6 +31,7 @@ pub struct ErasedVTable {
     pub type_id: fn() -> TypeId,
     // Writes the string's length to the out pointer and returns the string's start
     pub type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
+    pub hash: unsafe extern "C" fn(&mut &mut dyn Hasher, *const u8),
 }
 
 impl ErasedVTable {
@@ -177,14 +179,14 @@ unsafe impl DynVecVTable for DiffVTable {
     }
 }
 
-pub trait IntoErased: Sized + Eq + Ord + Clone + Send + SizeOf + Debug + 'static {
+pub trait IntoErased: Sized + Hash + Eq + Ord + Clone + Send + SizeOf + Debug + 'static {
     // + Sync
     const ERASED_VTABLE: ErasedVTable;
 }
 
 impl<T> IntoErased for T
 where
-    T: Sized + Eq + Ord + Clone + Send + SizeOf + Debug + 'static, // + Sync
+    T: Sized + Hash + Eq + Ord + Clone + Send + SizeOf + Debug + 'static, // + Sync
 {
     const ERASED_VTABLE: ErasedVTable = {
         unsafe extern "C" fn eq<T: PartialEq>(lhs: *const u8, rhs: *const u8) -> bool {
@@ -253,6 +255,13 @@ where
             name.as_ptr()
         }
 
+        unsafe extern "C" fn hash<T: Hash>(hasher: &mut &mut dyn Hasher, value: *const u8) {
+            debug_assert!(!value.is_null());
+
+            let value = &*value.cast::<T>();
+            value.hash(hasher);
+        }
+
         ErasedVTable {
             size_of: size_of::<Self>(),
             align_of: match NonZeroUsize::new(align_of::<Self>()) {
@@ -270,6 +279,7 @@ where
             drop_slice_in_place: drop_slice_in_place::<Self>,
             type_id: TypeId::of::<Self>,
             type_name: type_name::<Self>,
+            hash: hash::<Self>,
         }
     };
 }

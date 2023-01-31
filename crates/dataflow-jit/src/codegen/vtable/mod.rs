@@ -1,6 +1,7 @@
 mod clone;
 mod cmp;
 mod drop;
+mod hash;
 mod tests;
 
 use crate::{
@@ -23,6 +24,7 @@ use std::{
     any::TypeId,
     cmp::Ordering,
     fmt::{self, Debug},
+    hash::Hasher,
     mem::align_of,
     num::NonZeroUsize,
 };
@@ -163,6 +165,7 @@ vtable! {
     drop_in_place: unsafe extern "C" fn(*mut u8),
     drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
+    hash: unsafe extern "C" fn(&mut &mut dyn Hasher, *const u8),
 }
 
 // TODO: Move these functions onto `CodegenCtx`

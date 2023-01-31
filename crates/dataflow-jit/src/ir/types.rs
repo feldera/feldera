@@ -31,10 +31,40 @@ impl ColumnType {
         matches!(self, Self::String)
     }
 
+    #[must_use]
+    pub const fn is_bool(self) -> bool {
+        matches!(self, Self::Bool)
+    }
+
+    #[must_use]
+    pub const fn is_int(self) -> bool {
+        matches!(
+            self,
+            Self::U16 | Self::I16 | Self::U32 | Self::I32 | Self::U64 | Self::I64,
+        )
+    }
+
+    #[must_use]
+    pub const fn is_signed_int(self) -> bool {
+        matches!(self, Self::I16 | Self::I32 | Self::I64)
+    }
+
+    #[must_use]
+    pub const fn is_unsigned_int(self) -> bool {
+        matches!(self, Self::U16 | Self::U32 | Self::U64)
+    }
+
+    #[must_use]
+    pub const fn is_float(self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
+    }
+
+    #[must_use]
     pub const fn needs_drop(&self) -> bool {
         matches!(self, Self::String)
     }
 
+    #[must_use]
     pub const fn requires_nontrivial_clone(&self) -> bool {
         matches!(self, Self::String)
     }
@@ -116,7 +146,7 @@ impl RowLayout {
         &self.columns
     }
 
-    pub fn get_row_type(&self, row: usize) -> Option<ColumnType> {
+    pub fn column_type(&self, row: usize) -> Option<ColumnType> {
         self.columns.get(row).copied()
     }
 

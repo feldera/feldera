@@ -13,11 +13,11 @@ pub(crate) use layout::LayoutConfig;
 use crate::{
     codegen::{
         intrinsics::{ImportIntrinsics, Intrinsics},
-        utils::FunctionBuilderExt,
+        utils::{normalize_float, FunctionBuilderExt},
     },
     ir::{
         BinOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags, LayoutId,
-        RValue, RowLayoutCache, Signature, Terminator,
+        RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
 };
 use cranelift::{
@@ -27,7 +27,7 @@ use cranelift::{
     },
     prelude::{
         isa::{self, TargetFrontendConfig, TargetIsa},
-        settings, types, AbiParam, Block as ClifBlock, Configurable, FunctionBuilder,
+        settings, types, AbiParam, Block as ClifBlock, Configurable, FloatCC, FunctionBuilder,
         FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature as ClifSignature,
         StackSlotData, StackSlotKind, TrapCode, Type, Value,
     },
@@ -245,22 +245,203 @@ impl Codegen {
 
                     match expr {
                         Expr::BinOp(binop) => {
-                            let lhs = ctx.exprs[&binop.lhs()];
-                            let rhs = ctx.exprs[&binop.rhs()];
+                            let (lhs, rhs) = (ctx.exprs[&binop.lhs()], ctx.exprs[&binop.rhs()]);
+                            let (lhs_ty, rhs_ty) =
+                                (ctx.expr_types[&binop.lhs()], ctx.expr_types[&binop.rhs()]);
+                            debug_assert_eq!(
+                                builder.func.dfg.value_type(lhs),
+                                builder.func.dfg.value_type(rhs),
+                            );
+                            debug_assert_eq!(lhs_ty, rhs_ty);
 
-                            // FIXME: Doesn't handle floats
+                            let mut value_ty = lhs_ty;
                             let value = match binop.kind() {
-                                BinOpKind::Add => builder.ins().iadd(lhs, rhs),
-                                BinOpKind::Sub => builder.ins().isub(lhs, rhs),
-                                BinOpKind::Mul => builder.ins().imul(lhs, rhs),
-                                BinOpKind::Eq => builder.ins().icmp(IntCC::Equal, lhs, rhs),
-                                BinOpKind::Neq => builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
+                                BinOpKind::Add => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fadd(lhs, rhs)
+                                    } else if lhs_ty.is_int() {
+                                        builder.ins().iadd(lhs, rhs)
+                                    } else {
+                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                                    }
+                                }
+                                BinOpKind::Sub => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fsub(lhs, rhs)
+                                    } else if lhs_ty.is_int() {
+                                        builder.ins().isub(lhs, rhs)
+                                    } else {
+                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                                    }
+                                }
+                                BinOpKind::Mul => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fsub(lhs, rhs)
+                                    } else if lhs_ty.is_int() {
+                                        builder.ins().imul(lhs, rhs)
+                                    } else {
+                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                                    }
+                                }
+                                BinOpKind::Div => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fdiv(lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().sdiv(lhs, rhs)
+                                    } else if lhs_ty.is_unsigned_int() {
+                                        builder.ins().udiv(lhs, rhs)
+                                    } else {
+                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                                    }
+                                }
+
+                                BinOpKind::Eq => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                                    } else {
+                                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::Neq => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+                                    } else {
+                                        builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::LessThan => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+                                    } else {
+                                        builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::GreaterThan => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
+                                    } else {
+                                        builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::LessThanOrEqual => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
+                                    } else {
+                                        builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::GreaterThanOrEqual => {
+                                    value_ty = ColumnType::Bool;
+
+                                    if lhs_ty.is_float() {
+                                        let (lhs, rhs) = if self.config.total_float_comparisons {
+                                            (
+                                                normalize_float(lhs, &mut builder),
+                                                normalize_float(rhs, &mut builder),
+                                            )
+                                        } else {
+                                            (lhs, rhs)
+                                        };
+                                        builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().icmp(
+                                            IntCC::SignedGreaterThanOrEqual,
+                                            lhs,
+                                            rhs,
+                                        )
+                                    } else {
+                                        builder.ins().icmp(
+                                            IntCC::UnsignedGreaterThanOrEqual,
+                                            lhs,
+                                            rhs,
+                                        )
+                                    }
+                                }
+
+                                BinOpKind::Min => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fmin(lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().smin(lhs, rhs)
+                                    } else {
+                                        builder.ins().umin(lhs, rhs)
+                                    }
+                                }
+                                BinOpKind::Max => {
+                                    if lhs_ty.is_float() {
+                                        builder.ins().fmax(lhs, rhs)
+                                    } else if lhs_ty.is_signed_int() {
+                                        builder.ins().smax(lhs, rhs)
+                                    } else {
+                                        builder.ins().umax(lhs, rhs)
+                                    }
+                                }
+
                                 BinOpKind::And => builder.ins().band(lhs, rhs),
                                 BinOpKind::Or => builder.ins().bor(lhs, rhs),
+                                BinOpKind::Xor => builder.ins().bxor(lhs, rhs),
                             };
 
-                            ctx.add_expr(expr_id, value, None);
+                            ctx.add_expr(expr_id, value, value_ty, None);
                         }
+
+                        Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
 
                         Expr::Store(store) => {
                             debug_assert!(!ctx.is_readonly(store.target()));
@@ -286,7 +467,8 @@ impl Codegen {
                         }
 
                         Expr::Load(load) => {
-                            let layout = layout_cache.layout_of(ctx.layout_id(load.source()));
+                            let layout_id = ctx.layout_id(load.source());
+                            let (layout, row_layout) = layout_cache.get_layouts(layout_id);
                             let offset = layout.offset_of(load.row());
                             let ty = layout
                                 .type_of(load.row())
@@ -308,7 +490,7 @@ impl Codegen {
                                 builder.ins().load(ty, flags, addr, offset as i32)
                             };
 
-                            ctx.add_expr(expr_id, value, None);
+                            ctx.add_expr(expr_id, value, row_layout.column_type(load.row()), None);
                         }
 
                         // TODO: If the given nullish flag is the only occupant of its bitset,
@@ -353,7 +535,7 @@ impl Codegen {
                                 masked,
                                 0,
                             );
-                            ctx.add_expr(expr_id, is_null, None);
+                            ctx.add_expr(expr_id, is_null, ColumnType::Bool, None);
                         }
 
                         // TODO: If the given nullish flag is the only occupant of its bitset,
@@ -493,6 +675,7 @@ impl Codegen {
 
                         Expr::CopyVal(copy_val) => {
                             let value = ctx.exprs[&copy_val.value()];
+                            let ty = ctx.expr_types.get(&copy_val.value()).copied();
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
 
                             let value = if copy_val.ty() == ColumnType::String {
@@ -503,7 +686,7 @@ impl Codegen {
                                 value
                             };
 
-                            ctx.add_expr(expr_id, value, layout);
+                            ctx.add_expr(expr_id, value, ty, layout);
                         }
 
                         // TODO: There's a couple optimizations we can do here:
@@ -540,7 +723,7 @@ impl Codegen {
 
                         Expr::Constant(constant) => {
                             let value = ctx.constant(constant, &mut builder);
-                            ctx.add_expr(expr_id, value, None);
+                            ctx.add_expr(expr_id, value, constant.column_type(), None);
                         }
                     }
                 }
@@ -601,6 +784,7 @@ struct CodegenCtx<'a> {
     layout_cache: NativeLayoutCache,
     blocks: BTreeMap<BlockId, ClifBlock>,
     exprs: BTreeMap<ExprId, Value>,
+    expr_types: BTreeMap<ExprId, ColumnType>,
     expr_layouts: BTreeMap<ExprId, LayoutId>,
     stack_slots: BTreeMap<ExprId, StackSlot>,
     function_inputs: BTreeMap<ExprId, InputFlags>,
@@ -625,6 +809,7 @@ impl<'a> CodegenCtx<'a> {
             layout_cache,
             blocks: BTreeMap::new(),
             exprs: BTreeMap::new(),
+            expr_types: BTreeMap::new(),
             expr_layouts: BTreeMap::new(),
             stack_slots: BTreeMap::new(),
             function_inputs: BTreeMap::new(),
@@ -674,7 +859,7 @@ impl<'a> CodegenCtx<'a> {
         );
         for (idx, &(layout, expr_id, flags)) in function.args().iter().enumerate() {
             let param = builder.block_params(entry_block)[idx];
-            self.add_expr(expr_id, param, layout);
+            self.add_expr(expr_id, param, None, layout);
             self.function_inputs.insert(expr_id, flags);
         }
     }
@@ -769,12 +954,18 @@ impl<'a> CodegenCtx<'a> {
         builder.ins().iconst(ty, val)
     }
 
-    fn add_expr<L>(&mut self, expr_id: ExprId, value: Value, layout: L)
+    fn add_expr<T, L>(&mut self, expr_id: ExprId, value: Value, ty: T, layout: L)
     where
+        T: Into<Option<ColumnType>>,
         L: Into<Option<LayoutId>>,
     {
         let prev = self.exprs.insert(expr_id, value);
         debug_assert!(prev.is_none());
+
+        if let Some(ty) = ty.into() {
+            let prev = self.expr_types.insert(expr_id, ty);
+            debug_assert!(prev.is_none());
+        }
 
         if let Some(layout) = layout.into() {
             let prev = self.expr_layouts.insert(expr_id, layout);
@@ -949,5 +1140,113 @@ impl<'a> CodegenCtx<'a> {
         let masked = builder.ins().band_imm(ptr, (align - 1) as i64);
         // Masked will be zero if the pointer is aligned, so we trap on non-zero values
         builder.ins().trapnz(masked, TRAP_UNALIGNED_PTR);
+    }
+
+    fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
+        let (value, value_ty) = match unary.value() {
+            RValue::Expr(value_id) => {
+                let value = self.exprs[value_id];
+                let value_ty = self.expr_types[value_id];
+                debug_assert!(!value_ty.is_string() && !value_ty.is_unit());
+
+                let value = match unary.kind() {
+                    UnaryOpKind::Abs => {
+                        if value_ty.is_float() {
+                            builder.ins().fabs(value)
+                        } else if value_ty.is_signed_int() {
+                            builder.ins().iabs(value)
+                        } else {
+                            // Abs on unsigned types is a noop
+                            value
+                        }
+                    }
+
+                    UnaryOpKind::Neg => {
+                        if value_ty.is_float() {
+                            builder.ins().fneg(value)
+                        } else {
+                            // TODO: Should we only use ineg for signed integers?
+                            builder.ins().ineg(value)
+                        }
+                    }
+
+                    UnaryOpKind::Not => {
+                        let not_value = builder.ins().bnot(value);
+                        if value_ty.is_bool() {
+                            // Mask all bits except for the one containing the boolean value
+                            builder.ins().band_imm(not_value, 0b0000_0001)
+                        } else {
+                            not_value
+                        }
+                    }
+
+                    UnaryOpKind::Ceil => {
+                        debug_assert!(value_ty.is_float());
+                        builder.ins().ceil(value)
+                    }
+                    UnaryOpKind::Floor => {
+                        debug_assert!(value_ty.is_float());
+                        builder.ins().floor(value)
+                    }
+                    UnaryOpKind::Trunc => {
+                        debug_assert!(value_ty.is_float());
+                        builder.ins().trunc(value)
+                    }
+                    UnaryOpKind::Sqrt => {
+                        if value_ty.is_float() {
+                            builder.ins().sqrt(value)
+                        } else {
+                            todo!("integer sqrt?")
+                        }
+                    }
+
+                    UnaryOpKind::CountOnes => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().popcnt(value)
+                    }
+                    UnaryOpKind::CountZeroes => {
+                        debug_assert!(!value_ty.is_float());
+                        // count_zeroes(x) = count_ones(!x)
+                        let not_value = builder.ins().bnot(value);
+                        builder.ins().popcnt(not_value)
+                    }
+
+                    UnaryOpKind::LeadingOnes => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().cls(value)
+                    }
+                    UnaryOpKind::LeadingZeroes => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().clz(value)
+                    }
+
+                    UnaryOpKind::TrailingOnes => {
+                        debug_assert!(!value_ty.is_float());
+                        // trailing_ones(x) = trailing_zeroes(!x)
+                        let not_value = builder.ins().bnot(value);
+                        builder.ins().ctz(not_value)
+                    }
+                    UnaryOpKind::TrailingZeroes => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().ctz(value)
+                    }
+
+                    UnaryOpKind::BitReverse => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().bitrev(value)
+                    }
+                    UnaryOpKind::ByteReverse => {
+                        debug_assert!(!value_ty.is_float());
+                        builder.ins().bswap(value)
+                    }
+                };
+
+                (value, value_ty)
+            }
+
+            RValue::Imm(_value) => todo!(),
+        };
+
+        self.add_expr(expr_id, value, value_ty, None);
     }
 }

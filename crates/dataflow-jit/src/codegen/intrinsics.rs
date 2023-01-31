@@ -8,6 +8,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug},
+    hash::{Hash, Hasher},
     mem::ManuallyDrop,
     ptr::drop_in_place,
     slice,
@@ -103,10 +104,15 @@ macro_rules! intrinsics {
     };
 
     (@type $ptr_type:ident ptr) => { $ptr_type };
-    (@type $ptr_type:ident i8) => { types::I8 };
     (@type $ptr_type:ident bool) => { types::I8 };
-    (@type $ptr_type:ident i64) => { types::I64 };
+    (@type $ptr_type:ident u8) => { types::I8 };
+    (@type $ptr_type:ident i8) => { types::I8 };
+    (@type $ptr_type:ident u16) => { types::I16 };
+    (@type $ptr_type:ident i16) => { types::I16 };
+    (@type $ptr_type:ident u32) => { types::I32 };
+    (@type $ptr_type:ident i32) => { types::I32 };
     (@type $ptr_type:ident u64) => { types::I64 };
+    (@type $ptr_type:ident i64) => { types::I64 };
     (@type $ptr_type:ident f32) => { types::F32 };
     (@type $ptr_type:ident f64) => { types::F64 };
 
@@ -127,6 +133,15 @@ intrinsics! {
     uint_debug = fn(u64, ptr) -> bool,
     f32_debug = fn(f32, ptr) -> bool,
     f64_debug = fn(f64, ptr) -> bool,
+    u8_hash = fn(ptr, u8),
+    i8_hash = fn(ptr, i8),
+    u16_hash = fn(ptr, u16),
+    i16_hash = fn(ptr, i16),
+    u32_hash = fn(ptr, u32),
+    i32_hash = fn(ptr, i32),
+    u64_hash = fn(ptr, u64),
+    i64_hash = fn(ptr, i64),
+    string_hash = fn(ptr, ptr),
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -209,4 +224,28 @@ unsafe extern "C" fn dataflow_jit_f32_debug(float: f32, fmt: *mut fmt::Formatter
 unsafe extern "C" fn dataflow_jit_f64_debug(double: f64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&double, &mut *fmt).is_ok()
+}
+
+macro_rules! hash {
+    ($($name:ident = $ty:ty),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<dataflow_jit_ $name _hash>](hasher: &mut &mut dyn Hasher, value: $ty) {
+                    value.hash(hasher);
+                }
+            )+
+        }
+    };
+}
+
+hash! {
+    u8 = u8,
+    i8 = i8,
+    u16 = u16,
+    i16 = i16,
+    u32 = u32,
+    i32 = i32,
+    u64 = u64,
+    i64 = i64,
+    string = ThinStrRef,
 }
