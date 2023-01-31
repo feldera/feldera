@@ -611,9 +611,6 @@ where
         // );
         self.empty_input = delta.is_empty();
 
-        // We iterate over keys in order, so it is safe to use `Builder`
-        // as long as we are careful to add values in order for each key in
-        // `eval_key` method.
         let mut result = Vec::with_capacity(delta.key_count());
 
         let mut delta_cursor = delta.cursor();
@@ -810,7 +807,7 @@ mod test {
                 Ok((
                     move || {
                         *counter.borrow_mut() += 1;
-                        Ok(*counter.borrow() == 4)
+                        Ok(*counter.borrow() == MAX_ITERATIONS)
                     },
                     (),
                 ))

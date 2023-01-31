@@ -107,15 +107,21 @@ impl Timestamp for NestedTimestamp32 {
     }
 
     fn recede(&self, scope: Scope) -> Self {
+        self.checked_recede(scope)
+            .expect("NestedTimestamp32::recede timestamp underflow")
+    }
+
+    fn checked_recede(&self, scope: Scope) -> Option<Self> {
         if scope == 0 {
             if self.0 & INNER_MASK == 0 {
-                panic!("NestedTimestamp32::recede timestamp underflow");
+                None
+            } else {
+                Some(Self(self.0 - 1))
             }
-            Self(self.0 - 1)
         } else if scope == 1 {
-            Self(self.0 & INNER_MASK)
+            Some(Self(self.0 & INNER_MASK))
         } else {
-            self.clone()
+            Some(self.clone())
         }
     }
 

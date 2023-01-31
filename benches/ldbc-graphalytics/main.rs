@@ -455,6 +455,10 @@ fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
                             Cow::Borrowed("time"),
                             MetaItem::Duration(profile.total_time()),
                         ),
+                        (
+                            Cow::Borrowed("nodeid"),
+                            MetaItem::String(node_id.to_string()),
+                        ),
                     ];
 
                     for item in default_meta {

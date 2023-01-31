@@ -533,7 +533,7 @@ mod test {
 
                 OutputBatch::from_tuples((), tuples)
             })
-            .distinct()
+            .stream_distinct()
             .gather(0)
     }
 

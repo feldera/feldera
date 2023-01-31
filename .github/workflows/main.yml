@@ -110,10 +110,19 @@ jobs:
           args: --workspace --no-run --no-default-features  --target ${{ matrix.target }}
 
       - name: Run tests
+        if: runner.os != 'Windows'
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
+
+      # Only run basic tests on windows, which tends to run out of resources.
+      - name: Run tests on Windows
+        if: runner.os == 'Windows'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
 
   #   miri:
   #     name: Miri

@@ -86,7 +86,7 @@ fn main() {
             let paths = circuit
                 .recursive(|child, paths: Stream<_, OrdZSet<(u32, u32), i32>>| {
                     // ```text
-                    //                      distinct_trace
+                    //                            distinct
                     //               ┌───┐          ┌───┐
                     // edges         │   │          │   │  paths
                     // ────┬────────►│ + ├──────────┤   ├────────┬───►

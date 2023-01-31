@@ -61,7 +61,7 @@ pub use product::Product;
 /// # Example: `NestedTimestamp32`.
 ///
 /// [`join`](`crate::circuit::Stream::join`) and
-/// [`distinct_trace`](`crate::circuit::Stream::distinct_trace`) methods compute
+/// [`distinct`](`crate::circuit::Stream::distinct`) methods compute
 /// incremental versions
 /// of `join` and `distinct` operators within nested scopes.  They need to know
 /// the exact local time in the child circuit when each key-value tuple was
@@ -146,7 +146,20 @@ pub trait Timestamp:
     /// assert_eq!((2, 3).recede(0), (2, 2));
     /// assert_eq!((2, 3).recede(1), (1, 3));
     /// ```
-    fn recede(&self, scope: Scope) -> Self;
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock at the `scope` nesting level is equal to zero
+    /// (i.e., we are running the first clock cycle) and hence cannot be
+    /// decremented.
+    fn recede(&self, scope: Scope) -> Self {
+        self.checked_recede(scope).unwrap()
+    }
+
+    /// Like `recede`, but returns `None` if the clock at level `scope` is
+    /// equal to zero (i.e., we are running the first clock cycle) and hence
+    /// cannot be decremented.
+    fn checked_recede(&self, scope: Scope) -> Option<Self>;
 
     /// Returns the first time stamp of the current clock epoch in `scope`.
     fn epoch_start(&self, scope: Scope) -> Self;
@@ -161,6 +174,9 @@ impl Timestamp for () {
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
     fn recede(&self, _scope: Scope) -> Self {}
+    fn checked_recede(&self, _scope: Scope) -> Option<Self> {
+        Some(())
+    }
     fn epoch_start(&self, _scope: Scope) -> Self {}
     fn epoch_end(&self, _scope: Scope) -> Self {}
 }
@@ -176,6 +192,9 @@ impl Timestamp for u32 {
     }
     fn recede(&self, _scope: Scope) -> Self {
         self - 1
+    }
+    fn checked_recede(&self, _scope: Scope) -> Option<Self> {
+        self.checked_sub(1)
     }
     fn epoch_start(&self, _scope: Scope) -> Self {
         0

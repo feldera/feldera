@@ -199,25 +199,25 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
         .map(|((channel, day), (_auction, _price, bidder, _mins))| {
             ((channel.clone(), *day), *bidder)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank1_distinct_bidder = rank1_bids
         .map(|((channel, day), (_auction, _price, bidder, _mins))| {
             ((channel.clone(), *day), *bidder)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank2_distinct_bidder = rank2_bids
         .map(|((channel, day), (_auction, _price, bidder, _mins))| {
             ((channel.clone(), *day), *bidder)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank3_distinct_bidder = rank3_bids
         .map(|((channel, day), (_auction, _price, bidder, _mins))| {
             ((channel.clone(), *day), *bidder)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
 
     // Compute unique auctions across all bids and for each price range.
@@ -225,25 +225,25 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
         .map(|((channel, day), (auction, _price, _bidder, _mins))| {
             ((channel.clone(), *day), *auction)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank1_distinct_auction = rank1_bids
         .map(|((channel, day), (auction, _price, _bidder, _mins))| {
             ((channel.clone(), *day), *auction)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank2_distinct_auction = rank2_bids
         .map(|((channel, day), (auction, _price, _bidder, _mins))| {
             ((channel.clone(), *day), *auction)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank3_distinct_auction = rank3_bids
         .map(|((channel, day), (auction, _price, _bidder, _mins))| {
             ((channel.clone(), *day), *auction)
         })
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
 
     // Compute bids per channel per day.

@@ -5,9 +5,8 @@
 //! [2.3.1]: https://arxiv.org/pdf/2011.15028v4.pdf#subsection.2.3.1
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
-use crate::data::{Distance, DistanceMap, DistanceSet, Edges, Node, VertexSet, Vertices};
+use crate::data::{Distance, DistanceMap, DistanceSet, EdgeMap, Edges, Node, VertexSet, Vertices};
 use dbsp::{
-    algebra::Present,
     operator::{recursive::RecursiveStreams, FilterMap, Min},
     time::NestedTimestamp32,
     trace::{Batch, BatchReader, Builder, Cursor},
@@ -15,7 +14,7 @@ use dbsp::{
 };
 use std::iter::once;
 
-type Distances<P, D = Present> = Stream<Circuit<P>, DistanceSet<D>>;
+type Distances<P, D = i32> = Stream<Circuit<P>, DistanceSet<D>>;
 
 // TODO: This straight up won't work on the quantities of data required by the
 //       higher scale factor benchmarks, there's simply too much data. We'll
@@ -29,12 +28,28 @@ where
     // Initialize the roots to have a distance of zero
     let roots = roots
         .apply(|roots| {
-            let mut builder =
-                <DistanceSet<Present> as Batch>::Builder::with_capacity((), roots.len());
+            let mut builder = <DistanceSet<i32> as Batch>::Builder::with_capacity((), roots.len());
 
             let mut cursor = roots.cursor();
             while cursor.key_valid() {
-                builder.push(((*cursor.key(), 0), Present));
+                builder.push(((*cursor.key(), 0), 1));
+                cursor.step_key();
+            }
+
+            builder.done()
+        })
+        .shard();
+
+    let edges = edges
+        .apply(|edges| {
+            let mut builder = <EdgeMap<i32> as Batch>::Builder::with_capacity((), edges.len());
+
+            let mut cursor = edges.cursor();
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    builder.push(((*cursor.key(), *cursor.val()), 1));
+                    cursor.step_val();
+                }
                 cursor.step_key();
             }
 
@@ -54,7 +69,7 @@ where
             let distances = nodes
                 .index()
                 // Iterate over each edge within the graph, increasing the distance on each step
-                .join_generic::<NestedTimestamp32, _, _, DistanceSet<Present>, _>(
+                .join_generic::<NestedTimestamp32, _, _, DistanceSet<i32>, _>(
                     &edges,
                     |_, &dist, &dest| once(((dest, dist + 1), ())),
                 )
@@ -62,13 +77,13 @@ where
                 .plus(&roots)
                 .index::<Node, Distance>()
                 // Select only the shortest distance to continue iterating.
-                .aggregate_generic::<(), _, DistanceMap<Present>>(Min)
+                .aggregate_generic::<(), _, DistanceMap<i32>>(Min)
                 .map(|(&node, &distance)| (node, distance));
             Ok(distances)
         })
         .expect("failed to build dfs recursive scope");
 
-    // Convert the `Present` weights of distances to integer weights so we can use
+    // Convert the `i32` weights of distances to integer weights so we can use
     // negation on it
     //
     // TODO: Could probably be optimized to use `.apply_owned()` and take the key
@@ -91,7 +106,7 @@ where
         .mark_sharded();
 
     // Add weights to each vertex
-    // TODO: Ideally we could actually just use `Present` weights for this too
+    // TODO: Ideally we could actually just use `i32` weights for this too
     let vertices = vertices
         .apply(|vertices| {
             let mut builder = <VertexSet<i8> as Batch>::Builder::with_capacity((), vertices.len());

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d2c682b8d4a4302a866964c81bd23a54d8d5b88720a09ddcc2d374b5d922c1a3 # shrinks to inputs = [[], [OrdIndexedZSet { layer: OrderedLayer { keys: [], offs: [0], vals: ColumnLayer { keys: [], diffs: [] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [], offs: [0], vals: ColumnLayer { keys: [], diffs: [] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [], offs: [0], vals: ColumnLayer { keys: [], diffs: [] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [4], offs: [0, 1], vals: ColumnLayer { keys: [0], diffs: [1] } } }], [OrdIndexedZSet { layer: OrderedLayer { keys: [4], offs: [0, 1], vals: ColumnLayer { keys: [0], diffs: [1] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [], offs: [0], vals: ColumnLayer { keys: [], diffs: [] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [], offs: [0], vals: ColumnLayer { keys: [], diffs: [] } } }, OrdIndexedZSet { layer: OrderedLayer { keys: [2], offs: [0, 2], vals: ColumnLayer { keys: [0, 1], diffs: [1, 1] } } }]], workers = 2

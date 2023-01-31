@@ -176,37 +176,37 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
     // Compute unique bidders across all bids and for each price range.
     let distinct_bidder = bids
         .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank1_distinct_bidder = rank1_bids
         .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank2_distinct_bidder = rank2_bids
         .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank3_distinct_bidder = rank3_bids
         .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
 
     // Compute unique auctions across all bids and for each price range.
     let distinct_auction = bids
         .map(|(day, (auction, _price, _bidder))| (*day, *auction))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank1_distinct_auction = rank1_bids
         .map(|(day, (auction, _price, _bidder))| (*day, *auction))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank2_distinct_auction = rank2_bids
         .map(|(day, (auction, _price, _bidder))| (*day, *auction))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
     let rank3_distinct_auction = rank3_bids
         .map(|(day, (auction, _price, _bidder))| (*day, *auction))
-        .distinct_incremental()
+        .distinct::<()>()
         .index();
 
     // Compute bids per day.
