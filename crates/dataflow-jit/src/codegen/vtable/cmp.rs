@@ -10,6 +10,7 @@ use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, Me
 use cranelift_module::{FuncId, Module};
 use std::{cmp::Ordering, num::NonZeroU8};
 
+// TODO: gt, le, ge functions
 impl Codegen {
     /// Generates a function comparing two of the given layout for equality
     // FIXME: I took the really lazy route here and pretend that uninit data
@@ -19,10 +20,21 @@ impl Codegen {
     // FIXME: Need to implement total_cmp for floats
     // https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
     // https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating eq vtable function for {layout_id}");
+
         // fn(*const u8, *const u8) -> bool
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_eq"),
+            &format!(
+                "fn(*const {0:?}, *const {0:?}) -> bool",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =
@@ -213,10 +225,21 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_lt(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating lt vtable function for {layout_id}");
+
         // fn(*const u8, *const u8) -> bool
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_lt"),
+            &format!(
+                "fn(*const {0:?}, *const {0:?}) -> bool",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =
@@ -396,11 +419,22 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_cmp(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating cmp vtable function for {layout_id}");
+
         // fn(*const u8, *const u8) -> Ordering
         // Ordering is represented as an i8 where -1 = Less, 0 = Equal and 1 = Greater
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], Some(types::I8));
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_cmp"),
+            &format!(
+                "fn(*const {0:?}, *const {0:?}) -> Ordering",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =

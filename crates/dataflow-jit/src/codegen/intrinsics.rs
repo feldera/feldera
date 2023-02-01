@@ -1,4 +1,4 @@
-use crate::{thin_str::ThinStrRef, ThinStr};
+use crate::{codegen::pretty_clif::CommentWriter, thin_str::ThinStrRef, ThinStr};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
     prelude::{types, AbiParam, Signature as ClifSignature},
@@ -6,18 +6,20 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use std::{
+    cell::RefCell,
     cmp::Ordering,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
     mem::ManuallyDrop,
     ptr::drop_in_place,
+    rc::Rc,
     slice,
 };
 
 macro_rules! intrinsics {
     ($($intrinsic:ident = fn($($arg:tt),*) $(-> $ret:tt)?),+ $(,)?) => {
         #[derive(Debug, Clone)]
-        pub struct Intrinsics {
+        pub(crate) struct Intrinsics {
             $(pub $intrinsic: FuncId,)+
         }
 
@@ -28,7 +30,7 @@ macro_rules! intrinsics {
             ///
             /// Should be proceeded by a call to [`Intrinsics::register()`]
             /// on the [`JITBuilder`] that the given [`JITModule`] came from
-            pub fn new(module: &mut JITModule) -> Self {
+            pub(crate) fn new(module: &mut JITModule) -> Self {
                 let ptr_type = module.isa().pointer_type();
                 let call_conv = module.isa().default_call_conv();
 
@@ -55,7 +57,7 @@ macro_rules! intrinsics {
             /// Registers all intrinsics within the given [`JITBuilder`]
             ///
             /// Should be called before [`Intrinsics::new()`]
-            pub fn register(builder: &mut JITBuilder) {
+            pub(crate) fn register(builder: &mut JITBuilder) {
                 paste::paste! {
                     $(
                         // Ensure all functions have `extern "C"` abi
@@ -71,35 +73,47 @@ macro_rules! intrinsics {
 
             }
 
-            pub fn import(&self) -> ImportIntrinsics {
-                ImportIntrinsics::new(self)
+            pub(crate) fn import(&self, comment_writer: Option<Rc<RefCell<CommentWriter>>>) -> ImportIntrinsics {
+                ImportIntrinsics::new(self, comment_writer)
             }
         }
 
         #[derive(Debug, Clone)]
-        pub struct ImportIntrinsics {
+        pub(crate) struct ImportIntrinsics {
             $($intrinsic: Result<FuncRef, FuncId>,)+
+            comment_writer: Option<Rc<RefCell<CommentWriter>>>,
         }
 
         impl ImportIntrinsics {
-            pub fn new(intrinsics: &Intrinsics) -> Self {
+            pub(crate) fn new(intrinsics: &Intrinsics, comment_writer: Option<Rc<RefCell<CommentWriter>>>) -> Self {
                 Self {
                     $($intrinsic: Err(intrinsics.$intrinsic),)+
+                    comment_writer,
                 }
             }
 
-            $(
-                pub fn $intrinsic(&mut self, module: &mut JITModule, func: &mut Function) -> FuncRef {
-                    match self.$intrinsic {
-                        Ok(func_ref) => func_ref,
-                        Err(func_id) => {
-                            let func_ref = module.declare_func_in_func(func_id, func);
-                            self.$intrinsic = Ok(func_ref);
-                            func_ref
+            paste::paste! {
+                $(
+                    pub fn $intrinsic(&mut self, module: &mut JITModule, func: &mut Function) -> FuncRef {
+                        match self.$intrinsic {
+                            Ok(func_ref) => func_ref,
+                            Err(func_id) => {
+                                let func_ref = module.declare_func_in_func(func_id, func);
+                                self.$intrinsic = Ok(func_ref);
+
+                                if let Some(writer) = self.comment_writer.as_deref() {
+                                    writer.borrow_mut().add_comment(
+                                        func_ref,
+                                        stringify!([<dataflow_jit_ $intrinsic>]),
+                                    );
+                                }
+
+                                func_ref
+                            }
                         }
                     }
-                }
-            )+
+                )+
+            }
         }
     };
 

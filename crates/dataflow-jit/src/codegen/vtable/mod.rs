@@ -170,7 +170,7 @@ vtable! {
 
 // TODO: Move these functions onto `CodegenCtx`
 impl Codegen {
-    fn new_function<P>(&mut self, params: P, ret: Option<ClifType>) -> FuncId
+    fn new_vtable_fn<P>(&mut self, params: P, ret: Option<ClifType>) -> FuncId
     where
         P: IntoIterator<Item = ClifType>,
     {
@@ -194,10 +194,18 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     fn codegen_layout_type_name(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating type_name vtable function for {layout_id}");
+
         // fn(*mut usize) -> *const u8
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_function([ptr_ty], Some(ptr_ty));
+        let func_id = self.new_vtable_fn([ptr_ty], Some(ptr_ty));
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_type_name"),
+            "fn(*mut usize) -> *const u8",
+        );
 
         {
             let mut ctx = CodegenCtx::new(
@@ -206,7 +214,8 @@ impl Codegen {
                 &mut self.data_ctx,
                 &mut self.data,
                 self.layout_cache.clone(),
-                self.intrinsics.import(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
             );
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
@@ -258,19 +267,30 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     fn codegen_layout_size_of_children(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating size_of_children vtable function for {layout_id}");
+
         // fn(*const u8, *mut Context)
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], None);
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_size_of_children"),
+            &format!(
+                "fn(*const {:?}, *mut size_of::Context)",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
-            let ctx = CodegenCtx::new(
+            let mut ctx = CodegenCtx::new(
                 self.config,
                 &mut self.module,
                 &mut self.data_ctx,
                 &mut self.data,
                 self.layout_cache.clone(),
-                self.intrinsics.import(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
             );
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
@@ -305,7 +325,7 @@ impl Codegen {
                     let next_size_of = if nullable {
                         // Zero = string isn't null, non-zero = string is null
                         let string_non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, &self.module, true);
+                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
 
                         // If the string is null, jump to the `next_size_of` block and don't
                         // get the size of the current string (since it's null). Otherwise
@@ -325,15 +345,14 @@ impl Codegen {
 
                     // Load the string
                     let offset = layout.offset_of(idx) as i32;
-                    let native_ty = layout
-                        .type_of(idx)
-                        .native_type(&self.module.isa().frontend_config());
+                    let native_ty = layout.type_of(idx).native_type(&ctx.frontend_config());
                     let flags = MemFlags::trusted().with_readonly();
                     let string = builder.ins().load(native_ty, flags, ptr, offset);
 
                     // Get the size of the string's children
-                    let string_size_of_children =
-                        imports.string_size_of_children(&mut self.module, builder.func);
+                    let string_size_of_children = ctx
+                        .imports
+                        .string_size_of_children(ctx.module, builder.func);
                     builder
                         .ins()
                         .call(string_size_of_children, &[string, context]);
@@ -357,11 +376,21 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     fn codegen_layout_debug(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating debug vtable function for {layout_id}");
+
         // fn(*const u8, *mut fmt::Formatter) -> bool
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_function([ptr_ty; 2], Some(types::I8));
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([ptr_ty; 2], Some(types::I8));
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_debug"),
+            &format!(
+                "fn(*const {:?}, *mut fmt::Formatter) -> bool",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let layout_cache = self.layout_cache.clone();
@@ -371,12 +400,13 @@ impl Codegen {
                 &mut self.data_ctx,
                 &mut self.data,
                 self.layout_cache.clone(),
-                self.intrinsics.import(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
             );
 
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-            let str_debug = imports.str_debug(ctx.module, builder.func);
+            let str_debug = ctx.imports.str_debug(ctx.module, builder.func);
 
             // Create the entry block
             let entry_block = builder.create_block();
@@ -481,10 +511,23 @@ impl Codegen {
                         let unit_id = ctx.create_data(unit_data.to_owned());
                         let unit = ctx.import_data(unit_id, &mut builder);
 
-                        // Write `()` to the output
+                        // Write `unit` to the output
                         let unit_ptr = builder.ins().symbol_value(ptr_ty, unit);
                         let unit_len = builder.ins().iconst(ptr_ty, unit_data.len() as i64);
-                        builder.call_fn(str_debug, &[unit_ptr, unit_len, fmt])
+                        let result = builder.call_fn(str_debug, &[unit_ptr, unit_len, fmt]);
+
+                        if let Some(writer) = ctx.comment_writer.as_deref() {
+                            writer.borrow_mut().add_comment(
+                                builder.func.dfg.value_def(unit_ptr).unwrap_inst(),
+                                format!(
+                                    "debug col {idx} ({}) of {:?}",
+                                    ColumnType::Unit,
+                                    ctx.layout_cache.row_layout(layout_id),
+                                ),
+                            );
+                        }
+
+                        result
                     } else {
                         // Load the value
                         let layout = ctx.layout_cache.layout_of(layout_id);
@@ -495,43 +538,56 @@ impl Codegen {
                         let flags = MemFlags::trusted().with_readonly();
                         let value = builder.ins().load(native_ty, flags, ptr, offset);
 
+                        if let Some(writer) = ctx.comment_writer.as_deref() {
+                            let layout = ctx.layout_cache.row_layout(layout_id);
+                            writer.borrow_mut().add_comment(
+                                builder.func.dfg.value_def(value).unwrap_inst(),
+                                format!(
+                                    "debug col {idx} ({}) of {:?}",
+                                    layout.column_type(idx),
+                                    layout,
+                                ),
+                            );
+                        }
+
                         match ty {
                             ColumnType::Bool => {
-                                let bool_debug = imports.bool_debug(ctx.module, builder.func);
+                                let bool_debug = ctx.imports.bool_debug(ctx.module, builder.func);
                                 builder.call_fn(bool_debug, &[value, fmt])
                             }
 
                             ColumnType::U16 | ColumnType::U32 => {
-                                let uint_debug = imports.uint_debug(ctx.module, builder.func);
+                                let uint_debug = ctx.imports.uint_debug(ctx.module, builder.func);
                                 let extended = builder.ins().uextend(types::I64, value);
                                 builder.call_fn(uint_debug, &[extended, fmt])
                             }
                             ColumnType::U64 => {
-                                let uint_debug = imports.uint_debug(ctx.module, builder.func);
+                                let uint_debug = ctx.imports.uint_debug(ctx.module, builder.func);
                                 builder.call_fn(uint_debug, &[value, fmt])
                             }
 
                             ColumnType::I16 | ColumnType::I32 => {
-                                let int_debug = imports.int_debug(ctx.module, builder.func);
+                                let int_debug = ctx.imports.int_debug(ctx.module, builder.func);
                                 let extended = builder.ins().sextend(types::I64, value);
                                 builder.call_fn(int_debug, &[extended, fmt])
                             }
                             ColumnType::I64 => {
-                                let int_debug = imports.int_debug(ctx.module, builder.func);
+                                let int_debug = ctx.imports.int_debug(ctx.module, builder.func);
                                 builder.call_fn(int_debug, &[value, fmt])
                             }
 
                             ColumnType::F32 => {
-                                let f32_debug = imports.f32_debug(ctx.module, builder.func);
+                                let f32_debug = ctx.imports.f32_debug(ctx.module, builder.func);
                                 builder.call_fn(f32_debug, &[value, fmt])
                             }
                             ColumnType::F64 => {
-                                let f64_debug = imports.f64_debug(ctx.module, builder.func);
+                                let f64_debug = ctx.imports.f64_debug(ctx.module, builder.func);
                                 builder.call_fn(f64_debug, &[value, fmt])
                             }
 
                             ColumnType::String => {
-                                let string_debug = imports.string_debug(ctx.module, builder.func);
+                                let string_debug =
+                                    ctx.imports.string_debug(ctx.module, builder.func);
                                 builder.call_fn(string_debug, &[value, fmt])
                             }
 
@@ -541,10 +597,16 @@ impl Codegen {
 
                     // If writing the value failed, return an error
                     let debug_failed = builder.false_byte();
-                    builder.ins().brz(result, return_block, &[debug_failed]);
+                    let fail_branch = builder.ins().brz(result, return_block, &[debug_failed]);
                     builder.ins().jump(after_debug, &[]);
                     builder.seal_block(builder.current_block().unwrap());
                     builder.switch_to_block(after_debug);
+
+                    if let Some(writer) = ctx.comment_writer.as_deref() {
+                        writer
+                            .borrow_mut()
+                            .add_comment(fail_branch, "propagate errors if debugging failed");
+                    }
 
                     // If this is the last column in the row, finish it off with ` }`
                     if idx == row_layout.len() - 1 {

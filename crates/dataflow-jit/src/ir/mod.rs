@@ -10,8 +10,8 @@ mod types;
 mod validate;
 
 pub use expr::{
-    BinOp, BinOpKind, Branch, Constant, CopyRowTo, CopyVal, Expr, IsNull, Jump, Load, NullRow,
-    RValue, Return, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
+    BinaryOp, BinaryOpKind, Branch, Constant, CopyRowTo, CopyVal, Expr, IsNull, Jump, Load,
+    NullRow, RValue, Return, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
 };
 pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::{Graph, GraphExt};

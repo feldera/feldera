@@ -567,7 +567,7 @@ mod tests {
 
             // TODO: Deduplicate functions
             for func in functions {
-                codegen.codegen_func(func);
+                codegen.codegen_func("fn", func);
             }
         }
     }
