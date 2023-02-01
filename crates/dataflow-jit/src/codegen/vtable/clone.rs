@@ -21,10 +21,21 @@ use cranelift_module::{FuncId, Module};
 
 impl Codegen {
     /// Generates a function cloning the given layout
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating clone vtable function for {layout_id}");
+
         // fn(*const u8, *mut u8)
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], None);
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_clone"),
+            &format!(
+                "fn(*const {0:?}, *mut {0:?})",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =
@@ -49,6 +60,13 @@ impl Codegen {
                     builder
                         .ins()
                         .trapnz(src_eq_dest, TrapCode::UnreachableCodeReached);
+
+                    if let Some(writer) = self.comment_writer.as_deref() {
+                        writer.borrow_mut().add_comment(
+                            builder.func.dfg.value_def(src_eq_dest).unwrap_inst(),
+                            format!("trap if {src} is equal to {dest}"),
+                        );
+                    }
                 }
 
                 // If the row contains types that require non-trivial cloning (e.g. strings)
@@ -96,11 +114,22 @@ impl Codegen {
     }
 
     /// Generates a function cloning a slice of the given layout
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating clone_into_slice vtable function for {layout_id}");
+
         // fn(*const u8, *mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_function([ptr_ty; 3], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([ptr_ty; 3], None);
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_clone_into_slice"),
+            &format!(
+                "fn(*const {0:?}, *mut {0:?}, usize)",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =

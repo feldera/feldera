@@ -1,8 +1,8 @@
 use crate::ir::{
     block::{Block, UnsealedBlock},
     expr::{
-        BinOp, BinOpKind, Branch, Constant, Expr, IsNull, Load, RValue, Return, SetNull, Store,
-        Terminator,
+        BinaryOp, BinaryOpKind, Branch, Constant, Expr, IsNull, Load, RValue, Return, SetNull,
+        Store, Terminator,
     },
     layout_cache::RowLayoutCache,
     BlockId, BlockIdGen, ColumnType, ExprId, ExprIdGen, LayoutId, Signature,
@@ -120,7 +120,7 @@ impl Function {
                         let row_layout = row_exprs[&load.source()];
                         let layout = layout_cache.get(row_layout);
 
-                        if !layout.columns()[load.row()].requires_nontrivial_clone() {
+                        if !layout.columns()[load.column()].requires_nontrivial_clone() {
                             scalar_exprs.insert(expr_id);
                         }
                     }
@@ -227,7 +227,7 @@ impl Function {
                     let row_layout = row_exprs[&load.source()];
                     let layout = layout_cache.get(row_layout);
 
-                    if layout.columns()[load.row()].is_unit() {
+                    if layout.columns()[load.column()].is_unit() {
                         unit_exprs.insert(expr_id);
                         false
                     } else {
@@ -238,7 +238,7 @@ impl Function {
                 Expr::Store(store) => {
                     let row_layout = row_exprs[&store.target()];
                     let layout = layout_cache.get(row_layout);
-                    !layout.columns()[store.row()].is_unit()
+                    !layout.columns()[store.column()].is_unit()
                 }
 
                 Expr::CopyVal(copy) => {
@@ -375,19 +375,19 @@ impl FunctionBuilder {
     }
 
     pub fn and(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinOp::new(lhs, rhs, BinOpKind::And))
+        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::And))
     }
 
     pub fn or(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinOp::new(lhs, rhs, BinOpKind::Or))
+        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Or))
     }
 
     pub fn add(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinOp::new(lhs, rhs, BinOpKind::Add))
+        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Add))
     }
 
     pub fn mul(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinOp::new(lhs, rhs, BinOpKind::Mul))
+        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Mul))
     }
 
     pub fn constant(&mut self, constant: Constant) -> ExprId {

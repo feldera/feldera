@@ -1,6 +1,7 @@
 mod intrinsics;
 mod layout;
 mod layout_cache;
+mod pretty_clif;
 mod utils;
 mod vtable;
 
@@ -13,11 +14,12 @@ pub(crate) use layout::LayoutConfig;
 use crate::{
     codegen::{
         intrinsics::{ImportIntrinsics, Intrinsics},
+        pretty_clif::CommentWriter,
         utils::{normalize_float, FunctionBuilderExt},
     },
     ir::{
-        BinOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags, LayoutId,
-        RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
+        BinaryOp, BinaryOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags,
+        LayoutId, RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
 };
 use cranelift::{
@@ -35,15 +37,16 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, DataId, FuncId, Module};
 use std::{
-    cell::Ref,
+    cell::{Ref, RefCell},
     collections::{BTreeMap, BTreeSet, HashMap},
+    rc::Rc,
 };
 use target_lexicon::Triple;
 
 const TRAP_NULL_PTR: TrapCode = TrapCode::User(500);
 const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(501);
 
-// TODO: Pretty function debugging <https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs>
+// TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
 // TODO: Config option for packed null flags or 1 byte booleans
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +60,8 @@ pub struct CodegenConfig {
     pub total_float_comparisons: bool,
     /// Whether or not layouts should be optimized
     pub optimize_layouts: bool,
+    /// Whether or not to annotate debugged functions with extra information
+    pub clif_comments: bool,
 }
 
 impl CodegenConfig {
@@ -64,11 +69,13 @@ impl CodegenConfig {
         debug_assertions: bool,
         total_float_comparisons: bool,
         optimize_layouts: bool,
+        clif_comments: bool,
     ) -> Self {
         Self {
             debug_assertions,
             total_float_comparisons,
             optimize_layouts,
+            clif_comments,
         }
     }
 
@@ -87,11 +94,17 @@ impl CodegenConfig {
         self
     }
 
+    pub const fn with_clif_comments(mut self, clif_comments: bool) -> Self {
+        self.clif_comments = clif_comments;
+        self
+    }
+
     pub const fn debug() -> Self {
         Self {
             debug_assertions: true,
             total_float_comparisons: true,
             optimize_layouts: true,
+            clif_comments: true,
         }
     }
 
@@ -100,17 +113,14 @@ impl CodegenConfig {
             debug_assertions: false,
             total_float_comparisons: true,
             optimize_layouts: true,
+            clif_comments: false,
         }
     }
 }
 
 impl Default for CodegenConfig {
     fn default() -> Self {
-        Self {
-            debug_assertions: false,
-            total_float_comparisons: true,
-            optimize_layouts: true,
-        }
+        Self::release()
     }
 }
 
@@ -124,11 +134,19 @@ pub struct Codegen {
     intrinsics: Intrinsics,
     vtables: BTreeMap<LayoutId, LayoutVTable>,
     data: HashMap<Box<[u8]>, DataId>,
+    comment_writer: Option<Rc<RefCell<CommentWriter>>>,
 }
 
 impl Codegen {
     pub fn new(layout_cache: RowLayoutCache, config: CodegenConfig) -> Self {
         let target = Self::target_isa();
+        tracing::info!(
+            config = ?config,
+            flags = %target.flags(),
+            "creating code generator for {} {}",
+            target.name(),
+            target.triple(),
+        );
 
         let layout_cache = NativeLayoutCache::new(
             layout_cache,
@@ -156,6 +174,7 @@ impl Codegen {
             intrinsics,
             vtables: BTreeMap::new(),
             data: HashMap::new(),
+            comment_writer: None,
         }
     }
 
@@ -193,7 +212,20 @@ impl Codegen {
         (self.module, self.layout_cache)
     }
 
-    pub fn codegen_func(&mut self, function: &Function) -> FuncId {
+    fn set_comment_writer(&mut self, symbol: &str, abi: &str) {
+        self.comment_writer = self
+            .config
+            .clif_comments
+            .then(|| Rc::new(RefCell::new(CommentWriter::new(symbol, abi))));
+    }
+
+    pub fn codegen_func(&mut self, symbol: &str, function: &Function) -> FuncId {
+        let abi = function
+            .signature()
+            .display(self.layout_cache.row_layout_cache())
+            .to_string();
+        self.set_comment_writer(symbol, &abi);
+
         let sig = self.build_signature(&function.signature());
 
         let func_id = self.module.declare_anonymous_function(&sig).unwrap();
@@ -210,7 +242,8 @@ impl Codegen {
                 &mut self.data_ctx,
                 &mut self.data,
                 self.layout_cache.clone(),
-                self.intrinsics.import(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
             );
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
@@ -244,210 +277,15 @@ impl Codegen {
                     let expr = &function.exprs()[&expr_id];
 
                     match expr {
-                        Expr::BinOp(binop) => {
-                            let (lhs, rhs) = (ctx.exprs[&binop.lhs()], ctx.exprs[&binop.rhs()]);
-                            let (lhs_ty, rhs_ty) =
-                                (ctx.expr_types[&binop.lhs()], ctx.expr_types[&binop.rhs()]);
-                            debug_assert_eq!(
-                                builder.func.dfg.value_type(lhs),
-                                builder.func.dfg.value_type(rhs),
-                            );
-                            debug_assert_eq!(lhs_ty, rhs_ty);
-
-                            let mut value_ty = lhs_ty;
-                            let value = match binop.kind() {
-                                BinOpKind::Add => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fadd(lhs, rhs)
-                                    } else if lhs_ty.is_int() {
-                                        builder.ins().iadd(lhs, rhs)
-                                    } else {
-                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
-                                    }
-                                }
-                                BinOpKind::Sub => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fsub(lhs, rhs)
-                                    } else if lhs_ty.is_int() {
-                                        builder.ins().isub(lhs, rhs)
-                                    } else {
-                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
-                                    }
-                                }
-                                BinOpKind::Mul => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fsub(lhs, rhs)
-                                    } else if lhs_ty.is_int() {
-                                        builder.ins().imul(lhs, rhs)
-                                    } else {
-                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
-                                    }
-                                }
-                                BinOpKind::Div => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fdiv(lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().sdiv(lhs, rhs)
-                                    } else if lhs_ty.is_unsigned_int() {
-                                        builder.ins().udiv(lhs, rhs)
-                                    } else {
-                                        todo!("unknown binop type: {lhs_ty} ({binop:?})")
-                                    }
-                                }
-
-                                BinOpKind::Eq => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
-                                    } else {
-                                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::Neq => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
-                                    } else {
-                                        builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::LessThan => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
-                                    } else {
-                                        builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::GreaterThan => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
-                                    } else {
-                                        builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::LessThanOrEqual => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
-                                    } else {
-                                        builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::GreaterThanOrEqual => {
-                                    value_ty = ColumnType::Bool;
-
-                                    if lhs_ty.is_float() {
-                                        let (lhs, rhs) = if self.config.total_float_comparisons {
-                                            (
-                                                normalize_float(lhs, &mut builder),
-                                                normalize_float(rhs, &mut builder),
-                                            )
-                                        } else {
-                                            (lhs, rhs)
-                                        };
-                                        builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().icmp(
-                                            IntCC::SignedGreaterThanOrEqual,
-                                            lhs,
-                                            rhs,
-                                        )
-                                    } else {
-                                        builder.ins().icmp(
-                                            IntCC::UnsignedGreaterThanOrEqual,
-                                            lhs,
-                                            rhs,
-                                        )
-                                    }
-                                }
-
-                                BinOpKind::Min => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fmin(lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().smin(lhs, rhs)
-                                    } else {
-                                        builder.ins().umin(lhs, rhs)
-                                    }
-                                }
-                                BinOpKind::Max => {
-                                    if lhs_ty.is_float() {
-                                        builder.ins().fmax(lhs, rhs)
-                                    } else if lhs_ty.is_signed_int() {
-                                        builder.ins().smax(lhs, rhs)
-                                    } else {
-                                        builder.ins().umax(lhs, rhs)
-                                    }
-                                }
-
-                                BinOpKind::And => builder.ins().band(lhs, rhs),
-                                BinOpKind::Or => builder.ins().bor(lhs, rhs),
-                                BinOpKind::Xor => builder.ins().bxor(lhs, rhs),
-                            };
-
-                            ctx.add_expr(expr_id, value, value_ty, None);
-                        }
-
+                        Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
 
                         Expr::Store(store) => {
                             debug_assert!(!ctx.is_readonly(store.target()));
 
-                            let layout = layout_cache.layout_of(ctx.layout_id(store.target()));
-                            let offset = layout.offset_of(store.row());
+                            let layout_id = ctx.layout_id(store.target());
+                            let layout = layout_cache.layout_of(layout_id);
+                            let offset = layout.offset_of(store.column());
 
                             let value = match store.value() {
                                 RValue::Expr(expr) => ctx.exprs[expr],
@@ -455,42 +293,94 @@ impl Codegen {
                             };
 
                             if let Some(&slot) = ctx.stack_slots.get(&store.target()) {
-                                builder.ins().stack_store(value, slot, offset as i32);
+                                let inst = builder.ins().stack_store(value, slot, offset as i32);
+
+                                if let Some(writer) = self.comment_writer.as_deref() {
+                                    writer.borrow_mut().add_comment(
+                                        inst,
+                                        format!(
+                                            "store {value} to {slot} at col {} (offset {offset}) of {:?}",
+                                            store.column(),
+                                            ctx.layout_cache.row_layout(layout_id),
+                                        ),
+                                    );
+                                }
 
                             // If it's not a stack slot it must be a pointer via
                             // function parameter
                             } else {
                                 let addr = ctx.exprs[&store.target()];
                                 let flags = MemFlags::trusted();
-                                builder.ins().store(flags, value, addr, offset as i32);
+                                let inst = builder.ins().store(flags, value, addr, offset as i32);
+
+                                if let Some(writer) = self.comment_writer.as_deref() {
+                                    writer.borrow_mut().add_comment(
+                                        inst,
+                                        format!(
+                                            "store {value} to {addr} at col {} (offset {offset}) of {:?}",
+                                            store.column(),
+                                            ctx.layout_cache.row_layout(layout_id),
+                                        ),
+                                    );
+                                }
                             }
                         }
 
                         Expr::Load(load) => {
                             let layout_id = ctx.layout_id(load.source());
                             let (layout, row_layout) = layout_cache.get_layouts(layout_id);
-                            let offset = layout.offset_of(load.row());
+                            let offset = layout.offset_of(load.column());
                             let ty = layout
-                                .type_of(load.row())
+                                .type_of(load.column())
                                 .native_type(&ctx.module.isa().frontend_config());
 
                             let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
-                                builder.ins().stack_load(ty, slot, offset as i32)
+                                let value = builder.ins().stack_load(ty, slot, offset as i32);
+
+                                if let Some(writer) = self.comment_writer.as_deref() {
+                                    writer.borrow_mut().add_comment(
+                                        builder.func.dfg.value_def(value).unwrap_inst(),
+                                        format!(
+                                            "load {value} from {slot} at col {} (offset {offset}) of {:?}",
+                                            load.column(),
+                                            ctx.layout_cache.row_layout(layout_id),
+                                        ),
+                                    );
+                                }
+
+                                value
 
                             // If it's not a stack slot it must be a pointer via
                             // function parameter
                             } else {
-                                let addr = ctx.exprs[&load.source()];
-
                                 let mut flags = MemFlags::trusted();
                                 if ctx.is_readonly(load.source()) {
                                     flags.set_readonly();
                                 }
 
-                                builder.ins().load(ty, flags, addr, offset as i32)
+                                let addr = ctx.exprs[&load.source()];
+                                let value = builder.ins().load(ty, flags, addr, offset as i32);
+
+                                if let Some(writer) = self.comment_writer.as_deref() {
+                                    writer.borrow_mut().add_comment(
+                                        builder.func.dfg.value_def(value).unwrap_inst(),
+                                        format!(
+                                            "load {value} from {addr} at col {} (offset {offset}) of {:?}",
+                                            load.column(),
+                                            ctx.layout_cache.row_layout(layout_id),
+                                        ),
+                                    );
+                                }
+
+                                value
                             };
 
-                            ctx.add_expr(expr_id, value, row_layout.column_type(load.row()), None);
+                            ctx.add_expr(
+                                expr_id,
+                                value,
+                                row_layout.column_type(load.column()),
+                                None,
+                            );
                         }
 
                         // TODO: If the given nullish flag is the only occupant of its bitset,
@@ -706,6 +596,17 @@ impl Codegen {
                             // Create a stack slot
                             let slot =
                                 ctx.stack_slot_for_layout(expr_id, null.layout(), &mut builder);
+
+                            if let Some(writer) = self.comment_writer.as_deref() {
+                                writer.borrow_mut().add_comment(
+                                    slot,
+                                    format!(
+                                        "null row of layout {:?}",
+                                        ctx.layout_cache.row_layout(null.layout()),
+                                    ),
+                                );
+                            }
+
                             // Get the address of the stack slot
                             let addr =
                                 builder
@@ -718,7 +619,18 @@ impl Codegen {
                         }
 
                         Expr::UninitRow(uninit) => {
-                            ctx.stack_slot_for_layout(expr_id, uninit.layout(), &mut builder);
+                            let slot =
+                                ctx.stack_slot_for_layout(expr_id, uninit.layout(), &mut builder);
+
+                            if let Some(writer) = self.comment_writer.as_deref() {
+                                writer.borrow_mut().add_comment(
+                                    slot,
+                                    format!(
+                                        "uninit row of layout {:?}",
+                                        ctx.layout_cache.row_layout(uninit.layout()),
+                                    ),
+                                );
+                            }
                         }
 
                         Expr::Constant(constant) => {
@@ -763,15 +675,45 @@ impl Codegen {
 
     #[track_caller]
     fn finalize_function(&mut self, func_id: FuncId) {
-        // println!("pre-opt: {}", self.module_ctx.func.display());
+        tracing::debug!(
+            "finalizing {func_id} before optimization: \n{}",
+            if let Some(writer) = self.comment_writer.as_ref() {
+                let mut clif = String::new();
+                cranelift::codegen::write::decorate_function(
+                    &mut &*writer.borrow(),
+                    &mut clif,
+                    &self.module_ctx.func,
+                )
+                .unwrap();
+                clif
+            } else {
+                self.module_ctx.func.display().to_string()
+            },
+        );
+
         self.module
             .define_function(func_id, &mut self.module_ctx)
             .unwrap();
-
         self.module_ctx.optimize(self.module.isa()).unwrap();
-        // println!("post-opt: {}", self.module_ctx.func.display());
+
+        tracing::debug!(
+            "finalizing {func_id} after optimization: \n{}",
+            if let Some(writer) = self.comment_writer.as_ref() {
+                let mut clif = String::new();
+                cranelift::codegen::write::decorate_function(
+                    &mut &*writer.borrow(),
+                    &mut clif,
+                    &self.module_ctx.func,
+                )
+                .unwrap();
+                clif
+            } else {
+                self.module_ctx.func.display().to_string()
+            },
+        );
 
         self.module.clear_context(&mut self.module_ctx);
+        self.comment_writer = None;
     }
 }
 
@@ -790,6 +732,7 @@ struct CodegenCtx<'a> {
     function_inputs: BTreeMap<ExprId, InputFlags>,
     imports: ImportIntrinsics,
     data_imports: BTreeMap<DataId, GlobalValue>,
+    comment_writer: Option<Rc<RefCell<CommentWriter>>>,
 }
 
 impl<'a> CodegenCtx<'a> {
@@ -800,6 +743,7 @@ impl<'a> CodegenCtx<'a> {
         data: &'a mut HashMap<Box<[u8]>, DataId>,
         layout_cache: NativeLayoutCache,
         imports: ImportIntrinsics,
+        comment_writer: Option<Rc<RefCell<CommentWriter>>>,
     ) -> Self {
         Self {
             config,
@@ -815,6 +759,7 @@ impl<'a> CodegenCtx<'a> {
             function_inputs: BTreeMap::new(),
             imports,
             data_imports: BTreeMap::new(),
+            comment_writer,
         }
     }
 
@@ -1125,7 +1070,13 @@ impl<'a> CodegenCtx<'a> {
         debug_assert_eq!(builder.func.dfg.value_type(ptr), self.pointer_type());
 
         // Trap if `ptr` is null
-        builder.ins().trapz(ptr, TRAP_NULL_PTR);
+        let trap = builder.ins().trapz(ptr, TRAP_NULL_PTR);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer
+                .borrow_mut()
+                .add_comment(trap, format!("trap if {ptr} is null"));
+        }
     }
 
     /// Traps if the given pointer is not aligned to `align`
@@ -1139,7 +1090,205 @@ impl<'a> CodegenCtx<'a> {
         // underflow since align is always greater than zero
         let masked = builder.ins().band_imm(ptr, (align - 1) as i64);
         // Masked will be zero if the pointer is aligned, so we trap on non-zero values
-        builder.ins().trapnz(masked, TRAP_UNALIGNED_PTR);
+        let trap = builder.ins().trapnz(masked, TRAP_UNALIGNED_PTR);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer
+                .borrow_mut()
+                .add_comment(trap, format!("trap if {ptr} isn't aligned to {align}"));
+        }
+    }
+
+    fn binary_op(&mut self, expr_id: ExprId, binop: &BinaryOp, builder: &mut FunctionBuilder<'_>) {
+        let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
+        let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
+        debug_assert_eq!(
+            builder.func.dfg.value_type(lhs),
+            builder.func.dfg.value_type(rhs),
+        );
+        debug_assert_eq!(lhs_ty, rhs_ty);
+
+        let mut value_ty = lhs_ty;
+        let value = match binop.kind() {
+            BinaryOpKind::Add => {
+                if lhs_ty.is_float() {
+                    builder.ins().fadd(lhs, rhs)
+                } else if lhs_ty.is_int() {
+                    builder.ins().iadd(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+            BinaryOpKind::Sub => {
+                if lhs_ty.is_float() {
+                    builder.ins().fsub(lhs, rhs)
+                } else if lhs_ty.is_int() {
+                    builder.ins().isub(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+            BinaryOpKind::Mul => {
+                if lhs_ty.is_float() {
+                    builder.ins().fsub(lhs, rhs)
+                } else if lhs_ty.is_int() {
+                    builder.ins().imul(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+            BinaryOpKind::Div => {
+                if lhs_ty.is_float() {
+                    builder.ins().fdiv(lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().sdiv(lhs, rhs)
+                } else if lhs_ty.is_unsigned_int() {
+                    builder.ins().udiv(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+
+            BinaryOpKind::Eq => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                } else {
+                    builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                }
+            }
+            BinaryOpKind::Neq => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+                } else {
+                    builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
+                }
+            }
+            BinaryOpKind::LessThan => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+                } else {
+                    builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
+                }
+            }
+            BinaryOpKind::GreaterThan => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
+                } else {
+                    builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs)
+                }
+            }
+            BinaryOpKind::LessThanOrEqual => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
+                } else {
+                    builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs)
+                }
+            }
+            BinaryOpKind::GreaterThanOrEqual => {
+                value_ty = ColumnType::Bool;
+
+                if lhs_ty.is_float() {
+                    let (lhs, rhs) = if self.config.total_float_comparisons {
+                        (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        )
+                    } else {
+                        (lhs, rhs)
+                    };
+                    builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs)
+                } else {
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedGreaterThanOrEqual, lhs, rhs)
+                }
+            }
+
+            BinaryOpKind::Min => {
+                if lhs_ty.is_float() {
+                    builder.ins().fmin(lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().smin(lhs, rhs)
+                } else {
+                    builder.ins().umin(lhs, rhs)
+                }
+            }
+            BinaryOpKind::Max => {
+                if lhs_ty.is_float() {
+                    builder.ins().fmax(lhs, rhs)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().smax(lhs, rhs)
+                } else {
+                    builder.ins().umax(lhs, rhs)
+                }
+            }
+
+            BinaryOpKind::And => builder.ins().band(lhs, rhs),
+            BinaryOpKind::Or => builder.ins().bor(lhs, rhs),
+            BinaryOpKind::Xor => builder.ins().bxor(lhs, rhs),
+        };
+
+        self.add_expr(expr_id, value, value_ty, None);
     }
 
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
@@ -1201,42 +1350,42 @@ impl<'a> CodegenCtx<'a> {
                     }
 
                     UnaryOpKind::CountOnes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().popcnt(value)
                     }
                     UnaryOpKind::CountZeroes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         // count_zeroes(x) = count_ones(!x)
                         let not_value = builder.ins().bnot(value);
                         builder.ins().popcnt(not_value)
                     }
 
                     UnaryOpKind::LeadingOnes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().cls(value)
                     }
                     UnaryOpKind::LeadingZeroes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().clz(value)
                     }
 
                     UnaryOpKind::TrailingOnes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         // trailing_ones(x) = trailing_zeroes(!x)
                         let not_value = builder.ins().bnot(value);
                         builder.ins().ctz(not_value)
                     }
                     UnaryOpKind::TrailingZeroes => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().ctz(value)
                     }
 
                     UnaryOpKind::BitReverse => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().bitrev(value)
                     }
                     UnaryOpKind::ByteReverse => {
-                        debug_assert!(!value_ty.is_float());
+                        debug_assert!(value_ty.is_int());
                         builder.ins().bswap(value)
                     }
                 };
@@ -1248,5 +1397,75 @@ impl<'a> CodegenCtx<'a> {
         };
 
         self.add_expr(expr_id, value, value_ty, None);
+    }
+
+    /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]
+    /// implementations
+    ///
+    /// ```rust,ignore
+    /// // f32::total_cmp()
+    /// pub fn total_cmp(&self, other: &Self) -> Ordering {
+    ///     let mut left = self.to_bits() as i32;
+    ///     let mut right = other.to_bits() as i32;
+    ///
+    ///     // In case of negatives, flip all the bits except the sign
+    ///     // to achieve a similar layout as two's complement integers
+    ///     //
+    ///     // Why does this work? IEEE 754 floats consist of three fields:
+    ///     // Sign bit, exponent and mantissa. The set of exponent and mantissa
+    ///     // fields as a whole have the property that their bitwise order is
+    ///     // equal to the numeric magnitude where the magnitude is defined.
+    ///     // The magnitude is not normally defined on NaN values, but
+    ///     // IEEE 754 totalOrder defines the NaN values also to follow the
+    ///     // bitwise order. This leads to order explained in the doc comment.
+    ///     // However, the representation of magnitude is the same for negative
+    ///     // and positive numbers – only the sign bit is different.
+    ///     // To easily compare the floats as signed integers, we need to
+    ///     // flip the exponent and mantissa bits in case of negative numbers.
+    ///     // We effectively convert the numbers to "two's complement" form.
+    ///     //
+    ///     // To do the flipping, we construct a mask and XOR against it.
+    ///     // We branchlessly calculate an "all-ones except for the sign bit"
+    ///     // mask from negative-signed values: right shifting sign-extends
+    ///     // the integer, so we "fill" the mask with sign bits, and then
+    ///     // convert to unsigned to push one more zero bit.
+    ///     // On positive values, the mask is all zeros, so it's a no-op.
+    ///     left ^= (((left >> 31) as u32) >> 1) as i32;
+    ///     right ^= (((right >> 31) as u32) >> 1) as i32;
+    ///
+    ///     left.cmp(&right)
+    /// }
+    /// ```
+    ///
+    /// [`f32::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
+    /// [`f64::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
+    fn normalize_float(&self, float: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        let ty = builder.func.dfg.value_type(float);
+        let (int_ty, first_shift) = if ty == types::F32 {
+            (types::I32, 31)
+        } else if ty == types::F64 {
+            (types::I64, 63)
+        } else {
+            unreachable!("normalize_float() can only be called on f32 and f64: {ty}")
+        };
+
+        // float.to_bits()
+        // TODO: Should we apply any flags to this?
+        let int = builder.ins().bitcast(int_ty, MemFlags::new(), float);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(int).unwrap_inst(),
+                format!("normalize {ty} for totalOrder"),
+            );
+        }
+
+        // left >> {31, 63}
+        let shifted = builder.ins().sshr_imm(int, first_shift);
+        // ((left >> {31, 63}) as {u32, u64}) >> 1
+        let shifted = builder.ins().ushr_imm(shifted, 1);
+
+        // left ^= shifted
+        builder.ins().bxor(int, shifted)
     }
 }

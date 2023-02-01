@@ -1,3 +1,5 @@
+use std::fmt::{self, Display};
+
 use crate::ir::{BlockId, ColumnType, ExprId, LayoutId};
 use derive_more::From;
 
@@ -85,7 +87,7 @@ pub enum RValue {
 pub enum Expr {
     Load(Load),
     Store(Store),
-    BinOp(BinOp),
+    BinOp(BinaryOp),
     IsNull(IsNull),
     CopyVal(CopyVal),
     UnaryOp(UnaryOp),
@@ -98,15 +100,15 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BinOp {
+pub struct BinaryOp {
     // TODO: Allow for immediates
     lhs: ExprId,
     rhs: ExprId,
-    kind: BinOpKind,
+    kind: BinaryOpKind,
 }
 
-impl BinOp {
-    pub fn new(lhs: ExprId, rhs: ExprId, kind: BinOpKind) -> Self {
+impl BinaryOp {
+    pub fn new(lhs: ExprId, rhs: ExprId, kind: BinaryOpKind) -> Self {
         Self { lhs, rhs, kind }
     }
 
@@ -118,13 +120,13 @@ impl BinOp {
         self.rhs
     }
 
-    pub const fn kind(&self) -> BinOpKind {
+    pub const fn kind(&self) -> BinaryOpKind {
         self.kind
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinOpKind {
+pub enum BinaryOpKind {
     Add,
     Sub,
     Mul,
@@ -209,15 +211,15 @@ impl CopyVal {
 pub struct Load {
     /// The row to extract from
     source: ExprId,
-    /// The index of the row to extract from
-    row: usize,
+    /// The index of the column to extract from
+    column: usize,
 }
 
 impl Load {
-    pub fn new(target: ExprId, row: usize) -> Self {
+    pub fn new(target: ExprId, column: usize) -> Self {
         Self {
             source: target,
-            row,
+            column,
         }
     }
 
@@ -225,8 +227,8 @@ impl Load {
         self.source
     }
 
-    pub const fn row(&self) -> usize {
-        self.row
+    pub const fn column(&self) -> usize {
+        self.column
     }
 }
 
@@ -235,23 +237,27 @@ impl Load {
 pub struct Store {
     /// The row to insert into
     target: ExprId,
-    /// The index of the row to insert into
-    row: usize,
+    /// The index of the column to insert into
+    column: usize,
     /// The value being inserted
     value: RValue,
 }
 
 impl Store {
-    pub fn new(target: ExprId, row: usize, value: RValue) -> Self {
-        Self { target, row, value }
+    pub fn new(target: ExprId, column: usize, value: RValue) -> Self {
+        Self {
+            target,
+            column,
+            value,
+        }
     }
 
     pub const fn target(&self) -> ExprId {
         self.target
     }
 
-    pub const fn row(&self) -> usize {
-        self.row
+    pub const fn column(&self) -> usize {
+        self.column
     }
 
     pub const fn value(&self) -> &RValue {

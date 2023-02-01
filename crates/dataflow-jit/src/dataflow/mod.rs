@@ -213,7 +213,7 @@ impl CompiledDataflow {
             for (&node_id, node) in graph.nodes() {
                 match node {
                     Node::Map(map) => {
-                        let map_fn = codegen.codegen_func(map.map_fn());
+                        let map_fn = codegen.codegen_func("map_fn", map.map_fn());
                         functions.insert(node_id, vec![map_fn]);
 
                         vtables
@@ -222,18 +222,18 @@ impl CompiledDataflow {
                     }
 
                     Node::Fold(fold) => {
-                        let step_fn = codegen.codegen_func(fold.step_fn());
-                        let finish_fn = codegen.codegen_func(fold.finish_fn());
+                        let step_fn = codegen.codegen_func("fold_step_fn", fold.step_fn());
+                        let finish_fn = codegen.codegen_func("fold_finish_fn", fold.finish_fn());
                         functions.insert(node_id, vec![step_fn, finish_fn]);
                     }
 
                     Node::Filter(filter) => {
-                        let filter_fn = codegen.codegen_func(filter.filter_fn());
+                        let filter_fn = codegen.codegen_func("filter_fn", filter.filter_fn());
                         functions.insert(node_id, vec![filter_fn]);
                     }
 
                     Node::IndexWith(index_with) => {
-                        let index_fn = codegen.codegen_func(index_with.index_fn());
+                        let index_fn = codegen.codegen_func("index_fn", index_with.index_fn());
                         functions.insert(node_id, vec![index_fn]);
 
                         vtables
@@ -260,7 +260,7 @@ impl CompiledDataflow {
                     }
 
                     Node::JoinCore(join) => {
-                        let join_fn = codegen.codegen_func(join.join_fn());
+                        let join_fn = codegen.codegen_func("join_fn", join.join_fn());
                         functions.insert(node_id, vec![join_fn]);
 
                         vtables
@@ -272,7 +272,7 @@ impl CompiledDataflow {
                     }
 
                     Node::MonotonicJoin(join) => {
-                        let join_fn = codegen.codegen_func(join.join_fn());
+                        let join_fn = codegen.codegen_func("monotonic_join_fn", join.join_fn());
                         functions.insert(node_id, vec![join_fn]);
 
                         vtables
@@ -1377,6 +1377,8 @@ mod tests {
 
     #[test]
     fn bfs() {
+        crate::utils::test_logger();
+
         let mut graph = Graph::new();
 
         let unit = graph.layout_cache().unit();

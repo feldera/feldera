@@ -1,6 +1,6 @@
 use crate::ir::{
-    graph::GraphExt, BinOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags,
-    LayoutId, Node, NodeId, RValue, RowLayoutCache,
+    graph::GraphExt, BinaryOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags,
+    LayoutId, Node, NodeId, RValue, RowLayoutCache, UnaryOpKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -202,13 +202,13 @@ impl FunctionValidator {
 
                                 Err(src_layout) => {
                                     let layout = layout_cache.get(src_layout);
-                                    if let Some(row_ty) = layout.column_type(load.row()) {
+                                    if let Some(row_ty) = layout.try_column_type(load.column()) {
                                         let prev = self.expr_types.insert(expr_id, Ok(row_ty));
                                         assert_eq!(prev, None, "declared load expr twice: {expr_id}");
                                     } else {
                                         panic!(
                                             "load {expr_id} attempted to load from row {} of {layout:?} when the layout only has {} rows",
-                                            load.row(),
+                                            load.column(),
                                             layout.len(),
                                         );
                                     }
@@ -241,7 +241,7 @@ impl FunctionValidator {
 
                                 Err(row_layout) => {
                                     let layout = layout_cache.get(row_layout);
-                                    if let Some(row_ty) = layout.column_type(store.row()) {
+                                    if let Some(row_ty) = layout.try_column_type(store.column()) {
                                         let rval_ty = self.get_rval_type(store.value()).unwrap_or_else(|layout| {
                                             panic!(
                                                 "store {expr_id} attempted to store a row value with a layout {:?}",
@@ -258,7 +258,7 @@ impl FunctionValidator {
                                     } else {
                                         panic!(
                                             "store {expr_id} attempted to store to row {} of {layout:?} when the layout only has {} rows",
-                                            store.row(),
+                                            store.column(),
                                             layout.len(),
                                         );
                                     }
@@ -292,25 +292,25 @@ impl FunctionValidator {
                         assert_eq!(lhs_ty, rhs_ty);
 
                         match binop.kind() {
-                            BinOpKind::Eq
-                            | BinOpKind::Neq
-                            | BinOpKind::LessThan
-                            | BinOpKind::GreaterThan
-                            | BinOpKind::LessThanOrEqual
-                            | BinOpKind::GreaterThanOrEqual => {
+                            BinaryOpKind::Eq
+                            | BinaryOpKind::Neq
+                            | BinaryOpKind::LessThan
+                            | BinaryOpKind::GreaterThan
+                            | BinaryOpKind::LessThanOrEqual
+                            | BinaryOpKind::GreaterThanOrEqual => {
                                 let prev = self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
                                 assert!(prev.is_none());
                             }
 
-                            BinOpKind::Add
-                            | BinOpKind::Sub
-                            | BinOpKind::Mul
-                            | BinOpKind::Div
-                            | BinOpKind::And
-                            | BinOpKind::Or
-                            | BinOpKind::Xor
-                            | BinOpKind::Min
-                            | BinOpKind::Max => {
+                            BinaryOpKind::Add
+                            | BinaryOpKind::Sub
+                            | BinaryOpKind::Mul
+                            | BinaryOpKind::Div
+                            | BinaryOpKind::And
+                            | BinaryOpKind::Or
+                            | BinaryOpKind::Xor
+                            | BinaryOpKind::Min
+                            | BinaryOpKind::Max => {
                                 assert_ne!(lhs_ty, ColumnType::String);
 
                                 let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
@@ -319,8 +319,50 @@ impl FunctionValidator {
                         }
                     }
 
-                    Expr::UnaryOp(_)
-                    | Expr::IsNull(_)
+                    Expr::UnaryOp(unary) => {
+                        let value_ty = match unary.value() {
+                            RValue::Expr(value) => self.expr_types.get(value).unwrap().unwrap(),
+                            RValue::Imm(value) => value.column_type(),
+                        };
+
+                        match unary.kind() {
+                            UnaryOpKind::Not => {
+                                assert!(value_ty.is_int() || value_ty.is_bool());
+                                let prev = self.expr_types.insert(expr_id, Ok(value_ty));
+                                assert!(prev.is_none());
+                            }
+
+                            UnaryOpKind::Neg | UnaryOpKind::Abs => {
+                                assert!(value_ty.is_float() || value_ty.is_int());
+                                let prev = self.expr_types.insert(expr_id, Ok(value_ty));
+                                assert!(prev.is_none());
+                            }
+
+                            UnaryOpKind::Ceil
+                            | UnaryOpKind::Floor
+                            | UnaryOpKind::Trunc
+                            | UnaryOpKind::Sqrt => {
+                                assert!(value_ty.is_float());
+                                let prev = self.expr_types.insert(expr_id, Ok(value_ty));
+                                assert!(prev.is_none());
+                            }
+
+                            UnaryOpKind::CountOnes
+                            | UnaryOpKind::CountZeroes
+                            | UnaryOpKind::LeadingOnes
+                            | UnaryOpKind::LeadingZeroes
+                            | UnaryOpKind::TrailingOnes
+                            | UnaryOpKind::TrailingZeroes
+                            | UnaryOpKind::BitReverse
+                            | UnaryOpKind::ByteReverse => {
+                                debug_assert!(value_ty.is_int());
+                                let prev = self.expr_types.insert(expr_id, Ok(value_ty));
+                                assert!(prev.is_none());
+                            }
+                        }
+                    }
+
+                    Expr::IsNull(_)
                     | Expr::CopyVal(_)
                     | Expr::NullRow(_)
                     | Expr::SetNull(_)

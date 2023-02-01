@@ -1,4 +1,4 @@
-use crate::ir::{function::InputFlags, LayoutId};
+use crate::ir::{function::InputFlags, LayoutId, RowLayoutCache};
 use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
@@ -146,7 +146,11 @@ impl RowLayout {
         &self.columns
     }
 
-    pub fn column_type(&self, row: usize) -> Option<ColumnType> {
+    pub fn column_type(&self, row: usize) -> ColumnType {
+        self.columns[row]
+    }
+
+    pub fn try_column_type(&self, row: usize) -> Option<ColumnType> {
         self.columns.get(row).copied()
     }
 
@@ -266,5 +270,48 @@ impl Signature {
 
     pub fn ret(&self) -> ColumnType {
         self.ret
+    }
+
+    pub(crate) fn display<'a>(&'a self, layout_cache: &'a RowLayoutCache) -> impl Display + 'a {
+        struct DisplaySig<'a>(&'a Signature, &'a RowLayoutCache);
+
+        impl Display for DisplaySig<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("fn(")?;
+                for (idx, (&layout_id, &flags)) in
+                    self.0.args.iter().zip(&self.0.arg_flags).enumerate()
+                {
+                    let mut has_prefix = false;
+                    if flags.contains(InputFlags::INPUT) {
+                        f.write_str("in")?;
+                        has_prefix = true;
+                    }
+                    if flags.contains(InputFlags::OUTPUT) {
+                        f.write_str("out")?;
+                        has_prefix = true;
+                    }
+                    if has_prefix {
+                        f.write_char(' ')?;
+                    }
+
+                    let layout = self.1.get(layout_id);
+                    write!(f, "{layout:?}")?;
+
+                    if idx != self.0.args.len() - 1 {
+                        f.write_str(", ")?;
+                    }
+                }
+                f.write_char(')')?;
+
+                if self.0.ret != ColumnType::Unit {
+                    f.write_str(" -> ")?;
+                    write!(f, "{}", self.0.ret)?;
+                }
+
+                Ok(())
+            }
+        }
+
+        DisplaySig(self, layout_cache)
     }
 }

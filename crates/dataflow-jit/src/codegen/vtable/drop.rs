@@ -10,10 +10,18 @@ use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 
 impl Codegen {
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating drop_in_place vtable function for {layout_id}");
+
         // fn(*mut u8)
-        let func_id = self.new_function([self.module.isa().pointer_type()], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type()], None);
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_drop_in_place"),
+            &format!("fn(*mut {:?})", self.layout_cache.row_layout(layout_id)),
+        );
 
         {
             let mut builder =
@@ -46,11 +54,22 @@ impl Codegen {
         func_id
     }
 
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating drop_slice_in_place vtable function for {layout_id}");
+
         // fn(*mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_function([ptr_ty; 2], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([ptr_ty; 2], None);
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_drop_slice_in_place"),
+            &format!(
+                "fn(*mut {:?}, usize)",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
             let mut builder =

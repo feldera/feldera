@@ -1,21 +1,37 @@
 use crate::{
-    codegen::{
-        utils::{normalize_float, FunctionBuilderExt},
-        vtable::column_non_null,
-        Codegen,
-    },
+    codegen::{utils::FunctionBuilderExt, vtable::column_non_null, Codegen, CodegenCtx},
     ir::{ColumnType, LayoutId},
 };
 use cranelift::prelude::{types, FunctionBuilder, InstBuilder, IntCC, MemFlags};
 use cranelift_module::{FuncId, Module};
 
 impl Codegen {
+    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_hash(&mut self, layout_id: LayoutId) -> FuncId {
+        tracing::info!("creating hash vtable function for {layout_id}");
+
         // fn(&mut &mut dyn Hasher, *const u8)
-        let func_id = self.new_function([self.module.isa().pointer_type(); 2], None);
-        let mut imports = self.intrinsics.import();
+        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], None);
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
+        self.set_comment_writer(
+            &format!("{layout_id}_vtable_hash"),
+            &format!(
+                "fn(&mut &mut dyn Hasher, *const {:?})",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
 
         {
+            let ctx = CodegenCtx::new(
+                self.config,
+                &mut self.module,
+                &mut self.data_ctx,
+                &mut self.data,
+                self.layout_cache.clone(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
+            );
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
@@ -24,7 +40,7 @@ impl Codegen {
             let params = builder.block_params(entry_block);
             let (hasher, ptr) = (params[0], params[1]);
 
-            let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+            let (layout, row_layout) = ctx.layout_cache.get_layouts(layout_id);
 
             // Zero sized types have nothing to hash
             if !layout.is_zero_sized() {
@@ -36,7 +52,7 @@ impl Codegen {
                     let next_hash = if nullable {
                         // Zero = value isn't null, non-zero = value is null
                         let non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, &self.module, true);
+                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
                         // One = value isn't null, zero = value is null
                         let mut non_null = builder.ins().icmp_imm(IntCC::Equal, non_null, 0);
                         // Shrink the null-ness to a single byte
@@ -45,7 +61,7 @@ impl Codegen {
                         }
 
                         // Hash the null-ness byte
-                        let hash_u8 = imports.u8_hash(&mut self.module, builder.func);
+                        let hash_u8 = imports.u8_hash(ctx.module, builder.func);
                         builder.ins().call(hash_u8, &[hasher, non_null]);
 
                         // For nullable unit types we don't need to do anything else
@@ -69,9 +85,7 @@ impl Codegen {
                     debug_assert!(!ty.is_unit());
 
                     let offset = layout.offset_of(idx) as i32;
-                    let native_ty = layout
-                        .type_of(idx)
-                        .native_type(&self.module.isa().frontend_config());
+                    let native_ty = layout.type_of(idx).native_type(&ctx.frontend_config());
 
                     // Load the source value
                     let flags = MemFlags::trusted().with_readonly();
@@ -81,7 +95,7 @@ impl Codegen {
                     // If total float comparisons are enabled, we normalize the float before hashing it
                     } else if self.config.total_float_comparisons {
                         let float = builder.ins().load(native_ty, flags, ptr, offset);
-                        normalize_float(float, &mut builder)
+                        ctx.normalize_float(float, &mut builder)
 
                     // Otherwise we load the floating point value as its raw bits and then hash those raw bits
                     } else {
@@ -89,16 +103,16 @@ impl Codegen {
                     };
 
                     let hash_function = match ty {
-                        ColumnType::Bool => imports.u8_hash(&mut self.module, builder.func),
-                        ColumnType::U16 => imports.u16_hash(&mut self.module, builder.func),
-                        ColumnType::I16 => imports.i16_hash(&mut self.module, builder.func),
-                        ColumnType::U32 => imports.u32_hash(&mut self.module, builder.func),
-                        ColumnType::I32 => imports.i32_hash(&mut self.module, builder.func),
-                        ColumnType::U64 => imports.u64_hash(&mut self.module, builder.func),
-                        ColumnType::I64 => imports.i64_hash(&mut self.module, builder.func),
-                        ColumnType::F32 => imports.u32_hash(&mut self.module, builder.func),
-                        ColumnType::F64 => imports.u64_hash(&mut self.module, builder.func),
-                        ColumnType::String => imports.string_hash(&mut self.module, builder.func),
+                        ColumnType::Bool => imports.u8_hash(ctx.module, builder.func),
+                        ColumnType::U16 => imports.u16_hash(ctx.module, builder.func),
+                        ColumnType::I16 => imports.i16_hash(ctx.module, builder.func),
+                        ColumnType::U32 => imports.u32_hash(ctx.module, builder.func),
+                        ColumnType::I32 => imports.i32_hash(ctx.module, builder.func),
+                        ColumnType::U64 => imports.u64_hash(ctx.module, builder.func),
+                        ColumnType::I64 => imports.i64_hash(ctx.module, builder.func),
+                        ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
+                        ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
+                        ColumnType::String => imports.string_hash(ctx.module, builder.func),
                         ColumnType::Unit => unreachable!(),
                     };
                     builder.ins().call(hash_function, &[hasher, value]);
