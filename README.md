@@ -21,7 +21,7 @@ evaluate these queries correctly and efficiently.  DBSP aims to be such an
 engine.  To this end we set the following high-level objectives:
 
 1. **Full SQL support and more.**  While SQL is just the first of potentially
-many DBSP frontends, it offers a reference point to chatacterize the
+many DBSP frontends, it offers a reference point to characterize the
 expressiveness of the engine.  Our goal is to support the complete SQL syntax
 and semantics, including joins and aggregates, correlated subqueries, window
 functions, complex data types, time series operators, UDFs, etc.  Beyond
