@@ -148,6 +148,9 @@ name = "gdelt"
 harness = false
 required-features = ["__gdelt"]
 
+[[example]]
+name = "orgchart"
+
 # Waiting for bincode 2.0.0 to be released (https://github.com/thomcc/arcstr/pull/45)
 [patch.crates-io.arcstr]
 git = "https://github.com/gz/arcstr.git"
