@@ -61,7 +61,7 @@ impl Circuit<()> {
     /// Creates an input stream that carries values of type `OrdZSet<K, R>` and
     /// an input handle of type [`CollectionHandle<K, R>`](`CollectionHandle`)
     /// used to construct input Z-sets out of individual elements.  The
-    /// client invokes `[CollectionHandle::push]` and
+    /// client invokes [`CollectionHandle::push`] and
     /// [`CollectionHandle::append`] any number of times to add values to
     /// the input Z-set. These values are distributed across all worker
     /// threads (when running in a multithreaded [`Runtime`]) in a round-robin
@@ -91,7 +91,7 @@ impl Circuit<()> {
     /// Creates an input stream that carries values of type `OrdIndexedZSet<K,
     /// V, R>` and an input handle of type [`CollectionHandle<K, (V,
     /// R)>`](`CollectionHandle`) used to construct input Z-sets out of
-    /// individual elements.  The client invokes `[CollectionHandle::push]`
+    /// individual elements.  The client invokes [`CollectionHandle::push`]
     /// and [`CollectionHandle::append`] any number of times to add
     /// `key/value/weight` triples the indexed Z-set. These triples are
     /// distributed across all worker threads (when running in a
@@ -197,7 +197,7 @@ impl Circuit<()> {
     /// using set semantics. It returns a stream that carries values of type
     /// `OrdZSet<K, R>` and an input handle of type
     /// [`UpsertHandle<K,bool>`](`UpsertHandle`).  The client uses
-    /// `[UpsertHandle::push]` and [`UpsertHandle::append`] to submit
+    /// [`UpsertHandle::push`] and [`UpsertHandle::append`] to submit
     /// commands of the form `(val, true)` to insert an element to the set
     /// and `(val, false) ` to delete `val` from the set.  These commands
     /// are buffered until the start of the next clock cycle.
@@ -274,7 +274,7 @@ impl Circuit<()> {
     /// input data using upsert semantics. It returns a stream that carries
     /// values of type `OrdIndexedZSet<K, V, R>` and an input handle of type
     /// [`UpsertHandle<K,Option<V>>`](`UpsertHandle`).  The client uses
-    /// `[UpsertHandle::push]` and [`UpsertHandle::append`] to submit
+    /// [`UpsertHandle::push`] and [`UpsertHandle::append`] to submit
     /// commands of the form `(key, Some(val))` to insert a new key-value
     /// pair and `(key, None) ` to delete the value associated with `key` is
     /// any. These commands are buffered until the start of the next clock

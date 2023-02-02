@@ -462,16 +462,16 @@ type SchedulerEventHandlers = Rc<RefCell<HashMap<String, SchedulerEventHandler>>
 ///
 /// We capture ownership preferences at two levels.  First, each individual
 /// operator that consumes one or more streams exposes its preferences on a
-/// per-stream basis via an API method (e.g., `[UnaryOperator::
-/// input_preference]`).  The [`Circuit`] API allows the circuit builder
-/// to override these preferences when instantiating an operator, taking into
-/// account circuit topology and workload.  We express preference as a numeric
-/// value.
+/// per-stream basis via an API method (e.g.,
+/// [`UnaryOperator::input_preference`]).  The [`Circuit`] API allows the
+/// circuit builder to override these preferences when instantiating an
+/// operator, taking into account circuit topology and workload.  We express
+/// preference as a numeric value.
 ///
 /// These preferences are associated with each edge in the circuit graph.  The
 /// schedulers we have built so far implement a limited form of ownership-aware
 /// scheduling.  They only consider strong preferences
-/// (`OwnershipPreference::require_owned` and stronger) and model them
+/// ([`OwnershipPreference::STRONGLY_PREFER_OWNED`] and stronger) and model them
 /// internally as hard constraints that must be satisfied for the circuit to be
 /// schedulable.  Weaker preferences are ignored.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -497,7 +497,7 @@ impl OwnershipPreference {
 
     /// The operator is likely to run faster provided an owned input.
     ///
-    /// Preference levels above `prefer_owned` should not be used by operators
+    /// Preference levels above `PREFER_OWNED` should not be used by operators
     /// and are reserved for use by circuit builders through the [`Circuit`]
     /// API.
     pub const PREFER_OWNED: Self = Self::new(50);
