@@ -12,7 +12,7 @@ use clap::Parser;
 use dbsp::{
     operator::FilterMap,
     trace::{BatchReader, Cursor},
-    OrdIndexedZSet, OutputHandle, Runtime, Stream,
+    OrdZSet, OutputHandle, Runtime, Stream,
 };
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -38,22 +38,19 @@ struct SkipLevel {
 }
 
 type Weight = i32;
-type SkipLevels = OrdIndexedZSet<EmployeeID, SkipLevel, Weight>;
+type SkipLevels = OrdZSet<SkipLevel, Weight>;
 
-fn print_output(output: &OutputHandle<OrdIndexedZSet<usize, SkipLevel, Weight>>) {
+fn print_output(output: &OutputHandle<OrdZSet<SkipLevel, Weight>>) {
     let output = output.consolidate();
     let mut cursor = output.cursor();
     while cursor.key_valid() {
-        while cursor.val_valid() {
-            let weight = cursor.weight();
-            let SkipLevel {
-                grandmanager,
-                manager,
-                employee,
-            } = cursor.val();
-            println!("    ({grandmanager}, {manager}, {employee}) {weight:+}");
-            cursor.step_val();
-        }
+        let weight = cursor.weight();
+        let SkipLevel {
+            grandmanager,
+            manager,
+            employee,
+        } = cursor.key();
+        println!("    ({grandmanager}, {manager}, {employee}) {weight:+}");
         cursor.step_key();
     }
     println!();
@@ -82,16 +79,13 @@ fn main() -> Result<()> {
         // If Manages { manager, employee: common } and Manages { manager: common,
         // employee } then SkipLevel { grandmanager: manager, manager: common,
         // employee }.
-        let skiplevels: Stream<_, SkipLevels> = manages_by_employee
-            .join_index::<(), _, _, _, _, _>(&manages_by_manager, |common, m1, m2| {
-                Some((
-                    *common,
-                    SkipLevel {
-                        grandmanager: m1.manager,
-                        manager: *common,
-                        employee: m2.employee,
-                    },
-                ))
+        let skiplevels: Stream<_, SkipLevels> =
+            manages_by_employee.join::<(), _, _, _>(&manages_by_manager, |common, m1, m2| {
+                SkipLevel {
+                    grandmanager: m1.manager,
+                    manager: *common,
+                    employee: m2.employee,
+                }
             });
 
         (hmanages, skiplevels.output())
