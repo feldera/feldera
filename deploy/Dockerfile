@@ -23,14 +23,16 @@ RUN sed -i "s/scram-sha-256/trust/g" /etc/postgresql/14/main/pg_hba.conf \
    && createuser -h localhost -U postgres dbsp
 
 # Install Prometheus
-RUN curl -LO https://github.com/prometheus/prometheus/releases/download/v2.41.0/prometheus-2.41.0.linux-amd64.tar.gz \
+RUN arch=`dpkg --print-architecture`; \
+   curl -LO https://github.com/prometheus/prometheus/releases/download/v2.41.0/prometheus-2.41.0.linux-$arch.tar.gz \
    && tar xvfz prometheus-*.tar.gz \
    && cd prometheus-* \
    && mv prometheus /bin/
 
 # Install grafana
-RUN curl -LO https://dl.grafana.com/enterprise/release/grafana-enterprise_9.3.6_amd64.deb \
-   && dpkg -i grafana-enterprise_9.3.6_amd64.deb
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://dl.grafana.com/enterprise/release/grafana-enterprise_9.3.6_$arch.deb \
+    && dpkg -i grafana-enterprise_9.3.6_$arch.deb
 
 ADD ./dbsp_files.tar /database-stream-processor
 ADD ./sql_compiler_files.tar /sql-to-dbsp-compiler
