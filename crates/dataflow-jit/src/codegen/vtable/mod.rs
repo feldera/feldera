@@ -1,20 +1,18 @@
 mod clone;
 mod cmp;
+mod debug;
 mod drop;
 mod hash;
 mod tests;
 
 use crate::{
-    codegen::{
-        utils::FunctionBuilderExt, Codegen, CodegenCtx, NativeLayout, NativeType, TRAP_NULL_PTR,
-    },
+    codegen::{Codegen, CodegenCtx, NativeLayout, NativeType},
     ir::{ColumnType, LayoutId},
 };
 use cranelift::{
     codegen::ir::UserFuncName,
     prelude::{
-        types, AbiParam, FunctionBuilder, InstBuilder, MemFlags, Type as ClifType,
-        Value as ClifValue,
+        AbiParam, FunctionBuilder, InstBuilder, MemFlags, Type as ClifType, Value as ClifValue,
     },
 };
 use cranelift_jit::JITModule;
@@ -233,22 +231,9 @@ impl Codegen {
                 &mut builder,
             );
 
-            let type_name = format!(
-                "DataflowJitRow({:?})",
-                ctx.layout_cache.row_layout(layout_id),
-            )
-            .into_bytes();
-            let type_name_len = type_name.len();
-            let name_id = ctx.create_data(type_name);
-            let name_value = ctx.import_data(name_id, &mut builder);
-
             // Get the length and pointer to the type name
-            let type_name_ptr = builder.ins().symbol_value(ptr_ty, name_value);
-            let type_name_len = builder.ins().iconst(ptr_ty, type_name_len as i64);
-
-            if self.config.debug_assertions {
-                builder.ins().trapz(length_out, TRAP_NULL_PTR);
-            }
+            let type_name = format!("{:?}", ctx.layout_cache.row_layout(layout_id));
+            let (type_name_ptr, type_name_len) = ctx.import_string(type_name, &mut builder);
 
             builder
                 .ins()
@@ -375,291 +360,6 @@ impl Codegen {
 
         func_id
     }
-
-    #[tracing::instrument(skip(self))]
-    fn codegen_layout_debug(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating debug vtable function for {layout_id}");
-
-        // fn(*const u8, *mut fmt::Formatter) -> bool
-        let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty; 2], Some(types::I8));
-
-        self.set_comment_writer(
-            &format!("{layout_id}_vtable_debug"),
-            &format!(
-                "fn(*const {:?}, *mut fmt::Formatter) -> bool",
-                self.layout_cache.row_layout(layout_id),
-            ),
-        );
-
-        {
-            let layout_cache = self.layout_cache.clone();
-            let mut ctx = CodegenCtx::new(
-                self.config,
-                &mut self.module,
-                &mut self.data_ctx,
-                &mut self.data,
-                self.layout_cache.clone(),
-                self.intrinsics.import(self.comment_writer.clone()),
-                self.comment_writer.clone(),
-            );
-
-            let mut builder =
-                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-            let str_debug = ctx.imports.str_debug(ctx.module, builder.func);
-
-            // Create the entry block
-            let entry_block = builder.create_block();
-            builder.switch_to_block(entry_block);
-
-            // Add the function params as block params
-            builder.append_block_params_for_function_params(entry_block);
-
-            let params = builder.block_params(entry_block);
-            let (ptr, fmt) = (params[0], params[1]);
-
-            // Ensure that the given pointers are valid
-            if ctx.debug_assertions() {
-                let ptr_align = ctx.layout_cache.layout_of(layout_id).align();
-                ctx.assert_ptr_valid(ptr, ptr_align, &mut builder);
-                ctx.assert_ptr_valid(
-                    fmt,
-                    align_of::<std::fmt::Formatter<'_>>() as u32,
-                    &mut builder,
-                );
-            }
-
-            let return_block = builder.create_block();
-            builder.append_block_params_for_function_returns(return_block);
-
-            // If the row is empty we can just write an empty row
-            let row_layout = layout_cache.row_layout(layout_id);
-            if row_layout.is_empty() {
-                // Declare the data within the function
-                // TODO: Deduplicate data entries within the module
-                let empty_data = b"{}";
-                let empty_id = ctx.create_data(empty_data.to_owned());
-                let empty = ctx.import_data(empty_id, &mut builder);
-
-                // Write an empty row to the output
-                let empty_ptr = builder.ins().symbol_value(ptr_ty, empty);
-                let empty_len = builder.ins().iconst(ptr_ty, empty_data.len() as i64);
-                let result = builder.call_fn(str_debug, &[empty_ptr, empty_len, fmt]);
-
-                builder.ins().jump(return_block, &[result]);
-                builder.seal_block(entry_block);
-
-            // Otherwise, write each row to the output
-            } else {
-                let start_data = b"{ ";
-                let start_id = ctx.create_data(start_data.to_owned());
-                let start = ctx.import_data(start_id, &mut builder);
-
-                // Write the start of a row to the output
-                let start_ptr = builder.ins().symbol_value(ptr_ty, start);
-                let start_len = builder.ins().iconst(ptr_ty, start_data.len() as i64);
-                let result = builder.call_fn(str_debug, &[start_ptr, start_len, fmt]);
-
-                let debug_start = builder.create_block();
-                let debug_failed = builder.false_byte();
-                builder.ins().brz(result, return_block, &[debug_failed]);
-                builder.ins().jump(debug_start, &[]);
-                builder.seal_block(entry_block);
-
-                builder.switch_to_block(debug_start);
-
-                for (idx, (ty, nullable)) in row_layout.iter().enumerate() {
-                    let after_debug = builder.create_block();
-
-                    if nullable {
-                        let layout = layout_cache.layout_of(layout_id);
-                        // Zero = value isn't null, non-zero = value is null
-                        let non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
-
-                        // If the value is null, jump to the `write_null` block and debug a null
-                        // value (since it's null). Otherwise (if the value isn't null) debug it
-                        // and then continue debugging any other fields
-                        let debug_value = builder.create_block();
-                        let write_null = builder.create_block();
-                        builder.ins().brnz(non_null, write_null, &[]);
-                        builder.ins().jump(debug_value, &[]);
-                        builder.seal_current();
-
-                        builder.switch_to_block(write_null);
-
-                        let null_data = b"null";
-                        let null_id = ctx.create_data(null_data.to_owned());
-                        let null = ctx.import_data(null_id, &mut builder);
-
-                        // Write `null` to the output
-                        let null_ptr = builder.ins().symbol_value(ptr_ty, null);
-                        let null_len = builder.ins().iconst(ptr_ty, null_data.len() as i64);
-                        let call = builder.call_fn(str_debug, &[null_ptr, null_len, fmt]);
-
-                        // If writing `null` failed, return an error
-                        let debug_failed = builder.false_byte();
-                        builder.ins().brz(call, return_block, &[debug_failed]);
-                        builder.ins().jump(after_debug, &[]);
-                        builder.seal_block(write_null);
-
-                        builder.switch_to_block(debug_value);
-                    }
-
-                    let result = if ty.is_unit() {
-                        let unit_data = b"unit";
-                        let unit_id = ctx.create_data(unit_data.to_owned());
-                        let unit = ctx.import_data(unit_id, &mut builder);
-
-                        // Write `unit` to the output
-                        let unit_ptr = builder.ins().symbol_value(ptr_ty, unit);
-                        let unit_len = builder.ins().iconst(ptr_ty, unit_data.len() as i64);
-                        let result = builder.call_fn(str_debug, &[unit_ptr, unit_len, fmt]);
-
-                        if let Some(writer) = ctx.comment_writer.as_deref() {
-                            writer.borrow_mut().add_comment(
-                                builder.func.dfg.value_def(unit_ptr).unwrap_inst(),
-                                format!(
-                                    "debug col {idx} ({}) of {:?}",
-                                    ColumnType::Unit,
-                                    ctx.layout_cache.row_layout(layout_id),
-                                ),
-                            );
-                        }
-
-                        result
-                    } else {
-                        // Load the value
-                        let layout = ctx.layout_cache.layout_of(layout_id);
-                        let offset = layout.offset_of(idx) as i32;
-                        let native_ty = layout
-                            .type_of(idx)
-                            .native_type(&ctx.module.isa().frontend_config());
-                        let flags = MemFlags::trusted().with_readonly();
-                        let value = builder.ins().load(native_ty, flags, ptr, offset);
-
-                        if let Some(writer) = ctx.comment_writer.as_deref() {
-                            let layout = ctx.layout_cache.row_layout(layout_id);
-                            writer.borrow_mut().add_comment(
-                                builder.func.dfg.value_def(value).unwrap_inst(),
-                                format!(
-                                    "debug col {idx} ({}) of {:?}",
-                                    layout.column_type(idx),
-                                    layout,
-                                ),
-                            );
-                        }
-
-                        match ty {
-                            ColumnType::Bool => {
-                                let bool_debug = ctx.imports.bool_debug(ctx.module, builder.func);
-                                builder.call_fn(bool_debug, &[value, fmt])
-                            }
-
-                            ColumnType::U16 | ColumnType::U32 => {
-                                let uint_debug = ctx.imports.uint_debug(ctx.module, builder.func);
-                                let extended = builder.ins().uextend(types::I64, value);
-                                builder.call_fn(uint_debug, &[extended, fmt])
-                            }
-                            ColumnType::U64 => {
-                                let uint_debug = ctx.imports.uint_debug(ctx.module, builder.func);
-                                builder.call_fn(uint_debug, &[value, fmt])
-                            }
-
-                            ColumnType::I16 | ColumnType::I32 => {
-                                let int_debug = ctx.imports.int_debug(ctx.module, builder.func);
-                                let extended = builder.ins().sextend(types::I64, value);
-                                builder.call_fn(int_debug, &[extended, fmt])
-                            }
-                            ColumnType::I64 => {
-                                let int_debug = ctx.imports.int_debug(ctx.module, builder.func);
-                                builder.call_fn(int_debug, &[value, fmt])
-                            }
-
-                            ColumnType::F32 => {
-                                let f32_debug = ctx.imports.f32_debug(ctx.module, builder.func);
-                                builder.call_fn(f32_debug, &[value, fmt])
-                            }
-                            ColumnType::F64 => {
-                                let f64_debug = ctx.imports.f64_debug(ctx.module, builder.func);
-                                builder.call_fn(f64_debug, &[value, fmt])
-                            }
-
-                            ColumnType::String => {
-                                let string_debug =
-                                    ctx.imports.string_debug(ctx.module, builder.func);
-                                builder.call_fn(string_debug, &[value, fmt])
-                            }
-
-                            ColumnType::Unit => unreachable!(),
-                        }
-                    };
-
-                    // If writing the value failed, return an error
-                    let debug_failed = builder.false_byte();
-                    let fail_branch = builder.ins().brz(result, return_block, &[debug_failed]);
-                    builder.ins().jump(after_debug, &[]);
-                    builder.seal_block(builder.current_block().unwrap());
-                    builder.switch_to_block(after_debug);
-
-                    if let Some(writer) = ctx.comment_writer.as_deref() {
-                        writer
-                            .borrow_mut()
-                            .add_comment(fail_branch, "propagate errors if debugging failed");
-                    }
-
-                    // If this is the last column in the row, finish it off with ` }`
-                    if idx == row_layout.len() - 1 {
-                        let end_data = b" }";
-                        let end_id = ctx.create_data(end_data.to_owned());
-                        let end = ctx.import_data(end_id, &mut builder);
-
-                        // Write the end of a row to the output
-                        let end_ptr = builder.ins().symbol_value(ptr_ty, end);
-                        let end_len = builder.ins().iconst(ptr_ty, end_data.len() as i64);
-                        let result = builder.call_fn(str_debug, &[end_ptr, end_len, fmt]);
-
-                        let debug_failed = builder.false_byte();
-                        let debug_success = builder.true_byte();
-                        builder.ins().brz(result, return_block, &[debug_failed]);
-                        builder.ins().jump(return_block, &[debug_success]);
-
-                    // Otherwise comma-separate each column
-                    } else {
-                        let next_debug = builder.create_block();
-
-                        let comma_data = b", ";
-                        let comma_id = ctx.create_data(comma_data.to_owned());
-                        let comma = ctx.import_data(comma_id, &mut builder);
-
-                        let comma_ptr = builder.ins().symbol_value(ptr_ty, comma);
-                        let comma_len = builder.ins().iconst(ptr_ty, comma_data.len() as i64);
-                        let result = builder.call_fn(str_debug, &[comma_ptr, comma_len, fmt]);
-
-                        let debug_failed = builder.false_byte();
-                        builder.ins().brz(result, return_block, &[debug_failed]);
-                        builder.ins().jump(next_debug, &[]);
-                        builder.switch_to_block(next_debug);
-                    }
-
-                    builder.seal_block(after_debug);
-                }
-            }
-
-            builder.switch_to_block(return_block);
-            let result = builder.block_params(return_block)[0];
-            builder.ins().return_(&[result]);
-            builder.seal_block(return_block);
-
-            // Finish building the function
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.finalize_function(func_id);
-
-        func_id
-    }
 }
 
 /// Checks if the given row is currently null, returns zero for non-null and
@@ -695,15 +395,7 @@ fn column_non_null(
         .ins()
         .load(bitset_ty, flags, row_ptr, bitset_offset as i32);
 
-    // Zero is true (the value isn't null), non-zero is false (the value is
-    // null)
-    // if config.null_sigil.is_one() {
-    //     // x & (1 << bit)
-    //     builder.ins().band_imm(bitset, 1i64 << bit_idx)
-    // } else {
-    //     // !x & (1 << bit)
-    //     let bitset = builder.ins().bnot(bitset);
-    //     builder.ins().band_imm(bitset, 1i64 << bit_idx)
-    // }
+    // Zero is true (the value isn't null), non-zero is false
+    // (the value is null)
     builder.ins().band_imm(bitset, 1i64 << bit_idx)
 }

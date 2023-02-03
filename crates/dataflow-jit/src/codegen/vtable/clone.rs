@@ -374,7 +374,9 @@ fn clone_layout(
             | ColumnType::I32
             | ColumnType::I64
             | ColumnType::F32
-            | ColumnType::F64 => src_value,
+            | ColumnType::F64
+            | ColumnType::Date
+            | ColumnType::Timestamp => src_value,
 
             // Strings need their clone function called
             ColumnType::String => {

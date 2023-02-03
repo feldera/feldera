@@ -92,12 +92,14 @@ impl Codegen {
                     let value = if !native_ty.is_float() {
                         builder.ins().load(native_ty, flags, ptr, offset)
 
-                    // If total float comparisons are enabled, we normalize the float before hashing it
+                    // If total float comparisons are enabled, we normalize the
+                    // float before hashing it
                     } else if self.config.total_float_comparisons {
                         let float = builder.ins().load(native_ty, flags, ptr, offset);
                         ctx.normalize_float(float, &mut builder)
 
-                    // Otherwise we load the floating point value as its raw bits and then hash those raw bits
+                    // Otherwise we load the floating point value as its raw
+                    // bits and then hash those raw bits
                     } else {
                         builder.ins().load(native_ty.as_int(), flags, ptr, offset)
                     };
@@ -107,9 +109,13 @@ impl Codegen {
                         ColumnType::U16 => imports.u16_hash(ctx.module, builder.func),
                         ColumnType::I16 => imports.i16_hash(ctx.module, builder.func),
                         ColumnType::U32 => imports.u32_hash(ctx.module, builder.func),
-                        ColumnType::I32 => imports.i32_hash(ctx.module, builder.func),
+                        ColumnType::I32 | ColumnType::Date => {
+                            imports.i32_hash(ctx.module, builder.func)
+                        }
                         ColumnType::U64 => imports.u64_hash(ctx.module, builder.func),
-                        ColumnType::I64 => imports.i64_hash(ctx.module, builder.func),
+                        ColumnType::I64 | ColumnType::Timestamp => {
+                            imports.i64_hash(ctx.module, builder.func)
+                        }
                         ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
                         ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
                         ColumnType::String => imports.string_hash(ctx.module, builder.func),

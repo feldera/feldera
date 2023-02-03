@@ -15,11 +15,11 @@ use crate::{
     codegen::{
         intrinsics::{ImportIntrinsics, Intrinsics},
         pretty_clif::CommentWriter,
-        utils::{normalize_float, FunctionBuilderExt},
+        utils::FunctionBuilderExt,
     },
     ir::{
-        BinaryOp, BinaryOpKind, BlockId, ColumnType, Constant, Expr, ExprId, Function, InputFlags,
-        LayoutId, RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
+        BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function,
+        InputFlags, LayoutId, RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
 };
 use cranelift::{
@@ -62,6 +62,11 @@ pub struct CodegenConfig {
     pub optimize_layouts: bool,
     /// Whether or not to annotate debugged functions with extra information
     pub clif_comments: bool,
+    /// Whether or not to use saturating casts when converting floats to
+    /// integers, if this option is disabled then float to int casts will
+    /// trap when the float is NaN and if this option is enabled then float
+    /// to int casts will yield zero when the float is NaN
+    pub saturating_float_to_int_casts: bool,
 }
 
 impl CodegenConfig {
@@ -70,12 +75,14 @@ impl CodegenConfig {
         total_float_comparisons: bool,
         optimize_layouts: bool,
         clif_comments: bool,
+        saturating_float_to_int_casts: bool,
     ) -> Self {
         Self {
             debug_assertions,
             total_float_comparisons,
             optimize_layouts,
             clif_comments,
+            saturating_float_to_int_casts,
         }
     }
 
@@ -99,12 +106,21 @@ impl CodegenConfig {
         self
     }
 
+    pub const fn with_saturating_float_to_int_casts(
+        mut self,
+        saturating_float_to_int_casts: bool,
+    ) -> Self {
+        self.saturating_float_to_int_casts = saturating_float_to_int_casts;
+        self
+    }
+
     pub const fn debug() -> Self {
         Self {
             debug_assertions: true,
             total_float_comparisons: true,
             optimize_layouts: true,
             clif_comments: true,
+            saturating_float_to_int_casts: true,
         }
     }
 
@@ -114,6 +130,7 @@ impl CodegenConfig {
             total_float_comparisons: true,
             optimize_layouts: true,
             clif_comments: false,
+            saturating_float_to_int_casts: true,
         }
     }
 }
@@ -277,6 +294,7 @@ impl Codegen {
                     let expr = &function.exprs()[&expr_id];
 
                     match expr {
+                        Expr::Cast(cast) => ctx.cast(expr_id, cast, &mut builder),
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
 
@@ -769,6 +787,19 @@ impl<'a> CodegenCtx<'a> {
         self.exprs[&expr_id]
     }
 
+    /// Get the type of an expression
+    #[track_caller]
+    fn expr_ty(&self, expr_id: ExprId) -> ColumnType {
+        self.expr_types[&expr_id]
+    }
+
+    #[track_caller]
+    fn clif_ty(&self, ty: ColumnType) -> Type {
+        ty.native_type()
+            .expect("called `CodegenCtx::clif_ty()` on a unit type")
+            .native_type(&self.frontend_config())
+    }
+
     /// Returns `true` if the given expression is a `readonly` row
     fn is_readonly(&self, expr: ExprId) -> bool {
         self.function_inputs
@@ -807,6 +838,50 @@ impl<'a> CodegenCtx<'a> {
             self.add_expr(expr_id, param, None, layout);
             self.function_inputs.insert(expr_id, flags);
         }
+    }
+
+    /// Creates and imports the given string, returning a reference to its
+    /// global value and the length of the string
+    fn import_string<S>(&mut self, string: S, builder: &mut FunctionBuilder<'_>) -> (Value, Value)
+    where
+        S: Into<String>,
+    {
+        let string = string.into();
+        let len = string.len();
+
+        let global = if let Some(writer) = self.comment_writer.as_ref() {
+            let comment = format!("string {string:?}");
+
+            let data_id = *self
+                .data
+                .entry(string.into_bytes().into())
+                .or_insert_with_key(|data| {
+                    self.data_ctx.define(data.to_owned());
+                    let data_id = self.module.declare_anonymous_data(false, false).unwrap();
+                    self.module.define_data(data_id, self.data_ctx).unwrap();
+                    self.data_ctx.clear();
+                    data_id
+                });
+
+            let global = *self
+                .data_imports
+                .entry(data_id)
+                .or_insert_with(|| self.module.declare_data_in_func(data_id, builder.func));
+            writer.borrow_mut().add_comment(global, comment);
+
+            global
+        } else {
+            let data_id = self.create_data(string.into_bytes());
+            self.import_data(data_id, builder)
+        };
+
+        let ptr_type = self.pointer_type();
+        // Get the length of the string
+        let len = builder.ins().iconst(ptr_type, len as i64);
+        // Get a pointer to the global value
+        let ptr = builder.ins().symbol_value(ptr_type, global);
+
+        (ptr, len)
     }
 
     fn create_data<D>(&mut self, data: D) -> DataId
@@ -1397,6 +1472,79 @@ impl<'a> CodegenCtx<'a> {
         };
 
         self.add_expr(expr_id, value, value_ty, None);
+    }
+
+    fn cast(&mut self, expr_id: ExprId, cast: &Cast, builder: &mut FunctionBuilder<'_>) {
+        let src = self.value(cast.value());
+        assert_eq!(self.expr_ty(cast.value()), cast.from());
+        assert!(!cast.from().is_string() && !cast.from().is_unit());
+        assert!(!cast.to().is_string() && !cast.to().is_unit());
+
+        let (from_ty, to_ty) = (self.clif_ty(cast.from()), self.clif_ty(cast.to()));
+        let value = match (cast.from(), cast.to()) {
+            // Noop casts
+            (a, b)
+                if a == b
+                    // Dates are represented as an i32
+                    || ((a.is_i32() || a.is_u32()) && b.is_date())
+                    // Timestamps are represented as an i64
+                    || ((a.is_i64() || a.is_u64()) && b.is_timestamp())
+                    // Signed <=> unsigned casts
+                    || (a.is_i16() && b.is_u16())
+                    || (a.is_u16() && b.is_i16())
+                    || (a.is_i32() && b.is_u32())
+                    || (a.is_u32() && b.is_i32())
+                    || (a.is_i64() && b.is_u64())
+                    || (a.is_u64() && b.is_i64()) =>
+            {
+                src
+            }
+
+            // Float to int
+            (a, b) if a.is_float() => {
+                if b.is_unsigned_int() {
+                    if self.config.saturating_float_to_int_casts {
+                        builder.ins().fcvt_to_uint(to_ty, src)
+                    } else {
+                        builder.ins().fcvt_to_uint_sat(to_ty, src)
+                    }
+                } else {
+                    debug_assert!(b.is_signed_int());
+                    if self.config.saturating_float_to_int_casts {
+                        builder.ins().fcvt_to_sint(to_ty, src)
+                    } else {
+                        builder.ins().fcvt_to_sint_sat(to_ty, src)
+                    }
+                }
+            }
+
+            // Int to float
+            (a, b) if b.is_float() => {
+                if a.is_unsigned_int() {
+                    builder.ins().fcvt_from_uint(to_ty, src)
+                } else {
+                    debug_assert!(a.is_signed_int());
+                    builder.ins().fcvt_from_sint(to_ty, src)
+                }
+            }
+
+            // Smaller int to larger int
+            (a, _) if from_ty.bytes() < to_ty.bytes() => {
+                if a.is_signed_int() || a.is_date() || a.is_timestamp() {
+                    builder.ins().sextend(to_ty, src)
+                } else {
+                    debug_assert!(a.is_unsigned_int() || a.is_bool());
+                    builder.ins().uextend(to_ty, src)
+                }
+            }
+
+            // Larger int to smaller int
+            (_, _) if from_ty.bytes() > to_ty.bytes() => builder.ins().ireduce(to_ty, src),
+
+            (a, b) => unreachable!("cast from {a} to {b}"),
+        };
+
+        self.add_expr(expr_id, value, cast.to(), None);
     }
 
     /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]

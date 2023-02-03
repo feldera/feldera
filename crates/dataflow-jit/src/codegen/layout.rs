@@ -62,51 +62,16 @@ impl NativeType {
         }
     }
 
-    pub(crate) fn bits(self, target: &TargetFrontendConfig) -> u8 {
-        match self {
-            Self::Ptr | Self::Usize => target.pointer_bits(),
-            Self::U64 | Self::I64 | Self::F64 => 64,
-            Self::U32 | Self::I32 | Self::F32 => 32,
-            Self::U16 | Self::I16 => 16,
-            Self::U8 | Self::I8 | Self::Bool => 8,
-        }
-    }
-
     /// Computes `log2(effective_align)`
     pub(crate) fn effective_align(self, target: &TargetFrontendConfig) -> u32 {
         self.align(target).max(self.size(target)).trailing_zeros()
     }
 
-    /// Returns `true` if the type is a [`U8`].
-    ///
-    /// [`U8`]: Type::U8
-    #[must_use]
-    pub const fn is_u8(&self) -> bool {
-        matches!(self, Self::U8)
-    }
-
-    #[must_use]
-    pub const fn is_ptr(self) -> bool {
-        matches!(self, Self::Ptr)
-    }
-
     /// Creates a type from the given [`ColumnType`], returning `None`
     /// if it's a [`ColumnType::Unit`]
+    #[must_use]
     pub const fn from_column_type(column_type: ColumnType) -> Option<Self> {
-        Some(match column_type {
-            ColumnType::Bool => Self::Bool,
-            ColumnType::U16 => Self::U16,
-            ColumnType::I16 => Self::I16,
-            ColumnType::U32 => Self::U32,
-            ColumnType::I32 => Self::I32,
-            ColumnType::U64 => Self::U64,
-            ColumnType::I64 => Self::I64,
-            ColumnType::F32 => Self::F32,
-            ColumnType::F64 => Self::F64,
-            // Strings are represented as a pointer to a length-prefixed string (maybe???)
-            ColumnType::String => Self::Ptr,
-            ColumnType::Unit => return None,
-        })
+        column_type.native_type()
     }
 
     const fn to_str(self) -> &'static str {
@@ -125,6 +90,71 @@ impl NativeType {
             Self::Bool => "bool",
             Self::Usize => "usize",
         }
+    }
+
+    #[must_use]
+    pub const fn is_u8(&self) -> bool {
+        matches!(self, Self::U8)
+    }
+
+    #[must_use]
+    pub const fn is_i8(&self) -> bool {
+        matches!(self, Self::I8)
+    }
+
+    #[must_use]
+    pub const fn is_u16(&self) -> bool {
+        matches!(self, Self::U16)
+    }
+
+    #[must_use]
+    pub const fn is_i16(&self) -> bool {
+        matches!(self, Self::I16)
+    }
+
+    #[must_use]
+    pub const fn is_u32(&self) -> bool {
+        matches!(self, Self::U32)
+    }
+
+    #[must_use]
+    pub const fn is_i32(&self) -> bool {
+        matches!(self, Self::I32)
+    }
+
+    #[must_use]
+    pub const fn is_u64(&self) -> bool {
+        matches!(self, Self::U64)
+    }
+
+    #[must_use]
+    pub const fn is_i64(&self) -> bool {
+        matches!(self, Self::I64)
+    }
+
+    #[must_use]
+    pub const fn is_f32(&self) -> bool {
+        matches!(self, Self::F32)
+    }
+
+    #[must_use]
+    pub const fn is_f64(&self) -> bool {
+        matches!(self, Self::F64)
+    }
+
+    #[must_use]
+    pub const fn is_ptr(&self) -> bool {
+        matches!(self, Self::Ptr)
+    }
+
+    #[must_use]
+    pub const fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool)
+    }
+
+    #[must_use]
+    pub const fn is_usize(&self) -> bool {
+        matches!(self, Self::Usize)
     }
 }
 
@@ -164,10 +194,6 @@ impl BitSetType {
 
     fn align(self, target: &TargetFrontendConfig) -> u32 {
         NativeType::from(self).align(target)
-    }
-
-    fn bits(self, target: &TargetFrontendConfig) -> u8 {
-        NativeType::from(self).bits(target)
     }
 
     /// Computes `log2(effective_align)`
