@@ -10,7 +10,7 @@ mod types;
 mod validate;
 
 pub use expr::{
-    BinaryOp, BinaryOpKind, Branch, Constant, CopyRowTo, CopyVal, Expr, IsNull, Jump, Load,
+    BinaryOp, BinaryOpKind, Branch, Cast, Constant, CopyRowTo, CopyVal, Expr, IsNull, Jump, Load,
     NullRow, RValue, Return, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
 };
 pub use function::{Function, FunctionBuilder, InputFlags};

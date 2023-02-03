@@ -1,4 +1,5 @@
 use crate::{codegen::pretty_clif::CommentWriter, thin_str::ThinStrRef, ThinStr};
+use chrono::{LocalResult, NaiveDate, TimeZone, Utc};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
     prelude::{types, AbiParam, Signature as ClifSignature},
@@ -147,6 +148,8 @@ intrinsics! {
     uint_debug = fn(u64, ptr) -> bool,
     f32_debug = fn(f32, ptr) -> bool,
     f64_debug = fn(f64, ptr) -> bool,
+    date_debug = fn(i32, ptr) -> bool,
+    timestamp_debug = fn(i64, ptr) -> bool,
     u8_hash = fn(ptr, u8),
     i8_hash = fn(ptr, i8),
     u16_hash = fn(ptr, u16),
@@ -238,6 +241,32 @@ unsafe extern "C" fn dataflow_jit_f32_debug(float: f32, fmt: *mut fmt::Formatter
 unsafe extern "C" fn dataflow_jit_f64_debug(double: f64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&double, &mut *fmt).is_ok()
+}
+
+unsafe extern "C" fn dataflow_jit_date_debug(date: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
+    debug_assert!(!fmt.is_null());
+
+    // TODO: UTC?
+    if let Some(date) = NaiveDate::from_num_days_from_ce_opt(date) {
+        write!(&mut *fmt, "{}", date.format("%Y-%m-%d")).is_ok()
+    } else {
+        tracing::error!("failed to create date from {date}");
+        false
+    }
+}
+
+unsafe extern "C" fn dataflow_jit_timestamp_debug(
+    timestamp: i64,
+    fmt: *mut fmt::Formatter<'_>,
+) -> bool {
+    debug_assert!(!fmt.is_null());
+
+    if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(timestamp) {
+        write!(&mut *fmt, "{}", timestamp.format("%+")).is_ok()
+    } else {
+        tracing::error!("failed to create timestamp from {timestamp}");
+        false
+    }
 }
 
 macro_rules! hash {

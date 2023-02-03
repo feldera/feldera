@@ -17,9 +17,6 @@ impl Codegen {
     //        either doesn't exist or is always zeroed, if padding bytes
     //        or otherwise uninitialized data doesn't conform to that this'll
     //        spuriously error
-    // FIXME: Need to implement total_cmp for floats
-    // https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
-    // https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
         tracing::info!("creating eq vtable function for {layout_id}");
@@ -151,7 +148,9 @@ impl Codegen {
                         | ColumnType::U64
                         | ColumnType::I16
                         | ColumnType::I32
-                        | ColumnType::I64 => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+                        | ColumnType::I64
+                        | ColumnType::Date
+                        | ColumnType::Timestamp => builder.ins().icmp(IntCC::Equal, lhs, rhs),
 
                         // Compare floats
                         ColumnType::F32 | ColumnType::F64 => {
@@ -358,7 +357,11 @@ impl Codegen {
                             builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
                         }
 
-                        ColumnType::I16 | ColumnType::I32 | ColumnType::I64 => {
+                        ColumnType::I16
+                        | ColumnType::I32
+                        | ColumnType::I64
+                        | ColumnType::Date
+                        | ColumnType::Timestamp => {
                             builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
                         }
 
@@ -558,7 +561,11 @@ impl Codegen {
                         }
 
                         // Signed integers
-                        ColumnType::I16 | ColumnType::I32 | ColumnType::I64 => {
+                        ColumnType::I16
+                        | ColumnType::I32
+                        | ColumnType::I64
+                        | ColumnType::Date
+                        | ColumnType::Timestamp => {
                             let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
                             let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
                             let ordering = builder.ins().select(less, less_than, greater_than);

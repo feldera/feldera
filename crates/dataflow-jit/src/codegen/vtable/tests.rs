@@ -52,7 +52,7 @@ fn empty() {
             assert_eq!(debug, "{}");
 
             let type_name = vtable.type_name();
-            assert_eq!(type_name, "DataflowJitRow({})");
+            assert_eq!(type_name, "{}");
 
             let mut ctx = Context::new();
             (vtable.size_of_children)(lhs, &mut ctx);
@@ -133,7 +133,7 @@ fn string() {
                 assert_eq!(debug, r#"{ "foobar" }"#);
             }
 
-            assert_eq!(vtable.type_name(), "DataflowJitRow({str})");
+            assert_eq!(vtable.type_name(), "{str}");
 
             // Ensure a slice drop of length zero doesn't do anything
             (vtable.drop_slice_in_place)(lhs, 0);
@@ -439,25 +439,31 @@ mod proptests {
         Bool(bool),
         // Usize(usize),
         String(String),
+        // FIXME: Arbitrary valid date generation
+        // #[proptest(strategy = "")]
+        // Date(i32),
+        // Timestamp(i64),
     }
 
     impl Column {
         fn row_type(&self) -> ColumnType {
             match self {
-                Column::Unit => ColumnType::Unit,
+                Self::Unit => ColumnType::Unit,
                 // Column::U8(_) => todo!(),
                 // Column::I8(_) => todo!(),
-                Column::U16(_) => ColumnType::U16,
-                Column::I16(_) => ColumnType::I16,
-                Column::U32(_) => ColumnType::U32,
-                Column::I32(_) => ColumnType::I32,
-                Column::U64(_) => ColumnType::U64,
-                Column::I64(_) => ColumnType::I64,
-                Column::F32(_) => ColumnType::F32,
-                Column::F64(_) => ColumnType::F64,
-                Column::Bool(_) => ColumnType::Bool,
+                Self::U16(_) => ColumnType::U16,
+                Self::I16(_) => ColumnType::I16,
+                Self::U32(_) => ColumnType::U32,
+                Self::I32(_) => ColumnType::I32,
+                Self::U64(_) => ColumnType::U64,
+                Self::I64(_) => ColumnType::I64,
+                Self::F32(_) => ColumnType::F32,
+                Self::F64(_) => ColumnType::F64,
+                Self::Bool(_) => ColumnType::Bool,
                 // Column::Usize(_) => todo!(),
-                Column::String(_) => ColumnType::String,
+                Self::String(_) => ColumnType::String,
+                // Self::Date(_) => ColumnType::Date,
+                // Self::Timestamp(_) => ColumnType::Timestamp,
             }
         }
 
@@ -469,6 +475,7 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<()>(), 0);
                     ptr.cast::<()>().write(());
                 }
+
                 Column::U16(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u16>(), 0);
                     ptr.cast::<u16>().write(value);
@@ -477,6 +484,7 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<i16>(), 0);
                     ptr.cast::<i16>().write(value);
                 }
+
                 Column::U32(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u32>(), 0);
                     ptr.cast::<u32>().write(value);
@@ -485,6 +493,7 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
                     ptr.cast::<i32>().write(value);
                 }
+
                 Column::U64(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u64>(), 0);
                     ptr.cast::<u64>().write(value);
@@ -493,6 +502,7 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
                     ptr.cast::<i64>().write(value);
                 }
+
                 Column::F32(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<f32>(), 0);
                     ptr.cast::<f32>().write(value);
@@ -501,14 +511,23 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<f64>(), 0);
                     ptr.cast::<f64>().write(value);
                 }
+
                 Column::Bool(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<bool>(), 0);
                     ptr.cast::<bool>().write(value);
                 }
+
                 Column::String(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<ThinStr>(), 0);
                     ptr.cast::<ThinStr>().write(ThinStr::from(&*value));
-                }
+                } /* Column::Date(date) => {
+                   *     prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
+                   *     ptr.cast::<i32>().write(date);
+                   * }
+                   * Column::Timestamp(timestamp) => {
+                   *     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
+                   *     ptr.cast::<i64>().write(timestamp);
+                   * } */
             }
 
             Ok(())
@@ -531,6 +550,8 @@ mod proptests {
                 (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
                 // (Self::Usize(l0), Self::Usize(r0)) => l0 == r0,
                 (Self::String(l0), Self::String(r0)) => l0 == r0,
+                // (Self::Date(l0), Self::Date(r0)) => l0 == r0,
+                // (Self::Timestamp(l0), Self::Timestamp(r0)) => l0 == r0,
                 _ => unreachable!(),
             }
         }
@@ -560,6 +581,8 @@ mod proptests {
                 (Self::Bool(l0), Self::Bool(r0)) => l0.cmp(r0),
                 // (Self::Usize(l0), Self::Usize(r0)) => l0.cmp(r0),
                 (Self::String(l0), Self::String(r0)) => l0.cmp(r0),
+                // (Self::Date(l0), Self::Date(r0)) => l0.cmp(r0),
+                // (Self::Timestamp(l0), Self::Timestamp(r0)) => l0.cmp(r0),
                 _ => unreachable!(),
             }
         }

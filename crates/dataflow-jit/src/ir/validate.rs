@@ -1,7 +1,8 @@
 use crate::ir::{
-    graph::GraphExt, BinaryOpKind, BlockId, ColumnType, Expr, ExprId, Function, Graph, InputFlags,
-    LayoutId, Node, NodeId, RValue, RowLayoutCache, UnaryOpKind,
+    graph::GraphExt, BinaryOpKind, BlockId, Cast, ColumnType, Expr, ExprId, Function, Graph,
+    InputFlags, LayoutId, Node, NodeId, RValue, RowLayoutCache, UnaryOpKind,
 };
+use derive_more::{Display, Error};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub struct Validator {
@@ -156,7 +157,11 @@ impl FunctionValidator {
         self.blocks.clear();
     }
 
-    pub fn validate_function(&mut self, func: &Function, layout_cache: &RowLayoutCache) {
+    pub fn validate_function(
+        &mut self,
+        func: &Function,
+        layout_cache: &RowLayoutCache,
+    ) -> Result<(), ValidationError> {
         self.clear();
 
         self.exprs.extend(func.exprs().keys().copied());
@@ -362,6 +367,8 @@ impl FunctionValidator {
                         }
                     }
 
+                    Expr::Cast(cast) => self.cast(expr_id, cast)?,
+
                     Expr::IsNull(_)
                     | Expr::CopyVal(_)
                     | Expr::NullRow(_)
@@ -372,6 +379,8 @@ impl FunctionValidator {
                 }
             }
         }
+
+        Ok(())
     }
 
     fn get_rval_type(&self, rvalue: &RValue) -> Result<ColumnType, LayoutId> {
@@ -380,4 +389,39 @@ impl FunctionValidator {
             RValue::Imm(constant) => Ok(constant.column_type()),
         }
     }
+
+    fn cast(&mut self, expr_id: ExprId, cast: &Cast) -> Result<(), ValidationError> {
+        fn is_weird_float_cast(a: ColumnType, b: ColumnType) -> bool {
+            a.is_float() && (b.is_bool() || b.is_date() || b.is_timestamp())
+        }
+
+        if cast.from().is_string()
+            || cast.to().is_string()
+            || is_weird_float_cast(cast.from(), cast.to())
+            || is_weird_float_cast(cast.to(), cast.from())
+            // Cannot cast from non-bool to bool
+            || (!cast.from().is_bool() && cast.to().is_bool())
+        {
+            Err(ValidationError::InvalidCast {
+                expr: expr_id,
+                from: cast.from(),
+                to: cast.to(),
+            })
+        } else {
+            let prev = self.expr_types.insert(expr_id, Ok(cast.to()));
+            assert!(prev.is_none());
+
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Display, Error)]
+pub enum ValidationError {
+    #[display(fmt = "invalid cast in {}: cannot cast from {} to {}", expr, from, to)]
+    InvalidCast {
+        expr: ExprId,
+        from: ColumnType,
+        to: ColumnType,
+    },
 }

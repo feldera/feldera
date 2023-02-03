@@ -1,5 +1,3 @@
-use std::fmt::{self, Display};
-
 use crate::ir::{BlockId, ColumnType, ExprId, LayoutId};
 use derive_more::From;
 
@@ -85,10 +83,12 @@ pub enum RValue {
 
 #[derive(Debug, Clone, From, PartialEq)]
 pub enum Expr {
+    Cast(Cast),
     Load(Load),
     Store(Store),
-    BinOp(BinaryOp),
+    // Select(Select),
     IsNull(IsNull),
+    BinOp(BinaryOp),
     CopyVal(CopyVal),
     UnaryOp(UnaryOp),
     NullRow(NullRow),
@@ -97,6 +97,31 @@ pub enum Expr {
     CopyRowTo(CopyRowTo),
     UninitRow(UninitRow),
     // TODO: Select, cast
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cast {
+    value: ExprId,
+    from: ColumnType,
+    to: ColumnType,
+}
+
+impl Cast {
+    pub fn new(value: ExprId, from: ColumnType, to: ColumnType) -> Self {
+        Self { value, from, to }
+    }
+
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
+
+    pub const fn from(&self) -> ColumnType {
+        self.from
+    }
+
+    pub const fn to(&self) -> ColumnType {
+        self.to
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

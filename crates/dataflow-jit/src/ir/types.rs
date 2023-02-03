@@ -1,4 +1,7 @@
-use crate::ir::{function::InputFlags, LayoutId, RowLayoutCache};
+use crate::{
+    codegen::NativeType,
+    ir::{function::InputFlags, LayoutId, RowLayoutCache},
+};
 use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
@@ -13,29 +16,15 @@ pub enum ColumnType {
     I64,
     F32,
     F64,
+    /// Represents the days since Jan 1 1970 as an `i32`
+    Date,
     Unit,
     String,
+    /// Represents the milliseconds since Jan 1 1970 as an `i64`
+    Timestamp,
 }
 
 impl ColumnType {
-    /// Returns `true` if the row type is [`Unit`].
-    ///
-    /// [`Unit`]: RowType::Unit
-    #[must_use]
-    pub const fn is_unit(&self) -> bool {
-        matches!(self, Self::Unit)
-    }
-
-    #[must_use]
-    pub const fn is_string(&self) -> bool {
-        matches!(self, Self::String)
-    }
-
-    #[must_use]
-    pub const fn is_bool(self) -> bool {
-        matches!(self, Self::Bool)
-    }
-
     #[must_use]
     pub const fn is_int(self) -> bool {
         matches!(
@@ -80,9 +69,96 @@ impl ColumnType {
             Self::I64 => "i64",
             Self::F32 => "f32",
             Self::F64 => "f64",
+            Self::Date => "date",
             Self::Unit => "unit",
             Self::String => "str",
+            Self::Timestamp => "timestamp",
         }
+    }
+
+    #[must_use]
+    pub const fn native_type(self) -> Option<NativeType> {
+        Some(match self {
+            Self::Bool => NativeType::Bool,
+            Self::U16 => NativeType::U16,
+            Self::I16 => NativeType::I16,
+            Self::U32 => NativeType::U32,
+            Self::I32 => NativeType::I32,
+            Self::U64 => NativeType::U64,
+            Self::I64 => NativeType::I64,
+            Self::F32 => NativeType::F32,
+            Self::F64 => NativeType::F64,
+            Self::Date => NativeType::I32,
+            // Strings are represented as a pointer to a length-prefixed string (maybe???)
+            Self::String => NativeType::Ptr,
+            Self::Timestamp => NativeType::I64,
+            Self::Unit => return None,
+        })
+    }
+
+    #[must_use]
+    pub const fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool)
+    }
+
+    #[must_use]
+    pub const fn is_u16(&self) -> bool {
+        matches!(self, Self::U16)
+    }
+
+    #[must_use]
+    pub const fn is_i16(&self) -> bool {
+        matches!(self, Self::I16)
+    }
+
+    #[must_use]
+    pub const fn is_u32(&self) -> bool {
+        matches!(self, Self::U32)
+    }
+
+    #[must_use]
+    pub const fn is_i32(&self) -> bool {
+        matches!(self, Self::I32)
+    }
+
+    #[must_use]
+    pub const fn is_u64(&self) -> bool {
+        matches!(self, Self::U64)
+    }
+
+    #[must_use]
+    pub const fn is_i64(&self) -> bool {
+        matches!(self, Self::I64)
+    }
+
+    #[must_use]
+    pub const fn is_f32(&self) -> bool {
+        matches!(self, Self::F32)
+    }
+
+    #[must_use]
+    pub const fn is_f64(&self) -> bool {
+        matches!(self, Self::F64)
+    }
+
+    #[must_use]
+    pub const fn is_date(&self) -> bool {
+        matches!(self, Self::Date)
+    }
+
+    #[must_use]
+    pub const fn is_unit(&self) -> bool {
+        matches!(self, Self::Unit)
+    }
+
+    #[must_use]
+    pub const fn is_string(&self) -> bool {
+        matches!(self, Self::String)
+    }
+
+    #[must_use]
+    pub const fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Timestamp)
     }
 }
 

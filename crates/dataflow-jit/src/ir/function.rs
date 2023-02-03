@@ -81,9 +81,14 @@ impl Function {
     }
 
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
+        // self.remove_redundant_casts();
         self.remove_unit_memory_operations(layout_cache);
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
+    }
+
+    fn remove_redundant_casts(&mut self) {
+        todo!()
     }
 
     fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
@@ -169,6 +174,7 @@ impl Function {
                         Expr::Constant(_) => {}
                         Expr::CopyRowTo(_) => todo!(),
                         Expr::UninitRow(_) => todo!(),
+                        Expr::Cast(_) => todo!(),
                     }
                 }
 
