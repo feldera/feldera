@@ -7,6 +7,7 @@
 //! also include the employee's second-level manager.
 
 use anyhow::Result;
+use bincode::{Decode, Encode};
 use clap::Parser;
 use dbsp::{
     operator::FilterMap,
@@ -21,7 +22,7 @@ type EmployeeID = usize;
 /// Indicates that `manager` is the immediate manager of `employee`.
 ///
 /// If `manager == employee` then `manager` is the CEO.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Encode, Decode)]
 struct Manages {
     manager: EmployeeID,
     employee: EmployeeID,
@@ -29,7 +30,7 @@ struct Manages {
 
 /// Indicates that `manager` is the immediate manager of `employee` and that
 /// `grandmanager` is the immedate manager of `manager`.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Encode, Decode)]
 struct SkipLevel {
     grandmanager: EmployeeID,
     manager: EmployeeID,
