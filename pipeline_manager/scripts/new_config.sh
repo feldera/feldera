@@ -19,4 +19,4 @@ ESCAPED_CONFIG="$(json_escape "$CONFIG")"
 
 # echo $ESCAPED_CONFIG
 
-curl -s -X POST http://localhost:8080/new_config  -H 'Content-Type: application/json' -d '{"project_id":'$1',"name":"'$2'","config":'"${ESCAPED_CONFIG}"'}'
+curl -s -X POST http://localhost:8080/configs  -H 'Content-Type: application/json' -d '{"project_id":'$1',"name":"'$2'","config":'"${ESCAPED_CONFIG}"'}'

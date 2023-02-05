@@ -9,7 +9,7 @@ if [ "$#" -ne 4 ]; then
     exit 1
 fi
 
-response=$(curl -s -X POST http://localhost:8080/new_pipeline -H 'Content-Type: application/json' -d '{"project_id":'$1',"project_version":'$2',"config_id":'$3',"config_version":'$4'}')
+response=$(curl -s -X POST http://localhost:8080/pipelines -H 'Content-Type: application/json' -d '{"project_id":'$1',"project_version":'$2',"config_id":'$3',"config_version":'$4'}')
 
 port=$(echo ${response} | jq '.port')
 id=$(echo ${response} | jq '.pipeline_id')

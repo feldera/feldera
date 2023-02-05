@@ -139,7 +139,7 @@ pub use deinput::{
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, Parser};
 pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
 
-pub use controller::{Controller, ControllerConfig, ControllerError};
+pub use controller::{Controller, ControllerConfig, ControllerError, ControllerStatus};
 pub use transport::{
     FileInputTransport, InputConsumer, InputEndpoint, InputTransport, OutputEndpoint,
     OutputTransport,

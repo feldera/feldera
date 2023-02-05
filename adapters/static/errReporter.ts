@@ -123,8 +123,20 @@ export class WebClient {
     }
 
     public post(url: string, data: object, continuation: (response: Response) => void): void {
+        this.http_request('POST', url, data, continuation)
+    }
+
+    public delete(url: string, data: object, continuation: (response: Response) => void): void {
+        this.http_request('DELETE', url, data, continuation)
+    }
+
+    public patch(url: string, data: object, continuation: (response: Response) => void): void {
+        this.http_request('PATCH', url, data, continuation)
+    }
+
+    public http_request(method: string, url: string, data: object, continuation: (response: Response) => void): void {
         fetch(url, {
-            method: 'POST',
+            method: method,
             headers: {
                 "content-type": 'application/json',
             },

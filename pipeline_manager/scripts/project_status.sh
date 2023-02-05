@@ -11,4 +11,4 @@ fi
 
 # echo $ESCAPED_CODE
 
-curl http://localhost:8080/project_status/$1
+curl http://localhost:8080/projects/$1

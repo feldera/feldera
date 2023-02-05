@@ -9,4 +9,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-curl -X POST http://localhost:8080/kill_pipeline  -H 'Content-Type: application/json' -d '{"pipeline_id":'$1'}'
+curl -X POST http://localhost:8080/pipelines/shutdown  -H 'Content-Type: application/json' -d '{"pipeline_id":'$1'}'

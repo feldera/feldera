@@ -6,13 +6,14 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 
-actix-web = "4.2"
+actix-web = "4.3"
 actix-web-static-files = "4.0.0"
+awc = "3.1.0"
 static-files = "0.2.3"
 actix-files = "0.6.2"
 anyhow = "1.0.57"
-tokio = { version = "1.24.1", features = ["fs", "macros", "process", "io-util"] }
-tokio-postgres = "0.7.7"
+tokio = { version = "1.25.0", features = ["fs", "macros", "process", "io-util"] }
+tokio-postgres = { version = "0.7.7", features = ["with-chrono-0_4"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -21,8 +22,11 @@ serde_yaml = "0.9.14"
 mime = "0.3.16"
 clap = { version = "4.0.32", features = ["derive"] }
 regex = "1.7.0"
-reqwest = "0.11.13"
+reqwest = "0.11.14"
 fs_extra = "1.2.0"
+utoipa = { version = "3.0.1", features = ["actix_extras", "chrono"] }
+utoipa-swagger-ui = { version = "3.0.2", features = ["actix-web"] }
+chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
 
 [build-dependencies]
 static-files = "0.2.3"

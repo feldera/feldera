@@ -19,4 +19,4 @@ ESCAPED_CODE="$(json_escape "$CODE")"
 
 # echo $ESCAPED_CODE
 
-curl -X POST http://localhost:8080/update_project  -H 'Content-Type: application/json' -d '{"project_id":'$1',"name":"'$2'","code":'"${ESCAPED_CODE}"'}'
+curl -X PATCH http://localhost:8080/projects -H 'Content-Type: application/json' -d '{"project_id":'$1',"name":"'$2'","code":'"${ESCAPED_CODE}"'}'
