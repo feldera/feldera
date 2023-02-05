@@ -42,6 +42,7 @@ manager_config="
 
 printf "$manager_config" > "${WORKING_DIR}/manager.yaml"
 
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release -- --static-html=static --config-file="${WORKING_DIR}/manager.yaml" 2> "${WORKING_DIR}/manager.log"&
 
 TIMEOUT=10

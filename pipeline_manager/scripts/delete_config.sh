@@ -9,4 +9,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-curl -X POST http://localhost:8080/delete_config  -H 'Content-Type: application/json' -d '{"config_id":'$1'}'
+curl -X DELETE http://localhost:8080/configs/$1  -H 'Content-Type: application/json' -d '{}'

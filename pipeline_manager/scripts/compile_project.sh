@@ -9,4 +9,4 @@ if [ "$#" -ne 2 ]; then
     exit 1
 fi
 
-curl -X POST http://localhost:8080/compile_project  -H 'Content-Type: application/json' -d '{"project_id":'$1',"version":'$2'}'
+curl -X POST http://localhost:8080/projects/compile  -H 'Content-Type: application/json' -d '{"project_id":'$1',"version":'$2'}'

@@ -1,21 +1,5 @@
-//! HTTP server that manages cataloging, compilation,
-//! and execution of SQL programs.
-//!
-//! # API concepts
-//!
-//! * Project.  A project is a SQL script with a non-unique name and a unique ID
-//!   attached to it.  The client can add/remove/modify/compile a project.
-//!   Compilation includes running the SQL-to-DBSP compiler followed by the Rust
-//!   compiler.
-//!
-//! * Configuration.  A project can have multiple configurations associated with
-//!   it.  A configuration specifies input and output streams as a YAML file
-//!   that is deserialized into a `ControllerConfig` object.  Similar to
-//!   projects, one can add/remove/modify configs.
-//!
-//! * Pipeline.  A pipeline is a running instance of a compiled project based on
-//!   one of the configs.  One can start multiple pipelines for a project with
-//!   the same or different configs.
+//! DBSP Pipeline Manager provides an HTTP API to catalog, compile, and execute
+//! SQL programs.
 //!
 //! The API is currently single-tenant: there is no concept of users or
 //! permissions.  Multi-tenancy can be implemented by creating a manager
@@ -38,23 +22,9 @@
 //! * Runner.  The runner component is responsible for starting and killing
 //!   compiled pipelines and for interacting with them at runtime.  It also
 //!   registers each pipeline with Prometheus.
-//!
-//! # Concurrency
-//!
-//! We want to prevent race conditions due to users accessing the same project
-//! from different browsers.  An example is user 1 modifying the project,
-//! while user 2 is starting a pipeline for the same project.  The pipeline
-//! may end up running the old or the new version.  Our very simple solution
-//! is to increment project version on each update.  Every request to compile
-//! the project or start a pipeline must include project id _and_ version
-//! number. If the version number isn't equal to the current version in the
-//! database, this means that the last version of the project observed by the
-//! user is outdated, so the request is rejected.  Note that we don't store old
-//! versions, only the latest one.
 
 // TODOs:
 // * Tests.
-// * Generate a proper JSON API + docs using, e.g., OpenAPI.
 // * Support multi-node DBSP deployments (the current architecture assumes that
 //   pipelines and the Prometheus server run on the same host as this server).
 // * Proper UI.
@@ -62,11 +32,15 @@
 use actix_files as fs;
 use actix_files::NamedFile;
 use actix_web::{
+    delete,
     dev::{ServiceFactory, ServiceRequest},
     get,
-    http::header::{CacheControl, CacheDirective},
+    http::{
+        header::{CacheControl, CacheDirective},
+        Method,
+    },
     middleware::Logger,
-    post, web,
+    patch, post, web,
     web::Data as WebData,
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
     Result as ActixResult,
@@ -78,6 +52,8 @@ use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::{fs::read, sync::Mutex};
+use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 
 mod compiler;
 mod config;
@@ -87,7 +63,7 @@ mod runner;
 pub(crate) use compiler::{Compiler, ProjectStatus};
 pub(crate) use config::ManagerConfig;
 use db::{ConfigId, DBError, PipelineId, ProjectDB, ProjectId, Version};
-use runner::Runner;
+use runner::{Runner, RunnerError};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -101,6 +77,95 @@ struct Args {
     #[arg(short, long)]
     static_html: Option<String>,
 }
+
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "DBSP Pipeline Manager API",
+        description = r"API to catalog, compile, and execute SQL programs.
+
+# API concepts
+
+* *Project*.  A project is a SQL script with a non-unique name and a unique ID
+  attached to it.  The client can add, remove, modify, and compile projects.
+  Compilation includes running the SQL-to-DBSP compiler followed by the Rust
+  compiler.
+
+* *Configuration*.  A project can have multiple configurations associated with
+  it.  Similar to projects, one can add, remove, and modify configs.
+
+* *Pipeline*.  A pipeline is a running instance of a compiled project based on
+  one of the configs.  Clients can start multiple pipelines for a project with
+  the same or different configs.
+
+# Concurrency
+
+The API prevents race conditions due to multiple users accessing the same
+project or configuration concurrently.  An example is user 1 modifying the project,
+while user 2 is starting a pipeline for the same project.  The pipeline
+may end up running the old or the new version, potentially leading to
+unexpected behaviors.  The API prevents such situations by associating a
+monotonically increasing version number with each project and configuration.
+Every request to compile the project or start a pipeline must include project
+id _and_ version number. If the version number isn't equal to the current
+version in the database, this means that the last version of the project
+observed by the user is outdated, so the request is rejected."
+    ),
+    paths(
+        list_projects,
+        project_code,
+        project_status,
+        new_project,
+        update_project,
+        compile_project,
+        cancel_project,
+        delete_project,
+        new_config,
+        update_config,
+        delete_config,
+        list_project_configs,
+        new_pipeline,
+        list_project_pipelines,
+        pipeline_status,
+        pipeline_metadata,
+        pipeline_start,
+        pipeline_pause,
+        shutdown_pipeline,
+        delete_pipeline,
+    ),
+    components(schemas(
+        db::ProjectDescr,
+        db::ConfigDescr,
+        db::PipelineDescr,
+        ProjectId,
+        PipelineId,
+        ConfigId,
+        Version,
+        ProjectStatus,
+        ErrorResponse,
+        ProjectCodeResponse,
+        ProjectStatusResponse,
+        NewProjectRequest,
+        NewProjectResponse,
+        UpdateProjectRequest,
+        UpdateProjectResponse,
+        CompileProjectRequest,
+        CancelProjectRequest,
+        NewConfigRequest,
+        NewConfigResponse,
+        UpdateConfigRequest,
+        UpdateConfigResponse,
+        NewPipelineRequest,
+        NewPipelineResponse,
+        ShutdownPipelineRequest,
+    ),),
+    tags(
+        (name = "Project", description = "Manage projects"),
+        (name = "Config", description = "Manage project configurations"),
+        (name = "Pipeline", description = "Manage project pipelines"),
+    ),
+)]
+pub struct ApiDoc;
 
 #[actix_web::main]
 async fn main() -> AnyResult<()> {
@@ -166,11 +231,18 @@ async fn run(config: ManagerConfig) -> AnyResult<()> {
     let bind_address = config.bind_address.clone();
     let bind_port = config.port;
     let state = WebData::new(ServerState::new(config, db, compiler).await?);
+    let openapi = ApiDoc::openapi();
 
-    HttpServer::new(move || build_app(App::new().wrap(Logger::default()), state.clone()))
-        .bind((bind_address, bind_port))?
-        .run()
-        .await?;
+    HttpServer::new(move || {
+        build_app(
+            App::new().wrap(Logger::default()),
+            state.clone(),
+            openapi.clone(),
+        )
+    })
+    .bind((bind_address, bind_port))?
+    .run()
+    .await?;
 
     Ok(())
 }
@@ -178,7 +250,7 @@ async fn run(config: ManagerConfig) -> AnyResult<()> {
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn build_app<T>(app: App<T>, state: WebData<ServerState>) -> App<T>
+fn build_app<T>(app: App<T>, state: WebData<ServerState>, openapi: OpenApiDoc) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = ActixError, InitError = ()>,
 {
@@ -209,9 +281,14 @@ where
         .service(delete_config)
         .service(list_project_configs)
         .service(new_pipeline)
-        .service(kill_pipeline)
+        .service(list_project_pipelines)
+        .service(pipeline_status)
+        .service(pipeline_metadata)
+        .service(pipeline_start)
+        .service(pipeline_pause)
+        .service(shutdown_pipeline)
         .service(delete_pipeline)
-        .service(list_project_pipelines);
+        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
 
     if let Some(static_html) = &state.config.static_html {
         // Serve static contents from the file system.
@@ -234,25 +311,85 @@ async fn index() -> ActixResult<NamedFile> {
     Ok(NamedFile::open("static/index.html")?)
 }
 
+/// Pipeline manager error response.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct ErrorResponse {
+    #[schema(example = "Unknown project id 42.")]
+    message: String,
+}
+
+impl ErrorResponse {
+    pub(crate) fn new(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+}
+
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     if let Some(db_error) = error.downcast_ref::<DBError>() {
-        let msg = db_error.to_string();
+        let message = db_error.to_string();
         match db_error {
             DBError::UnknownProject(_) => HttpResponse::NotFound(),
             DBError::OutdatedProjectVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownConfig(_) => HttpResponse::NotFound(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
         }
-        .body(msg)
+        .json(ErrorResponse::new(&message))
+    } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
+        let message = runner_error.to_string();
+        match runner_error {
+            RunnerError::PipelineShutdown(_) => HttpResponse::Conflict(),
+        }
+        .json(ErrorResponse::new(&message))
     } else {
-        HttpResponse::InternalServerError().body(error.to_string())
+        HttpResponse::InternalServerError().json(ErrorResponse::new(&error.to_string()))
+    }
+}
+
+fn parse_project_id_param(req: &HttpRequest) -> Result<ProjectId, HttpResponse> {
+    match req.match_info().get("project_id") {
+        None => Err(HttpResponse::BadRequest().body("missing project id argument")),
+        Some(project_id) => {
+            match project_id.parse::<i64>() {
+                Err(e) => Err(HttpResponse::BadRequest()
+                    .body(format!("invalid project id '{project_id}': {e}"))),
+                Ok(project_id) => Ok(ProjectId(project_id)),
+            }
+        }
+    }
+}
+
+fn parse_config_id_param(req: &HttpRequest) -> Result<ConfigId, HttpResponse> {
+    match req.match_info().get("config_id") {
+        None => Err(HttpResponse::BadRequest().body("missing config id argument")),
+        Some(config_id) => match config_id.parse::<i64>() {
+            Err(e) => Err(HttpResponse::BadRequest()
+                .body(format!("invalid configuration id '{config_id}': {e}"))),
+            Ok(config_id) => Ok(ConfigId(config_id)),
+        },
+    }
+}
+
+fn parse_pipeline_id_param(req: &HttpRequest) -> Result<PipelineId, HttpResponse> {
+    match req.match_info().get("pipeline_id") {
+        None => Err(HttpResponse::BadRequest().body("missing pipeline id argument")),
+        Some(pipeline_id) => match pipeline_id.parse::<i64>() {
+            Err(e) => Err(HttpResponse::BadRequest()
+                .body(format!("invalid pipeline id '{pipeline_id}': {e}"))),
+            Ok(pipeline_id) => Ok(PipelineId(pipeline_id)),
+        },
     }
 }
 
 /// Enumerate the project database.
-///
-/// Returns an array of [project descriptors](`db::ProjectDescr`).
-#[get("/list_projects")]
+#[utoipa::path(
+    responses(
+        (status = OK, description = "List of projects retrieved successfully", body = [ProjectDescr]),
+    ),
+    tag = "Project"
+)]
+#[get("/projects")]
 async fn list_projects(state: WebData<ServerState>) -> impl Responder {
     state
         .db
@@ -261,17 +398,15 @@ async fn list_projects(state: WebData<ServerState>) -> impl Responder {
         .list_projects()
         .await
         .map(|projects| {
-            let json_string = serde_json::to_string(&projects).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(projects)
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Response to a `/project_code` request.
-#[derive(Serialize)]
+/// Response to a project code request.
+#[derive(Serialize, ToSchema)]
 struct ProjectCodeResponse {
     /// Current project version.
     version: Version,
@@ -280,24 +415,30 @@ struct ProjectCodeResponse {
 }
 
 /// Returns the latest SQL source code of the project.
-///
-/// # HTTP errors
-///
-/// * `BAD_REQUEST` - missing or invalid `project_id`.
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[get("/project_code/{project_id}")]
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Project code retrieved successfully.", body = ProjectCodeResponse),
+        (status = BAD_REQUEST
+            , description = "Missing or invalid `project_id` parameter."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Missing 'project_id' parameter."))),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    params(
+        ("project_id" = i64, Path, description = "Unique project identifier")
+    ),
+    tag = "Project"
+)]
+#[get("/projects/{project_id}/code")]
 async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match req.match_info().get("project_id") {
-        None => {
-            return HttpResponse::BadRequest().body("missing project id argument");
+    let project_id = match parse_project_id_param(&req) {
+        Err(e) => {
+            return e;
         }
-        Some(project_id) => match project_id.parse::<ProjectId>() {
-            Err(e) => {
-                return HttpResponse::BadRequest()
-                    .body(format!("invalid project id '{project_id}': {e}"));
-            }
-            Ok(project_id) => project_id,
-        },
+        Ok(project_id) => project_id,
     };
 
     state
@@ -307,18 +448,15 @@ async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .project_code(project_id)
         .await
         .map(|(version, code)| {
-            let json_string =
-                serde_json::to_string(&ProjectCodeResponse { version, code }).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&ProjectCodeResponse { version, code })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Response to a `/project_status` request.
-#[derive(Serialize)]
+/// Response to a project status request.
+#[derive(Serialize, ToSchema)]
 struct ProjectStatusResponse {
     /// Current project version.
     version: Version,
@@ -327,24 +465,30 @@ struct ProjectStatusResponse {
 }
 
 /// Returns current project version and compilation status.
-///
-/// # HTTP errors
-///
-/// * `BAD_REQUEST` - missing or invalid `project_id`.
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[get("/project_status/{project_id}")]
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Project status retrieved successfully.", body = ProjectStatusResponse),
+        (status = BAD_REQUEST
+            , description = "Missing or invalid `project_id` parameter."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Missing 'project_id' parameter."))),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    params(
+        ("project_id" = i64, Path, description = "Unique project identifier")
+    ),
+    tag = "Project"
+)]
+#[get("/projects/{project_id}")]
 async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match req.match_info().get("project_id") {
-        None => {
-            return HttpResponse::BadRequest().body("missing project id argument");
+    let project_id = match parse_project_id_param(&req) {
+        Err(e) => {
+            return e;
         }
-        Some(project_id) => match project_id.parse::<ProjectId>() {
-            Err(e) => {
-                return HttpResponse::BadRequest()
-                    .body(format!("invalid project id '{project_id}': {e}"));
-            }
-            Ok(project_id) => project_id,
-        },
+        Ok(project_id) => project_id,
     };
 
     state
@@ -354,39 +498,47 @@ async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl R
         .get_project(project_id)
         .await
         .map(|descr| {
-            let json_string = serde_json::to_string(&ProjectStatusResponse {
-                version: descr.version,
-                status: descr.status,
-            })
-            .unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&ProjectStatusResponse {
+                    version: descr.version,
+                    status: descr.status,
+                })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/new_project` request parameters.
-#[derive(Deserialize)]
+/// Request to create a new DBSP project.
+#[derive(Deserialize, ToSchema)]
 struct NewProjectRequest {
     /// Project name.
+    #[schema(example = "Example project")]
     name: String,
     /// SQL code of the project.
+    #[schema(example = "CREATE TABLE Example(name varchar);")]
     code: String,
 }
 
-/// Response to a `/new_project` request
-#[derive(Serialize)]
+/// Response to a new project request.
+#[derive(Serialize, ToSchema)]
 struct NewProjectResponse {
     /// Id of the newly created project.
+    #[schema(example = 42)]
     project_id: ProjectId,
     /// Initial project version (this field is always set to 1).
+    #[schema(example = 1)]
     version: Version,
 }
 
 /// Create a new project.
-#[post("/new_project")]
+#[utoipa::path(
+    request_body = NewProjectRequest,
+    responses(
+        (status = CREATED, description = "Project created successfully", body = NewProjectResponse),
+    ),
+    tag = "Project"
+)]
+#[post("/projects")]
 async fn new_project(
     state: WebData<ServerState>,
     request: web::Json<NewProjectRequest>,
@@ -398,21 +550,18 @@ async fn new_project(
         .new_project(&request.name, &request.code)
         .await
         .map(|(project_id, version)| {
-            let json_string = serde_json::to_string(&NewProjectResponse {
-                project_id,
-                version,
-            })
-            .unwrap();
-            HttpResponse::Ok()
+            HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&NewProjectResponse {
+                    project_id,
+                    version,
+                })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/update_project` request parameters.
-#[derive(Deserialize)]
+/// Update project request.
+#[derive(Deserialize, ToSchema)]
 struct UpdateProjectRequest {
     /// Id of the project.
     project_id: ProjectId,
@@ -423,8 +572,8 @@ struct UpdateProjectRequest {
     code: Option<String>,
 }
 
-/// Response to a `/update_project` request.
-#[derive(Serialize)]
+/// Response to an project update request.
+#[derive(Serialize, ToSchema)]
 struct UpdateProjectResponse {
     /// New project version.  Equals the previous version if project code
     /// doesn't change or previous version +1 if it does.
@@ -434,14 +583,21 @@ struct UpdateProjectResponse {
 /// Change project code and/or name.
 ///
 /// If project code changes, any ongoing compilation gets cancelled,
-/// project status is reset to `ProjectStatus::None`, and project version
+/// project status is reset to `None`, and project version
 /// is incremented by 1.  Changing project name only doesn't affect its
 /// version or the compilation process.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[post("/update_project")]
+#[utoipa::path(
+    request_body = UpdateProjectRequest,
+    responses(
+        (status = OK, description = "Project updated successfully.", body = UpdateProjectResponse),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    tag = "Project"
+)]
+#[patch("/projects")]
 async fn update_project(
     state: WebData<ServerState>,
     request: web::Json<UpdateProjectRequest>,
@@ -453,17 +609,15 @@ async fn update_project(
         .update_project(request.project_id, &request.name, &request.code)
         .await
         .map(|version| {
-            let json_string = serde_json::to_string(&UpdateProjectResponse { version }).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&UpdateProjectResponse { version })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/compile_project` request parameters.
-#[derive(Deserialize)]
+/// Request to queue a project for compilation.
+#[derive(Deserialize, ToSchema)]
 struct CompileProjectRequest {
     /// Project id.
     project_id: ProjectId,
@@ -475,13 +629,22 @@ struct CompileProjectRequest {
 ///
 /// The client should poll the `/project_status` endpoint
 /// for compilation results.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-/// * `CONFLICT` - project version specified in the request doesn't match the
-///   latest project version in the database.
-#[post("/compile_project")]
+#[utoipa::path(
+    request_body = CompileProjectRequest,
+    responses(
+        (status = ACCEPTED, description = "Compilation request submitted."),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = CONFLICT
+            , description = "Project version specified in the request doesn't match the latest project version in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Outdated project version '{version}'"))),
+    ),
+    tag = "Project"
+)]
+#[post("/projects/compile")]
 async fn compile_project(
     state: WebData<ServerState>,
     request: web::Json<CompileProjectRequest>,
@@ -492,12 +655,12 @@ async fn compile_project(
         .await
         .set_project_pending(request.project_id, request.version)
         .await
-        .map(|_| HttpResponse::Ok().finish())
+        .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/cancel_project` request parameters.
-#[derive(Deserialize)]
+/// Request to cancel ongoing project compilation.
+#[derive(Deserialize, ToSchema)]
 struct CancelProjectRequest {
     /// Project id.
     project_id: ProjectId,
@@ -509,14 +672,22 @@ struct CancelProjectRequest {
 ///
 /// The client should poll the `/project_status` endpoint
 /// to determine when the cancelation request completes.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-///
-/// * `CONFLICT` - project version specified in the request doesn't match the
-///   latest project version in the database.
-#[post("/cancel_project")]
+#[utoipa::path(
+    request_body = CancelProjectRequest,
+    responses(
+        (status = ACCEPTED, description = "Cancelation request submitted."),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = CONFLICT
+            , description = "Project version specified in the request doesn't match the latest project version in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Outdated project version '{3}'"))),
+    ),
+    tag = "Project"
+)]
+#[delete("/projects/compile")]
 async fn cancel_project(
     state: WebData<ServerState>,
     request: web::Json<CancelProjectRequest>,
@@ -527,48 +698,57 @@ async fn cancel_project(
         .await
         .cancel_project(request.project_id, request.version)
         .await
-        .map(|_| HttpResponse::Ok().finish())
+        .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/delete_project` request parameters.
-#[derive(Deserialize)]
-struct DeleteProjectRequest {
-    project_id: ProjectId,
-}
-
 /// Delete a project.
-///
-/// # HTTP errors
-///
-/// * `BAD_REQUEST` - the project has one or more running pipelines.
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[post("/delete_project")]
-async fn delete_project(
-    state: WebData<ServerState>,
-    request: web::Json<DeleteProjectRequest>,
-) -> impl Responder {
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Project successfully deleted."),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = BAD_REQUEST
+            , description = "The project has one or more running pipelines."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Cannot delete a project while some of its pipelines are running"))),
+    ),
+    params(
+        ("project_id" = i64, Path, description = "Unique project identifier")
+    ),
+    tag = "Project"
+)]
+#[delete("/projects/{project_id}")]
+async fn delete_project(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let project_id = match parse_project_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(project_id) => project_id,
+    };
+
     let db = state.db.lock().await;
 
-    match db.list_project_pipelines(request.project_id).await {
+    match db.list_project_pipelines(project_id).await {
         Ok(pipelines) => {
             if pipelines.iter().any(|pipeline| !pipeline.killed) {
                 return HttpResponse::BadRequest()
-                    .body("Cannot delete a project while some of its pipelines are running");
+                    .body("Cannot delete a project while some of its pipelines are running.");
             }
         }
         Err(e) => return http_resp_from_error(&e),
     }
 
-    db.delete_project(request.project_id)
+    db.delete_project(project_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/new_config` request parameters.
-#[derive(Deserialize)]
+/// Request to create a new project configuration.
+#[derive(Deserialize, ToSchema)]
 struct NewConfigRequest {
     /// Project to create config for.
     project_id: ProjectId,
@@ -578,8 +758,8 @@ struct NewConfigRequest {
     config: String,
 }
 
-/// Response to a `/new_config` request.
-#[derive(Serialize)]
+/// Response to a config creation request.
+#[derive(Serialize, ToSchema)]
 struct NewConfigResponse {
     /// Id of the newly created config.
     config_id: ConfigId,
@@ -588,11 +768,18 @@ struct NewConfigResponse {
 }
 
 /// Create a new project configuration.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[post("/new_config")]
+#[utoipa::path(
+    request_body = NewConfigRequest,
+    responses(
+        (status = OK, description = "Configuration successfully created.", body = NewConfigResponse),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    tag = "Config"
+)]
+#[post("/configs")]
 async fn new_config(
     state: WebData<ServerState>,
     request: web::Json<NewConfigRequest>,
@@ -604,29 +791,26 @@ async fn new_config(
         .new_config(request.project_id, &request.name, &request.config)
         .await
         .map(|(config_id, version)| {
-            let json_string =
-                serde_json::to_string(&NewConfigResponse { config_id, version }).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&NewConfigResponse { config_id, version })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/update_config` request parameters.
-#[derive(Deserialize)]
+/// Request to update an existing project configuration.
+#[derive(Deserialize, ToSchema)]
 struct UpdateConfigRequest {
     /// Config id.
     config_id: ConfigId,
     /// New config name.
     name: String,
-    /// New config YAML or `None` to keep existing YAML unmodified.
+    /// New config YAML. If absent, existing YAML will be kept unmodified.
     config: Option<String>,
 }
 
-/// Response to an `/update_config` request.
-#[derive(Serialize)]
+/// Response to a config update request.
+#[derive(Serialize, ToSchema)]
 struct UpdateConfigResponse {
     /// New config version.  Equals the previous version +1.
     version: Version,
@@ -636,11 +820,18 @@ struct UpdateConfigResponse {
 ///
 /// Updates project config name and, optionally, code.
 /// On success, increments config version by 1.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `config_id` does not exist in the database.
-#[post("/update_config")]
+#[utoipa::path(
+    request_body = UpdateConfigRequest,
+    responses(
+        (status = OK, description = "Configuration successfully updated.", body = UpdateConfigResponse),
+        (status = NOT_FOUND
+            , description = "Specified `config_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+    ),
+    tag = "Config"
+)]
+#[patch("/configs")]
 async fn update_config(
     state: WebData<ServerState>,
     request: web::Json<UpdateConfigRequest>,
@@ -652,78 +843,82 @@ async fn update_config(
         .update_config(request.config_id, &request.name, &request.config)
         .await
         .map(|version| {
-            let json_string = serde_json::to_string(&UpdateConfigResponse { version }).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(&UpdateConfigResponse { version })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/delete_config` request parameters.
-#[derive(Deserialize)]
-struct DeleteConfigRequest {
-    config_id: ConfigId,
-}
-
 /// Delete existing project configuration.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `config_id` does not exist in the database.
-#[post("/delete_config")]
-async fn delete_config(
-    state: WebData<ServerState>,
-    request: web::Json<DeleteConfigRequest>,
-) -> impl Responder {
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Configuration successfully deleted."),
+        (status = NOT_FOUND
+            , description = "Specified `config_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+    ),
+    tag = "Config"
+)]
+#[delete("/configs/{config_id}")]
+async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let config_id = match parse_config_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(config_id) => config_id,
+    };
+
     state
         .db
         .lock()
         .await
-        .delete_config(request.config_id)
+        .delete_config(config_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/list_project_configs` request parameters.
-#[derive(Deserialize)]
-struct ListProjectConfigsRequest {
-    /// Project id to list configs for.
-    project_id: ProjectId,
-}
+/// List project configurations.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Project config list retrieved successfully.", body = [ConfigDescr]),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    params(
+        ("project_id" = i64, Path, description = "Unique project identifier")
+    ),
+    tag = "Config"
+)]
+#[get("/projects/{project_id}/configs")]
+async fn list_project_configs(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let project_id = match parse_project_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(project_id) => project_id,
+    };
 
-/// List project configs.
-///
-/// Returns an array of [configuration descriptors](`db::ConfigDescr`).
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[post("/list_project_configs")]
-async fn list_project_configs(
-    state: WebData<ServerState>,
-    request: web::Json<ListProjectConfigsRequest>,
-) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_project_configs(request.project_id)
+        .list_project_configs(project_id)
         .await
         .map(|configs| {
-            let json_string = serde_json::to_string(&configs).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(configs)
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/new_pipeline` request parameters.
-#[derive(Deserialize)]
+/// Request to create a new pipeline.
+#[derive(Deserialize, ToSchema)]
 pub(self) struct NewPipelineRequest {
     /// Project id to create pipeline for.
     project_id: ProjectId,
@@ -735,8 +930,8 @@ pub(self) struct NewPipelineRequest {
     config_version: Version,
 }
 
-/// Response to a `/new_pipeline` request.
-#[derive(Serialize)]
+/// Response to a pipeline creation request.
+#[derive(Serialize, ToSchema)]
 struct NewPipelineResponse {
     /// Unique id assigned to the new pipeline.
     pipeline_id: PipelineId,
@@ -746,22 +941,33 @@ struct NewPipelineResponse {
 
 /// Launch a new pipeline.
 ///
-/// Create a new pipeline for the specified project and config.
+/// Create a new pipeline for the specified project and configuration.
 /// This is a synchronous endpoint, which sends a response once
 /// the pipeline has been initialized.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` or `config_id` does not exist in the database.
-///
-/// * `CONFLICT` - project or config version in the request doesn't match the
-/// latest version in the database.
-///
-/// * `BAD_REQUEST` - `config_id` refers to a config that does not belong to
-/// `project_id`.
-///
-/// * `INTERNAL_SERVER_ERROR` - pipeline process failed to initialize.
-#[post("/new_pipeline")]
+#[utoipa::path(
+    request_body = NewPipelineRequest,
+    responses(
+        (status = OK, description = "Pipeline successfully created.", body = NewPipelineResponse),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` or `config_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+        (status = CONFLICT
+            , description = "Project or config version in the request doesn't match the latest version in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Outdated project version '{3}'"))),
+        (status = BAD_REQUEST
+            , description = "`config_id` refers to a config that does not belong to `project_id`."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Config '9' does not belong to project '15'"))),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Pipeline process failed to initialize."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Failed to run 'project42': permission denied"))),
+    ),
+    tag = "Pipeline"
+)]
+#[post("/pipelines")]
 async fn new_pipeline(
     state: WebData<ServerState>,
     request: web::Json<NewPipelineRequest>,
@@ -773,44 +979,169 @@ async fn new_pipeline(
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/list_project_pipelines` request parameters.
-#[derive(Deserialize)]
-struct ListProjectPipelinesRequest {
-    /// Project id to list pipelines for.
-    project_id: ProjectId,
-}
-
 /// List pipelines associated with a project.
-///
-/// Returns an array of [pipeline descriptors](`db::PipelineDescr`).
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `project_id` does not exist in the database.
-#[post("/list_project_pipelines")]
-async fn list_project_pipelines(
-    state: WebData<ServerState>,
-    request: web::Json<ListProjectPipelinesRequest>,
-) -> impl Responder {
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Project pipeline list retrieved successfully.", body = [PipelineDescr]),
+        (status = NOT_FOUND
+            , description = "Specified `project_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+    ),
+    params(
+        ("project_id" = i64, Path, description = "Unique project identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[get("/projects/{project_id}/pipelines")]
+async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let project_id = match parse_project_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(project_id) => project_id,
+    };
+
     state
         .db
         .lock()
         .await
-        .list_project_pipelines(request.project_id)
+        .list_project_pipelines(project_id)
         .await
         .map(|pipelines| {
-            let json_string = serde_json::to_string(&pipelines).unwrap();
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .json(pipelines)
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/kill_pipeline` request parameters.
-#[derive(Deserialize)]
-pub(self) struct KillPipelineRequest {
+/// Retrieve pipeline status and performance counters.
+#[utoipa::path(
+    responses(
+        // TODO: figure out how to specify that response contains arbitrary JSON,
+        // or, better yet, implement `ToSchema` for `ControllerStatus`, which is the
+        // actual type returned by this endpoint.
+        (status = OK, description = "Pipeline status retrieved successfully.", body = String),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[get("/pipelines/{pipeline_id}/status")]
+async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+
+    state
+        .runner
+        .forward_to_pipeline(pipeline_id, Method::GET, "status")
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Retrieve pipeline metadata.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Pipeline metadata retrieved successfully.", body = String),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[get("/pipelines/{pipeline_id}/metadata")]
+async fn pipeline_metadata(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+
+    state
+        .runner
+        .forward_to_pipeline(pipeline_id, Method::GET, "metadata")
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Start pipeline.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Pipeline started."),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[post("/pipelines/{pipeline_id}/start")]
+async fn pipeline_start(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+
+    state
+        .runner
+        .forward_to_pipeline(pipeline_id, Method::GET, "start")
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Pause pipeline.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Pipeline paused."),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[post("/pipelines/{pipeline_id}/pause")]
+async fn pipeline_pause(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+
+    state
+        .runner
+        .forward_to_pipeline(pipeline_id, Method::GET, "pause")
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Request to terminate a running project pipeline.
+#[derive(Deserialize, ToSchema)]
+pub(self) struct ShutdownPipelineRequest {
     /// Pipeline id to terminate.
     pipeline_id: PipelineId,
 }
@@ -823,51 +1154,73 @@ pub(self) struct KillPipelineRequest {
 ///
 /// The pipeline is not deleted from the database, but its
 /// `killed` flag is set to `true`.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `pipeline_id` does not exist in the database.
-///
-/// * `INTERNAL_SERVER_ERROR` - pipeline process returned an HTTP
-/// error in response to the termination command.
-#[post("/kill_pipeline")]
-async fn kill_pipeline(
+#[utoipa::path(
+    request_body = ShutdownPipelineRequest,
+    responses(
+        (status = OK
+            , description = "Pipeline successfully terminated."
+            , body = String
+            , example = json!("Pipeline successfully terminated")
+            , example = json!("Pipeline already shut down")),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
+    ),
+    tag = "Pipeline"
+)]
+#[post("/pipelines/shutdown")]
+async fn shutdown_pipeline(
     state: WebData<ServerState>,
-    request: web::Json<KillPipelineRequest>,
+    request: web::Json<ShutdownPipelineRequest>,
 ) -> impl Responder {
     state
         .runner
-        .kill_pipeline(request.pipeline_id)
+        .shutdown_pipeline(request.pipeline_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// `/delete_pipeline` request parameters.
-#[derive(Deserialize)]
-pub(self) struct DeletePipelineRequest {
-    /// Pipeline id to delete.
-    pipeline_id: PipelineId,
-}
-
 /// Terminate and delete a pipeline.
 ///
-/// Kill the pipeline if it is still running and delete it from
+/// Shut down the pipeline if it is still running and delete it from
 /// the database.
-///
-/// # HTTP errors
-///
-/// * `NOT_FOUND` - `pipeline_id` does not exist in the database.
-///
-/// * `INTERNAL_SERVER_ERROR` - pipeline process returned an HTTP
-/// error in response to the termination command.
-#[post("/delete_pipeline")]
-async fn delete_pipeline(
-    state: WebData<ServerState>,
-    request: web::Json<DeletePipelineRequest>,
-) -> impl Responder {
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "Pipeline successfully deleted."
+            , body = String
+            , example = json!("Pipeline successfully deleted")),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[delete("/pipelines/{pipeline_id}")]
+async fn delete_pipeline(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+
     state
         .runner
-        .delete_pipeline(request.pipeline_id)
+        .delete_pipeline(pipeline_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

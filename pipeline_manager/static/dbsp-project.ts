@@ -43,10 +43,7 @@ interface Pipeline {
     project_version: number,
     port: number,
     killed: boolean,
-    created: {
-        secs_since_epoch: number,
-        nanos_since_epoch: number
-    }
+    created: string
 }
 
 class ProjectDisplay extends WebClient implements IHtmlElement {
@@ -158,16 +155,13 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
                 "config": reader.result,
             };
             this.display.reportError("Configuration creation requested...");
-            this.post("new_config", data, t => this.showText(t));
+            this.post("configs", data, t => this.showText(t));
         });
     }
 
     pipelines(): void {
-        const data = {
-            "project_id": this.project.project_id
-        }
         this.display.reportError("Refreshing...");
-        this.post("list_project_pipelines", data, r => r.json().then(r => this.showPipelines(r)));
+        this.get("projects/" + this.project.project_id + "/pipelines", r => r.json().then(r => this.showPipelines(r)));
     }
 
     showPipelines(data: Pipeline[]): void {
@@ -176,16 +170,46 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
         for (let pipeline of data) {
             let one = document.createElement("div");
             this.pipelinesDiv.appendChild(one);
-            let date = new Date(pipeline.created.secs_since_epoch * 1000 + 
-                                pipeline.created.nanos_since_epoch / 1000_0000);
             
             let span = document.createElement("span");
-            span.textContent = "id=" + pipeline.pipeline_id + " started " + date.toLocaleString();
+            span.textContent = "id=" + pipeline.pipeline_id + " started " + pipeline.created;
             one.appendChild(span);
 
+            let metadata = document.createElement("button");
+            metadata.textContent = "Pipeline metadata";
+            metadata.title = "Retrieve pipeline metadata";
+            metadata.onclick = () => {
+                this.pipeline_metadata(pipeline);
+            }
+            one.appendChild(metadata);
+ 
+            let status = document.createElement("button");
+            status.textContent = "Pipeline status";
+            status.title = "Retrieve pipeline status";
+            status.onclick = () => {
+                this.pipeline_status(pipeline);
+            }
+            one.appendChild(status);
+
+            let start = document.createElement("button");
+            start.textContent = "Start pipeline";
+            start.title = "Start pipeline";
+            start.onclick = () => {
+                this.pipeline_start(pipeline);
+            }
+            one.appendChild(start);
+
+            let pause = document.createElement("button");
+            pause.textContent = "Pause pipeline";
+            pause.title = "Pause pipeline";
+            pause.onclick = () => {
+                this.pipeline_pause(pipeline);
+            }
+            one.appendChild(pause);
+ 
             let kill = document.createElement("button");
-            kill.textContent = "Stop";
-            kill.title = "Stop this pipeline from execution";
+            kill.textContent = "Shut down";
+            kill.title = "Shut down this pipeline";
             kill.onclick = () => {
                 this.kill(pipeline);
                 this.pipelines();
@@ -193,7 +217,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
             one.appendChild(kill);
             if (pipeline.killed) {
                 kill.disabled = true;
-                kill.title = "Pipeline has been stopped from execution";
+                kill.title = "Pipeline has been shut down";
             }
 
             let del = document.createElement("button");
@@ -217,28 +241,41 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
             this.display.reportError("No pipelines exist");
     }
 
+    pipeline_status(pipeline: Pipeline): void {
+        this.get("pipelines/" + pipeline.pipeline_id + "/status", r => this.showText(r));
+    } 
+
+    pipeline_metadata(pipeline: Pipeline): void {
+        this.get("pipelines/" + pipeline.pipeline_id + "/metadata", r => this.showText(r));
+    } 
+
+    pipeline_start(pipeline: Pipeline): void {
+        const data = {}
+        this.post("pipelines/" + pipeline.pipeline_id + "/start", data, r => this.showText(r));
+    } 
+
+    pipeline_pause(pipeline: Pipeline): void {
+        const data = {}
+        this.post("pipelines/" + pipeline.pipeline_id + "/pause", data, r => this.showText(r));
+    } 
+
     kill(pipeline: Pipeline): void {
         const data = {
             pipeline_id: pipeline.pipeline_id
         }
         this.display.reportError("Pipeline stop requested...");
-        this.post("kill_pipeline", data, r => this.showJson(r));
+        this.post("pipelines/shutdown", data, r => this.showJson(r));
     } 
 
     deletePipeline(pipeline: Pipeline): void {
-        const data = {
-            pipeline_id: pipeline.pipeline_id
-        }
+        const data = {}
         this.display.reportError("Pipeline deletion requested...");
-        this.post("delete_pipeline", data, r => this.showJson(r));
+        this.delete("pipelines/" + pipeline.pipeline_id, data, r => this.showJson(r));
     }
 
     configs(): void {
-        const data = {
-            "project_id": this.project.project_id
-        }
         this.display.reportError("Configuration list requested...");
-        this.post("list_project_configs", data, r => r.json().then(r => this.showConfigs(r)));
+        this.get("projects/" + this.project.project_id + "/configs", r => r.json().then(r => this.showConfigs(r)));
     }
 
     showConfigs(data: Config[]): void {
@@ -286,15 +323,13 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
             "config_version": config.version,
         }
         this.display.reportError("Pipeline request initiated...");
-        this.post("new_pipeline", data, r => this.showText(r));
+        this.post("pipelines", data, r => this.showText(r));
     }
 
     deleteConfig(config: Config): void {
-        const data = {
-            config_id: config.config_id
-        }
+        const data = {}
         this.display.reportError("Deletion request initiated...");
-        this.post("delete_config", data, r => this.showJson(r));
+        this.delete("configs/" + config.config_id, data, r => this.showJson(r));
     }
 
     back(): void {
@@ -303,11 +338,9 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
     }
 
     deleteProject(): void {
-        const data = {
-            "project_id": this.project.project_id
-        }
+        const data = {}
         this.display.reportError("Project deletion initiated...");
-        this.post("delete_project", data, _ => this.back());
+        this.delete("projects/" + this.project.project_id, data, _ => this.back());
     }
 
     update(): void {
@@ -331,7 +364,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
                 "code": reader.result,
             };
             this.display.reportError("Project update requested...");
-            this.post("update_project", data, 
+            this.patch("projects", data,
                 t => {
                     this.showText(t);
                     this.fetchStatus();
@@ -344,7 +377,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
             "project_id": this.project.project_id,
             "version": this.project.version,
         };
-        this.post("compile_project", data, t => {
+        this.post("projects/compile", data, t => {
             t.text().then(t => {
                 this.display.reportError("Compiling in background..." + t);
                 runAfterDelay(1000, () => this.fetchStatus());
@@ -353,7 +386,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
     }
 
     fetchStatus(): void {
-        this.get("project_status/" + this.project.project_id, r => this.statusReceived(r));
+        this.get("projects/" + this.project.project_id, r => this.statusReceived(r));
     }
 
     statusReceived(response: Response): void {
@@ -375,7 +408,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
     }
 
     fetchCode(): void {
-        this.get("project_code/" + this.project.project_id, r => this.codeReceived(r));
+        this.get("/projects/" + this.project.project_id + "/code", r => this.codeReceived(r));
     }
 
     codeReceived(response: Response): void {
@@ -526,7 +559,7 @@ class ProjectListDisplay extends WebClient implements IHtmlElement {
             };
             console.log(data);
             this.display.reportError("Project creation requested...");
-            this.post("new_project", data, 
+            this.post("projects", data,
                 (r) => {
                     this.showText(r);
                     runAfterDelay(1000, () => this.list());
@@ -542,7 +575,7 @@ class ProjectListDisplay extends WebClient implements IHtmlElement {
     }
 
     list(): void {
-        this.get("list_projects", response => response.json().then(r => this.show(r)));
+        this.get("projects", response => response.json().then(r => this.show(r)));
     }
 
     removeTable(): void {

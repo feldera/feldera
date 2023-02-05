@@ -17,12 +17,14 @@ use tokio::{
     task::JoinHandle,
     time::{sleep, Duration},
 };
+use utoipa::ToSchema;
 
 /// The frequency with which the compiler polls the project database
 /// for new compilation requests.
 const COMPILER_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
-#[derive(Serialize, Eq, PartialEq)]
+/// Project compilation status.
+#[derive(Serialize, Eq, PartialEq, ToSchema)]
 pub(crate) enum ProjectStatus {
     /// Initial state: project has been created or modified, but the user
     /// hasn't yet started compiling the project.

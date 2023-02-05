@@ -8,7 +8,7 @@ CREATE TABLE project (
     code varchar,
     status varchar,
     error varchar,
-    status_since timestamp,
+    status_since timestamp with time zone,
     PRIMARY KEY (id)
 );
 
@@ -21,7 +21,7 @@ CREATE TABLE pipeline (
     -- TODO: add 'host' field when we support remote pipelines.
     port int NOT NULL,
     killed bool NOT NULL,
-    created timestamp,
+    created timestamp with time zone,
     PRIMARY KEY (id),
     FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
 );

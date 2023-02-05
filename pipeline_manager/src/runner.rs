@@ -1,13 +1,16 @@
 use crate::{
-    ManagerConfig, NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB, ProjectId,
-    ProjectStatus, Version,
+    ErrorResponse, ManagerConfig, NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB,
+    ProjectId, ProjectStatus, Version,
 };
-use actix_web::HttpResponse;
+use actix_web::{http::Method, HttpResponse};
 use anyhow::{Error as AnyError, Result as AnyResult};
+use awc::Client;
 use log::error;
 use regex::Regex;
 use serde::Serialize;
-use std::{path::Path, pin::Pin, process::Stdio, sync::Arc};
+use std::{
+    error::Error as StdError, fmt, fmt::Display, path::Path, pin::Pin, process::Stdio, sync::Arc,
+};
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all, remove_file, File},
@@ -19,6 +22,23 @@ use tokio::{
 
 const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
 const LOG_SUFFIX_LEN: i64 = 10_000;
+
+#[derive(Debug)]
+pub(crate) enum RunnerError {
+    PipelineShutdown(PipelineId),
+}
+
+impl Display for RunnerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RunnerError::PipelineShutdown(pipeline_id) => {
+                write!(f, "Pipeline '{pipeline_id}' has been shut down")
+            }
+        }
+    }
+}
+
+impl StdError for RunnerError {}
 
 /// The Runner component responsible for running and interacting with
 /// pipelines at runtime.
@@ -154,7 +174,7 @@ scrape_configs:
             .get_project_guarded(request.project_id, request.project_version)
             .await?;
         if project_descr.status != ProjectStatus::Success {
-            return Ok(HttpResponse::Conflict().body("project hasn't been compiled yet"));
+            return Ok(HttpResponse::Conflict().body("Project hasn't been compiled yet"));
         };
 
         // Read and validate project config.
@@ -162,14 +182,14 @@ scrape_configs:
 
         if config_descr.project_id != request.project_id {
             return Ok(HttpResponse::BadRequest().body(format!(
-                "config '{}' does not belong to project '{}'",
+                "Config '{}' does not belong to project '{}'",
                 request.config_id, request.project_id
             )));
         }
 
         if config_descr.version != request.config_version {
             return Ok(HttpResponse::Conflict().body(format!(
-                "specified config version '{}' does not match the latest config version '{}'",
+                "Specified config version '{}' does not match the latest config version '{}'",
                 request.config_version, config_descr.version,
             )));
         }
@@ -417,13 +437,16 @@ scrape_configs:
     ///
     /// Use the [`delete_pipeline`](`Self::delete_pipeline`) method to remove
     /// all traces of the pipeline from the manager.
-    pub(crate) async fn kill_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn shutdown_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
 
-        self.do_kill_pipeline(&db, pipeline_id).await
+        self.do_shutdown_pipeline(&db, pipeline_id).await
     }
 
-    async fn do_kill_pipeline(
+    async fn do_shutdown_pipeline(
         &self,
         db: &ProjectDB,
         pipeline_id: PipelineId,
@@ -431,7 +454,8 @@ scrape_configs:
         let (port, killed) = db.pipeline_status(pipeline_id).await?;
 
         if killed {
-            return Ok(HttpResponse::Ok().body("pipeline already killed"));
+            return Ok(HttpResponse::Ok()
+                .body(serde_json::to_string("Pipeline already shut down.").unwrap()));
         };
 
         let url = format!("http://localhost:{port}/kill");
@@ -441,17 +465,24 @@ scrape_configs:
                 db.set_pipeline_killed(pipeline_id).await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
-                return Ok(HttpResponse::Ok().body(format!("pipeline at '{url}' already killed")));
+                return Ok(HttpResponse::Ok().body(
+                    serde_json::to_string(&format!("Pipeline at '{url}' already shut down."))
+                        .unwrap(),
+                ));
             }
         };
 
         if response.status().is_success() {
             db.set_pipeline_killed(pipeline_id).await?;
-            Ok(HttpResponse::Ok().finish())
+            Ok(HttpResponse::Ok()
+                .body(serde_json::to_string("Pipeline successfully terminated.").unwrap()))
         } else {
-            Ok(HttpResponse::InternalServerError().body(format!(
-                "failed to kill the pipeline; response from pipeline controller: {response:?}"
-            )))
+            Ok(HttpResponse::InternalServerError().body(
+                serde_json::to_string(&ErrorResponse::new(&format!(
+                    "Failed to shut down the pipeline; response from pipeline controller: {response:?}"
+                )))
+                .unwrap(),
+            ))
         }
     }
 
@@ -461,7 +492,7 @@ scrape_configs:
         let db = self.db.lock().await;
 
         // Kill pipeline.
-        let response = self.do_kill_pipeline(&db, pipeline_id).await?;
+        let response = self.do_shutdown_pipeline(&db, pipeline_id).await?;
         if !response.status().is_success() {
             return Ok(response);
         }
@@ -475,6 +506,43 @@ scrape_configs:
         remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
         db.delete_pipeline(pipeline_id).await?;
 
-        Ok(HttpResponse::Ok().finish())
+        Ok(HttpResponse::Ok()
+            .body(serde_json::to_string("Pipeline successfully deleted.").unwrap()))
+    }
+
+    pub(crate) async fn forward_to_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+        method: Method,
+        endpoint: &str,
+    ) -> AnyResult<HttpResponse> {
+        let (port, killed) = self.db.lock().await.pipeline_status(pipeline_id).await?;
+
+        if killed {
+            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+        }
+
+        let client = Client::default();
+        let request = client.request(method, &format!("http://localhost:{port}/{endpoint}"));
+
+        let mut response = request
+            .send()
+            .await
+            .map_err(|e| AnyError::msg(format!("Failed to connect to pipeline: {e}")))?;
+
+        let response_body = response.body().await?;
+
+        let mut response_builder = HttpResponse::build(response.status());
+        // Remove `Connection` as per
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
+        for (header_name, header_value) in response
+            .headers()
+            .iter()
+            .filter(|(h, _)| *h != "connection")
+        {
+            response_builder.insert_header((header_name.clone(), header_value.clone()));
+        }
+
+        Ok(response_builder.body(response_body))
     }
 }

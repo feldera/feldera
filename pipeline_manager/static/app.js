@@ -154,8 +154,17 @@ define("errReporter", ["require", "exports", "ui"], function (require, exports, 
             });
         }
         post(url, data, continuation) {
+            this.http_request('POST', url, data, continuation);
+        }
+        delete(url, data, continuation) {
+            this.http_request('DELETE', url, data, continuation);
+        }
+        patch(url, data, continuation) {
+            this.http_request('PATCH', url, data, continuation);
+        }
+        http_request(method, url, data, continuation) {
             fetch(url, {
-                method: 'POST',
+                method: method,
                 headers: {
                     "content-type": 'application/json',
                 },
@@ -273,15 +282,12 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                     "config": reader.result,
                 };
                 this.display.reportError("Configuration creation requested...");
-                this.post("new_config", data, t => this.showText(t));
+                this.post("configs", data, t => this.showText(t));
             });
         }
         pipelines() {
-            const data = {
-                "project_id": this.project.project_id
-            };
             this.display.reportError("Refreshing...");
-            this.post("list_project_pipelines", data, r => r.json().then(r => this.showPipelines(r)));
+            this.get("projects/" + this.project.project_id + "/pipelines", r => r.json().then(r => this.showPipelines(r)));
         }
         showPipelines(data) {
             (0, ui_2.removeAllChildren)(this.pipelinesDiv);
@@ -289,14 +295,40 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             for (let pipeline of data) {
                 let one = document.createElement("div");
                 this.pipelinesDiv.appendChild(one);
-                let date = new Date(pipeline.created.secs_since_epoch * 1000 +
-                    pipeline.created.nanos_since_epoch / 10000000);
                 let span = document.createElement("span");
-                span.textContent = "id=" + pipeline.pipeline_id + " started " + date.toLocaleString();
+                span.textContent = "id=" + pipeline.pipeline_id + " started " + pipeline.created;
                 one.appendChild(span);
+                let metadata = document.createElement("button");
+                metadata.textContent = "Pipeline metadata";
+                metadata.title = "Retrieve pipeline metadata";
+                metadata.onclick = () => {
+                    this.pipeline_metadata(pipeline);
+                };
+                one.appendChild(metadata);
+                let status = document.createElement("button");
+                status.textContent = "Pipeline status";
+                status.title = "Retrieve pipeline status";
+                status.onclick = () => {
+                    this.pipeline_status(pipeline);
+                };
+                one.appendChild(status);
+                let start = document.createElement("button");
+                start.textContent = "Start pipeline";
+                start.title = "Start pipeline";
+                start.onclick = () => {
+                    this.pipeline_start(pipeline);
+                };
+                one.appendChild(start);
+                let pause = document.createElement("button");
+                pause.textContent = "Pause pipeline";
+                pause.title = "Pause pipeline";
+                pause.onclick = () => {
+                    this.pipeline_pause(pipeline);
+                };
+                one.appendChild(pause);
                 let kill = document.createElement("button");
-                kill.textContent = "Stop";
-                kill.title = "Stop this pipeline from execution";
+                kill.textContent = "Shut down";
+                kill.title = "Shut down this pipeline";
                 kill.onclick = () => {
                     this.kill(pipeline);
                     this.pipelines();
@@ -304,7 +336,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                 one.appendChild(kill);
                 if (pipeline.killed) {
                     kill.disabled = true;
-                    kill.title = "Pipeline has been stopped from execution";
+                    kill.title = "Pipeline has been shut down";
                 }
                 let del = document.createElement("button");
                 del.textContent = "Delete";
@@ -325,26 +357,35 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             if (data.length === 0)
                 this.display.reportError("No pipelines exist");
         }
+        pipeline_status(pipeline) {
+            this.get("pipelines/" + pipeline.pipeline_id + "/status", r => this.showText(r));
+        }
+        pipeline_metadata(pipeline) {
+            this.get("pipelines/" + pipeline.pipeline_id + "/metadata", r => this.showText(r));
+        }
+        pipeline_start(pipeline) {
+            const data = {};
+            this.post("pipelines/" + pipeline.pipeline_id + "/start", data, r => this.showText(r));
+        }
+        pipeline_pause(pipeline) {
+            const data = {};
+            this.post("pipelines/" + pipeline.pipeline_id + "/pause", data, r => this.showText(r));
+        }
         kill(pipeline) {
             const data = {
                 pipeline_id: pipeline.pipeline_id
             };
             this.display.reportError("Pipeline stop requested...");
-            this.post("kill_pipeline", data, r => this.showJson(r));
+            this.post("pipelines/shutdown", data, r => this.showJson(r));
         }
         deletePipeline(pipeline) {
-            const data = {
-                pipeline_id: pipeline.pipeline_id
-            };
+            const data = {};
             this.display.reportError("Pipeline deletion requested...");
-            this.post("delete_pipeline", data, r => this.showJson(r));
+            this.delete("pipelines/" + pipeline.pipeline_id, data, r => this.showJson(r));
         }
         configs() {
-            const data = {
-                "project_id": this.project.project_id
-            };
             this.display.reportError("Configuration list requested...");
-            this.post("list_project_configs", data, r => r.json().then(r => this.showConfigs(r)));
+            this.get("projects/" + this.project.project_id + "/configs", r => r.json().then(r => this.showConfigs(r)));
         }
         showConfigs(data) {
             (0, ui_2.removeAllChildren)(this.pipelinesDiv);
@@ -385,25 +426,21 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                 "config_version": config.version,
             };
             this.display.reportError("Pipeline request initiated...");
-            this.post("new_pipeline", data, r => this.showText(r));
+            this.post("pipelines", data, r => this.showText(r));
         }
         deleteConfig(config) {
-            const data = {
-                config_id: config.config_id
-            };
+            const data = {};
             this.display.reportError("Deletion request initiated...");
-            this.post("delete_config", data, r => this.showJson(r));
+            this.delete("configs/" + config.config_id, data, r => this.showJson(r));
         }
         back() {
             this.parent.switchChild(this.list);
             this.list.list();
         }
         deleteProject() {
-            const data = {
-                "project_id": this.project.project_id
-            };
+            const data = {};
             this.display.reportError("Project deletion initiated...");
-            this.post("delete_project", data, _ => this.back());
+            this.delete("projects/" + this.project.project_id, data, _ => this.back());
         }
         update() {
             const npe = this.newProjectElement.setTitle(this.project.name, "Specify new project name", "Update project name and code");
@@ -423,7 +460,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                     "code": reader.result,
                 };
                 this.display.reportError("Project update requested...");
-                this.post("update_project", data, t => {
+                this.patch("projects", data, t => {
                     this.showText(t);
                     this.fetchStatus();
                 });
@@ -434,7 +471,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                 "project_id": this.project.project_id,
                 "version": this.project.version,
             };
-            this.post("compile_project", data, t => {
+            this.post("projects/compile", data, t => {
                 t.text().then(t => {
                     this.display.reportError("Compiling in background..." + t);
                     (0, errReporter_1.runAfterDelay)(1000, () => this.fetchStatus());
@@ -442,7 +479,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             });
         }
         fetchStatus() {
-            this.get("project_status/" + this.project.project_id, r => this.statusReceived(r));
+            this.get("projects/" + this.project.project_id, r => this.statusReceived(r));
         }
         statusReceived(response) {
             response.json().then(s => this.showStatus(s));
@@ -463,7 +500,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             }
         }
         fetchCode() {
-            this.get("project_code/" + this.project.project_id, r => this.codeReceived(r));
+            this.get("/projects/" + this.project.project_id + "/code", r => this.codeReceived(r));
         }
         codeReceived(response) {
             response.json().then(s => this.showCode(s));
@@ -581,7 +618,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                 };
                 console.log(data);
                 this.display.reportError("Project creation requested...");
-                this.post("new_project", data, (r) => {
+                this.post("projects", data, (r) => {
                     this.showText(r);
                     (0, errReporter_1.runAfterDelay)(1000, () => this.list());
                 });
@@ -593,7 +630,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             this.newProjectElement.submit.onclick = () => this.createNewProject();
         }
         list() {
-            this.get("list_projects", response => response.json().then(r => this.show(r)));
+            this.get("projects", response => response.json().then(r => this.show(r)));
         }
         removeTable() {
             if (this.table != null) {

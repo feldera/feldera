@@ -1,9 +1,11 @@
 use crate::{ManagerConfig, ProjectStatus};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use chrono::{DateTime, Utc};
 use log::error;
-use serde::Serialize;
-use std::{error::Error as StdError, fmt, fmt::Display, time::SystemTime};
+use serde::{Deserialize, Serialize};
+use std::{error::Error as StdError, fmt, fmt::Display};
 use tokio_postgres::{Client, NoTls};
+use utoipa::ToSchema;
 
 /// Project database API.
 ///
@@ -22,10 +24,55 @@ pub(crate) struct ProjectDB {
     dbclient: Client,
 }
 
-pub(crate) type ProjectId = i64;
-pub(crate) type ConfigId = i64;
-pub(crate) type PipelineId = i64;
-pub(crate) type Version = i64;
+/// Unique project id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct ProjectId(pub i64);
+impl Display for ProjectId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Unique configuration id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct ConfigId(pub i64);
+impl Display for ConfigId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Unique pipeline id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct PipelineId(pub i64);
+impl Display for PipelineId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Version number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub(crate) struct Version(i64);
+impl Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Version {
+    fn increment(&self) -> Self {
+        Self(self.0 + 1)
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum DBError {
@@ -85,10 +132,7 @@ impl ProjectStatus {
 }
 
 /// Project descriptor.
-///
-/// This is a Rust representation of a record from the `project` table, sans
-/// the potentially large `code` field, which must be retrieved separately.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct ProjectDescr {
     /// Unique project id.
     pub project_id: ProjectId,
@@ -100,10 +144,8 @@ pub(crate) struct ProjectDescr {
     pub status: ProjectStatus,
 }
 
-/// Project config descriptor.
-///
-/// This is a Rust representation of a record from the `project_config` table.
-#[derive(Serialize)]
+/// Project configuration descriptor.
+#[derive(Serialize, ToSchema)]
 pub(crate) struct ConfigDescr {
     pub config_id: ConfigId,
     pub project_id: ProjectId,
@@ -113,16 +155,14 @@ pub(crate) struct ConfigDescr {
 }
 
 /// Pipeline descriptor.
-///
-/// This is a Rust represenation of a record from the `pipeline` table.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct PipelineDescr {
-    pub pipeline_id: ConfigId,
+    pub pipeline_id: PipelineId,
     pub project_id: ProjectId,
     pub project_version: Version,
     pub port: u16,
     pub killed: bool,
-    pub created: SystemTime,
+    pub created: DateTime<Utc>,
 }
 
 impl ProjectDB {
@@ -171,9 +211,9 @@ impl ProjectDB {
             let status = ProjectStatus::from_columns(status, error)?;
 
             result.push(ProjectDescr {
-                project_id: row.try_get(0)?,
+                project_id: ProjectId(row.try_get(0)?),
                 name: row.try_get(1)?,
-                version: row.try_get(2)?,
+                version: Version(row.try_get(2)?),
                 status,
             });
         }
@@ -187,12 +227,12 @@ impl ProjectDB {
             .dbclient
             .query_opt(
                 "SELECT version, code FROM project WHERE id = $1",
-                &[&project_id],
+                &[&project_id.0],
             )
             .await?
             .ok_or(DBError::UnknownProject(project_id))?;
 
-        Ok((row.try_get(0)?, row.try_get(1)?))
+        Ok((Version(row.try_get(0)?), row.try_get(1)?))
     }
 
     /// Create a new project.
@@ -205,16 +245,16 @@ impl ProjectDB {
             .dbclient
             .query_one("SELECT nextval('project_id_seq')", &[])
             .await?;
-        let id: ProjectId = row.try_get(0)?;
+        let id: ProjectId = ProjectId(row.try_get(0)?);
 
         self.dbclient
             .execute(
                 "INSERT INTO project (id, version, name, code, status_since) VALUES($1, 1, $2, $3, now())",
-                &[&id, &project_name, &project_code],
+                &[&id.0, &project_name, &project_code],
             )
             .await?;
 
-        Ok((id, 1))
+        Ok((id, Version(1)))
     }
 
     /// Update project name and, optionally, code.
@@ -228,23 +268,23 @@ impl ProjectDB {
             .dbclient
             .query_opt(
                 "SELECT version, code FROM project where id = $1",
-                &[&project_id],
+                &[&project_id.0],
             )
             .await?
             .ok_or(DBError::UnknownProject(project_id))?;
 
-        let mut version: Version = res.try_get(0)?;
+        let mut version: Version = Version(res.try_get(0)?);
         let old_code: String = res.try_get(1)?;
 
         match project_code {
             Some(code) if &old_code != code => {
                 // Only increment `version` if new code actually differs from the
                 // current version.
-                version += 1;
+                version = version.increment();
                 self.dbclient
                     .execute(
                         "UPDATE project SET version = $1, name = $2, code = $3, status = NULL, error = NULL WHERE id = $4",
-                        &[&version, &project_name, code, &project_id],
+                        &[&version.0, &project_name, code, &project_id.0],
                     )
                     .await?;
             }
@@ -252,7 +292,7 @@ impl ProjectDB {
                 self.dbclient
                     .execute(
                         "UPDATE project SET name = $1 WHERE id = $2",
-                        &[&project_name, &project_id],
+                        &[&project_name, &project_id.0],
                     )
                     .await?;
             }
@@ -272,13 +312,13 @@ impl ProjectDB {
             .dbclient
             .query_opt(
                 "SELECT name, version, status, error FROM project WHERE id = $1",
-                &[&project_id],
+                &[&project_id.0],
             )
             .await?;
 
         if let Some(row) = row {
             let name: String = row.try_get(0)?;
-            let version: Version = row.try_get(1)?;
+            let version: Version = Version(row.try_get(1)?);
             let status: Option<&str> = row.try_get(2)?;
             let error: Option<String> = row.try_get(3)?;
 
@@ -336,7 +376,7 @@ impl ProjectDB {
         self.dbclient
             .execute(
                 "UPDATE project SET status = $1, error = $2, status_since = now() WHERE id = $3",
-                &[&status, &error, &project_id],
+                &[&status, &error, &project_id.0],
             )
             .await?;
 
@@ -362,7 +402,7 @@ impl ProjectDB {
         self.dbclient
             .execute(
                 "UPDATE project SET status = $1, error = $2, status_since = now() WHERE id = $3",
-                &[&status, &error, &project_id],
+                &[&status, &error, &project_id.0],
             )
             .await?;
 
@@ -424,7 +464,7 @@ impl ProjectDB {
     pub(crate) async fn delete_project(&self, project_id: ProjectId) -> AnyResult<()> {
         let num_deleted = self
             .dbclient
-            .execute("DELETE FROM project WHERE id = $1", &[&project_id])
+            .execute("DELETE FROM project WHERE id = $1", &[&project_id.0])
             .await?;
 
         if num_deleted > 0 {
@@ -449,8 +489,8 @@ impl ProjectDB {
             return Ok(None);
         }
 
-        let project_id: ProjectId = rows[0].try_get(0)?;
-        let version: Version = rows[0].try_get(1)?;
+        let project_id: ProjectId = ProjectId(rows[0].try_get(0)?);
+        let version: Version = Version(rows[0].try_get(1)?);
 
         Ok(Some((project_id, version)))
     }
@@ -468,16 +508,16 @@ impl ProjectDB {
             .dbclient
             .query(
                 "SELECT id, version, name, config FROM project_config WHERE project_id = $1",
-                &[&project_id],
+                &[&project_id.0],
             )
             .await?;
         let mut result = Vec::with_capacity(rows.len());
 
         for row in rows.into_iter() {
             result.push(ConfigDescr {
-                config_id: row.try_get(0)?,
+                config_id: ConfigId(row.try_get(0)?),
                 project_id,
-                version: row.try_get(1)?,
+                version: Version(row.try_get(1)?),
                 name: row.try_get(2)?,
                 config: row.try_get(3)?,
             });
@@ -492,7 +532,7 @@ impl ProjectDB {
             .dbclient
             .query_opt(
                 "SELECT project_id, version, name, config FROM project_config WHERE id = $1",
-                &[&config_id],
+                &[&config_id.0],
             )
             .await?;
 
@@ -500,8 +540,8 @@ impl ProjectDB {
             None => Err(anyhow!(DBError::UnknownConfig(config_id))),
             Some(row) => Ok(ConfigDescr {
                 config_id,
-                project_id: row.try_get(0)?,
-                version: row.try_get(1)?,
+                project_id: ProjectId(row.try_get(0)?),
+                version: Version(row.try_get(1)?),
                 name: row.try_get(2)?,
                 config: row.try_get(3)?,
             }),
@@ -523,16 +563,16 @@ impl ProjectDB {
             .dbclient
             .query_one("SELECT nextval('project_config_id_seq')", &[])
             .await?;
-        let id: ConfigId = row.try_get(0)?;
+        let id: ConfigId = ConfigId(row.try_get(0)?);
 
         self.dbclient
             .execute(
                 "INSERT INTO project_config (id, project_id, version, name, config) VALUES($1, $2, 1, $3, $4)",
-                &[&id, &project_id, &config_name, &config],
+                &[&id.0, &project_id.0, &config_name, &config],
             )
             .await?;
 
-        Ok((id, 1))
+        Ok((id, Version(1)))
     }
 
     /// Update existing project config.
@@ -548,11 +588,11 @@ impl ProjectDB {
 
         let config = config.clone().unwrap_or(descr.config);
 
-        let version = descr.version + 1;
+        let version = descr.version.increment();
         self.dbclient
             .execute(
                 "UPDATE project_config SET version = $1, name = $2, config = $3 WHERE id = $4",
-                &[&version, &config_name, &config, &config_id],
+                &[&version.0, &config_name, &config, &config_id.0],
             )
             .await?;
 
@@ -563,7 +603,7 @@ impl ProjectDB {
     pub(crate) async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
         let num_deleted = self
             .dbclient
-            .execute("DELETE FROM project_config WHERE id = $1", &[&config_id])
+            .execute("DELETE FROM project_config WHERE id = $1", &[&config_id.0])
             .await?;
 
         if num_deleted > 0 {
@@ -579,7 +619,7 @@ impl ProjectDB {
             .dbclient
             .query_one("SELECT nextval('pipeline_id_seq')", &[])
             .await?;
-        let id: PipelineId = row.try_get(0)?;
+        let id: PipelineId = PipelineId(row.try_get(0)?);
 
         Ok(id)
     }
@@ -598,7 +638,7 @@ impl ProjectDB {
         self.dbclient
             .execute(
                 "INSERT INTO pipeline (id, project_id, project_version, port, killed, created) VALUES($1, $2, $3, $4, false, now())",
-                &[&pipeline_id, &project_id, &project_version, &port],
+                &[&pipeline_id.0, &project_id.0, &project_version.0, &port],
             )
             .await?;
 
@@ -613,7 +653,7 @@ impl ProjectDB {
             .dbclient
             .query_opt(
                 "SELECT port, killed FROM pipeline WHERE id = $1",
-                &[&pipeline_id],
+                &[&pipeline_id.0],
             )
             .await?;
 
@@ -633,7 +673,7 @@ impl ProjectDB {
             .dbclient
             .execute(
                 "UPDATE pipeline SET killed=true WHERE id = $1",
-                &[&pipeline_id],
+                &[&pipeline_id.0],
             )
             .await?;
 
@@ -644,7 +684,7 @@ impl ProjectDB {
     pub(crate) async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
         let num_deleted = self
             .dbclient
-            .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id])
+            .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id.0])
             .await?;
 
         Ok(num_deleted > 0)
@@ -663,16 +703,16 @@ impl ProjectDB {
             .dbclient
             .query(
                 "SELECT id, project_version, port, killed, created FROM pipeline WHERE project_id = $1",
-                &[&project_id],
+                &[&project_id.0],
             )
             .await?;
         let mut result = Vec::with_capacity(rows.len());
 
         for row in rows.into_iter() {
             result.push(PipelineDescr {
-                pipeline_id: row.try_get(0)?,
+                pipeline_id: PipelineId(row.try_get(0)?),
                 project_id,
-                project_version: row.try_get(1)?,
+                project_version: Version(row.try_get(1)?),
                 port: row.try_get::<_, i32>(2)? as u16,
                 killed: row.try_get(3)?,
                 created: row.try_get(4)?,

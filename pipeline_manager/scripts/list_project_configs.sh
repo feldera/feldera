@@ -9,4 +9,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-curl -X POST http://localhost:8080/list_project_configs  -H 'Content-Type: application/json' -d '{"project_id":'$1'}'
+curl http://localhost:8080/projects/$1/configs
