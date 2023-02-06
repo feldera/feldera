@@ -163,12 +163,12 @@ async fn run(config: ManagerConfig) -> AnyResult<()> {
     // reset all projects to `ProjectStatus::None`, which will force
     // us to recompile projects before running them.
     db.lock().await.reset_project_status().await?;
-
-    let port = config.port;
+    let bind_address = config.bind_address.clone();
+    let bind_port = config.port;
     let state = WebData::new(ServerState::new(config, db, compiler).await?);
 
     HttpServer::new(move || build_app(App::new().wrap(Logger::default()), state.clone()))
-        .bind(("127.0.0.1", port))?
+        .bind((bind_address, bind_port))?
         .run()
         .await?;
 

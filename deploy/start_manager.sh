@@ -5,12 +5,14 @@ ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/../sql-to-dbsp-compiler"
 MANAGER_DIR="${ROOT_DIR}/pipeline_manager"
 
-if [ "$#" -ne 1 ]; then
-    echo "Usage '$0 <working_directory_path>'"
+if [ "$#" -lt 1 ]; then
+    echo "Usage '$0 <working_directory_path> <bind address (optional)>'"
     exit 1
 fi
 
 WORKING_DIR=$(realpath "${1}")
+DEFAULT_BIND_ADDRESS="127.0.0.1"
+BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 
 mkdir -p "${WORKING_DIR}"
 
@@ -30,6 +32,7 @@ psql -h localhost -U postgres -f "${ROOT_DIR}/pipeline_manager/create_db.sql"
 
 manager_config="
     port: 8080
+    bind_address:  \"${BIND_ADDRESS}\"
     pg_connection_string: \"host=localhost user=dbsp\"
     working_directory: \"${WORKING_DIR}\"
     sql_compiler_home: \"${SQL_COMPILER_DIR}\"
@@ -39,7 +42,7 @@ manager_config="
 
 printf "$manager_config" > "${WORKING_DIR}/manager.yaml"
 
-cd "${MANAGER_DIR}" && cargo run --release -- --static-html=static --config-file="${WORKING_DIR}/manager.yaml" 2> "${WORKING_DIR}/manager.log"&
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release -- --static-html=static --config-file="${WORKING_DIR}/manager.yaml" 2> "${WORKING_DIR}/manager.log"&
 
 TIMEOUT=10
 
