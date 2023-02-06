@@ -257,7 +257,8 @@ impl RowLayout {
         }
     }
 
-    // TODO: We probably want this to be configurable so that we can change the weight type
+    // TODO: We probably want this to be configurable so that we can change the
+    // weight type
     pub fn weight() -> Self {
         let mut nullability = BitVec::with_capacity(1);
         nullability.push(false);
