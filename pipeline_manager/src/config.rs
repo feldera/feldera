@@ -8,6 +8,10 @@ const fn default_server_port() -> u16 {
     8080
 }
 
+fn default_server_address() -> String {
+    "127.0.0.1".to_string()
+}
+
 fn default_pg_connection_string() -> String {
     "host=localhost user=dbsp".to_string()
 }
@@ -22,6 +26,10 @@ pub(crate) struct ManagerConfig {
     /// Port number for the HTTP service, defaults to 8080.
     #[serde(default = "default_server_port")]
     pub port: u16,
+
+    /// Bind address for the HTTP service, defaults to 127.0.0.1.
+    #[serde(default = "default_server_address")]
+    pub bind_address: String,
 
     /// Postgres database connection string.
     ///
