@@ -169,14 +169,14 @@ impl Display for ColumnType {
 }
 
 pub struct RowLayoutBuilder {
-    rows: Vec<ColumnType>,
+    columns: Vec<ColumnType>,
     nullability: BitVec,
 }
 
 impl RowLayoutBuilder {
     pub const fn new() -> Self {
         Self {
-            rows: Vec::new(),
+            columns: Vec::new(),
             nullability: BitVec::EMPTY,
         }
     }
@@ -187,16 +187,16 @@ impl RowLayoutBuilder {
     }
 
     pub fn add_column(&mut self, row_type: ColumnType, nullable: bool) -> &mut Self {
-        self.rows.push(row_type);
+        self.columns.push(row_type);
         self.nullability.push(nullable);
         self
     }
 
     pub fn build(self) -> RowLayout {
-        debug_assert_eq!(self.rows.len(), self.nullability.len());
+        debug_assert_eq!(self.columns.len(), self.nullability.len());
 
         RowLayout {
-            columns: self.rows,
+            columns: self.columns,
             nullability: self.nullability,
         }
     }
@@ -257,6 +257,7 @@ impl RowLayout {
         }
     }
 
+    // TODO: We probably want this to be configurable so that we can change the weight type
     pub fn weight() -> Self {
         let mut nullability = BitVec::with_capacity(1);
         nullability.push(false);
