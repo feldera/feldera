@@ -405,13 +405,13 @@ impl Codegen {
                         // we can simplify the codegen a good bit by just checking if the bitset
                         // is or isn't equal to zero
                         Expr::IsNull(is_null) => {
-                            let layout = layout_cache.layout_of(ctx.layout_id(is_null.value()));
+                            let layout = layout_cache.layout_of(ctx.layout_id(is_null.target()));
                             let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.nullability_of(is_null.row());
+                                layout.nullability_of(is_null.column());
                             let bitset_ty =
                                 bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
-                            let bitset = if let Some(&slot) = ctx.stack_slots.get(&is_null.value())
+                            let bitset = if let Some(&slot) = ctx.stack_slots.get(&is_null.target())
                             {
                                 builder
                                     .ins()
@@ -420,10 +420,10 @@ impl Codegen {
                             // If it's not a stack slot it must be a pointer via
                             // function parameter
                             } else {
-                                let addr = ctx.exprs[&is_null.value()];
+                                let addr = ctx.exprs[&is_null.target()];
 
                                 let mut flags = MemFlags::trusted();
-                                if ctx.is_readonly(is_null.value()) {
+                                if ctx.is_readonly(is_null.target()) {
                                     flags.set_readonly();
                                 }
 
@@ -455,7 +455,7 @@ impl Codegen {
 
                             let layout = ctx.layout_of(set_null.target());
                             let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.nullability_of(set_null.row());
+                                layout.nullability_of(set_null.column());
                             let bitset_ty =
                                 bitset_ty.native_type(&ctx.module.isa().frontend_config());
 

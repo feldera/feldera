@@ -292,46 +292,61 @@ impl Store {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IsNull {
-    value: ExprId,
-    row: usize,
+    /// The row we're checking
+    target: ExprId,
+    /// The column of `target` to fetch the null-ness of
+    column: usize,
 }
 
 impl IsNull {
-    pub fn new(value: ExprId, row: usize) -> Self {
-        Self { value, row }
-    }
-
-    pub const fn value(&self) -> ExprId {
-        self.value
-    }
-
-    pub const fn row(&self) -> usize {
-        self.row
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetNull {
-    target: ExprId,
-    row: usize,
-    is_null: RValue,
-}
-
-impl SetNull {
-    pub fn new(target: ExprId, row: usize, is_null: RValue) -> Self {
-        Self {
-            target,
-            row,
-            is_null,
-        }
+    /// Create a new `IsNull` expression
+    ///
+    /// - `target` must be a readable row type
+    /// - `column` must be a valid column index into `target`
+    pub fn new(target: ExprId, column: usize) -> Self {
+        Self { target, column }
     }
 
     pub const fn target(&self) -> ExprId {
         self.target
     }
 
-    pub const fn row(&self) -> usize {
-        self.row
+    pub const fn column(&self) -> usize {
+        self.column
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetNull {
+    /// The row that's being manipulated
+    target: ExprId,
+    /// The column of `target` that we're setting the null flag of
+    column: usize,
+    /// A boolean constant to be stored in `target.column`'s null flag
+    is_null: RValue,
+}
+
+impl SetNull {
+    /// Create a new `SetNull` expression
+    ///
+    /// - `target` must be a writeable row type
+    /// - `column` must be a valid column index into `target`
+    /// - `is_null` must be a boolean value
+    pub fn new(target: ExprId, column: usize, is_null: RValue) -> Self {
+        Self {
+            target,
+            column,
+            is_null,
+        }
+    }
+
+    /// Gets the target of the `SetNull`
+    pub const fn target(&self) -> ExprId {
+        self.target
+    }
+
+    pub const fn column(&self) -> usize {
+        self.column
     }
 
     pub const fn is_null(&self) -> &RValue {
