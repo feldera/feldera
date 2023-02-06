@@ -105,7 +105,7 @@ impl Function {
         while let Some(block_id) = stack.pop() {
             let block = self.blocks.get_mut(&block_id).unwrap();
 
-            block.body.retain(|&expr_id| {
+            block.retain(|expr_id| {
                 match &self.exprs[&expr_id] {
                     Expr::UninitRow(uninit) => {
                         row_exprs.insert(expr_id, uninit.layout());
@@ -152,7 +152,7 @@ impl Function {
                 true
             });
 
-            match &mut block.terminator {
+            match block.terminator_mut() {
                 Terminator::Return(_) => {}
                 Terminator::Jump(jump) => stack.push(jump.target()),
                 Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
@@ -213,7 +213,7 @@ impl Function {
         while let Some(block_id) = stack.pop() {
             let block = self.blocks.get_mut(&block_id).unwrap();
 
-            block.body.retain(|&expr_id| match &self.exprs[&expr_id] {
+            block.retain(|expr_id| match &self.exprs[&expr_id] {
                 Expr::UninitRow(uninit) => {
                     row_exprs.insert(expr_id, uninit.layout());
                     true
@@ -259,7 +259,7 @@ impl Function {
                 _ => true,
             });
 
-            match &mut block.terminator {
+            match block.terminator_mut() {
                 // Normalize unit returns to return unit contents
                 Terminator::Return(ret) => {
                     if let &RValue::Expr(expr) = ret.value() {
@@ -435,21 +435,10 @@ impl FunctionBuilder {
         let current = self
             .current
             .take()
-            .expect("Called `FunctionBuilder::seal()` without a current block");
+            .expect("Called `FunctionBuilder::seal()` without a current block")
+            .into_block();
 
-        let terminator = current.terminator.unwrap_or_else(|| {
-            panic!(
-                "Called `FunctionBuilder::build()` with unfinished blocks: {} has no terminator",
-                current.id,
-            )
-        });
-
-        let block = Block {
-            id: current.id,
-            body: current.body,
-            terminator,
-        };
-        self.blocks.insert(current.id, block);
+        self.blocks.insert(current.id(), current);
     }
 
     pub fn create_block(&mut self) -> BlockId {
@@ -491,14 +480,14 @@ impl FunctionBuilder {
     #[track_caller]
     pub fn validate(&self) {
         for (&id, block) in &self.blocks {
-            assert_eq!(id, block.id);
+            assert_eq!(id, block.id());
         }
         for (&id, block) in &self.unsealed_blocks {
             assert_eq!(id, block.id);
         }
 
         for block in self.blocks.values() {
-            self.validate_terminator(block.id, &block.terminator);
+            self.validate_terminator(block.id(), block.terminator());
         }
         for block in self.unsealed_blocks.values() {
             if let Some(terminator) = block.terminator.as_ref() {
@@ -549,31 +538,14 @@ impl FunctionBuilder {
 
         // Finish the current block
         if let Some(current) = self.current.take() {
-            let terminator = match current.terminator {
-                Some(terminator) => terminator,
-                None => panic!("Called `FunctionBuilder::build()` with unfinished blocks: {} has no terminator", current.id),
-            };
-            let block = Block {
-                id: current.id,
-                body: current.body,
-                terminator,
-            };
-            self.blocks.insert(current.id, block);
+            let block = current.into_block();
+            self.blocks.insert(block.id(), block);
         }
 
         // Finish all unsealed blocks
         for (id, unsealed) in self.unsealed_blocks {
             debug_assert_eq!(id, unsealed.id);
-
-            let terminator = match unsealed.terminator {
-                Some(terminator) => terminator,
-                None => panic!("Called `FunctionBuilder::build()` with unfinished blocks: {id} has no terminator"),
-            };
-            let block = Block {
-                id: unsealed.id,
-                body: unsealed.body,
-                terminator,
-            };
+            let block = unsealed.into_block();
             self.blocks.insert(id, block);
         }
 
