@@ -1,0 +1,18 @@
+First, build the DBSP docker container following the instructions
+in the `/deploy` folder.
+
+Next, to try this example, run the following docker command
+from this directory. This brings up the DBSP docker container
+and mounts this directory to be available within the docker
+container's `/examples` folder:
+
+```
+docker run --name dbsp -p 8081:8080 -v `pwd`:/examples -itd dbspmanager
+```
+
+Now go to `localhost:8081` on your browser and start a pipeline
+with the `combiner.sql` and the `config.yml` files in this directory.
+
+Once the pipeline runs, you should see an output file named `matches.csv`
+be created in this directory with the message `Hello world!,1` (1 indicating
+that this tuple was added to the output collection).
