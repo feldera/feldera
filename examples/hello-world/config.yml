@@ -1,0 +1,35 @@
+inputs:
+  Messages:
+    transport:
+      name: file
+      config: 
+        path: "/examples/messages.csv"
+        follow: true
+
+    format:
+      name: csv
+      config:
+        input_stream: MESSAGES # messages table in our schema
+          
+  Records:
+    transport:
+      name: file
+      config: 
+        path: "/examples/records.csv"
+        follow: true
+
+    format:
+      name: csv
+      config:
+        input_stream: RECORDS # records table in our schema
+
+outputs:
+  Filtered:
+    stream: MESSAGE_COMBINER
+    transport:
+      name: file
+      config: 
+        path: "/examples/matches.csv"
+
+    format:
+      name: csv
