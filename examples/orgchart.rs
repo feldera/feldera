@@ -9,11 +9,7 @@
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use clap::Parser;
-use dbsp::{
-    operator::FilterMap,
-    trace::{BatchReader, Cursor},
-    OrdZSet, OutputHandle, Runtime, Stream,
-};
+use dbsp::{operator::FilterMap, IndexedZSet, OrdZSet, OutputHandle, Runtime, Stream};
 use size_of::SizeOf;
 use std::hash::Hash;
 
@@ -41,17 +37,11 @@ type Weight = i32;
 type SkipLevels = OrdZSet<SkipLevel, Weight>;
 
 fn print_output(output: &OutputHandle<OrdZSet<SkipLevel, Weight>>) {
-    let output = output.consolidate();
-    let mut cursor = output.cursor();
-    while cursor.key_valid() {
-        let weight = cursor.weight();
-        let SkipLevel {
-            grandmanager,
-            manager,
-            employee,
-        } = cursor.key();
-        println!("    ({grandmanager}, {manager}, {employee}) {weight:+}");
-        cursor.step_key();
+    for (key, _value, weight) in output.consolidate().iter() {
+        println!(
+            "    ({}, {}, {}) {:+}",
+            key.grandmanager, key.manager, key.employee, weight
+        );
     }
     println!();
 }
