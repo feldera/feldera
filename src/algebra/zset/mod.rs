@@ -47,9 +47,56 @@ pub trait IndexedZSet: Batch<Time = ()> + GroupValue + NumEntries {
     {
         self.distinct()
     }
+
+    /// Returns an iterator over updates in the indexed Z-set.
+    fn iter(&self) -> IndexedZSetIterator<Self> {
+        IndexedZSetIterator::new(self.cursor())
+    }
 }
 
 impl<Z> IndexedZSet for Z where Z: Batch<Time = ()> + GroupValue + NumEntries {}
+
+/// Iterator over `(key, value, weight)` tuples of an indexed Z-set.
+pub struct IndexedZSetIterator<'a, Z>
+where
+    Z: IndexedZSet,
+{
+    cursor: Z::Cursor<'a>,
+}
+
+impl<'a, Z> IndexedZSetIterator<'a, Z>
+where
+    Z: IndexedZSet,
+{
+    /// Returns an iterator of `(key, value, weight)` over the items that
+    /// `cursor` visits.
+    fn new(cursor: Z::Cursor<'a>) -> Self {
+        Self { cursor }
+    }
+}
+
+impl<'a, Z> Iterator for IndexedZSetIterator<'a, Z>
+where
+    Z: IndexedZSet,
+{
+    type Item = (Z::Key, Z::Val, Z::R);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.cursor.key_valid() {
+            if self.cursor.val_valid() {
+                let retval = (
+                    self.cursor.key().clone(),
+                    self.cursor.val().clone(),
+                    self.cursor.weight(),
+                );
+                self.cursor.step_val();
+                return Some(retval);
+            }
+            self.cursor.step_key();
+        }
+        None
+    }
+}
 
 /// The Z-set trait.
 ///
@@ -73,5 +120,41 @@ where
             cursor.step_key();
         }
         sum
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::trace::Batch;
+    use crate::{IndexedZSet, OrdIndexedZSet};
+
+    #[test]
+    fn test_indexed_zset_iterator() {
+        let tuples: Vec<((usize, String), i32)> = vec![
+            ((1, "a".to_string()), 1),
+            ((1, "b".to_string()), 2),
+            ((1, "c".to_string()), -1),
+            ((2, "d".to_string()), 1),
+        ];
+
+        let indexed_zset = <OrdIndexedZSet<usize, String, i32>>::from_tuples((), tuples.clone());
+
+        assert_eq!(
+            indexed_zset
+                .iter()
+                .map(|(k, v, w)| ((k, v), w))
+                .collect::<Vec<_>>(),
+            tuples
+        );
+
+        let indexed_zset = <OrdIndexedZSet<usize, String, i32>>::from_tuples((), Vec::new());
+
+        assert_eq!(
+            indexed_zset
+                .iter()
+                .map(|(k, v, w)| ((k, v), w))
+                .collect::<Vec<_>>(),
+            Vec::new()
+        );
     }
 }
