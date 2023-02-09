@@ -25,6 +25,7 @@ pub use crate::num_entries::NumEntries;
 pub use crate::ref_pair::RefPair;
 pub use crate::time::Timestamp;
 
+pub use algebra::{IndexedZSet, ZSet};
 pub use circuit::{
     Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
 };

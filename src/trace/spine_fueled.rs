@@ -120,8 +120,6 @@ where
 impl<B> Display for Spine<B>
 where
     B: Batch + Display,
-    B::Key: Ord,
-    B::Val: Ord,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.try_fold_batches((), |_, batch| {
