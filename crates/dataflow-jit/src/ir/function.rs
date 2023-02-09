@@ -1,11 +1,7 @@
 use crate::ir::{
-    block::{Block, UnsealedBlock},
-    expr::{
-        BinaryOp, BinaryOpKind, Branch, Constant, Expr, IsNull, Load, RValue, Return, SetNull,
-        Store, Terminator,
-    },
-    layout_cache::RowLayoutCache,
-    BlockId, BlockIdGen, ColumnType, ExprId, ExprIdGen, LayoutId, Signature,
+    block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
+    BlockIdGen, Branch, ColumnType, Constant, CopyRowTo, Expr, ExprId, ExprIdGen, IsNull, Jump,
+    LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -83,12 +79,30 @@ impl Function {
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
         self.remove_unit_memory_operations(layout_cache);
+        self.simplify_branches();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
     }
 
     fn remove_redundant_casts(&mut self) {
         todo!()
+    }
+
+    fn simplify_branches(&mut self) {
+        // TODO: Consume const prop dataflow graph and turn conditional branches with
+        // constant conditions into unconditional ones
+
+        // Replace any branches that have identical true/false targets with an
+        // unconditional jump
+        for block in self.blocks.values_mut() {
+            if let Some(target) = block
+                .terminator()
+                .as_branch()
+                .and_then(|branch| branch.targets_are_identical().then(|| branch.truthy()))
+            {
+                *block.terminator_mut() = Terminator::Jump(Jump::new(target));
+            }
+        }
     }
 
     fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
@@ -292,10 +306,13 @@ pub struct FunctionBuilder {
 
     expr_id: ExprIdGen,
     block_id: BlockIdGen,
+
+    layout_cache: RowLayoutCache,
+    expr_types: BTreeMap<ExprId, Result<ColumnType, LayoutId>>,
 }
 
 impl FunctionBuilder {
-    pub fn new() -> Self {
+    pub fn new(layout_cache: RowLayoutCache) -> Self {
         Self {
             args: Vec::new(),
             ret: ColumnType::Unit,
@@ -306,7 +323,14 @@ impl FunctionBuilder {
             current: None,
             expr_id: ExprIdGen::new(),
             block_id: BlockIdGen::new(),
+            layout_cache,
+            expr_types: BTreeMap::new(),
         }
+    }
+
+    pub fn set_return_type(&mut self, return_type: ColumnType) -> &mut Self {
+        self.ret = return_type;
+        self
     }
 
     pub fn with_return_type(mut self, return_type: ColumnType) -> Self {
@@ -329,7 +353,13 @@ impl FunctionBuilder {
     pub fn add_input_with_flags(&mut self, input_row: LayoutId, flags: InputFlags) -> ExprId {
         let arg_id = self.expr_id.next();
         self.args.push((input_row, arg_id, flags));
+        self.set_expr_type(arg_id, Err(input_row));
         arg_id
+    }
+
+    fn set_expr_type(&mut self, expr_id: ExprId, ty: Result<ColumnType, LayoutId>) {
+        let prev = self.expr_types.insert(expr_id, ty);
+        debug_assert!(prev.is_none());
     }
 
     fn current_block(&mut self) -> &mut UnsealedBlock {
@@ -343,7 +373,7 @@ impl FunctionBuilder {
         })
     }
 
-    pub fn add_expr<E>(&mut self, expr: E) -> ExprId
+    fn add_expr<E>(&mut self, expr: E) -> ExprId
     where
         E: Into<Expr>,
     {
@@ -358,46 +388,152 @@ impl FunctionBuilder {
     }
 
     /// Check if `value` is null
-    pub fn is_null(&mut self, value: ExprId, row: usize) -> ExprId {
-        self.add_expr(IsNull::new(value, row))
+    pub fn is_null(&mut self, value: ExprId, column: usize) -> ExprId {
+        let value_layout = self
+            .expr_types
+            .get(&value)
+            .unwrap_or_else(|| panic!("failed to get type of {value}"))
+            .expect_err("attempted to call `IsNull` on a scalar value");
+        let expr = self.add_expr(IsNull::new(value, value_layout, column));
+        self.set_expr_type(expr, Ok(ColumnType::Bool));
+        expr
     }
 
-    pub fn set_null<N>(&mut self, target: ExprId, row: usize, is_null: N)
+    pub fn set_null<N>(&mut self, target: ExprId, column: usize, is_null: N)
     where
         N: Into<RValue>,
     {
-        self.add_expr(SetNull::new(target, row, is_null.into()));
+        let target_layout = self
+            .expr_types
+            .get(&target)
+            .unwrap_or_else(|| panic!("failed to get type of {target}"))
+            .expect_err("attempted to call `SetNull` on a scalar value");
+        self.add_expr(SetNull::new(target, target_layout, column, is_null.into()));
     }
 
-    pub fn load(&mut self, target: ExprId, row: usize) -> ExprId {
-        self.add_expr(Load::new(target, row))
+    pub fn load(&mut self, target: ExprId, column: usize) -> ExprId {
+        let target_layout = self
+            .expr_types
+            .get(&target)
+            .unwrap_or_else(|| panic!("failed to get type of {target}"))
+            .expect_err("attempted to call `Load` on a scalar value");
+        let column_type = self.layout_cache.get(target_layout).column_type(column);
+
+        let expr = self.add_expr(Load::new(target, target_layout, column, column_type));
+        self.set_expr_type(expr, Ok(column_type));
+
+        expr
     }
 
-    pub fn store<V>(&mut self, target: ExprId, row: usize, value: V)
+    pub fn store<V>(&mut self, target: ExprId, column: usize, value: V)
     where
         V: Into<RValue>,
     {
-        self.add_expr(Store::new(target, row, value.into()));
+        let target_layout = self
+            .expr_types
+            .get(&target)
+            .unwrap_or_else(|| panic!("failed to get type of {target}"))
+            .expect_err("attempted to call `Store` on a scalar value");
+        let value_type = self.layout_cache.get(target_layout).column_type(column);
+
+        self.add_expr(Store::new(
+            target,
+            target_layout,
+            column,
+            value.into(),
+            value_type,
+        ));
     }
 
     pub fn and(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::And))
+        self.binary_op(lhs, rhs, BinaryOpKind::And)
     }
 
     pub fn or(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Or))
+        self.binary_op(lhs, rhs, BinaryOpKind::Or)
     }
 
     pub fn add(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Add))
+        self.binary_op(lhs, rhs, BinaryOpKind::Add)
+    }
+
+    pub fn sub(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::Sub)
     }
 
     pub fn mul(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
-        self.add_expr(BinaryOp::new(lhs, rhs, BinaryOpKind::Mul))
+        self.binary_op(lhs, rhs, BinaryOpKind::Mul)
+    }
+
+    pub fn div(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::Div)
+    }
+
+    fn binary_op(&mut self, lhs: ExprId, rhs: ExprId, kind: BinaryOpKind) -> ExprId {
+        let lhs_ty = self
+            .expr_types
+            .get(&lhs)
+            .unwrap_or_else(|| panic!("failed to get type of {lhs}"))
+            .expect("attempted to call a binary op on a row value");
+        if cfg!(debug_assertions) {
+            let rhs_ty = self
+                .expr_types
+                .get(&rhs)
+                .unwrap_or_else(|| panic!("failed to get type of {rhs}"))
+                .expect("attempted to call a binary op on a row value");
+            assert_eq!(lhs_ty, rhs_ty);
+        }
+
+        let expr = self.add_expr(BinaryOp::new(lhs, rhs, lhs_ty, kind));
+
+        // TODO: Is this correct?
+        // TODO: Make this a method on `BinaryOpKind` for reuse
+        let output_ty = match kind {
+            BinaryOpKind::Add
+            | BinaryOpKind::Sub
+            | BinaryOpKind::Mul
+            | BinaryOpKind::Div
+            | BinaryOpKind::And
+            | BinaryOpKind::Or
+            | BinaryOpKind::Xor
+            | BinaryOpKind::Min
+            | BinaryOpKind::Max => lhs_ty,
+
+            BinaryOpKind::Eq
+            | BinaryOpKind::Neq
+            | BinaryOpKind::LessThan
+            | BinaryOpKind::GreaterThan
+            | BinaryOpKind::LessThanOrEqual
+            | BinaryOpKind::GreaterThanOrEqual => ColumnType::Bool,
+        };
+        self.set_expr_type(expr, Ok(output_ty));
+
+        expr
     }
 
     pub fn constant(&mut self, constant: Constant) -> ExprId {
-        self.add_expr(constant)
+        let constant_type = constant.column_type();
+        let expr = self.add_expr(constant);
+        self.set_expr_type(expr, Ok(constant_type));
+        expr
+    }
+
+    pub fn copy_row_to(&mut self, src: ExprId, dest: ExprId) {
+        let src_layout = self
+            .expr_types
+            .get(&src)
+            .unwrap_or_else(|| panic!("failed to get type of {src}"))
+            .expect_err("attempted to call `CopyRowTo` on a scalar value");
+        if cfg!(debug_assertions) {
+            let dest_layout = self
+                .expr_types
+                .get(&dest)
+                .unwrap_or_else(|| panic!("failed to get type of {dest}"))
+                .expect_err("attempted to call `CopyRowTo` on a scalar value");
+            assert_eq!(src_layout, dest_layout);
+        }
+
+        self.add_expr(CopyRowTo::new(src, dest, src_layout));
     }
 
     pub fn set_terminator<T>(&mut self, terminator: T)

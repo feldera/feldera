@@ -6,12 +6,14 @@ mod function;
 mod ids;
 mod layout_cache;
 mod node;
+mod terminator;
 mod types;
 mod validate;
 
+pub use block::Block;
 pub use expr::{
-    BinaryOp, BinaryOpKind, Branch, Cast, Constant, CopyRowTo, CopyVal, Expr, IsNull, Jump, Load,
-    NullRow, RValue, Return, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
+    BinaryOp, BinaryOpKind, Cast, Constant, CopyRowTo, CopyVal, Expr, IsNull, Load, NullRow,
+    RValue, SetNull, Store, UnaryOp, UnaryOpKind, UninitRow,
 };
 pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::{Graph, GraphExt};
@@ -22,6 +24,7 @@ pub use node::{
     IndexWith, JoinCore, Map, Min, Minus, MonotonicJoin, Neg, Node, Sink, Source, SourceMap,
     Stream, StreamKind, Subgraph, Sum,
 };
+pub use terminator::{Branch, Jump, Return, Terminator};
 pub use types::{ColumnType, RowLayout, RowLayoutBuilder, Signature};
 pub use validate::Validator;
 

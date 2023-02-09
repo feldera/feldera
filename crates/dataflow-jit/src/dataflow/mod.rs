@@ -1242,7 +1242,7 @@ mod tests {
         let mul = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(xy_layout);
                 let output = func.add_output(x_layout);
 
@@ -1260,7 +1260,7 @@ mod tests {
         let y_index = graph.add_node(IndexWith::new(
             source,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(xy_layout);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(x_layout);
@@ -1279,7 +1279,7 @@ mod tests {
         let y_squared = graph.add_node(Map::new(
             y_index,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let _key = func.add_input(unit_layout);
                 let value = func.add_input(x_layout);
                 let output = func.add_output(x_layout);
@@ -1410,7 +1410,7 @@ mod tests {
             let nodes_index = subgraph.add_node(IndexWith::new(
                 nodes,
                 {
-                    let mut func = FunctionBuilder::new();
+                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
                     let input = func.add_input(u64x2);
                     let key = func.add_output(u64x1);
                     let value = func.add_output(u64x1);
@@ -1430,7 +1430,7 @@ mod tests {
                 nodes_index,
                 edges,
                 {
-                    let mut func = FunctionBuilder::new();
+                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
                     let _key = func.add_input(u64x1);
                     let node_value = func.add_input(u64x1);
                     let edge_value = func.add_input(u64x1);
@@ -1456,7 +1456,7 @@ mod tests {
             let joined_plus_roots = subgraph.add_node(IndexWith::new(
                 joined_plus_roots,
                 {
-                    let mut func = FunctionBuilder::new();
+                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
                     let input = func.add_input(u64x2);
                     let key = func.add_output(u64x1);
                     let value = func.add_output(u64x1);
@@ -1477,7 +1477,7 @@ mod tests {
             let min_set = subgraph.add_node(Map::new(
                 min,
                 {
-                    let mut func = FunctionBuilder::new();
+                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
                     let key = func.add_input(u64x1);
                     let value = func.add_input(u64x1);
                     let output = func.add_output(u64x2);
@@ -1500,7 +1500,7 @@ mod tests {
         let reachable_nodes = graph.add_node(Map::new(
             distances,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let distance = func.add_input(u64x2);
                 let output = func.add_output(u64x1);
 
@@ -1517,7 +1517,7 @@ mod tests {
             vertices,
             reachable_nodes,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let key = func.add_input(u64x1);
                 let _lhs_val = func.add_input(unit);
                 let _rhs_val = func.add_input(unit);
@@ -1535,7 +1535,7 @@ mod tests {
         let unreachable_nodes = graph.add_node(Map::new(
             unreachable_nodes,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let node = func.add_input(u64x1);
                 let output = func.add_output(u64x2);
 

@@ -272,7 +272,7 @@ mod tests {
         let stream7850 = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(source_row);
                 let output = func.add_output(nullable_i32);
 
@@ -299,7 +299,7 @@ mod tests {
         let stream7856 = graph.add_node(IndexWith::new(
             stream7850,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(nullable_i32);
@@ -365,7 +365,7 @@ mod tests {
             // }
             // ```
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let accumulator = func.add_output(nullable_i32);
                 let current = func.add_input(nullable_i32);
                 let weight = func.add_input(weight_layout);
@@ -409,7 +409,7 @@ mod tests {
             },
             // Just a unit closure
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
                 let output = func.add_output(nullable_i32);
 
@@ -445,7 +445,7 @@ mod tests {
         let stream7866 = graph.add_node(Map::new(
             stream7861,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(stream7866_layout);
                 let output = func.add_output(nullable_i32);
 
@@ -472,7 +472,7 @@ mod tests {
         let stream7874 = graph.add_node(Map::new(
             stream7866,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let _input = func.add_input(nullable_i32);
                 let output = func.add_output(nullable_i32);
 
@@ -516,14 +516,13 @@ mod tests {
         let stream7892 = graph.add_node(IndexWith::new(
             source,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(source_row);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(source_row);
 
                 func.store(key, 0, Constant::Unit);
-
-                func.add_expr(CopyRowTo::new(input, value, source_row));
+                func.copy_row_to(input, value);
                 func.ret_unit();
                 func.build()
             },
@@ -540,14 +539,13 @@ mod tests {
         let stream7897 = graph.add_node(IndexWith::new(
             stream7887,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(nullable_i32);
                 let key = func.add_output(unit_layout);
                 let value = func.add_output(nullable_i32);
 
                 func.store(key, 0, Constant::Unit);
-
-                func.add_expr(CopyRowTo::new(input, value, nullable_i32));
+                func.copy_row_to(input, value);
                 func.ret_unit();
                 func.build()
             },
@@ -592,7 +590,7 @@ mod tests {
         let map = graph.add_node(Map::new(
             source,
             {
-                let mut func = FunctionBuilder::new();
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(xy_layout);
                 let output = func.add_output(x_layout);
 
@@ -610,11 +608,11 @@ mod tests {
         let sink = graph.add_node(Sink::new(map));
 
         let mut validator = Validator::new();
-        validator.validate_graph(&graph);
+        validator.validate_graph(&graph).unwrap();
 
         graph.optimize();
 
-        validator.validate_graph(&graph);
+        validator.validate_graph(&graph).unwrap();
 
         let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());

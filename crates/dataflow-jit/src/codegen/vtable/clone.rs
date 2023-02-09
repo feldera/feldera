@@ -367,6 +367,8 @@ fn clone_layout(
         let cloned = match ty {
             // For scalar types we just copy the value directly
             ColumnType::Bool
+            | ColumnType::U8
+            | ColumnType::I8
             | ColumnType::U16
             | ColumnType::U32
             | ColumnType::U64

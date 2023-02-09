@@ -143,6 +143,8 @@ impl Codegen {
                     let are_equal = match row_ty {
                         // Compare integers
                         ColumnType::Bool
+                        | ColumnType::U8
+                        | ColumnType::I8
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
@@ -353,11 +355,14 @@ impl Codegen {
                     };
 
                     let is_less = match row_type {
-                        ColumnType::Bool | ColumnType::U16 | ColumnType::U32 | ColumnType::U64 => {
-                            builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
-                        }
+                        ColumnType::Bool
+                        | ColumnType::U8
+                        | ColumnType::U16
+                        | ColumnType::U32
+                        | ColumnType::U64 => builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
 
-                        ColumnType::I16
+                        ColumnType::I8
+                        | ColumnType::I16
                         | ColumnType::I32
                         | ColumnType::I64
                         | ColumnType::Date
@@ -552,7 +557,11 @@ impl Codegen {
 
                     match row_type {
                         // Unsigned integers
-                        ColumnType::Bool | ColumnType::U16 | ColumnType::U32 | ColumnType::U64 => {
+                        ColumnType::Bool
+                        | ColumnType::U8
+                        | ColumnType::U16
+                        | ColumnType::U32
+                        | ColumnType::U64 => {
                             let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
                             let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
                             let ordering = builder.ins().select(less, less_than, greater_than);
@@ -561,7 +570,8 @@ impl Codegen {
                         }
 
                         // Signed integers
-                        ColumnType::I16
+                        ColumnType::I8
+                        | ColumnType::I16
                         | ColumnType::I32
                         | ColumnType::I64
                         | ColumnType::Date

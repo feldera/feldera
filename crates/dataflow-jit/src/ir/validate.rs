@@ -33,7 +33,7 @@ impl Validator {
     }
 
     // FIXME: Make this return a result instead of panicking
-    pub fn validate_graph(&mut self, graph: &Graph) {
+    pub fn validate_graph(&mut self, graph: &Graph) -> Result<(), ValidationError> {
         self.clear();
 
         // Collect all nodes and the layouts of their outputs
@@ -101,7 +101,7 @@ impl Validator {
                     }
 
                     self.function_validator
-                        .validate_function(map.map_fn(), graph.layout_cache());
+                        .validate_function(map.map_fn(), graph.layout_cache())?;
                 }
 
                 Node::Neg(neg) => {
@@ -112,6 +112,8 @@ impl Validator {
                 _ => {}
             }
         }
+
+        Ok(())
     }
 
     #[track_caller]
@@ -121,6 +123,12 @@ impl Validator {
         } else {
             panic!("node {node}'s input {input} does not exist");
         }
+    }
+}
+
+impl Default for Validator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -391,27 +399,16 @@ impl FunctionValidator {
     }
 
     fn cast(&mut self, expr_id: ExprId, cast: &Cast) -> Result<(), ValidationError> {
-        fn is_weird_float_cast(a: ColumnType, b: ColumnType) -> bool {
-            a.is_float() && (b.is_bool() || b.is_date() || b.is_timestamp())
-        }
-
-        if cast.from().is_string()
-            || cast.to().is_string()
-            || is_weird_float_cast(cast.from(), cast.to())
-            || is_weird_float_cast(cast.to(), cast.from())
-            // Cannot cast from non-bool to bool
-            || (!cast.from().is_bool() && cast.to().is_bool())
-        {
+        if cast.is_valid_cast() {
+            let prev = self.expr_types.insert(expr_id, Ok(cast.to()));
+            assert!(prev.is_none());
+            Ok(())
+        } else {
             Err(ValidationError::InvalidCast {
                 expr: expr_id,
                 from: cast.from(),
                 to: cast.to(),
             })
-        } else {
-            let prev = self.expr_types.insert(expr_id, Ok(cast.to()));
-            assert!(prev.is_none());
-
-            Ok(())
         }
     }
 }

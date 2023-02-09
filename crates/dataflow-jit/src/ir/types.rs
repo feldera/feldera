@@ -5,160 +5,146 @@ use crate::{
 use bitvec::vec::BitVec;
 use std::fmt::{self, Debug, Display, Write};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ColumnType {
-    Bool,
-    U16,
-    I16,
-    U32,
-    I32,
-    U64,
-    I64,
-    F32,
-    F64,
+macro_rules! column_type {
+    ($($(#[$meta:meta])* $column_ty:ident = ($display:literal, $native_ty:expr)),+ $(,)?) => {
+        /// The type of a single column within a row
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum ColumnType {
+            $(
+                $(#[$meta])*
+                $column_ty,
+            )+
+        }
+
+        impl ColumnType {
+            /// Returns the pretty name of the column type
+            #[must_use]
+            pub const fn to_str(self) -> &'static str {
+                match self {
+                    $(Self::$column_ty => $display,)+
+                }
+            }
+
+            /// Returns the [`NativeType`] that corresponds with the current `ColumnType`,
+            /// returning `None` if there's no equivalent `NativeType`.
+            ///
+            /// Currently [`Unit`][ColumnType::Unit] is the only type that will return
+            /// `None`, as zero sized types have no runtime representation
+            #[must_use]
+            pub const fn native_type(self) -> Option<NativeType> {
+                use NativeType::*;
+                Some(match self {
+                    $(Self::$column_ty => $native_ty,)+
+                })
+            }
+
+            paste::paste! {
+                $(
+                    #[doc = "Returns `true` if the current column type is a [`" $column_ty "`][ColumnType::" $column_ty "]"]
+                    #[must_use]
+                    pub const fn [<is_ $column_ty:lower>](&self) -> bool {
+                        matches!(self, Self::$column_ty)
+                    }
+                )+
+            }
+
+        }
+    };
+}
+
+column_type! {
+    /// A boolean value (either zero for `false` or one for `true`)
+    Bool = ("bool", Bool),
+
+    /// An unsigned 8 bit integer
+    U8 = ("u8", U8),
+    /// A signed 8 bit integer
+    I8 = ("i8", I8),
+    /// An unsigned 16 bit integer
+    U16 = ("u16", U16),
+    /// A signed 16 bit integer
+    I16 = ("i16", I16),
+    /// An unsigned 32 bit integer
+    U32 = ("u32", U32),
+    /// A signed 32 bit integer
+    I32 = ("i32", I32),
+    /// An unsigned 64 bit integer
+    U64 = ("u64", U64),
+    /// A signed 64 bit integer
+    I64 = ("i64", I64),
+
+    /// A 32 bit floating point value
+    F32 = ("f32", F32),
+    /// A 64 bit floating point value
+    F64 = ("f64", F64),
+
     /// Represents the days since Jan 1 1970 as an `i32`
-    Date,
-    Unit,
-    String,
+    Date = ("date", I32),
     /// Represents the milliseconds since Jan 1 1970 as an `i64`
-    Timestamp,
+    Timestamp = ("timestamp", I64),
+
+    /// A string encoded as UTF-8
+    String = ("str", Ptr),
+
+    /// A unit value
+    Unit = ("unit", return None),
 }
 
 impl ColumnType {
+    /// Returns `true` if the column type is an integer of any width (signed or
+    /// unsigned)
     #[must_use]
     pub const fn is_int(self) -> bool {
         matches!(
             self,
-            Self::U16 | Self::I16 | Self::U32 | Self::I32 | Self::U64 | Self::I64,
+            Self::U8
+                | Self::I8
+                | Self::U16
+                | Self::I16
+                | Self::U32
+                | Self::I32
+                | Self::U64
+                | Self::I64,
         )
     }
 
+    /// Returns `true` if the column type is a signed integer of any width
     #[must_use]
     pub const fn is_signed_int(self) -> bool {
-        matches!(self, Self::I16 | Self::I32 | Self::I64)
+        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
     }
 
+    /// Returns `true` if the column type is an unsigned integer of any width
     #[must_use]
     pub const fn is_unsigned_int(self) -> bool {
-        matches!(self, Self::U16 | Self::U32 | Self::U64)
+        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64)
     }
 
+    /// Returns `true` if the column type is a floating point value
     #[must_use]
     pub const fn is_float(self) -> bool {
         matches!(self, Self::F32 | Self::F64)
     }
 
+    /// Returns `true` if the column type requires a non-trivial drop
+    /// operation (currently just [`String`][ColumnType::String])
     #[must_use]
     pub const fn needs_drop(&self) -> bool {
         matches!(self, Self::String)
     }
 
+    /// Returns `true` if the column type requires a non-trivial clone
+    /// operation (currently just [`String`][ColumnType::String])
     #[must_use]
     pub const fn requires_nontrivial_clone(&self) -> bool {
         matches!(self, Self::String)
     }
 
-    const fn to_str(self) -> &'static str {
-        match self {
-            Self::Bool => "bool",
-            Self::U16 => "u16",
-            Self::U32 => "u32",
-            Self::U64 => "u64",
-            Self::I16 => "i16",
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-            Self::Date => "date",
-            Self::Unit => "unit",
-            Self::String => "str",
-            Self::Timestamp => "timestamp",
-        }
-    }
-
+    /// Returns `true` if the column type is a zero-sized type
+    /// (currently just [`Unit`][ColumnType::Unit])
     #[must_use]
-    pub const fn native_type(self) -> Option<NativeType> {
-        Some(match self {
-            Self::Bool => NativeType::Bool,
-            Self::U16 => NativeType::U16,
-            Self::I16 => NativeType::I16,
-            Self::U32 => NativeType::U32,
-            Self::I32 => NativeType::I32,
-            Self::U64 => NativeType::U64,
-            Self::I64 => NativeType::I64,
-            Self::F32 => NativeType::F32,
-            Self::F64 => NativeType::F64,
-            Self::Date => NativeType::I32,
-            // Strings are represented as a pointer to a length-prefixed string (maybe???)
-            Self::String => NativeType::Ptr,
-            Self::Timestamp => NativeType::I64,
-            Self::Unit => return None,
-        })
-    }
-
-    #[must_use]
-    pub const fn is_bool(&self) -> bool {
-        matches!(self, Self::Bool)
-    }
-
-    #[must_use]
-    pub const fn is_u16(&self) -> bool {
-        matches!(self, Self::U16)
-    }
-
-    #[must_use]
-    pub const fn is_i16(&self) -> bool {
-        matches!(self, Self::I16)
-    }
-
-    #[must_use]
-    pub const fn is_u32(&self) -> bool {
-        matches!(self, Self::U32)
-    }
-
-    #[must_use]
-    pub const fn is_i32(&self) -> bool {
-        matches!(self, Self::I32)
-    }
-
-    #[must_use]
-    pub const fn is_u64(&self) -> bool {
-        matches!(self, Self::U64)
-    }
-
-    #[must_use]
-    pub const fn is_i64(&self) -> bool {
-        matches!(self, Self::I64)
-    }
-
-    #[must_use]
-    pub const fn is_f32(&self) -> bool {
-        matches!(self, Self::F32)
-    }
-
-    #[must_use]
-    pub const fn is_f64(&self) -> bool {
-        matches!(self, Self::F64)
-    }
-
-    #[must_use]
-    pub const fn is_date(&self) -> bool {
-        matches!(self, Self::Date)
-    }
-
-    #[must_use]
-    pub const fn is_unit(&self) -> bool {
+    pub const fn is_zst(&self) -> bool {
         matches!(self, Self::Unit)
-    }
-
-    #[must_use]
-    pub const fn is_string(&self) -> bool {
-        matches!(self, Self::String)
-    }
-
-    #[must_use]
-    pub const fn is_timestamp(&self) -> bool {
-        matches!(self, Self::Timestamp)
     }
 }
 
@@ -181,13 +167,13 @@ impl RowLayoutBuilder {
         }
     }
 
-    pub fn with_column(mut self, row_type: ColumnType, nullable: bool) -> Self {
-        self.add_column(row_type, nullable);
+    pub fn with_column(mut self, column_type: ColumnType, nullable: bool) -> Self {
+        self.add_column(column_type, nullable);
         self
     }
 
-    pub fn add_column(&mut self, row_type: ColumnType, nullable: bool) -> &mut Self {
-        self.columns.push(row_type);
+    pub fn add_column(&mut self, column_type: ColumnType, nullable: bool) -> &mut Self {
+        self.columns.push(column_type);
         self.nullability.push(nullable);
         self
     }
@@ -202,18 +188,24 @@ impl RowLayoutBuilder {
     }
 }
 
+/// The layout of a row
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RowLayout {
+    /// The type of each column within the row
     columns: Vec<ColumnType>,
+    /// The nullability of each column within the current row, a `true` at index
+    /// `n` means that `columns[n]` is nullable
     nullability: BitVec,
 }
 
 impl RowLayout {
+    /// Returns the number of columns within the current row
     pub fn len(&self) -> usize {
         debug_assert_eq!(self.columns.len(), self.nullability.len());
         self.columns.len()
     }
 
+    /// Returns `true` if the current row has zero columns
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -222,16 +214,16 @@ impl RowLayout {
         &self.columns
     }
 
-    pub fn column_type(&self, row: usize) -> ColumnType {
-        self.columns[row]
+    pub fn column_type(&self, column: usize) -> ColumnType {
+        self.columns[column]
     }
 
-    pub fn try_column_type(&self, row: usize) -> Option<ColumnType> {
-        self.columns.get(row).copied()
+    pub fn try_column_type(&self, column: usize) -> Option<ColumnType> {
+        self.columns.get(column).copied()
     }
 
-    pub fn column_nullable(&self, row: usize) -> bool {
-        self.nullability[row]
+    pub fn column_nullable(&self, column: usize) -> bool {
+        self.nullability[column]
     }
 
     pub fn nullability(&self) -> &BitVec {
@@ -247,6 +239,7 @@ impl RowLayout {
             || (self.columns.iter().all(ColumnType::is_unit) && self.nullability.not_any())
     }
 
+    /// Returns a row containing only a single unit column
     pub fn unit() -> Self {
         let mut nullability = BitVec::with_capacity(1);
         nullability.push(false);
@@ -295,12 +288,19 @@ impl RowLayout {
     pub fn total_null_columns(&self) -> usize {
         self.nullability.count_ones()
     }
+
+    /// Returns `true` if any of the columns within the current layout are
+    /// nullable
+    pub fn has_nullable_columns(&self) -> bool {
+        self.nullability.any()
+    }
 }
 
 impl Debug for RowLayout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct DebugRowLayout<'a>(&'a ColumnType, bool);
-        impl Debug for DebugRowLayout<'_> {
+        struct DebugColumnLayout<'a>(&'a ColumnType, bool);
+
+        impl Debug for DebugColumnLayout<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let Self(row, nullable) = *self;
                 if nullable {
@@ -316,7 +316,7 @@ impl Debug for RowLayout {
                 self.columns
                     .iter()
                     .zip(self.nullability.iter().by_vals())
-                    .map(|(row, nullable)| DebugRowLayout(row, nullable)),
+                    .map(|(column, nullable)| DebugColumnLayout(column, nullable)),
             )
             .finish()
     }
