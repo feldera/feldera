@@ -93,12 +93,29 @@ impl ThinStr {
         unsafe { str::from_utf8_unchecked_mut(self.as_mut_bytes()) }
     }
 
+    /// Sets the length of the current `ThinStr`
+    ///
+    /// # Safety
+    ///
+    /// - `length` must be less than or equal to [`ThinStr::capacity()`]
+    /// - The elements at `self.len()..length` must be initialized and valid
+    ///   UTF-8
+    /// - The current string cannot be the sigil string ([`ThinStr::is_sigil()`]
+    ///   must return `false`)
     #[inline]
-    pub unsafe fn set_len(&mut self, length: usize) {
+    unsafe fn set_len(&mut self, length: usize) {
         debug_assert!(!self.is_sigil());
+        debug_assert!(length <= self.capacity());
         unsafe { addr_of_mut!((*self.buf.as_ptr()).length).write(length) }
     }
 
+    /// Sets the capacity of the current `ThinStr`
+    ///
+    /// # Safety
+    ///
+    /// - The current string must have allocated data
+    /// - The current string cannot be the sigil string ([`ThinStr::is_sigil()`]
+    ///   must return `false`)
     #[inline]
     unsafe fn set_capacity(&mut self, capacity: usize) {
         debug_assert!(!self.is_sigil());
@@ -111,6 +128,16 @@ impl ThinStr {
         this.buf.as_ptr().cast()
     }
 
+    /// Constructs a `ThinStr` from a raw pointer
+    ///
+    /// After calling this function, the raw pointer is owned by the resulting
+    /// `ThinStr`. Specifically, the `ThinStr` destructor will run and free
+    /// the allocated memory. For this to be safe, the memory must have been
+    /// allocated in accordance with the memory layout used by `ThinStr`.
+    ///
+    /// # Safety
+    ///
+    /// The pointer passed must have come from [`ThinStr::into_raw()`]
     #[inline]
     pub unsafe fn from_raw(raw: *mut ()) -> Self {
         debug_assert!(
@@ -155,6 +182,7 @@ impl ThinStr {
     unsafe fn with_capacity_uninit(capacity: usize, length: usize) -> Self {
         let layout = Self::layout_for(capacity);
 
+        debug_assert_ne!(layout.size(), 0);
         let ptr = unsafe { std::alloc::alloc(layout) };
         let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
             Some(buf) => buf,
@@ -169,16 +197,41 @@ impl ThinStr {
         Self { buf }
     }
 
+    #[inline]
     fn layout_for(capacity: usize) -> Layout {
+        #[cold]
+        #[inline(never)]
+        fn failed_thinstr_layout(capacity: usize) -> ! {
+            panic!("failed to create ThinStr layout for {capacity} bytes")
+        }
+
         let header = Layout::new::<StrHeader>();
 
-        let align = align_of::<usize>();
-        let bytes = Layout::from_size_align(capacity, align)
-            .expect("failed to create layout for string bytes");
+        let bytes = Layout::from_size_align(capacity, 16)
+            .unwrap_or_else(|_| failed_thinstr_layout(capacity));
 
         let (layout, _) = header
             .extend(bytes)
-            .expect("failed to add header and string bytes layouts");
+            .unwrap_or_else(|_| failed_thinstr_layout(capacity));
+
+        // Pad out the layout
+        layout.pad_to_align()
+    }
+
+    /// Create a layout for the given capacity without checking that it's valid
+    ///
+    /// # Safety
+    ///
+    /// The entire `ThinStr`'s layout must obey the preconditions of
+    /// [`Layout::from_size_align`]
+    #[inline]
+    unsafe fn layout_for_unchecked(capacity: usize) -> Layout {
+        let header = Layout::new::<StrHeader>();
+
+        let align = align_of::<usize>();
+        debug_assert!(Layout::from_size_align(capacity, align).is_ok());
+        let bytes = Layout::from_size_align_unchecked(capacity, 16);
+        let (layout, _) = header.extend(bytes).unwrap_unchecked();
 
         // Pad out the layout
         layout.pad_to_align()
@@ -187,9 +240,34 @@ impl ThinStr {
     fn grow(&mut self, additional: usize) {
         debug_assert!(additional > 0);
 
-        let current_cap = self.capacity();
-        let capacity = current_cap.checked_add(additional).unwrap();
-        let capacity = max(max(current_cap * 2, capacity), 16);
+        #[cold]
+        #[inline(never)]
+        fn grow_thinstr_overflow(current: usize, additional: usize) -> ! {
+            panic!("attempted to grow a ThinStr with capacity {current} by {additional}, but {current} + {additional} overflows a usize")
+        }
+
+        let current = self.capacity();
+
+        // The minimum possible capacity we have to allocate
+        let minimum = current
+            .checked_add(additional)
+            .unwrap_or_else(|| grow_thinstr_overflow(current, additional));
+
+        // Choose the largest possible capacity to ensure exponential growth, either
+        // growing the current capacity by 1.5 times or choosing our the minimum
+        // required capacity.
+        // Why 1.5x?
+        // - https://github.com/facebook/folly/blob/main/folly/docs/FBVector.md
+        // - https://stackoverflow.com/questions/1100311/what-is-the-ideal-growth-rate-for-a-dynamically-allocated-array
+        //
+        //  `x + (x >> 1)` is equivalent to `x * 1.5`
+        let capacity = max(
+            current + (current >> 1),
+            max(minimum, 64 - (size_of::<usize>() * 2)),
+        );
+        // We align our strings to 16 bytes, so we can always take advantage of that
+        // "extra" capacity we'll allocate
+        let capacity = next_multiple_of(capacity, 16);
 
         // For sigil values, allocate
         if self.is_sigil() {
@@ -228,7 +306,8 @@ impl ThinStr {
         } else {
             debug_assert!(!self.is_sigil());
 
-            let current_layout = Self::layout_for(self.capacity());
+            // Safety: The current layout was created in order to
+            let current_layout = unsafe { Self::layout_for_unchecked(self.capacity()) };
             let new_layout = Self::layout_for(capacity);
 
             let ptr = unsafe {
@@ -294,12 +373,19 @@ impl ThinStr {
         std::str::from_utf8(bytes).map(Self::from_str)
     }
 
+    /// Creates a `ThinStr` from a slice of bytes without checking that the
+    /// string contains valid UTF-8
+    ///
+    /// # Safety
+    ///
+    /// - `bytes` must contain valid UTF-8
     #[inline]
     pub unsafe fn from_utf8_unchecked(bytes: &[u8]) -> Self {
         debug_assert!(std::str::from_utf8(bytes).is_ok());
         Self::from_str(std::str::from_utf8_unchecked(bytes))
     }
 
+    /// Returns `true` if the current `ThinStr` points to the sigil empty string
     #[inline]
     fn is_sigil(&self) -> bool {
         self.buf == NonNull::from(&EMPTY)
@@ -316,11 +402,55 @@ impl Default for ThinStr {
 impl Clone for ThinStr {
     #[inline]
     fn clone(&self) -> Self {
-        Self::from_str(self.as_str())
+        let string = self.as_str();
+        if string.is_empty() {
+            return ThinStr::new();
+        }
+
+        let length = string.len();
+        // Safety: The layout was created in order for `self` to exist, so it's valid
+        let layout = unsafe { ThinStr::layout_for_unchecked(length) };
+
+        debug_assert_ne!(layout.size(), 0);
+        let ptr = unsafe { std::alloc::alloc(layout) };
+        let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
+            Some(buf) => buf,
+            None => std::alloc::handle_alloc_error(layout),
+        };
+
+        // Safety: buf is a valid allocation
+        unsafe {
+            // Write the string's length
+            addr_of_mut!((*buf.as_ptr()).length).write(length);
+            // Write the allocated capacity
+            addr_of_mut!((*buf.as_ptr()).capacity).write(length);
+
+            // Copy over the string's bytes
+            ptr::copy_nonoverlapping(
+                string.as_ptr(),
+                addr_of_mut!((*buf.as_ptr())._data).cast(),
+                length,
+            );
+        }
+
+        Self { buf }
     }
 
     fn clone_from(&mut self, source: &Self) {
+        // If self is sigil, we can't reallocate it
+        if self.is_sigil() {
+            // If self is sigil and source isn't we can just directly clone source
+            if !source.is_sigil() {
+                *self = source.clone();
+            }
+            // Otherwise if both self and source are sigil, we're done
+
+            return;
+        }
+
+        // If source is empty we can set self's length to zero
         if source.is_empty() {
+            // Safety: 0 is always <= capacity and self isn't sigil
             unsafe { self.set_len(0) };
             return;
         }
@@ -330,8 +460,12 @@ impl Clone for ThinStr {
             self.grow_exact(source.len());
         }
 
+        // Copy over the bytes from source to self
+        // Safety: self has sufficient capacity to store all bytes from source
         unsafe {
             let length = source.len();
+            debug_assert!(length <= self.capacity());
+
             ptr::copy_nonoverlapping(source.as_ptr(), self.as_mut_ptr(), length);
             self.set_len(length);
         }
@@ -341,8 +475,12 @@ impl Clone for ThinStr {
 impl Drop for ThinStr {
     fn drop(&mut self) {
         if !self.is_sigil() {
-            let layout = Self::layout_for(self.capacity());
-            unsafe { std::alloc::dealloc(self.buf.as_ptr().cast(), layout) };
+            // Safety: The current layout is valid since we must have created it in order to
+            // make the current `ThinStr` and we're deallocating a valid allocation
+            unsafe {
+                let layout = Self::layout_for_unchecked(self.capacity());
+                std::alloc::dealloc(self.buf.as_ptr().cast(), layout);
+            }
         }
     }
 }
@@ -538,5 +676,14 @@ impl Ord for ThinStrRef<'_> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_str().cmp(other.as_str())
+    }
+}
+
+// FIXME: Replace with `usize::next_multiple_of()`
+#[inline]
+const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
+    match lhs % rhs {
+        0 => lhs,
+        rem => lhs + (rhs - rem),
     }
 }

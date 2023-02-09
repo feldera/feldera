@@ -105,7 +105,10 @@ impl Codegen {
                     };
 
                     let hash_function = match ty {
-                        ColumnType::Bool => imports.u8_hash(ctx.module, builder.func),
+                        ColumnType::Bool | ColumnType::U8 => {
+                            imports.u8_hash(ctx.module, builder.func)
+                        }
+                        ColumnType::I8 => imports.i8_hash(ctx.module, builder.func),
                         ColumnType::U16 => imports.u16_hash(ctx.module, builder.func),
                         ColumnType::I16 => imports.i16_hash(ctx.module, builder.func),
                         ColumnType::U32 => imports.u32_hash(ctx.module, builder.func),

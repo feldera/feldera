@@ -19,7 +19,8 @@ use crate::{
     },
     ir::{
         BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function,
-        InputFlags, LayoutId, RValue, RowLayoutCache, Signature, Terminator, UnaryOp, UnaryOpKind,
+        InputFlags, LayoutId, NullRow, RValue, RowLayoutCache, Signature, Terminator, UnaryOp,
+        UnaryOpKind,
     },
 };
 use cranelift::{
@@ -433,16 +434,7 @@ impl Codegen {
                             };
 
                             let masked = builder.ins().band_imm(bitset, 1i64 << bit_idx);
-                            let is_null = builder.ins().icmp_imm(
-                                // if ctx.null_sigil.is_one() {
-                                //     IntCC::NotEqual
-                                // } else {
-                                //     IntCC::Equal
-                                // },
-                                IntCC::NotEqual,
-                                masked,
-                                0,
-                            );
+                            let is_null = builder.ins().icmp_imm(IntCC::NotEqual, masked, 0);
                             ctx.add_expr(expr_id, is_null, ColumnType::Bool, None);
                         }
 
@@ -490,31 +482,18 @@ impl Codegen {
                                     let mask = 1i64 << bit_idx;
                                     let set_bit = builder.ins().bor_imm(bitset, mask);
                                     let unset_bit = builder.ins().band_imm(bitset, !mask);
-
-                                    // if ctx.null_sigil.is_one() {
-                                    //     builder.ins().select(is_null, set_bit, unset_bit)
-                                    // } else {
-                                    //     builder.ins().select(is_null, unset_bit, set_bit)
-                                    // }
                                     builder.ins().select(is_null, set_bit, unset_bit)
                                 }
 
                                 &RValue::Imm(Constant::Bool(set_null)) => {
                                     let mask = 1i64 << bit_idx;
-
-                                    // if (ctx.null_sigil.is_one() && set_null)
-                                    //     || (ctx.null_sigil.is_zero() && !set_null)
-                                    // {
-                                    //     builder.ins().bor_imm(bitset, mask)
-                                    // } else {
-                                    //     builder.ins().band_imm(bitset, !mask)
-                                    // }
                                     if set_null {
                                         builder.ins().bor_imm(bitset, mask)
                                     } else {
                                         builder.ins().band_imm(bitset, !mask)
                                     }
                                 }
+
                                 RValue::Imm(_) => unreachable!(),
                             };
 
@@ -587,7 +566,7 @@ impl Codegen {
                             let ty = ctx.expr_types.get(&copy_val.value()).copied();
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
 
-                            let value = if copy_val.ty() == ColumnType::String {
+                            let value = if copy_val.value_ty() == ColumnType::String {
                                 let clone_string =
                                     ctx.imports.string_clone(ctx.module, builder.func);
                                 builder.call_fn(clone_string, &[value])
@@ -598,44 +577,7 @@ impl Codegen {
                             ctx.add_expr(expr_id, value, ty, layout);
                         }
 
-                        // TODO: There's a couple optimizations we can do here:
-                        // - If our type is sub-word size, we can simply use a constant that's been
-                        //   set to all ones. This does require generalized handling for rows that
-                        //   aren't addressable, but that's a good thing we need in the future
-                        //   anyways
-                        // - If the null bits are sufficiently sparse and the row is sufficiently
-                        //   large (something something heuristics) then memset-ing the entire thing
-                        //   is just a waste and we should instead use more focused stores
-                        // - If our type doesn't contain any null flags, we don't need to do
-                        //   anything and can simply leave the row uninitialized. This does require
-                        //   that we actually follow our contract that `NullRow` only means "any
-                        //   well-defined `IsNull` call returns `true`" and don't depend on it being
-                        //   initialized to any degree further than what is required by that
-                        Expr::NullRow(null) => {
-                            // Create a stack slot
-                            let slot =
-                                ctx.stack_slot_for_layout(expr_id, null.layout(), &mut builder);
-
-                            if let Some(writer) = self.comment_writer.as_deref() {
-                                writer.borrow_mut().add_comment(
-                                    slot,
-                                    format!(
-                                        "null row of layout {:?}",
-                                        ctx.layout_cache.row_layout(null.layout()),
-                                    ),
-                                );
-                            }
-
-                            // Get the address of the stack slot
-                            let addr =
-                                builder
-                                    .ins()
-                                    .stack_addr(ctx.module.isa().pointer_type(), slot, 0);
-
-                            // Fill the stack slot with whatever our nullish sigil is
-                            // ctx.memset_imm(addr, ctx.null_sigil as u8, null.layout());
-                            ctx.memset_imm(addr, 0b1111_1111, null.layout(), &mut builder);
-                        }
+                        Expr::NullRow(null) => ctx.null_row(expr_id, null, &mut builder),
 
                         Expr::UninitRow(uninit) => {
                             let slot =
@@ -678,15 +620,15 @@ impl Codegen {
     fn build_signature(&mut self, signature: &Signature) -> ClifSignature {
         let mut sig = self.module.make_signature();
 
+        let ptr = self.module.isa().pointer_type();
+        for _arg in signature.args() {
+            sig.params.push(AbiParam::new(ptr));
+        }
+
         if let Some(return_type) = NativeType::from_column_type(signature.ret()) {
             sig.returns.push(AbiParam::new(
                 return_type.native_type(&self.module.isa().frontend_config()),
             ));
-        }
-
-        let ptr = self.module.isa().pointer_type();
-        for _arg in signature.args() {
-            sig.params.push(AbiParam::new(ptr));
         }
 
         sig
@@ -950,17 +892,17 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn iconst(&mut self, constant: &Constant, builder: &mut FunctionBuilder<'_>) -> Value {
-        let ty = match *constant {
-            Constant::U32(_) | Constant::I32(_) => types::I32,
-            Constant::U64(_) | Constant::I64(_) => types::I64,
-            Constant::Bool(_) => types::I8,
-
-            Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
-                unreachable!()
-            }
-        };
+        let ty = constant
+            .column_type()
+            .native_type()
+            .expect("invalid constant type")
+            .native_type(&self.frontend_config());
 
         let val = match *constant {
+            Constant::U8(int) => int as i64,
+            Constant::I8(int) => int as i64,
+            Constant::U16(int) => int as i64,
+            Constant::I16(int) => int as i64,
             Constant::U32(int) => int as i64,
             Constant::I32(int) => int as i64,
             Constant::U64(int) => int as i64,
@@ -1099,7 +1041,7 @@ impl<'a> CodegenCtx<'a> {
 
     /// Sets the given `buffer` to be filled with `value` bytes
     /// according to `layout`'s size and alignment
-    fn memset_imm(
+    fn emit_small_memset(
         &mut self,
         buffer: Value,
         value: u8,
@@ -1172,6 +1114,49 @@ impl<'a> CodegenCtx<'a> {
             writer
                 .borrow_mut()
                 .add_comment(trap, format!("trap if {ptr} isn't aligned to {align}"));
+        }
+    }
+
+    // TODO: There's a couple optimizations we can do here:
+    // - If our type is sub-word size, we can simply use a constant that's been set
+    //   to all ones. This does require generalized handling for rows that aren't
+    //   addressable, but that's a good thing we need in the future anyways
+    // - If the null bits are sufficiently sparse and the row is sufficiently large
+    //   (something something heuristics) then memset-ing the entire thing is just a
+    //   waste and we should instead use more focused stores
+    // - If our type doesn't contain any null flags, we don't need to do anything
+    //   and can simply leave the row uninitialized. This does require that we
+    //   actually follow our contract that `NullRow` only means "any well-defined
+    //   `IsNull` call returns `true`" and don't depend on it being initialized to
+    //   any degree further than what is required by that
+    fn null_row(&mut self, expr_id: ExprId, null: &NullRow, builder: &mut FunctionBuilder) {
+        // Create a stack slot
+        let slot = self.stack_slot_for_layout(expr_id, null.layout(), builder);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                slot,
+                format!(
+                    "null row of layout {:?}",
+                    self.layout_cache.row_layout(null.layout()),
+                ),
+            );
+        }
+
+        // We only need to set all nullish bits if the current layout has any nullable
+        // rows
+        if self
+            .layout_cache
+            .row_layout(null.layout())
+            .has_nullable_columns()
+        {
+            // Get the address of the stack slot
+            let addr = builder
+                .ins()
+                .stack_addr(self.module.isa().pointer_type(), slot, 0);
+
+            // Fill the stack slot with whatever our nullish sigil is
+            self.emit_small_memset(addr, 0b1111_1111, null.layout(), builder);
         }
     }
 

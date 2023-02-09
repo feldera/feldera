@@ -161,13 +161,13 @@ impl Codegen {
                             // TODO: We can manually inline this
                             ColumnType::Bool => ctx.imports.bool_debug(ctx.module, builder.func),
 
-                            ColumnType::U16 | ColumnType::U32 => {
+                            ColumnType::U8 | ColumnType::U16 | ColumnType::U32 => {
                                 value = builder.ins().uextend(types::I64, value);
                                 ctx.imports.uint_debug(ctx.module, builder.func)
                             }
                             ColumnType::U64 => ctx.imports.uint_debug(ctx.module, builder.func),
 
-                            ColumnType::I16 | ColumnType::I32 => {
+                            ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
                                 value = builder.ins().sextend(types::I64, value);
                                 ctx.imports.int_debug(ctx.module, builder.func)
                             }
