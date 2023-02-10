@@ -7,10 +7,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dbsp::{
-    operator::FilterMap, time::NestedTimestamp32, IndexedZSet, OrdIndexedZSet, OutputHandle,
-    Runtime,
-};
+use dbsp::{operator::FilterMap, IndexedZSet, OrdIndexedZSet, OutputHandle, Runtime};
 
 type Node = usize;
 type Weight = isize;
@@ -62,12 +59,14 @@ fn main() -> Result<()> {
 
         // Count the number of edges with each node as its source (each node's
         // out-degree).
-        let degrees = edges.map(|&(src, _dst)| (src, 1)).index();
-        let degrees = degrees.aggregate_linear::<NestedTimestamp32, _, _>(|_k, v| *v);
+        let degrees = edges
+            .map(|(src, _dst)| *src)
+            .aggregate_linear::<(), _, _>(|_k, _v| 1);
 
         // Count the number of nodes with each out-degree.
-        let distribution = degrees.map(|(_src, count)| (*count, 1)).index();
-        let distribution = distribution.aggregate_linear::<NestedTimestamp32, _, _>(|_k, v| *v);
+        let distribution = degrees
+            .map(|(_src, count)| *count)
+            .aggregate_linear::<(), _, _>(|_k, _v| 1);
 
         (hedges, degrees.output(), distribution.output())
     })
