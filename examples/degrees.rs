@@ -8,10 +8,8 @@
 use anyhow::Result;
 use clap::Parser;
 use dbsp::{
-    operator::FilterMap,
-    time::NestedTimestamp32,
-    trace::{BatchReader, Cursor},
-    DBData, DBWeight, OrdIndexedZSet, OutputHandle, Runtime,
+    operator::FilterMap, time::NestedTimestamp32, IndexedZSet, OrdIndexedZSet, OutputHandle,
+    Runtime,
 };
 
 type Node = usize;
@@ -36,52 +34,16 @@ struct Args {
     threads: usize,
 }
 
-struct BatchIterator<'a, T: BatchReader> {
-    cursor: T::Cursor<'a>,
-}
-
-impl<'a, T: BatchReader> BatchIterator<'a, T> {
-    /// Returns an iterator of `(key, value, weight)` over the items that
-    /// `cursor` visits.
-    fn new(cursor: T::Cursor<'a>) -> Self {
-        Self { cursor }
-    }
-}
-
-impl<'a, K, V, R> Iterator for BatchIterator<'a, OrdIndexedZSet<K, V, R>>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    type Item = (K, V, R);
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.cursor.key_valid() {
-            while self.cursor.val_valid() {
-                let retval = (
-                    self.cursor.key().clone(),
-                    self.cursor.val().clone(),
-                    self.cursor.weight(),
-                );
-                self.cursor.step_val();
-                return Some(retval);
-            }
-            self.cursor.step_key();
-        }
-        None
-    }
-}
-
 fn print_changes(
     degrees: &OutputHandle<OrdIndexedZSet<Node, isize, Weight>>,
     distribution: &OutputHandle<OrdIndexedZSet<isize, isize, Weight>>,
 ) {
-    for (src, outdegree, weight) in BatchIterator::new(degrees.consolidate().cursor()) {
+    for (src, outdegree, weight) in degrees.consolidate().iter() {
         println!("    {weight:+}: Node {src} has out-degree {outdegree}");
     }
     println!();
 
-    for (outdegree, count, weight) in BatchIterator::new(distribution.consolidate().cursor()) {
+    for (outdegree, count, weight) in distribution.consolidate().iter() {
         println!("    {weight:+}: {count} nodes have out-degree {outdegree}");
     }
     println!();
