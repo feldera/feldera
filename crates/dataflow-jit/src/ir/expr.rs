@@ -59,6 +59,12 @@ impl RValue {
     }
 }
 
+impl From<bool> for RValue {
+    fn from(value: bool) -> Self {
+        Self::Imm(Constant::Bool(value))
+    }
+}
+
 /// A cast expression, changes the type of the given value
 ///
 /// Changes the type of `value` from `from` to `to`
@@ -66,7 +72,7 @@ impl RValue {
 /// # Rules
 ///
 /// - Casts between the same type are always valid (that is, a cast from
-///   `String` to [`String`] is always)
+///   `String` to [`String`] is always valid)
 /// - Strings and unit types are not castable (except casts from [`String`] to
 ///   `String` or from [`Unit`] to `Unit`)
 /// - Integers (signed and unsigned) can be freely casted between ([`U16`] <->

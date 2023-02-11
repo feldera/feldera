@@ -1,7 +1,8 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
     node::{Node, Subgraph as SubgraphNode},
-    DataflowNode, ExportedNode, Function, LayoutId, NodeId, NodeIdGen,
+    DataflowNode, ExportedNode, Filter, Function, LayoutId, Map, NodeId, NodeIdGen, Sink, Source,
+    SourceMap,
 };
 use petgraph::prelude::DiGraphMap;
 use std::{collections::BTreeMap, rc::Rc};
@@ -46,6 +47,26 @@ pub trait GraphExt {
     }
 
     fn edges(&self) -> &DiGraphMap<NodeId, ()>;
+
+    fn source(&mut self, key_layout: LayoutId) -> NodeId {
+        self.add_node(Source::new(key_layout))
+    }
+
+    fn source_map(&mut self, key_layout: LayoutId, value_layout: LayoutId) -> NodeId {
+        self.add_node(SourceMap::new(key_layout, value_layout))
+    }
+
+    fn sink(&mut self, input: NodeId) -> NodeId {
+        self.add_node(Sink::new(input))
+    }
+
+    fn filter(&mut self, input: NodeId, filter_fn: Function) -> NodeId {
+        self.add_node(Filter::new(input, filter_fn))
+    }
+
+    fn map(&mut self, input: NodeId, key_layout: LayoutId, map_fn: Function) -> NodeId {
+        self.add_node(Map::new(input, map_fn, key_layout))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +238,7 @@ mod tests {
         codegen::{Codegen, CodegenConfig},
         dataflow::CompiledDataflow,
         ir::{
-            expr::{Constant, CopyRowTo, NullRow},
+            expr::{Constant, NullRow},
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
             node::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
@@ -381,7 +402,7 @@ mod tests {
 
                 func.move_to(current_null);
                 func.ret_unit();
-                func.seal();
+                func.seal_current();
 
                 let acc_null = func.create_block();
                 let acc_non_null = func.create_block();
@@ -391,19 +412,19 @@ mod tests {
                 let weight = func.load(weight, 0);
                 let diff = func.mul(current, weight);
                 func.branch(acc_is_null, acc_null, acc_non_null);
-                func.seal();
+                func.seal_current();
 
                 func.move_to(acc_null);
                 func.store(accumulator, 0, diff);
                 func.ret_unit();
-                func.seal();
+                func.seal_current();
 
                 func.move_to(acc_non_null);
                 let acc = func.load(accumulator, 0);
                 let sum = func.add(acc, diff);
                 func.store(accumulator, 0, sum);
                 func.ret_unit();
-                func.seal();
+                func.seal_current();
 
                 func.build()
             },
@@ -422,7 +443,7 @@ mod tests {
                 func.store(output, 0, value);
 
                 func.ret_unit();
-                func.seal();
+                func.seal_current();
 
                 func.build()
             },
@@ -458,7 +479,7 @@ mod tests {
                 func.store(output, 0, value);
 
                 func.ret_unit();
-                func.seal();
+                func.seal_current();
 
                 func.build()
             },

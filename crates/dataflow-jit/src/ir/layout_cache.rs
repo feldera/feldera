@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RowLayoutCache {
     inner: Rc<RefCell<RowLayoutCacheInner>>,
 }
@@ -39,6 +39,18 @@ impl RowLayoutCache {
 impl Default for RowLayoutCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Debug for RowLayoutCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("RowLayoutCache");
+        if let Ok(inner) = self.inner.try_borrow() {
+            debug.field("layouts", &*inner);
+        } else {
+            debug.field("layouts", &"{ ... }");
+        }
+        debug.finish()
     }
 }
 
@@ -110,6 +122,12 @@ impl RowLayoutCacheInner {
 
 impl Debug for RowLayoutCacheInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_set().entries(&self.layouts).finish()
+        f.debug_map()
+            .entries(
+                self.id_to_idx
+                    .iter()
+                    .map(|(layout_id, &idx)| (layout_id, &self.layouts[idx as usize])),
+            )
+            .finish()
     }
 }
