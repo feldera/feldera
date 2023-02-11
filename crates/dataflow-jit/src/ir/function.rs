@@ -1,7 +1,7 @@
 use crate::ir::{
     block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
-    BlockIdGen, Branch, ColumnType, Constant, CopyRowTo, Expr, ExprId, ExprIdGen, IsNull, Jump,
-    LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator,
+    BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, Expr, ExprId, ExprIdGen, IsNull,
+    Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -411,6 +411,17 @@ impl FunctionBuilder {
         self.add_expr(SetNull::new(target, target_layout, column, is_null.into()));
     }
 
+    pub fn cast(&mut self, value: ExprId, dest_ty: ColumnType) -> ExprId {
+        let value_ty = self
+            .expr_types
+            .get(&value)
+            .unwrap_or_else(|| panic!("failed to get type of {value}"))
+            .expect("attempted to call `Cast` on a row value");
+        let expr = self.add_expr(Cast::new(value, value_ty, dest_ty));
+        self.set_expr_type(expr, Ok(dest_ty));
+        expr
+    }
+
     pub fn load(&mut self, target: ExprId, column: usize) -> ExprId {
         let target_layout = self
             .expr_types
@@ -467,6 +478,30 @@ impl FunctionBuilder {
 
     pub fn div(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
         self.binary_op(lhs, rhs, BinaryOpKind::Div)
+    }
+
+    pub fn eq(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::Eq)
+    }
+
+    pub fn neq(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::Neq)
+    }
+
+    pub fn lt(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::LessThan)
+    }
+
+    pub fn gt(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::GreaterThan)
+    }
+
+    pub fn le(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::LessThanOrEqual)
+    }
+
+    pub fn ge(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.binary_op(lhs, rhs, BinaryOpKind::GreaterThanOrEqual)
     }
 
     fn binary_op(&mut self, lhs: ExprId, rhs: ExprId, kind: BinaryOpKind) -> ExprId {
@@ -567,7 +602,7 @@ impl FunctionBuilder {
     }
 
     #[track_caller]
-    pub fn seal(&mut self) {
+    pub fn seal_current(&mut self) {
         let current = self
             .current
             .take()

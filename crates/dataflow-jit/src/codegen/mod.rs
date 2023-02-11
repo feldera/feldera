@@ -452,24 +452,23 @@ impl Codegen {
                                 bitset_ty.native_type(&ctx.module.isa().frontend_config());
 
                             // Load the bitset's current value
-                            let bitset = if let Some(&slot) =
-                                ctx.stack_slots.get(&set_null.target())
-                            {
-                                builder
-                                    .ins()
-                                    .stack_load(bitset_ty, slot, bitset_offset as i32)
+                            let bitset =
+                                if let Some(&slot) = ctx.stack_slots.get(&set_null.target()) {
+                                    builder
+                                        .ins()
+                                        .stack_load(bitset_ty, slot, bitset_offset as i32)
 
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let addr = ctx.exprs[&set_null.target()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for
-                                // stores
-                                let flags = MemFlags::new();
-                                builder
-                                    .ins()
-                                    .load(bitset_ty, flags, addr, bitset_offset as i32)
-                            };
+                                // If it's not a stack slot it must be a pointer via
+                                // function parameter
+                                } else {
+                                    let addr = ctx.exprs[&set_null.target()];
+                                    // TODO: We can probably add the `notrap` and `aligned` flags for
+                                    // stores
+                                    let flags = MemFlags::new();
+                                    builder
+                                        .ins()
+                                        .load(bitset_ty, flags, addr, bitset_offset as i32)
+                                };
 
                             // Set the given bit, these use `bitset | (1 << bit_idx)` to set the bit
                             // and `bitset & !(1 << bit_idx)` to unset the bit.

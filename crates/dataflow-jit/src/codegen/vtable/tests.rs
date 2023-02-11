@@ -426,8 +426,8 @@ mod proptests {
     #[derive(Debug, Clone, Arbitrary)]
     enum Column {
         Unit,
-        // U8(u8),
-        // I8(i8),
+        U8(u8),
+        I8(i8),
         U16(u16),
         I16(i16),
         U32(u32),
@@ -449,8 +449,8 @@ mod proptests {
         fn row_type(&self) -> ColumnType {
             match self {
                 Self::Unit => ColumnType::Unit,
-                // Column::U8(_) => todo!(),
-                // Column::I8(_) => todo!(),
+                Self::U8(_) => ColumnType::U8,
+                Self::I8(_) => ColumnType::I8,
                 Self::U16(_) => ColumnType::U16,
                 Self::I16(_) => ColumnType::I16,
                 Self::U32(_) => ColumnType::U32,
@@ -474,6 +474,15 @@ mod proptests {
                 Column::Unit => {
                     prop_assert_eq!(ptr as usize % align_of::<()>(), 0);
                     ptr.cast::<()>().write(());
+                }
+
+                Column::U8(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u8>(), 0);
+                    ptr.cast::<u8>().write(value);
+                }
+                Column::I8(value) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i8>(), 0);
+                    ptr.cast::<i8>().write(value);
                 }
 
                 Column::U16(value) => {
@@ -537,8 +546,8 @@ mod proptests {
     impl PartialEq for Column {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
-                // (Self::U8(l0), Self::U8(r0)) => l0 == r0,
-                // (Self::I8(l0), Self::I8(r0)) => l0 == r0,
+                (Self::U8(l0), Self::U8(r0)) => l0 == r0,
+                (Self::I8(l0), Self::I8(r0)) => l0 == r0,
                 (Self::U16(l0), Self::U16(r0)) => l0 == r0,
                 (Self::I16(l0), Self::I16(r0)) => l0 == r0,
                 (Self::U32(l0), Self::U32(r0)) => l0 == r0,
@@ -568,8 +577,8 @@ mod proptests {
     impl Ord for Column {
         fn cmp(&self, other: &Self) -> Ordering {
             match (self, other) {
-                // (Self::U8(l0), Self::U8(r0)) => l0.cmp(r0),
-                // (Self::I8(l0), Self::I8(r0)) => l0.cmp(r0),
+                (Self::U8(l0), Self::U8(r0)) => l0.cmp(r0),
+                (Self::I8(l0), Self::I8(r0)) => l0.cmp(r0),
                 (Self::U16(l0), Self::U16(r0)) => l0.cmp(r0),
                 (Self::I16(l0), Self::I16(r0)) => l0.cmp(r0),
                 (Self::U32(l0), Self::U32(r0)) => l0.cmp(r0),
