@@ -1,3 +1,5 @@
+//! Contains the dataflow graph that users construct
+
 use crate::ir::{
     layout_cache::RowLayoutCache,
     node::{Node, Subgraph as SubgraphNode},
