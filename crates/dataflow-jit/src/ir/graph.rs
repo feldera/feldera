@@ -536,7 +536,7 @@ mod tests {
         //         ((), Tuple6::new(l.0, l.1, l.2, l.3.clone(), l.4, l.5))
         //     });
         // ```
-        let stream7892 = graph.add_node(IndexWith::new(
+        let _stream7892 = graph.add_node(IndexWith::new(
             source,
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
@@ -559,7 +559,7 @@ mod tests {
         //         move |r: &Tuple1<Option<i32>>| -> ((), Tuple1<Option<i32>>) { ((), Tuple1::new(r.0)) },
         //     );
         // ```
-        let stream7897 = graph.add_node(IndexWith::new(
+        let _stream7897 = graph.add_node(IndexWith::new(
             stream7887,
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());

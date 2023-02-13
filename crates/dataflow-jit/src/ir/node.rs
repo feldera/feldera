@@ -973,6 +973,7 @@ impl DataflowNode for IndexWith {
 pub struct Fold {
     input: NodeId,
     /// The initial value of the fold, should be the same layout as `acc_layout`
+    #[allow(dead_code)]
     init: Expr,
     /// The step function, should have a signature of
     /// `fn(acc_layout, input_layout, weight_layout) -> acc_layout`

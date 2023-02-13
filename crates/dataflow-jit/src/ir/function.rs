@@ -88,6 +88,7 @@ impl Function {
         // TODO: Tree shaking to remove unreachable nodes
     }
 
+    #[allow(dead_code)]
     fn remove_redundant_casts(&mut self) {
         todo!()
     }
@@ -109,6 +110,7 @@ impl Function {
         }
     }
 
+    #[allow(dead_code)]
     fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
         let mut scalar_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();

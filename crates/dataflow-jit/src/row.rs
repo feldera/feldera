@@ -34,6 +34,11 @@ impl Row {
         self.data.as_ptr()
     }
 
+    /// Creates an uninitalized row
+    ///
+    /// # Safety
+    ///
+    /// Must fully initialize the inner data before manipulating it
     pub unsafe fn uninit(vtable: &'static VTable) -> Self {
         Self {
             data: Self::alloc(vtable),

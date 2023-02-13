@@ -118,6 +118,13 @@ impl JitHandle {
         &self.vtables
     }
 
+    /// Free all memory associated with the JIT compiled code, including vtables
+    /// and the functions themselves
+    ///
+    /// # Safety
+    ///
+    /// Cannot call this while any vtable or function pointers are still live or
+    /// in use, any attempt to use them after calling this function is UB
     pub unsafe fn free_memory(mut self) {
         for &vtable in self.vtables.values() {
             drop(Box::from_raw(vtable));
@@ -1071,7 +1078,7 @@ impl CompiledDataflow {
 
                                     DataflowNode::Distinct(distinct) => {
                                         let distinct = match &substreams[&distinct.input] {
-         RowStream::Set(input) => RowStream::Set(input.distinct::<NestedTimestamp32>()),
+                                            RowStream::Set(input) => RowStream::Set(input.distinct::<NestedTimestamp32>()),
                                             RowStream::Map(_input) => todo!(),
                                         };
                                         substreams.insert(node_id, distinct);
