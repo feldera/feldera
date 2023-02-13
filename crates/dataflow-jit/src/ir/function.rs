@@ -40,6 +40,10 @@ impl InputFlags {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
+    /// Contains the layout of the argument, the id that the pointer is
+    /// associated with and the flags that are associated with the argument.
+    /// All function arguments are passed by pointer since we can't know the
+    /// type's exact size at compile time
     args: Vec<(LayoutId, ExprId, InputFlags)>,
     ret: ColumnType,
     entry_block: BlockId,

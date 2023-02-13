@@ -1,3 +1,6 @@
+//! This module contains the [`RowLayoutCache`] which allows us to only perform
+//! fairly expensive layout calculations once for each layout
+
 use crate::ir::{types::RowLayout, LayoutId, LayoutIdGen};
 use std::{
     cell::{Ref, RefCell},
