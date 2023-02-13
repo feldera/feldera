@@ -638,14 +638,49 @@ pub unsafe trait DynVecVTable: Copy + Send + Sync + Sized + 'static {
 
     fn type_name(&self) -> &'static str;
 
+    /// Clones `count` elements from `src` into `dest`
+    ///
+    /// # Safety
+    ///
+    /// - `src` and `dest` must be valid pointers aligned to
+    ///   [`Self::align_of()`]
+    /// - `src` and `dest` must be valid for `count` elements of size
+    ///   [`Self::size_of()`] of the current vtable's type
+    /// - `src` must have `count` valid elements
     unsafe fn clone_slice(&self, src: *const u8, dest: *mut u8, count: usize);
 
+    /// Drops `count` elements from `ptr` in place
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be a valid pointer aligned to [`Self::align_of()`]
+    /// - `ptr` must be valid for `count` elements of size [`Self::size_of()`]
+    ///   of the current vtable's type
+    /// - `ptr` must have `count` valid elements
     unsafe fn drop_slice_in_place(&self, ptr: *mut u8, length: usize);
 
+    /// Calls [`SizeOf`] on the given item
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be a valid pointer to an initialized value of the current
+    ///   vtable's type
     unsafe fn size_of_children(&self, ptr: *const u8, context: &mut Context);
 
+    /// Calls [`Debug::fmt`] on the given item
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be a valid pointer to an initialized value of the current
+    ///   vtable's type
     unsafe fn debug(&self, value: *const u8, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 
+    /// Compares the given values for equality
+    ///
+    /// # Safety
+    ///
+    /// - `lhs` and `rhs` must be valid pointers to initialized values of the
+    ///   current vtable's type
     unsafe fn eq(&self, lhs: *const u8, rhs: *const u8) -> bool;
 
     fn is_zst(&self) -> bool {
