@@ -188,7 +188,7 @@ where
 
         // 2. For each `(val, off)` pair, sort the range, compact, and rewrite `off`.
         //    This may leave `val` with an empty range; filtering happens in step 3.
-        let (mut write_position, mut indices_buf) = (0, Vec::new());
+        let mut write_position = 0;
         for i in 0..self.layer.vals.keys.len() {
             // NB: batch.layer.vals.offs[i+1] will be used next iteration, and should not be
             // changed.     we will change batch.layer.vals.offs[i] in this
@@ -205,7 +205,6 @@ where
             let count = crate::trace::consolidation::consolidate_paired_slices(
                 &mut times[lower..upper],
                 &mut diffs[lower..upper],
-                &mut indices_buf,
             );
 
             for index in lower..(lower + count) {
