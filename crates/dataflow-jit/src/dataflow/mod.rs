@@ -1071,7 +1071,7 @@ impl CompiledDataflow {
 
                                     DataflowNode::Distinct(distinct) => {
                                         let distinct = match &substreams[&distinct.input] {
-                                            RowStream::Set(input) => RowStream::Set(input.distinct::<NestedTimestamp32>()),
+         RowStream::Set(input) => RowStream::Set(input.distinct::<NestedTimestamp32>()),
                                             RowStream::Map(_input) => todo!(),
                                         };
                                         substreams.insert(node_id, distinct);
