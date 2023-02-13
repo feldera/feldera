@@ -1,4 +1,3 @@
-use bitvec::vec::BitVec;
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use dbsp::{
     algebra::{AddAssignByRef, HasZero},
@@ -167,71 +166,21 @@ macro_rules! consolidation_benches {
             )*
             group.finish();
 
-            let mut group = c.benchmark_group("shuffle-by-indices");
-            group.sample_size(10);
-            $(
-                group.bench_function($name, |b| {
-                    let mut rng = Xoshiro256StarStar::from_seed(SEED);
-
-                    let mut indices: Vec<usize> = (0..$size).collect();
-                    indices.shuffle(&mut rng);
-                    let mut keys: Vec<usize> = (0..$size).map(|_| rng.gen()).collect();
-                    keys.shuffle(&mut rng);
-                    let mut diffs: Vec<isize> = (0..$size).map(|_| rng.gen()).collect();
-                    diffs.shuffle(&mut rng);
-
-                    b.iter_batched(
-                        || (keys.clone(), diffs.clone(), indices.clone()),
-                        |(mut keys, mut diffs, mut indices)| {
-                            unsafe { consolidation::utils::shuffle_by_indices(&mut keys, &mut diffs, &mut indices) };
-                        },
-                        BatchSize::PerIteration,
-                    );
-                });
-            )*
-            group.finish();
-
-            let mut group = c.benchmark_group("shuffle-by-indices-bitvec");
-            group.sample_size(10);
-            $(
-                group.bench_function($name, |b| {
-                    let mut rng = Xoshiro256StarStar::from_seed(SEED);
-
-                    let mut indices: Vec<usize> = (0..$size).collect();
-                    indices.shuffle(&mut rng);
-                    let mut keys: Vec<usize> = (0..$size).map(|_| rng.gen()).collect();
-                    keys.shuffle(&mut rng);
-                    let mut diffs: Vec<isize> = (0..$size).map(|_| rng.gen()).collect();
-                    diffs.shuffle(&mut rng);
-
-                    b.iter_batched(
-                        || (keys.clone(), diffs.clone(), indices.clone(), BitVec::repeat(false, $size).into_boxed_bitslice()),
-                        |(mut keys, mut diffs, mut indices, mut visited)| {
-                            unsafe { consolidation::utils::shuffle_by_indices_bitvec(&mut keys, &mut diffs, &mut indices, &mut visited) };
-                        },
-                        BatchSize::PerIteration,
-                    );
-                });
-            )*
-            group.finish();
-
             let mut group = c.benchmark_group("consolidate-paired-vecs");
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
                     let mut rng = Xoshiro256StarStar::from_seed(SEED);
 
-                    let mut indices: Vec<usize> = (0..$size).collect();
-                    indices.shuffle(&mut rng);
                     let mut keys: Vec<usize> = (0..$size).map(|_| rng.gen()).collect();
                     keys.shuffle(&mut rng);
                     let mut diffs: Vec<isize> = (0..$size).map(|_| rng.gen()).collect();
                     diffs.shuffle(&mut rng);
 
                     b.iter_batched(
-                        || (keys.clone(), diffs.clone(), indices.clone()),
-                        |(mut keys, mut diffs, mut indices)| {
-                            consolidation::consolidate_paired_vecs_from(&mut keys, &mut diffs, &mut indices, 0);
+                        || (keys.clone(), diffs.clone()),
+                        |(mut keys, mut diffs)| {
+                            consolidation::consolidate_payload_from(&mut keys, &mut diffs, 0);
                         },
                         BatchSize::PerIteration,
                     );

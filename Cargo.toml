@@ -9,10 +9,7 @@ license = "MIT OR Apache-2.0"
     rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [
-    "adapters",
-    "pipeline_manager"
-]
+members = ["adapters", "pipeline_manager"]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
@@ -57,7 +54,6 @@ rust_decimal = { version = "1.26.1", optional = true }
 regex = { version = "1.6.0", optional = true }
 time = { version = "0.3.14", features = ["formatting"], optional = true }
 paste = { version = "1.0.9", optional = true }
-bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.19", default-features = false, features = [
@@ -87,6 +83,7 @@ cached = "0.38.0"
 proptest = "1.0.0"
 criterion = "0.4.0"
 hdrhist = "0.5"
+bitvec = "1.0.1"
 proptest-derive = "0.3.0"
 rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"

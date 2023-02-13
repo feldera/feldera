@@ -3,8 +3,8 @@
 mod proptests;
 
 use crate::trace::consolidation::{
-    consolidate, consolidate_from, consolidate_paired_slices, consolidate_slice, dedup_starting_at,
-    fill_indices, retain_starting_at,
+    consolidate, consolidate_from, consolidate_paired_slices, consolidate_slice,
+    dedup_payload_starting_at, quicksort::quicksort, retain_starting_at,
 };
 
 #[test]
@@ -90,11 +90,110 @@ fn test_consolidate_paired_slices() {
         ((vec!["a", "b"], vec![1, 1]), (vec!["a", "b"], vec![1, 1])),
     ];
 
-    let mut indices = Vec::with_capacity(10);
     for ((mut keys, mut values), (output_keys, output_values)) in test_cases {
-        let length = consolidate_paired_slices(&mut keys, &mut values, &mut indices);
+        let length = consolidate_paired_slices(&mut keys, &mut values);
         assert_eq!(keys[..length], output_keys);
         assert_eq!(values[..length], output_values);
+    }
+}
+
+#[test]
+fn consolidate_paired_slices_corpus() {
+    let (mut keys, mut values): (Vec<_>, Vec<_>) = vec![
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((1107, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((1107, 0), 0),
+        ((0, 0), 1),
+        ((0, 0), 1),
+        ((0, 0), -1),
+        ((0, 0), -1),
+        ((0, 0), 1),
+    ]
+    .into_iter()
+    .unzip();
+    let length = consolidate_paired_slices(&mut keys, &mut values);
+    assert_eq!(&keys[..length], &[(0, 0)]);
+    assert_eq!(&values[..length], &[1]);
+
+    let (mut keys, mut values): (Vec<_>, Vec<_>) = vec![
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((1107, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((0, 0), 0),
+        ((1107, 0), 0),
+        ((0, 0), 1),
+        ((0, 0), 1),
+        ((0, 0), -1),
+        ((0, 0), -1),
+        ((0, 0), 1),
+    ]
+    .into_iter()
+    .unzip();
+    let length = consolidate_paired_slices(&mut keys, &mut values);
+    assert_eq!(&keys[..length], &[(0, 0)]);
+    assert_eq!(&values[..length], &[1]);
+}
+
+#[test]
+fn quicksort_corpus() {
+    let corpus: &[&[(u32, u32)]] = &[&[
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 1),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (1, 0),
+        (0, 0),
+    ]];
+
+    for batch in corpus {
+        let (mut keys, mut values): (Vec<_>, Vec<_>) = batch.iter().copied().unzip();
+        quicksort(&mut keys, &mut values);
+
+        let mut expected = batch.to_vec();
+        expected.sort_unstable_by_key(|&(key, _)| key);
+        let (expected_keys, expected_values): (Vec<_>, Vec<_>) = expected.into_iter().unzip();
+
+        assert_eq!(keys, expected_keys);
+        assert_eq!(values, expected_values);
     }
 }
 
@@ -118,7 +217,7 @@ fn offset_dedup() {
     ];
 
     for (mut input, starting_point, output) in test_cases {
-        dedup_starting_at(&mut input, starting_point, |a, b| *a == *b);
+        dedup_payload_starting_at(&mut input, (), starting_point, |a, (), b, ()| *a == *b);
         assert_eq!(input, output);
     }
 }
@@ -164,16 +263,5 @@ fn offset_retain() {
     for (mut input, starting_point, output) in test_cases {
         retain_starting_at(&mut input, starting_point, |(_, cond)| *cond);
         assert_eq!(input, output);
-    }
-}
-
-#[test]
-fn fill_indices() {
-    for &length in &[0, 1, 2, 42, 128, 333, 1400, 2352] {
-        let mut output = Vec::new();
-        fill_indices::fill_indices(length, &mut output);
-
-        let expected: Vec<usize> = (0..length).collect();
-        assert_eq!(expected, output);
     }
 }

@@ -30,8 +30,7 @@ fn main() {
     ]);
 
     // Config string
-    let config_str = format!(
-        r#"
+    let config_str = r#"
 inputs:
     test_input1:
         transport:
@@ -56,8 +55,7 @@ outputs:
                 max_inflight_messages: 0
         format:
             name: csv
-"#
-    );
+"#;
 
     spawn(move || {
         let producer = TestProducer::new();
@@ -83,7 +81,7 @@ outputs:
 
     server::run_server(
         &test_circuit,
-        &config_str,
+        config_str,
         "{\"name\": \"example\"}".to_string(),
         Some(8080),
     )

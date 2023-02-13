@@ -5,7 +5,7 @@
 //! each record occurs at most once, with the accumulated weights. These methods
 //! supply that functionality.
 
-mod fill_indices;
+mod quicksort;
 mod tests;
 
 // Public for benchmarks
@@ -13,9 +13,16 @@ mod tests;
 #[doc(hidden)]
 pub mod utils;
 
-use crate::algebra::{AddAssignByRef, HasZero, MonoidValue};
-use std::{mem::replace, ops::AddAssign, ptr};
-use utils::{dedup_starting_at, retain_starting_at, shuffle_by_indices};
+use crate::{
+    algebra::{AddAssignByRef, HasZero, MonoidValue},
+    utils::assume,
+};
+use std::{
+    mem::{replace, size_of},
+    ops::AddAssign,
+    ptr,
+};
+use utils::{dedup_payload_starting_at, retain_payload_starting_at, retain_starting_at};
 
 /// Sorts and consolidates `vec`.
 ///
@@ -60,7 +67,7 @@ where
     }
 
     vec[offset..].sort_unstable_by(|(key1, _), (key2, _)| key1.cmp(key2));
-    dedup_starting_at(vec, offset, |(key1, data1), (key2, data2)| {
+    dedup_payload_starting_at(vec, (), offset, |(key1, data1), (), (key2, data2), ()| {
         if key1 == key2 {
             data2.add_assign(replace(data1, R::zero()));
             true
@@ -69,60 +76,6 @@ where
         }
     });
     retain_starting_at(vec, offset, |(_, data)| !data.is_zero());
-}
-
-/// Sorts and consolidate `vec[offset..]`.
-///
-/// This method will sort `vec[offset..]` and then consolidate runs of more than
-/// one entry with identical first elements by accumulating the second elements
-/// of the pairs. Should the final accumulation be zero, the element is
-/// discarded.
-pub fn consolidate_paired_vecs_from<T, R>(
-    keys: &mut Vec<T>,
-    diffs: &mut Vec<R>,
-    indices: &mut Vec<usize>,
-    offset: usize,
-) where
-    T: Ord,
-    R: HasZero + AddAssign,
-{
-    // Ensure that the paired slices are the same length
-    assert_eq!(keys.len(), diffs.len());
-    if keys[offset..].is_empty() {
-        return;
-    }
-
-    // Clear and pre-allocate the indices buffer
-    fill_indices::fill_indices(keys.len() - offset, indices);
-    debug_assert_eq!(indices.len(), keys.len() - offset);
-
-    // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
-    indices.sort_unstable_by(|&idx1, &idx2| {
-        // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
-        unsafe { keys.get_unchecked(idx1).cmp(keys.get_unchecked(idx2)) }
-    });
-
-    // Safety: All indices within `indices` are valid
-    let diffs_ptr = diffs.as_mut_ptr();
-    dedup_starting_at(indices, offset, |&mut idx1, &mut idx2| unsafe {
-        debug_assert!(idx1 < keys.len() && idx2 < keys.len());
-
-        if keys.get_unchecked(idx1) == keys.get_unchecked(idx2) {
-            debug_assert_ne!(idx1, idx2);
-            let data1 = replace(&mut *diffs_ptr.add(idx1), R::zero());
-            let data2 = &mut *diffs_ptr.add(idx2);
-            data2.add_assign(data1);
-
-            true
-        } else {
-            false
-        }
-    });
-    retain_starting_at(indices, offset, |&mut idx| unsafe {
-        !diffs.get_unchecked(idx).is_zero()
-    });
 }
 
 /// Sorts and consolidates a slice, returning the valid prefix length.
@@ -155,53 +108,6 @@ where
         |(_, diff1), (_, diff2)| diff1.add_assign_by_ref(diff2),
         |(_, diff)| diff.is_zero(),
     )
-}
-
-pub fn consolidate_paired_slices<T, R>(
-    keys: &mut [T],
-    diffs: &mut [R],
-    indices: &mut Vec<usize>,
-) -> usize
-where
-    T: Ord,
-    R: AddAssignByRef + HasZero,
-{
-    // Ensure that the paired slices are the same length
-    assert_eq!(keys.len(), diffs.len());
-    if keys.is_empty() {
-        return 0;
-    }
-
-    // Clear and pre-allocate the indices buffer
-    fill_indices::fill_indices(keys.len(), indices);
-    debug_assert_eq!(indices.len(), keys.len());
-
-    // Ideally we'd combine the sorting and value merging portions
-    // These lines right here are literally the hottest code within the entirety of
-    // the program. They make up 90% of the work done while joining or merging
-    // anything
-    indices.sort_unstable_by(|&idx1, &idx2| {
-        // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
-        unsafe { keys.get_unchecked(idx1).cmp(keys.get_unchecked(idx2)) }
-    });
-
-    // Safety: All indices within `indices` are in-bounds of `keys` and `diffs`
-    let valid_prefix = unsafe {
-        let diffs_ptr = diffs.as_mut_ptr();
-
-        consolidate_slice_inner(
-            indices,
-            |&idx1, &idx2| keys.get_unchecked(idx1) == keys.get_unchecked(idx2),
-            |&mut idx1, &idx2| (*diffs_ptr.add(idx1)).add_assign_by_ref(&*diffs_ptr.add(idx2)),
-            |&idx| (*diffs_ptr.add(idx)).is_zero(),
-        )
-    };
-
-    // Safety: All indices within `indices` are valid and `keys`, `diffs` and
-    // `indices` all have the same length
-    unsafe { shuffle_by_indices(keys, diffs, indices) };
-
-    valid_prefix
 }
 
 /// The innards of `consolidate_slice()`, not meant to be used directly
@@ -261,6 +167,154 @@ where
     }
 
     if offset < slice_len && unsafe { !is_zero(&*slice_ptr.add(offset)) } {
+        offset += 1;
+    }
+
+    offset
+}
+
+/// Sorts and consolidate `vec[offset..]`.
+///
+/// This method will sort `vec[offset..]` and then consolidate runs of more than
+/// one entry with identical first elements by accumulating the second elements
+/// of the pairs. Should the final accumulation be zero, the element is
+/// discarded.
+pub fn consolidate_payload_from<K, R>(keys: &mut Vec<K>, diffs: &mut Vec<R>, offset: usize)
+where
+    K: Ord,
+    R: HasZero + AddAssign,
+{
+    // Ensure that the paired slices are the same length
+    assert_eq!(keys.len(), diffs.len());
+    if keys[offset..].is_empty() {
+        return;
+    }
+
+    // Ideally we'd combine the sorting and value merging portions
+    // This line right here is literally the hottest code within the entirety of the
+    // program. It makes up 90% of the work done while joining or merging anything
+    quicksort::quicksort(&mut keys[offset..], &mut diffs[offset..]);
+
+    // Deduplicate all difference values
+    dedup_payload_starting_at(keys, &mut *diffs, offset, |key1, diff1, key2, diff2| {
+        if key1 == key2 {
+            diff2.add_assign(replace(diff1, R::zero()));
+            true
+        } else {
+            false
+        }
+    });
+
+    // Remove any keys with zeroed diffs
+    retain_payload_starting_at(keys, diffs, offset, |_key, diff| !diff.is_zero());
+}
+
+pub fn consolidate_paired_slices<K, R>(keys: &mut [K], diffs: &mut [R]) -> usize
+where
+    K: Ord,
+    R: AddAssignByRef + HasZero,
+{
+    // Ensure that the paired slices are the same length
+    assert_eq!(keys.len(), diffs.len());
+    if keys.is_empty() {
+        return 0;
+    }
+
+    // Ideally we'd combine the sorting and value merging portions
+    // These lines right here are literally the hottest code within the entirety of
+    // the program. They make up 90% of the work done while joining or merging
+    // anything
+    quicksort::quicksort(keys, diffs);
+
+    // Safety: the keys & diffs slices are the same length and are non-empty
+    unsafe { compact_paired_slices(keys, diffs) }
+}
+
+/// Compacts already-sorted values and their diffs, returning the compacted
+/// prefix length
+///
+/// # Safety
+///
+/// - `keys` and `diffs` must have the same length
+/// - `keys` and `diffs` must both be non-empty
+unsafe fn compact_paired_slices<T, R>(keys: &mut [T], diffs: &mut [R]) -> usize
+where
+    T: Eq,
+    R: AddAssignByRef + HasZero,
+{
+    unsafe {
+        assume(!keys.is_empty());
+        assume(keys.len() == diffs.len());
+    }
+
+    // If the key type is a zst then all keys are identical, so we sum up all diffs
+    if size_of::<T>() == 0 {
+        debug_assert!(!diffs.is_empty());
+        let (sum, diffs) = diffs.split_at_mut(1);
+        debug_assert_eq!(sum.len(), 1);
+        let sum = &mut sum[0];
+
+        // Add all diffs to the first diff in the slice
+        for diff in diffs {
+            sum.add_assign_by_ref(diff);
+        }
+
+        // If the diff that contains the sum of all diffs is zero, return 0.
+        // Otherwise if it's non-zero, return 1 as our prefix length
+        return !sum.is_zero() as usize;
+
+    // If the diff type is a zst we check if the diff is always zero or always
+    // non-zero
+    } else if size_of::<R>() == 0 {
+        return !diffs[0].is_zero() as usize;
+    }
+
+    let len = keys.len();
+    let key_ptr = keys.as_mut_ptr();
+    let diff_ptr = diffs.as_mut_ptr();
+
+    // Counts the number of distinct known-non-zero accumulations. Indexes the write
+    // location.
+    let mut offset = 0;
+    for index in 1..len {
+        // The following unsafe block elides various bounds checks, using the reasoning
+        // that `offset` is always strictly less than `index` at the beginning
+        // of each iteration. This is initially true, and in each iteration
+        // `offset` can increase by at most one (whereas `index` always
+        // increases by one). As `index` is always in bounds, and `offset` starts at
+        // zero, it too is always in bounds.
+        //
+        // LLVM appears to struggle to optimize out Rust's split_at_mut, which would
+        // prove disjointness using run-time tests.
+        unsafe {
+            assume(offset < index);
+            assume(index < len);
+            assume(offset < len);
+
+            // LOOP INVARIANT: offset < index
+            let key1 = key_ptr.add(offset);
+            let key2 = key_ptr.add(index);
+            let diff1 = diff_ptr.add(offset);
+            let diff2 = diff_ptr.add(index);
+
+            // If the values are equal, merge them
+            if *key1 == *key2 {
+                (*diff1).add_assign_by_ref(&*diff2);
+
+            // Otherwise continue
+            } else {
+                if !(*diff1).is_zero() {
+                    offset += 1;
+                }
+
+                debug_assert!(offset < len);
+                ptr::swap(key_ptr.add(offset), key2);
+                ptr::swap(diff_ptr.add(offset), diff2);
+            }
+        }
+    }
+
+    if offset < len && unsafe { !(*diff_ptr.add(offset)).is_zero() } {
         offset += 1;
     }
 

@@ -384,8 +384,7 @@ mod test_with_kafka {
         let buffer_consumer = BufferConsumer::new("test_server_output_topic");
 
         // Config string
-        let config_str = format!(
-            r#"
+        let config_str = r#"
 inputs:
     test_input1:
         stream: test_input1
@@ -409,8 +408,7 @@ outputs:
                 max_inflight_messages: 0
         format:
             name: csv
-"#
-        );
+"#;
 
         // Create circuit
         println!("Creating circuit");
@@ -419,7 +417,7 @@ outputs:
         let errors = Arc::new(SegQueue::new());
         let errors_clone = errors.clone();
 
-        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
         let controller = Controller::with_config(
             circuit,
             catalog,

@@ -2,14 +2,13 @@
 
 use crate::{
     trace::consolidation::{
-        consolidate, consolidate_from, consolidate_slice,
-        utils::{
-            dedup_starting_at, retain_starting_at, shuffle_by_indices, shuffle_by_indices_bitvec,
-        },
+        consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
+        consolidate_slice,
+        quicksort::quicksort,
+        utils::{dedup_payload_starting_at, retain_starting_at},
     },
     utils::VecExt,
 };
-use bitvec::vec::BitVec;
 use proptest::{collection::vec, prelude::*};
 use std::collections::BTreeMap;
 
@@ -35,11 +34,28 @@ prop_compose! {
 
 prop_compose! {
     fn random_paired_vecs()
-        (len in 0..5000usize)
+        (len in 0..=5000usize)
         (left in vec(any::<u16>(), len), right in vec(any::<i16>(), len))
     -> (Vec<u16>, Vec<i16>) {
-        assert_eq!(left.len(), right.len());
+        debug_assert_eq!(left.len(), right.len());
         (left, right)
+    }
+}
+
+prop_compose! {
+    fn multiple_payloads()
+        (len in 0..=5000usize)
+        (
+            left in vec(any::<u8>(), len),
+            values1 in vec(any::<i16>(), len),
+            values2 in vec(any::<u8>(), len),
+            values3 in vec(any::<u32>(), len),
+        )
+    -> (Vec<u8>, Vec<i16>, Vec<u8>, Vec<u32>) {
+        debug_assert_eq!(left.len(), values1.len());
+        debug_assert_eq!(left.len(), values2.len());
+        debug_assert_eq!(left.len(), values3.len());
+        (left, values1, values2, values3)
     }
 }
 
@@ -57,19 +73,19 @@ fn batch_data(batch: &[((usize, usize), isize)]) -> BTreeMap<(usize, usize), i64
     values
 }
 
-// fn paired_batch_data(keys: &[(usize, usize)], diffs: &[isize]) ->
-// BTreeMap<(usize, usize), i64> {     let mut values = BTreeMap::new();
-//     for (&tuple, &diff) in keys.iter().zip(diffs) {
-//         values
-//             .entry(tuple)
-//             .and_modify(|acc| *acc += diff as i64)
-//             .or_insert(diff as i64);
-//     }
-//
-//     // Elements with a value of zero are removed in consolidation
-//     values.retain(|_, &mut diff| diff != 0);
-//     values
-// }
+fn paired_batch_data(keys: &[(usize, usize)], diffs: &[isize]) -> BTreeMap<(usize, usize), i64> {
+    let mut values = BTreeMap::new();
+    for (&tuple, &diff) in keys.iter().zip(diffs) {
+        values
+            .entry(tuple)
+            .and_modify(|acc| *acc += diff as i64)
+            .or_insert(diff as i64);
+    }
+
+    // Elements with a value of zero are removed in consolidation
+    values.retain(|_, &mut diff| diff != 0);
+    values
+}
 
 proptest! {
     #[test]
@@ -112,27 +128,57 @@ proptest! {
         prop_assert_eq!(&vec, &slice);
     }
 
-    // #[test]
-    // fn consolidate_pair_is_equivalent(batch in batch()) {
-    //     let expected = batch_data(&batch);
-    //
-    //     let mut consolidated = batch.clone();
-    //     consolidate(&mut consolidated);
-    //
-    //     let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
-    //     let mut indices = Vec::new();
-    //     let len = consolidate_paired_slices(&mut keys, &mut diffs, &mut indices);
-    //     keys.truncate(len);
-    //     diffs.truncate(len);
-    //
-    //     prop_assert!(diffs.iter().all(|&diff| diff != 0));
-    //     prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
-    //     prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
-    //
-    //     let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.into_iter().unzip();
-    //     prop_assert_eq!(consolidated_keys, keys);
-    //     prop_assert_eq!(consolidated_diffs, diffs);
-    // }
+    #[test]
+    fn consolidate_pair_is_equivalent(batch in batch()) {
+        let expected = batch_data(&batch);
+
+        let mut consolidated = batch.clone();
+        consolidate(&mut consolidated);
+
+        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
+        let len = consolidate_paired_slices(&mut keys, &mut diffs);
+        keys.truncate(len);
+        diffs.truncate(len);
+
+        prop_assert!(diffs.iter().all(|&diff| diff != 0));
+        prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
+        prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
+
+        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.into_iter().unzip();
+        prop_assert_eq!(consolidated_keys, keys);
+        prop_assert_eq!(consolidated_diffs, diffs);
+    }
+
+    #[test]
+    fn consolidate_payload_from_is_equivalent(batch in batch()) {
+        let expected = batch_data(&batch);
+
+        let mut consolidated = batch.clone();
+        consolidate(&mut consolidated);
+
+        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
+        consolidate_payload_from(&mut keys, &mut diffs, 0);
+
+        prop_assert!(diffs.iter().all(|&diff| diff != 0));
+        prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
+        prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
+
+        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.into_iter().unzip();
+        prop_assert_eq!(consolidated_keys, keys);
+        prop_assert_eq!(consolidated_diffs, diffs);
+    }
+
+    #[test]
+    fn dual_quicksort_smoke(mut data in vec(any::<(u32, u32)>(), 0..=5000)) {
+        let (mut keys, mut values): (Vec<_>, Vec<_>) = data.clone().into_iter().unzip();
+        quicksort(&mut keys, &mut values);
+
+        data.sort_unstable_by_key(|&(key, _)| key);
+        let (expected_keys, expected_values): (Vec<_>, Vec<_>) = data.into_iter().unzip();
+
+        prop_assert_eq!(keys, expected_keys);
+        prop_assert_eq!(values, expected_values);
+    }
 
     #[test]
     fn retain_equivalence(mut expected in random_vec()) {
@@ -145,41 +191,49 @@ proptest! {
     #[test]
     fn dedup_equivalence(mut expected in random_vec()) {
         let mut output = expected.clone();
-        dedup_starting_at(&mut output, 0, |a, b| *a == *b);
+        dedup_payload_starting_at(&mut output, (), 0, |a, (), b, ()| *a == *b);
         expected.dedup_by(|a, b| *a == *b);
         prop_assert_eq!(output, expected);
     }
 
     #[test]
-    fn shuffle_by_indices_equivalence((mut values, mut diffs) in random_paired_vecs()) {
-        let mut expected_indices: Vec<_> = (0..values.len()).collect();
-        expected_indices.sort_by_key(|&idx| values[idx]);
+    fn dedup_payload_equivalence((mut keys, mut values) in random_paired_vecs()) {
+        keys.sort_unstable();
 
-        let (mut output_values, mut output_diffs) = (vec![0; values.len()], vec![0; values.len()]);
-        for (current, &idx) in expected_indices.iter().enumerate() {
-            output_values[current] = values[idx];
-            output_diffs[current] = diffs[idx];
-        }
+        let mut expected: Vec<(_, _)> = keys.iter().copied().zip(values.iter().copied()).collect();
+        expected.dedup_by(|(a, _), (b, _)| a == b);
+        let (expected_keys, expected_values): (Vec<_>, Vec<_>) = expected.into_iter().unzip();
 
-        unsafe { shuffle_by_indices(&mut values, &mut diffs, &mut expected_indices) };
-        prop_assert_eq!(values, output_values);
-        prop_assert_eq!(diffs, output_diffs);
+        dedup_payload_starting_at(&mut keys, &mut values, 0, |a, _, b, _| *a == *b);
+        prop_assert_eq!(keys, expected_keys);
+        prop_assert_eq!(values, expected_values);
     }
 
     #[test]
-    fn shuffle_by_indices_bitvec_equivalence((mut values, mut diffs) in random_paired_vecs()) {
-        let mut visited = BitVec::repeat(false, values.len());
-        let mut expected_indices: Vec<_> = (0..values.len()).collect();
-        expected_indices.sort_by_key(|&idx| values[idx]);
+    fn dedup_multiple_payloads((mut keys, mut values1, mut values2, mut values3) in multiple_payloads()) {
+        let mut expected = Vec::with_capacity(keys.len());
+        for idx in 0..keys.len() {
+            expected.push((keys[idx], values1[idx], values2[idx], values3[idx]));
+        }
+        expected.dedup_by(|(a, ..), (b, ..)| a == b);
 
-        let (mut output_values, mut output_diffs) = (vec![0; values.len()], vec![0; values.len()]);
-        for (current, &idx) in expected_indices.iter().enumerate() {
-            output_values[current] = values[idx];
-            output_diffs[current] = diffs[idx];
+        let (mut expected_keys, mut expected_values1, mut expected_values2, mut expected_values3) = (
+            Vec::with_capacity(expected.len()),
+            Vec::with_capacity(expected.len()),
+            Vec::with_capacity(expected.len()),
+            Vec::with_capacity(expected.len()),
+        );
+        for (key, value1, value2, value3) in expected{
+            expected_keys.push(key);
+            expected_values1.push(value1);
+            expected_values2.push(value2);
+            expected_values3.push(value3);
         }
 
-        unsafe { shuffle_by_indices_bitvec(&mut values, &mut diffs, &mut expected_indices, &mut visited) };
-        prop_assert_eq!(values, output_values);
-        prop_assert_eq!(diffs, output_diffs);
+        dedup_payload_starting_at(&mut keys, (&mut values1, (&mut values2, &mut values3)), 0, |a, _, b, _| *a == *b);
+        prop_assert_eq!(keys, expected_keys);
+        prop_assert_eq!(values1, expected_values1);
+        prop_assert_eq!(values2, expected_values2);
+        prop_assert_eq!(values3, expected_values3);
     }
 }

@@ -605,7 +605,7 @@ mod test {
             let expected_500_100 =
                 partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
             let output_500_100 = input_stream
-                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec.clone())
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec)
                 .gather(0)
                 .integrate();
             expected_500_100.apply2(&output_500_100, |expected, actual| {

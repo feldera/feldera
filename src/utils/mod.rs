@@ -25,15 +25,6 @@ pub(crate) unsafe fn assume(cond: bool) {
     }
 }
 
-// FIXME: Replace with `usize::next_multiple_of()` via rust/#88581
-#[inline]
-pub(crate) const fn next_multiple_of(n: usize, rhs: usize) -> usize {
-    match n % rhs {
-        0 => n,
-        r => n + (rhs - r),
-    }
-}
-
 #[cold]
 #[inline(never)]
 pub(crate) fn cursor_position_oob(position: usize, length: usize) -> ! {
