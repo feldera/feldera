@@ -32,6 +32,7 @@ impl CommentWriter {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn add_global_comment<S: Into<String>>(&mut self, comment: S) {
         self.global_comments.push(comment.into());
     }
