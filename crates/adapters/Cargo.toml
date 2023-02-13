@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [features]
-default = []
+default = ["with-kafka", "server"]
 with-kafka = ["rdkafka"]
 server = ["actix", "actix-test", "actix-web", "actix-web-actors", "actix-http", "bytes", "byteorder", "futures", "serde_json", "mime", "with-kafka"]
 test-utils = ["size-of", "futures", "proptest", "proptest-derive", "actix-codec"]
@@ -41,7 +41,7 @@ futures = { version = "0.3.25", optional = true }
 proptest = { version = "1.0.0", optional = true }
 proptest-derive = { version = "0.3.0", optional = true }
 env_logger = "0.10.0"
-clap = {version = "4.0.32", features = ["derive"] }
+clap = { version = "4.0.32", features = ["derive"] }
 tokio = { version = "1.25.0", features = ["sync"] }
 prometheus = "0.13.3"
 utoipa = { version = "3.0.1" }
@@ -49,7 +49,7 @@ actix-codec = { version = "0.5.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0.89"
-size-of = { version = "0.1.2", features = ["time-std"]}
+size-of = { version = "0.1.2", features = ["time-std"] }
 tempfile = "3.3.0"
 proptest = "1.0.0"
 proptest-derive = "0.3.0"
