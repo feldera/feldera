@@ -5,8 +5,8 @@ pub(crate) fn test_logger() {
     let filter = EnvFilter::try_from_env("DBSP_JIT")
         .or_else(|_| EnvFilter::try_new("info"))
         .unwrap();
-    tracing_subscriber::registry()
+    let _ = tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer())
-        .init();
+        .with(fmt::layer().with_test_writer())
+        .try_init();
 }
