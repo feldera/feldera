@@ -19,6 +19,7 @@ cranelift-module = "0.92.0"
 cranelift-native = "0.92.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 petgraph = { version = "0.6.2", features = ["graphmap"] }
+bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 
 # FIXME: Better serialization protocol
 serde_json = "1.0.92"
