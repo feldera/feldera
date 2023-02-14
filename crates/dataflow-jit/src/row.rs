@@ -1,4 +1,5 @@
 use crate::codegen::VTable;
+use bincode::{de::Decoder, enc::Encoder, error::EncodeError, Decode, Encode};
 use size_of::SizeOf;
 use std::{
     alloc::Layout,
@@ -105,6 +106,24 @@ impl SizeOf for Row {
             context.add_distinct_allocation().add(self.vtable.size_of);
             unsafe { (self.vtable.size_of_children)(self.data.as_ptr(), context) };
         }
+    }
+}
+
+impl Encode for Row {
+    fn encode<E>(&self, _encoder: &mut E) -> Result<(), EncodeError>
+    where
+        E: Encoder,
+    {
+        todo!()
+    }
+}
+
+impl Decode for Row {
+    fn decode<D>(_decoder: &mut D) -> Result<Self, bincode::error::DecodeError>
+    where
+        D: Decoder,
+    {
+        todo!()
     }
 }
 
