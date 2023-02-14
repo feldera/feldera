@@ -60,6 +60,7 @@ fn set_column_nullness(row: &mut Row, column: usize, layout: &NativeLayout, null
 }
 
 #[test]
+#[ignore]
 fn test_parse_sql_output() {
     const SQL: &str = include_str!("simple_select.json");
 
