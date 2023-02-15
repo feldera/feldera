@@ -100,7 +100,7 @@
 //!
 //! A [`Controller`] is instantiated with
 //!
-//! * a [`ControllerConfig`] object, which specifies input and output pipeline
+//! * a [`PipelineConfig`] object, which specifies input and output pipeline
 //!   configurations as well as global controller configuration settings, and
 //!
 //! * a [`Catalog`] object, which stores dictionaries of input and output
@@ -111,11 +111,11 @@ use num_derive::FromPrimitive;
 mod catalog;
 mod controller;
 mod deinput;
-mod format;
+pub mod format;
 mod seroutput;
 #[cfg(feature = "server")]
 pub mod server;
-mod transport;
+pub mod transport;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;
@@ -139,7 +139,10 @@ pub use deinput::{
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, Parser};
 pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
 
-pub use controller::{Controller, ControllerConfig, ControllerError, ControllerStatus};
+pub use controller::{
+    Controller, ControllerError, ControllerStatus, FormatConfig, GlobalPipelineConfig,
+    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, TransportConfig,
+};
 pub use transport::{
     FileInputTransport, InputConsumer, InputEndpoint, InputTransport, OutputEndpoint,
     OutputTransport,

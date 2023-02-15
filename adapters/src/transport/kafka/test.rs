@@ -4,7 +4,7 @@ use crate::{
         kafka::{BufferConsumer, KafkaResources, TestProducer},
         mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, TEST_LOGGER,
     },
-    Controller, ControllerConfig,
+    Controller, PipelineConfig,
 };
 use log::LevelFilter;
 use proptest::prelude::*;
@@ -185,7 +185,7 @@ outputs:
         let (circuit, catalog) = test_circuit(4);
 
         println!("Starting controller");
-        let config: ControllerConfig = serde_yaml::from_str(config_str).unwrap();
+        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
         let controller = Controller::with_config(
             circuit,

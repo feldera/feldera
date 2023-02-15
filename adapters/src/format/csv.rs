@@ -16,12 +16,13 @@ use std::{
     mem::take,
     sync::{Arc, Mutex},
 };
+use utoipa::ToSchema;
 
 /// CSV format parser.
 pub struct CsvInputFormat;
 
-#[derive(Deserialize)]
-struct CsvParserConfig {
+#[derive(Deserialize, ToSchema)]
+pub struct CsvParserConfig {
     /// Input stream to feed parsed records to.
     input_stream: String,
 }
@@ -174,8 +175,8 @@ const fn default_buffer_size_records() -> usize {
     10_000
 }
 
-#[derive(Deserialize)]
-struct CsvEncoderConfig {
+#[derive(Deserialize, ToSchema)]
+pub struct CsvEncoderConfig {
     #[serde(default = "default_buffer_size_records")]
     buffer_size_records: usize,
 }

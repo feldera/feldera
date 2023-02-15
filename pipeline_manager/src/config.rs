@@ -1,8 +1,10 @@
 use crate::{PipelineId, ProjectId};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
-use tokio::fs::{canonicalize, create_dir_all};
+use std::{
+    fs::{canonicalize, create_dir_all, File},
+    path::{Path, PathBuf},
+};
 
 const fn default_server_port() -> u16 {
     8080
@@ -10,10 +12,6 @@ const fn default_server_port() -> u16 {
 
 fn default_server_address() -> String {
     "127.0.0.1".to_string()
-}
-
-fn default_pg_connection_string() -> String {
-    "host=localhost user=dbsp".to_string()
 }
 
 fn default_working_directory() -> String {
@@ -31,12 +29,8 @@ pub(crate) struct ManagerConfig {
     #[serde(default = "default_server_address")]
     pub bind_address: String,
 
-    /// Postgres database connection string.
-    ///
-    /// See `tokio-postgres` crate documentation for supported formats.
-    /// Defaults to "host=localhost user=dbsp".
-    #[serde(default = "default_pg_connection_string")]
-    pub pg_connection_string: String,
+    /// File to write manager logs to.
+    pub logfile: String,
 
     /// Directory where the manager stores its filesystem state:
     /// generated Rust crates, pipeline logs, Prometheus config file,
@@ -83,19 +77,16 @@ impl ManagerConfig {
     /// Converts `working_directory` `sql_compiler_home`,
     /// `dbsp_override_path`, and `static_html` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
-    pub(crate) async fn canonicalize(self) -> AnyResult<Self> {
-        let mut result = self.clone();
-        create_dir_all(&result.working_directory)
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "unable to create or open working directry '{}': {e}",
-                    result.working_directory
-                ))
-            })?;
+    pub(crate) fn canonicalize(self) -> AnyResult<Self> {
+        let mut result = self;
+        create_dir_all(&result.working_directory).map_err(|e| {
+            AnyError::msg(format!(
+                "unable to create or open working directry '{}': {e}",
+                result.working_directory
+            ))
+        })?;
 
         result.working_directory = canonicalize(&result.working_directory)
-            .await
             .map_err(|e| {
                 AnyError::msg(format!(
                     "error canonicalizing working directory path '{}': {e}",
@@ -104,8 +95,26 @@ impl ManagerConfig {
             })?
             .to_string_lossy()
             .into_owned();
+
+        let logfile = File::create(&result.logfile).map_err(|e| {
+            AnyError::msg(format!(
+                "unable to create or truncate log file '{}': {e}",
+                result.logfile
+            ))
+        })?;
+        drop(logfile);
+
+        result.logfile = canonicalize(&result.logfile)
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "error canonicalizing log file path '{}': {e}",
+                    result.logfile
+                ))
+            })?
+            .to_string_lossy()
+            .into_owned();
+
         result.sql_compiler_home = canonicalize(&result.sql_compiler_home)
-            .await
             .map_err(|e| {
                 AnyError::msg(format!(
                     "failed to access SQL compiler home '{}': {e}",
@@ -117,7 +126,6 @@ impl ManagerConfig {
 
         if let Some(path) = result.dbsp_override_path.as_mut() {
             *path = canonicalize(&path)
-                .await
                 .map_err(|e| {
                     AnyError::msg(format!(
                         "failed to access dbsp override directory '{path}': {e}"
@@ -129,7 +137,6 @@ impl ManagerConfig {
 
         if let Some(path) = result.static_html.as_mut() {
             *path = canonicalize(&path)
-                .await
                 .map_err(|e| AnyError::msg(format!("failed to access '{path}': {e}")))?
                 .to_string_lossy()
                 .into_owned();
@@ -149,6 +156,16 @@ impl ManagerConfig {
     /// Directory where the manager maintains the generated cargo workspace.
     pub(crate) fn workspace_dir(&self) -> PathBuf {
         Path::new(&self.working_directory).join("cargo_workspace")
+    }
+
+    /// Manager pid file.
+    pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
+        Path::new(&self.working_directory).join("manager.pid")
+    }
+
+    /// SQlite database file.
+    pub(crate) fn database_file_path(&self) -> PathBuf {
+        Path::new(&self.working_directory).join("manager.db")
     }
 
     /// Directory where the manager generates Rust crate for the project.

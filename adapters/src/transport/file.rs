@@ -8,7 +8,7 @@ use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     fs::File,
-    io::{BufRead, BufReader, Result as IoResult, Write},
+    io::{BufRead, BufReader, Write},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -16,6 +16,7 @@ use std::{
     thread::{sleep, spawn},
     time::Duration,
 };
+use utoipa::ToSchema;
 
 const SLEEP_MS: u64 = 200;
 
@@ -39,8 +40,8 @@ impl InputTransport for FileInputTransport {
     }
 }
 
-#[derive(Deserialize)]
-struct FileInputConfig {
+#[derive(Deserialize, ToSchema)]
+pub struct FileInputConfig {
     /// File path.
     path: String,
 
@@ -76,7 +77,12 @@ impl FileInputEndpoint {
     }
 
     fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
-        let file = File::open(&self.config.path)?;
+        let file = File::open(&self.config.path).map_err(|e| {
+            AnyError::msg(format!(
+                "Failed to open input file '{}': {e}",
+                self.config.path
+            ))
+        })?;
         let reader = match self.config.buffer_size_bytes {
             Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
             _ => BufReader::new(file),
@@ -189,8 +195,8 @@ impl OutputTransport for FileOutputTransport {
     }
 }
 
-#[derive(Deserialize)]
-struct FileOutputConfig {
+#[derive(Deserialize, ToSchema)]
+pub struct FileOutputConfig {
     /// File path.
     path: String,
 }
@@ -200,8 +206,13 @@ struct FileOutputEndpoint {
 }
 
 impl FileOutputEndpoint {
-    fn new(config: FileOutputConfig) -> IoResult<Self> {
-        let file = File::create(config.path)?;
+    fn new(config: FileOutputConfig) -> AnyResult<Self> {
+        let file = File::create(&config.path).map_err(|e| {
+            AnyError::msg(format!(
+                "Failed to create output file '{}': {e}",
+                config.path
+            ))
+        })?;
         Ok(Self { file })
     }
 }

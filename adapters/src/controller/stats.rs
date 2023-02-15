@@ -30,7 +30,7 @@
 //! by the circuit, but the counter shows that 10 records are still
 //! pending.
 
-use super::{EndpointId, GlobalControllerConfig, InputEndpointConfig, OutputEndpointConfig};
+use super::{EndpointId, GlobalPipelineConfig, InputEndpointConfig, OutputEndpointConfig};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use serde::{Serialize, Serializer};
@@ -77,7 +77,7 @@ where
 #[derive(Serialize)]
 pub struct ControllerStatus {
     /// Global controller configuration.
-    pub global_config: GlobalControllerConfig,
+    pub global_config: GlobalPipelineConfig,
 
     /// Global controller metrics.
     pub global_metrics: GlobalControllerMetrics,
@@ -96,7 +96,7 @@ pub struct ControllerStatus {
 }
 
 impl ControllerStatus {
-    pub fn new(global_config: &GlobalControllerConfig) -> Self {
+    pub fn new(global_config: &GlobalPipelineConfig) -> Self {
         Self {
             global_config: global_config.clone(),
             global_metrics: Default::default(),
@@ -208,7 +208,7 @@ impl ControllerStatus {
         endpoint_id: EndpointId,
         num_bytes: usize,
         num_records: usize,
-        global_config: &GlobalControllerConfig,
+        global_config: &GlobalPipelineConfig,
         circuit_thread_unparker: &Unparker,
         backpressure_thread_unparker: &Unparker,
     ) {
@@ -262,7 +262,7 @@ impl ControllerStatus {
         &self,
         endpoint_id: EndpointId,
         num_records: usize,
-        global_config: &GlobalControllerConfig,
+        global_config: &GlobalPipelineConfig,
         circuit_thread_unparker: &Unparker,
     ) {
         let num_records = num_records as u64;
