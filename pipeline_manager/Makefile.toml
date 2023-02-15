@@ -1,0 +1,27 @@
+[tasks.build]
+args = ["build", "--release"]
+
+[tasks.openapi_json]
+description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
+dependencies = ["build"]
+command = "cargo"
+args = ["run", "--release",  "--", "--dump-openapi"]
+
+[tasks.openapi_python]
+description = "Generate Python bindings for the REST API"
+dependencies = ["openapi_json"]
+script = '''
+pip3 install openapi-python-client
+cd python
+rm -rf dbsp-api-client
+openapi-python-client generate --path ../openapi.json
+pip3 install -e dbsp-api-client
+'''
+
+[tasks.python_test]
+description = "Test Python API"
+dependencies = ["openapi_python"]
+script = '''
+../scripts/start_manager.sh $(python3 -c 'import tempfile; print(tempfile.gettempdir(), end="")')/pipeline_data
+python3 python/test.py
+'''
