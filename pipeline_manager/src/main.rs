@@ -40,7 +40,7 @@ use actix_web::{
         Method,
     },
     middleware::Logger,
-    patch, post, web,
+    patch, post, rt, web,
     web::Data as WebData,
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
     Result as ActixResult,
@@ -48,10 +48,16 @@ use actix_web::{
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
+#[cfg(unix)]
+use daemonize::Daemonize;
 use env_logger::Env;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::{fs::read, sync::Mutex};
+use std::{
+    fs::{read, write, File as StdFile},
+    net::TcpListener,
+    sync::Arc,
+};
+use tokio::sync::Mutex;
 use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -76,12 +82,17 @@ struct Args {
     /// Allows modifying JavaScript without restarting the server.
     #[arg(short, long)]
     static_html: Option<String>,
+
+    /// [Developers only] dump OpenAPI specification to `openapi.json` file and
+    /// exit immediately.
+    #[arg(long)]
+    dump_openapi: bool,
 }
 
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "DBSP Pipeline Manager API",
+        title = "DBSP API",
         description = r"API to catalog, compile, and execute SQL programs.
 
 # API concepts
@@ -130,13 +141,26 @@ observed by the user is outdated, so the request is rejected."
         pipeline_metadata,
         pipeline_start,
         pipeline_pause,
-        shutdown_pipeline,
-        delete_pipeline,
+        pipeline_shutdown,
+        pipeline_delete,
     ),
     components(schemas(
         db::ProjectDescr,
         db::ConfigDescr,
         db::PipelineDescr,
+        dbsp_adapters::PipelineConfig,
+        dbsp_adapters::InputEndpointConfig,
+        dbsp_adapters::OutputEndpointConfig,
+        dbsp_adapters::TransportConfig,
+        dbsp_adapters::FormatConfig,
+        dbsp_adapters::transport::FileInputConfig,
+        dbsp_adapters::transport::FileOutputConfig,
+        dbsp_adapters::transport::KafkaInputConfig,
+        dbsp_adapters::transport::KafkaOutputConfig,
+        dbsp_adapters::transport::KafkaLogLevel,
+        dbsp_adapters::transport::KafkaOutputConfig,
+        dbsp_adapters::format::CsvEncoderConfig,
+        dbsp_adapters::format::CsvParserConfig,
         ProjectId,
         PipelineId,
         ConfigId,
@@ -167,18 +191,24 @@ observed by the user is outdated, so the request is rejected."
 )]
 pub struct ApiDoc;
 
-#[actix_web::main]
-async fn main() -> AnyResult<()> {
+fn main() -> AnyResult<()> {
+    // Stay in single-threaded mode (no tokio) until calling `daemonize`.
+
     // Create env logger.
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
     let args = Args::try_parse()?;
+
+    if args.dump_openapi {
+        let openapi_json = ApiDoc::openapi().to_json()?;
+        write("openapi.json", openapi_json.as_bytes())?;
+        return Ok(());
+    }
 
     let config_file = &args
         .config_file
         .unwrap_or_else(|| "config.yaml".to_string());
     let config_yaml = read(config_file)
-        .await
         .map_err(|e| AnyError::msg(format!("error reading config file '{config_file}': {e}")))?;
     let config_yaml = String::from_utf8_lossy(&config_yaml);
     let mut config: ManagerConfig = serde_yaml::from_str(&config_yaml)
@@ -187,9 +217,9 @@ async fn main() -> AnyResult<()> {
     if let Some(static_html) = &args.static_html {
         config.static_html = Some(static_html.clone());
     }
-    let config = config.canonicalize().await?;
+    let config = config.canonicalize()?;
 
-    run(config).await
+    run(config)
 }
 
 struct ServerState {
@@ -220,31 +250,62 @@ impl ServerState {
     }
 }
 
-async fn run(config: ManagerConfig) -> AnyResult<()> {
-    let db = Arc::new(Mutex::new(ProjectDB::connect(&config).await?));
-    let compiler = Compiler::new(&config, db.clone()).await?;
+fn run(config: ManagerConfig) -> AnyResult<()> {
+    // Check that the port is available before turning into a daemon, so we can fail
+    // early if the port is taken.
+    let listener = TcpListener::bind((config.bind_address.clone(), config.port)).map_err(|e| {
+        AnyError::msg(format!(
+            "failed to bind port '{}:{}': {e}",
+            &config.bind_address, config.port
+        ))
+    })?;
 
-    // Since we don't trust any file system state after restart,
-    // reset all projects to `ProjectStatus::None`, which will force
-    // us to recompile projects before running them.
-    db.lock().await.reset_project_status().await?;
-    let bind_address = config.bind_address.clone();
-    let bind_port = config.port;
-    let state = WebData::new(ServerState::new(config, db, compiler).await?);
-    let openapi = ApiDoc::openapi();
+    let logfile = StdFile::create(&config.logfile).map_err(|e| {
+        AnyError::msg(format!(
+            "failed to create log file '{}': {e}",
+            &config.logfile
+        ))
+    })?;
 
-    HttpServer::new(move || {
-        build_app(
-            App::new().wrap(Logger::default()),
-            state.clone(),
-            openapi.clone(),
-        )
+    let logfile_clone = logfile.try_clone().unwrap();
+    let db = ProjectDB::connect(&config)?;
+
+    #[cfg(unix)]
+    let daemonize = Daemonize::new()
+        .pid_file(config.manager_pid_file_path())
+        .working_directory(&config.working_directory)
+        .stdout(logfile_clone)
+        .stderr(logfile);
+
+    #[cfg(unix)]
+    daemonize.start().map_err(|e| {
+        AnyError::msg(format!(
+            "failed to detach server process from terminal: '{e}'",
+        ))
+    })?;
+
+    rt::System::new().block_on(async {
+        let db = Arc::new(Mutex::new(db));
+        let compiler = Compiler::new(&config, db.clone()).await?;
+
+        // Since we don't trust any file system state after restart,
+        // reset all projects to `ProjectStatus::None`, which will force
+        // us to recompile projects before running them.
+        db.lock().await.reset_project_status()?;
+        let openapi = ApiDoc::openapi();
+
+        let state = WebData::new(ServerState::new(config, db, compiler).await?);
+
+        let server = HttpServer::new(move || {
+            build_app(
+                App::new().wrap(Logger::default()),
+                state.clone(),
+                openapi.clone(),
+            )
+        });
+        server.listen(listener)?.run().await?;
+        Ok(())
     })
-    .bind((bind_address, bind_port))?
-    .run()
-    .await?;
-
-    Ok(())
 }
 
 // `static_files` magic.
@@ -286,8 +347,8 @@ where
         .service(pipeline_metadata)
         .service(pipeline_start)
         .service(pipeline_pause)
-        .service(shutdown_pipeline)
-        .service(delete_pipeline)
+        .service(pipeline_shutdown)
+        .service(pipeline_delete)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
 
     if let Some(static_html) = &state.config.static_html {
@@ -307,8 +368,11 @@ where
     }
 }
 
-async fn index() -> ActixResult<NamedFile> {
-    Ok(NamedFile::open("static/index.html")?)
+async fn index(state: WebData<ServerState>) -> ActixResult<NamedFile> {
+    Ok(NamedFile::open(format!(
+        "{}/index.html",
+        state.config.static_html.as_ref().unwrap()
+    ))?)
 }
 
 /// Pipeline manager error response.
@@ -446,7 +510,6 @@ async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .lock()
         .await
         .project_code(project_id)
-        .await
         .map(|(version, code)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -496,7 +559,6 @@ async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl R
         .lock()
         .await
         .get_project(project_id)
-        .await
         .map(|descr| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -548,7 +610,6 @@ async fn new_project(
         .lock()
         .await
         .new_project(&request.name, &request.code)
-        .await
         .map(|(project_id, version)| {
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -607,7 +668,6 @@ async fn update_project(
         .lock()
         .await
         .update_project(request.project_id, &request.name, &request.code)
-        .await
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -654,7 +714,6 @@ async fn compile_project(
         .lock()
         .await
         .set_project_pending(request.project_id, request.version)
-        .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -697,7 +756,6 @@ async fn cancel_project(
         .lock()
         .await
         .cancel_project(request.project_id, request.version)
-        .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -731,7 +789,7 @@ async fn delete_project(state: WebData<ServerState>, req: HttpRequest) -> impl R
 
     let db = state.db.lock().await;
 
-    match db.list_project_pipelines(project_id).await {
+    match db.list_project_pipelines(project_id) {
         Ok(pipelines) => {
             if pipelines.iter().any(|pipeline| !pipeline.killed) {
                 return HttpResponse::BadRequest()
@@ -742,7 +800,6 @@ async fn delete_project(state: WebData<ServerState>, req: HttpRequest) -> impl R
     }
 
     db.delete_project(project_id)
-        .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -789,7 +846,6 @@ async fn new_config(
         .lock()
         .await
         .new_config(request.project_id, &request.name, &request.config)
-        .await
         .map(|(config_id, version)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -841,7 +897,6 @@ async fn update_config(
         .lock()
         .await
         .update_config(request.config_id, &request.name, &request.config)
-        .await
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -859,6 +914,9 @@ async fn update_config(
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown config id '5'"))),
     ),
+    params(
+        ("config_id" = i64, Path, description = "Unique configuration identifier")
+    ),
     tag = "Config"
 )]
 #[delete("/configs/{config_id}")]
@@ -875,7 +933,6 @@ async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Re
         .lock()
         .await
         .delete_config(config_id)
-        .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -908,7 +965,6 @@ async fn list_project_configs(state: WebData<ServerState>, req: HttpRequest) -> 
         .lock()
         .await
         .list_project_configs(project_id)
-        .await
         .map(|configs| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1007,7 +1063,6 @@ async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -
         .lock()
         .await
         .list_project_pipelines(project_id)
-        .await
         .map(|pipelines| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1019,10 +1074,9 @@ async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -
 /// Retrieve pipeline status and performance counters.
 #[utoipa::path(
     responses(
-        // TODO: figure out how to specify that response contains arbitrary JSON,
-        // or, better yet, implement `ToSchema` for `ControllerStatus`, which is the
+        // TODO: Implement `ToSchema` for `ControllerStatus`, which is the
         // actual type returned by this endpoint.
-        (status = OK, description = "Pipeline status retrieved successfully.", body = String),
+        (status = OK, description = "Pipeline status retrieved successfully.", body = Object),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
@@ -1052,7 +1106,7 @@ async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl 
 /// Retrieve pipeline metadata.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline metadata retrieved successfully.", body = String),
+        (status = OK, description = "Pipeline metadata retrieved successfully.", body = Object),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
@@ -1082,7 +1136,10 @@ async fn pipeline_metadata(state: WebData<ServerState>, req: HttpRequest) -> imp
 /// Start pipeline.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline started."),
+        (status = OK
+            , description = "Pipeline started."
+            , content_type = "application/json"
+            , body = String),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
@@ -1112,7 +1169,10 @@ async fn pipeline_start(state: WebData<ServerState>, req: HttpRequest) -> impl R
 /// Pause pipeline.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline paused."),
+        (status = OK
+            , description = "Pipeline paused."
+            , content_type = "application/json"
+            , body = String),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
@@ -1159,6 +1219,7 @@ pub(self) struct ShutdownPipelineRequest {
     responses(
         (status = OK
             , description = "Pipeline successfully terminated."
+            , content_type = "application/json"
             , body = String
             , example = json!("Pipeline successfully terminated")
             , example = json!("Pipeline already shut down")),
@@ -1174,7 +1235,7 @@ pub(self) struct ShutdownPipelineRequest {
     tag = "Pipeline"
 )]
 #[post("/pipelines/shutdown")]
-async fn shutdown_pipeline(
+async fn pipeline_shutdown(
     state: WebData<ServerState>,
     request: web::Json<ShutdownPipelineRequest>,
 ) -> impl Responder {
@@ -1193,6 +1254,7 @@ async fn shutdown_pipeline(
     responses(
         (status = OK
             , description = "Pipeline successfully deleted."
+            , content_type = "application/json"
             , body = String
             , example = json!("Pipeline successfully deleted")),
         (status = NOT_FOUND
@@ -1210,7 +1272,7 @@ async fn shutdown_pipeline(
     tag = "Pipeline"
 )]
 #[delete("/pipelines/{pipeline_id}")]
-async fn delete_pipeline(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
             return e;

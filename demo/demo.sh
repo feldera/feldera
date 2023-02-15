@@ -6,7 +6,8 @@ SERVER_DIR="${ROOT}/pipeline_manager/"
 
 set -e
 
-${ROOT}/deploy/start_manager.sh ${THIS_DIR}/pipeline_data
+${ROOT}/scripts/start_manager.sh ${THIS_DIR}/pipeline_data
+${ROOT}/scripts/start_prometheus.sh ${THIS_DIR}/pipeline_data
 
 # We want non-matching wildcards to return an empty list
 # instead of a non-expanded wildcard.

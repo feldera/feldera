@@ -38,6 +38,7 @@ env_logger = "0.10.0"
 clap = {version = "4.0.32", features = ["derive"] }
 tokio = { version = "1.25.0", features = ["sync"] }
 prometheus = "0.13.3"
+utoipa = { version = "3.0.1" }
 
 [dev-dependencies]
 serde_json = "1.0.89"

@@ -61,8 +61,8 @@ mod error;
 mod stats;
 
 pub use config::{
-    ControllerConfig, FormatConfig, GlobalControllerConfig, InputEndpointConfig,
-    OutputEndpointConfig,
+    FormatConfig, GlobalPipelineConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
+    TransportConfig,
 };
 pub use error::ControllerError;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
@@ -73,7 +73,7 @@ pub(crate) type EndpointId = u64;
 /// input/output adapters, and implements runtime flow control.
 ///
 /// The controller instantiates the input and output pipelines according to a
-/// user-provided [configuration](`ControllerConfig`) and exposes an API to
+/// user-provided [configuration](`PipelineConfig`) and exposes an API to
 /// reconfigure and monitor the pipelines at runtime.
 pub struct Controller {
     inner: Arc<ControllerInner>,
@@ -118,7 +118,7 @@ impl Controller {
     pub fn with_config(
         mut circuit: DBSPHandle,
         catalog: Catalog,
-        config: &ControllerConfig,
+        config: &PipelineConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> AnyResult<Self> {
         let circuit_thread_parker = Parker::new();
@@ -493,7 +493,7 @@ struct ControllerInner {
 impl ControllerInner {
     fn new(
         catalog: Catalog,
-        global_config: &GlobalControllerConfig,
+        global_config: &GlobalPipelineConfig,
         circuit_thread_unparker: Unparker,
         backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -962,7 +962,7 @@ impl OutputConsumer for OutputProbe {
 mod test {
     use crate::{
         test::{generate_test_batch, test_circuit, wait, TestStruct},
-        Controller, ControllerConfig,
+        Controller, PipelineConfig,
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
     use std::fs::remove_file;
@@ -1023,7 +1023,7 @@ outputs:
 
             println!("input file: {}", temp_input_file.path().to_str().unwrap());
             println!("output file: {output_path}");
-            let config: ControllerConfig = serde_yaml::from_str(&config_str).unwrap();
+            let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
             let controller = Controller::with_config(
                 circuit,

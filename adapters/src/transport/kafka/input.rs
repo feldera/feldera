@@ -20,6 +20,13 @@ use std::{
     thread::spawn,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use utoipa::{
+    openapi::{
+        schema::{KnownFormat, Schema},
+        ArrayBuilder, ObjectBuilder, RefOr, SchemaFormat, SchemaType,
+    },
+    ToSchema,
+};
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -76,6 +83,45 @@ pub struct KafkaInputConfig {
     /// consumer group during initialization.
     #[serde(default = "default_group_join_timeout_secs")]
     group_join_timeout_secs: u32,
+}
+
+// The auto-derived implementation gets confused by the flattened
+// `kafka_options` field. FIXME: I didn't figure out how to attach a
+// `description` to the `topics` property.
+impl<'s> ToSchema<'s> for KafkaInputConfig {
+    fn schema() -> (&'s str, RefOr<Schema>) {
+        (
+            "KafkaInputConfig",
+            ObjectBuilder::new()
+                .property(
+                    "topics",
+                    ArrayBuilder::new().items(
+                        ObjectBuilder::new()
+                            .schema_type(SchemaType::String)
+                    )
+                )
+                .required("topics")
+                .property(
+                    "log_level",
+                    KafkaLogLevel::schema().1
+                )
+                .property(
+                    "group_join_timeout_secs",
+                    ObjectBuilder::new()
+                        .schema_type(SchemaType::Integer)
+                        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int32)))
+                        .description(Some("Maximum timeout in seconds to wait for the endpoint to join the Kafka consumer group during initialization.")),
+                )
+                .additional_properties(Some(
+                        ObjectBuilder::new()
+                        .schema_type(SchemaType::String)
+                        .description(Some(r#"Options passed directly to `rdkafka`.
+
+See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
+used to configure the Kafka producer."#))))
+                .into(),
+        )
+    }
 }
 
 impl KafkaInputConfig {

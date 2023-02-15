@@ -108,7 +108,7 @@ impl Compiler {
                     if let Some(job) = &job {
                         // Project was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_project_if_exists(job.project_id).await?;
+                        let descr = db.lock().await.get_project_if_exists(job.project_id)?;
                         if let Some(descr) = descr {
                             if descr.version != job.version || descr.status != ProjectStatus::Compiling {
                                 cancel = true;
@@ -143,7 +143,7 @@ impl Compiler {
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
-                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success).await?;
+                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success)?;
                             job = None;
                         }
                         Ok(status) => {
@@ -155,7 +155,7 @@ impl Compiler {
                             } else {
                                 ProjectStatus::SqlError(format!("{output}\nexit code: {status}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status).await?;
+                            db.set_project_status_guarded(project_id, version, status)?;
                             job = None;
                         }
                         Err(e) => {
@@ -164,7 +164,7 @@ impl Compiler {
                             } else {
                                 ProjectStatus::SqlError(format!("I/O error: {e}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status).await?;
+                            db.set_project_status_guarded(project_id, version, status)?;
                             job = None;
                         }
                     }
@@ -172,12 +172,24 @@ impl Compiler {
             }
             // Pick the next project from the queue.
             if job.is_none() {
-                let mut db = db.lock().await;
-                if let Some((project_id, version)) = db.next_job().await? {
-                    trace!("Next project in the queue: '{project_id}', version '{version}'");
-                    job = Some(CompilationJob::sql(&config, &db, project_id, version).await?);
-                    db.set_project_status_guarded(project_id, version, ProjectStatus::Compiling)
-                        .await?;
+                let project = {
+                    let db = db.lock().await;
+                    if let Some((project_id, version)) = db.next_job()? {
+                        trace!("Next project in the queue: '{project_id}', version '{version}'");
+                        let (_version, code) = db.project_code(project_id)?;
+                        Some((project_id, version, code))
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some((project_id, version, code)) = project {
+                    job = Some(CompilationJob::sql(&config, &code, project_id, version).await?);
+                    db.lock().await.set_project_status_guarded(
+                        project_id,
+                        version,
+                        ProjectStatus::Compiling,
+                    )?;
                 }
             }
         }
@@ -209,15 +221,11 @@ impl CompilationJob {
     /// Run SQL-to-DBSP compiler.
     async fn sql(
         config: &ManagerConfig,
-        db: &ProjectDB,
+        code: &str,
         project_id: ProjectId,
         version: Version,
     ) -> AnyResult<Self> {
         debug!("Running SQL compiler on project '{project_id}', version '{version}'");
-
-        // Read code from DB (we assume that the DB is locked by the caller,
-        // so no need for a version check).
-        let (_version, code) = db.project_code(project_id).await?;
 
         // Create project directory.
         let sql_file_path = config.sql_file_path(project_id);

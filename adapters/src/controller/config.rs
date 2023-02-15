@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
+use utoipa::ToSchema;
 
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
@@ -21,13 +22,14 @@ const fn default_workers() -> u16 {
     1
 }
 
-/// Controller configuration specified by the user when creating
-/// a new controller instance.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ControllerConfig {
+/// Pipeline configuration specified by the user when creating
+/// a new pipeline instance.
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+pub struct PipelineConfig {
     /// Global controller configuration.
     #[serde(flatten)]
-    pub global: GlobalControllerConfig,
+    #[schema(inline)]
+    pub global: GlobalPipelineConfig,
 
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
@@ -37,9 +39,9 @@ pub struct ControllerConfig {
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 }
 
-/// Global controller configuration settings.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct GlobalControllerConfig {
+/// Global pipeline configuration settings.
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+pub struct GlobalPipelineConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
     pub workers: u16,
@@ -64,7 +66,7 @@ pub struct GlobalControllerConfig {
     pub max_buffering_delay_usecs: u64,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct InputEndpointConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
@@ -85,7 +87,7 @@ pub struct InputEndpointConfig {
     pub max_buffered_records: u64,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct OutputEndpointConfig {
     /// The name of the output stream of the circuit that this pipeline is
     /// connected to.
@@ -105,7 +107,7 @@ pub struct OutputEndpointConfig {
 }
 
 /// Transport endpoint configuration.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct TransportConfig {
     /// Data transport name, e.g., "file", "kafka", "kinesis", etc.
     pub name: Cow<'static, str>,
@@ -115,17 +117,19 @@ pub struct TransportConfig {
     /// and
     /// [`InputTransport::new_endpoint`](`crate::InputTransport::new_endpoint`).
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub config: YamlValue,
 }
 
 /// Data format specification used to parse raw data received from the
 /// endpoint or to encode data sent to the endpoint.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct FormatConfig {
     /// Format name, e.g., "csv", "json", "bincode", etc.
     pub name: Cow<'static, str>,
 
     /// Format-specific parser or encoder configuration.
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub config: YamlValue,
 }

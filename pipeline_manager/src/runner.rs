@@ -170,15 +170,13 @@ scrape_configs:
         let db = self.db.lock().await;
 
         // Check: project exists, version = current version, compilation completed.
-        let project_descr = db
-            .get_project_guarded(request.project_id, request.project_version)
-            .await?;
+        let project_descr = db.get_project_guarded(request.project_id, request.project_version)?;
         if project_descr.status != ProjectStatus::Success {
             return Ok(HttpResponse::Conflict().body("Project hasn't been compiled yet"));
         };
 
         // Read and validate project config.
-        let config_descr = db.get_config(request.config_id).await?;
+        let config_descr = db.get_config(request.config_id)?;
 
         if config_descr.project_id != request.project_id {
             return Ok(HttpResponse::BadRequest().body(format!(
@@ -194,7 +192,7 @@ scrape_configs:
             )));
         }
 
-        let pipeline_id = db.alloc_pipeline_id().await?;
+        let pipeline_id = db.new_pipeline(request.project_id, request.project_version)?;
 
         // Run the pipeline executable.
         let mut pipeline_process = self
@@ -207,18 +205,7 @@ scrape_configs:
         match Self::wait_for_startup(&self.config.log_file_path(pipeline_id)).await {
             Ok(port) => {
                 // Store pipeline in the database.
-                if let Err(e) = self
-                    .db
-                    .lock()
-                    .await
-                    .new_pipeline(
-                        pipeline_id,
-                        request.project_id,
-                        request.project_version,
-                        port,
-                    )
-                    .await
-                {
+                if let Err(e) = self.db.lock().await.pipeline_set_port(pipeline_id, port) {
                     let _ = pipeline_process.kill().await;
                     return Err(e);
                 };
@@ -247,6 +234,7 @@ scrape_configs:
             }
             Err(e) => {
                 let _ = pipeline_process.kill().await;
+                self.db.lock().await.delete_pipeline(pipeline_id)?;
                 Err(e)
             }
         }
@@ -269,7 +257,7 @@ scrape_configs:
         let config_file_path = self.config.config_file_path(pipeline_id);
         fs::write(&config_file_path, config_yaml).await?;
 
-        let (_version, code) = db.project_code(request.project_id).await?;
+        let (_version, code) = db.project_code(request.project_id)?;
 
         let metadata = PipelineMetadata {
             project_id: request.project_id,
@@ -454,34 +442,30 @@ scrape_configs:
         let (port, killed) = db.pipeline_status(pipeline_id).await?;
 
         if killed {
-            return Ok(HttpResponse::Ok()
-                .body(serde_json::to_string("Pipeline already shut down.").unwrap()));
+            return Ok(HttpResponse::Ok().json("Pipeline already shut down."));
         };
 
         let url = format!("http://localhost:{port}/kill");
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
-                db.set_pipeline_killed(pipeline_id).await?;
+                db.set_pipeline_killed(pipeline_id)?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
-                return Ok(HttpResponse::Ok().body(
-                    serde_json::to_string(&format!("Pipeline at '{url}' already shut down."))
-                        .unwrap(),
-                ));
+                return Ok(
+                    HttpResponse::Ok().json(&format!("Pipeline at '{url}' already shut down."))
+                );
             }
         };
 
         if response.status().is_success() {
-            db.set_pipeline_killed(pipeline_id).await?;
-            Ok(HttpResponse::Ok()
-                .body(serde_json::to_string("Pipeline successfully terminated.").unwrap()))
+            db.set_pipeline_killed(pipeline_id)?;
+            Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
-            Ok(HttpResponse::InternalServerError().body(
-                serde_json::to_string(&ErrorResponse::new(&format!(
+            Ok(HttpResponse::InternalServerError().json(
+                &ErrorResponse::new(&format!(
                     "Failed to shut down the pipeline; response from pipeline controller: {response:?}"
-                )))
-                .unwrap(),
+                )),
             ))
         }
     }
@@ -504,10 +488,9 @@ scrape_configs:
 
         // Delete pipeline directory.
         remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
-        db.delete_pipeline(pipeline_id).await?;
+        db.delete_pipeline(pipeline_id)?;
 
-        Ok(HttpResponse::Ok()
-            .body(serde_json::to_string("Pipeline successfully deleted.").unwrap()))
+        Ok(HttpResponse::Ok().json("Pipeline successfully deleted."))
     }
 
     pub(crate) async fn forward_to_pipeline(

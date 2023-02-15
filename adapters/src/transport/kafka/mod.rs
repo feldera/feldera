@@ -6,6 +6,7 @@ use rdkafka::{
     types::RDKafkaErrorCode,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 mod input;
 mod output;
@@ -13,11 +14,11 @@ mod output;
 #[cfg(test)]
 pub mod test;
 
-pub use input::KafkaInputTransport;
-pub use output::KafkaOutputTransport;
+pub use input::{KafkaInputConfig, KafkaInputTransport};
+pub use output::{KafkaOutputConfig, KafkaOutputTransport};
 
 /// Kafka logging levels.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
 pub enum KafkaLogLevel {
     #[serde(rename = "emerg")]
     Emerg,
