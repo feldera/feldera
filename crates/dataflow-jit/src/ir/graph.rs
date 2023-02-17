@@ -2,9 +2,9 @@
 
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    node::{Node, Subgraph as SubgraphNode},
-    DataflowNode, ExportedNode, Filter, Function, LayoutId, Map, NodeId, NodeIdGen, Sink, Source,
-    SourceMap,
+    node::{Integrate, Node, Subgraph as SubgraphNode},
+    DataflowNode, Differentiate, ExportedNode, Filter, Function, IndexWith, LayoutId, Map, NodeId,
+    NodeIdGen, Sink, Source, SourceMap,
 };
 use petgraph::prelude::DiGraphMap;
 use std::{collections::BTreeMap, rc::Rc};
@@ -68,6 +68,24 @@ pub trait GraphExt {
 
     fn map(&mut self, input: NodeId, key_layout: LayoutId, map_fn: Function) -> NodeId {
         self.add_node(Map::new(input, map_fn, key_layout))
+    }
+
+    fn index_with(
+        &mut self,
+        input: NodeId,
+        key_layout: LayoutId,
+        value_layout: LayoutId,
+        index_fn: Function,
+    ) -> NodeId {
+        self.add_node(IndexWith::new(input, index_fn, key_layout, value_layout))
+    }
+
+    fn differentiate(&mut self, input: NodeId) -> NodeId {
+        self.add_node(Differentiate::new(input))
+    }
+
+    fn integrate(&mut self, input: NodeId) -> NodeId {
+        self.add_node(Integrate::new(input))
     }
 }
 
@@ -247,7 +265,7 @@ mod tests {
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
-        row::Row,
+        row::{Row, UninitRow},
     };
     use dbsp::{
         trace::{Batch, BatchReader, Builder, Cursor},
@@ -653,11 +671,11 @@ mod tests {
         let mut values = Vec::new();
         for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
             unsafe {
-                let mut row = Row::uninit(&*jit_handle.vtables()[&xy_layout]);
+                let mut row = UninitRow::new(&*jit_handle.vtables()[&xy_layout]);
                 row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
                 row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
 
-                values.push((row, 1i32));
+                values.push((row.assume_init(), 1i32));
             }
         }
         inputs
@@ -684,10 +702,10 @@ mod tests {
         let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
         for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
             unsafe {
-                let mut row = Row::uninit(&*jit_handle.vtables()[&x_layout]);
+                let mut row = UninitRow::new(&*jit_handle.vtables()[&x_layout]);
                 row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
 
-                expected.push((row, weight));
+                expected.push((row.assume_init(), weight));
             }
         }
         assert_eq!(output, expected.done());

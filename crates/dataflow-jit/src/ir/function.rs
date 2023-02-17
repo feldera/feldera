@@ -1,7 +1,11 @@
 use crate::ir::{
     block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
     BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, Expr, ExprId, ExprIdGen, IsNull,
-    Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator,
+    Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator, UninitRow,
+};
+use petgraph::{
+    algo::dominators::{self, Dominators},
+    prelude::DiGraphMap,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -38,7 +42,7 @@ impl InputFlags {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Function {
     /// Contains the layout of the argument, the id that the pointer is
     /// associated with and the flags that are associated with the argument.
@@ -49,6 +53,7 @@ pub struct Function {
     entry_block: BlockId,
     exprs: BTreeMap<ExprId, Expr>,
     blocks: BTreeMap<BlockId, Block>,
+    cfg: DiGraphMap<BlockId, ()>,
 }
 
 impl Function {
@@ -70,6 +75,10 @@ impl Function {
 
     pub const fn return_type(&self) -> ColumnType {
         self.ret
+    }
+
+    pub fn dominators(&self) -> Dominators<BlockId> {
+        dominators::simple_fast(&self.cfg, self.entry_block)
     }
 
     pub fn signature(&self) -> Signature {
@@ -559,6 +568,12 @@ impl FunctionBuilder {
         expr
     }
 
+    pub fn uninit_row(&mut self, layout: LayoutId) -> ExprId {
+        let expr = self.add_expr(UninitRow::new(layout));
+        self.set_expr_type(expr, Err(layout));
+        expr
+    }
+
     pub fn copy_row_to(&mut self, src: ExprId, dest: ExprId) {
         let src_layout = self
             .expr_types
@@ -726,12 +741,36 @@ impl FunctionBuilder {
             self.blocks.insert(id, block);
         }
 
+        // Build a control flow graph
+        let mut cfg = DiGraphMap::with_capacity(
+            self.blocks.len(),
+            // blocks * 1.5
+            self.blocks.len() + (self.blocks.len() >> 1),
+        );
+        for (&block_id, block) in &self.blocks {
+            match block.terminator() {
+                Terminator::Jump(jump) => {
+                    cfg.add_edge(block_id, jump.target(), ());
+                }
+
+                Terminator::Branch(branch) => {
+                    cfg.add_edge(block_id, branch.truthy(), ());
+                    cfg.add_edge(block_id, branch.falsy(), ());
+                }
+
+                Terminator::Return(_) => {
+                    cfg.add_node(block_id);
+                }
+            }
+        }
+
         Function {
             args: self.args,
             ret: self.ret,
             entry_block,
             exprs: self.exprs,
             blocks: self.blocks,
+            cfg,
         }
     }
 }

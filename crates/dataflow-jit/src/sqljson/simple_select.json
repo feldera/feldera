@@ -80,227 +80,184 @@
                     ]
                 },
                 "body": {
-                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression",
+                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression",
                     "type": {
                         "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
                         "mayBeNull": false
                     },
-                    "function": {
-                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression",
-                        "type": {
-                            "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeAny",
-                            "mayBeNull": false
-                        },
-                        "path": {
-                            "class": "org.dbsp.sqlCompiler.ir.path.DBSPPath",
-                            "components": [
-                                "[Lorg.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;",
-                                [
-                                    {
-                                        "class": "org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment",
-                                        "identifier": "wrap_bool",
-                                        "genericArgs": [
-                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                            []
-                                        ]
-                                    }
-                                ]
-                            ]
-                        }
-                    },
-                    "arguments": [
-                        "[Lorg.dbsp.sqlCompiler.ir.expression.DBSPExpression;",
+                    "contents": [
+                        "java.util.ArrayList",
                         [
                             {
-                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression",
+                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
+                                "variable": "tmp0",
+                                "type": {
+                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                    "mayBeNull": true,
+                                    "width": 32
+                                },
+                                "initializer": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": true,
+                                        "width": 32
+                                    },
+                                    "expression": {
+                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                        "type": {
+                                            "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
+                                            "mayBeNull": false,
+                                            "type": {
+                                                "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
+                                                "mayBeNull": false,
+                                                "tupFields": [
+                                                    "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
+                                                    [
+                                                        {
+                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                                            "mayBeNull": true,
+                                                            "width": 32
+                                                        },
+                                                        {
+                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                                            "mayBeNull": true,
+                                                            "width": 32
+                                                        }
+                                                    ]
+                                                ]
+                                            },
+                                            "mutable": false
+                                        },
+                                        "variable": "t"
+                                    },
+                                    "fieldNo": 0
+                                },
+                                "mutable": true,
+                                "name": "tmp0",
+                                "varReference": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": true,
+                                        "width": 32
+                                    },
+                                    "variable": "tmp0"
+                                }
+                            },
+                            {
+                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
+                                "variable": "tmp1",
+                                "type": {
+                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                    "mayBeNull": true,
+                                    "width": 64
+                                },
+                                "initializer": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": true,
+                                        "width": 64
+                                    },
+                                    "source": {
+                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                        "type": {
+                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                            "mayBeNull": true,
+                                            "width": 32
+                                        },
+                                        "variable": "tmp0"
+                                    },
+                                    "destinationType": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": true,
+                                        "width": 64
+                                    }
+                                },
+                                "mutable": true,
+                                "name": "tmp1",
+                                "varReference": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": true,
+                                        "width": 64
+                                    },
+                                    "variable": "tmp1"
+                                }
+                            },
+                            {
+                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
+                                "variable": "tmp2",
+                                "type": {
+                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                    "mayBeNull": false,
+                                    "width": 64
+                                },
+                                "initializer": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": false,
+                                        "width": 64
+                                    },
+                                    "isNull": false,
+                                    "value": 1000,
+                                    "integerType": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": false,
+                                        "width": 64
+                                    }
+                                },
+                                "mutable": true,
+                                "name": "tmp2",
+                                "varReference": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                        "mayBeNull": false,
+                                        "width": 64
+                                    },
+                                    "variable": "tmp2"
+                                }
+                            },
+                            {
+                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
+                                "variable": "tmp3",
                                 "type": {
                                     "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
                                     "mayBeNull": true
                                 },
-                                "contents": [
-                                    "java.util.ArrayList",
-                                    [
-                                        {
-                                            "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                            "variable": "tmp0",
-                                            "type": {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                "mayBeNull": true,
-                                                "width": 32
-                                            },
-                                            "initializer": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": true,
-                                                    "width": 32
-                                                },
-                                                "expression": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                        "mayBeNull": false,
-                                                        "type": {
-                                                            "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                            "mayBeNull": false,
-                                                            "tupFields": [
-                                                                "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                                [
-                                                                    {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 32
-                                                                    },
-                                                                    {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 32
-                                                                    }
-                                                                ]
-                                                            ]
-                                                        },
-                                                        "mutable": false
-                                                    },
-                                                    "variable": "t"
-                                                },
-                                                "fieldNo": 0
-                                            },
-                                            "mutable": false,
-                                            "name": "tmp0",
-                                            "varReference": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": true,
-                                                    "width": 32
-                                                },
-                                                "variable": "tmp0"
-                                            }
+                                "initializer": {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
+                                        "mayBeNull": true
+                                    },
+                                    "left": {
+                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                        "type": {
+                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                            "mayBeNull": true,
+                                            "width": 64
                                         },
-                                        {
-                                            "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                            "variable": "tmp1",
-                                            "type": {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                "mayBeNull": true,
-                                                "width": 64
-                                            },
-                                            "initializer": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": true,
-                                                    "width": 64
-                                                },
-                                                "source": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                        "mayBeNull": true,
-                                                        "width": 32
-                                                    },
-                                                    "variable": "tmp0"
-                                                },
-                                                "destinationType": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": true,
-                                                    "width": 64
-                                                }
-                                            },
-                                            "mutable": false,
-                                            "name": "tmp1",
-                                            "varReference": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": true,
-                                                    "width": 64
-                                                },
-                                                "variable": "tmp1"
-                                            }
+                                        "variable": "tmp1"
+                                    },
+                                    "right": {
+                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                        "type": {
+                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
+                                            "mayBeNull": false,
+                                            "width": 64
                                         },
-                                        {
-                                            "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                            "variable": "tmp2",
-                                            "type": {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                "mayBeNull": false,
-                                                "width": 64
-                                            },
-                                            "initializer": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": false,
-                                                    "width": 64
-                                                },
-                                                "isNull": false,
-                                                "value": 1000,
-                                                "integerType": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": false,
-                                                    "width": 64
-                                                }
-                                            },
-                                            "mutable": false,
-                                            "name": "tmp2",
-                                            "varReference": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                    "mayBeNull": false,
-                                                    "width": 64
-                                                },
-                                                "variable": "tmp2"
-                                            }
-                                        },
-                                        {
-                                            "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                            "variable": "tmp3",
-                                            "type": {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                "mayBeNull": true
-                                            },
-                                            "initializer": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                    "mayBeNull": true
-                                                },
-                                                "left": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                        "mayBeNull": true,
-                                                        "width": 64
-                                                    },
-                                                    "variable": "tmp1"
-                                                },
-                                                "right": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                        "mayBeNull": false,
-                                                        "width": 64
-                                                    },
-                                                    "variable": "tmp2"
-                                                },
-                                                "operation": ">"
-                                            },
-                                            "mutable": false,
-                                            "name": "tmp3",
-                                            "varReference": {
-                                                "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                    "mayBeNull": true
-                                                },
-                                                "variable": "tmp3"
-                                            }
-                                        }
-                                    ]
-                                ],
-                                "lastExpression": {
+                                        "variable": "tmp2"
+                                    },
+                                    "operation": ">"
+                                },
+                                "mutable": true,
+                                "name": "tmp3",
+                                "varReference": {
                                     "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
                                     "type": {
                                         "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
@@ -310,7 +267,50 @@
                                 }
                             }
                         ]
-                    ]
+                    ],
+                    "lastExpression": {
+                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression",
+                        "type": {
+                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
+                            "mayBeNull": false
+                        },
+                        "function": {
+                            "class": "org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression",
+                            "type": {
+                                "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeAny",
+                                "mayBeNull": false
+                            },
+                            "path": {
+                                "class": "org.dbsp.sqlCompiler.ir.path.DBSPPath",
+                                "components": [
+                                    "[Lorg.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;",
+                                    [
+                                        {
+                                            "class": "org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment",
+                                            "identifier": "wrap_bool",
+                                            "genericArgs": [
+                                                "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
+                                                []
+                                            ]
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        "arguments": [
+                            "[Lorg.dbsp.sqlCompiler.ir.expression.DBSPExpression;",
+                            [
+                                {
+                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
+                                    "type": {
+                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
+                                        "mayBeNull": true
+                                    },
+                                    "variable": "tmp3"
+                                }
+                            ]
+                        ]
+                    }
                 },
                 "parameters": [
                     "[Lorg.dbsp.sqlCompiler.ir.DBSPParameter;",
@@ -514,400 +514,6 @@
                         [
                             {
                                 "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                "variable": "cond0",
-                                "type": {
-                                    "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction",
-                                    "mayBeNull": false,
-                                    "resultType": {
-                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                        "mayBeNull": false
-                                    },
-                                    "argumentTypes": [
-                                        "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                        [
-                                            {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                "mayBeNull": false,
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                    "mayBeNull": false,
-                                                    "tupFields": [
-                                                        "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                        [
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                "mayBeNull": true,
-                                                                "width": 32
-                                                            },
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                "mayBeNull": true,
-                                                                "width": 32
-                                                            }
-                                                        ]
-                                                    ]
-                                                },
-                                                "mutable": false
-                                            }
-                                        ]
-                                    ]
-                                },
-                                "initializer": {
-                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression",
-                                    "type": {
-                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction",
-                                        "mayBeNull": false,
-                                        "resultType": {
-                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                            "mayBeNull": false
-                                        },
-                                        "argumentTypes": [
-                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                            [
-                                                {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                    "mayBeNull": false,
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                        "mayBeNull": false,
-                                                        "tupFields": [
-                                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                            [
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                },
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                }
-                                                            ]
-                                                        ]
-                                                    },
-                                                    "mutable": false
-                                                }
-                                            ]
-                                        ]
-                                    },
-                                    "body": {
-                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression",
-                                        "type": {
-                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                            "mayBeNull": false
-                                        },
-                                        "function": {
-                                            "class": "org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression",
-                                            "type": {
-                                                "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeAny",
-                                                "mayBeNull": false
-                                            },
-                                            "path": {
-                                                "class": "org.dbsp.sqlCompiler.ir.path.DBSPPath",
-                                                "components": [
-                                                    "[Lorg.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;",
-                                                    [
-                                                        {
-                                                            "class": "org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment",
-                                                            "identifier": "wrap_bool",
-                                                            "genericArgs": [
-                                                                "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                                []
-                                                            ]
-                                                        }
-                                                    ]
-                                                ]
-                                            }
-                                        },
-                                        "arguments": [
-                                            "[Lorg.dbsp.sqlCompiler.ir.expression.DBSPExpression;",
-                                            [
-                                                {
-                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression",
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                        "mayBeNull": true
-                                                    },
-                                                    "contents": [
-                                                        "java.util.ArrayList",
-                                                        [
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                                                "variable": "tmp0",
-                                                                "type": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                },
-                                                                "initializer": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 32
-                                                                    },
-                                                                    "expression": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                        "type": {
-                                                                            "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                                            "mayBeNull": false,
-                                                                            "type": {
-                                                                                "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                                                "mayBeNull": false,
-                                                                                "tupFields": [
-                                                                                    "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                                                    [
-                                                                                        {
-                                                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                                            "mayBeNull": true,
-                                                                                            "width": 32
-                                                                                        },
-                                                                                        {
-                                                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                                            "mayBeNull": true,
-                                                                                            "width": 32
-                                                                                        }
-                                                                                    ]
-                                                                                ]
-                                                                            },
-                                                                            "mutable": false
-                                                                        },
-                                                                        "variable": "t"
-                                                                    },
-                                                                    "fieldNo": 0
-                                                                },
-                                                                "mutable": false,
-                                                                "name": "tmp0",
-                                                                "varReference": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 32
-                                                                    },
-                                                                    "variable": "tmp0"
-                                                                }
-                                                            },
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                                                "variable": "tmp1",
-                                                                "type": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 64
-                                                                },
-                                                                "initializer": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 64
-                                                                    },
-                                                                    "source": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                        "type": {
-                                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                            "mayBeNull": true,
-                                                                            "width": 32
-                                                                        },
-                                                                        "variable": "tmp0"
-                                                                    },
-                                                                    "destinationType": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 64
-                                                                    }
-                                                                },
-                                                                "mutable": false,
-                                                                "name": "tmp1",
-                                                                "varReference": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": true,
-                                                                        "width": 64
-                                                                    },
-                                                                    "variable": "tmp1"
-                                                                }
-                                                            },
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                                                "variable": "tmp2",
-                                                                "type": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": false,
-                                                                    "width": 64
-                                                                },
-                                                                "initializer": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": false,
-                                                                        "width": 64
-                                                                    },
-                                                                    "isNull": false,
-                                                                    "value": 1000,
-                                                                    "integerType": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": false,
-                                                                        "width": 64
-                                                                    }
-                                                                },
-                                                                "mutable": false,
-                                                                "name": "tmp2",
-                                                                "varReference": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                        "mayBeNull": false,
-                                                                        "width": 64
-                                                                    },
-                                                                    "variable": "tmp2"
-                                                                }
-                                                            },
-                                                            {
-                                                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
-                                                                "variable": "tmp3",
-                                                                "type": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                                    "mayBeNull": true
-                                                                },
-                                                                "initializer": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                                        "mayBeNull": true
-                                                                    },
-                                                                    "left": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                        "type": {
-                                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                            "mayBeNull": true,
-                                                                            "width": 64
-                                                                        },
-                                                                        "variable": "tmp1"
-                                                                    },
-                                                                    "right": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                        "type": {
-                                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                            "mayBeNull": false,
-                                                                            "width": 64
-                                                                        },
-                                                                        "variable": "tmp2"
-                                                                    },
-                                                                    "operation": ">"
-                                                                },
-                                                                "mutable": false,
-                                                                "name": "tmp3",
-                                                                "varReference": {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                                    "type": {
-                                                                        "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                                        "mayBeNull": true
-                                                                    },
-                                                                    "variable": "tmp3"
-                                                                }
-                                                            }
-                                                        ]
-                                                    ],
-                                                    "lastExpression": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                                        "type": {
-                                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                                            "mayBeNull": true
-                                                        },
-                                                        "variable": "tmp3"
-                                                    }
-                                                }
-                                            ]
-                                        ]
-                                    },
-                                    "parameters": [
-                                        "[Lorg.dbsp.sqlCompiler.ir.DBSPParameter;",
-                                        [
-                                            {
-                                                "class": "org.dbsp.sqlCompiler.ir.DBSPParameter",
-                                                "pattern": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern",
-                                                    "identifier": "t",
-                                                    "mutable": false
-                                                },
-                                                "type": {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                    "mayBeNull": false,
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                        "mayBeNull": false,
-                                                        "tupFields": [
-                                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                            [
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                },
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                }
-                                                            ]
-                                                        ]
-                                                    },
-                                                    "mutable": false
-                                                }
-                                            }
-                                        ]
-                                    ]
-                                },
-                                "mutable": false,
-                                "name": "cond0",
-                                "varReference": {
-                                    "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",
-                                    "type": {
-                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction",
-                                        "mayBeNull": false,
-                                        "resultType": {
-                                            "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool",
-                                            "mayBeNull": false
-                                        },
-                                        "argumentTypes": [
-                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                            [
-                                                {
-                                                    "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeRef",
-                                                    "mayBeNull": false,
-                                                    "type": {
-                                                        "class": "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple",
-                                                        "mayBeNull": false,
-                                                        "tupFields": [
-                                                            "[Lorg.dbsp.sqlCompiler.ir.type.DBSPType;",
-                                                            [
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                },
-                                                                {
-                                                                    "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
-                                                                    "mayBeNull": true,
-                                                                    "width": 32
-                                                                }
-                                                            ]
-                                                        ]
-                                                    },
-                                                    "mutable": false
-                                                }
-                                            ]
-                                        ]
-                                    },
-                                    "variable": "cond0"
-                                }
-                            },
-                            {
-                                "class": "org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement",
                                 "variable": "tmp4",
                                 "type": {
                                     "class": "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger",
@@ -951,7 +557,7 @@
                                     },
                                     "fieldNo": 1
                                 },
-                                "mutable": false,
+                                "mutable": true,
                                 "name": "tmp4",
                                 "varReference": {
                                     "class": "org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath",

@@ -174,7 +174,7 @@ fn drop_layout(
 
         let next_drop = if nullable {
             // Zero = string isn't null, non-zero = string is null
-            let string_non_null = column_non_null(idx, ptr, layout, builder, module, true);
+            let string_non_null = column_non_null(idx, ptr, layout, builder, true);
 
             // If the string is null, jump to the `next_drop` block and don't drop
             // the current string. Otherwise (if the string isn't null) drop it and

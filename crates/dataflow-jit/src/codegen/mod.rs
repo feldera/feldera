@@ -14,18 +14,19 @@ pub(crate) use layout::LayoutConfig;
 use crate::{
     codegen::{
         intrinsics::{ImportIntrinsics, Intrinsics},
+        layout::MemoryEntry,
         pretty_clif::CommentWriter,
         utils::FunctionBuilderExt,
     },
     ir::{
-        BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function,
-        InputFlags, LayoutId, NullRow, RValue, RowLayoutCache, Signature, Terminator, UnaryOp,
-        UnaryOpKind,
+        BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr, ExprId,
+        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, SetNull,
+        Signature, Terminator, UnaryOp, UnaryOpKind,
     },
 };
 use cranelift::{
     codegen::{
-        ir::{GlobalValue, StackSlot, UserFuncName},
+        ir::{GlobalValue, Inst, StackSlot, UserFuncName},
         Context,
     },
     prelude::{
@@ -39,13 +40,15 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, DataId, FuncId, Module};
 use std::{
     cell::{Ref, RefCell},
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap},
     rc::Rc,
 };
 use target_lexicon::Triple;
 
-const TRAP_NULL_PTR: TrapCode = TrapCode::User(500);
-const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(501);
+const TRAP_NULL_PTR: TrapCode = TrapCode::User(0);
+const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(1);
+const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -345,174 +348,9 @@ impl Codegen {
                             }
                         }
 
-                        Expr::Load(load) => {
-                            let layout_id = ctx.layout_id(load.source());
-                            let (layout, row_layout) = layout_cache.get_layouts(layout_id);
-                            let offset = layout.offset_of(load.column());
-                            let ty = layout
-                                .type_of(load.column())
-                                .native_type(&ctx.module.isa().frontend_config());
-
-                            let value = if let Some(&slot) = ctx.stack_slots.get(&load.source()) {
-                                let value = builder.ins().stack_load(ty, slot, offset as i32);
-
-                                if let Some(writer) = self.comment_writer.as_deref() {
-                                    writer.borrow_mut().add_comment(
-                                        builder.func.dfg.value_def(value).unwrap_inst(),
-                                        format!(
-                                            "load {value} from {slot} at col {} (offset {offset}) of {:?}",
-                                            load.column(),
-                                            ctx.layout_cache.row_layout(layout_id),
-                                        ),
-                                    );
-                                }
-
-                                value
-
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let mut flags = MemFlags::trusted();
-                                if ctx.is_readonly(load.source()) {
-                                    flags.set_readonly();
-                                }
-
-                                let addr = ctx.exprs[&load.source()];
-                                let value = builder.ins().load(ty, flags, addr, offset as i32);
-
-                                if let Some(writer) = self.comment_writer.as_deref() {
-                                    writer.borrow_mut().add_comment(
-                                        builder.func.dfg.value_def(value).unwrap_inst(),
-                                        format!(
-                                            "load {value} from {addr} at col {} (offset {offset}) of {:?}",
-                                            load.column(),
-                                            ctx.layout_cache.row_layout(layout_id),
-                                        ),
-                                    );
-                                }
-
-                                value
-                            };
-
-                            ctx.add_expr(
-                                expr_id,
-                                value,
-                                row_layout.column_type(load.column()),
-                                None,
-                            );
-                        }
-
-                        // TODO: If the given nullish flag is the only occupant of its bitset,
-                        // we can simplify the codegen a good bit by just checking if the bitset
-                        // is or isn't equal to zero
-                        Expr::IsNull(is_null) => {
-                            let layout = layout_cache.layout_of(ctx.layout_id(is_null.target()));
-                            let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.nullability_of(is_null.column());
-                            let bitset_ty =
-                                bitset_ty.native_type(&ctx.module.isa().frontend_config());
-
-                            let bitset = if let Some(&slot) = ctx.stack_slots.get(&is_null.target())
-                            {
-                                builder
-                                    .ins()
-                                    .stack_load(bitset_ty, slot, bitset_offset as i32)
-
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let addr = ctx.exprs[&is_null.target()];
-
-                                let mut flags = MemFlags::trusted();
-                                if ctx.is_readonly(is_null.target()) {
-                                    flags.set_readonly();
-                                }
-
-                                builder
-                                    .ins()
-                                    .load(bitset_ty, flags, addr, bitset_offset as i32)
-                            };
-
-                            let masked = builder.ins().band_imm(bitset, 1i64 << bit_idx);
-                            let is_null = builder.ins().icmp_imm(IntCC::NotEqual, masked, 0);
-                            ctx.add_expr(expr_id, is_null, ColumnType::Bool, None);
-                        }
-
-                        // TODO: If the given nullish flag is the only occupant of its bitset,
-                        // we can simplify the codegen a good bit by just storing a value with
-                        // our desired configuration instead of loading the bitset, toggling the
-                        // bit and then storing the bitset
-                        Expr::SetNull(set_null) => {
-                            debug_assert!(!ctx.is_readonly(set_null.target()));
-
-                            let layout = ctx.layout_of(set_null.target());
-                            let (bitset_ty, bitset_offset, bit_idx) =
-                                layout.nullability_of(set_null.column());
-                            let bitset_ty =
-                                bitset_ty.native_type(&ctx.module.isa().frontend_config());
-
-                            // Load the bitset's current value
-                            let bitset = if let Some(&slot) =
-                                ctx.stack_slots.get(&set_null.target())
-                            {
-                                builder
-                                    .ins()
-                                    .stack_load(bitset_ty, slot, bitset_offset as i32)
-
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let addr = ctx.exprs[&set_null.target()];
-                                // TODO: We can probably add the `notrap` and `aligned` flags for
-                                // stores
-                                let flags = MemFlags::new();
-                                builder
-                                    .ins()
-                                    .load(bitset_ty, flags, addr, bitset_offset as i32)
-                            };
-
-                            // Set the given bit, these use `bitset | (1 << bit_idx)` to set the bit
-                            // and `bitset & !(1 << bit_idx)` to unset the bit.
-                            // For non-constant inputs this computes both results and then selects
-                            // the correct one based off of the value of
-                            // `is_null`
-                            let masked = match set_null.is_null() {
-                                RValue::Expr(expr) => {
-                                    let is_null = ctx.exprs[expr];
-                                    let mask = 1i64 << bit_idx;
-                                    let set_bit = builder.ins().bor_imm(bitset, mask);
-                                    let unset_bit = builder.ins().band_imm(bitset, !mask);
-                                    builder.ins().select(is_null, set_bit, unset_bit)
-                                }
-
-                                &RValue::Imm(Constant::Bool(set_null)) => {
-                                    let mask = 1i64 << bit_idx;
-                                    if set_null {
-                                        builder.ins().bor_imm(bitset, mask)
-                                    } else {
-                                        builder.ins().band_imm(bitset, !mask)
-                                    }
-                                }
-
-                                RValue::Imm(_) => unreachable!(),
-                            };
-
-                            // Store the bit with mask set
-                            if let Some(&slot) = ctx.stack_slots.get(&set_null.target()) {
-                                builder
-                                    .ins()
-                                    .stack_store(masked, slot, bitset_offset as i32);
-
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let addr = ctx.exprs[&set_null.target()];
-                                let flags = MemFlags::trusted();
-                                builder
-                                    .ins()
-                                    .store(flags, masked, addr, bitset_offset as i32);
-                            }
-                        }
+                        Expr::Load(load) => ctx.load(expr_id, load, &layout_cache, &mut builder),
+                        Expr::IsNull(is_null) => ctx.is_null(expr_id, is_null, &mut builder),
+                        Expr::SetNull(set_null) => ctx.set_null(expr_id, set_null, &mut builder),
 
                         Expr::CopyRowTo(copy_row) => {
                             debug_assert_eq!(
@@ -601,7 +439,7 @@ impl Codegen {
                     }
                 }
 
-                ctx.codegen_terminator(block_contents.terminator(), &mut stack, &mut builder);
+                ctx.terminator(block_contents.terminator(), &mut stack, &mut builder);
 
                 builder.seal_block(block);
             }
@@ -678,6 +516,7 @@ impl Codegen {
     }
 }
 
+// TODO: Keep track of constants within `CodegenCtx` and remove `RValue`
 struct CodegenCtx<'a> {
     config: CodegenConfig,
     module: &'a mut JITModule,
@@ -969,13 +808,15 @@ impl<'a> CodegenCtx<'a> {
         block
     }
 
-    fn codegen_terminator(
+    fn terminator(
         &mut self,
         terminator: &Terminator,
         stack: &mut Vec<BlockId>,
         builder: &mut FunctionBuilder<'_>,
     ) {
         match terminator {
+            // TODO: If the return value is a boolean, call `.assert_bool_is_valid()` when debug
+            // assertions are enabled
             Terminator::Return(ret) => match ret.value() {
                 RValue::Expr(expr) => {
                     let value = self.exprs[expr];
@@ -1005,22 +846,32 @@ impl<'a> CodegenCtx<'a> {
                 stack.push(jump.target());
             }
 
-            Terminator::Branch(branch) => {
-                let truthy = self.block(branch.truthy(), builder);
-                let falsy = self.block(branch.falsy(), builder);
-
-                let cond = match branch.cond() {
-                    RValue::Expr(expr) => self.exprs[expr],
-                    RValue::Imm(_) => todo!(),
-                };
-
-                // FIXME: bb args
-                builder.ins().brz(cond, truthy, &[]);
-                builder.ins().jump(falsy, &[]);
-
-                stack.extend([branch.truthy(), branch.falsy()]);
-            }
+            Terminator::Branch(branch) => self.branch(branch, stack, builder),
         }
+    }
+
+    fn branch(
+        &mut self,
+        branch: &Branch,
+        stack: &mut Vec<BlockId>,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let truthy = self.block(branch.truthy(), builder);
+        let falsy = self.block(branch.falsy(), builder);
+
+        let cond = match branch.cond() {
+            RValue::Expr(expr) => self.exprs[expr],
+            RValue::Imm(_) => todo!(),
+        };
+
+        // Ensure that booleans are either true or false
+        self.debug_assert_bool_is_valid(cond, builder);
+
+        // FIXME: bb args
+        builder.ins().brnz(cond, truthy, &[]);
+        builder.ins().jump(falsy, &[]);
+
+        stack.extend([branch.truthy(), branch.falsy()]);
     }
 
     fn stack_slot_for_layout(
@@ -1041,6 +892,7 @@ impl<'a> CodegenCtx<'a> {
 
     /// Sets the given `buffer` to be filled with `value` bytes
     /// according to `layout`'s size and alignment
+    #[allow(dead_code)]
     fn emit_small_memset(
         &mut self,
         buffer: Value,
@@ -1075,8 +927,7 @@ impl<'a> CodegenCtx<'a> {
         self.assert_ptr_aligned(ptr, align, builder);
     }
 
-    /// Traps if the given pointer is null or not aligned to `align` when
-    /// `debug_assertions` is enabled
+    /// Traps if the given pointer is null or not aligned to `align` when debug assertions are enabled
     fn debug_assert_ptr_valid(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
         if self.debug_assertions() {
             self.assert_ptr_valid(ptr, align, builder);
@@ -1117,6 +968,349 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
+    /// Traps if the given boolean value is not `true` or `false` when debug assertions are enabled
+    fn debug_assert_bool_is_valid(&self, boolean: Value, builder: &mut FunctionBuilder<'_>) {
+        if self.debug_assertions() {
+            self.assert_bool_is_valid(boolean, builder);
+        }
+    }
+
+    /// Traps if the given boolean value is not `true` or `false`
+    fn assert_bool_is_valid(&self, boolean: Value, builder: &mut FunctionBuilder<'_>) {
+        debug_assert!(builder.func.dfg.value_type(boolean).is_int());
+
+        let is_true = builder.ins().icmp_imm(IntCC::Equal, boolean, true as i64);
+        let is_false = builder.ins().icmp_imm(IntCC::Equal, boolean, false as i64);
+        let is_true_or_false = builder.ins().bor(is_true, is_false);
+        builder.ins().trapz(is_true_or_false, TRAP_INVALID_BOOL);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(is_true).unwrap_inst(),
+                format!(
+                    "trap if {boolean} is not true ({}) or false ({})",
+                    true as u8, false as u8,
+                ),
+            );
+        }
+    }
+
+    fn load_from_row(
+        &self,
+        row_expr: ExprId,
+        flags: MemFlags,
+        ty: NativeType,
+        offset: u32,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        let ty = ty.native_type(&self.frontend_config());
+
+        // TODO: Assert alignment when debug assertions are enabled?
+
+        if let Some(&slot) = self.stack_slots.get(&row_expr) {
+            builder.ins().stack_load(ty, slot, offset as i32)
+
+        // If it's not a stack slot it must be a pointer of some other kind
+        } else {
+            let addr = self.exprs[&row_expr];
+            builder.ins().load(ty, flags, addr, offset as i32)
+        }
+    }
+
+    // fn load_column(
+    //     &self,
+    //     row_expr: ExprId,
+    //     column: usize,
+    //     flags: MemFlags,
+    //     builder: &mut FunctionBuilder<'_>,
+    // ) -> Value {
+    //     let layout = self.layout_of(row_expr);
+    //     self.load_from_row(
+    //         row_expr,
+    //         flags,
+    //         layout.type_of(column),
+    //         layout.offset_of(column),
+    //         builder,
+    //     )
+    // }
+
+    // fn load_column_null_flag(
+    //     &self,
+    //     row_expr: ExprId,
+    //     column: usize,
+    //     flags: MemFlags,
+    //     builder: &mut FunctionBuilder<'_>,
+    // ) -> Value {
+    // }
+
+    fn store_to_row(
+        &self,
+        row_expr: ExprId,
+        value: Value,
+        flags: MemFlags,
+        offset: u32,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Inst {
+        debug_assert!(!flags.readonly(), "cannot store to readonly memory");
+
+        // TODO: Assert alignment when debug assertions are enabled?mtuner
+
+        // Attempt to get the pointer from a stack slot
+        if let Some(&slot) = self.stack_slots.get(&row_expr) {
+            builder.ins().stack_store(value, slot, offset as i32)
+
+        // If it's not a stack slot it must be a pointer of some other kind
+        } else {
+            let addr = self.exprs[&row_expr];
+            builder.ins().store(flags, value, addr, offset as i32)
+        }
+    }
+
+    fn load(
+        &mut self,
+        expr_id: ExprId,
+        load: &Load,
+        layout_cache: &NativeLayoutCache,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let layout_id = self.layout_id(load.source());
+        let (layout, row_layout) = layout_cache.get_layouts(layout_id);
+        let offset = layout.offset_of(load.column());
+        let ty = layout
+            .type_of(load.column())
+            .native_type(&self.module.isa().frontend_config());
+
+        let value = if let Some(&slot) = self.stack_slots.get(&load.source()) {
+            let value = builder.ins().stack_load(ty, slot, offset as i32);
+
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.func.dfg.value_def(value).unwrap_inst(),
+                    format!(
+                        "load {value} from {slot} at col {} (offset {offset}) of {:?}",
+                        load.column(),
+                        layout_cache.row_layout(layout_id),
+                    ),
+                );
+            }
+
+            value
+
+        // If it's not a stack slot it must be a pointer via
+        // function parameter
+        } else {
+            let mut flags = MemFlags::trusted();
+            if self.is_readonly(load.source()) {
+                flags.set_readonly();
+            }
+
+            let addr = self.exprs[&load.source()];
+            let value = builder.ins().load(ty, flags, addr, offset as i32);
+
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.func.dfg.value_def(value).unwrap_inst(),
+                    format!(
+                        "load {value} from {addr} at col {} (offset {offset}) of {:?}",
+                        load.column(),
+                        layout_cache.row_layout(layout_id),
+                    ),
+                );
+            }
+
+            value
+        };
+
+        self.add_expr(expr_id, value, row_layout.column_type(load.column()), None);
+    }
+
+    fn is_null(&mut self, expr_id: ExprId, is_null: &IsNull, builder: &mut FunctionBuilder<'_>) {
+        let layout_id = self.layout_id(is_null.target());
+        let layout = self.layout_cache.layout_of(layout_id);
+
+        let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(is_null.column());
+        let bitset_occupants = layout.bitset_occupants(is_null.column());
+        drop(layout);
+
+        let mut flags = MemFlags::trusted();
+        if self.is_readonly(is_null.target()) {
+            flags.set_readonly();
+        }
+
+        let bitset = self.load_from_row(
+            is_null.target(),
+            flags,
+            bitset_ty.into(),
+            bitset_offset,
+            builder,
+        );
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(bitset).unwrap_inst(),
+                format!(
+                    "check if column {} of {} is null",
+                    is_null.column(),
+                    self.layout_cache.row_layout(layout_id),
+                ),
+            );
+        }
+
+        // If this column is the only occupant of the bitset
+        let is_null = if bitset_occupants == 1 {
+            // Note that we don't check if `bitset` is equal to `1` since all bits other
+            // than the last are considered padding bits and have unspecified values
+            // TODO: This could still be potentially problematic if the target bit is 0
+            // but the rest are for some reason non-zero. Do we need to (internally) constrain
+            // padding bits to being zeroed? If so, how do we determine that we're the first
+            // writer to a given bitset in the case of multi-tenant bitsets?
+            builder.ins().icmp_imm(IntCC::NotEqual, bitset, 0)
+
+        // If there's more than one occupant of the bitset
+        } else {
+            let masked = builder.ins().band_imm(bitset, 1i64 << bit_idx);
+            builder.ins().icmp_imm(IntCC::NotEqual, masked, 0)
+        };
+
+        // Ensure that the produced boolean is valid
+        self.debug_assert_bool_is_valid(is_null, builder);
+
+        self.add_expr(expr_id, is_null, ColumnType::Bool, None);
+    }
+
+    // TODO: If the given nullish flag is the only occupant of its bitset,
+    // we can simplify the codegen a good bit by just storing a value with
+    // our desired configuration instead of loading the bitset, toggling the
+    // bit and then storing the bitset
+    fn set_null(
+        &mut self,
+        _expr_id: ExprId,
+        set_null: &SetNull,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        debug_assert!(!self.is_readonly(set_null.target()));
+
+        let layout = self.layout_of(set_null.target());
+        let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(set_null.column());
+        let bitset_ty = bitset_ty.native_type();
+
+        let mut first_expr = None;
+
+        // If this column is the only occupant of the bitset we can set it directly
+        let with_null_set = if layout.bitset_occupants(set_null.column()) == 1 {
+            match set_null.is_null() {
+                RValue::Expr(expr) => {
+                    let is_null = self.exprs[expr];
+                    // TODO: Assert that `is_null` is a valid boolean when debug_assertions are on
+                    let null_ty = builder.func.dfg.value_type(is_null);
+                    debug_assert_eq!(null_ty, types::I8);
+
+                    // Make sure that is_null is the same type as the target bitset
+                    match bitset_ty.bytes().cmp(&null_ty.bytes()) {
+                        Ordering::Less => {
+                            let reduce = builder.ins().ireduce(bitset_ty, is_null);
+                            first_expr = Some(reduce);
+                            reduce
+                        }
+
+                        Ordering::Equal => is_null,
+
+                        Ordering::Greater => {
+                            let extend = builder.ins().uextend(bitset_ty, is_null);
+                            first_expr = Some(extend);
+                            extend
+                        }
+                    }
+                }
+
+                &RValue::Imm(Constant::Bool(set_null)) => {
+                    let constant = builder.ins().iconst(bitset_ty, set_null as i64);
+                    first_expr = Some(constant);
+                    constant
+                }
+
+                RValue::Imm(_) => unreachable!(),
+            }
+
+        // If there's more than one occupant of the bitset we have to load the
+        // bitset's current value, set or unset our target bit and then store
+        // the modified value
+        } else {
+            // Load the bitset's current value
+            let bitset = if let Some(&slot) = self.stack_slots.get(&set_null.target()) {
+                builder
+                    .ins()
+                    .stack_load(bitset_ty, slot, bitset_offset as i32)
+
+            // If it's not a stack slot it must be a pointer via
+            // function parameter
+            } else {
+                let addr = self.exprs[&set_null.target()];
+                builder.ins().load(
+                    bitset_ty,
+                    // Note that readonly will never be valid here
+                    MemFlags::trusted(),
+                    addr,
+                    bitset_offset as i32,
+                )
+            };
+            first_expr = Some(bitset);
+
+            // Set the given bit, these use `bitset | (1 << bit_idx)` to set the bit
+            // and `bitset & !(1 << bit_idx)` to unset the bit.
+            // For non-constant inputs this computes both results and then selects
+            // the correct one based off of the value of `is_null`
+            match set_null.is_null() {
+                RValue::Expr(expr) => {
+                    let is_null = self.exprs[expr];
+                    let mask = 1i64 << bit_idx;
+                    let set_bit = builder.ins().bor_imm(bitset, mask);
+                    let unset_bit = builder.ins().band_imm(bitset, !mask);
+                    builder.ins().select(is_null, set_bit, unset_bit)
+                }
+
+                &RValue::Imm(Constant::Bool(set_null)) => {
+                    let mask = 1i64 << bit_idx;
+                    if set_null {
+                        builder.ins().bor_imm(bitset, mask)
+                    } else {
+                        builder.ins().band_imm(bitset, !mask)
+                    }
+                }
+
+                RValue::Imm(_) => unreachable!(),
+            }
+        };
+
+        // Store the bit with mask set
+        let store = self.store_to_row(
+            set_null.target(),
+            with_null_set,
+            MemFlags::trusted(),
+            bitset_offset,
+            builder,
+        );
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let first_expr = if let Some(first_expr) = first_expr {
+                builder.func.dfg.value_def(first_expr).unwrap_inst()
+            } else {
+                store
+            };
+
+            writer.borrow_mut().add_comment(
+                first_expr,
+                format!(
+                    "set_null col {} of {} ({}) with {:?}",
+                    set_null.column(),
+                    set_null.target(),
+                    self.layout_id(set_null.target()),
+                    set_null.is_null(),
+                ),
+            );
+        }
+    }
+
     // TODO: There's a couple optimizations we can do here:
     // - If our type is sub-word size, we can simply use a constant that's been set
     //   to all ones. This does require generalized handling for rows that aren't
@@ -1129,7 +1323,7 @@ impl<'a> CodegenCtx<'a> {
     //   actually follow our contract that `NullRow` only means "any well-defined
     //   `IsNull` call returns `true`" and don't depend on it being initialized to
     //   any degree further than what is required by that
-    fn null_row(&mut self, expr_id: ExprId, null: &NullRow, builder: &mut FunctionBuilder) {
+    fn null_row(&mut self, expr_id: ExprId, null: &NullRow, builder: &mut FunctionBuilder<'_>) {
         // Create a stack slot
         let slot = self.stack_slot_for_layout(expr_id, null.layout(), builder);
 
@@ -1155,8 +1349,32 @@ impl<'a> CodegenCtx<'a> {
                 .ins()
                 .stack_addr(self.module.isa().pointer_type(), slot, 0);
 
-            // Fill the stack slot with whatever our nullish sigil is
-            self.emit_small_memset(addr, 0b1111_1111, null.layout(), builder);
+            let layout = self.layout_cache.layout_of(null.layout());
+            for entry in layout.memory_order() {
+                if let &MemoryEntry::BitSet {
+                    offset,
+                    ty,
+                    ref columns,
+                } = entry
+                {
+                    // If there's only one occupant of the bitset, set it to 1
+                    let value = if columns.len() == 1 {
+                        builder.ins().iconst(ty.native_type(), 1)
+
+                    // Otherwise just set all bits high
+                    } else {
+                        ty.all_set(builder)
+                    };
+
+                    // Note that this store can't be readonly
+                    builder
+                        .ins()
+                        .store(MemFlags::trusted(), value, addr, offset as i32);
+                }
+            }
+
+            // // Fill the stack slot with whatever our nullish sigil is
+            // self.emit_small_memset(addr, 0b1111_1111, null.layout(), builder);
         }
     }
 

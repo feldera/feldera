@@ -1,7 +1,7 @@
 use crate::ir::{ColumnType, RowLayout};
 use cranelift::prelude::{
     isa::{CallConv, TargetFrontendConfig},
-    types, Type as ClifType,
+    types, FunctionBuilder, InstBuilder, Type as ClifType, Value,
 };
 use std::{
     alloc::Layout as StdLayout,
@@ -184,21 +184,47 @@ pub enum BitSetType {
 }
 
 impl BitSetType {
-    pub fn native_type(self, target: &TargetFrontendConfig) -> ClifType {
-        NativeType::from(self).native_type(target)
+    pub const fn native_type(self) -> ClifType {
+        match self {
+            Self::U8 => types::I8,
+            Self::U16 => types::I16,
+            Self::U32 => types::I32,
+            Self::U64 => types::I64,
+        }
     }
 
-    fn size(self, target: &TargetFrontendConfig) -> u32 {
-        NativeType::from(self).size(target)
+    pub const fn size(self) -> u32 {
+        match self {
+            Self::U8 => 8,
+            Self::U16 => 16,
+            Self::U32 => 32,
+            Self::U64 => 64,
+        }
     }
 
-    fn align(self, target: &TargetFrontendConfig) -> u32 {
-        NativeType::from(self).align(target)
+    pub const fn align(self) -> u32 {
+        match self {
+            Self::U8 => 1,
+            Self::U16 => 2,
+            Self::U32 => 4,
+            Self::U64 => 8,
+        }
     }
 
     /// Computes `log2(effective_align)`
-    fn effective_align(self, target: &TargetFrontendConfig) -> u32 {
-        self.align(target).max(self.size(target)).trailing_zeros()
+    pub fn effective_align(self) -> u32 {
+        self.align().max(self.size()).trailing_zeros()
+    }
+
+    pub fn all_set(self, builder: &mut FunctionBuilder<'_>) -> Value {
+        // Set all bits to 1
+        let value = match self {
+            Self::U8 => !0u8 as i64,
+            Self::U16 => !0u16 as i64,
+            Self::U32 => !0u32 as i64,
+            Self::U64 => !0u64 as i64,
+        };
+        builder.ins().iconst(self.native_type(), value)
     }
 }
 
@@ -327,9 +353,43 @@ impl NativeLayout {
     /// Returns the offset, type and bit offset of the given column's
     /// nullability
     ///
+    /// # Panics
+    ///
     /// Panics if `column` isn't nullable
     pub fn nullability_of(&self, column: usize) -> (BitSetType, u32, u8) {
         self.bitsets[column].unwrap()
+    }
+
+    /// Returns the memory entry for the bitset backing the nullability of the
+    /// given column
+    ///
+    /// # Panics
+    ///
+    /// Panics if `column` isn't nullable
+    fn bitset_entry(&self, column: usize) -> &MemoryEntry {
+        debug_assert!(self.is_nullable(column));
+        self.memory_order()
+            .iter()
+            .find(|entry| {
+                if let MemoryEntry::BitSet { columns, .. } = entry {
+                    if columns.contains(&(column as u32)) {
+                        return true;
+                    }
+                }
+
+                false
+            })
+            .unwrap()
+    }
+
+    pub fn bitset_occupants(&self, column: usize) -> usize {
+        let occupants = if let MemoryEntry::BitSet { columns, .. } = self.bitset_entry(column) {
+            columns.len()
+        } else {
+            unreachable!()
+        };
+        debug_assert_ne!(occupants, 0);
+        occupants
     }
 
     // TODO: Strings can use zero as their null value, this requires actual
@@ -459,7 +519,7 @@ impl Display for NativeLayout {
                         self.ty.to_str(),
                         self.offset,
                         self.offset + self.ty.size(&frontend),
-                        bitset_offset + bitset.size(&frontend),
+                        bitset_offset + bitset.size(),
                     )
                 } else {
                     write!(
@@ -518,6 +578,18 @@ pub enum MemoryEntry {
 }
 
 impl MemoryEntry {
+    pub const fn is_column(&self) -> bool {
+        matches!(self, Self::Column { .. })
+    }
+
+    pub const fn is_bitset(&self) -> bool {
+        matches!(self, Self::BitSet { .. })
+    }
+
+    pub const fn is_padding(&self) -> bool {
+        matches!(self, Self::Padding { .. })
+    }
+
     /// Returns the offset this memory entry resides at
     pub const fn offset(&self) -> u32 {
         match *self {
@@ -531,7 +603,7 @@ impl MemoryEntry {
     pub fn size(&self, target: &TargetFrontendConfig) -> u32 {
         match *self {
             Self::Column { ty, .. } => ty.size(target),
-            Self::BitSet { ty, .. } => ty.size(target),
+            Self::BitSet { ty, .. } => ty.size(),
             Self::Padding { bytes, .. } => bytes as u32,
         }
     }
@@ -571,6 +643,14 @@ mod algorithm {
 
     // TODO: Strings can use zero as their null value, this requires actual
     //       null-checking abstractions for writing code with though
+    // TODO: Ideally we'd spread the bitsets around to try and get as many in their
+    //       own bytes as possible, e.g. if we have a 4 padding bytes and 4 null flags
+    //       then each flag should have its own byte, even if the padding bytes take
+    //       the form of a u32 or two u16s
+    // TODO: We could also incorporate heuristics into this to try and determine
+    //       the most-accessed null flags and then prioritize putting them in their
+    //       own unique bytes to maximize the happy path of just loading a byte instead
+    //       of dealing with bitset munging
     pub(super) fn compute_native_layout(layout: &RowLayout, config: &LayoutConfig) -> NativeLayout {
         // Ensure that the given layout has less than u32::MAX fields
         debug_assert!(
@@ -612,7 +692,7 @@ mod algorithm {
                         (false, ty.effective_align(&config.target), ty.is_ptr())
                     }
 
-                    Field::BitSet { ty, .. } => (false, ty.effective_align(&config.target), false),
+                    Field::BitSet { ty, .. } => (false, ty.effective_align(), false),
                 };
 
                 // Place zsts first so they don't do anything weird.
