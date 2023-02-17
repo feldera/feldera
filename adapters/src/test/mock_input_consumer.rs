@@ -1,4 +1,4 @@
-use crate::{controller::FormatConfig, Catalog, InputConsumer, InputFormat, Parser};
+use crate::{controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, Parser};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -39,9 +39,14 @@ impl MockInputConsumerState {
         }
     }
 
-    pub fn from_config(format_config: &FormatConfig, catalog: &Arc<Mutex<Catalog>>) -> Self {
+    pub fn from_handle(
+        input_handle: &dyn DeCollectionHandle,
+        format_config: &FormatConfig,
+    ) -> Self {
         let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
-        let parser = format.new_parser(&format_config.config, catalog).unwrap();
+        let parser = format
+            .new_parser(input_handle, &format_config.config)
+            .unwrap();
         Self::new(parser)
     }
 
@@ -59,10 +64,13 @@ impl MockInputConsumerState {
 pub struct MockInputConsumer(Arc<Mutex<MockInputConsumerState>>);
 
 impl MockInputConsumer {
-    pub fn from_config(format_config: &FormatConfig, catalog: &Arc<Mutex<Catalog>>) -> Self {
-        Self(Arc::new(Mutex::new(MockInputConsumerState::from_config(
+    pub fn from_handle(
+        input_handle: &dyn DeCollectionHandle,
+        format_config: &FormatConfig,
+    ) -> Self {
+        Self(Arc::new(Mutex::new(MockInputConsumerState::from_handle(
+            input_handle,
             format_config,
-            catalog,
         ))))
     }
 

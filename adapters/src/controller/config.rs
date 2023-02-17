@@ -71,6 +71,10 @@ pub struct InputEndpointConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 
+    /// The name of the input stream of the circuit that this endpoint is
+    /// connected to.
+    pub stream: Cow<'static, str>,
+
     /// Parser configuration.
     pub format: FormatConfig,
 
@@ -89,7 +93,7 @@ pub struct InputEndpointConfig {
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct OutputEndpointConfig {
-    /// The name of the output stream of the circuit that this pipeline is
+    /// The name of the output stream of the circuit that this endpoint is
     /// connected to.
     pub stream: Cow<'static, str>,
 

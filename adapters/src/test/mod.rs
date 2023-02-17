@@ -5,7 +5,6 @@ use dbsp::{DBSPHandle, Runtime};
 use log::{Log, Metadata, Record};
 use serde::Deserialize;
 use std::{
-    sync::{Arc, Mutex},
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -70,17 +69,14 @@ where
 /// └────────┘   └─────────────────┘   └──────┘   └──────────┘
 /// ```
 pub fn mock_input_pipeline<T>(
-    name: &str,
     config: InputEndpointConfig,
 ) -> (Box<dyn InputEndpoint>, MockInputConsumer, MockDeZSet<T>)
 where
     T: for<'de> Deserialize<'de> + Send + 'static,
 {
-    let mut catalog = Catalog::new();
     let input_handle = <MockDeZSet<T>>::new();
-    catalog.register_input_collection_handle(name, input_handle.clone());
 
-    let consumer = MockInputConsumer::from_config(&config.format, &Arc::new(Mutex::new(catalog)));
+    let consumer = MockInputConsumer::from_handle(&input_handle, &config.format);
 
     let transport = <dyn InputTransport>::get_transport(&config.transport.name).unwrap();
     let endpoint = transport

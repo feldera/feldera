@@ -63,6 +63,7 @@ proptest! {
         // the producer starts earlier (the consumer won't start until the
         // rebalancing protocol kicks in).
         let config_str = r#"
+stream: test_input
 transport:
     name: kafka
     config:
@@ -72,14 +73,11 @@ transport:
         log_level: debug
 format:
     name: csv
-    config:
-        input_stream: test_input
 "#;
 
         println!("Building input pipeline");
 
         let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
-            "test_input",
             serde_yaml::from_str(config_str).unwrap(),
         );
 
@@ -156,6 +154,7 @@ format:
         let config_str = r#"
 inputs:
     test_input1:
+        stream: test_input1
         transport:
             name: kafka
             config:
@@ -166,8 +165,6 @@ inputs:
                 log_level: debug
         format:
             name: csv
-            config:
-                input_stream: test_input1
 outputs:
     test_output2:
         stream: test_output1

@@ -125,21 +125,23 @@ def main():
     config.add_input(
             "DEMOGRAPHICS",
             InputEndpointConfig(
+                stream = 'DEMOGRAPHICS',
                 transport = TransportConfig(
                     name = "file",
                     config = FileInputConfig.from_dict({ 'path': dempath })),
                 format_ = FormatConfig(
                     name = "csv",
-                    config = CsvParserConfig(input_stream = 'DEMOGRAPHICS'))))
+                    config = CsvParserConfig())))
     config.add_input(
             "TRANSACTIONS",
             InputEndpointConfig(
+                stream = 'TRANSACTIONS',
                 transport = TransportConfig(
                     name = "file",
                     config = FileInputConfig.from_dict({ 'path': transpath })),
                 format_ = FormatConfig(
                     name = "csv",
-                    config = CsvParserConfig(input_stream = 'TRANSACTIONS'))))
+                    config = CsvParserConfig())))
 
     config.add_output(
             "TRANSACTIONS_WITH_DEMOGRAPHICS",

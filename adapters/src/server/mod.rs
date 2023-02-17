@@ -388,6 +388,7 @@ mod test_with_kafka {
             r#"
 inputs:
     test_input1:
+        stream: test_input1
         transport:
             name: kafka
             config:
@@ -397,8 +398,6 @@ inputs:
                 log_level: debug
         format:
             name: csv
-            config:
-                input_stream: test_input1
 outputs:
     test_output2:
         stream: test_output1

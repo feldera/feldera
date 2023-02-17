@@ -1,12 +1,8 @@
-use crate::{Catalog, SerBatch};
+use crate::{DeCollectionHandle, SerBatch};
 use anyhow::Result as AnyResult;
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::BTreeMap};
 
 mod csv;
 
@@ -34,23 +30,13 @@ pub trait InputFormat: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `config` - Format-specific configuration.
+    /// * `input_stream` - Input stream of the circuit to push parsed data to.
     ///
-    /// * `catalog` - Circuit [catalog](`Catalog`).  The newly created parser
-    ///   will use this catalog to bind to one or more input streams of the
-    ///   circuit.  Most input endpoints feed data to one specific input stream.
-    ///   The name of this stream must be specified as an `input_stream` field
-    ///   of `config`.  Some endpoints, however, may carry data that gets
-    ///   demultiplexed to multiple input streams. An example is a database
-    ///   change data capture (CDC) protocol endpoint that receives updates to
-    ///   multiple input tables.  Its associated data format includes metadata
-    ///   about the destination table of each record.  The associated parser
-    ///   uses this metadata to locate corresponding steams in the circuit
-    ///   catalog.
+    /// * `config` - Format-specific configuration.
     fn new_parser(
         &self,
+        input_stream: &dyn DeCollectionHandle,
         config: &YamlValue,
-        catalog: &Arc<Mutex<Catalog>>,
     ) -> AnyResult<Box<dyn Parser>>;
 }
 

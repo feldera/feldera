@@ -1,5 +1,6 @@
 inputs:
     USERS:
+        stream: USERS
         transport:
             name: kafka
             config:
@@ -8,8 +9,6 @@ inputs:
                 topics: [null_demo_input]
         format:
             name: csv
-            config:
-                input_stream: USERS
 outputs:
     OUTPUT_USERS:
         stream: OUTPUT_USERS
