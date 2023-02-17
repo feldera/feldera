@@ -47,6 +47,21 @@ Other than that, follow the steps listed under Settings -> Actions -> Runner -> 
 Ensure the runners have permission to access the benchmarks repo and the source
 code repo in case you want to do fast-forward merging.
 
+Add a cronjob to clean up `/tmp/` periodically (used to get rid of database files created
+during tests):
+
+```
+$ crontab -e
+```
+
+Then add the following line:
+
+```
+0 5 * * * find /tmp/* -type d -mtime +5 -print0 | xargs -0 rm -rf
+```
+
+The command will delete all files in `tmp` that are older than 5 days (every day at 5 am).
+
 ## Starting the runner
 
 Finally, launch the runner:
