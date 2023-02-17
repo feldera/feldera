@@ -1,6 +1,7 @@
 workers: 8
 inputs:
     DEMOGRAPHICS:
+        stream: DEMOGRAPHICS
         transport:
             name: kafka
             config:
@@ -9,9 +10,8 @@ inputs:
                 topics: [fraud_demo_large_demographics]
         format:
             name: csv
-            config:
-                input_stream: DEMOGRAPHICS
     TRANSACTIONS:
+        stream: TRANSACTIONS
         transport:
             name: kafka
             config:
@@ -20,8 +20,6 @@ inputs:
                 topics: [fraud_demo_large_transactions]
         format:
             name: csv
-            config:
-                input_stream: TRANSACTIONS
 outputs:
     TRANSACTIONS_WITH_DEMOGRAPHICS:
         stream: TRANSACTIONS_WITH_DEMOGRAPHICS

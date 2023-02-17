@@ -1,5 +1,6 @@
 inputs:
   Messages:
+    stream: MESSAGES # messages table in our schema
     transport:
       name: file
       config: 
@@ -8,10 +9,9 @@ inputs:
 
     format:
       name: csv
-      config:
-        input_stream: MESSAGES # messages table in our schema
           
   Records:
+    stream: RECORDS # records table in our schema
     transport:
       name: file
       config: 
@@ -20,8 +20,6 @@ inputs:
 
     format:
       name: csv
-      config:
-        input_stream: RECORDS # records table in our schema
 
 outputs:
   Filtered:

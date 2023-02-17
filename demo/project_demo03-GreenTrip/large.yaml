@@ -2,6 +2,7 @@ workers: 8
 cpu_profiler: true
 inputs:
     GREEN_TRIPDATA:
+        stream: GREEN_TRIPDATA
         transport:
             name: kafka
             config:
@@ -10,8 +11,6 @@ inputs:
                 topics: [green_trip_demo_large_input]
         format:
             name: csv
-            config:
-                input_stream: GREEN_TRIPDATA
 outputs:
     FEATURES:
         stream: FEATURES

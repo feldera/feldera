@@ -1,6 +1,6 @@
 use crate::{
     format::{Encoder, InputFormat, OutputFormat, Parser},
-    Catalog, DeCollectionHandle, OutputConsumer, SerBatch,
+    DeCollectionHandle, OutputConsumer, SerBatch,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
 use csv::{
@@ -10,22 +10,14 @@ use csv::{
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
-use std::{
-    borrow::Cow,
-    io::Read,
-    mem::take,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, io::Read, mem::take};
 use utoipa::ToSchema;
 
 /// CSV format parser.
 pub struct CsvInputFormat;
 
 #[derive(Deserialize, ToSchema)]
-pub struct CsvParserConfig {
-    /// Input stream to feed parsed records to.
-    input_stream: String,
-}
+pub struct CsvParserConfig;
 
 impl InputFormat for CsvInputFormat {
     fn name(&self) -> Cow<'static, str> {
@@ -34,16 +26,10 @@ impl InputFormat for CsvInputFormat {
 
     fn new_parser(
         &self,
-        config: &YamlValue,
-        catalog: &Arc<Mutex<Catalog>>,
+        input_stream: &dyn DeCollectionHandle,
+        _config: &YamlValue,
     ) -> AnyResult<Box<dyn Parser>> {
-        let config = CsvParserConfig::deserialize(config)?;
-        catalog
-            .lock()
-            .unwrap()
-            .input_collection_handle(&config.input_stream)
-            .map(|stream| Box::new(CsvParser::new(stream)) as Box<dyn Parser>)
-            .ok_or_else(|| AnyError::msg(format!("unknown stream '{}'", config.input_stream)))
+        Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
 }
 

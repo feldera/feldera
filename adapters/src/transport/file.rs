@@ -257,6 +257,7 @@ mod test {
         // Use a very small buffer size for testing.
         let config_str = format!(
             r#"
+stream: test_input
 transport:
     name: file
     config:
@@ -264,8 +265,6 @@ transport:
         buffer_size_bytes: 5
 format:
     name: csv
-    config:
-        input_stream: test_input
 "#,
             temp_file.path().to_str().unwrap()
         );
@@ -280,10 +279,8 @@ format:
         }
         writer.flush().unwrap();
 
-        let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct>(
-            "test_input",
-            serde_yaml::from_str(&config_str).unwrap(),
-        );
+        let (endpoint, consumer, zset) =
+            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap());
 
         sleep(Duration::from_millis(10));
 
@@ -312,6 +309,7 @@ format:
         // Use a very small buffer size for testing.
         let config_str = format!(
             r#"
+stream: test_input
 transport:
     name: file
     config:
@@ -320,8 +318,6 @@ transport:
         follow: true
 format:
     name: csv
-    config:
-        input_stream: test_input
 "#,
             temp_file.path().to_str().unwrap()
         );
@@ -332,10 +328,8 @@ format:
             .has_headers(false)
             .from_writer(temp_file.as_file());
 
-        let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct>(
-            "test_input",
-            serde_yaml::from_str(&config_str).unwrap(),
-        );
+        let (endpoint, consumer, zset) =
+            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap());
 
         for _ in 0..10 {
             for val in test_data.iter().cloned() {

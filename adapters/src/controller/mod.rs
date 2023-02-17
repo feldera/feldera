@@ -536,7 +536,13 @@ impl ControllerInner {
         // Create parser.
         let format = <dyn InputFormat>::get_format(&endpoint_config.format.name)
             .ok_or_else(|| ControllerError::unknown_input_format(&endpoint_config.format.name))?;
-        let parser = format.new_parser(&endpoint_config.format.config, &self.catalog)?;
+
+        let catalog = self.catalog.lock().unwrap();
+        let input_stream = catalog
+            .input_collection_handle(&endpoint_config.stream)
+            .ok_or_else(|| AnyError::msg(format!("unknown stream '{}'", endpoint_config.stream)))?;
+
+        let parser = format.new_parser(input_stream, &endpoint_config.format.config)?;
 
         // Create probe.
         let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -995,6 +1001,7 @@ min_batch_size_records: {min_batch_size_records}
 max_buffering_delay_usecs: {max_buffering_delay_usecs}
 inputs:
     test_input1:
+        stream: test_input1
         transport:
             name: file
             config:
@@ -1003,8 +1010,6 @@ inputs:
                 follow: false
         format:
             name: csv
-            config:
-                input_stream: test_input1
 outputs:
     test_output1:
         stream: test_output1
