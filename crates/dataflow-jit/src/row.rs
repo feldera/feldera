@@ -1,5 +1,10 @@
-use crate::codegen::VTable;
-use bincode::{de::Decoder, enc::Encoder, error::EncodeError, Decode, Encode};
+use crate::codegen::{BitSetType, NativeLayout, VTable};
+use bincode::{
+    de::Decoder,
+    enc::Encoder,
+    error::{DecodeError, EncodeError},
+    Decode, Encode,
+};
 use size_of::SizeOf;
 use std::{
     alloc::Layout,
@@ -7,17 +12,22 @@ use std::{
     fmt::{self, Debug},
     hash::{Hash, Hasher},
     ptr::NonNull,
+    slice,
 };
 
-/// An individually-allocated, dynamically generated row
-pub struct Row {
+// TODO: Column value read/write functions
+
+pub struct UninitRow {
     data: NonNull<u8>,
     vtable: &'static VTable,
 }
 
-impl Row {
-    pub fn type_name(&self) -> &str {
-        self.vtable.type_name()
+impl UninitRow {
+    pub fn new(vtable: &'static VTable) -> Self {
+        Self {
+            data: Self::alloc(vtable),
+            vtable,
+        }
     }
 
     #[inline]
@@ -35,16 +45,18 @@ impl Row {
         self.data.as_ptr()
     }
 
-    /// Creates an uninitalized row
+    pub fn type_name(&self) -> &str {
+        self.vtable.type_name()
+    }
+
+    /// Turns an uninitialized row into an initialized one
     ///
     /// # Safety
     ///
-    /// Must fully initialize the inner data before manipulating it
-    pub unsafe fn uninit(vtable: &'static VTable) -> Self {
-        Self {
-            data: Self::alloc(vtable),
-            vtable,
-        }
+    /// All columns of the row must be initialized
+    #[inline]
+    pub const unsafe fn assume_init(self) -> Row {
+        Row { inner: self }
     }
 
     fn alloc(vtable: &VTable) -> NonNull<u8> {
@@ -64,12 +76,159 @@ impl Row {
             None => std::alloc::handle_alloc_error(layout),
         }
     }
+
+    // TODO: Ideally we'd retain enough info within the vtable to not require the `layout` argument
+    // TODO: Make sure that `layout` corresponds to the current row's layout
+    pub fn set_column_null(&mut self, column: usize, layout: &NativeLayout, null: bool) {
+        let (ty, bit_offset, bit) = layout.nullability_of(column);
+
+        let bitset = unsafe { self.as_mut_ptr().add(bit_offset as usize) };
+        debug_assert_eq!(bitset as usize % ty.align() as usize, 0);
+
+        let value = if layout.bitset_occupants(column) == 1 {
+            // If there's only one occupant in the bitset we can set it directly
+            null as u64
+
+        // If there's more than one occupant in the bitset we need to load, set/unset the bit and then store it
+        } else {
+            // Load the bitset's current value
+            let mut mask = unsafe {
+                match ty {
+                    BitSetType::U8 => bitset.read() as u64,
+                    BitSetType::U16 => bitset.cast::<u16>().read() as u64,
+                    BitSetType::U32 => bitset.cast::<u32>().read() as u64,
+                    BitSetType::U64 => bitset.cast::<u64>().read(),
+                }
+            };
+
+            // Set or unset the bit
+            if null {
+                mask |= 1 << bit;
+            } else {
+                mask &= !(1 << bit);
+            }
+
+            mask
+        };
+
+        // Store the modified bitset
+        unsafe {
+            match ty {
+                BitSetType::U8 => bitset.write(value as u8),
+                BitSetType::U16 => bitset.cast::<u16>().write(value as u16),
+                BitSetType::U32 => bitset.cast::<u32>().write(value as u32),
+                BitSetType::U64 => bitset.cast::<u64>().write(value),
+            }
+        }
+    }
+
+    /// Returns `true` if the given column is null
+    ///
+    /// # Safety
+    ///
+    /// The null flag for the given column must have been initialized
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given column is not nullable
+    // TODO: Ideally we'd retain enough info within the vtable to not require the `layout` argument
+    // TODO: Make sure that `layout` corresponds to the current row's layout
+    pub unsafe fn column_is_null(&self, column: usize, layout: &NativeLayout) -> bool {
+        let (ty, bit_offset, bit) = layout.nullability_of(column);
+
+        let bitset = unsafe { self.as_ptr().add(bit_offset as usize) };
+        debug_assert_eq!(bitset as usize % ty.align() as usize, 0);
+
+        let value = unsafe {
+            match ty {
+                BitSetType::U8 => bitset.read() as u64,
+                BitSetType::U16 => bitset.cast::<u16>().read() as u64,
+                BitSetType::U32 => bitset.cast::<u32>().read() as u64,
+                BitSetType::U64 => bitset.cast::<u64>().read(),
+            }
+        };
+
+        if layout.bitset_occupants(column) == 1 {
+            value != 0
+        } else {
+            value & (1 << bit) != 0
+        }
+    }
+}
+
+impl Drop for UninitRow {
+    fn drop(&mut self) {
+        if self.vtable.size_of != 0 {
+            debug_assert!(
+                Layout::from_size_align(self.vtable.size_of, self.vtable.align_of.get()).is_ok(),
+            );
+
+            // Safety: We've already validated the preconditions of `Layout` when creating
+            // our own layouts
+            let layout = unsafe {
+                Layout::from_size_align_unchecked(self.vtable.size_of, self.vtable.align_of.get())
+            };
+
+            // Safety: This is a valid allocation
+            unsafe { std::alloc::dealloc(self.as_mut_ptr(), layout) }
+        }
+    }
+}
+
+/// An individually-allocated, dynamically generated row
+#[repr(transparent)]
+pub struct Row {
+    inner: UninitRow,
+}
+
+impl Row {
+    #[inline]
+    pub const fn vtable(&self) -> &VTable {
+        self.inner.vtable()
+    }
+
+    #[inline]
+    pub const fn as_ptr(&self) -> *const u8 {
+        self.inner.as_ptr()
+    }
+
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.inner.as_mut_ptr()
+    }
+
+    pub fn type_name(&self) -> &str {
+        self.inner.type_name()
+    }
+
+    pub fn column_is_null(&self, column: usize, layout: &NativeLayout) -> bool {
+        // Safety: The current row is initialized
+        unsafe { self.inner.column_is_null(column, layout) }
+    }
+
+    pub fn set_column_null(&mut self, column: usize, layout: &NativeLayout, null: bool) {
+        self.inner.set_column_null(column, layout, null);
+    }
 }
 
 impl PartialEq for Row {
     fn eq(&self, other: &Self) -> bool {
-        debug_assert_eq!(self.vtable.layout_id, other.vtable.layout_id);
-        unsafe { (self.vtable.eq)(self.data.as_ptr(), other.data.as_ptr()) }
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { (self.vtable().eq)(self.as_ptr(), other.as_ptr()) }
+    }
+}
+
+impl PartialEq<&Self> for Row {
+    fn eq(&self, other: &&Self) -> bool {
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { (self.vtable().eq)(self.as_ptr(), other.as_ptr()) }
+    }
+}
+
+impl<'a> PartialEq<Row> for &'a Row {
+    fn eq(&self, other: &Row) -> bool {
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { (self.vtable().eq)(self.as_ptr(), other.as_ptr()) }
     }
 }
 
@@ -77,34 +236,34 @@ impl Eq for Row {}
 
 impl PartialOrd for Row {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        debug_assert_eq!(self.vtable.layout_id, other.vtable.layout_id);
-        unsafe { Some((self.vtable.cmp)(self.data.as_ptr(), other.data.as_ptr())) }
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { Some((self.vtable().cmp)(self.as_ptr(), other.as_ptr())) }
     }
 
     fn lt(&self, other: &Self) -> bool {
-        debug_assert_eq!(self.vtable.layout_id, other.vtable.layout_id);
-        unsafe { (self.vtable.lt)(self.data.as_ptr(), other.data.as_ptr()) }
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { (self.vtable().lt)(self.as_ptr(), other.as_ptr()) }
     }
 }
 
 impl Ord for Row {
     fn cmp(&self, other: &Self) -> Ordering {
-        debug_assert_eq!(self.vtable.layout_id, other.vtable.layout_id);
-        unsafe { (self.vtable.cmp)(self.data.as_ptr(), other.data.as_ptr()) }
+        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
+        unsafe { (self.vtable().cmp)(self.as_ptr(), other.as_ptr()) }
     }
 }
 
 impl Hash for Row {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        unsafe { (self.vtable.hash)(&mut (state as &mut dyn Hasher), self.as_ptr()) }
+        unsafe { (self.vtable().hash)(&mut (state as &mut dyn Hasher), self.as_ptr()) }
     }
 }
 
 impl SizeOf for Row {
     fn size_of_children(&self, context: &mut size_of::Context) {
-        if self.vtable.size_of != 0 {
-            context.add_distinct_allocation().add(self.vtable.size_of);
-            unsafe { (self.vtable.size_of_children)(self.data.as_ptr(), context) };
+        if self.vtable().size_of != 0 {
+            context.add_distinct_allocation().add(self.vtable().size_of);
+            unsafe { (self.vtable().size_of_children)(self.as_ptr(), context) };
         }
     }
 }
@@ -119,7 +278,7 @@ impl Encode for Row {
 }
 
 impl Decode for Row {
-    fn decode<D>(_decoder: &mut D) -> Result<Self, bincode::error::DecodeError>
+    fn decode<D>(_decoder: &mut D) -> Result<Self, DecodeError>
     where
         D: Decoder,
     {
@@ -129,7 +288,44 @@ impl Decode for Row {
 
 impl Debug for Row {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if unsafe { (self.vtable.debug)(self.data.as_ptr(), f) } {
+        // If the alternative flag is passed, debug the raw bytes of the row
+        if f.alternate() {
+            #[derive(Debug)]
+            #[allow(dead_code)]
+            struct DebugRow<'a> {
+                layout: &'a str,
+                size: usize,
+                align: usize,
+                debug: String,
+                // TODO: Hex output for the raw bytes
+                bytes: &'a [u8],
+                // TODO: Debug column types & offsets as well as bitsets
+            }
+
+            // This is really unsound since we're reading uninit memory but whatever
+            let bytes = unsafe {
+                // Make an asm black box to freeze the underlying memory
+                let mut ptr = self.as_ptr();
+                std::arch::asm!(
+                    "/* {ptr} */",
+                    ptr = inout(reg) ptr,
+                    options(pure, nomem, preserves_flags, nostack),
+                );
+
+                slice::from_raw_parts(ptr, self.vtable().size_of)
+            };
+
+            let debug = DebugRow {
+                layout: self.type_name(),
+                size: self.vtable().size_of,
+                align: self.vtable().align_of.get(),
+                debug: format!("{:?}", self),
+                bytes,
+            };
+            write!(f, "{debug:#?}",)
+
+        // Otherwise debug normally
+        } else if unsafe { (self.vtable().debug)(self.as_ptr(), f) } {
             Ok(())
         } else {
             Err(fmt::Error)
@@ -139,13 +335,13 @@ impl Debug for Row {
 
 impl Clone for Row {
     fn clone(&self) -> Self {
-        let data = Self::alloc(self.vtable);
-        unsafe { (self.vtable.clone)(self.data.as_ptr(), data.as_ptr()) };
+        let mut data = UninitRow::new(self.inner.vtable);
+        unsafe { (self.vtable().clone)(self.as_ptr(), data.as_mut_ptr()) };
 
-        Self {
-            data,
-            vtable: self.vtable,
-        }
+        let clone = unsafe { data.assume_init() };
+        debug_assert_eq!(self, clone);
+
+        clone
     }
 }
 
@@ -155,21 +351,11 @@ unsafe impl Sync for Row {}
 
 impl Drop for Row {
     fn drop(&mut self) {
-        if self.vtable.size_of != 0 {
-            debug_assert!(
-                Layout::from_size_align(self.vtable.size_of, self.vtable.align_of.get()).is_ok(),
-            );
-
-            // Safety: We've already validated the preconditions of `Layout` when creating
-            // our own layouts
-            let layout = unsafe {
-                Layout::from_size_align_unchecked(self.vtable.size_of, self.vtable.align_of.get())
-            };
-
-            unsafe {
-                (self.vtable.drop_in_place)(self.data.as_ptr());
-                std::alloc::dealloc(self.data.as_ptr(), layout);
-            }
+        // Drop the row's inner data
+        if self.vtable().size_of != 0 {
+            unsafe { (self.vtable().drop_in_place)(self.as_mut_ptr()) }
         }
+
+        // UninitRow::drop() cleans up the allocated memory
     }
 }

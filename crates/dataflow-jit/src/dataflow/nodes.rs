@@ -15,13 +15,15 @@ use crate::{
 pub enum DataflowNode {
     Map(Map),
     MapIndex(MapIndex),
+    Filter(Filter),
+    FilterIndex(FilterIndex),
+    FilterMap(FilterMap),
+    FilterMapIndex(FilterMapIndex),
     Sum(Sum),
     Neg(Neg),
     Sink(Sink),
     Source(Source),
     SourceMap(SourceMap),
-    Filter(Filter),
-    FilterIndex(FilterIndex),
     IndexWith(IndexWith),
     Delta0(Delta0),
     DelayedFeedback(DelayedFeedback),
@@ -33,6 +35,18 @@ pub enum DataflowNode {
     Noop(Noop),
     Minus(Minus),
     MonotonicJoin(MonotonicJoin),
+    Differentiate(Differentiate),
+    Integrate(Integrate),
+}
+
+#[derive(Debug, Clone)]
+pub struct Differentiate {
+    pub input: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct Integrate {
+    pub input: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +152,20 @@ pub struct Filter {
 pub struct FilterIndex {
     pub input: NodeId,
     pub filter_fn: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterMap {
+    pub input: NodeId,
+    pub filter_map: unsafe extern "C" fn(*const u8, *mut u8) -> bool,
+    pub output_vtable: &'static VTable,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterMapIndex {
+    pub input: NodeId,
+    pub filter_map: unsafe extern "C" fn(*const u8, *const u8, *mut u8) -> bool,
+    pub output_vtable: &'static VTable,
 }
 
 #[derive(Debug, Clone)]

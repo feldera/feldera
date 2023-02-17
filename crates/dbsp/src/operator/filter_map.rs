@@ -123,7 +123,7 @@ pub trait FilterMap<C> {
     /// IntoIterator`, e.g., `Option<>` or `Vec<>`.
     fn flat_map<F, I>(&self, func: F) -> Stream<C, OrdZSet<I::Item, Self::R>>
     where
-        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
         I::Item: DBData,
     {
@@ -133,7 +133,7 @@ pub trait FilterMap<C> {
     /// Like [`Self::flat_map`], but can return any batch type.
     fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
     where
-        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
         O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>;
 
@@ -201,9 +201,9 @@ where
         )
     }
 
-    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<Circuit<P>, O>
     where
-        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
         O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
     {
@@ -269,9 +269,9 @@ where
         self.circuit().add_unary_operator(Map::new(map_func), self)
     }
 
-    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<Circuit<P>, O>
     where
-        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
         O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
     {
@@ -694,7 +694,7 @@ impl<CI, CO, F, I> UnaryOperator<CI, CO> for FlatMap<CI, CO, F, I>
 where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
-    for<'a> F: Fn((&'a CI::Key, &'a CI::Val)) -> I + 'static,
+    for<'a> F: FnMut((&'a CI::Key, &'a CI::Val)) -> I + 'static,
     I: IntoIterator<Item = (CO::Key, CO::Val)> + 'static,
 {
     fn eval(&mut self, i: &CI) -> CO {

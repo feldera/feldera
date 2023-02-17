@@ -51,8 +51,7 @@ impl Codegen {
 
                     let next_hash = if nullable {
                         // Zero = value isn't null, non-zero = value is null
-                        let non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
+                        let non_null = column_non_null(idx, ptr, &layout, &mut builder, true);
                         // One = value isn't null, zero = value is null
                         let mut non_null = builder.ins().icmp_imm(IntCC::Equal, non_null, 0);
                         // Shrink the null-ness to a single byte

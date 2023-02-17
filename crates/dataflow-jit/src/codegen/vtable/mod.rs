@@ -30,7 +30,9 @@ use std::{
 // TODO: The unwinding issues can be solved by creating unwind table entries for
 // our generated functions, this'll also make our code more debug-able
 // https://github.com/bytecodealliance/wasmtime/issues/5574
-// TODO: Hash impl
+// TODO: bincode Encode/Decode impls
+// TODO: serde Serialize/Deserialize impls?
+// TODO: rkyv Archive impls
 
 macro_rules! vtable {
     ($($func:ident: $ty:ty),+ $(,)?) => {
@@ -310,7 +312,7 @@ impl Codegen {
                     let next_size_of = if nullable {
                         // Zero = string isn't null, non-zero = string is null
                         let string_non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
+                            column_non_null(idx, ptr, &layout, &mut builder, true);
 
                         // If the string is null, jump to the `next_size_of` block and don't
                         // get the size of the current string (since it's null). Otherwise
@@ -376,13 +378,12 @@ fn column_non_null(
     row_ptr: ClifValue,
     layout: &NativeLayout,
     builder: &mut FunctionBuilder,
-    module: &JITModule,
     readonly: bool,
 ) -> ClifValue {
     debug_assert!(layout.is_nullable(column));
 
     let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
-    let bitset_ty = bitset_ty.native_type(&module.isa().frontend_config());
+    let bitset_ty = bitset_ty.native_type();
 
     // Create the flags for the load
     let mut flags = MemFlags::trusted();
@@ -397,5 +398,12 @@ fn column_non_null(
 
     // Zero is true (the value isn't null), non-zero is false
     // (the value is null)
-    builder.ins().band_imm(bitset, 1i64 << bit_idx)
+    if layout.bitset_occupants(column) == 1 {
+        // If there's only a single occupant of the bitset, it's already in the proper
+        // format
+        bitset
+    } else {
+        // Otherwise we mask all bits other than the one we're interested in
+        builder.ins().band_imm(bitset, 1i64 << bit_idx)
+    }
 }

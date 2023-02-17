@@ -89,8 +89,7 @@ impl Codegen {
                     if nullable {
                         let layout = layout_cache.layout_of(layout_id);
                         // Zero = value isn't null, non-zero = value is null
-                        let non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, ctx.module, true);
+                        let non_null = column_non_null(idx, ptr, &layout, &mut builder, true);
 
                         // If the value is null, jump to the `write_null` block and debug a null
                         // value (since it's null). Otherwise (if the value isn't null) debug it

@@ -7,7 +7,7 @@ use crate::{
         ColumnType, Constant, FunctionBuilder, Graph, GraphExt, LayoutId, NodeId, RowLayout,
         RowLayoutBuilder, Validator,
     },
-    row::Row,
+    row::{Row, UninitRow},
 };
 use dbsp::{
     trace::{BatchReader, Cursor},
@@ -15,54 +15,11 @@ use dbsp::{
 };
 use std::collections::HashMap;
 
-#[cfg(test)]
-fn set_column_nullness(row: &mut Row, column: usize, layout: &NativeLayout, null: bool) {
-    use crate::codegen::BitSetType;
-    use std::mem::align_of;
-
-    let (ty, bit_offset, bit) = layout.nullability_of(column);
-
-    unsafe {
-        let bitset = row.as_mut_ptr().add(bit_offset as usize);
-
-        let mut mask = match ty {
-            BitSetType::U8 => {
-                debug_assert_eq!(bitset as usize % align_of::<u8>(), 0);
-                bitset.read() as u64
-            }
-            BitSetType::U16 => {
-                debug_assert_eq!(bitset as usize % align_of::<u16>(), 0);
-                bitset.cast::<u16>().read() as u64
-            }
-            BitSetType::U32 => {
-                debug_assert_eq!(bitset as usize % align_of::<u32>(), 0);
-                bitset.cast::<u32>().read() as u64
-            }
-            BitSetType::U64 => {
-                debug_assert_eq!(bitset as usize % align_of::<u64>(), 0);
-                bitset.cast::<u64>().read()
-            }
-        };
-
-        if null {
-            mask |= 1 << bit;
-        } else {
-            mask &= !(1 << bit);
-        }
-
-        match ty {
-            BitSetType::U8 => bitset.write(mask as u8),
-            BitSetType::U16 => bitset.cast::<u16>().write(mask as u16),
-            BitSetType::U32 => bitset.cast::<u32>().write(mask as u32),
-            BitSetType::U64 => bitset.cast::<u64>().write(mask),
-        }
-    }
-}
-
 #[test]
 #[ignore]
 fn test_parse_sql_output() {
-    const SQL: &str = include_str!("simple_select.json");
+    // const SQL: &str = include_str!("simple_select.json");
+    const SQL: &str = include_str!("green_tripdata_count.json");
 
     crate::utils::test_logger();
 
@@ -75,6 +32,11 @@ fn test_parse_sql_output() {
 
     let (mut runtime, (mut inputs, outputs)) =
         Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
+
+    runtime.step().unwrap();
+    runtime.kill().unwrap();
+    unsafe { jit_handle.free_memory() };
+    return;
 
     let (input_node, input_layout) = sources["T"];
     let (output_node, _output_layout) = sinks["V"];
@@ -89,27 +51,29 @@ fn test_parse_sql_output() {
         (None, None),
         (Some(2000), None),
     ] {
-        unsafe {
-            let mut row = Row::uninit(&*jit_handle.vtables()[&input_layout]);
+        let mut row = UninitRow::new(unsafe { &*jit_handle.vtables()[&input_layout] });
 
-            set_column_nullness(&mut row, 0, &layout, x.is_none());
-            if let Some(x) = x {
+        row.set_column_null(0, &layout, x.is_none());
+        if let Some(x) = x {
+            unsafe {
                 row.as_mut_ptr()
                     .add(layout.offset_of(0) as usize)
                     .cast::<i32>()
-                    .write(x);
-            }
+                    .write(x)
+            };
+        }
 
-            set_column_nullness(&mut row, 1, &layout, y.is_none());
-            if let Some(y) = y {
+        row.set_column_null(1, &layout, y.is_none());
+        if let Some(y) = y {
+            unsafe {
                 row.as_mut_ptr()
                     .add(layout.offset_of(1) as usize)
                     .cast::<i32>()
-                    .write(y);
-            }
-
-            values.push((row, 1i32));
+                    .write(y)
+            };
         }
+
+        values.push((unsafe { row.assume_init() }, 1i32));
     }
     inputs
         .get_mut(&input_node)
@@ -159,7 +123,10 @@ fn parse_sql_output(
         let mut builder = FunctionBuilder::new(graph.layout_cache().clone());
 
         let mut arg_layouts = Vec::new();
-        let args = func["type"]["argumentTypes"][1].as_array().unwrap();
+        let args = match func["type"]["argumentTypes"][1].as_array() {
+            Some(args) => args,
+            None => continue,
+        };
         for arg in args {
             debug_assert_eq!(
                 arg["class"].as_str().unwrap(),
@@ -179,7 +146,7 @@ fn parse_sql_output(
             arg_layouts.push(arg);
         }
 
-        let mut output = None;
+        let mut outputs = Vec::new();
         let ret_ty = func["type"]["resultType"]["class"].as_str().unwrap();
         if ret_ty == "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool" {
             builder.set_return_type(ColumnType::Bool);
@@ -187,7 +154,43 @@ fn parse_sql_output(
             let layout = graph
                 .layout_cache()
                 .add(sql_layout(&func["type"]["resultType"]));
-            output = Some(builder.add_output(layout));
+            outputs.push(builder.add_output(layout));
+        } else if ret_ty == "org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple" {
+            let elems = func["type"]["resultType"]["tupFields"][1]
+                .as_array()
+                .unwrap();
+            for elem in elems {
+                if elem["class"].as_str().unwrap()
+                    == "org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple"
+                {
+                    let elems = elem["tupFields"][1].as_array().unwrap();
+                    for elem in elems {
+                        if elem["class"] == "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple" {
+                            let layout = graph.layout_cache().add(sql_layout(elem));
+                            outputs.push(builder.add_output(layout));
+                        } else {
+                            let (column_type, nullable) = sql_type(elem);
+                            let layout = graph.layout_cache().add(
+                                RowLayoutBuilder::new()
+                                    .with_column(column_type, nullable)
+                                    .build(),
+                            );
+                            outputs.push(builder.add_output(layout));
+                        }
+                    }
+                } else if elem["class"] == "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple" {
+                    let layout = graph.layout_cache().add(sql_layout(elem));
+                    outputs.push(builder.add_output(layout));
+                } else {
+                    let (column_type, nullable) = sql_type(elem);
+                    let layout = graph.layout_cache().add(
+                        RowLayoutBuilder::new()
+                            .with_column(column_type, nullable)
+                            .build(),
+                    );
+                    outputs.push(builder.add_output(layout));
+                }
+            }
         } else {
             todo!("unknown return type: {ret_ty}");
         }
@@ -284,7 +287,7 @@ fn parse_sql_output(
             // i64 constants
             // TODO: Handle null constants
             } else if kind == "org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal" {
-                let value = dbg!(initializer["value"].as_i64().unwrap());
+                let value = initializer["value"].as_i64().unwrap();
                 let constant = builder.constant(Constant::I64(value));
                 variables.insert(var, constant);
 
@@ -294,8 +297,92 @@ fn parse_sql_output(
                 let value = initializer["value"].as_bool().unwrap();
                 let constant = builder.constant(Constant::Bool(value));
                 variables.insert(var, constant);
+
+            // Function calls
+            } else if kind == "org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression" {
+                let func = initializer["function"]["path"]["components"][1][0]["identifier"]
+                    .as_str()
+                    .unwrap();
+
+                if func == "extract_Timestamp_epoch" {
+                    // timestamp.milliseconds() / 1000
+                    let timestamp = initializer["arguments"][1][0]["variable"].as_str().unwrap();
+                    let timestamp = variables[timestamp];
+
+                    // Timestamp is represented by milliseconds
+                    let millis = builder.cast(timestamp, ColumnType::I64);
+                    let one_thousand = builder.constant(Constant::I64(1000));
+                    let epoch = builder.div(millis, one_thousand);
+                    variables.insert(var, epoch);
+                } else if func == "extract_Timestamp_epochN" {
+                    // timestamp.milliseconds() / 1000
+                    let timestamp = initializer["arguments"][1][0]["variable"].as_str().unwrap();
+                    let timestamp = variables[timestamp];
+
+                    // Timestamp is represented by milliseconds
+                    let millis = builder.cast(timestamp, ColumnType::I64);
+                    let one_thousand = builder.constant(Constant::I64(1000));
+                    let epoch = builder.div(millis, one_thousand);
+                    variables.insert(var, epoch);
+
+                    // FIXME: Ideally we'd do this via branching, need basic block params first
+                    let is_null = variables_null[var];
+                    variables_null.insert(var, is_null);
+                } else {
+                    todo!("unknown function: {func}")
+                }
+            } else if kind == "org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression" {
+                let layout = graph.layout_cache().add(sql_layout(&initializer["type"]));
+                let row = builder.uninit_row(layout);
+
+                for (idx, col) in initializer["fields"][1]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                {
+                    let col = col["variable"].as_str().unwrap();
+                    let value = variables[col];
+
+                    if let Some(&is_null) = variables_null.get(col) {
+                        builder.set_null(row, idx, is_null);
+                        // TODO: Make branching happen for non-scalar values
+                        builder.store(row, idx, value);
+                    } else {
+                        builder.store(row, idx, value);
+                    }
+                }
+
+                variables.insert(var, row);
+            // } else if kind == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
+            //     let layout = graph.layout_cache().add(sql_layout(&initializer["type"]));
+            //     let row = builder.uninit_row(layout);
+            //
+            //     for (idx, col) in initializer["fields"][1]
+            //         .as_array()
+            //         .unwrap()
+            //         .iter()
+            //         .enumerate()
+            //     {
+            //         let col = col["variable"].as_str().unwrap();
+            //         let value = variables[col];
+            //
+            //         if let Some(&is_null) = variables_null.get(col) {
+            //             builder.set_null(row, idx, is_null);
+            //             // TODO: Make branching happen for non-scalar values
+            //             builder.store(row, idx, value);
+            //         } else {
+            //             builder.store(row, idx, value);
+            //         }
+            //     }
+            //
+            //     variables.insert(var, row);
+            } else if kind == "org.dbsp.sqlCompiler.ir.expression.literal.DBSPCloneExpression" {
+                // FIXME: Clone values
+                let src = variables[initializer["expression"]["variable"].as_str().unwrap()];
+                variables.insert(var, src);
             } else {
-                todo!("unknown expression body: {expr}")
+                todo!("unknown expression body: {expr} (kind: {kind})")
             }
         }
 
@@ -328,7 +415,7 @@ fn parse_sql_output(
                 todo!("unknown last expression function: {last_expr}")
             }
         } else if class == "org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression" {
-            let output = output.unwrap();
+            let output = outputs[0];
 
             let elements = last_expr["fields"][1]
                 .as_array()
@@ -395,7 +482,7 @@ fn parse_sql_output(
 
             let filter = graph.filter(input_stream, functions[filter_fn].clone());
             streams.insert(output, filter);
-        } else if operation == "map" {
+        } else if operation == "map" || operation == "map_index" {
             let input = operator["inputs"][0].as_str().unwrap();
             let input_stream = streams[input];
             let layout = graph
@@ -406,6 +493,30 @@ fn parse_sql_output(
 
             let map = graph.map(input_stream, layout, functions[map_fn].clone());
             streams.insert(output, map);
+        } else if operation == "index_with" {
+            let input = operator["inputs"][0].as_str().unwrap();
+            let input_stream = streams[input];
+            let key_layout = graph
+                .layout_cache()
+                .add(sql_layout(&operator["type"]["keyType"]));
+            let value_layout = graph
+                .layout_cache()
+                .add(sql_layout(&operator["type"]["elementType"]));
+            let map_fn = operator["function"]["variable"].as_str().unwrap();
+            let output = operator["output"].as_str().unwrap();
+
+            let index_with = graph.index_with(
+                input_stream,
+                key_layout,
+                value_layout,
+                functions[map_fn].clone(),
+            );
+            streams.insert(output, index_with);
+        } else if operation == "differentiate" {
+            let input = operator["inputs"][0].as_str().unwrap();
+            let input_stream = streams[input];
+            let differentiated = graph.differentiate(input_stream);
+            streams.insert(output, differentiated);
         } else if operation == "inspect" {
             let input = operator["inputs"][0].as_str().unwrap();
             let input_stream = streams[input];
@@ -420,6 +531,7 @@ fn parse_sql_output(
         }
     }
 
+    dbg!(&graph);
     (graph, sources, sinks)
 }
 
@@ -467,6 +579,8 @@ fn sql_layout(fields: &serde_json::Value) -> RowLayout {
             layout.add_column(ColumnType::Bool, nullable);
         } else if kind == "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString" {
             layout.add_column(ColumnType::String, nullable);
+        } else if kind == "org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp" {
+            layout.add_column(ColumnType::Timestamp, nullable);
         } else {
             todo!("unknown element type: {kind}")
         }

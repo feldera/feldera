@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::{
     codegen::{
         intrinsics::ImportIntrinsics, utils::FunctionBuilderExt, vtable::column_non_null, Codegen,
@@ -302,26 +304,34 @@ fn clone_layout(
         // only need to branch for non-trivial clones
         let next_clone = if nullable {
             // Zero = value isn't null, non-zero = value is null
-            let value_non_null = column_non_null(idx, src, layout, builder, module, true);
+            let value_non_null = column_non_null(idx, src, layout, builder, true);
 
             // If the value is null, set the cloned value to null
             let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
-            let bitset_ty = bitset_ty.native_type(&module.isa().frontend_config());
-            let mask = 1 << bit_idx;
+            let bitset_ty = bitset_ty.native_type();
 
-            // Load the bitset's current value
-            let current_bitset =
+            let bitset = if layout.bitset_occupants(idx) == 1 {
+                let null_ty = builder.func.dfg.value_type(value_non_null);
+                match bitset_ty.bytes().cmp(&null_ty.bytes()) {
+                    Ordering::Less => builder.ins().ireduce(bitset_ty, value_non_null),
+                    Ordering::Equal => value_non_null,
+                    Ordering::Greater => builder.ins().uextend(bitset_ty, value_non_null),
+                }
+            } else {
+                // Load the bitset's current value
+                let current_bitset =
+                    builder
+                        .ins()
+                        .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
+
+                let mask = 1 << bit_idx;
+                let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
+                let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
+
                 builder
                     .ins()
-                    .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
-
-            // debug_assert!(config.null_sigil.is_one());
-            let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
-            let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
-            let bitset =
-                builder
-                    .ins()
-                    .select(value_non_null, bitset_with_null, bitset_with_non_null);
+                    .select(value_non_null, bitset_with_null, bitset_with_non_null)
+            };
 
             // Store the newly modified bitset back into the row
             builder

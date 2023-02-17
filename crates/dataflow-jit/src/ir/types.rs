@@ -322,6 +322,12 @@ impl Debug for RowLayout {
     }
 }
 
+impl Display for RowLayout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
     args: Vec<LayoutId>,

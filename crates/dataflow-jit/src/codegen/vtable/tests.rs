@@ -405,9 +405,9 @@ impl Write for FailWriter {
 
 mod proptests {
     use crate::{
-        codegen::{BitSetType, Codegen, CodegenConfig, NativeLayout},
+        codegen::{Codegen, CodegenConfig},
         ir::{ColumnType, RowLayout, RowLayoutBuilder, RowLayoutCache},
-        row::Row,
+        row::UninitRow,
         ThinStr,
     };
     use proptest::{
@@ -635,53 +635,6 @@ mod proptests {
         }
     }
 
-    fn set_column_nullness(
-        row: &mut Row,
-        column: usize,
-        layout: &NativeLayout,
-        null: bool,
-    ) -> TestCaseResult {
-        let (ty, bit_offset, bit) = layout.nullability_of(column);
-
-        unsafe {
-            let bitset = row.as_mut_ptr().add(bit_offset as usize);
-
-            let mut mask = match ty {
-                BitSetType::U8 => {
-                    prop_assert_eq!(bitset as usize % align_of::<u8>(), 0);
-                    bitset.read() as u64
-                }
-                BitSetType::U16 => {
-                    prop_assert_eq!(bitset as usize % align_of::<u16>(), 0);
-                    bitset.cast::<u16>().read() as u64
-                }
-                BitSetType::U32 => {
-                    prop_assert_eq!(bitset as usize % align_of::<u32>(), 0);
-                    bitset.cast::<u32>().read() as u64
-                }
-                BitSetType::U64 => {
-                    prop_assert_eq!(bitset as usize % align_of::<u64>(), 0);
-                    bitset.cast::<u64>().read()
-                }
-            };
-
-            if null {
-                mask |= 1 << bit;
-            } else {
-                mask &= !(1 << bit);
-            }
-
-            match ty {
-                BitSetType::U8 => bitset.write(mask as u8),
-                BitSetType::U16 => bitset.cast::<u16>().write(mask as u16),
-                BitSetType::U32 => bitset.cast::<u32>().write(mask as u32),
-                BitSetType::U64 => bitset.cast::<u64>().write(mask),
-            }
-        }
-
-        Ok(())
-    }
-
     fn test_layout(value: PropLayout, debug: bool) -> TestCaseResult {
         let cache = RowLayoutCache::new();
         let layout_id = cache.add(value.row_layout());
@@ -700,7 +653,7 @@ mod proptests {
         prop_assert_ne!(layout.align(), 0);
         prop_assert!(layout.align().is_power_of_two());
 
-        let mut row = unsafe { Row::uninit(&*vtable) };
+        let mut row = UninitRow::new(unsafe { &*vtable });
         for (idx, column) in value.columns.into_iter().enumerate() {
             let offset = layout.offset_of(idx) as usize;
 
@@ -714,7 +667,8 @@ mod proptests {
 
                     MaybeColumn::Nullable(value, false) => {
                         // Set the column to not be null
-                        set_column_nullness(&mut row, idx, &layout, false)?;
+                        row.set_column_null(idx, &layout, false);
+                        prop_assert!(!row.column_is_null(idx, &layout));
 
                         // Write the column's value
                         let column = row.as_mut_ptr().add(offset);
@@ -723,11 +677,13 @@ mod proptests {
 
                     MaybeColumn::Nullable(_, true) => {
                         // Set the column to be null
-                        set_column_nullness(&mut row, idx, &layout, true)?;
+                        row.set_column_null(idx, &layout, true);
+                        prop_assert!(row.column_is_null(idx, &layout));
                     }
                 }
             }
         }
+        let row = unsafe { row.assume_init() };
 
         let clone = row.clone();
         prop_assert_eq!(&row, &clone);
@@ -790,6 +746,8 @@ mod proptests {
                 $(
                     #[test]
                     fn $test() {
+                        crate::utils::test_logger();
+
                         let layout = PropLayout::new(vec![$($column,)*]);
                         test_layout(layout, true).unwrap();
 
@@ -804,6 +762,7 @@ mod proptests {
     corpus! {
         empty_layout = [],
         null_string = [Nullable(String("".to_owned()), true)],
+        non_null_string = [Nullable(String("supercalifragilisticexpialidocious".to_owned()), true)],
         prop1 = [Nullable(U16(0), false), Nonnull(U32(0)), Nullable(Unit, false)],
         prop2 =  [
             Nullable(F32(4.8600124e-10), false), Nonnull(I64(2232805474518099604)),
