@@ -1,7 +1,7 @@
 \section{Stream computations}\label{sec:streams}
 
 The core notion of our theory of IVM is the \textbf{stream}.
-In this section we introduce formally streams as a
+In this section we introduce formally streams as 
 infinite sequences of values, and define computations on streams.
 Stream operators (\secref{sec:notation}) are the basic building block of stream
 computations.  Operators can be composed with simple rules (\secref{sec:abelian})
@@ -129,10 +129,12 @@ $\cong$
 
 \subsection{Streams over abelian groups}\label{sec:abelian}
 
-For the rest of the technical development we require the set of values $A$
-of a stream $\stream{A}$ to form a commutative group $(A, +, 0_A, -)$.
-We show later that this restriction is not a problem
-for using \dbsp with relational data.
+For the rest of the technical development we require the set of values
+$A$ of a stream $\stream{A}$ to form a commutative group $(A, +, 0_A,
+-)$.  The plus defines what it means to add new data, while the minus
+allows us to compute differences (deltas); the group structure will
+allow us to reorder insertions and deletions.  We show later that this
+restriction is not a problem for using \dbsp with relational data.
 Now we introduce some useful operators and study their properties.
 
 \subsubsection{Delays and time-invariance}\label{sec:delay}
@@ -217,7 +219,7 @@ A stream operator $S:\stream{A}\to\stream{B}$
 is \defined{causal} when for all $s,s'\in\stream{A}$,
 and all times $t$ we have:
 $
-(\forall i \leq . t~s[i]=s'[i]) ~~\Rightarrow~~ S(s)[t]=S(s')[t].
+(\forall i \leq t . s[i]=s'[i]) ~~\Rightarrow~~ S(s)[t]=S(s')[t].
 $
 \end{definition}
 

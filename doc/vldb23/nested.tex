@@ -168,9 +168,11 @@ iterations than the non-incremental circuit (\ref{eq:seminaive}):
 once the non-incremental circuit reaches the fixed point, its output is constant, 
 and the derivative of corresponding value in the incrementalized circuit becomes 0.
 
-Moreover, the work performed by each operator in the incremental 
-circuit is asymptotically better than the non-incremental one.
-A detailed analysis can be found in our companion report~\cite{tr}.
+Moreover, the work performed by each operator in the incremental
+circuit is asymptotically less than the non-incremental
+one\footnote{Under the standard assumption enumerated
+in~\refsec{sec:complexity}.}.  A detailed analysis can be found in our
+companion report~\cite{tr}.
 
 %As a concrete example, consider a join in a recursive circuit.
 %A non-incremental implementation is shown in the Appendix in 
@@ -191,7 +193,7 @@ and differentiates respectively inputs and outputs of the recursive program
 fragment.  As we move $\I$ and $\D$ inside the circuit using the chain rule, we
 additionally store changes to intermediate streams.  Effectively we cache results of 
 fixed point iterations from earlier timestamps to update them efficiently as new input changes arrive.
-Notice that space usage is proportional to the number of iterations of the inner loop 
+Notice that space usage is proportional to the \emph{number of iterations of the inner loop} 
 that computes the fixed-point.  
 Fortunately, many recursive algorithms converge in a relatively small number of steps
 (for example, transitive closure requires a number of steps  log(graph diameter).
