@@ -33,3 +33,9 @@ nexmark_results.csv
 nexmark_comment.txt
 galen_results.csv
 ldbc_results.csv
+
+# pipeline manager
+manager.db
+manager.pid
+config.yaml
+cargo_workspace
