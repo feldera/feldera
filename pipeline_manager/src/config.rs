@@ -100,8 +100,7 @@ pub(crate) struct ManagerConfig {
     #[arg(short, long)]
     pub static_html: Option<String>,
 
-    /// [Developers only] dump OpenAPI specification to `openapi.json` file and
-    /// exit immediately.
+    /// [Developers only] Dump OpenAPI specification to `openapi.json` file.
     #[serde(skip)]
     #[arg(long)]
     pub dump_openapi: bool,

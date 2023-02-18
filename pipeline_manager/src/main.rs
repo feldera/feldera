@@ -184,7 +184,6 @@ fn main() -> AnyResult<()> {
     if config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
         write("openapi.json", openapi_json.as_bytes())?;
-        return Ok(());
     }
 
     if let Some(config_file) = &config.config_file {
@@ -927,6 +926,10 @@ async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Re
             , description = "Specified `project_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `project_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid project id 'a'"))),
     ),
     params(
         ("project_id" = i64, Path, description = "Unique project identifier")
@@ -1025,6 +1028,10 @@ async fn new_pipeline(
             , description = "Specified `project_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `project_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid project id 'a'"))),
     ),
     params(
         ("project_id" = i64, Path, description = "Unique project identifier")
@@ -1063,6 +1070,10 @@ async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `pipeline_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
         ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
@@ -1093,6 +1104,10 @@ async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl 
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `pipeline_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
         ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
@@ -1126,6 +1141,10 @@ async fn pipeline_metadata(state: WebData<ServerState>, req: HttpRequest) -> imp
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `pipeline_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
         ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
@@ -1159,6 +1178,10 @@ async fn pipeline_start(state: WebData<ServerState>, req: HttpRequest) -> impl R
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `pipeline_id` is not a valid integer."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
         ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
