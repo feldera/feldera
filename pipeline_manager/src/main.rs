@@ -271,18 +271,19 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
     let db = ProjectDB::connect(&config)?;
 
     #[cfg(unix)]
-    let daemonize = Daemonize::new()
-        .pid_file(config.manager_pid_file_path())
-        .working_directory(&config.working_directory)
-        .stdout(logfile_clone)
-        .stderr(logfile);
+    if config.unix_daemon {
+        let daemonize = Daemonize::new()
+            .pid_file(config.manager_pid_file_path())
+            .working_directory(&config.working_directory)
+            .stdout(logfile_clone)
+            .stderr(logfile);
 
-    #[cfg(unix)]
-    daemonize.start().map_err(|e| {
-        AnyError::msg(format!(
-            "failed to detach server process from terminal: '{e}'",
-        ))
-    })?;
+        daemonize.start().map_err(|e| {
+            AnyError::msg(format!(
+                "failed to detach server process from terminal: '{e}'",
+            ))
+        })?;
+    }
 
     rt::System::new().block_on(async {
         let db = Arc::new(Mutex::new(db));

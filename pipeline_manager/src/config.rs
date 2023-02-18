@@ -18,6 +18,14 @@ fn default_working_directory() -> String {
     ".".to_string()
 }
 
+fn default_logfile() -> String {
+    "pipeline_manager.log".to_string()
+}
+
+fn default_sql_compiler_home() -> String {
+    "../../sql-to-dbsp-compiler".to_string()
+}
+
 /// Pipeline manager configuration read from a YAML config file.
 #[derive(Deserialize, Clone)]
 pub(crate) struct ManagerConfig {
@@ -30,6 +38,7 @@ pub(crate) struct ManagerConfig {
     pub bind_address: String,
 
     /// File to write manager logs to.
+    #[serde(default = "default_logfile")]
     pub logfile: String,
 
     /// Directory where the manager stores its filesystem state:
@@ -40,6 +49,7 @@ pub(crate) struct ManagerConfig {
     pub working_directory: String,
 
     /// Location of the SQL-to-DBSP compiler.
+    #[serde(default = "default_sql_compiler_home")]
     pub sql_compiler_home: String,
 
     /// Override DBSP dependencies in generated Rust crates.
@@ -69,6 +79,15 @@ pub(crate) struct ManagerConfig {
     /// The default is `false`.
     #[serde(default)]
     pub debug: bool,
+
+    /// Run as a UNIX daemon (detach from terminal).
+    ///
+    /// The default is `false`.
+    ///
+    /// # Compatibility
+    /// This only has effect UNIX platform.
+    #[serde(default)]
+    pub unix_daemon: bool,
 }
 
 impl ManagerConfig {
