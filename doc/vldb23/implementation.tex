@@ -37,15 +37,19 @@ repository and will be discussed in future work.
 
 \paragraph{SQL compiler}
 
-We have also built a SQL to \dbsp compiler, which translates standard SQL queries
-into \dbsp circuits.  The compiler implements Algorithm~\ref{algorithm-inc}, to
-generate a streaming version of any SQL query.
-The compiler is  open-source
-\anonymize{\url{https://github.com/vmware/sql-to-dbsp-compiler}}
-with an MIT license.  The compiler front-end parser and optimizer
-are based on the Apache Calcite~\cite{begoli-icmd18} infrastructure.  The
-project is mature enough to pass all 7 million SQL Logic Tests~\cite{sqllogictest}.  The compiler handles
-all aspects of SQL, including NULLs, ternary logic, grouping, aggregation, multiset queries, etc.
+We have also built a SQL to \dbsp compiler, which translates standard
+SQL queries into \dbsp circuits.  The compiler implements
+Algorithm~\ref{algorithm-inc}, to generate a streaming version of any
+SQL query.  The compiler is open-source
+\anonymize{\url{https://github.com/vmware/sql-to-dbsp-compiler}} with
+an MIT license.  The compiler front-end parser and optimizer are based
+on the Apache Calcite~\cite{begoli-icmd18} infrastructure.  The
+project is mature enough to pass all 7 million SQL Logic
+Tests~\cite{sqllogictest}.  The compiler handles all aspects of SQL,
+including NULLs, ternary logic, grouping, aggregation, multiset
+queries, etc.  Currently correlated sub-queries and outer joins are
+essentially converted to equivalent relational plans using multiple
+joins.
 
 \paragraph{Formal verification}
 

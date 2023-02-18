@@ -40,10 +40,13 @@ logic efficiently.
 
 The above objectives can only be achieved by building on a solid mathematical
 foundation.  The formal model that underpins our system, also called DBSP, is
-described in the accompanying paper:
+described in the accompanying paper (link points to an earlier version while
+we prepare the camera-ready version of the paper):
 
-- [Budiu, McSherry, Ryzhyk, Tannen. DBSP: Automatic Incremental View Maintenance
-  for Rich Query Languages](https://arxiv.org/abs/2203.16684)
+- [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic
+  Incremental View Maintenance for Rich Query Languages, Conference on
+  Very Large Databases, August 2023, Vancouver,
+  Canada](https://arxiv.org/abs/2203.16684)
 
 The model provides two things:
 

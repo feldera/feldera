@@ -21,15 +21,17 @@ many basic relational queries can be expressed using LTI \zr operators~\refsec{s
 
 \subsection{\zrs as an abelian group}
 
-Given a set $A$, we define \defined{\zrs}
-over $A$ as functions with \emph{finite support} from $A$ to $\Z$.
-These are functions $f: A \rightarrow \Z$ where
-$f(x) \not= 0$ for at most a finite number of values $x \in A$.
-We also write $\Z[A]$ for the type of \zrs with elements from $A$.
-Values in $\Z[A]$ can be thought of as key-value maps with
-keys in $A$ and values in $\Z$, justifying the array indexing notation.
-If $m \in \Z[A]$ we write $m[a]$ instead of $m(a)$, again using
-an indexing notation.
+\zrs generalize databases tables: think of a \zr as a table where each
+row has an associated weight, possibly negative.
+
+Given a set $A$, we define \defined{\zrs} over $A$ as functions with
+\emph{finite support} from $A$ to $\Z$.  These are functions $f: A
+\rightarrow \Z$ where $f(x) \not= 0$ for at most a finite number of
+values $x \in A$.  We also write $\Z[A]$ for the type of \zrs with
+elements from $A$.  Values in $\Z[A]$ can be thought of as key-value
+maps with keys in $A$ and values in $\Z$, justifying the array
+indexing notation.  If $m \in \Z[A]$ we write $m[a]$ instead of
+$m(a)$, again using an indexing notation.
 
 A particular \zr $m \in \Z[A]$ can be denoted by enumerating its
 elements that have non-zero values and their corresponding values:
@@ -37,8 +39,6 @@ $m = \{ x_1 \mapsto w_1, \dots, x_n \mapsto w_n \}$.
 We call $w_i \in \Z$ the \defined{multiplicity} (or weight)
 of $x_i \in A$.  Multiplicities can be negative.
 We write that $x \in m$ iff $m[x] \not= 0$.
-In terms of databases think of a \zr as a table
-where each row as an associated weight, possibly negative.
 We also write $w \cdot x$ for $\{ x \mapsto w \}$.
 
 \ifzsetexamples
@@ -244,7 +244,7 @@ WHERE p(I.c)
 \parbox[b][][t]{\commentsize}{
 $\sigma_P(m)[x] \defn \left\{
 \begin{array}{ll}
-  m[x] \cdot x & \mbox{ if } P(x) \\
+  m[x] & \mbox{ if } P(x) \\
   0 & \mbox{ otherwise } \\
 \end{array}
 \right.$ \\
@@ -364,6 +364,7 @@ SELECT * FROM I2
   \draw[->] (distinct) -- (output);
 \end{tikzpicture}
 &
+$\distinct$ removes elements with negative multiplicities from the result.
 \\ \hline
 \end{tabular}
 \caption{Implementation of SQL relational set operators in \dbsp.
@@ -373,7 +374,7 @@ produces output sets.\label{tab:relational}}
 
 
 The translation is fairly straightforward, but many operators require
-the application of a $\distinct$ to produce sets.
+the application of a $\distinct$ \textbf{to produce sets}.
 For example, $a \cup b = \distinct(a + b)$, $a \setminus b =
 \distinct(a - b)$, $(a \times b)((x,y)) = a[x] \times b[y]$.
 
@@ -496,17 +497,18 @@ one $\distinct$ at the end of a chain of computations.
 
 \subsection{Incremental view maintenance}
 
-Let us consider a relational query $Q$
-defining a view $V$.  To create a circuit that maintains incrementally $V$
-we apply the following mechanical steps (this algorithm is deterministic
-and its running time is proportional to the number of operators in the query):
+Let us consider a relational query $Q$ defining a view $V$.  To create
+a circuit that maintains incrementally $V$ we apply the following
+mechanical steps (this algorithm is deterministic and its running time
+is proportional to the number of operators in the query):
 
 \begin{algorithm}[incremental view maintenance]\label{algorithm-inc}\quad
 \begin{enumerate}[nosep, leftmargin=\parindent]
     \item Translate $Q$ into a circuit using the rules in Table~\ref{tab:relational}.
     \item Apply $\distinct$ elimination rules (\ref{prop-distinct-delay}, \ref{prop-distinct-once}) until convergence\footnote{The
     order in which the rules are applied does not matter, since the algorithm is
-    confluent: it always produces the same final result. So the rules can be applied in topological order.}.
+    confluent: it always produces the same final result. So the rules
+    can be applied in e.g., topological order.}.
     \item Lift the whole circuit, by applying Proposition~\ref{prop:distributivity},
     converting it to a circuit operating on streams.
     \item Incrementalize the whole circuit ``surrounding'' it with $\I$ and $\D$.
@@ -516,26 +518,23 @@ and its running time is proportional to the number of operators in the query):
 \end{enumerate}
 \end{algorithm}
 
-A query can be implemented by multiple plans, with varying data-dependent costs.  The input provided
-to this algorithm is a standard relational query plan, and this algorithm produces
-an incremental plan that is ``similar'' to the input plan\footnote{Query planners generally use cost-based
-heuristics to optimize plans, but IVM planning in general does not have this luxury, since the plan
-must be generated \emph{before} the data has been fed to the database.  Nevertheless, standard query
-optimization techniques, perhaps based on historical statistics, can be applied to the query plan before
-generating the incremental plan.}.  Step (2) generates an equivalent circuit, with possibly
-fewer $\distinct$ operators.
-Step (3) yields a circuit that consumes a \emph{stream} of complete database snapshots and outputs a
-stream of complete view snapshots. Step (4) yields a circuit that consumes a stream of \emph{database changes}
-and outputs a stream of \emph{view changes}; however, the internal operation of the
-circuit is non-incremental, as it rebuilds the complete database using
-integration operators.  Step (5) incrementalizes the circuit by replacing each
-primitive operators with its incremental version.
+Step (2) generates an equivalent circuit, with possibly fewer
+$\distinct$ operators.  Step (3) yields a circuit that consumes a
+\emph{stream} of complete database snapshots and outputs a stream of
+complete view snapshots. Step (4) yields a circuit that consumes a
+stream of \emph{database changes} and outputs a stream of \emph{view
+changes}; however, the internal operation of the circuit is
+non-incremental, as it rebuilds the complete database using
+integration operators.  Step (5) incrementalizes the circuit by
+replacing each primitive operators with its incremental version.
 
- Most of the operators that appear in the circuits in
+Most of the operators that appear in the circuits in
 Table~\ref{tab:relational} are linear, and thus have very efficient
-incremental versions (we discuss complexity in \refsec{sec:complexity}).  A notable exception is $\distinct$.
-The next proposition shows that the incremental version of $\distinct$
-is also efficient, and it can be computed by doing work proportional to the size of the input change.
+incremental versions (we discuss complexity in
+\refsec{sec:complexity}).  A notable exception is $\distinct$.  The
+next proposition shows that the incremental version of $\distinct$ is
+also efficient, and it can be computed by doing work proportional to
+the size of the input change.
 
 \begin{proposition}\label{prop-inc_distinct}
 The following circuit implements $\inc{(\lift{\distinct})}$:
@@ -623,5 +622,36 @@ better than full re-evaluation.
 The space complexity of linear operators is 0 (zero), since they store no
 data persistently.  The space complexity of operators such as $\inc{(\lift{\distinct})}$,
 $\inc{(\lift{\bowtie})}$, $\I$, and $\D$ is $O(|DB[t]|)$.
+
+\subsubsection{IVM query plans and optimality}
+
+We want to spell explcitly what Algorithm~\ref{algorithm-inc} actually
+peforms.
+
+In relational algebra a query can be implemented by multiple plans,
+each with a different data-dependent cost\footnote{I.e., which plan is
+optimal may depend not only on the query, but also on the data.}.  The
+input of Algorithm~\ref{algorithm-inc} is not an abstract query, it is
+a (relational) query plan.  The algorithm produces an incremental plan
+that is ``similar'' to the input plan.
+
+Standard query planners generally use cost-based heuristics (and
+sometimes data statistics) to optimize plans.  A generic IVM planner
+does not have this luxury, since the plan must be generated
+\emph{before} any data has been fed to the database.  Nevertheless,
+all standard query optimization techniques, perhaps based on
+historical statistics, can be used to generate the query plan that is
+supplied to Algorithm~\ref{algorithm-inc}.  The question of optimality
+in the context of IVM plan is a much more difficult topic than
+optimization of ad-hoc queries, since the chosen IVM plan will execute
+for \emph{all future database updates}.
+
+Moreover, since incremental computations maintain internal state, it
+follows that incremental plans cannot be simply changed in-flight,
+like we can change ad-hoc queries based on current data statistics: a
+new plan has to ``learn'' the state produced by entire history of
+prior updates.  Fortunately, there is a trivial, but somewhat
+expensive, recipe for installing a new incremental plan: feed the
+entire current state of the database as one big change to the plan.
 
 \input{example1}

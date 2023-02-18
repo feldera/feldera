@@ -40,7 +40,7 @@ proof assistant~\cite{moura-cade15}.
 recursively to incrementalizing its component subqueries.
 This gives a simple, syntactic,
 heuristic-free algorithm (Algorithm~\ref{algorithm-inc})
-that converts an arbitrary \dbsp query to its incremental form.
+that converts an arbitrary \dbsp query plan to its incremental form.
 (b) Extending \dbsp to support new primitive operators is easy,
 and they immediately benefit from the rest of the theory of
 incrementalization.
@@ -48,12 +48,6 @@ An important consequence of modularity is that the theory
 can be efficiently implemented, as we
 briefly discuss in \refsec{sec:implementation}.
 \end{enumerate}
-
-%\leonid{
-%The only(?) previous work that does this is differential dataflow, but DD is significantly %more complex, doesn't support syntactic incrementalization, and hasn't been formalized %with the same level or rigor (thank you, Tej!)
-%}
-
-%\leonid{Can we claim the first machine-checked correctness proof of an incremental view %maintenance algorithm as a contribution?  (Tej, is there a better way to frame this claim?)}
 
 The core concept of \dbsp is the \emph{stream}, which is used to model changes
 over time. We use $\stream{A}$ to denote the type of infinite streams with values of
@@ -167,7 +161,8 @@ composition of queries can be incrementalized by composing the
 incremental versions of its constituents, that is $\inc{(Q_1 \circ
   Q_2)} = \inc{Q_1} \circ \inc{Q_2}$.  The second key property is that
 essentially all primitive database operations have efficient
-incremental versions.
+incremental versions\footnote{They are faster than non-incremental
+versions by a factor of $O(|DB|/|\Delta DB|)$.}.
 
 Armed with this general theory of incremental computation, in
 \secref{sec:relational} we show how to model relational queries in
@@ -196,7 +191,7 @@ This paper makes the following contributions:
   streaming and incremental computations.
   \item An algorithm for incrementalizing any streaming computation expressed in
   \dbsp.
-  \item An illustration of how \dbsp can be model various query classes, such as relational algebra,
+  \item An illustration of how \dbsp can model various query classes, such as relational algebra,
   nested relations, aggregations, flatmap, and stratified-monotonic Datalog.
   \item The first general and machine-checked theory of IVM.
   \item A high-performance open-source implementation of DBSP as a

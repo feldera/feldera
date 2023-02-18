@@ -19,41 +19,6 @@ this circuit is essentially a dataflow implementation of the query:
 \begin{tikzpicture}[node distance=1.2cm,>=latex]
     \node[] (t1) {\code{t1}};
     \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
-    \node[block, right of=s1] (d1) {$\distinct$};
-    \node[block, right of=d1] (p1) {$\pi_{x, id}$};
-    \node[block, right of=p1] (d11) {$\distinct$};
-    \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
-    \node[block, right of=t2, node distance=.9cm] (s2) {$\sigma_{s > 5}$};
-    \node[block, right of=s2] (d2) {$\distinct$};
-    \node[block, right of=d2] (p2) {$\pi_{y, id}$};
-    \node[block, right of=p2] (d21) {$\distinct$};
-    \node[below of=d11, node distance=.5cm] (mid) {};
-    \node[block, right of=mid, node distance=.8cm] (j) {$\bowtie_{id = id}$};
-    \node[block, right of=j] (p) {$\pi_{x, y}$};
-    \node[block, right of=p] (d) {$\distinct$};
-    \node[right of=d, node distance=.9cm] (V) {\code{V}};
-    \draw[->] (t1) -- (s1);
-    \draw[->] (s1) -- (d1);
-    \draw[->] (d1) -- (p1);
-    \draw[->] (p1) -- (d11);
-    \draw[->] (t2) -- (s2);
-    \draw[->] (s2) -- (d2);
-    \draw[->] (d2) -- (p2);
-    \draw[->] (p2) -- (d21);
-    \draw[->] (d11) -| (j);
-    \draw[->] (d21) -| (j);
-    \draw[->] (j) -- (p);
-    \draw[->] (p) -- (d);
-    \draw[->] (d) -- (V);
-\end{tikzpicture}
-
-Step 2: apply the rules to eliminate $\distinct$ operators; first from
-Proposition~\ref{prop-distinct-once}:
-
-\noindent
-\begin{tikzpicture}[node distance=1.2cm,>=latex]
-    \node[] (t1) {\code{t1}};
-    \node[block, right of=t1, node distance=.9cm] (s1) {$\sigma_{a > 2}$};
     \node[block, right of=s1] (p1) {$\pi_{x, id}$};
     \node[block, right of=p1] (d11) {$\distinct$};
     \node[below of=t1, node distance=1cm] (t2) {\code{t2}};
@@ -78,6 +43,7 @@ Proposition~\ref{prop-distinct-once}:
     \draw[->] (d) -- (V);
 \end{tikzpicture}
 
+Step 2: apply the rules to eliminate $\distinct$ operators.
 The rule from Proposition~\ref{prop-distinct-delay} gives:
 
 \noindent
@@ -106,7 +72,7 @@ The rule from Proposition~\ref{prop-distinct-delay} gives:
     \draw[->] (d) -- (V);
 \end{tikzpicture}
 
-Applying again~\ref{prop-distinct-once} we get:
+Applying~\ref{prop-distinct-once} we get:
 
 \noindent
 \begin{tikzpicture}[node distance=1.2cm,>=latex]
@@ -132,9 +98,11 @@ Applying again~\ref{prop-distinct-once} we get:
     \draw[->] (d) -- (V);
 \end{tikzpicture}
 
-Step 3: we lift the circuit using distributivity (Proposition~\ref{prop:distributivity})
-of composition over lifting; we
-obtain a circuit that computes over streams, i.e., for each new input pair of relations
+At this point no more $\distinct$ elimination rules can be applied.
+
+Step 3: we lift the circuit using distributivity of composition over
+lifting (Proposition~\ref{prop:distributivity}); we obtain a circuit
+that computes over streams, i.e., for each new input pair of relations
 \code{t1} and \code{t2} it will produce an output view \code{V}:
 
 \noindent
