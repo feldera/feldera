@@ -1,5 +1,6 @@
 use crate::{PipelineId, ProjectId};
 use anyhow::{Error as AnyError, Result as AnyResult};
+use clap::Parser;
 use serde::Deserialize;
 use std::{
     fs::{canonicalize, create_dir_all, File},
@@ -18,38 +19,44 @@ fn default_working_directory() -> String {
     ".".to_string()
 }
 
-fn default_logfile() -> String {
-    "pipeline_manager.log".to_string()
-}
-
 fn default_sql_compiler_home() -> String {
-    "../../sql-to-dbsp-compiler".to_string()
+    "../sql-to-dbsp-compiler".to_string()
 }
 
-/// Pipeline manager configuration read from a YAML config file.
-#[derive(Deserialize, Clone)]
+/// Pipeline manager configuration read from a YAML config file or from command
+/// line arguments.
+#[derive(Parser, Deserialize, Debug, Clone)]
+#[command(author, version, about, long_about = None)]
 pub(crate) struct ManagerConfig {
     /// Port number for the HTTP service, defaults to 8080.
     #[serde(default = "default_server_port")]
+    #[arg(short, long, default_value_t = default_server_port())]
     pub port: u16,
 
     /// Bind address for the HTTP service, defaults to 127.0.0.1.
     #[serde(default = "default_server_address")]
+    #[arg(short, long, default_value_t = default_server_address())]
     pub bind_address: String,
 
     /// File to write manager logs to.
-    #[serde(default = "default_logfile")]
-    pub logfile: String,
+    ///
+    /// This setting is only used when the `unix_daemon` option is set to
+    /// `true`; otherwise the manager prints log entries to `stderr`.
+    ///
+    /// The default is `working_directory/manager.log`.
+    #[arg(short, long)]
+    pub logfile: Option<String>,
 
     /// Directory where the manager stores its filesystem state:
     /// generated Rust crates, pipeline logs, Prometheus config file,
-    /// etc.  The server will create a subdirectory named `pipeline_data`
-    /// under `working_directory`.
+    /// etc.
     #[serde(default = "default_working_directory")]
+    #[arg(short, long, default_value_t = default_working_directory())]
     pub working_directory: String,
 
     /// Location of the SQL-to-DBSP compiler.
     #[serde(default = "default_sql_compiler_home")]
+    #[arg(long, default_value_t = default_sql_compiler_home())]
     pub sql_compiler_home: String,
 
     /// Override DBSP dependencies in generated Rust crates.
@@ -59,12 +66,8 @@ pub(crate) struct ManagerConfig {
     /// (`dbsp`, `dbsp_adapters`).  This configuration options
     /// modifies the dependency to point to a source tree in the
     /// local file system.
+    #[arg(long)]
     pub dbsp_override_path: Option<String>,
-
-    /// When specified, the server will serve static web contents
-    /// from this directory; otherwise it will use the static contents
-    /// embedded in the manager executable.
-    pub static_html: Option<String>,
 
     /// When `true`, the pipeline manager will start Prometheus
     /// and configure it to monitor the directory where the manager
@@ -72,12 +75,14 @@ pub(crate) struct ManagerConfig {
     ///
     /// The default is `false`.
     #[serde(default)]
+    #[arg(long)]
     pub with_prometheus: bool,
 
     /// Compile pipelines in debug mode.
     ///
     /// The default is `false`.
     #[serde(default)]
+    #[arg(long)]
     pub debug: bool,
 
     /// Run as a UNIX daemon (detach from terminal).
@@ -85,9 +90,26 @@ pub(crate) struct ManagerConfig {
     /// The default is `false`.
     ///
     /// # Compatibility
-    /// This only has effect UNIX platform.
+    /// This only has effect on UNIX OSs.
     #[serde(default)]
+    #[arg(long)]
     pub unix_daemon: bool,
+
+    /// [Developers only] serve static content from the specified directory.
+    /// Allows modifying JavaScript without restarting the server.
+    #[arg(short, long)]
+    pub static_html: Option<String>,
+
+    /// [Developers only] dump OpenAPI specification to `openapi.json` file and
+    /// exit immediately.
+    #[serde(skip)]
+    #[arg(long)]
+    pub dump_openapi: bool,
+
+    /// Server configuration YAML file.
+    #[serde(skip)]
+    #[arg(short, long)]
+    pub config_file: Option<String>,
 }
 
 impl ManagerConfig {
@@ -96,54 +118,62 @@ impl ManagerConfig {
     /// Converts `working_directory` `sql_compiler_home`,
     /// `dbsp_override_path`, and `static_html` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
-    pub(crate) fn canonicalize(self) -> AnyResult<Self> {
-        let mut result = self;
-        create_dir_all(&result.working_directory).map_err(|e| {
+    pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
+        create_dir_all(&self.working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directry '{}': {e}",
-                result.working_directory
+                self.working_directory
             ))
         })?;
 
-        result.working_directory = canonicalize(&result.working_directory)
+        self.working_directory = canonicalize(&self.working_directory)
             .map_err(|e| {
                 AnyError::msg(format!(
                     "error canonicalizing working directory path '{}': {e}",
-                    result.working_directory
+                    self.working_directory
                 ))
             })?
             .to_string_lossy()
             .into_owned();
 
-        let logfile = File::create(&result.logfile).map_err(|e| {
-            AnyError::msg(format!(
-                "unable to create or truncate log file '{}': {e}",
-                result.logfile
-            ))
-        })?;
-        drop(logfile);
+        // Running as daemon and no log file specified - use default log file name.
+        if self.logfile.is_none() && self.unix_daemon {
+            self.logfile = Some(format!("{}/manager.log", self.working_directory));
+        }
 
-        result.logfile = canonicalize(&result.logfile)
-            .map_err(|e| {
+        if let Some(logfile) = &self.logfile {
+            let file = File::create(logfile).map_err(|e| {
                 AnyError::msg(format!(
-                    "error canonicalizing log file path '{}': {e}",
-                    result.logfile
+                    "unable to create or truncate log file '{}': {e}",
+                    logfile
                 ))
-            })?
-            .to_string_lossy()
-            .into_owned();
+            })?;
+            drop(file);
 
-        result.sql_compiler_home = canonicalize(&result.sql_compiler_home)
+            self.logfile = Some(
+                canonicalize(logfile)
+                    .map_err(|e| {
+                        AnyError::msg(format!(
+                            "error canonicalizing log file path '{}': {e}",
+                            logfile
+                        ))
+                    })?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        };
+
+        self.sql_compiler_home = canonicalize(&self.sql_compiler_home)
             .map_err(|e| {
                 AnyError::msg(format!(
                     "failed to access SQL compiler home '{}': {e}",
-                    result.sql_compiler_home
+                    self.sql_compiler_home
                 ))
             })?
             .to_string_lossy()
             .into_owned();
 
-        if let Some(path) = result.dbsp_override_path.as_mut() {
+        if let Some(path) = self.dbsp_override_path.as_mut() {
             *path = canonicalize(&path)
                 .map_err(|e| {
                     AnyError::msg(format!(
@@ -154,14 +184,14 @@ impl ManagerConfig {
                 .into_owned();
         }
 
-        if let Some(path) = result.static_html.as_mut() {
+        if let Some(path) = self.static_html.as_mut() {
             *path = canonicalize(&path)
                 .map_err(|e| AnyError::msg(format!("failed to access '{path}': {e}")))?
                 .to_string_lossy()
                 .into_owned();
         }
 
-        Ok(result)
+        Ok(self)
     }
 
     /// Crate name for a project.

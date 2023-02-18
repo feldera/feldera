@@ -71,24 +71,6 @@ pub(crate) use config::ManagerConfig;
 use db::{ConfigId, DBError, PipelineId, ProjectDB, ProjectId, Version};
 use runner::{Runner, RunnerError};
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// Server configuration YAML file.
-    #[arg(short, long)]
-    config_file: Option<String>,
-
-    /// [Developers only] serve static content from the specified directory.
-    /// Allows modifying JavaScript without restarting the server.
-    #[arg(short, long)]
-    static_html: Option<String>,
-
-    /// [Developers only] dump OpenAPI specification to `openapi.json` file and
-    /// exit immediately.
-    #[arg(long)]
-    dump_openapi: bool,
-}
-
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -197,26 +179,24 @@ fn main() -> AnyResult<()> {
     // Create env logger.
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
-    let args = Args::try_parse()?;
+    let mut config = ManagerConfig::try_parse()?;
 
-    if args.dump_openapi {
+    if config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
         write("openapi.json", openapi_json.as_bytes())?;
         return Ok(());
     }
 
-    let config_file = &args
-        .config_file
-        .unwrap_or_else(|| "config.yaml".to_string());
-    let config_yaml = read(config_file)
-        .map_err(|e| AnyError::msg(format!("error reading config file '{config_file}': {e}")))?;
-    let config_yaml = String::from_utf8_lossy(&config_yaml);
-    let mut config: ManagerConfig = serde_yaml::from_str(&config_yaml)
-        .map_err(|e| AnyError::msg(format!("error parsing config file '{config_file}': {e}")))?;
-
-    if let Some(static_html) = &args.static_html {
-        config.static_html = Some(static_html.clone());
+    if let Some(config_file) = &config.config_file {
+        let config_yaml = read(config_file).map_err(|e| {
+            AnyError::msg(format!("error reading config file '{config_file}': {e}"))
+        })?;
+        let config_yaml = String::from_utf8_lossy(&config_yaml);
+        config = serde_yaml::from_str(&config_yaml).map_err(|e| {
+            AnyError::msg(format!("error parsing config file '{config_file}': {e}"))
+        })?;
     }
+
     let config = config.canonicalize()?;
 
     run(config)
@@ -260,18 +240,19 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         ))
     })?;
 
-    let logfile = StdFile::create(&config.logfile).map_err(|e| {
-        AnyError::msg(format!(
-            "failed to create log file '{}': {e}",
-            &config.logfile
-        ))
-    })?;
-
-    let logfile_clone = logfile.try_clone().unwrap();
     let db = ProjectDB::connect(&config)?;
 
     #[cfg(unix)]
     if config.unix_daemon {
+        let logfile = StdFile::create(config.logfile.as_ref().unwrap()).map_err(|e| {
+            AnyError::msg(format!(
+                "failed to create log file '{}': {e}",
+                &config.logfile.as_ref().unwrap()
+            ))
+        })?;
+
+        let logfile_clone = logfile.try_clone().unwrap();
+
         let daemonize = Daemonize::new()
             .pid_file(config.manager_pid_file_path())
             .working_directory(&config.working_directory)
