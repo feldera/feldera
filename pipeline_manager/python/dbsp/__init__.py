@@ -11,7 +11,9 @@ from .config import KafkaOutputConfig
 from .config import FileInputConfig
 from .config import FileOutputConfig
 from .config import CsvParserConfig
+from .config import CsvInputFormatConfig
 from .config import CsvEncoderConfig
+from .config import CsvOutputFormatConfig
 from .error import DBSPServerError
 from .error import TimeoutException
 from .error import CompilationException
