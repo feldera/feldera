@@ -21,7 +21,7 @@ many basic relational queries can be expressed using LTI \zr operators~\refsec{s
 
 \subsection{\zrs as an abelian group}
 
-\zrs generalize databases tables: think of a \zr as a table where each
+\zrs generalize database tables: think of a \zr as a table where each
 row has an associated weight, possibly negative.
 
 Given a set $A$, we define \defined{\zrs} over $A$ as functions with
@@ -526,7 +526,7 @@ stream of \emph{database changes} and outputs a stream of \emph{view
 changes}; however, the internal operation of the circuit is
 non-incremental, as it rebuilds the complete database using
 integration operators.  Step (5) incrementalizes the circuit by
-replacing each primitive operators with its incremental version.
+replacing each primitive operator with its incremental version.
 
 Most of the operators that appear in the circuits in
 Table~\ref{tab:relational} are linear, and thus have very efficient
@@ -626,14 +626,14 @@ $\inc{(\lift{\bowtie})}$, $\I$, and $\D$ is $O(|DB[t]|)$.
 \subsubsection{IVM query plans and optimality}
 
 We want to spell explcitly what Algorithm~\ref{algorithm-inc} actually
-peforms.
+performs.
 
 In relational algebra a query can be implemented by multiple plans,
-each with a different data-dependent cost\footnote{I.e., which plan is
-optimal may depend not only on the query, but also on the data.}.  The
-input of Algorithm~\ref{algorithm-inc} is not an abstract query, it is
-a (relational) query plan.  The algorithm produces an incremental plan
-that is ``similar'' to the input plan.
+each with a different data-dependent cost\footnote{The optimal plan
+depends not only on the query, but also on the data.}.  The input of
+Algorithm~\ref{algorithm-inc} is a (relational), non-incremental query
+plan, produced by a query planner.  The algorithm produces an
+incremental plan that is ``similar'' to the input plan.
 
 Standard query planners generally use cost-based heuristics (and
 sometimes data statistics) to optimize plans.  A generic IVM planner
@@ -648,10 +648,11 @@ for \emph{all future database updates}.
 
 Moreover, since incremental computations maintain internal state, it
 follows that incremental plans cannot be simply changed in-flight,
-like we can change ad-hoc queries based on current data statistics: a
-new plan has to ``learn'' the state produced by entire history of
-prior updates.  Fortunately, there is a trivial, but somewhat
-expensive, recipe for installing a new incremental plan: feed the
-entire current state of the database as one big change to the plan.
+like we can change ad-hoc queries based on current data statistics:
+deploying a new requires it in general to reconstruct its internal
+state, which is produced by entire history of prior updates.
+Fortunately, there is a trivial, but somewhat expensive, recipe for
+installing a new incremental plan: feed the entire current state of
+the database as one big change to the plan.
 
 \input{example1}
