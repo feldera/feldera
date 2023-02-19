@@ -184,6 +184,7 @@ fn main() -> AnyResult<()> {
     if config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
         write("openapi.json", openapi_json.as_bytes())?;
+        return Ok(());
     }
 
     if let Some(config_file) = &config.config_file {
