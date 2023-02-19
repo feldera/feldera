@@ -14,7 +14,6 @@ from dbsp_api_client.models.kafka_output_config import KafkaOutputConfig
 from dbsp_api_client.models.file_input_config import FileInputConfig
 from dbsp_api_client.models.file_output_config import FileOutputConfig
 from dbsp_api_client.models.csv_parser_config import CsvParserConfig
-from dbsp_api_client.models.csv_parser_config import CsvParserConfig
 from dbsp_api_client.models.new_config_request import NewConfigRequest
 from dbsp_api_client.models.update_config_request import UpdateConfigRequest
 from dbsp_api_client.models.csv_encoder_config import CsvEncoderConfig
@@ -52,6 +51,24 @@ class DBSPPipelineConfig:
         # print("yaml:\n" + str(yaml.dump(input_endpoint_config.to_dict())))
         self.pipeline_config.inputs[name] = input_endpoint_config
 
+    def add_file_input(self, stream: str, filepath: str, format_: FormatConfig, **file_config_options):
+        """Add an input endpoint that reads data from a file to the pipeline configuration.
+
+        Args:
+            stream (str): Input stream name to connect the endpoint to.
+            filepath (str): File to read data from.
+            format_ (FormatConfig): Data format specification, e.g., CsvInputFormatConfig().
+            file_config_options: Additional configuration options defined in FileInputConfig.
+        """
+        self.add_input(
+                stream,
+                InputEndpointConfig(
+                    stream = stream,
+                    transport = TransportConfig(
+                        name = "file",
+                        config = FileInputConfig.from_dict({ 'path': filepath } | file_config_options)),
+                    format_ = format_))
+
     def add_output(self, name: str, output_endpoint_config: OutputEndpointConfig):
         """Add an output endpoint to the pipeline configuration.
 
@@ -61,6 +78,24 @@ class DBSPPipelineConfig:
         """
 
         self.pipeline_config.outputs[name] = output_endpoint_config
+
+    def add_file_output(self, stream: str, filepath: str, format_: FormatConfig, **file_config_options):
+        """Add an output endpoint that reads data from a file to the pipeline configuration.
+
+        Args:
+            stream (str): Output stream name to connect the endpoint to.
+            filepath (str): File to write to.
+            format_ (FormatConfig): Data format specification, e.g., CsvOutputFormatConfig().
+            file_config_options: Additional configuration options defined in FileOutputConfig.
+        """
+        self.add_output(
+                stream,
+                OutputEndpointConfig(
+                    stream = stream,
+                    transport = TransportConfig(
+                        name = "file",
+                        config = FileOutputConfig.from_dict({ 'path': filepath } | file_config_options)),
+                    format_ = format_))
 
     def yaml(self) -> str:
         """Convert pipeline configuration to YAML format."""
@@ -109,3 +144,13 @@ class DBSPPipelineConfig:
         response = new_pipeline.sync_detailed(client = self.api_client, json_body = body).unwrap("Failed to start pipeline")
 
         return DBSPPipeline(self.api_client, response.pipeline_id)
+
+
+class CsvInputFormatConfig(FormatConfig):
+    def __init__(self):
+         super().__init__('csv', CsvParserConfig())
+
+
+class CsvOutputFormatConfig(FormatConfig):
+    def __init__(self, **csv_config_options):
+        super().__init__('csv', CsvEncoderConfig.from_dict(csv_config_options))

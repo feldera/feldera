@@ -9,8 +9,8 @@ from dbsp import TransportConfig
 from dbsp import FormatConfig
 from dbsp import FileInputConfig
 from dbsp import FileOutputConfig
-from dbsp import CsvParserConfig
-from dbsp import CsvEncoderConfig
+from dbsp import CsvInputFormatConfig
+from dbsp import CsvOutputFormatConfig
 
 demographics = """4218196001337,172,1,866,131,34,12043,42.684,-74.4939,8509,4,1968-10-03
 4351161559407816183,107,0,319,34,34,13027,43.162,-76.3237,31637,357,1948-06-07
@@ -122,37 +122,10 @@ def main():
     print("Project status: " + status)
 
     config = DBSPPipelineConfig(project, 6)
-    config.add_input(
-            "DEMOGRAPHICS",
-            InputEndpointConfig(
-                stream = 'DEMOGRAPHICS',
-                transport = TransportConfig(
-                    name = "file",
-                    config = FileInputConfig.from_dict({ 'path': dempath })),
-                format_ = FormatConfig(
-                    name = "csv",
-                    config = CsvParserConfig())))
-    config.add_input(
-            "TRANSACTIONS",
-            InputEndpointConfig(
-                stream = 'TRANSACTIONS',
-                transport = TransportConfig(
-                    name = "file",
-                    config = FileInputConfig.from_dict({ 'path': transpath })),
-                format_ = FormatConfig(
-                    name = "csv",
-                    config = CsvParserConfig())))
 
-    config.add_output(
-            "TRANSACTIONS_WITH_DEMOGRAPHICS",
-            OutputEndpointConfig(
-                stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS',
-                transport = TransportConfig(
-                    name = "file",
-                    config = FileOutputConfig.from_dict({ 'path': outpath })),
-                format_ = FormatConfig(
-                    name = "csv",
-                    config = CsvEncoderConfig(buffer_size_records = 1000000))))
+    config.add_file_input(stream = 'DEMOGRAPHICS', filepath = dempath, format_ = CsvInputFormatConfig())
+    config.add_file_input(stream = 'TRANSACTIONS', filepath = transpath, format_ = CsvInputFormatConfig())
+    config.add_file_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', filepath = outpath, format_ = CsvOutputFormatConfig())
 
     project.compile()
     print("Project compiled")
