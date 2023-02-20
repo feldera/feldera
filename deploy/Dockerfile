@@ -37,7 +37,7 @@ RUN arch=`dpkg --print-architecture`; \
 ADD ./dbsp_files.tar /database-stream-processor
 ADD ./sql_compiler_files.tar /database-stream-processor/sql-to-dbsp-compiler
 
-RUN cd /database-stream-processor/pipeline_manager \
+RUN cd /database-stream-processor/crates//database-stream-processor/demo/hello-world/pipeline_manager \
     && ~/.cargo/bin/cargo install --path . \
     && rm -rf /database-stream-processor/target
 

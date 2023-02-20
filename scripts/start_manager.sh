@@ -3,7 +3,7 @@
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/sql-to-dbsp-compiler"
-MANAGER_DIR="${ROOT_DIR}/pipeline_manager"
+MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
 
 if [ "$#" -lt 1 ]; then
     echo "Usage '$0 <working_directory_path> <bind address (optional)>'"

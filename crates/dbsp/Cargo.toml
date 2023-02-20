@@ -1,0 +1,106 @@
+[package]
+name = "dbsp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+    [package.metadata.docs.rs]
+    all-features = true
+    rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
+# main.yml and coverage.yml:
+default = ["with-serde"]
+persistence = ["rocksdb", "uuid"]
+with-serde = ["serde"]
+with-csv = ["csv"]
+__gdelt = ["size-of/arcstr"]
+
+[dependencies]
+num = "0.4.0"
+anyhow = "1.0.57"
+petgraph = "0.6.0"
+typedmap = { version = "0.3.0", features = ["dashmap"] }
+crossbeam-utils = "0.8.6"
+once_cell = "1.9.0"
+priority-queue = "1.2.1"
+hashbrown = "0.12.0"
+csv = { git = "https://github.com/ryzhyk/rust-csv.git", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+impl-trait-for-tuples = "0.2"
+itertools = "0.10.5"
+textwrap = "0.15.0"
+ordered-float = { version = "3.0.0", features = ["serde"] }
+bitvec = "1.0.1"
+xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+crossbeam = "0.8.2"
+rocksdb = { version = "0.19", default-features = false, features = [
+    "multi-threaded-cf",
+], optional = true }
+bincode = { version = "2.0.0-rc.2", features = ["serde"] }
+uuid = { version = "1.1.2", features = ["v4"], optional = true }
+arc-swap = "1.5.1"
+mimalloc-rust-sys = "1.7.2"
+
+    [dependencies.size-of]
+    version = "0.1.3"
+    features = ["hashbrown", "time-std", "xxhash-xxh3"]
+
+[dev-dependencies]
+zip = "0.6.2"
+tar = "0.4.38"
+rand = "0.8.5"
+zstd = "0.12.0"
+proptest = "1.0.0"
+criterion = "0.4.0"
+proptest-derive = "0.3.0"
+rand_xoshiro = "0.6.0"
+indicatif = "0.17.0-rc.11"
+clap = { version = "3.2.8", features = ["derive", "env"] }
+reqwest = { version = "0.11.11", features = ["blocking"] }
+time = { version = "0.3.14", features = [
+    "formatting",
+    "serde",
+    "serde-human-readable",
+] }
+serde_json = "1.0.87"
+arcstr = { version = "1.1.4", features = ["bincode"] }
+
+[[bench]]
+name = "galen"
+harness = false
+required-features = ["with-csv"]
+
+[[bench]]
+name = "fraud"
+harness = false
+required-features = ["with-csv", "with-serde"]
+
+[[bench]]
+name = "path"
+harness = false
+
+[[bench]]
+name = "consolidation"
+harness = false
+
+[[bench]]
+name = "ldbc-graphalytics"
+required-features = ["with-csv"]
+harness = false
+
+[[bench]]
+name = "column_layer"
+harness = false
+
+[[bench]]
+name = "gdelt"
+harness = false
+required-features = ["__gdelt"]
+
+[[example]]
+name = "orgchart"
+
+[[example]]
+name = "degrees"

@@ -19,7 +19,7 @@ NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
-rm -f ${NEXMARK_CSV_FILE} ${GALEN_CSV_FILE} ${LDBC_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${NEXMARK_PERSISTENCE_CSV_FILE}
+rm -f crates/nexmark/${NEXMARK_CSV_FILE} crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE}
 rm -f nexmark_comment.txt
 
 # Run nexmark benchmark
@@ -31,7 +31,7 @@ if [ "$SMOKE" != "" ]; then
   EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
-numactl --cpunodebind=1 cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
+numactl --cpunodebind=1 cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
@@ -56,8 +56,8 @@ if [ "$SMOKE" != "" ]; then
   EVENT_RATE=5000000
   MAX_EVENTS=100000
 fi
-cargo bench --bench nexmark --features with-nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
-cargo bench --bench nexmark --features with-nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
+cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
+cargo bench --bench nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
 
 # Clone repo
 if [ ! -d "gh-pages" ]; then
@@ -81,7 +81,7 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 # Copy nexmark results
 mkdir -p ${DEPLOY_DIR}
-mv ${NEXMARK_CSV_FILE} ${NEXMARK_PERSISTENCE_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
+mv crates/nexmark/${NEXMARK_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
@@ -95,7 +95,7 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 # Copy galen results
 mkdir -p ${DEPLOY_DIR}
-mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
+mv crates/dbsp/${GALEN_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
 
 # Add ldbc results to repo
@@ -107,7 +107,7 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 # Copy ldbc results
 mkdir -p ${DEPLOY_DIR}
-mv ${LDBC_CSV_FILE} ${DEPLOY_DIR}
+mv crates/dbsp/${LDBC_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${LDBC_CSV_FILE}
 
 # Update CI history plots
