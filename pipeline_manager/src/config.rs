@@ -110,6 +110,24 @@ pub(crate) struct ManagerConfig {
     #[serde(skip)]
     #[arg(short, long)]
     pub config_file: Option<String>,
+
+    /// [Developers only] Inject a SQL file into the database when starting the
+    /// manager.
+    ///
+    /// This is useful to populate the DB with state for testing.
+    #[serde(skip)]
+    #[arg(short, long)]
+    pub initial_sql: Option<String>,
+
+    /// [Developers only] Run in development mode.
+    ///
+    /// This runs with permissive CORS settings and allows the manager to be
+    /// accessed from a different host/port.
+    ///
+    /// The default is `false`.
+    #[serde(default)]
+    #[arg(long)]
+    pub dev_mode: bool,
 }
 
 impl ManagerConfig {
