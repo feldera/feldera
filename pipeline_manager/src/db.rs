@@ -131,7 +131,7 @@ impl ProjectStatus {
 }
 
 /// Project descriptor.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 pub(crate) struct ProjectDescr {
     /// Unique project id.
     pub project_id: ProjectId,
@@ -144,7 +144,7 @@ pub(crate) struct ProjectDescr {
 }
 
 /// Project configuration descriptor.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 pub(crate) struct ConfigDescr {
     pub config_id: ConfigId,
     pub project_id: ProjectId,
@@ -154,7 +154,7 @@ pub(crate) struct ConfigDescr {
 }
 
 /// Pipeline descriptor.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
     pub project_id: ProjectId,
@@ -217,6 +217,14 @@ CREATE TABLE IF NOT EXISTS pipeline (
     FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE)"#,
             (),
         )?;
+
+        if let Some(initial_sql_file) = &config.initial_sql {
+            if let Ok(initial_sql) = std::fs::read_to_string(initial_sql_file) {
+                dbclient.execute(&initial_sql, ())?;
+            } else {
+                log::warn!("initial SQL file '{}' does not exist", initial_sql_file);
+            }
+        }
 
         Ok(Self { dbclient })
     }

@@ -266,6 +266,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         })?;
     }
 
+    let dev_mode = config.dev_mode;
     rt::System::new().block_on(async {
         let db = Arc::new(Mutex::new(db));
         let compiler = Compiler::new(&config, db.clone()).await?;
@@ -279,8 +280,14 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         let state = WebData::new(ServerState::new(config, db, compiler).await?);
 
         let server = HttpServer::new(move || {
+            let cors = if dev_mode {
+                actix_cors::Cors::permissive()
+            } else {
+                actix_cors::Cors::default()
+            };
+
             build_app(
-                App::new().wrap(Logger::default()),
+                App::new().wrap(Logger::default()).wrap(cors),
                 state.clone(),
                 openapi.clone(),
             )
