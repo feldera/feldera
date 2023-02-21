@@ -565,6 +565,9 @@ struct NewProjectRequest {
     /// Project name.
     #[schema(example = "Example project")]
     name: String,
+    /// Project description.
+    #[schema(example = "Example description")]
+    description: String,
     /// SQL code of the project.
     #[schema(example = "CREATE TABLE Example(name varchar);")]
     code: String,
@@ -598,7 +601,7 @@ async fn new_project(
         .db
         .lock()
         .await
-        .new_project(&request.name, &request.code)
+        .new_project(&request.name, &request.description, &request.code)
         .map(|(project_id, version)| {
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -617,6 +620,8 @@ struct UpdateProjectRequest {
     project_id: ProjectId,
     /// New name for the project.
     name: String,
+    /// New description for the project.
+    description: String,
     /// New SQL code for the project or `None` to keep existing project
     /// code unmodified.
     code: Option<String>,
@@ -656,7 +661,12 @@ async fn update_project(
         .db
         .lock()
         .await
-        .update_project(request.project_id, &request.name, &request.code)
+        .update_project(
+            request.project_id,
+            &request.name,
+            &request.description,
+            &request.code,
+        )
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))

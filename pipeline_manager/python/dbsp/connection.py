@@ -34,7 +34,7 @@ class DBSPConnection:
             DBSPProject
         """
 
-        request = NewProjectRequest(code=sql_code, name=name)
+        request = NewProjectRequest(code=sql_code, name=name, description='')
 
         new_project_response = new_project.sync_detailed(client = self.api_client, json_body=request).unwrap("Failed to create a project")
 
