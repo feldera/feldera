@@ -137,6 +137,8 @@ pub(crate) struct ProjectDescr {
     pub project_id: ProjectId,
     /// Project name (doesn't have to be unique).
     pub name: String,
+    /// Project description.
+    pub description: String,
     /// Project version, incremented every time project code is modified.
     pub version: Version,
     /// Project compilation status.
@@ -183,6 +185,7 @@ CREATE TABLE IF NOT EXISTS project (
     id integer PRIMARY KEY AUTOINCREMENT,
     version integer,
     name varchar,
+    description varchar,
     code varchar,
     status varchar,
     error varchar,
@@ -242,21 +245,22 @@ CREATE TABLE IF NOT EXISTS pipeline (
     pub(crate) async fn list_projects(&self) -> AnyResult<Vec<ProjectDescr>> {
         let mut statement = self
             .dbclient
-            .prepare("SELECT id, name, version, status, error FROM project")?;
+            .prepare("SELECT id, name, description, version, status, error FROM project")?;
         let mut rows = statement.query([])?;
 
         let mut result = Vec::new();
 
         while let Some(row) = rows.next()? {
-            let status: Option<String> = row.get(3)?;
-            let error: Option<String> = row.get(4)?;
+            let status: Option<String> = row.get(4)?;
+            let error: Option<String> = row.get(5)?;
 
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
             result.push(ProjectDescr {
                 project_id: ProjectId(row.get(0)?),
                 name: row.get(1)?,
-                version: Version(row.get(2)?),
+                description: row.get(2)?,
+                version: Version(row.get(3)?),
                 status,
             });
         }
@@ -282,12 +286,13 @@ CREATE TABLE IF NOT EXISTS pipeline (
     pub(crate) fn new_project(
         &self,
         project_name: &str,
+        project_description: &str,
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
         self.dbclient
             .execute(
-                "INSERT INTO project (version, name, code, status_since) VALUES(1, $1, $2, unixepoch('now'))",
-                (&project_name, &project_code),
+                "INSERT INTO project (version, name, description, code, status_since) VALUES(1, $1, $2, $3, unixepoch('now'))",
+                (&project_name, &project_description, &project_code),
             )?;
 
         let id = self
@@ -304,6 +309,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
         &mut self,
         project_id: ProjectId,
         project_name: &str,
+        project_description: &str,
         project_code: &Option<String>,
     ) -> AnyResult<Version> {
         let (mut version, old_code): (Version, String) = self
@@ -322,14 +328,14 @@ CREATE TABLE IF NOT EXISTS pipeline (
                 version = version.increment();
                 self.dbclient
                     .execute(
-                        "UPDATE project SET version = $1, name = $2, code = $3, status = NULL, error = NULL WHERE id = $4",
-                        (&version.0, &project_name, code, &project_id.0),
+                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL WHERE id = $4",
+                        (&version.0, &project_name, &project_description, code, &project_id.0),
                     )?;
             }
             _ => {
                 self.dbclient.execute(
-                    "UPDATE project SET name = $1 WHERE id = $2",
-                    (&project_name, &project_id.0),
+                    "UPDATE project SET name = $1, description = $2 WHERE id = $3",
+                    (&project_name, &project_description, &project_id.0),
                 )?;
             }
         }
@@ -344,22 +350,24 @@ CREATE TABLE IF NOT EXISTS pipeline (
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
-        let mut statement = self
-            .dbclient
-            .prepare("SELECT name, version, status, error FROM project WHERE id = $1")?;
+        let mut statement = self.dbclient.prepare(
+            "SELECT name, description, version, status, error FROM project WHERE id = $1",
+        )?;
         let mut rows = statement.query([&project_id.0])?;
 
         if let Some(row) = rows.next()? {
             let name: String = row.get(0)?;
-            let version: Version = Version(row.get(1)?);
-            let status: Option<String> = row.get(2)?;
-            let error: Option<String> = row.get(3)?;
+            let description: String = row.get(1)?;
+            let version: Version = Version(row.get(2)?);
+            let status: Option<String> = row.get(3)?;
+            let error: Option<String> = row.get(4)?;
 
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
             Ok(Some(ProjectDescr {
                 project_id,
                 name,
+                description,
                 version,
                 status,
             }))
