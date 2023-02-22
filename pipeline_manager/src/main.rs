@@ -39,7 +39,7 @@ use actix_web::{
         header::{CacheControl, CacheDirective},
         Method,
     },
-    middleware::Logger,
+    middleware::{Condition, Logger},
     patch, post, rt, web,
     web::Data as WebData,
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
@@ -280,17 +280,11 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         let state = WebData::new(ServerState::new(config, db, compiler).await?);
 
         let server = HttpServer::new(move || {
-            let cors = if dev_mode {
-                actix_cors::Cors::permissive()
-            } else {
-                actix_cors::Cors::default()
-            };
+            let app = App::new()
+                .wrap(Logger::default())
+                .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()));
 
-            build_app(
-                App::new().wrap(Logger::default()).wrap(cors),
-                state.clone(),
-                openapi.clone(),
-            )
+            build_app(app, state.clone(), openapi.clone())
         });
         server.listen(listener)?.run().await?;
         Ok(())
