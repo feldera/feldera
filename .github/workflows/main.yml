@@ -47,26 +47,35 @@ jobs:
           - {
               rust: stable,
               target: x86_64-unknown-linux-gnu,
+              cargo_args: --workspace,
               os: [self-hosted, Linux, skylake-2x],
             }
           - {
               rust: stable,
               target: x86_64-apple-darwin,
               os: macos-latest,
+              cargo_args: --workspace,
               test_flags: --skip kafka
             }
           - {
               rust: stable,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
+              cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
               test_flags: --skip kafka
             }
           # `rdkafka` doesn't compile on 32-bit Windows.
           # - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
-          - { rust: beta, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - {
+              rust: beta,
+              target: x86_64-unknown-linux-gnu,
+              cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
+              os: ubuntu-latest
+            }
           - {
               rust: nightly-2022-11-10,
               target: x86_64-unknown-linux-gnu,
+              cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
               os: ubuntu-latest,
             }
 
@@ -101,20 +110,20 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --no-run --all-features  --target ${{ matrix.target }}
+          args: ${{ matrix.cargo_args }} --no-run --all-features  --target ${{ matrix.target }}
 
       - name: Build tests with no features
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --no-run --no-default-features  --target ${{ matrix.target }}
+          args: ${{ matrix.cargo_args }} --no-run --no-default-features  --target ${{ matrix.target }}
 
       - name: Run tests
         if: runner.os != 'Windows'
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
+          args: ${{ matrix.cargo_args }} ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
 
       # Only run basic tests on windows, which tends to run out of resources.
       - name: Run tests on Windows
@@ -122,7 +131,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
+          args: ${{ matrix.cargo_args }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
 
   #   miri:
   #     name: Miri
