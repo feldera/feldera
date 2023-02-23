@@ -5,7 +5,18 @@ macro_rules! create_ids {
     ($($name:ident = $prefix:literal),* $(,)?) => {
         ::paste::paste! {
             $(
-                #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+                #[derive(
+                    Clone,
+                    Copy,
+                    PartialEq,
+                    Eq,
+                    PartialOrd,
+                    Ord,
+                    Hash,
+                    ::serde::Deserialize,
+                    ::serde::Serialize,
+                )]
+                #[serde(transparent)]
                 #[repr(transparent)]
                 pub struct $name(::std::num::NonZeroU32);
 
@@ -77,6 +88,7 @@ macro_rules! create_ids {
 create_ids! {
     NodeId   = "n",
     ExprId   = "v",
+    // FuncId   = "fn",
     BlockId  = "bb",
     LayoutId = "layout",
 }

@@ -1,15 +1,16 @@
-use crate::ir::{BlockId, ExprId, Terminator};
+use crate::ir::{BlockId, Expr, ExprId, Terminator};
+use serde::{Deserialize, Serialize};
 
 /// A single basic block within a function
 ///
 /// Each basic block has a unique id, zero or more expressions within its body
 /// and a single terminator
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Block {
     /// The id of the block
     id: BlockId,
     /// The ids of all expressions within the block
-    body: Vec<ExprId>,
+    body: Vec<(ExprId, Expr)>,
     /// The block's terminator
     terminator: Terminator,
 }
@@ -21,13 +22,13 @@ impl Block {
     }
 
     /// Returns the ids of all expressions within the block
-    pub fn body(&self) -> &[ExprId] {
+    pub fn body(&self) -> &[(ExprId, Expr)] {
         &self.body
     }
 
     /// Returns a mutable reference to the ids of all expressions within the
     /// block
-    pub fn body_mut(&mut self) -> &mut [ExprId] {
+    pub fn body_mut(&mut self) -> &mut [(ExprId, Expr)] {
         &mut self.body
     }
 
@@ -35,9 +36,9 @@ impl Block {
     /// predicate returns `false`
     pub fn retain<F>(&mut self, mut retain: F)
     where
-        F: FnMut(ExprId) -> bool,
+        F: FnMut(ExprId, &Expr) -> bool,
     {
-        self.body.retain(|&expr_id| retain(expr_id));
+        self.body.retain(|(expr_id, expr)| retain(*expr_id, expr));
     }
 
     /// Returns the block's terminator
@@ -54,7 +55,7 @@ impl Block {
 /// An unfinished basic block
 pub(crate) struct UnsealedBlock {
     pub(crate) id: BlockId,
-    pub(crate) body: Vec<ExprId>,
+    pub(crate) body: Vec<(ExprId, Expr)>,
     pub(crate) terminator: Option<Terminator>,
 }
 

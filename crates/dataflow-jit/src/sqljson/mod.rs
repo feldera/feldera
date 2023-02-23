@@ -163,21 +163,18 @@ fn parse_sql_output(
                 if elem["class"].as_str().unwrap()
                     == "org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple"
                 {
-                    let elems = elem["tupFields"][1].as_array().unwrap();
-                    for elem in elems {
+                    let mut layout_builder = RowLayoutBuilder::new();
+                    for elem in elem["tupFields"][1].as_array().unwrap() {
                         if elem["class"] == "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple" {
-                            let layout = graph.layout_cache().add(sql_layout(elem));
-                            outputs.push(builder.add_output(layout));
+                            sql_layout_into(elem, &mut layout_builder);
                         } else {
                             let (column_type, nullable) = sql_type(elem);
-                            let layout = graph.layout_cache().add(
-                                RowLayoutBuilder::new()
-                                    .with_column(column_type, nullable)
-                                    .build(),
-                            );
-                            outputs.push(builder.add_output(layout));
+                            layout_builder.add_column(column_type, nullable);
                         }
                     }
+
+                    outputs
+                        .push(builder.add_output(graph.layout_cache().add(layout_builder.build())));
                 } else if elem["class"] == "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple" {
                     let layout = graph.layout_cache().add(sql_layout(elem));
                     outputs.push(builder.add_output(layout));
@@ -204,11 +201,9 @@ fn parse_sql_output(
             variables.insert(param["pattern"]["identifier"].as_str().unwrap(), param_id);
         }
 
-        let body = dbg!(&dbg!(&dbg!(&func["body"])["contents"])[1])
-            .as_array()
-            .unwrap();
-        dbg!(body);
+        let body = func["body"]["contents"][1].as_array().unwrap();
 
+        let mut tuples = HashMap::new();
         for expr in body {
             let var = expr["variable"].as_str().unwrap();
 
@@ -354,29 +349,33 @@ fn parse_sql_output(
                 }
 
                 variables.insert(var, row);
-            // } else if kind == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
-            //     let layout = graph.layout_cache().add(sql_layout(&initializer["type"]));
-            //     let row = builder.uninit_row(layout);
-            //
-            //     for (idx, col) in initializer["fields"][1]
-            //         .as_array()
-            //         .unwrap()
-            //         .iter()
-            //         .enumerate()
-            //     {
-            //         let col = col["variable"].as_str().unwrap();
-            //         let value = variables[col];
-            //
-            //         if let Some(&is_null) = variables_null.get(col) {
-            //             builder.set_null(row, idx, is_null);
-            //             // TODO: Make branching happen for non-scalar values
-            //             builder.store(row, idx, value);
-            //         } else {
-            //             builder.store(row, idx, value);
-            //         }
-            //     }
-            //
-            //     variables.insert(var, row);
+            } else if kind == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
+                let elements: Vec<_> = initializer["fields"][1]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|field| {
+                        let ty = &field["type"];
+
+                        let layout = if ty["class"].as_str().unwrap()
+                            == "org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple"
+                        {
+                            graph.layout_cache().add(sql_layout(ty))
+                        } else {
+                            let (column_type, nullable) = sql_type(ty);
+                            graph.layout_cache().add(
+                                RowLayoutBuilder::new()
+                                    .with_column(column_type, nullable)
+                                    .build(),
+                            )
+                        };
+
+                        let elem = field["variable"].as_str().unwrap();
+                        (elem, layout)
+                    })
+                    .collect();
+
+                tuples.insert(var, elements);
             } else if kind == "org.dbsp.sqlCompiler.ir.expression.literal.DBSPCloneExpression" {
                 // FIXME: Clone values
                 let src = variables[initializer["expression"]["variable"].as_str().unwrap()];
@@ -435,6 +434,38 @@ fn parse_sql_output(
                     builder.set_null(output, column, is_null);
                 }
             }
+
+            builder.ret_unit();
+            builder.seal_current();
+        } else if class == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
+            // let mut idx = 0;
+            // for elem in last_expr["fields"][1].as_array().unwrap() {
+            //     let class = elem["type"]["class"].as_str().unwrap();
+
+            //     if class == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
+            //     } else if class == "org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression" {
+            //         for (column, (value, is_null)) in elements {
+            //             builder.store(output, column, value);
+
+            //             if let Some(is_null) = is_null {
+            //                 builder.set_null(output, column, is_null);
+            //             }
+            //         }
+            //         let var_name = elem["variable"].as_str().unwrap();
+            //         let value = variables[var_name];
+            //         let is_null = variables_null.get(var_name).copied();
+
+            //         let output = outputs[idx];
+            //         builder.store(output, idx, value);
+            //         if let Some(is_null) = is_null {
+            //             builder.set_null(output, idx, is_null);
+            //         }
+
+            //         idx += 1;
+            //     } else {
+            //         todo!("unknown tuple element: {last_expr} (class: {class})")
+            //     }
+            // }
 
             builder.ret_unit();
             builder.seal_current();
@@ -559,7 +590,11 @@ fn sql_type(ty: &serde_json::Value) -> (ColumnType, bool) {
 
 fn sql_layout(fields: &serde_json::Value) -> RowLayout {
     let mut layout = RowLayoutBuilder::new();
+    sql_layout_into(fields, &mut layout);
+    dbg!(layout.build())
+}
 
+fn sql_layout_into(fields: &serde_json::Value, layout: &mut RowLayoutBuilder) {
     let fields = fields["tupFields"][1].as_array().unwrap();
     for elem in fields {
         let kind = elem["class"].as_str().unwrap();
@@ -585,6 +620,4 @@ fn sql_layout(fields: &serde_json::Value) -> RowLayout {
             todo!("unknown element type: {kind}")
         }
     }
-
-    dbg!(layout.build())
 }

@@ -1,5 +1,6 @@
 use crate::ir::{BlockId, RValue};
 use derive_more::From;
+use serde::{Deserialize, Serialize};
 
 /// A block terminator
 ///
@@ -7,7 +8,7 @@ use derive_more::From;
 /// control flow somehow, either through branching to another block
 /// (conditionally or otherwise), by returning from the function or otherwise
 /// changing control flow
-#[derive(Debug, Clone, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
 pub enum Terminator {
     Jump(Jump),
     Branch(Branch),
@@ -91,7 +92,7 @@ impl Terminator {
 }
 
 /// An unconditional branch instruction
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Jump {
     target: BlockId,
 }
@@ -113,7 +114,7 @@ impl Jump {
 ///
 /// If `cond` is true, this instruction will jump to the `truthy` block
 /// If `cond` is false, this instruction will jump to the `falsy` block
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Branch {
     /// The condition this branch decides upon
     cond: RValue,
@@ -160,7 +161,7 @@ impl Branch {
 }
 
 /// Returns a value from the current function
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Return {
     value: RValue,
 }

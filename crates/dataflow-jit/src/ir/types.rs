@@ -3,12 +3,13 @@ use crate::{
     ir::{function::InputFlags, LayoutId, RowLayoutCache},
 };
 use bitvec::vec::BitVec;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Write};
 
 macro_rules! column_type {
     ($($(#[$meta:meta])* $column_ty:ident = ($display:literal, $native_ty:expr)),+ $(,)?) => {
         /// The type of a single column within a row
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
         pub enum ColumnType {
             $(
                 $(#[$meta])*
@@ -189,7 +190,7 @@ impl RowLayoutBuilder {
 }
 
 /// The layout of a row
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct RowLayout {
     /// The type of each column within the row
     columns: Vec<ColumnType>,

@@ -1,14 +1,10 @@
 mod nodes;
 
-pub use nodes::{
-    DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
-};
-
 use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
-        DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterIndex,
-        FilterMap, FilterMapIndex, Integrate, JoinCore, MapIndex, Min, Minus, Noop,
+        DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterMap,
+        FilterMapIndex, Integrate, JoinCore, MapIndex, Min, Minus, Noop,
     },
     ir::{
         graph, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId, Stream as NodeStream,
@@ -25,8 +21,13 @@ use dbsp::{
     Circuit, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Stream,
 };
 use derive_more::{IsVariant, Unwrap};
+use nodes::{
+    DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
+};
 use petgraph::{algo, prelude::DiGraphMap};
 use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
+
+// TODO: Keep layout ids in dataflow nodes so we can do assertions that types are correct
 
 type Inputs = BTreeMap<NodeId, RowInput>;
 type Outputs = BTreeMap<NodeId, RowOutput>;
@@ -374,7 +375,7 @@ impl CompiledDataflow {
                         let input = filter.input();
 
                         let node = match output.unwrap() {
-                            NodeStream::Set(_) => DataflowNode::Filter(Filter {
+                            NodeStream::Set(_) => DataflowNode::Filter(Filter::Set {
                                 input,
                                 filter_fn: unsafe {
                                     transmute::<_, unsafe extern "C" fn(*const u8) -> bool>(
@@ -383,7 +384,7 @@ impl CompiledDataflow {
                                 },
                             }),
 
-                            NodeStream::Map(..) => DataflowNode::FilterIndex(FilterIndex {
+                            NodeStream::Map(..) => DataflowNode::Filter(Filter::Map {
                                 input,
                                 filter_fn: unsafe {
                                     transmute::<_, unsafe extern "C" fn(*const u8, *const u8) -> bool>(
@@ -711,30 +712,22 @@ impl CompiledDataflow {
                 }
 
                 DataflowNode::Filter(filter) => {
-                    let input = &streams[&filter.input];
-                    let filter_fn = filter.filter_fn;
-                    let filtered = match input {
-                        RowStream::Set(input) => {
+                    let input = &streams[&filter.input()];
+                    let filtered = match (filter, input) {
+                        (&Filter::Set { filter_fn, .. }, RowStream::Set(input)) => {
                             let filtered =
                                 input.filter(move |input| unsafe { filter_fn(input.as_ptr()) });
                             RowStream::Set(filtered)
                         }
-                        RowStream::Map(_) => todo!(),
-                    };
 
-                    streams.insert(node_id, filtered);
-                }
-
-                DataflowNode::FilterIndex(filter) => {
-                    let input = &streams[&filter.input];
-                    let filter_fn = filter.filter_fn;
-                    let filtered = match input {
-                        RowStream::Map(input) => {
-                            RowStream::Map(input.filter(move |(key, value)| unsafe {
+                        (&Filter::Map { filter_fn, .. }, RowStream::Map(input)) => {
+                            let filtered = input.filter(move |(key, value)| unsafe {
                                 filter_fn(key.as_ptr(), value.as_ptr())
-                            }))
+                            });
+                            RowStream::Map(filtered)
                         }
-                        RowStream::Set(_) => todo!(),
+
+                        _ => unreachable!(),
                     };
 
                     streams.insert(node_id, filtered);
@@ -1077,30 +1070,30 @@ impl CompiledDataflow {
                                     }
 
                                     DataflowNode::Filter(filter) => {
-                                        let input = &substreams[&filter.input];
-                                        let filter_fn = filter.filter_fn;
-                                        let filtered = match input {
-                                            RowStream::Set(input) => {
-                                                RowStream::Set(input.filter(move |input| unsafe {
+                                        let input = &substreams[&filter.input()];
+                                        let filtered = match (filter, input) {
+                                            (
+                                                &Filter::Set { filter_fn, .. },
+                                                RowStream::Set(input),
+                                            ) => {
+                                                let filtered = input.filter(move |input| unsafe {
                                                     filter_fn(input.as_ptr())
-                                                }))
+                                                });
+                                                RowStream::Set(filtered)
                                             }
-                                            RowStream::Map(_) => todo!(),
-                                        };
 
-                                        substreams.insert(node_id, filtered);
-                                    }
+                                            (
+                                                &Filter::Map { filter_fn, .. },
+                                                RowStream::Map(input),
+                                            ) => {
+                                                let filtered =
+                                                    input.filter(move |(key, value)| unsafe {
+                                                        filter_fn(key.as_ptr(), value.as_ptr())
+                                                    });
+                                                RowStream::Map(filtered)
+                                            }
 
-                                    DataflowNode::FilterIndex(filter) => {
-                                        let input = &substreams[&filter.input];
-                                        let filter_fn = filter.filter_fn;
-                                        let filtered = match input {
-                                            RowStream::Map(input) => RowStream::Map(input.filter(
-                                                move |(key, value)| unsafe {
-                                                    filter_fn(key.as_ptr(), value.as_ptr())
-                                                },
-                                            )),
-                                            RowStream::Set(_) => todo!(),
+                                            _ => unreachable!(),
                                         };
 
                                         substreams.insert(node_id, filtered);

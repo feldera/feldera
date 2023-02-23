@@ -1,10 +1,11 @@
 use crate::ir::{ColumnType, ExprId, LayoutId};
 use derive_more::From;
+use serde::{Deserialize, Serialize};
 
 // TODO: Put type info into more expressions
 
 /// An expression within a basic block's body
-#[derive(Debug, Clone, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
 pub enum Expr {
     Cast(Cast),
     Load(Load),
@@ -23,7 +24,7 @@ pub enum Expr {
 
 /// An rvalue (right value) is either a reference to another expression or an
 /// immediate constant
-#[derive(Debug, Clone, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
 pub enum RValue {
     /// An expression
     Expr(ExprId),
@@ -91,7 +92,7 @@ impl From<bool> for RValue {
 /// [`Timestamp`]: ColumnType::Timestamp
 /// [`Date`]: ColumnType::Date
 /// [`Bool`]: ColumnType::Bool
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Cast {
     /// The source value being casted
     value: ExprId,
@@ -148,7 +149,7 @@ impl Cast {
 
 /// A binary operation, see [`BinaryOpKind`] for the possible kinds of
 /// operations being performed
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct BinaryOp {
     /// The left hand value
     // TODO: Allow for immediates
@@ -190,7 +191,7 @@ impl BinaryOp {
 }
 
 /// The kind of binary operation being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum BinaryOpKind {
     /// Addition
     Add,
@@ -227,7 +228,7 @@ pub enum BinaryOpKind {
 
 /// A unary operation, see [`UnaryOpKind`] for the possible kinds of
 /// operations being performed
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct UnaryOp {
     /// The input value
     value: RValue,
@@ -260,7 +261,7 @@ impl UnaryOp {
 }
 
 /// The kind of unary operation being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum UnaryOpKind {
     Abs,
     Neg,
@@ -285,7 +286,7 @@ pub enum UnaryOpKind {
 /// underlying string and results in the cloned string
 ///
 /// [`String`]: ColumnType::String
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct CopyVal {
     /// The value to be copied
     value: ExprId,
@@ -308,7 +309,7 @@ impl CopyVal {
 }
 
 /// Load a value from the given column of the given row
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Load {
     /// The row to load from
     source: ExprId,
@@ -353,7 +354,7 @@ impl Load {
 }
 
 /// Store a value to the given column of the given row
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Store {
     /// The row to store into
     target: ExprId,
@@ -410,7 +411,7 @@ impl Store {
 /// Requires that `column` of the target layout is nullable.
 /// Returns `true` if the `column`-th row of `target` is currently null and
 /// `false` if it's not null
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct IsNull {
     /// The row we're checking
     target: ExprId,
@@ -450,7 +451,7 @@ impl IsNull {
 ///
 /// Requires that `column` of the target layout is nullable and that `target` is
 /// writeable. `is_null` determines
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SetNull {
     /// The row that's being manipulated
     target: ExprId,
@@ -504,7 +505,7 @@ impl SetNull {
 /// `dest` (along with any required [`IsNull`]/[`SetNull`] juggling that has to
 /// be done due to nullable columns)
 // TODO: We need to offer a drop operator of some kind so that rows can be deinitialized if needed
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct CopyRowTo {
     src: ExprId,
     dest: ExprId,
@@ -541,7 +542,7 @@ impl CopyRowTo {
 /// cannot be read before initialization without causing UB
 ///
 /// [uninitialized data]: https://en.wikipedia.org/wiki/Uninitialized_variable
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct UninitRow {
     layout: LayoutId,
 }
@@ -572,7 +573,7 @@ impl UninitRow {
 /// sigil value since that could potentially be more efficient.
 /// In short: `NullRow` produces a row for which `IsNull` will
 /// always return `true`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct NullRow {
     layout: LayoutId,
 }
@@ -590,7 +591,7 @@ impl NullRow {
 }
 
 /// A constant value
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum Constant {
     Unit,
     U8(u8),

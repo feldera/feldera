@@ -5,7 +5,7 @@ mod expr;
 mod function;
 mod ids;
 mod layout_cache;
-mod node;
+mod nodes;
 mod terminator;
 mod types;
 mod validate;
@@ -19,7 +19,7 @@ pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::{Graph, GraphExt};
 pub use ids::{BlockId, ExprId, LayoutId, NodeId};
 pub use layout_cache::RowLayoutCache;
-pub use node::{
+pub use nodes::{
     DataflowNode, DelayedFeedback, Delta0, Differentiate, Distinct, Export, ExportedNode, Filter,
     IndexWith, JoinCore, Map, Min, Minus, MonotonicJoin, Neg, Node, Sink, Source, SourceMap,
     Stream, StreamKind, Subgraph, Sum,

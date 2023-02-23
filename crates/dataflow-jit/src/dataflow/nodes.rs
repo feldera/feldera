@@ -16,7 +16,6 @@ pub enum DataflowNode {
     Map(Map),
     MapIndex(MapIndex),
     Filter(Filter),
-    FilterIndex(FilterIndex),
     FilterMap(FilterMap),
     FilterMapIndex(FilterMapIndex),
     Sum(Sum),
@@ -142,16 +141,25 @@ pub struct MapIndex {
     pub output_vtable: &'static VTable,
 }
 
+// TODO: Maybe just enum the filter function?
 #[derive(Debug, Clone)]
-pub struct Filter {
-    pub input: NodeId,
-    pub filter_fn: unsafe extern "C" fn(*const u8) -> bool,
+pub enum Filter {
+    Set {
+        input: NodeId,
+        filter_fn: unsafe extern "C" fn(*const u8) -> bool,
+    },
+    Map {
+        input: NodeId,
+        filter_fn: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+    },
 }
 
-#[derive(Debug, Clone)]
-pub struct FilterIndex {
-    pub input: NodeId,
-    pub filter_fn: unsafe extern "C" fn(*const u8, *const u8) -> bool,
+impl Filter {
+    pub const fn input(&self) -> NodeId {
+        match *self {
+            Self::Set { input, .. } | Self::Map { input, .. } => input,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

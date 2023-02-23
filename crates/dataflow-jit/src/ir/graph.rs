@@ -2,11 +2,12 @@
 
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    node::{Integrate, Node, Subgraph as SubgraphNode},
+    nodes::{Integrate, Node, Subgraph as SubgraphNode},
     DataflowNode, Differentiate, ExportedNode, Filter, Function, IndexWith, LayoutId, Map, NodeId,
     NodeIdGen, Sink, Source, SourceMap,
 };
 use petgraph::prelude::DiGraphMap;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, rc::Rc};
 
 pub trait GraphExt {
@@ -89,25 +90,75 @@ pub trait GraphExt {
     }
 }
 
-#[derive(Debug, Clone)]
-struct GraphContext {
-    layout_cache: RowLayoutCache,
-    node_id: Rc<NodeIdGen>,
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Graph {
+    graph: Subgraph,
 }
 
-impl GraphContext {
-    fn new() -> Self {
+impl Graph {
+    pub fn new() -> Self {
         Self {
-            layout_cache: RowLayoutCache::new(),
-            node_id: Rc::new(NodeIdGen::new()),
+            graph: Subgraph::new(GraphContext::new()),
         }
+    }
+
+    pub fn graph(&self) -> &Subgraph {
+        &self.graph
     }
 }
 
-#[derive(Debug, Clone)]
+impl GraphExt for Graph {
+    fn layout_cache(&self) -> &RowLayoutCache {
+        self.graph.layout_cache()
+    }
+
+    fn nodes(&self) -> &BTreeMap<NodeId, Node> {
+        self.graph.nodes()
+    }
+
+    fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
+        self.graph.nodes_mut()
+    }
+
+    fn next_node(&self) -> NodeId {
+        self.graph.next_node()
+    }
+
+    fn create_node<N>(&mut self, node_id: NodeId, node: N) -> NodeId
+    where
+        N: Into<Node>,
+    {
+        self.graph.create_node(node_id, node)
+    }
+
+    fn subgraph<F, T>(&mut self, build: F) -> (NodeId, T)
+    where
+        F: FnOnce(&mut SubgraphNode) -> T,
+    {
+        self.graph.subgraph(build)
+    }
+
+    fn optimize(&mut self) {
+        self.graph.optimize();
+    }
+
+    fn edges(&self) -> &DiGraphMap<NodeId, ()> {
+        self.graph.edges()
+    }
+}
+
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Subgraph {
     edges: DiGraphMap<NodeId, ()>,
     nodes: BTreeMap<NodeId, Node>,
+    #[serde(skip)]
     ctx: GraphContext,
 }
 
@@ -189,64 +240,22 @@ impl GraphExt for Subgraph {
     }
 }
 
-#[derive(Debug)]
-pub struct Graph {
-    graph: Subgraph,
+#[derive(Debug, Clone)]
+struct GraphContext {
+    layout_cache: RowLayoutCache,
+    node_id: Rc<NodeIdGen>,
 }
 
-impl Graph {
-    pub fn new() -> Self {
+impl GraphContext {
+    fn new() -> Self {
         Self {
-            graph: Subgraph::new(GraphContext::new()),
+            layout_cache: RowLayoutCache::new(),
+            node_id: Rc::new(NodeIdGen::new()),
         }
     }
-
-    pub fn graph(&self) -> &Subgraph {
-        &self.graph
-    }
 }
 
-impl GraphExt for Graph {
-    fn layout_cache(&self) -> &RowLayoutCache {
-        self.graph.layout_cache()
-    }
-
-    fn nodes(&self) -> &BTreeMap<NodeId, Node> {
-        self.graph.nodes()
-    }
-
-    fn nodes_mut(&mut self) -> &mut BTreeMap<NodeId, Node> {
-        self.graph.nodes_mut()
-    }
-
-    fn next_node(&self) -> NodeId {
-        self.graph.next_node()
-    }
-
-    fn create_node<N>(&mut self, node_id: NodeId, node: N) -> NodeId
-    where
-        N: Into<Node>,
-    {
-        self.graph.create_node(node_id, node)
-    }
-
-    fn subgraph<F, T>(&mut self, build: F) -> (NodeId, T)
-    where
-        F: FnOnce(&mut SubgraphNode) -> T,
-    {
-        self.graph.subgraph(build)
-    }
-
-    fn optimize(&mut self) {
-        self.graph.optimize();
-    }
-
-    fn edges(&self) -> &DiGraphMap<NodeId, ()> {
-        self.graph.edges()
-    }
-}
-
-impl Default for Graph {
+impl Default for GraphContext {
     fn default() -> Self {
         Self::new()
     }
@@ -261,7 +270,7 @@ mod tests {
             expr::{Constant, NullRow},
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
-            node::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
+            nodes::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
