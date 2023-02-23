@@ -156,6 +156,7 @@ impl Default for Graph {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Subgraph {
+    #[serde(skip)]
     edges: DiGraphMap<NodeId, ()>,
     nodes: BTreeMap<NodeId, Node>,
     #[serde(skip)]

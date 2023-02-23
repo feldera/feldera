@@ -13,17 +13,42 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     Runtime,
 };
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SqlGraph {
+    #[serde(flatten)]
+    graph: Graph,
+    layouts: BTreeMap<LayoutId, RowLayout>,
+}
+
+impl From<Graph> for SqlGraph {
+    fn from(graph: Graph) -> Self {
+        let mut layouts = BTreeMap::new();
+        graph.layout_cache().with_layouts(|layout_id, layout| {
+            layouts.insert(layout_id, layout.clone());
+        });
+
+        Self { graph, layouts }
+    }
+}
 
 #[test]
 #[ignore]
 fn test_parse_sql_output() {
-    // const SQL: &str = include_str!("simple_select.json");
-    const SQL: &str = include_str!("green_tripdata_count.json");
+    const SQL: &str = include_str!("simple_select.json");
+    // const SQL: &str = include_str!("green_tripdata_count.json");
 
     crate::utils::test_logger();
 
     let (mut graph, sources, sinks) = parse_sql_output(SQL);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&SqlGraph::from(graph)).unwrap(),
+    );
+    return;
+
     graph.optimize();
     // Validator::new().validate_graph(&graph).unwrap();
 
@@ -33,10 +58,10 @@ fn test_parse_sql_output() {
     let (mut runtime, (mut inputs, outputs)) =
         Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
-    runtime.step().unwrap();
-    runtime.kill().unwrap();
-    unsafe { jit_handle.free_memory() };
-    return;
+    // runtime.step().unwrap();
+    // runtime.kill().unwrap();
+    // unsafe { jit_handle.free_memory() };
+    // return;
 
     let (input_node, input_layout) = sources["T"];
     let (output_node, _output_layout) = sinks["V"];

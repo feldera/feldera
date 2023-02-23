@@ -37,6 +37,16 @@ impl RowLayoutCache {
     pub fn layouts(&self) -> Ref<'_, Vec<RowLayout>> {
         Ref::map(self.inner.borrow(), |cache| &cache.layouts)
     }
+
+    pub fn with_layouts<F>(&self, mut with_layouts: F)
+    where
+        F: FnMut(LayoutId, &RowLayout),
+    {
+        let inner = self.inner.borrow();
+        for (&layout_id, &idx) in inner.id_to_idx.iter() {
+            with_layouts(layout_id, &inner.layouts[idx as usize]);
+        }
+    }
 }
 
 impl Default for RowLayoutCache {
