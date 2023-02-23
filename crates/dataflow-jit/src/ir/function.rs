@@ -53,7 +53,7 @@ impl Display for InvalidInputFlag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Invalid input flag, expected one of \"\", \"input\", \"output\" or \"inout\", got {:?}",
+            "Invalid input flag, expected one of \"input\", \"output\" or \"inout\", got {:?}",
             self.0,
         )
     }
@@ -88,7 +88,7 @@ impl From<InputFlags> for &'static str {
             InputFlags::INPUT => "input",
             InputFlags::OUTPUT => "output",
             InputFlags::INOUT => "inout",
-            _ => "",
+            _ => unreachable!(),
         }
     }
 }
@@ -100,12 +100,25 @@ impl From<InputFlags> for String {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FuncArg {
+    /// The id that the pointer is associated with and the flags that are associated with the argument.
+    /// All function arguments are passed by pointer since we can't know the type's exact size at compile time
+    pub id: ExprId,
+    /// The layout of the argument
+    pub layout: LayoutId,
+    /// The flags associated with the argument
+    pub flags: InputFlags,
+}
+
+impl FuncArg {
+    pub const fn new(id: ExprId, layout: LayoutId, flags: InputFlags) -> Self {
+        Self { id, layout, flags }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Function {
-    /// Contains the layout of the argument, the id that the pointer is
-    /// associated with and the flags that are associated with the argument.
-    /// All function arguments are passed by pointer since we can't know the
-    /// type's exact size at compile time
-    args: Vec<(LayoutId, ExprId, InputFlags)>,
+    args: Vec<FuncArg>,
     ret: ColumnType,
     entry_block: BlockId,
     blocks: BTreeMap<BlockId, Block>,
@@ -114,7 +127,7 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn args(&self) -> &[(LayoutId, ExprId, InputFlags)] {
+    pub fn args(&self) -> &[FuncArg] {
         &self.args
     }
 
@@ -136,8 +149,8 @@ impl Function {
 
     pub fn signature(&self) -> Signature {
         Signature::new(
-            self.args.iter().map(|&(arg, ..)| arg).collect(),
-            self.args.iter().map(|&(.., flags)| flags).collect(),
+            self.args.iter().map(|arg| arg.layout).collect(),
+            self.args.iter().map(|arg| arg.flags).collect(),
             self.ret,
         )
     }
@@ -176,8 +189,8 @@ impl Function {
     fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
         let mut scalar_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();
-        for &(layout, expr, _) in &self.args {
-            row_exprs.insert(expr, layout);
+        for arg in &self.args {
+            row_exprs.insert(arg.id, arg.layout);
         }
 
         let mut substitutions = BTreeMap::new();
@@ -286,8 +299,8 @@ impl Function {
     fn remove_unit_memory_operations(&mut self, layout_cache: &RowLayoutCache) {
         let mut unit_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();
-        for &(layout, expr, _) in &self.args {
-            row_exprs.insert(expr, layout);
+        for arg in &self.args {
+            row_exprs.insert(arg.id, arg.layout);
         }
 
         // FIXME: Doesn't work for back edges/loops
@@ -362,7 +375,7 @@ impl Function {
 // TODO: Function arg attributes for mutability, allow inserting into mutable
 // rows
 pub struct FunctionBuilder {
-    args: Vec<(LayoutId, ExprId, InputFlags)>,
+    args: Vec<FuncArg>,
     ret: ColumnType,
     entry_block: Option<BlockId>,
 
@@ -418,7 +431,7 @@ impl FunctionBuilder {
 
     pub fn add_input_with_flags(&mut self, input_row: LayoutId, flags: InputFlags) -> ExprId {
         let arg_id = self.expr_id.next();
-        self.args.push((input_row, arg_id, flags));
+        self.args.push(FuncArg::new(arg_id, input_row, flags));
         self.set_expr_type(arg_id, Err(input_row));
         arg_id
     }
