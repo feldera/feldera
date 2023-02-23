@@ -298,7 +298,14 @@ impl CompilationJob {
         drop(main_rs);
 
         // Write `project/Cargo.toml`.
-        let template_toml = fs::read_to_string(&config.project_toml_template_path()).await?;
+        let template_toml = fs::read_to_string(&config.project_toml_template_path())
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to read template '{}': '{e}'",
+                    config.project_toml_template_path().display()
+                ))
+            })?;
         let project_name = format!("name = \"{}\"", ManagerConfig::crate_name(project_id));
         let project_toml_code = template_toml
             .replace("name = \"temp\"", &project_name)
@@ -308,7 +315,14 @@ impl CompilationJob {
                 &format!("\n\n[[bin]]\n{project_name}\npath = \"src/main.rs\""),
             );
 
-        fs::write(&config.project_toml_path(project_id), project_toml_code).await?;
+        fs::write(&config.project_toml_path(project_id), project_toml_code)
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to write '{}': '{e}'",
+                    config.project_toml_path(project_id).display()
+                ))
+            })?;
 
         // Write workspace `Cargo.toml`.  The workspace contains SQL libs and the
         // generated project crate.
@@ -327,10 +341,31 @@ impl CompilationJob {
             workspace_toml_code.push_str(&patch);
         }
 
-        fs::write(&config.workspace_toml_path(), workspace_toml_code).await?;
+        fs::write(&config.workspace_toml_path(), workspace_toml_code)
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to write '{}': '{e}'",
+                    config.workspace_toml_path().display()
+                ))
+            })?;
 
-        let err_file = File::create(&config.compiler_stderr_path(project_id)).await?;
-        let out_file = File::create(&config.compiler_stdout_path(project_id)).await?;
+        let err_file = File::create(&config.compiler_stderr_path(project_id))
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to create '{}': '{e}'",
+                    config.compiler_stderr_path(project_id).display()
+                ))
+            })?;
+        let out_file = File::create(&config.compiler_stdout_path(project_id))
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to create '{}': '{e}'",
+                    config.compiler_stdout_path(project_id).display()
+                ))
+            })?;
 
         // Run cargo, direct stdout and stderr to the same file.
         let mut command = Command::new("cargo");
@@ -347,7 +382,9 @@ impl CompilationJob {
             command.arg("--release");
         }
 
-        let compiler_process = command.spawn()?;
+        let compiler_process = command
+            .spawn()
+            .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))?;
 
         Ok(Self {
             stage: Stage::Rust,
