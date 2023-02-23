@@ -284,10 +284,10 @@ impl Codegen {
                 // Ensure that all input pointers are valid
                 // TODO: This may need changes if we ever have scalar function inputs
                 if ctx.debug_assertions() && block_id == function.entry_block() {
-                    for &(layout_id, arg_id, _) in function.args() {
-                        debug_assert_eq!(ctx.layout_id(arg_id), layout_id);
-                        let layout = layout_cache.layout_of(layout_id);
-                        let arg = ctx.value(arg_id);
+                    for arg in function.args() {
+                        debug_assert_eq!(ctx.layout_id(arg.id), arg.layout);
+                        let layout = layout_cache.layout_of(arg.layout);
+                        let arg = ctx.value(arg.id);
                         ctx.assert_ptr_valid(arg, layout.align(), &mut builder);
                     }
                 }
@@ -613,10 +613,10 @@ impl<'a> CodegenCtx<'a> {
             function.args().len(),
             builder.block_params(entry_block).len()
         );
-        for (idx, &(layout, expr_id, flags)) in function.args().iter().enumerate() {
+        for (idx, arg) in function.args().iter().enumerate() {
             let param = builder.block_params(entry_block)[idx];
-            self.add_expr(expr_id, param, None, layout);
-            self.function_inputs.insert(expr_id, flags);
+            self.add_expr(arg.id, param, None, arg.layout);
+            self.function_inputs.insert(arg.id, arg.flags);
         }
     }
 

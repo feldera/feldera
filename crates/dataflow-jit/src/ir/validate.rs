@@ -80,19 +80,19 @@ impl Validator {
                     let expected = &[(input_layout, false), (map.layout(), true)];
 
                     assert_eq!(expected.len(), map.map_fn().args().len());
-                    for (idx, (&(expected_layout, is_mutable), &(layout, _, flags))) in
+                    for (idx, (&(expected_layout, is_mutable), arg)) in
                         expected.iter().zip(map.map_fn().args()).enumerate()
                     {
                         assert_eq!(
                             expected_layout,
-                            layout,
+                            arg.layout,
                             "the {idx}th argument to a map function had an incorrect layout: expected {:?}, got {:?}",
                             graph.layout_cache().get(expected_layout),
-                            graph.layout_cache().get(layout),
+                            graph.layout_cache().get(arg.layout),
                         );
 
                         assert_eq!(
-                            flags.contains(InputFlags::OUTPUT),
+                            arg.flags.contains(InputFlags::OUTPUT),
                             is_mutable,
                             "the {idx}th argument to a map function was {}mutable when it should {}have been",
                             if is_mutable { "not" } else { "" },
@@ -181,14 +181,17 @@ impl FunctionValidator {
             }
         }
 
-        for &(layout_id, expr_id, flags) in func.args() {
-            if !self.exprs.insert(expr_id) {
-                panic!("duplicate expression {expr_id} (declared first as a function parameter)");
+        for arg in func.args() {
+            if !self.exprs.insert(arg.id) {
+                panic!(
+                    "duplicate expression {} (declared first as a function parameter)",
+                    arg.id,
+                );
             }
 
-            self.expr_types.insert(expr_id, Err(layout_id));
+            self.expr_types.insert(arg.id, Err(arg.layout));
             self.expr_row_mutability
-                .insert(expr_id, flags.contains(InputFlags::OUTPUT));
+                .insert(arg.id, arg.flags.contains(InputFlags::OUTPUT));
         }
 
         // Infer expression types
