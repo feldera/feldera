@@ -4,7 +4,7 @@ inputs:
     transport:
       name: file
       config: 
-        path: "/examples/messages.csv"
+        path: "/database-stream-processor/demo/hello-world/messages.csv"
         follow: true
 
     format:
@@ -15,7 +15,7 @@ inputs:
     transport:
       name: file
       config: 
-        path: "/examples/records.csv"
+        path: "/database-stream-processor/demo/hello-world/records.csv"
         follow: true
 
     format:
@@ -27,7 +27,7 @@ outputs:
     transport:
       name: file
       config: 
-        path: "/examples/matches.csv"
+        path: "/database-stream-processor/demo/hello-world/matches.csv"
 
     format:
       name: csv
