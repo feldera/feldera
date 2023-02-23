@@ -614,6 +614,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             reader.addEventListener("load", () => {
                 const data = {
                     "name": name,
+                    "description": "",
                     "code": reader.result,
                 };
                 console.log(data);

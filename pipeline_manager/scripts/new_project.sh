@@ -19,4 +19,4 @@ ESCAPED_CODE="$(json_escape "$CODE")"
 
 # echo $ESCAPED_CODE
 
-curl -s -X POST http://localhost:8080/projects  -H 'Content-Type: application/json' -d '{"name":"'$1'","code":'"${ESCAPED_CODE}"'}'
+curl -s -X POST http://localhost:8080/projects  -H 'Content-Type: application/json' -d '{"name":"'$1'","description": "","code":'"${ESCAPED_CODE}"'}'

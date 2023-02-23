@@ -555,6 +555,7 @@ class ProjectListDisplay extends WebClient implements IHtmlElement {
         reader.addEventListener("load", () => {
             const data = {
                 "name": name,
+                "description": "",
                 "code": reader.result,
             };
             console.log(data);
