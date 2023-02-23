@@ -191,6 +191,7 @@ impl RowLayoutBuilder {
 
 /// The layout of a row
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(from = "SerRowLayout", into = "SerRowLayout")]
 pub struct RowLayout {
     /// The type of each column within the row
     columns: Vec<ColumnType>,
@@ -327,6 +328,45 @@ impl Display for RowLayout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(self, f)
     }
+}
+
+#[derive(Deserialize, Serialize)]
+struct SerRowLayout {
+    columns: Vec<SerColumnLayout>,
+}
+
+impl From<RowLayout> for SerRowLayout {
+    fn from(layout: RowLayout) -> Self {
+        Self {
+            columns: layout
+                .iter()
+                .map(|(ty, nullable)| SerColumnLayout { ty, nullable })
+                .collect(),
+        }
+    }
+}
+
+impl From<SerRowLayout> for RowLayout {
+    fn from(layout: SerRowLayout) -> Self {
+        let mut columns = Vec::with_capacity(layout.columns.len());
+        let mut nullability = BitVec::with_capacity(layout.columns.len());
+
+        for SerColumnLayout { ty, nullable } in layout.columns {
+            columns.push(ty);
+            nullability.push(nullable);
+        }
+
+        Self {
+            columns,
+            nullability,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct SerColumnLayout {
+    ty: ColumnType,
+    nullable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
