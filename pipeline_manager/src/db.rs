@@ -76,6 +76,7 @@ impl Version {
 #[derive(Debug)]
 pub(crate) enum DBError {
     UnknownProject(ProjectId),
+    DuplicateProjectName(String),
     OutdatedProjectVersion(Version),
     UnknownConfig(ConfigId),
     UnknownPipeline(PipelineId),
@@ -85,6 +86,9 @@ impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DBError::UnknownProject(project_id) => write!(f, "Unknown project id '{project_id}'"),
+            DBError::DuplicateProjectName(name) => {
+                write!(f, "A project named '{name}' already exists")
+            }
             DBError::OutdatedProjectVersion(version) => {
                 write!(f, "Outdated project version '{version}'")
             }
@@ -184,7 +188,7 @@ impl ProjectDB {
 CREATE TABLE IF NOT EXISTS project (
     id integer PRIMARY KEY AUTOINCREMENT,
     version integer,
-    name varchar,
+    name varchar UNIQUE,
     description varchar,
     code varchar,
     status varchar,
@@ -330,13 +334,15 @@ CREATE TABLE IF NOT EXISTS pipeline (
                     .execute(
                         "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL WHERE id = $4",
                         (&version.0, &project_name, &project_description, code, &project_id.0),
-                    )?;
+                    ).map_err(|_| DBError::DuplicateProjectName(project_name.to_string()))?;
             }
             _ => {
-                self.dbclient.execute(
-                    "UPDATE project SET name = $1, description = $2 WHERE id = $3",
-                    (&project_name, &project_description, &project_id.0),
-                )?;
+                self.dbclient
+                    .execute(
+                        "UPDATE project SET name = $1, description = $2 WHERE id = $3",
+                        (&project_name, &project_description, &project_id.0),
+                    )
+                    .map_err(|_| DBError::DuplicateProjectName(project_name.to_string()))?;
             }
         }
 

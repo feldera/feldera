@@ -378,6 +378,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
         let message = db_error.to_string();
         match db_error {
             DBError::UnknownProject(_) => HttpResponse::NotFound(),
+            DBError::DuplicateProjectName(_) => HttpResponse::Conflict(),
             DBError::OutdatedProjectVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownConfig(_) => HttpResponse::NotFound(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
@@ -643,6 +644,10 @@ struct UpdateProjectResponse {
             , description = "Specified `project_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+        (status = CONFLICT
+            , description = "A project with this name already exists in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Duplicate project name 'p'."))),
     ),
     tag = "Project"
 )]
