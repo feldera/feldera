@@ -172,8 +172,14 @@ impl FunctionValidator {
     ) -> Result<(), ValidationError> {
         self.clear();
 
-        self.exprs.extend(func.exprs().keys().copied());
         self.blocks.extend(func.blocks().keys().copied());
+        for block in func.blocks().values() {
+            for &(expr_id, _) in block.body() {
+                if !self.exprs.insert(expr_id) {
+                    panic!("duplicate expression {expr_id}")
+                }
+            }
+        }
 
         for &(layout_id, expr_id, flags) in func.args() {
             if !self.exprs.insert(expr_id) {
@@ -199,11 +205,7 @@ impl FunctionValidator {
                 block.id(),
             );
 
-            for &expr_id in block.body() {
-                let expr = func.exprs().get(&expr_id).unwrap_or_else(|| {
-                    panic!("block {block_id} mentioned expression {expr_id} which doesn't exist")
-                });
-
+            for &(expr_id, ref expr) in block.body() {
                 match expr {
                     Expr::Load(load) => {
                         if let Some(&source_ty) = self.expr_types.get(&load.source()) {

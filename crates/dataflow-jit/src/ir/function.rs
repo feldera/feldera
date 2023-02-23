@@ -7,12 +7,14 @@ use petgraph::{
     algo::dominators::{self, Dominators},
     prelude::DiGraphMap,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     mem::swap,
 };
 
 bitflags::bitflags! {
+    #[derive(Deserialize, Serialize)]
     pub struct InputFlags: u8 {
         /// The parameter can be used as an input
         const INPUT = 1 << 0;
@@ -42,7 +44,7 @@ impl InputFlags {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Function {
     /// Contains the layout of the argument, the id that the pointer is
     /// associated with and the flags that are associated with the argument.
@@ -51,8 +53,8 @@ pub struct Function {
     args: Vec<(LayoutId, ExprId, InputFlags)>,
     ret: ColumnType,
     entry_block: BlockId,
-    exprs: BTreeMap<ExprId, Expr>,
     blocks: BTreeMap<BlockId, Block>,
+    #[serde(skip)]
     cfg: DiGraphMap<BlockId, ()>,
 }
 
@@ -63,10 +65,6 @@ impl Function {
 
     pub fn entry_block(&self) -> BlockId {
         self.entry_block
-    }
-
-    pub fn exprs(&self) -> &BTreeMap<ExprId, Expr> {
-        &self.exprs
     }
 
     pub fn blocks(&self) -> &BTreeMap<BlockId, Block> {
@@ -134,8 +132,8 @@ impl Function {
         while let Some(block_id) = stack.pop() {
             let block = self.blocks.get_mut(&block_id).unwrap();
 
-            block.retain(|expr_id| {
-                match &self.exprs[&expr_id] {
+            block.retain(|expr_id, expr| {
+                match expr {
                     Expr::UninitRow(uninit) => {
                         row_exprs.insert(expr_id, uninit.layout());
                     }
@@ -190,8 +188,8 @@ impl Function {
 
         if !substitutions.is_empty() {
             for block in self.blocks.values_mut() {
-                for expr_id in block.body() {
-                    match self.exprs.get_mut(expr_id).unwrap() {
+                for (_, expr) in block.body() {
+                    match expr {
                         Expr::Load(_) => todo!(),
                         Expr::Store(_) => todo!(),
                         Expr::BinOp(_) => todo!(),
@@ -242,7 +240,7 @@ impl Function {
         while let Some(block_id) = stack.pop() {
             let block = self.blocks.get_mut(&block_id).unwrap();
 
-            block.retain(|expr_id| match &self.exprs[&expr_id] {
+            block.retain(|expr_id, expr| match expr {
                 Expr::UninitRow(uninit) => {
                     row_exprs.insert(expr_id, uninit.layout());
                     true
@@ -313,7 +311,6 @@ pub struct FunctionBuilder {
     ret: ColumnType,
     entry_block: Option<BlockId>,
 
-    exprs: BTreeMap<ExprId, Expr>,
     blocks: BTreeMap<BlockId, Block>,
     unsealed_blocks: BTreeMap<BlockId, UnsealedBlock>,
 
@@ -332,7 +329,6 @@ impl FunctionBuilder {
             args: Vec::new(),
             ret: ColumnType::Unit,
             entry_block: None,
-            exprs: BTreeMap::new(),
             blocks: BTreeMap::new(),
             unsealed_blocks: BTreeMap::new(),
             current: None,
@@ -394,11 +390,7 @@ impl FunctionBuilder {
     {
         let expr = expr.into();
         let expr_id = self.expr_id.next();
-        self.exprs.insert(expr_id, expr);
-
-        let current = self.current_block();
-        current.body.push(expr_id);
-
+        self.current_block().body.push((expr_id, expr));
         expr_id
     }
 
@@ -768,7 +760,6 @@ impl FunctionBuilder {
             args: self.args,
             ret: self.ret,
             entry_block,
-            exprs: self.exprs,
             blocks: self.blocks,
             cfg,
         }

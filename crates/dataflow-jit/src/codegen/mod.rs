@@ -294,9 +294,7 @@ impl Codegen {
 
                 let block_contents = &function.blocks()[&block_id];
 
-                for &expr_id in block_contents.body() {
-                    let expr = &function.exprs()[&expr_id];
-
+                for &(expr_id, ref expr) in block_contents.body() {
                     match expr {
                         Expr::Cast(cast) => ctx.cast(expr_id, cast, &mut builder),
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
