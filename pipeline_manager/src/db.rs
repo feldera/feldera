@@ -286,6 +286,26 @@ CREATE TABLE IF NOT EXISTS pipeline (
         Ok((version, code))
     }
 
+    /// Helper to convert rusqlite error into a `DBError::DuplicateProjectName`
+    /// if the underlying low-level error thrown by the database matches.
+    fn maybe_duplicate_project_name_err(e: rusqlite::Error, project_name: &str) -> AnyError {
+        if let rusqlite::Error::SqliteFailure(sqlite_failure, Some(msg)) = &e {
+            if sqlite_failure
+                == (&rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::ConstraintViolation,
+                    extended_code: rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
+                })
+                && msg.as_str() == "UNIQUE constraint failed: project.name"
+            {
+                anyhow!(DBError::DuplicateProjectName(project_name.to_string()))
+            } else {
+                anyhow!(e)
+            }
+        } else {
+            anyhow!(e)
+        }
+    }
+
     /// Create a new project.
     pub(crate) fn new_project(
         &self,
@@ -297,7 +317,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
             .execute(
                 "INSERT INTO project (version, name, description, code, status_since) VALUES(1, $1, $2, $3, unixepoch('now'))",
                 (&project_name, &project_description, &project_code),
-            )?;
+            ).map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
 
         let id = self
             .dbclient
@@ -334,7 +354,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                     .execute(
                         "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL WHERE id = $4",
                         (&version.0, &project_name, &project_description, code, &project_id.0),
-                    ).map_err(|_| DBError::DuplicateProjectName(project_name.to_string()))?;
+                    ).map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
             _ => {
                 self.dbclient
@@ -342,7 +362,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                         "UPDATE project SET name = $1, description = $2 WHERE id = $3",
                         (&project_name, &project_description, &project_id.0),
                     )
-                    .map_err(|_| DBError::DuplicateProjectName(project_name.to_string()))?;
+                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
         }
 
