@@ -208,6 +208,8 @@ impl Controller {
 
     /// Returns controller status.
     pub fn status(&self) -> &ControllerStatus {
+        // Update pipeline metrics computed on-demand.
+        self.inner.status.update();
         &self.inner.status
     }
 
@@ -226,6 +228,23 @@ impl Controller {
             .join()
             .map_err(|_| AnyError::msg("backpressure thread panicked"))?;
         Ok(())
+    }
+
+    /// Check whether the pipeline has processed all input data to completion.
+    ///
+    /// Returns `true` when the following conditions are satisfied:
+    ///
+    /// * All input endpoints have signalled end-of-input.
+    /// * All input records received from all endpoints have been processed by
+    ///   the circuit.
+    /// * All output records have been sent to respective output transport
+    ///   endponts.
+    ///
+    /// Note that, depending on the type and configuration of the output
+    /// transport, this may not guarantee that all output records have been
+    /// written to a persistent storage or delivered to the recipient.
+    pub fn pipeline_complete(&self) -> bool {
+        self.inner.status.pipeline_complete()
     }
 
     /// Circuit thread function: holds the handle to the circuit, calls `step`
@@ -285,6 +304,11 @@ impl Controller {
                         start = None;
                         // Reset all counters of buffered records and bytes to 0.
                         controller.status.consume_buffered_inputs();
+
+                        // All input records accumulated so far (and possibly some more) will
+                        // be fully processed after the `step()` call returns.
+                        let processed_records = controller.status.num_total_input_records();
+
                         // Wake up the backpressure thread to unpause endpoints blocked due to
                         // backpressure.
                         controller.unpark_backpressure();
@@ -293,6 +317,10 @@ impl Controller {
                             .step()
                             .unwrap_or_else(|e| controller.error(ControllerError::dbsp_error(e)));
                         debug!("circuit thread: 'circuit.step' returned");
+
+                        controller
+                            .status
+                            .set_num_total_processed_records(processed_records);
 
                         // Push output batches to output pipelines.
                         let outputs = controller.outputs.read().unwrap();
@@ -303,7 +331,11 @@ impl Controller {
 
                             // Increment stats first, so we don't end up with negative counts.
                             controller.status.enqueue_batch(*endpoint_id, num_records);
-                            output.queue.push(batch);
+
+                            // Associate the input frontier with the batch.  Once the batch has
+                            // been sent to the output endpoint, the endpoint will get labeled
+                            // with this frontier.
+                            output.queue.push((batch, processed_records));
 
                             // Wake up the output thread.  We're not trying to be smart here and
                             // wake up the thread conditionally if it was previously idle, as I
@@ -428,8 +460,11 @@ impl InputEndpointDescr {
 }
 
 /// A lock-free queue used to send output batches from the circuit thread
-/// to output endpoint threads.
-type BatchQueue = SegQueue<Vec<Box<dyn SerBatch>>>;
+/// to output endpoint threads.  Each entry is annotated with a progress label
+/// that is equal to the number of input records fully processed by
+/// DBSP before emitting this batch of outputs.  The label increases
+/// monotonically over time.
+type BatchQueue = SegQueue<(Vec<Box<dyn SerBatch>>, u64)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -704,7 +739,7 @@ impl ControllerInner {
             }
 
             // Dequeue the next output batch and push it to the encoder.
-            if let Some(data) = queue.pop() {
+            if let Some((data, processed_records)) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
 
                 encoder
@@ -716,6 +751,7 @@ impl ControllerInner {
                 // number of queued records drops below high water mark.
                 controller.status.output_batch(
                     endpoint_id,
+                    processed_records,
                     num_records,
                     &controller.circuit_thread_unparker,
                 );
@@ -888,7 +924,6 @@ impl InputConsumer for InputProbe {
                 self.controller.status.eoi(
                     self.endpoint_id,
                     num_records,
-                    &self.controller.status.global_config,
                     &self.circuit_thread_unparker,
                 );
             }
@@ -1049,9 +1084,9 @@ outputs:
             controller.start();
 
             // Wait for the pipeline to output all records.
-            wait(|| {
-                controller.status().output_status().get(&0).unwrap().transmitted_records() == data.len() as u64
-            }, None);
+            wait(|| controller.pipeline_complete(), None);
+
+            assert_eq!(controller.status().output_status().get(&0).unwrap().transmitted_records(), data.len() as u64);
 
             controller.stop().unwrap();
 

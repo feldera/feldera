@@ -142,6 +142,12 @@ def main():
     pipeline.pause()
     print("Pipeline paused")
 
+    pipeline.start()
+    print("Pipeline restarted")
+
+    pipeline.wait()
+    print("Pipeline finished")
+
     # pipeline.shutdown()
     # print("Pipeline terminated")
 

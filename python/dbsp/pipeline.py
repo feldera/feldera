@@ -1,4 +1,6 @@
 import dbsp_api_client
+import time
+import sys
 
 from typing import Dict, Any
 from dbsp_api_client.client import Client
@@ -74,6 +76,24 @@ class DBSPPipeline:
         """
         status = pipeline_status.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to retrieve pipeline status")
         return status.additional_properties
+
+    def wait(self, timeout: float = sys.maxsize):
+        """Wait for the pipeline to process all inputs to completion.
+
+        This method should only be used for pipelines configured with finite input streams, e.g., files.
+
+        Raises:
+            httpx.TimeoutException: If the DBSP server takes longer than Client.timeout to reply to a request.
+            dbsp.DBSPServerError: If the DBSP server returns an error.
+            dbsp.TimeoutException: If the pipeline does not terminate within 'timeout' seconds.
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            status = self.status()
+            if status['global_metrics']['pipeline_complete'] == True:
+                return
+            time.sleep(0.5)
+        raise TimeoutException("Timeout waiting for the pipeline to complete after " + str(timeout) + "s")
 
     def metadata(self) -> Dict[str, Any]:
         """Retrieve pipeline metadata.
