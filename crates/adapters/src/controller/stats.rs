@@ -37,15 +37,66 @@ use serde::{Serialize, Serializer};
 use std::{
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
 };
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
-    /// Total number of records buffered by all endpoints.
+    /// Total number of records currently buffered by all endpoints.
     pub buffered_input_records: AtomicU64,
+
+    /// Total number of records received from all endpoints.
+    pub total_input_records: AtomicU64,
+
+    /// Total number of input records processed by the DBSP engine.
+    /// Note that some of the outputs produced for these input records
+    /// may still be buffered at the output endpoint.
+    /// Use `OutputEndpointMetrics::total_processed_input_records`
+    /// for end-to-end progress tracking.
+    pub total_processed_records: AtomicU64,
+
+    /// True if the pipeline has processed all input data to completion.
+    /// This means that the following conditions hold:
+    ///
+    /// * All input endpoints have signalled end-of-input.
+    /// * All input records received from all endpoints have been processed by
+    ///   the circuit.
+    /// * All output records have been sent to respective output transport
+    ///   endponts.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub pipeline_complete: AtomicBool,
+}
+
+impl GlobalControllerMetrics {
+    fn input_batch(&self, num_records: u64) -> u64 {
+        self.total_input_records
+            .fetch_add(num_records, Ordering::AcqRel);
+        self.buffered_input_records
+            .fetch_add(num_records, Ordering::AcqRel)
+    }
+
+    fn consume_buffered_inputs(&self) {
+        self.buffered_input_records.store(0, Ordering::Release);
+    }
+
+    fn num_buffered_input_records(&self) -> u64 {
+        self.buffered_input_records.load(Ordering::Acquire)
+    }
+
+    fn num_total_input_records(&self) -> u64 {
+        self.total_input_records.load(Ordering::Acquire)
+    }
+
+    fn num_total_processed_records(&self) -> u64 {
+        self.total_processed_records.load(Ordering::Acquire)
+    }
+
+    fn set_num_total_processed_records(&self, total_processed_records: u64) {
+        self.total_processed_records
+            .store(total_processed_records, Ordering::Release);
+    }
 }
 
 type InputsStatus = ShardedLock<BTreeMap<EndpointId, InputEndpointStatus>>;
@@ -131,11 +182,23 @@ impl ControllerStatus {
         );
     }
 
-    /// Total number of records buffered by all input endpoints.
+    /// Total number of records currently buffered by all input endpoints.
     pub fn num_buffered_input_records(&self) -> u64 {
+        self.global_metrics.num_buffered_input_records()
+    }
+
+    /// Total number of records received from all input endpoints.
+    pub fn num_total_input_records(&self) -> u64 {
+        self.global_metrics.num_total_input_records()
+    }
+
+    pub fn num_total_processed_records(&self) -> u64 {
+        self.global_metrics.num_total_processed_records()
+    }
+
+    pub fn set_num_total_processed_records(&self, total_processed_records: u64) {
         self.global_metrics
-            .buffered_input_records
-            .load(Ordering::Acquire)
+            .set_num_total_processed_records(total_processed_records);
     }
 
     /// Input endpoint stats.
@@ -169,9 +232,7 @@ impl ControllerStatus {
     /// buffered data is about to be consumed.  See module-level documentation
     /// for details.
     pub fn consume_buffered_inputs(&self) {
-        self.global_metrics
-            .buffered_input_records
-            .store(0, Ordering::Release);
+        self.global_metrics.consume_buffered_inputs();
         for endpoint_stats in self.inputs.read().unwrap().values() {
             endpoint_stats.consume_buffered();
         }
@@ -217,10 +278,7 @@ impl ControllerStatus {
 
         // Increment buffered_records; unpark circuit thread once
         // `min_batch_size_records` is exceeded.
-        let old = self
-            .global_metrics
-            .buffered_input_records
-            .fetch_add(num_records, Ordering::AcqRel);
+        let old = self.global_metrics.input_batch(num_records);
 
         if old == 0
             || (old <= global_config.min_batch_size_records
@@ -247,14 +305,13 @@ impl ControllerStatus {
         };
     }
 
-    /// Update counters after receiving an end-of-file event on an input
+    /// Update counters after receiving an end-of-input event on an input
     /// endpoint.
     ///
     /// # Arguments
     ///
     /// * `endpoint_id` - id of the input endpoint.
     /// * `num_records` - number of records returned by `Parser::eoi`.
-    /// * `global_config` - global controller config.
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
@@ -262,19 +319,20 @@ impl ControllerStatus {
         &self,
         endpoint_id: EndpointId,
         num_records: usize,
-        global_config: &GlobalPipelineConfig,
         circuit_thread_unparker: &Unparker,
     ) {
         let num_records = num_records as u64;
 
-        // Increment buffered_input_records; unpark circuit thread if
-        // `min_batch_size_records` exceeded.
-        let old = self
-            .global_metrics
-            .buffered_input_records
-            .fetch_add(num_records, Ordering::AcqRel);
-        if old < global_config.min_batch_size_records
-            && old + num_records >= global_config.min_batch_size_records
+        // Increment `buffered_input_records` and `total_input_records`;unpark
+        // circuit thread if `min_batch_size_records` exceeded.
+        //
+        // Note: we increment `total_input_records` _before_ setting the `eoi` flag on
+        // the endpoint to guarantee that `total_input_records` reflects the
+        // final number of inputs records when all endpoints are marked as
+        // finished.
+        let old = self.global_metrics.input_batch(num_records);
+        if old < self.global_config.min_batch_size_records
+            && old + num_records >= self.global_config.min_batch_size_records
         {
             circuit_thread_unparker.unpark();
         }
@@ -283,7 +341,7 @@ impl ControllerStatus {
         // won't see any more inputs from this endpoint.
         let inputs = self.inputs.read().unwrap();
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.add_buffered(0, num_records);
+            endpoint_stats.eoi(num_records);
         };
     }
 
@@ -296,11 +354,12 @@ impl ControllerStatus {
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
+        total_processed_records: u64,
         num_records: usize,
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            let old = endpoint_stats.output_batch(num_records);
+            let old = endpoint_stats.output_batch(total_processed_records, num_records);
             if old - (num_records as u64) <= endpoint_stats.config.max_buffered_records
                 && old >= endpoint_stats.config.max_buffered_records
             {
@@ -348,6 +407,40 @@ impl ControllerStatus {
             endpoint_stats.transport_error(fatal, error);
         }
     }
+
+    /// True if the pipeline has processed all inputs to completion.
+    pub fn pipeline_complete(&self) -> bool {
+        // All input endpoints (if any) are at end of input.
+        if !self
+            .input_status()
+            .values()
+            .all(|endpoint_stats| endpoint_stats.is_eoi())
+        {
+            return false;
+        }
+
+        // All received records have been processed by the circuit.
+        let total_input_records = self.num_total_input_records();
+
+        if self.num_total_processed_records() != total_input_records {
+            return false;
+        }
+
+        // Outputs have been pushed to their respective transport endpoints.
+        if !self.output_status().values().all(|endpoint_stats| {
+            endpoint_stats.num_total_processed_input_records() == total_input_records
+        }) {
+            return false;
+        }
+
+        true
+    }
+
+    pub fn update(&self) {
+        self.global_metrics
+            .pipeline_complete
+            .store(self.pipeline_complete(), Ordering::Release);
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -369,6 +462,8 @@ pub struct InputEndpointMetrics {
     pub num_transport_errors: AtomicU64,
 
     pub num_parse_errors: AtomicU64,
+
+    pub end_of_input: AtomicBool,
 }
 
 /// Input endpoint status information.
@@ -423,6 +518,15 @@ impl InputEndpointStatus {
             .fetch_add(num_records, Ordering::AcqRel)
     }
 
+    fn eoi(&self, num_records: u64) {
+        self.add_buffered(0, num_records);
+        self.metrics.end_of_input.store(true, Ordering::Release);
+    }
+
+    fn is_eoi(&self) -> bool {
+        self.metrics.end_of_input.load(Ordering::Acquire)
+    }
+
     /// Increment parser error counter.
     fn parse_error(&self) {
         self.metrics.num_parse_errors.fetch_add(1, Ordering::AcqRel);
@@ -453,6 +557,13 @@ pub struct OutputEndpointMetrics {
 
     pub num_encode_errors: AtomicU64,
     pub num_transport_errors: AtomicU64,
+
+    /// The number of input records processed by the circuit.
+    ///
+    /// This metric tracks the end-to-end progress of the pipeline: the output
+    /// of this endpoint is equal to the output of the circuit after
+    /// processing `total_processed_input_records` records.
+    pub total_processed_input_records: AtomicU64,
 }
 
 /// Output endpoint status informations.
@@ -494,7 +605,10 @@ impl OutputEndpointStatus {
         self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
     }
 
-    fn output_batch(&self, num_records: usize) -> u64 {
+    fn output_batch(&self, total_processed_input_records: u64, num_records: usize) -> u64 {
+        self.metrics
+            .total_processed_input_records
+            .store(total_processed_input_records, Ordering::Release);
         self.metrics
             .transmitted_records
             .fetch_add(num_records as u64, Ordering::Relaxed);
@@ -532,5 +646,11 @@ impl OutputEndpointStatus {
                 *fatal_error = Some(error.to_string());
             }
         }
+    }
+
+    fn num_total_processed_input_records(&self) -> u64 {
+        self.metrics
+            .total_processed_input_records
+            .load(Ordering::Acquire)
     }
 }

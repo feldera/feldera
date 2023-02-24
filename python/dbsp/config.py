@@ -1,5 +1,6 @@
 import dbsp_api_client
 import yaml
+import sys
 
 from dbsp_api_client.models.pipeline_config import PipelineConfig
 from dbsp_api_client.models.pipeline_config_inputs import PipelineConfigInputs
@@ -22,6 +23,7 @@ from dbsp_api_client.api.config import update_config
 from dbsp_api_client.api.pipeline import new_pipeline
 from dbsp.pipeline import DBSPPipeline
 from dbsp.project import DBSPProject
+from dbsp.error import TimeoutException
 
 class DBSPPipelineConfig:
     """Pipeline configuration specified by the user when creating
@@ -145,6 +147,24 @@ class DBSPPipelineConfig:
 
         return DBSPPipeline(self.api_client, response.pipeline_id)
 
+    def run_to_completion(self, timeout: float = sys.maxsize):
+        """Launch a new pipeline, wait for it to run to completion, and delete the pipeline.
+
+        This method should only be used for pipelines configured with finite input streams, e.g., files.
+
+        Raises:
+            httpx.TimeoutException: If the DBSP server takes longer than Client.timeout to reply to a request.
+            dbsp.DBSPServerError: If the DBSP server returns an error.
+            dbsp.TimeoutException: If the pipeline does not terminate within 'timeout' seconds.
+        """
+        pipeline = self.run()
+        try:
+            pipeline.wait(timeout)
+        except TimeoutException as e:
+            pipeline.delete()
+            raise
+            
+        pipeline.delete()
 
 class CsvInputFormatConfig(FormatConfig):
     def __init__(self):
