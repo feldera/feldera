@@ -30,6 +30,7 @@ impl OutputTransport for KafkaOutputTransport {
 
     fn new_endpoint(
         &self,
+        _name: &str,
         config: &YamlValue,
         async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {

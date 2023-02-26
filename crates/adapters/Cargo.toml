@@ -7,8 +7,8 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["with-kafka", "server"]
 with-kafka = ["rdkafka"]
-server = ["actix-web", "serde_json", "mime", "with-kafka"]
-test-utils = ["size-of", "futures", "proptest", "proptest-derive"]
+server = ["actix", "actix-test", "actix-web", "actix-web-actors", "actix-http", "bytes", "byteorder", "futures", "serde_json", "mime", "with-kafka"]
+test-utils = ["size-of", "futures", "proptest", "proptest-derive", "actix-codec"]
 
 [dependencies]
 num-traits = "0.2.15"
@@ -25,8 +25,14 @@ csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 # cmake-build is required on Windows.
 rdkafka = { version = "0.29.0", features = ["cmake-build"], optional = true }
+actix = { version = "0.13", optional = true }
 actix-web = { version = "4.3", optional = true }
+actix-http = { version = "3.3", optional = true }
+actix-web-actors = { version = "4.2", optional = true }
 actix-web-static-files = "4.0.0"
+actix-test = { version = "0.1.1", optional = true }
+bytes = { version = "1.4.0", optional = true }
+byteorder = { version = "1.4.3", optional = true }
 static-files = "0.2.3"
 mime = { version = "0.3.16", optional = true }
 log = "0.4.17"
@@ -39,6 +45,7 @@ clap = {version = "4.0.32", features = ["derive"] }
 tokio = { version = "1.25.0", features = ["sync"] }
 prometheus = "0.13.3"
 utoipa = { version = "3.0.1" }
+actix-codec = { version = "0.5.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0.89"
@@ -47,6 +54,8 @@ tempfile = "3.3.0"
 proptest = "1.0.0"
 proptest-derive = "0.3.0"
 futures = "0.3.25"
+bytestring = "1.2.0"
+actix-codec = "0.5.0"
 
 [build-dependencies]
 static-files = "0.2.3"

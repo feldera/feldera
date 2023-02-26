@@ -47,7 +47,8 @@ use dbsp::DBSPHandle;
 use log::{debug, error, info};
 use num_traits::FromPrimitive;
 use std::{
-    collections::{BTreeMap, HashSet},
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
@@ -324,23 +325,27 @@ impl Controller {
 
                         // Push output batches to output pipelines.
                         let outputs = controller.outputs.read().unwrap();
-                        for (endpoint_id, output) in outputs.iter() {
+                        for (_stream, (output_handle, endpoints)) in outputs.iter_by_stream() {
                             // TODO: add an endpoint config option to consolidate output batches.
-                            let batch = output.output_handle.take_from_all();
+                            let batch = output_handle.take_from_all();
                             let num_records = batch.iter().map(|b| b.len()).sum();
 
-                            // Increment stats first, so we don't end up with negative counts.
-                            controller.status.enqueue_batch(*endpoint_id, num_records);
+                            for endpoint_id in endpoints.iter() {
+                                let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
 
-                            // Associate the input frontier with the batch.  Once the batch has
-                            // been sent to the output endpoint, the endpoint will get labeled
-                            // with this frontier.
-                            output.queue.push((batch, processed_records));
+                                // Increment stats first, so we don't end up with negative counts.
+                                controller.status.enqueue_batch(*endpoint_id, num_records);
 
-                            // Wake up the output thread.  We're not trying to be smart here and
-                            // wake up the thread conditionally if it was previously idle, as I
-                            // don't expect this to make any real difference.
-                            output.unparker.unpark();
+                                // Associate the input frontier with the batch.  Once the batch has
+                                // been sent to the output endpoint, the endpoint will get labeled
+                                // with this frontier.
+                                endpoint.queue.push((batch.clone(), processed_records));
+
+                                // Wake up the output thread.  We're not trying to be smart here and
+                                // wake up the thread conditionally if it was previously idle, as I
+                                // don't expect this to make any real difference.
+                                endpoint.unparker.unpark();
+                            }
                         }
                     } else if buffered_records > 0 {
                         // We have some buffered data, but less than `min_batch_size_records` --
@@ -464,26 +469,12 @@ impl InputEndpointDescr {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs.  The label increases
 /// monotonically over time.
-type BatchQueue = SegQueue<(Vec<Box<dyn SerBatch>>, u64)>;
+type BatchQueue = SegQueue<(Vec<Arc<dyn SerBatch>>, u64)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
     /// Endpoint name.
     endpoint_name: String,
-
-    /// Output stream name from the circuit catalog.
-    ///
-    /// Note: we currently assume that each output endpoint is connected to
-    /// exactly one output stream.  This can be generalized to a
-    /// many-to-many relation, e.g., a single endpoint that implements a
-    /// database connection can read from multiple output streams (one per DB
-    /// table). Likewise, there's no reason the same output stream cannot be
-    /// sent to multiple destinations. Like with the rest of this design, we
-    /// keep things simple until we understand real use cases better.
-    stream_name: String,
-
-    /// Handle for the output stream.
-    output_handle: Box<dyn SerOutputBatchHandle>,
 
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
@@ -493,19 +484,69 @@ struct OutputEndpointDescr {
 }
 
 impl OutputEndpointDescr {
-    pub fn new(
-        endpoint_name: &str,
-        stream_name: &str,
-        output_handle: Box<dyn SerOutputBatchHandle>,
-        unparker: Unparker,
-    ) -> Self {
+    pub fn new(endpoint_name: &str, unparker: Unparker) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
-            stream_name: stream_name.to_string(),
-            output_handle,
             queue: Arc::new(SegQueue::new()),
             unparker,
         }
+    }
+}
+
+type StreamEndpointMap =
+    BTreeMap<Cow<'static, str>, (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>)>;
+
+struct OutputEndpoints {
+    by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
+    by_stream: StreamEndpointMap,
+}
+
+impl OutputEndpoints {
+    fn new() -> Self {
+        Self {
+            by_id: BTreeMap::new(),
+            by_stream: BTreeMap::new(),
+        }
+    }
+
+    fn iter_by_stream(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &'_ Cow<'static, str>,
+            &'_ (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>),
+        ),
+    > {
+        self.by_stream.iter()
+    }
+
+    fn lookup_by_id(&self, endpoint_id: &EndpointId) -> Option<&OutputEndpointDescr> {
+        self.by_id.get(endpoint_id)
+    }
+
+    fn lookup_by_name(&self, endpoint_name: &str) -> Option<&OutputEndpointDescr> {
+        self.by_id
+            .values()
+            .find(|ep| ep.endpoint_name == endpoint_name)
+    }
+
+    fn alloc_endpoint_id(&self) -> EndpointId {
+        self.by_id.keys().rev().next().map(|k| k + 1).unwrap_or(0)
+    }
+
+    fn insert(
+        &mut self,
+        endpoint_id: EndpointId,
+        stream: Cow<'static, str>,
+        collection_handle: Box<dyn SerOutputBatchHandle>,
+        endpoint_descr: OutputEndpointDescr,
+    ) {
+        self.by_id.insert(endpoint_id, endpoint_descr);
+        self.by_stream
+            .entry(stream)
+            .or_insert_with(|| (collection_handle, BTreeSet::new()))
+            .1
+            .insert(endpoint_id);
     }
 }
 
@@ -519,7 +560,7 @@ struct ControllerInner {
     dump_profile_request: AtomicBool,
     catalog: Arc<Mutex<Catalog>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
-    outputs: ShardedLock<BTreeMap<EndpointId, OutputEndpointDescr>>,
+    outputs: ShardedLock<OutputEndpoints>,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -543,7 +584,7 @@ impl ControllerInner {
             dump_profile_request,
             catalog: Arc::new(Mutex::new(catalog)),
             inputs: Mutex::new(BTreeMap::new()),
-            outputs: ShardedLock::new(BTreeMap::new()),
+            outputs: ShardedLock::new(OutputEndpoints::new()),
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
@@ -596,7 +637,8 @@ impl ControllerInner {
                 ControllerError::unknown_input_transport(&endpoint_config.transport.name)
             })?;
 
-        let endpoint = transport.new_endpoint(&endpoint_config.transport.config, probe)?;
+        let endpoint =
+            transport.new_endpoint(endpoint_name, &endpoint_config.transport.config, probe)?;
 
         inputs.insert(
             endpoint_id,
@@ -630,17 +672,8 @@ impl ControllerInner {
     ) -> AnyResult<()> {
         let mut outputs = self.outputs.write().unwrap();
 
-        if outputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
+        if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
-        }
-        for ep in outputs.values() {
-            if ep.stream_name == endpoint_config.stream {
-                Err(ControllerError::duplicate_output_stream_consumer(
-                    &ep.stream_name,
-                    &ep.endpoint_name,
-                    endpoint_name,
-                ))?;
-            }
         }
 
         // Create output pipeline, consisting of an encoder, output probe and
@@ -665,11 +698,12 @@ impl ControllerInner {
                 ControllerError::unknown_output_transport(&endpoint_config.transport.name)
             })?;
 
-        let endpoint_id = outputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
+        let endpoint_id = outputs.alloc_endpoint_id();
         let endpoint_name_str = endpoint_name.to_string();
 
         let self_weak = Arc::downgrade(self);
         let endpoint = transport.new_endpoint(
+            endpoint_name,
             &endpoint_config.transport.config,
             Box::new(move |fatal: bool, e: AnyError| {
                 if let Some(controller) = self_weak.upgrade() {
@@ -692,16 +726,16 @@ impl ControllerInner {
         let encoder = format.new_encoder(&endpoint_config.format.config, probe)?;
 
         let parker = Parker::new();
-        let endpoint_state = OutputEndpointDescr::new(
-            endpoint_name,
-            &endpoint_config.stream,
-            collection_handle,
-            parker.unparker().clone(),
-        );
+        let endpoint_state = OutputEndpointDescr::new(endpoint_name, parker.unparker().clone());
         let queue = endpoint_state.queue.clone();
         let controller = self.clone();
 
-        outputs.insert(endpoint_id, endpoint_state);
+        outputs.insert(
+            endpoint_id,
+            endpoint_config.stream.clone(),
+            collection_handle,
+            endpoint_state,
+        );
 
         let endpoint_name_string = endpoint_name.to_string();
         // Thread to run the output pipeline.

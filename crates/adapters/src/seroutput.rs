@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// This is a wrapper around the DBSP `Batch` trait that returns a cursor that
 /// yields `erased_serde::Serialize` trait objects that can be used to serialize
 /// the contents of the batch without knowing its key and value types.
-pub trait SerBatch: Send {
+pub trait SerBatch: Send + Sync {
     /// Number of keys in the batch.
     fn key_count(&self) -> usize;
 
@@ -208,7 +208,7 @@ pub trait SerOutputBatchHandle: Send + Sync {
 
     /// Like [`OutputHandle::take_from_all`], but returns output batches as
     /// [`SerBatch`] trait objects.
-    fn take_from_all(&self) -> Vec<Box<dyn SerBatch>>;
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>>;
 
     /// Like [`OutputHandle::consolidate`], but returns the output batch as a
     /// [`SerBatch`] trait object.
@@ -230,10 +230,10 @@ where
             .map(|batch| Box::new(SerBatchImpl::new(batch)) as Box<dyn SerBatch>)
     }
 
-    fn take_from_all(&self) -> Vec<Box<dyn SerBatch>> {
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>> {
         self.take_from_all()
             .into_iter()
-            .map(|batch| Box::new(SerBatchImpl::new(batch)) as Box<dyn SerBatch>)
+            .map(|batch| Arc::new(SerBatchImpl::new(batch)) as Arc<dyn SerBatch>)
             .collect()
     }
 

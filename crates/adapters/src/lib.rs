@@ -120,7 +120,7 @@ pub mod transport;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;
 
-#[derive(Copy, Clone, PartialEq, Eq, FromPrimitive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive)]
 pub enum PipelineState {
     /// All input endpoints are paused (or are in the process of being paused).
     Paused = 0,
@@ -147,3 +147,6 @@ pub use transport::{
     FileInputTransport, InputConsumer, InputEndpoint, InputTransport, OutputEndpoint,
     OutputTransport,
 };
+
+#[cfg(feature = "server")]
+pub use transport::{HttpInputTransport, HttpOutputTransport};
