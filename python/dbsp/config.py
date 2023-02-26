@@ -68,7 +68,7 @@ class DBSPPipelineConfig:
                     stream = stream,
                     transport = TransportConfig(
                         name = "file",
-                        config = FileInputConfig.from_dict({ 'path': filepath } | file_config_options)),
+                        config = FileInputConfig.from_dict(dict({ 'path': filepath }, **file_config_options))),
                     format_ = format_))
 
     def add_output(self, name: str, output_endpoint_config: OutputEndpointConfig):
@@ -96,7 +96,7 @@ class DBSPPipelineConfig:
                     stream = stream,
                     transport = TransportConfig(
                         name = "file",
-                        config = FileOutputConfig.from_dict({ 'path': filepath } | file_config_options)),
+                        config = FileOutputConfig.from_dict(dict({ 'path': filepath }, **file_config_options))),
                     format_ = format_))
 
     def yaml(self) -> str:
@@ -163,7 +163,7 @@ class DBSPPipelineConfig:
         except TimeoutException as e:
             pipeline.delete()
             raise
-            
+
         pipeline.delete()
 
 class CsvInputFormatConfig(FormatConfig):

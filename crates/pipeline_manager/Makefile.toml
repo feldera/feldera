@@ -15,8 +15,8 @@ pip3 install openapi-python-client
 cd ../../python
 rm -rf dbsp-api-client
 openapi-python-client generate --path ../crates/pipeline_manager/openapi.json
-pip3 install -e dbsp-api-client
-pip3 install -e .
+pip3 install ./dbsp-api-client
+pip3 install .
 '''
 
 [tasks.python_test]
