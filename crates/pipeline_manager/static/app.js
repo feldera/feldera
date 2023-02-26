@@ -482,20 +482,20 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             this.get("projects/" + this.project.project_id, r => this.statusReceived(r));
         }
         statusReceived(response) {
-            response.json().then(s => this.showStatus(s));
+            response.json().then(descr => this.showStatus(descr));
         }
-        showStatus(s) {
+        showStatus(descr) {
             var _a;
-            this.project.version = s.version;
+            this.project.version = descr.version;
             this.refresh();
-            if (typeof s.status === 'string') {
-                this.display.reportError(s.status);
-                if (s.status === 'Compiling') {
+            if (typeof descr.status === 'string') {
+                this.display.reportError(descr.status);
+                if (descr.status === 'Compiling') {
                     (0, errReporter_1.runAfterDelay)(1000, () => this.fetchStatus());
                 }
             }
-            else if (typeof s.status === 'object') {
-                const error = (_a = s.status.SqlError) !== null && _a !== void 0 ? _a : s.status.RustError;
+            else if (typeof descr.status === 'object') {
+                const error = (_a = descr.status.SqlError) !== null && _a !== void 0 ? _a : descr.status.RustError;
                 this.display.reportError("Compilation error:\n" + error);
             }
         }

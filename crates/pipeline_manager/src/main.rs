@@ -150,7 +150,6 @@ observed by the user is outdated, so the request is rejected."
         ProjectStatus,
         ErrorResponse,
         ProjectCodeResponse,
-        ProjectStatusResponse,
         NewProjectRequest,
         NewProjectResponse,
         UpdateProjectRequest,
@@ -502,19 +501,11 @@ async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Response to a project status request.
-#[derive(Serialize, ToSchema)]
-struct ProjectStatusResponse {
-    /// Current project version.
-    version: Version,
-    /// Project compilation status.
-    status: ProjectStatus,
-}
-
-/// Returns current project version and compilation status.
+/// Returns project descriptor, including current project version and
+/// compilation status.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project status retrieved successfully.", body = ProjectStatusResponse),
+        (status = OK, description = "Project status retrieved successfully.", body = ProjectDescr),
         (status = BAD_REQUEST
             , description = "Missing or invalid `project_id` parameter."
             , body = ErrorResponse
@@ -546,10 +537,7 @@ async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl R
         .map(|descr| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&ProjectStatusResponse {
-                    version: descr.version,
-                    status: descr.status,
-                })
+                .json(&descr)
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

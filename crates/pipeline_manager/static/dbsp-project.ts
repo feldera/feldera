@@ -7,7 +7,8 @@ import { IHtmlElement, removeAllChildren } from './ui';
 interface Project {
     name: string,
     project_id: number,
-    version: number
+    version: number,
+    status: CompilationError | string,
 }
 
 interface ProjectCode {
@@ -18,11 +19,6 @@ interface ProjectCode {
 interface CompilationError {
     SqlError: string | null,
     RustError: string | null,
-}
-
-interface ProjectStatus {
-    version: number,
-    status: CompilationError | string,
 }
 
 interface SwitchChild {
@@ -390,19 +386,19 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
     }
 
     statusReceived(response: Response): void {
-        response.json().then(s => this.showStatus(s));
+        response.json().then(descr => this.showStatus(descr));
     }
 
-    showStatus(s: ProjectStatus): void {
-        this.project.version = s.version;
+    showStatus(descr: Project): void {
+        this.project.version = descr.version;
         this.refresh();
-        if (typeof s.status === 'string') {
-            this.display.reportError(s.status);
-            if (s.status === 'Compiling') {
+        if (typeof descr.status === 'string') {
+            this.display.reportError(descr.status);
+            if (descr.status === 'Compiling') {
                 runAfterDelay(1000, () => this.fetchStatus());
             }
-        } else if (typeof s.status === 'object') {
-            const error = s.status.SqlError ?? s.status.RustError;
+        } else if (typeof descr.status === 'object') {
+            const error = descr.status.SqlError ?? descr.status.RustError;
             this.display.reportError("Compilation error:\n" + error);
         }
     }
