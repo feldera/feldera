@@ -14,13 +14,6 @@ pub enum ConfigError {
     /// Output endpoint with this name already exists.
     DuplicateOutputEndpoint { endpoint_name: String },
 
-    /// An output stream cannot be connected to multiple output endpoints.
-    DuplicateOutputStreamConsumer {
-        stream_name: String,
-        endpoint_name1: String,
-        endpoint_name2: String,
-    },
-
     /// Endpoint configuration specifies unknown input format name.
     UnknownInputFormat { format_name: String },
 
@@ -52,13 +45,6 @@ impl Display for ConfigError {
             }
             Self::DuplicateOutputEndpoint { endpoint_name } => {
                 write!(f, "output endpoint '{endpoint_name}' already exists")
-            }
-            Self::DuplicateOutputStreamConsumer {
-                stream_name,
-                endpoint_name1,
-                endpoint_name2,
-            } => {
-                write!(f, "output stream '{stream_name}' is connected to multiple output endpoints: '{endpoint_name1}' and '{endpoint_name2}'")
             }
             Self::UnknownOutputFormat { format_name } => {
                 write!(f, "unknown output format '{format_name}'")
@@ -95,18 +81,6 @@ impl ConfigError {
     pub fn duplicate_output_endpoint(endpoint_name: &str) -> Self {
         Self::DuplicateOutputEndpoint {
             endpoint_name: endpoint_name.to_owned(),
-        }
-    }
-
-    pub fn duplicate_output_stream_consumer(
-        stream_name: &str,
-        endpoint_name1: &str,
-        endpoint_name2: &str,
-    ) -> Self {
-        Self::DuplicateOutputStreamConsumer {
-            stream_name: stream_name.to_owned(),
-            endpoint_name1: endpoint_name1.to_owned(),
-            endpoint_name2: endpoint_name2.to_owned(),
         }
     }
 
@@ -250,20 +224,6 @@ impl ControllerError {
     pub fn duplicate_output_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::duplicate_output_endpoint(endpoint_name),
-        }
-    }
-
-    pub fn duplicate_output_stream_consumer(
-        stream_name: &str,
-        endpoint_name1: &str,
-        endpoint_name2: &str,
-    ) -> Self {
-        Self::Config {
-            config_error: ConfigError::duplicate_output_stream_consumer(
-                stream_name,
-                endpoint_name1,
-                endpoint_name2,
-            ),
         }
     }
 

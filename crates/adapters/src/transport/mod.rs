@@ -6,10 +6,16 @@ use std::collections::BTreeMap;
 
 mod file;
 
+#[cfg(feature = "server")]
+mod http;
+
 #[cfg(feature = "with-kafka")]
 mod kafka;
 
 pub use file::{FileInputConfig, FileInputTransport, FileOutputConfig, FileOutputTransport};
+
+#[cfg(feature = "server")]
+pub use http::{HttpInputTransport, HttpOutputTransport};
 
 #[cfg(feature = "with-kafka")]
 pub use kafka::{
@@ -25,6 +31,11 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
             "file",
             Box::new(FileInputTransport) as Box<dyn InputTransport>,
         ),
+        #[cfg(feature = "server")]
+        (
+            "http",
+            Box::new(HttpInputTransport) as Box<dyn InputTransport>,
+        ),
         #[cfg(feature = "with-kafka")]
         (
             "kafka",
@@ -39,6 +50,11 @@ static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> 
         (
             "file",
             Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
+        ),
+        #[cfg(feature = "server")]
+        (
+            "http",
+            Box::new(HttpOutputTransport) as Box<dyn OutputTransport>,
         ),
         #[cfg(feature = "with-kafka")]
         (
@@ -64,6 +80,8 @@ pub trait InputTransport: Send + Sync {
     ///
     /// # Arguments
     ///
+    /// * `name` - unique input endpoint name.
+    ///
     /// * `config` - Transport-specific configuration.
     ///
     /// * `consumer` - Input consumer that will receive data from the endpoint.
@@ -75,6 +93,7 @@ pub trait InputTransport: Send + Sync {
     /// connection).
     fn new_endpoint(
         &self,
+        name: &str,
         config: &YamlValue,
         consumer: Box<dyn InputConsumer>,
     ) -> AnyResult<Box<dyn InputEndpoint>>;
@@ -153,7 +172,10 @@ pub trait OutputTransport: Send + Sync {
     ///
     /// # Arguments
     ///
+    /// * `name` - unique input endpoint name.
+    ///
     /// * `config` - Transport-specific configuration.
+    ///
     /// * `async_error_callback` - the endpoint must invoke this callback to
     ///   notify the client about asynchronous errors, i.e., errors that happen
     ///   outside the context of the [`OutputEndpoint::push_buffer`] method. For
@@ -171,6 +193,7 @@ pub trait OutputTransport: Send + Sync {
     /// connection).
     fn new_endpoint(
         &self,
+        name: &str,
         config: &YamlValue,
         async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>>;

@@ -2,7 +2,7 @@ use crate::{DeCollectionHandle, SerBatch};
 use anyhow::Result as AnyResult;
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 mod csv;
 
@@ -119,7 +119,7 @@ impl dyn OutputFormat {
 }
 
 pub trait Encoder: Send {
-    fn encode(&mut self, batches: &[Box<dyn SerBatch>]) -> AnyResult<()>;
+    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()>;
 }
 
 pub trait OutputConsumer: Send {

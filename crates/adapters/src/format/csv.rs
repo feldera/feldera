@@ -10,7 +10,7 @@ use csv::{
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, io::Read, mem::take};
+use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
 /// CSV format parser.
@@ -211,7 +211,7 @@ impl CsvEncoder {
 }
 
 impl Encoder for CsvEncoder {
-    fn encode(&mut self, batches: &[Box<dyn SerBatch>]) -> AnyResult<()> {
+    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
         let buffer = take(&mut self.buffer);
         let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;

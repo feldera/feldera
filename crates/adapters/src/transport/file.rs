@@ -30,6 +30,7 @@ impl InputTransport for FileInputTransport {
 
     fn new_endpoint(
         &self,
+        _name: &str,
         config: &YamlValue,
         consumer: Box<dyn InputConsumer>,
     ) -> AnyResult<Box<dyn InputEndpoint>> {
@@ -185,6 +186,7 @@ impl OutputTransport for FileOutputTransport {
 
     fn new_endpoint(
         &self,
+        _name: &str,
         config: &YamlValue,
         _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {

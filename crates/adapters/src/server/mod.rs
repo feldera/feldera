@@ -1,11 +1,13 @@
-use crate::{Catalog, Controller, ControllerError, PipelineConfig};
+use crate::{
+    Catalog, Controller, ControllerError, HttpInputTransport, HttpOutputTransport, PipelineConfig,
+};
 use actix_web::{
     dev::{Server, ServiceFactory, ServiceRequest},
     get,
     middleware::Logger,
     rt, web,
     web::Data as WebData,
-    App, Error as ActixError, HttpResponse, HttpServer, Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
@@ -237,6 +239,8 @@ where
         .service(metrics)
         .service(metadata)
         .service(dump_profile)
+        .service(input_endpoint)
+        .service(output_endpoint)
         .service(kill)
 }
 
@@ -340,26 +344,65 @@ async fn kill(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
 }
 
+#[get("/input_endpoint/{endpoint_name}")]
+async fn input_endpoint(req: HttpRequest, stream: web::Payload) -> impl Responder {
+    match req.match_info().get("endpoint_name") {
+        None => HttpResponse::BadRequest().body("Missing endpoint name argument"),
+        Some(endpoint_name) => {
+            HttpInputTransport::get_endpoint_websocket(endpoint_name, &req, stream).unwrap_or_else(
+                |e| {
+                    HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
+                        "Failed to establish connection to input HTTP endpoint: {e}"
+                    )))
+                },
+            )
+        }
+    }
+}
+
+#[get("/output_endpoint/{endpoint_name}")]
+async fn output_endpoint(req: HttpRequest, stream: web::Payload) -> impl Responder {
+    match req.match_info().get("endpoint_name") {
+        None => HttpResponse::BadRequest().body("Missing endpoint name argument"),
+        Some(endpoint_name) => {
+            HttpOutputTransport::get_endpoint_websocket(endpoint_name, &req, stream).unwrap_or_else(
+                |e| {
+                    HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
+                        "Failed to establish connection to output HTTP endpoint: {e}"
+                    )))
+                },
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
+#[cfg(feature = "server")]
 mod test_with_kafka {
     use super::{build_app, PrometheusMetrics, ServerState};
     use crate::{
         test::{
             generate_test_batches,
             kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit, wait, TEST_LOGGER,
+            test_circuit, wait,
+            websocket::{TestWsReceiver, TestWsSender},
+            TEST_LOGGER,
         },
         Controller, ControllerError, PipelineConfig,
     };
+    use actix_http::ws::{Frame as WsFrame, Message as WsMessage};
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
+    use bytes::Bytes;
+    use bytestring::ByteString;
     use crossbeam::queue::SegQueue;
+    use futures::{SinkExt, StreamExt};
     use log::{error, LevelFilter};
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use std::{sync::Arc, thread::sleep, time::Duration};
+    use std::{pin::Pin, sync::Arc, thread::sleep, time::Duration};
 
     #[actix_web::test]
     async fn test_server() {
@@ -401,8 +444,6 @@ inputs:
         stream: test_input1
         transport:
             name: http
-            config:
-                name: test_input1
         format:
             name: csv
 outputs:
@@ -414,6 +455,12 @@ outputs:
                 bootstrap.servers: "localhost"
                 topic: test_server_output_topic
                 max_inflight_messages: 0
+        format:
+            name: csv
+    test_output_http:
+        stream: test_output1
+        transport:
+            name: http
         format:
             name: csv
 "#;
@@ -447,7 +494,7 @@ outputs:
             "metadata".to_string(),
             None,
         ));
-        let server =
+        let mut server =
             actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
 
         // Write data to Kafka.
@@ -495,6 +542,97 @@ outputs:
         println!("Testing invalid input");
         producer.send_string("invalid\n", "test_server_input_topic");
         wait(|| errors.len() == 1, None);
+
+        println!("Connecting to HTTP input endpoint");
+        let mut ws1 = server
+            .ws_at("/input_endpoint/test_input_http")
+            .await
+            .unwrap();
+        ws1.send(WsMessage::Text(ByteString::from_static("state")))
+            .await
+            .unwrap();
+        assert_eq!(
+            ws1.next().await.unwrap().unwrap(),
+            WsFrame::Text(Bytes::from("running"))
+        );
+
+        let mut ws2 = server
+            .ws_at("/input_endpoint/test_input_http")
+            .await
+            .unwrap();
+        ws2.send(WsMessage::Text(ByteString::from_static("state")))
+            .await
+            .unwrap();
+        assert_eq!(
+            ws2.next().await.unwrap().unwrap(),
+            WsFrame::Text(Bytes::from("running"))
+        );
+
+        println!("Connecting to HTTP output endpoint");
+        let mut outws1 = server
+            .ws_at("/output_endpoint/test_output_http")
+            .await
+            .unwrap();
+        outws1
+            .send(WsMessage::Ping(Bytes::from("ping")))
+            .await
+            .unwrap();
+        assert_eq!(
+            outws1.next().await.unwrap().unwrap(),
+            WsFrame::Pong(Bytes::from("ping"))
+        );
+
+        let mut outws2 = server
+            .ws_at("/output_endpoint/test_output_http")
+            .await
+            .unwrap();
+        outws2
+            .send(WsMessage::Ping(Bytes::from("ping")))
+            .await
+            .unwrap();
+        assert_eq!(
+            outws2.next().await.unwrap().unwrap(),
+            WsFrame::Pong(Bytes::from("ping"))
+        );
+
+        println!("Websocket test: whole messages");
+        TestWsSender::send_to_websocket(Pin::new(&mut ws1), &data).await;
+
+        buffer_consumer.wait_for_output_unordered(&data);
+        buffer_consumer.clear();
+
+        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws1), &data).await;
+        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws2), &data).await;
+
+        TestWsSender::send_to_websocket(Pin::new(&mut ws2), &data).await;
+
+        buffer_consumer.wait_for_output_unordered(&data);
+        buffer_consumer.clear();
+
+        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws1), &data).await;
+        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws2), &data).await;
+
+        println!("Websocket test: continuations");
+        TestWsSender::send_to_websocket_continuations(Pin::new(&mut ws1), &data).await;
+
+        buffer_consumer.wait_for_output_unordered(&data);
+        buffer_consumer.clear();
+
+        TestWsSender::send_to_websocket_continuations(Pin::new(&mut ws2), &data).await;
+
+        buffer_consumer.wait_for_output_unordered(&data);
+        buffer_consumer.clear();
+
+        println!("/pause");
+        let resp = server.get("/pause").send().await.unwrap();
+        assert!(resp.status().is_success());
+        sleep(Duration::from_millis(1000));
+
+        // Make sure the websocket gets status update.
+        assert_eq!(
+            ws1.next().await.unwrap().unwrap(),
+            WsFrame::Text(Bytes::from("paused"))
+        );
 
         // Shutdown
         println!("/shutdown");

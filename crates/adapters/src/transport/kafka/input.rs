@@ -47,6 +47,7 @@ impl InputTransport for KafkaInputTransport {
 
     fn new_endpoint(
         &self,
+        _name: &str,
         config: &YamlValue,
         consumer: Box<dyn InputConsumer>,
     ) -> AnyResult<Box<dyn InputEndpoint>> {
