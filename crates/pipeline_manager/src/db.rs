@@ -402,6 +402,34 @@ CREATE TABLE IF NOT EXISTS pipeline (
         }
     }
 
+    /// Lookup project by name
+    pub(crate) fn lookup_project(&self, project_name: &str) -> AnyResult<Option<ProjectDescr>> {
+        let mut statement = self.dbclient.prepare(
+            "SELECT id, description, version, status, error FROM project WHERE name = $1",
+        )?;
+        let mut rows = statement.query([project_name])?;
+
+        if let Some(row) = rows.next()? {
+            let project_id: ProjectId = ProjectId(row.get(0)?);
+            let description: String = row.get(1)?;
+            let version: Version = Version(row.get(2)?);
+            let status: Option<String> = row.get(3)?;
+            let error: Option<String> = row.get(4)?;
+
+            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+
+            Ok(Some(ProjectDescr {
+                project_id,
+                name: project_name.to_string(),
+                description,
+                version,
+                status,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Retrieve project descriptor.
     ///
     /// Returns a `DBError:UnknownProject` error if `project_id` is not found in
