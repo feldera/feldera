@@ -115,7 +115,7 @@ def main():
     dbsp = DBSPConnection()
     print("Connection established")
 
-    project = dbsp.new_project(name = "foo", sql_code = sql_code)
+    project = dbsp.create_or_replace_project(name = "foo", sql_code = sql_code)
     print("Project created")
 
     status = project.status()

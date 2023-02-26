@@ -79,7 +79,7 @@ use runner::{Runner, RunnerError};
 
 # API concepts
 
-* *Project*.  A project is a SQL script with a non-unique name and a unique ID
+* *Project*.  A project is a SQL script with a unique name and a unique ID
   attached to it.  The client can add, remove, modify, and compile projects.
   Compilation includes running the SQL-to-DBSP compiler followed by the Rust
   compiler.
@@ -560,6 +560,9 @@ struct NewProjectRequest {
     /// Project name.
     #[schema(example = "Example project")]
     name: String,
+    /// Overwrite existing project with the same name, if any.
+    #[serde(default)]
+    overwrite_existing: bool,
     /// Project description.
     #[schema(example = "Example description")]
     description: String,
@@ -580,10 +583,18 @@ struct NewProjectResponse {
 }
 
 /// Create a new project.
+///
+/// If the `overwrite_existing` flag is set in the request and a project with
+/// the same name already exists, all pipelines associated with that project and
+/// the project itself will be deleted.
 #[utoipa::path(
     request_body = NewProjectRequest,
     responses(
         (status = CREATED, description = "Project created successfully", body = NewProjectResponse),
+        (status = CONFLICT
+            , description = "A project with this name already exists in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Duplicate project name 'p'."))),
     ),
     tag = "Project"
 )]
@@ -592,6 +603,22 @@ async fn new_project(
     state: WebData<ServerState>,
     request: web::Json<NewProjectRequest>,
 ) -> impl Responder {
+    do_new_project(state, request)
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+async fn do_new_project(
+    state: WebData<ServerState>,
+    request: web::Json<NewProjectRequest>,
+) -> AnyResult<HttpResponse> {
+    if request.overwrite_existing {
+        let descr = state.db.lock().await.lookup_project(&request.name)?;
+        if let Some(project_descr) = descr {
+            do_delete_project(state.clone(), project_descr.project_id).await?;
+        }
+    }
+
     state
         .db
         .lock()
@@ -605,7 +632,6 @@ async fn new_project(
                     version,
                 })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Update project request.
@@ -622,7 +648,7 @@ struct UpdateProjectRequest {
     code: Option<String>,
 }
 
-/// Response to an project update request.
+/// Response to a project update request.
 #[derive(Serialize, ToSchema)]
 struct UpdateProjectResponse {
     /// New project version.  Equals the previous version if project code
@@ -759,6 +785,8 @@ async fn cancel_project(
 }
 
 /// Delete a project.
+///
+/// Deletes all pipelines and configs associated with the project.
 #[utoipa::path(
     responses(
         (status = OK, description = "Project successfully deleted."),
@@ -766,10 +794,6 @@ async fn cancel_project(
             , description = "Specified `project_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown project id '42'"))),
-        (status = BAD_REQUEST
-            , description = "The project has one or more running pipelines."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Cannot delete a project while some of its pipelines are running"))),
     ),
     params(
         ("project_id" = i64, Path, description = "Unique project identifier")
@@ -785,21 +809,23 @@ async fn delete_project(state: WebData<ServerState>, req: HttpRequest) -> impl R
         Ok(project_id) => project_id,
     };
 
+    do_delete_project(state, project_id)
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+async fn do_delete_project(
+    state: WebData<ServerState>,
+    project_id: ProjectId,
+) -> AnyResult<HttpResponse> {
     let db = state.db.lock().await;
 
-    match db.list_project_pipelines(project_id) {
-        Ok(pipelines) => {
-            if pipelines.iter().any(|pipeline| !pipeline.killed) {
-                return HttpResponse::BadRequest()
-                    .body("Cannot delete a project while some of its pipelines are running.");
-            }
-        }
-        Err(e) => return http_resp_from_error(&e),
+    for pipeline in db.list_project_pipelines(project_id)?.iter() {
+        state.runner.delete_pipeline(pipeline.pipeline_id).await?;
     }
 
     db.delete_project(project_id)
         .map(|_| HttpResponse::Ok().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Request to create a new project configuration.

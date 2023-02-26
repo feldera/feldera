@@ -19,12 +19,13 @@ class DBSPConnection:
 
         list_projects.sync_detailed(client = self.api_client).unwrap("Failed to fetch project list from the DBSP server")
 
-    def new_project(self, *, name: str = "<noname>", sql_code: str) -> DBSPProject:
+    def create_project(self, *, name: str, sql_code: str, description: str = '') -> DBSPProject:
         """Create a new project.
 
         Args:
             name (str): Project name
             sql_code (str): SQL code for the project
+            description (str): Project description
 
         Raises:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
@@ -34,7 +35,31 @@ class DBSPConnection:
             DBSPProject
         """
 
-        request = NewProjectRequest(code=sql_code, name=name, description='')
+        return self.create_project_inner(name = name, sql_code = sql_code, description = description, replace = False)
+
+    def create_or_replace_project(self, *, name: str, sql_code: str, description: str = '') -> DBSPProject:
+        """Create a new project overwriting existing project with the same name, if any.
+
+        If a project with the same name already exists, all pipelines associated
+        with that project and the project itself will be deleted.
+
+        Args:
+            name (str): Project name
+            sql_code (str): SQL code for the project
+            description (str): Project description
+
+        Raises:
+            httpx.TimeoutException: If the request takes longer than Client.timeout.
+            dbsp.DBSPServerError: If the DBSP server returns an error.
+
+        Returns:
+            DBSPProject
+        """
+
+        return self.create_project_inner(name = name, sql_code = sql_code, description = description, replace = True)
+
+    def create_project_inner(self, *, name: str, sql_code: str, description: str, replace: bool):
+        request = NewProjectRequest(name=name, overwrite_existing = replace, code=sql_code, description='')
 
         new_project_response = new_project.sync_detailed(client = self.api_client, json_body=request).unwrap("Failed to create a project")
 
