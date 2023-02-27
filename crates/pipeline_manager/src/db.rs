@@ -352,7 +352,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                 version = version.increment();
                 self.dbclient
                     .execute(
-                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL WHERE id = $4",
+                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL WHERE id = $5",
                         (&version.0, &project_name, &project_description, code, &project_id.0),
                     ).map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
