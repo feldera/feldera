@@ -68,7 +68,7 @@ mod runner;
 
 pub(crate) use compiler::{Compiler, ProjectStatus};
 pub(crate) use config::ManagerConfig;
-use db::{ConfigId, DBError, PipelineId, ProjectDB, ProjectId, Version};
+use db::{ConfigId, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, Version};
 use runner::{Runner, RunnerError};
 
 #[derive(OpenApi)]
@@ -455,16 +455,16 @@ async fn list_projects(state: WebData<ServerState>) -> impl Responder {
 /// Response to a project code request.
 #[derive(Serialize, ToSchema)]
 struct ProjectCodeResponse {
-    /// Current project version.
-    version: Version,
+    /// Current project meta-data.
+    project: ProjectDescr,
     /// Project code.
     code: String,
 }
 
-/// Returns the latest SQL source code of the project.
+/// Returns the latest SQL source code of the project along with its meta-data.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project code retrieved successfully.", body = ProjectCodeResponse),
+        (status = OK, description = "Project data and code retrieved successfully.", body = ProjectCodeResponse),
         (status = BAD_REQUEST
             , description = "Missing or invalid `project_id` parameter."
             , body = ErrorResponse
@@ -493,10 +493,10 @@ async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .lock()
         .await
         .project_code(project_id)
-        .map(|(version, code)| {
+        .map(|(project, code)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&ProjectCodeResponse { version, code })
+                .json(&ProjectCodeResponse { project, code })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
