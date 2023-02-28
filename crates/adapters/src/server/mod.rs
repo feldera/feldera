@@ -352,7 +352,7 @@ mod test_with_kafka {
         },
         Controller, ControllerError, PipelineConfig,
     };
-    use actix_web::{http::StatusCode, middleware::Logger, test, web::Data as WebData, App};
+    use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
     use crossbeam::queue::SegQueue;
     use log::{error, LevelFilter};
     use proptest::{
@@ -397,6 +397,14 @@ inputs:
                 log_level: debug
         format:
             name: csv
+    test_input_http:
+        stream: test_input1
+        transport:
+            name: http
+            config:
+                name: test_input1
+        format:
+            name: csv
 outputs:
     test_output2:
         stream: test_output1
@@ -439,8 +447,8 @@ outputs:
             "metadata".to_string(),
             None,
         ));
-        let app =
-            test::init_service(build_app(App::new().wrap(Logger::default()), state.clone())).await;
+        let server =
+            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
 
         // Write data to Kafka.
         println!("Send test data");
@@ -452,27 +460,23 @@ outputs:
 
         // Start command; wait for data.
         println!("/start");
-        let req = test::TestRequest::get().uri("/start").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/start").send().await.unwrap();
         assert!(resp.status().is_success());
 
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
 
         println!("/status");
-        let req = test::TestRequest::get().uri("/status").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/status").send().await.unwrap();
         assert!(resp.status().is_success());
 
         println!("/metadata");
-        let req = test::TestRequest::get().uri("/metadata").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/metadata").send().await.unwrap();
         assert!(resp.status().is_success());
 
         // Pause command; send more data, receive none.
         println!("/pause");
-        let req = test::TestRequest::get().uri("/pause").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/pause").send().await.unwrap();
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
 
@@ -482,8 +486,7 @@ outputs:
 
         // Start; wait for data
         println!("/start");
-        let req = test::TestRequest::get().uri("/start").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/start").send().await.unwrap();
         assert!(resp.status().is_success());
 
         buffer_consumer.wait_for_output_unordered(&data);
@@ -495,15 +498,13 @@ outputs:
 
         // Shutdown
         println!("/shutdown");
-        let req = test::TestRequest::get().uri("/shutdown").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/shutdown").send().await.unwrap();
         // println!("Response: {resp:?}");
         assert!(resp.status().is_success());
 
         // Start after shutdown must fail.
         println!("/start");
-        let req = test::TestRequest::get().uri("/start").to_request();
-        let resp = test::call_service(&app, req).await;
+        let resp = server.get("/start").send().await.unwrap();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
 
         drop(buffer_consumer);
