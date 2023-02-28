@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-
-use petgraph::prelude::DiGraphMap;
-
 use crate::{
     codegen::VTable,
-    ir::{NodeId, StreamKind},
+    ir::{NodeId, StreamKind, StreamLayout},
 };
+use petgraph::prelude::DiGraphMap;
+use std::collections::BTreeMap;
 
 // FIXME: Ideally each node would carry a handle to the jit runtime so that we
 // could ensure we don't deallocate anything important until the dataflow is
@@ -14,7 +12,6 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum DataflowNode {
     Map(Map),
-    MapIndex(MapIndex),
     Filter(Filter),
     FilterMap(FilterMap),
     FilterMapIndex(FilterMapIndex),
@@ -130,36 +127,36 @@ pub struct IndexWith {
 #[derive(Debug, Clone)]
 pub struct Map {
     pub input: NodeId,
-    pub map_fn: unsafe extern "C" fn(*const u8, *mut u8),
+    pub map_fn: MapFn,
+    // TODO: Debug checks against input layout
+    // pub input_layout: StreamLayout,
     pub output_vtable: &'static VTable,
 }
 
-#[derive(Debug, Clone)]
-pub struct MapIndex {
-    pub input: NodeId,
-    pub map_fn: unsafe extern "C" fn(*const u8, *const u8, *mut u8),
-    pub output_vtable: &'static VTable,
+#[derive(Debug, Clone, Copy)]
+pub enum MapFn {
+    Set(unsafe extern "C" fn(*const u8, *mut u8)),
+    Map(unsafe extern "C" fn(*const u8, *const u8, *mut u8)),
 }
 
 // TODO: Maybe just enum the filter function?
 #[derive(Debug, Clone)]
-pub enum Filter {
-    Set {
-        input: NodeId,
-        filter_fn: unsafe extern "C" fn(*const u8) -> bool,
-    },
-    Map {
-        input: NodeId,
-        filter_fn: unsafe extern "C" fn(*const u8, *const u8) -> bool,
-    },
+pub struct Filter {
+    pub input: NodeId,
+    pub filter_fn: FilterFn,
+    pub layout: StreamLayout,
 }
 
 impl Filter {
     pub const fn input(&self) -> NodeId {
-        match *self {
-            Self::Set { input, .. } | Self::Map { input, .. } => input,
-        }
+        self.input
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FilterFn {
+    Set(unsafe extern "C" fn(*const u8) -> bool),
+    Map(unsafe extern "C" fn(*const u8, *const u8) -> bool),
 }
 
 #[derive(Debug, Clone)]

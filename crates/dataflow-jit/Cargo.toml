@@ -21,6 +21,7 @@ petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 
 # FIXME: Better serialization protocol
+serde_with = "2.2.0"
 serde_json = "1.0.92"
 serde = { version = "1.0.152", features = ["derive"] }
 

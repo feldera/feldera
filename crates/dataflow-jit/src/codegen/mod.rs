@@ -925,7 +925,8 @@ impl<'a> CodegenCtx<'a> {
         self.assert_ptr_aligned(ptr, align, builder);
     }
 
-    /// Traps if the given pointer is null or not aligned to `align` when debug assertions are enabled
+    /// Traps if the given pointer is null or not aligned to `align` when debug
+    /// assertions are enabled
     fn debug_assert_ptr_valid(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
         if self.debug_assertions() {
             self.assert_ptr_valid(ptr, align, builder);
@@ -966,7 +967,8 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
-    /// Traps if the given boolean value is not `true` or `false` when debug assertions are enabled
+    /// Traps if the given boolean value is not `true` or `false` when debug
+    /// assertions are enabled
     fn debug_assert_bool_is_valid(&self, boolean: Value, builder: &mut FunctionBuilder<'_>) {
         if self.debug_assertions() {
             self.assert_bool_is_valid(boolean, builder);
@@ -1159,9 +1161,10 @@ impl<'a> CodegenCtx<'a> {
             // Note that we don't check if `bitset` is equal to `1` since all bits other
             // than the last are considered padding bits and have unspecified values
             // TODO: This could still be potentially problematic if the target bit is 0
-            // but the rest are for some reason non-zero. Do we need to (internally) constrain
-            // padding bits to being zeroed? If so, how do we determine that we're the first
-            // writer to a given bitset in the case of multi-tenant bitsets?
+            // but the rest are for some reason non-zero. Do we need to (internally)
+            // constrain padding bits to being zeroed? If so, how do we
+            // determine that we're the first writer to a given bitset in the
+            // case of multi-tenant bitsets?
             builder.ins().icmp_imm(IntCC::NotEqual, bitset, 0)
 
         // If there's more than one occupant of the bitset
@@ -1372,7 +1375,8 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // // Fill the stack slot with whatever our nullish sigil is
-            // self.emit_small_memset(addr, 0b1111_1111, null.layout(), builder);
+            // self.emit_small_memset(addr, 0b1111_1111, null.layout(),
+            // builder);
         }
     }
 

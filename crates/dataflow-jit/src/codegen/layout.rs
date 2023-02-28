@@ -644,13 +644,13 @@ mod algorithm {
     // TODO: Strings can use zero as their null value, this requires actual
     //       null-checking abstractions for writing code with though
     // TODO: Ideally we'd spread the bitsets around to try and get as many in their
-    //       own bytes as possible, e.g. if we have a 4 padding bytes and 4 null flags
-    //       then each flag should have its own byte, even if the padding bytes take
-    //       the form of a u32 or two u16s
+    //       own bytes as possible, e.g. if we have a 4 padding bytes and 4 null
+    // flags       then each flag should have its own byte, even if the padding
+    // bytes take       the form of a u32 or two u16s
     // TODO: We could also incorporate heuristics into this to try and determine
     //       the most-accessed null flags and then prioritize putting them in their
-    //       own unique bytes to maximize the happy path of just loading a byte instead
-    //       of dealing with bitset munging
+    //       own unique bytes to maximize the happy path of just loading a byte
+    // instead       of dealing with bitset munging
     pub(super) fn compute_native_layout(layout: &RowLayout, config: &LayoutConfig) -> NativeLayout {
         // Ensure that the given layout has less than u32::MAX fields
         debug_assert!(

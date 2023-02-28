@@ -1,6 +1,6 @@
 use crate::ir::{
     function::Function, layout_cache::RowLayoutCache, types::Signature, DataflowNode, LayoutId,
-    NodeId, Stream, StreamKind,
+    NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
 
@@ -64,33 +64,37 @@ impl DataflowNode for JoinCore {
         inputs.extend([self.lhs, self.rhs]);
     }
 
-    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
         Some(self.output_kind)
     }
 
-    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(match self.output_kind {
-            StreamKind::Set => Stream::Set(self.key_layout),
-            StreamKind::Map => Stream::Map(self.key_layout, self.value_layout),
+            StreamKind::Set => StreamLayout::Set(self.key_layout),
+            StreamKind::Map => StreamLayout::Map(self.key_layout, self.value_layout),
         })
     }
 
-    fn signature(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) -> Signature {
+    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[Stream], layout_cache: &RowLayoutCache) {
+    fn validate(&self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
         if self.output_kind.is_set() {
             assert_eq!(self.value_layout, layout_cache.unit());
         }
     }
 
-    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
         self.join_fn.optimize(layout_cache);
     }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         functions.push(&self.join_fn);
+    }
+
+    fn functions_mut<'a>(&'a mut self, functions: &mut Vec<&'a mut Function>) {
+        functions.push(&mut self.join_fn);
     }
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
@@ -139,26 +143,30 @@ impl DataflowNode for MonotonicJoin {
         inputs.extend([self.lhs, self.rhs]);
     }
 
-    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
         Some(StreamKind::Set)
     }
 
-    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
-        Some(Stream::Set(self.key_layout))
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(StreamLayout::Set(self.key_layout))
     }
 
-    fn signature(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) -> Signature {
+    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[Stream], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
         self.join_fn.optimize(layout_cache);
     }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         functions.push(&self.join_fn);
+    }
+
+    fn functions_mut<'a>(&'a mut self, functions: &mut Vec<&'a mut Function>) {
+        functions.push(&mut self.join_fn);
     }
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {

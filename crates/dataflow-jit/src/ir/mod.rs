@@ -22,10 +22,10 @@ pub use layout_cache::RowLayoutCache;
 pub use nodes::{
     DataflowNode, DelayedFeedback, Delta0, Differentiate, Distinct, Export, ExportedNode, Filter,
     IndexWith, JoinCore, Map, Min, Minus, MonotonicJoin, Neg, Node, Sink, Source, SourceMap,
-    Stream, StreamKind, Subgraph, Sum,
+    StreamKind, StreamLayout, Subgraph, Sum,
 };
 pub use terminator::{Branch, Jump, Return, Terminator};
 pub use types::{ColumnType, RowLayout, RowLayoutBuilder, Signature};
 pub use validate::Validator;
 
-pub(crate) use ids::{BlockIdGen, ExprIdGen, LayoutIdGen, NodeIdGen};
+pub(crate) use ids::{BlockIdGen, ExprIdGen, NodeIdGen};
