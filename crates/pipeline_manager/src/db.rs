@@ -272,18 +272,37 @@ CREATE TABLE IF NOT EXISTS pipeline (
         Ok(result)
     }
 
-    /// Retrieve code of the specified project.
-    pub(crate) fn project_code(&self, project_id: ProjectId) -> AnyResult<(Version, String)> {
-        let (version, code) = self
-            .dbclient
-            .query_row(
-                "SELECT version, code FROM project WHERE id = $1",
-                [&project_id.0],
-                |row| Ok((Version(row.get(0)?), row.get(1)?)),
-            )
-            .map_err(|_| DBError::UnknownProject(project_id))?;
+    /// Retrieve code of the specified project along with the project's
+    /// meta-data.
+    pub(crate) fn project_code(&self, project_id: ProjectId) -> AnyResult<(ProjectDescr, String)> {
+        let mut statement = self.dbclient.prepare(
+            "SELECT name, description, version, status, error, code FROM project WHERE id = $1",
+        )?;
+        let mut rows = statement.query([&project_id.0])?;
 
-        Ok((version, code))
+        if let Some(row) = rows.next()? {
+            let name: String = row.get(0)?;
+            let description: String = row.get(1)?;
+            let version: Version = Version(row.get(2)?);
+            let status: Option<String> = row.get(3)?;
+            let error: Option<String> = row.get(4)?;
+            let code: String = row.get(5)?;
+
+            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+
+            Ok((
+                ProjectDescr {
+                    project_id,
+                    name,
+                    description,
+                    version,
+                    status,
+                },
+                code,
+            ))
+        } else {
+            Err(DBError::UnknownProject(project_id).into())
+        }
     }
 
     /// Helper to convert rusqlite error into a `DBError::DuplicateProjectName`
