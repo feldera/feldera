@@ -4,8 +4,10 @@ use crate::{
     codegen::{CodegenConfig, NativeLayout},
     dataflow::CompiledDataflow,
     ir::{
-        ColumnType, Constant, FunctionBuilder, Graph, GraphExt, LayoutId, NodeId, RowLayout,
-        RowLayoutBuilder, Validator,
+        graph::{GraphContext, Subgraph},
+        ColumnType, Constant, DataflowNode, Function, FunctionBuilder, Graph, GraphExt, LayoutId,
+        Node, NodeId, NodeIdGen, RowLayout, RowLayoutBuilder, RowLayoutCache, Terminator,
+        Validator,
     },
     row::{Row, UninitRow},
 };
@@ -13,14 +15,159 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     Runtime,
 };
+use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    cmp::max,
+    collections::{BTreeMap, HashMap},
+    mem::{take, ManuallyDrop},
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SqlGraph {
     #[serde(flatten)]
     graph: Graph,
     layouts: BTreeMap<LayoutId, RowLayout>,
+}
+
+impl SqlGraph {
+    // TODO: Make sure all referenced nodes/layouts/blocks/expressions exist (verify the generated graph)
+    pub fn rematerialize(self) -> Graph {
+        let Self { mut graph, layouts } = self;
+
+        // FIXME: This doesn't ensure that layout ids are continuous
+        let layout_cache = RowLayoutCache::from_layouts(layouts.into_values().collect());
+
+        // Find the highest node id and create a generator to pick up where it left off
+        let highest_node_id = Self::collect_highest_id(graph.graph());
+        let node_id_generator = highest_node_id
+            .map(NodeIdGen::after_id)
+            .unwrap_or_else(NodeIdGen::new);
+
+        let context = GraphContext::from_parts(layout_cache, node_id_generator);
+
+        let (mut inputs, mut functions) = (Vec::with_capacity(8), Vec::with_capacity(8));
+        Self::rebuild_subgraph(graph.graph_mut(), context, &mut inputs, &mut functions);
+
+        graph
+    }
+
+    // Collect the highest id assigned to any node within the graph
+    // TODO: If recursion becomes an issue we can either rewrite this in a
+    // non-recursive form or use stacker
+    fn collect_highest_id(graph: &Subgraph) -> Option<NodeId> {
+        let mut highest = graph.nodes().last_key_value().map(|(&node_id, _)| node_id);
+
+        for node in graph.nodes().values() {
+            if let Node::Subgraph(subgraph) = node {
+                if let Some(subgraph_highest) = Self::collect_highest_id(subgraph.subgraph()) {
+                    if let Some(highest) = highest.as_mut() {
+                        *highest = max(*highest, subgraph_highest);
+                    } else {
+                        highest = Some(subgraph_highest);
+                    }
+                }
+            }
+        }
+
+        highest
+    }
+
+    fn rebuild_subgraph(
+        graph: &mut Subgraph,
+        context: GraphContext,
+        inputs: &mut Vec<NodeId>,
+        functions_buf: &mut Vec<*mut Function>,
+    ) {
+        debug_assert!(inputs.is_empty());
+
+        let total_nodes = graph.nodes().len();
+        let mut edges = DiGraphMap::with_capacity(total_nodes, total_nodes * 2);
+
+        debug_assert!(functions_buf.is_empty());
+        let mut functions = unsafe { buffer_to_usable(take(functions_buf)) };
+
+        for (&node_id, node) in graph.nodes_mut() {
+            // Collect the node's inputs
+            node.inputs(inputs);
+
+            // Add the node and all incoming edges to the graph
+            edges.add_node(node_id);
+            for input in inputs.drain(..) {
+                edges.add_edge(input, node_id, ());
+            }
+
+            // If the node is a subgraph, recursively rebuild it
+            if let Node::Subgraph(subgraph) = node {
+                let mut functions_buf = unsafe { usable_to_buffer(functions) };
+
+                Self::rebuild_subgraph(
+                    subgraph.subgraph_mut(),
+                    context.clone(),
+                    inputs,
+                    &mut functions_buf,
+                );
+
+                functions = unsafe { buffer_to_usable(functions_buf) };
+            }
+
+            // Rebuild function control flow graphs
+            node.functions_mut(&mut functions);
+            for function in functions.drain(..) {
+                let blocks = function.blocks().len();
+                let mut cfg = DiGraphMap::with_capacity(blocks, blocks + (blocks >> 1));
+
+                for (&block_id, block) in function.blocks() {
+                    match block.terminator() {
+                        Terminator::Jump(jump) => {
+                            cfg.add_edge(block_id, jump.target(), ());
+                        }
+
+                        Terminator::Branch(branch) => {
+                            cfg.add_edge(block_id, branch.truthy(), ());
+                            cfg.add_edge(block_id, branch.falsy(), ());
+                        }
+
+                        Terminator::Return(_) => {
+                            cfg.add_node(block_id);
+                        }
+                    }
+                }
+
+                function.set_cfg(cfg);
+            }
+        }
+
+        debug_assert!(inputs.is_empty());
+        debug_assert!(functions.is_empty());
+        *functions_buf = unsafe { usable_to_buffer(functions) };
+
+        // Set the context and edges of the current subgraph
+        graph.set_context(context);
+        graph.set_edges(edges);
+    }
+}
+
+#[inline]
+unsafe fn buffer_to_usable<'a>(buffer: Vec<*mut Function>) -> Vec<&'a mut Function> {
+    debug_assert!(buffer.is_empty());
+
+    let mut functions = ManuallyDrop::new(buffer);
+    let capacity = functions.capacity();
+    let ptr = functions.as_mut_ptr().cast::<&mut Function>();
+
+    unsafe { Vec::from_raw_parts(ptr, 0, capacity) }
+}
+
+#[inline]
+unsafe fn usable_to_buffer(buffer: Vec<&mut Function>) -> Vec<*mut Function> {
+    debug_assert!(buffer.is_empty());
+
+    let mut functions = ManuallyDrop::new(buffer);
+    let capacity = functions.capacity();
+    let ptr = functions.as_mut_ptr().cast::<*mut Function>();
+
+    unsafe { Vec::from_raw_parts(ptr, 0, capacity) }
 }
 
 impl From<Graph> for SqlGraph {
@@ -42,12 +189,16 @@ fn test_parse_sql_output() {
 
     crate::utils::test_logger();
 
-    let (mut graph, sources, sinks) = parse_sql_output(SQL);
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&SqlGraph::from(graph)).unwrap(),
-    );
-    return;
+    let (graph, sources, sinks) = parse_sql_output(SQL);
+
+    let graph = SqlGraph::from(graph);
+    let json_graph = serde_json::to_string_pretty(&graph).unwrap();
+    println!("{json_graph}");
+
+    let mut graph = serde_json::from_str::<SqlGraph>(&json_graph)
+        .unwrap()
+        .rematerialize();
+    println!("{graph:#?}");
 
     graph.optimize();
     // Validator::new().validate_graph(&graph).unwrap();
@@ -468,7 +619,8 @@ fn parse_sql_output(
             //     let class = elem["type"]["class"].as_str().unwrap();
 
             //     if class == "org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression" {
-            //     } else if class == "org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression" {
+            //     } else if class ==
+            // "org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression" {
             //         for (column, (value, is_null)) in elements {
             //             builder.store(output, column, value);
 

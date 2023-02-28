@@ -103,8 +103,12 @@ impl Graph {
         }
     }
 
-    pub fn graph(&self) -> &Subgraph {
+    pub const fn graph(&self) -> &Subgraph {
         &self.graph
+    }
+
+    pub fn graph_mut(&mut self) -> &mut Subgraph {
+        &mut self.graph
     }
 }
 
@@ -154,10 +158,12 @@ impl Default for Graph {
     }
 }
 
+#[serde_with::serde_as]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Subgraph {
     #[serde(skip)]
     edges: DiGraphMap<NodeId, ()>,
+    #[serde_as(as = "BTreeMap<serde_with::DisplayFromStr, _>")]
     nodes: BTreeMap<NodeId, Node>,
     #[serde(skip)]
     ctx: GraphContext,
@@ -170,6 +176,14 @@ impl Subgraph {
             nodes: BTreeMap::new(),
             ctx,
         }
+    }
+
+    pub(crate) fn set_context(&mut self, context: GraphContext) {
+        self.ctx = context;
+    }
+
+    pub(crate) fn set_edges(&mut self, edges: DiGraphMap<NodeId, ()>) {
+        self.edges = edges;
     }
 }
 
@@ -198,6 +212,8 @@ impl GraphExt for Subgraph {
 
         let mut inputs = Vec::new();
         node.inputs(&mut inputs);
+
+        self.edges.add_node(node_id);
         for input in inputs {
             self.edges.add_edge(input, node_id, ());
         }
@@ -242,7 +258,7 @@ impl GraphExt for Subgraph {
 }
 
 #[derive(Debug, Clone)]
-struct GraphContext {
+pub(crate) struct GraphContext {
     layout_cache: RowLayoutCache,
     node_id: Rc<NodeIdGen>,
 }
@@ -252,6 +268,13 @@ impl GraphContext {
         Self {
             layout_cache: RowLayoutCache::new(),
             node_id: Rc::new(NodeIdGen::new()),
+        }
+    }
+
+    pub(crate) fn from_parts(layout_cache: RowLayoutCache, node_id: NodeIdGen) -> Self {
+        Self {
+            layout_cache,
+            node_id: Rc::new(node_id),
         }
     }
 }

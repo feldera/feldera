@@ -77,8 +77,9 @@ impl UninitRow {
         }
     }
 
-    // TODO: Ideally we'd retain enough info within the vtable to not require the `layout` argument
-    // TODO: Make sure that `layout` corresponds to the current row's layout
+    // TODO: Ideally we'd retain enough info within the vtable to not require the
+    // `layout` argument TODO: Make sure that `layout` corresponds to the
+    // current row's layout
     pub fn set_column_null(&mut self, column: usize, layout: &NativeLayout, null: bool) {
         let (ty, bit_offset, bit) = layout.nullability_of(column);
 
@@ -89,7 +90,8 @@ impl UninitRow {
             // If there's only one occupant in the bitset we can set it directly
             null as u64
 
-        // If there's more than one occupant in the bitset we need to load, set/unset the bit and then store it
+        // If there's more than one occupant in the bitset we need to load,
+        // set/unset the bit and then store it
         } else {
             // Load the bitset's current value
             let mut mask = unsafe {
@@ -131,8 +133,9 @@ impl UninitRow {
     /// # Panics
     ///
     /// Panics if the given column is not nullable
-    // TODO: Ideally we'd retain enough info within the vtable to not require the `layout` argument
-    // TODO: Make sure that `layout` corresponds to the current row's layout
+    // TODO: Ideally we'd retain enough info within the vtable to not require the
+    // `layout` argument TODO: Make sure that `layout` corresponds to the
+    // current row's layout
     pub unsafe fn column_is_null(&self, column: usize, layout: &NativeLayout) -> bool {
         let (ty, bit_offset, bit) = layout.nullability_of(column);
 

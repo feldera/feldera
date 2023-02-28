@@ -410,9 +410,10 @@ mod proptests {
         row::UninitRow,
         ThinStr,
     };
+    use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
     use proptest::{
-        prelude::any, prop_assert, prop_assert_eq, prop_assert_ne, proptest,
-        test_runner::TestCaseResult,
+        prelude::any, prop_assert, prop_assert_eq, prop_assert_ne, prop_compose, proptest,
+        strategy::Strategy, test_runner::TestCaseResult,
     };
     use proptest_derive::Arbitrary;
     use size_of::SizeOf;
@@ -439,10 +440,29 @@ mod proptests {
         Bool(bool),
         // Usize(usize),
         String(String),
-        // FIXME: Arbitrary valid date generation
-        // #[proptest(strategy = "")]
-        // Date(i32),
-        // Timestamp(i64),
+        #[proptest(strategy = "date().prop_map(|date| Column::Date(date.num_days_from_ce()))")]
+        Date(i32),
+        #[proptest(strategy = "timestamp().prop_map(|date| Column::Timestamp(date.timestamp()))")]
+        Timestamp(i64),
+    }
+
+    prop_compose! {
+        fn date()(days in NaiveDate::MIN.num_days_from_ce()..=NaiveDate::MAX.num_days_from_ce()) -> NaiveDate {
+            NaiveDate::from_num_days_from_ce_opt(days).unwrap()
+        }
+    }
+
+    prop_compose! {
+        fn time()(secs in 0..=86_399u32, nanos in 0..=1_999_999_999u32) -> NaiveTime {
+            NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos).unwrap()
+        }
+    }
+
+    prop_compose! {
+        fn timestamp()(date in date(), time in time()) -> DateTime<Utc> {
+            let datetime = NaiveDateTime::new(date, time);
+            DateTime::from_utc(datetime, Utc)
+        }
     }
 
     impl Column {
@@ -462,8 +482,8 @@ mod proptests {
                 Self::Bool(_) => ColumnType::Bool,
                 // Column::Usize(_) => todo!(),
                 Self::String(_) => ColumnType::String,
-                // Self::Date(_) => ColumnType::Date,
-                // Self::Timestamp(_) => ColumnType::Timestamp,
+                Self::Date(_) => ColumnType::Date,
+                Self::Timestamp(_) => ColumnType::Timestamp,
             }
         }
 
@@ -529,14 +549,16 @@ mod proptests {
                 Column::String(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<ThinStr>(), 0);
                     ptr.cast::<ThinStr>().write(ThinStr::from(&*value));
-                } /* Column::Date(date) => {
-                   *     prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
-                   *     ptr.cast::<i32>().write(date);
-                   * }
-                   * Column::Timestamp(timestamp) => {
-                   *     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
-                   *     ptr.cast::<i64>().write(timestamp);
-                   * } */
+                }
+
+                Column::Date(date) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
+                    ptr.cast::<i32>().write(date);
+                }
+                Column::Timestamp(timestamp) => {
+                    prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
+                    ptr.cast::<i64>().write(timestamp);
+                }
             }
 
             Ok(())
@@ -559,8 +581,8 @@ mod proptests {
                 (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
                 // (Self::Usize(l0), Self::Usize(r0)) => l0 == r0,
                 (Self::String(l0), Self::String(r0)) => l0 == r0,
-                // (Self::Date(l0), Self::Date(r0)) => l0 == r0,
-                // (Self::Timestamp(l0), Self::Timestamp(r0)) => l0 == r0,
+                (Self::Date(l0), Self::Date(r0)) => l0 == r0,
+                (Self::Timestamp(l0), Self::Timestamp(r0)) => l0 == r0,
                 _ => unreachable!(),
             }
         }
@@ -590,8 +612,8 @@ mod proptests {
                 (Self::Bool(l0), Self::Bool(r0)) => l0.cmp(r0),
                 // (Self::Usize(l0), Self::Usize(r0)) => l0.cmp(r0),
                 (Self::String(l0), Self::String(r0)) => l0.cmp(r0),
-                // (Self::Date(l0), Self::Date(r0)) => l0.cmp(r0),
-                // (Self::Timestamp(l0), Self::Timestamp(r0)) => l0.cmp(r0),
+                (Self::Date(l0), Self::Date(r0)) => l0.cmp(r0),
+                (Self::Timestamp(l0), Self::Timestamp(r0)) => l0.cmp(r0),
                 _ => unreachable!(),
             }
         }

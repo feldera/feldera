@@ -3,7 +3,8 @@ use crate::ir::{
     graph::{self, GraphExt},
     layout_cache::RowLayoutCache,
     types::Signature,
-    DataflowNode, DelayedFeedback, Delta0, Export, LayoutId, Node, NodeId, Stream, StreamKind,
+    DataflowNode, DelayedFeedback, Delta0, Export, LayoutId, Node, NodeId, StreamKind,
+    StreamLayout,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -32,8 +33,12 @@ impl Subgraph {
         }
     }
 
-    pub fn subgraph(&self) -> &graph::Subgraph {
+    pub const fn subgraph(&self) -> &graph::Subgraph {
         &self.subgraph
+    }
+
+    pub fn subgraph_mut(&mut self) -> &mut graph::Subgraph {
+        &mut self.subgraph
     }
 
     pub fn delta0(&mut self, import: NodeId) -> NodeId {
@@ -42,7 +47,7 @@ impl Subgraph {
         delta0
     }
 
-    pub fn export(&mut self, output: NodeId, layout: Stream) -> NodeId {
+    pub fn export(&mut self, output: NodeId, layout: StreamLayout) -> NodeId {
         let export = self.add_node(Export::new(output, layout));
         self.outputs.insert(output, export);
         export
@@ -117,21 +122,21 @@ impl DataflowNode for Subgraph {
         inputs.extend(self.inputs.keys().copied());
     }
 
-    fn output_kind(&self, _inputs: &[Stream]) -> Option<StreamKind> {
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
         None
     }
 
-    fn output_stream(&self, _inputs: &[Stream]) -> Option<Stream> {
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         None
     }
 
-    fn signature(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) -> Signature {
+    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
         todo!()
     }
 
-    fn validate(&self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[Stream], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         self.subgraph.functions(functions);

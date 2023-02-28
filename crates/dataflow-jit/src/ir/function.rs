@@ -59,7 +59,8 @@ impl Display for InvalidInputFlag {
     }
 }
 
-// TODO: Maybe this would be better represented as a comma-delimited list, e.g. `"input,output"`
+// TODO: Maybe this would be better represented as a comma-delimited list, e.g.
+// `"input,output"`
 impl TryFrom<&str> for InputFlags {
     type Error = InvalidInputFlag;
 
@@ -101,8 +102,9 @@ impl From<InputFlags> for String {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FuncArg {
-    /// The id that the pointer is associated with and the flags that are associated with the argument.
-    /// All function arguments are passed by pointer since we can't know the type's exact size at compile time
+    /// The id that the pointer is associated with and the flags that are
+    /// associated with the argument. All function arguments are passed by
+    /// pointer since we can't know the type's exact size at compile time
     pub id: ExprId,
     /// The layout of the argument
     pub layout: LayoutId,
@@ -116,11 +118,13 @@ impl FuncArg {
     }
 }
 
+#[serde_with::serde_as]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Function {
     args: Vec<FuncArg>,
     ret: ColumnType,
     entry_block: BlockId,
+    #[serde_as(as = "BTreeMap<serde_with::DisplayFromStr, _>")]
     blocks: BTreeMap<BlockId, Block>,
     #[serde(skip)]
     cfg: DiGraphMap<BlockId, ()>,
@@ -153,6 +157,10 @@ impl Function {
             self.args.iter().map(|arg| arg.flags).collect(),
             self.ret,
         )
+    }
+
+    pub(crate) fn set_cfg(&mut self, cfg: DiGraphMap<BlockId, ()>) {
+        self.cfg = cfg;
     }
 
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
