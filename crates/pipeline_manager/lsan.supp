@@ -1,0 +1,3 @@
+# Address sanitizer memory leak suppressions.
+# (Used to ignore known intentional memory leaks).
+leak:actix_router::resource::ResourceDef
