@@ -240,6 +240,8 @@ jobs:
           CXX: "clang++"
           CXXFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
           ASAN_SYMBOLIZER_PATH: "/usr/bin/llvm-symbolizer-14"
+          # Suppress known memory leaks.
+          LSAN_OPTIONS: "suppressions=lsan.supp"
           # Backtraces sometimes mess with sanitizers
           RUST_BACKTRACE: 0
           # Leak sanitizer is very slow on many of the proptests.
