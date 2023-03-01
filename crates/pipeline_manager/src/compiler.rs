@@ -2,7 +2,7 @@ use crate::{ManagerConfig, ProjectDB, ProjectId, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use fs_extra::{dir, dir::CopyOptions};
 use log::{debug, error, trace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     process::{ExitStatus, Stdio},
     sync::Arc,
@@ -23,6 +23,34 @@ use utoipa::ToSchema;
 /// for new compilation requests.
 const COMPILER_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
+/// A SQL compiler error.
+///
+/// The SQL compiler returns a list of errors in the following JSON format if
+/// it's invoked with the `-je` option.
+///
+/// ```no_run
+///  [ {
+/// "startLineNumber" : 14,
+/// "startColumn" : 13,
+/// "endLineNumber" : 14,
+/// "endColumn" : 13,
+/// "warning" : false,
+/// "errorType" : "Error parsing SQL",
+/// "message" : "Encountered \"<EOF>\" at line 14, column 13."
+/// } ]
+/// ```
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SqlCompilerMessage {
+    start_line_number: usize,
+    start_column: usize,
+    end_line_number: usize,
+    end_column: usize,
+    warning: bool,
+    error_type: String,
+    message: String,
+}
+
 /// Project compilation status.
 #[derive(Debug, Serialize, Eq, PartialEq, ToSchema)]
 pub(crate) enum ProjectStatus {
@@ -37,9 +65,13 @@ pub(crate) enum ProjectStatus {
     /// Compilation succeeded.
     Success,
     /// SQL compiler returned an error.
-    SqlError(String),
+    ///
+    /// The format is (exit-code, messages).
+    SqlError(Vec<SqlCompilerMessage>),
     /// Rust compiler returned an error.
     RustError(String),
+    /// System/OS returned an error when trying to invoke commands.
+    SystemError(String),
 }
 
 pub struct Compiler {
@@ -152,17 +184,23 @@ impl Compiler {
                             let output = job.as_ref().unwrap().error_output(&config).await?;
                             let status = if job.as_ref().unwrap().is_rust() {
                                 ProjectStatus::RustError(format!("{output}\nexit code: {status}"))
+                            } else if let Ok(messages) = serde_json::from_str(&output) {
+                                    // If we can parse the SqlCompilerMessages
+                                    // as JSON, we assume the compiler worked:
+                                    ProjectStatus::SqlError(messages)
                             } else {
-                                ProjectStatus::SqlError(format!("{output}\nexit code: {status}"))
+                                    // Otherwise something unexpected happened
+                                    // and we return a system error:
+                                    ProjectStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
                             db.set_project_status_guarded(project_id, version, status)?;
                             job = None;
                         }
                         Err(e) => {
                             let status = if job.unwrap().is_rust() {
-                                ProjectStatus::RustError(format!("I/O error: {e}"))
+                                ProjectStatus::SystemError(format!("I/O error with rustc: {e}"))
                             } else {
-                                ProjectStatus::SqlError(format!("I/O error: {e}"))
+                                ProjectStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
                             db.set_project_status_guarded(project_id, version, status)?;
                             job = None;
@@ -263,6 +301,7 @@ impl CompilationJob {
         let compiler_process = Command::new(config.sql_compiler_path())
             .arg(sql_file_path.as_os_str())
             .arg("-i")
+            .arg("-je")
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(rust_file.into_std().await))

@@ -127,6 +127,7 @@ observed by the user is outdated, so the request is rejected."
         pipeline_delete,
     ),
     components(schemas(
+        compiler::SqlCompilerMessage,
         db::ProjectDescr,
         db::ConfigDescr,
         db::PipelineDescr,
@@ -630,6 +631,7 @@ struct UpdateProjectRequest {
     /// New name for the project.
     name: String,
     /// New description for the project.
+    #[serde(default)]
     description: String,
     /// New SQL code for the project or `None` to keep existing project
     /// code unmodified.

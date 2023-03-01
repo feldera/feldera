@@ -1,6 +1,7 @@
 use crate::{ManagerConfig, ProjectStatus};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, NaiveDateTime, Utc};
+use log::{debug, error};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::{error::Error as StdError, fmt, fmt::Display};
@@ -115,7 +116,15 @@ impl ProjectStatus {
             Some("success") => Ok(Self::Success),
             Some("pending") => Ok(Self::Pending),
             Some("compiling") => Ok(Self::Compiling),
-            Some("sql_error") => Ok(Self::SqlError(error_string.unwrap_or_default())),
+            Some("sql_error") => {
+                let error = error_string.unwrap_or_default();
+                if let Ok(messages) = serde_json::from_str(&error) {
+                    Ok(Self::SqlError(messages))
+                } else {
+                    error!("Expected valid json for SqlCompilerMessage but got {:?}, did you update struct without adjusting the database?", error);
+                    Ok(Self::SystemError(error))
+                }
+            }
             Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
             Some(status) => Err(AnyError::msg(format!("invalid status string '{status}'"))),
         }
@@ -126,9 +135,19 @@ impl ProjectStatus {
             ProjectStatus::Success => (Some("success".to_string()), None),
             ProjectStatus::Pending => (Some("pending".to_string()), None),
             ProjectStatus::Compiling => (Some("compiling".to_string()), None),
-            ProjectStatus::SqlError(error) => (Some("sql_error".to_string()), Some(error.clone())),
+            ProjectStatus::SqlError(error) => {
+                if let Ok(error_string) = serde_json::to_string(&error) {
+                    (Some("sql_error".to_string()), Some(error_string))
+                } else {
+                    error!("Expected valid json for SqlError, but got {:?}", error);
+                    (Some("sql_error".to_string()), None)
+                }
+            }
             ProjectStatus::RustError(error) => {
                 (Some("rust_error".to_string()), Some(error.clone()))
+            }
+            ProjectStatus::SystemError(error) => {
+                (Some("system_error".to_string()), Some(error.clone()))
             }
         }
     }
@@ -178,7 +197,7 @@ impl ProjectDB {
     pub(crate) fn connect(config: &ManagerConfig) -> AnyResult<Self> {
         unsafe {
             rusqlite::trace::config_log(Some(|errcode, msg| {
-                log::debug!("sqlite: {msg}:{errcode}")
+                debug!("sqlite: {msg}:{errcode}")
             }))?
         };
         let dbclient = Connection::open(config.database_file_path())?;
@@ -332,6 +351,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
         project_description: &str,
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
+        debug!("new_project {project_name} {project_description} {project_code}");
         self.dbclient
             .execute(
                 "INSERT INTO project (version, name, description, code, status_since) VALUES(1, $1, $2, $3, unixepoch('now'))",
@@ -651,6 +671,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
         config_name: &str,
         config: &str,
     ) -> AnyResult<(ConfigId, Version)> {
+        debug!("new_config {project_id} {config_name} {config}");
         // Check that the project exists, so we return correct error status
         // instead of Internal Server Error due to the next query failing.
         let _descr = self.get_project(project_id)?;

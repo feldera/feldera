@@ -485,7 +485,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             response.json().then(descr => this.showStatus(descr));
         }
         showStatus(descr) {
-            var _a;
+            var _a, _b;
             this.project.version = descr.version;
             this.refresh();
             if (typeof descr.status === 'string') {
@@ -495,8 +495,8 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
                 }
             }
             else if (typeof descr.status === 'object') {
-                const error = (_a = descr.status.SqlError) !== null && _a !== void 0 ? _a : descr.status.RustError;
-                this.display.reportError("Compilation error:\n" + error);
+                const error = (_b = (_a = descr.status.SqlError) !== null && _a !== void 0 ? _a : descr.status.RustError) !== null && _b !== void 0 ? _b : descr.status.SystemError;
+                this.display.reportError("Compilation error:\n" + JSON.stringify(error));
             }
         }
         fetchCode() {
