@@ -53,7 +53,7 @@ class DBSPProject:
                 if status == 'Success':
                     return
                 else:
-                    raise CompilationException(status)
+                    raise CompilationException(str(status))
             time.sleep(0.5)
 
         raise TimeoutException("Timeout waiting for the project to compile after " + str(timeout) + "s")

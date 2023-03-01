@@ -24,9 +24,11 @@ class CompilationException(Exception):
     """
     def __init__(self, status):
         if hasattr(status, 'sql_error'):
-            self.message = "SQL error: " + status.sql_error
+            self.message = "SQL error: " + str(status.sql_error)
         elif hasattr(status, 'rust_error'):
             self.message = "Rust compiler error: " + status.rust_error
+        elif hasattr(status, 'system_error'):
+            self.message = "System error: " + status.system_error
         else:
             self.message = "Unexpected project status: " + str(status)
 

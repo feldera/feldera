@@ -16,9 +16,20 @@ interface ProjectCode {
     code: string,
 }
 
+interface SqlCompilerMessage {
+    start_line_number: number,
+    start_column: number,
+    end_line_number: number,
+    end_column: number,
+    warning: boolean,
+    error_type: string,
+    message: string,
+}
+
 interface CompilationError {
-    SqlError: string | null,
+    SqlError: SqlCompilerMessage[] | null,
     RustError: string | null,
+    SystemError: string | null,
 }
 
 interface SwitchChild {
@@ -398,8 +409,8 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
                 runAfterDelay(1000, () => this.fetchStatus());
             }
         } else if (typeof descr.status === 'object') {
-            const error = descr.status.SqlError ?? descr.status.RustError;
-            this.display.reportError("Compilation error:\n" + error);
+            const error = descr.status.SqlError ?? descr.status.RustError ?? descr.status.SystemError;
+            this.display.reportError("Compilation error:\n" + JSON.stringify(error));
         }
     }
 
