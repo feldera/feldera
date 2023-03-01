@@ -196,9 +196,7 @@ impl ProjectDB {
     /// database created with `create_db.sql` along with access credentials.
     pub(crate) fn connect(config: &ManagerConfig) -> AnyResult<Self> {
         unsafe {
-            rusqlite::trace::config_log(Some(|errcode, msg| {
-                debug!("sqlite: {msg}:{errcode}")
-            }))?
+            rusqlite::trace::config_log(Some(|errcode, msg| debug!("sqlite: {msg}:{errcode}")))?
         };
         let dbclient = Connection::open(config.database_file_path())?;
 

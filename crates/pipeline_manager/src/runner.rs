@@ -472,11 +472,15 @@ scrape_configs:
 
     /// Kill the pipeline if it is still running, delete its file system state
     /// and remove the pipeline from the database.
-    pub(crate) async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
-        let db = self.db.lock().await;
-
+    // Takes a reference to an already locked DB instance, since this function
+    // is invoked in contexts where the client already holds the lock.
+    pub(crate) async fn delete_pipeline(
+        &self,
+        db: &ProjectDB,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         // Kill pipeline.
-        let response = self.do_shutdown_pipeline(&db, pipeline_id).await?;
+        let response = self.do_shutdown_pipeline(db, pipeline_id).await?;
         if !response.status().is_success() {
             return Ok(response);
         }

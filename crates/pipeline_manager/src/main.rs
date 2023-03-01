@@ -544,7 +544,7 @@ async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl R
 }
 
 /// Request to create a new DBSP project.
-#[derive(Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct NewProjectRequest {
     /// Project name.
     #[schema(example = "Example project")]
@@ -602,7 +602,12 @@ async fn do_new_project(
     request: web::Json<NewProjectRequest>,
 ) -> AnyResult<HttpResponse> {
     if request.overwrite_existing {
-        let descr = state.db.lock().await.lookup_project(&request.name)?;
+        let descr = {
+            let db = state.db.lock().await;
+            let descr = db.lookup_project(&request.name)?;
+            drop(db);
+            descr
+        };
         if let Some(project_descr) = descr {
             do_delete_project(state.clone(), project_descr.project_id).await?;
         }
@@ -811,7 +816,10 @@ async fn do_delete_project(
     let db = state.db.lock().await;
 
     for pipeline in db.list_project_pipelines(project_id)?.iter() {
-        state.runner.delete_pipeline(pipeline.pipeline_id).await?;
+        state
+            .runner
+            .delete_pipeline(&db, pipeline.pipeline_id)
+            .await?;
     }
 
     db.delete_project(project_id)
@@ -1318,9 +1326,11 @@ async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl 
         Ok(pipeline_id) => pipeline_id,
     };
 
+    let db = state.db.lock().await;
+
     state
         .runner
-        .delete_pipeline(pipeline_id)
+        .delete_pipeline(&db, pipeline_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
