@@ -6,6 +6,8 @@ members = [
     "crates/pipeline_manager"
 ]
 
+exclude = ["sql-to-dbsp-compiler/temp"]
+
 [profile.bench]
 debug = true
 
