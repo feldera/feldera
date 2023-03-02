@@ -579,6 +579,7 @@ pub enum Constant {
     F64(f64),
     Bool(bool),
     String(String),
+    // TODO: Date, Timestamp
 }
 
 impl Constant {
