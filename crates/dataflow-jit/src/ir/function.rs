@@ -293,6 +293,7 @@ impl Function {
                         Expr::CopyRowTo(_) => todo!(),
                         Expr::UninitRow(_) => todo!(),
                         Expr::Cast(_) => todo!(),
+                        Expr::Select(_) => todo!(),
                     }
                 }
 

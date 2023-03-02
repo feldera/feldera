@@ -9,6 +9,8 @@ use std::{
     error::Error,
 };
 
+use super::exprs::Select;
+
 type ValidationResult<T = ()> = Result<T, ValidationError>;
 
 pub struct Validator {
@@ -299,6 +301,7 @@ impl FunctionValidator {
                 match expr {
                     Expr::Cast(cast) => self.cast(expr_id, cast)?,
                     Expr::Constant(constant) => self.constant(expr_id, constant)?,
+                    Expr::Select(select) => self.select(expr_id, select)?,
                     Expr::Load(load) => self.load(expr_id, load)?,
                     Expr::Store(store) => self.store(expr_id, store)?,
                     Expr::IsNull(is_null) => self.is_null(expr_id, is_null)?,
@@ -333,7 +336,6 @@ impl FunctionValidator {
                             | BinaryOpKind::Min
                             | BinaryOpKind::Max => {
                                 assert_ne!(lhs_ty, ColumnType::String);
-
                                 let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
                                 assert!(prev.is_none());
                             }
@@ -619,6 +621,19 @@ impl FunctionValidator {
     fn uninit_row(&mut self, expr_id: ExprId, uninit_row: &UninitRow) -> ValidationResult {
         self.expr_row_mutability.insert(expr_id, true);
         self.expr_types.insert(expr_id, Err(uninit_row.layout()));
+        Ok(())
+    }
+
+    fn select(&mut self, expr_id: ExprId, select: &Select) -> ValidationResult {
+        let cond_ty = self.expr_type(select.cond())?.unwrap();
+        assert_eq!(cond_ty, ColumnType::Bool);
+
+        let lhs_ty = self.expr_type(select.cond())?;
+        let rhs_ty = self.expr_type(select.cond())?;
+        assert_eq!(lhs_ty, rhs_ty);
+
+        self.expr_types.insert(expr_id, lhs_ty);
+
         Ok(())
     }
 }
