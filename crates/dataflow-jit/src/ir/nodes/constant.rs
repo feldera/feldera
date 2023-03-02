@@ -12,14 +12,14 @@ pub enum StreamLiteral {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RowLiteral {
-    rows: Vec<NullableConstant>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum NullableConstant {
     NonNull(Constant),
     Nullable(Option<Constant>),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RowLiteral {
+    rows: Vec<NullableConstant>,
 }
 
 impl RowLiteral {
@@ -42,22 +42,13 @@ impl RowLiteral {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConstantStream {
-    input: NodeId,
     value: StreamLiteral,
     layout: StreamLayout,
 }
 
 impl ConstantStream {
-    pub fn new(input: NodeId, value: StreamLiteral, layout: StreamLayout) -> Self {
-        Self {
-            input,
-            value,
-            layout,
-        }
-    }
-
-    pub const fn input(&self) -> NodeId {
-        self.input
+    pub fn new(value: StreamLiteral, layout: StreamLayout) -> Self {
+        Self { value, layout }
     }
 
     pub fn value(&self) -> &StreamLiteral {
