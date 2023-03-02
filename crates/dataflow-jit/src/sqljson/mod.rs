@@ -5,9 +5,9 @@ use crate::{
     dataflow::CompiledDataflow,
     ir::{
         graph::{GraphContext, Subgraph},
-        ColumnType, Constant, DataflowNode, Function, FunctionBuilder, Graph, GraphExt, LayoutId,
-        Node, NodeId, NodeIdGen, RowLayout, RowLayoutBuilder, RowLayoutCache, Sink, StreamKind,
-        StreamLayout, Terminator, Validator,
+        ColumnType, Constant, ConstantStream, DataflowNode, Function, FunctionBuilder, Graph,
+        GraphExt, LayoutId, Node, NodeId, NodeIdGen, NullableConstant, RowLayout, RowLayoutBuilder,
+        RowLayoutCache, RowLiteral, Sink, StreamKind, StreamLayout, Terminator, Validator,
     },
     row::{Row, UninitRow},
 };
@@ -225,58 +225,80 @@ fn join_json() {
     );
     let unit = graph.layout_cache().unit();
 
-    let source = graph.source_map(key, value);
-    let source_index = graph.index_with(source, key, value, {
-        let mut builder = graph.function_builder();
-        let key_input = builder.add_input(key);
-        let value_input = builder.add_input(value);
-        let key_output = builder.add_output(key);
-        let value_output = builder.add_output(value);
+    // let source = graph.source_map(key, value);
+    // let source_index = graph.index_with(source, key, value, {
+    //     let mut builder = graph.function_builder();
+    //     let key_input = builder.add_input(key);
+    //     let value_input = builder.add_input(value);
+    //     let key_output = builder.add_output(key);
+    //     let value_output = builder.add_output(value);
 
-        let key = builder.load(key_input, 0);
-        builder.store(key_output, 0, key);
+    //     let key = builder.load(key_input, 0);
+    //     builder.store(key_output, 0, key);
 
-        let value = builder.load(value_input, 0);
-        let value = builder.copy_val(value);
-        builder.store(value_output, 0, value);
+    //     let value = builder.load(value_input, 0);
+    //     let value = builder.copy_val(value);
+    //     builder.store(value_output, 0, value);
 
-        builder.ret_unit();
+    //     builder.ret_unit();
 
-        builder.build()
-    });
+    //     builder.build()
+    // });
 
-    let joined = graph.join_core(
-        source_index,
-        source_index,
-        {
-            let mut builder = graph.function_builder();
-            let key = builder.add_input(key);
-            let lhs_val = builder.add_input(value);
-            let rhs_val = builder.add_input(value);
-            let output = builder.add_output(output);
-            let _unit_output = builder.add_output(unit);
+    // let joined = graph.join_core(
+    //     source_index,
+    //     source_index,
+    //     {
+    //         let mut builder = graph.function_builder();
+    //         let key = builder.add_input(key);
+    //         let lhs_val = builder.add_input(value);
+    //         let rhs_val = builder.add_input(value);
+    //         let output = builder.add_output(output);
+    //         let _unit_output = builder.add_output(unit);
 
-            let key = builder.load(key, 0);
-            builder.store(output, 0, key);
+    //         let key = builder.load(key, 0);
+    //         builder.store(output, 0, key);
 
-            let lhs_val = builder.load(lhs_val, 0);
-            let lhs_val = builder.copy_val(lhs_val);
-            builder.store(output, 1, lhs_val);
+    //         let lhs_val = builder.load(lhs_val, 0);
+    //         let lhs_val = builder.copy_val(lhs_val);
+    //         builder.store(output, 1, lhs_val);
 
-            let rhs_val = builder.load(rhs_val, 0);
-            let rhs_val = builder.copy_val(rhs_val);
-            builder.store(output, 2, rhs_val);
+    //         let rhs_val = builder.load(rhs_val, 0);
+    //         let rhs_val = builder.copy_val(rhs_val);
+    //         builder.store(output, 2, rhs_val);
 
-            builder.ret_unit();
+    //         builder.ret_unit();
 
-            builder.build()
-        },
-        output,
-        unit,
-        StreamKind::Set,
-    );
+    //         builder.build()
+    //     },
+    //     output,
+    //     unit,
+    //     StreamKind::Set,
+    // );
 
-    graph.sink(joined);
+    let constant = graph.add_node(Node::Constant(ConstantStream::new(
+        crate::ir::StreamLiteral::Set(vec![
+            (
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::U32(10)),
+                    NullableConstant::Nullable(Some(Constant::String(String::from("foo")))),
+                    NullableConstant::Nullable(Some(Constant::String(String::from("bar")))),
+                ]),
+                10,
+            ),
+            (
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::U32(10)),
+                    NullableConstant::Nullable(None),
+                    NullableConstant::Nullable(Some(Constant::String(String::from("bing")))),
+                ]),
+                -5,
+            ),
+        ]),
+        StreamLayout::Set(output),
+    )));
+
+    graph.sink(constant);
 
     let graph = SqlGraph::from(graph);
     let json_graph = serde_json::to_string_pretty(&graph).unwrap();
