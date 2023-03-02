@@ -13,7 +13,7 @@ mod validate;
 pub use block::Block;
 pub use exprs::{
     BinaryOp, BinaryOpKind, Cast, Constant, CopyRowTo, CopyVal, Expr, IsNull, Load, NullRow,
-    RValue, SetNull, Store, UnaryOp, UnaryOpKind, UninitRow,
+    RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, UninitRow,
 };
 pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::{Graph, GraphExt};

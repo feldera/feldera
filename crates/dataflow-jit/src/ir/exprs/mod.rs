@@ -15,7 +15,7 @@ pub enum Expr {
     Cast(Cast),
     Load(Load),
     Store(Store),
-    // Select(Select),
+    Select(Select),
     IsNull(IsNull),
     BinOp(BinaryOp),
     CopyVal(CopyVal),
@@ -41,6 +41,7 @@ impl Expr {
             // These expressions don't contain `LayoutId`s
             Self::Cast(_)
             | Self::BinOp(_)
+            | Self::Select(_)
             | Self::CopyVal(_)
             | Self::UnaryOp(_)
             | Self::Constant(_) => {}
@@ -90,6 +91,35 @@ impl RValue {
 impl From<bool> for RValue {
     fn from(value: bool) -> Self {
         Self::Imm(Constant::Bool(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Select {
+    cond: ExprId,
+    if_true: ExprId,
+    if_false: ExprId,
+}
+
+impl Select {
+    pub fn new(cond: ExprId, if_true: ExprId, if_false: ExprId) -> Self {
+        Self {
+            cond,
+            if_true,
+            if_false,
+        }
+    }
+
+    pub const fn cond(&self) -> ExprId {
+        self.cond
+    }
+
+    pub const fn if_true(&self) -> ExprId {
+        self.if_true
+    }
+
+    pub const fn if_false(&self) -> ExprId {
+        self.if_false
     }
 }
 

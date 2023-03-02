@@ -20,8 +20,8 @@ use crate::{
     },
     ir::{
         BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr, ExprId,
-        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, SetNull,
-        Signature, Terminator, UnaryOp, UnaryOpKind,
+        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, Select,
+        SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
     ThinStr,
 };
@@ -301,6 +301,7 @@ impl Codegen {
                         Expr::Cast(cast) => ctx.cast(expr_id, cast, &mut builder),
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
+                        Expr::Select(select) => ctx.select(expr_id, select, &mut builder),
 
                         Expr::Store(store) => {
                             debug_assert!(!ctx.is_readonly(store.target()));
@@ -1781,6 +1782,23 @@ impl<'a> CodegenCtx<'a> {
         };
 
         self.add_expr(expr_id, value, cast.to(), None);
+    }
+
+    fn select(&mut self, expr_id: ExprId, select: &Select, builder: &mut FunctionBuilder<'_>) {
+        let (cond, if_true, if_false) = (
+            self.value(select.cond()),
+            self.value(select.if_true()),
+            self.value(select.if_false()),
+        );
+        // TODO: Add type debug assertions
+
+        let value = builder.ins().select(cond, if_true, if_false);
+        self.add_expr(
+            expr_id,
+            value,
+            self.expr_types.get(&select.if_true()).copied(),
+            self.expr_layouts.get(&select.if_true()).copied(),
+        );
     }
 
     /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]
