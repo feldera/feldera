@@ -3,6 +3,7 @@ use crate::ir::{
     NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Map {
@@ -72,6 +73,11 @@ impl DataflowNode for Map {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.layout);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout = mappings[&self.layout];
+        self.map_fn.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -131,6 +137,10 @@ impl DataflowNode for Filter {
     }
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.filter_fn.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -200,5 +210,10 @@ impl DataflowNode for FilterMap {
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.layout);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout = mappings[&self.layout];
+        self.filter_map.remap_layouts(mappings);
     }
 }

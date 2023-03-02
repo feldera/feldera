@@ -3,6 +3,7 @@ use crate::ir::{
     StreamLayout,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Export {
@@ -46,6 +47,8 @@ impl DataflowNode for Export {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -99,6 +102,8 @@ impl DataflowNode for ExportedNode {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -140,27 +145,34 @@ impl DataflowNode for Source {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.layout);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout = mappings[&self.layout];
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SourceMap {
-    key: LayoutId,
-    value: LayoutId,
+    key_layout: LayoutId,
+    value_layout: LayoutId,
 }
 
 impl SourceMap {
     pub const fn new(key: LayoutId, value: LayoutId) -> Self {
-        Self { key, value }
+        Self {
+            key_layout: key,
+            value_layout: value,
+        }
     }
 
     /// The key type of the source's produced stream
     pub const fn key(&self) -> LayoutId {
-        self.key
+        self.key_layout
     }
 
     /// The value type of the source's produced stream
     pub const fn value(&self) -> LayoutId {
-        self.value
+        self.value_layout
     }
 }
 
@@ -172,7 +184,7 @@ impl DataflowNode for SourceMap {
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(StreamLayout::Map(self.key, self.value))
+        Some(StreamLayout::Map(self.key_layout, self.value_layout))
     }
 
     fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
@@ -184,7 +196,12 @@ impl DataflowNode for SourceMap {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.key, self.value]);
+        layouts.extend([self.key_layout, self.value_layout]);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.key_layout = mappings[&self.key_layout];
+        self.value_layout = mappings[&self.value_layout];
     }
 }
 
@@ -225,4 +242,6 @@ impl DataflowNode for Sink {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }

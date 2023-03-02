@@ -3,6 +3,7 @@ use crate::ir::{
     NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct JoinCore {
@@ -100,6 +101,12 @@ impl DataflowNode for JoinCore {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.extend([self.key_layout, self.value_layout]);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.key_layout = mappings[&self.key_layout];
+        self.value_layout = mappings[&self.value_layout];
+        self.join_fn.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -171,5 +178,10 @@ impl DataflowNode for MonotonicJoin {
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.key_layout);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.key_layout = mappings[&self.key_layout];
+        self.join_fn.remap_layouts(mappings);
     }
 }

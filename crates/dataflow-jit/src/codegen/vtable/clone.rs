@@ -218,8 +218,7 @@ impl Codegen {
                     let src_end = builder.ins().iadd(src, length_bytes);
 
                     // Check that `length` isn't zero and if so jump to the end
-                    builder.ins().brz(length, tail, &[]);
-                    builder.ins().jump(body, &[src, dest]);
+                    builder.ins().brif(length, body, &[src, dest], tail, &[]);
 
                     builder.seal_block(entry_block);
                     builder.switch_to_block(body);
@@ -245,8 +244,9 @@ impl Codegen {
                         builder
                             .ins()
                             .icmp(IntCC::UnsignedLessThan, src_inc, src_end);
-                    builder.ins().brnz(ptr_inbounds, body, &[src_inc, dest_inc]);
-                    builder.ins().jump(tail, &[]);
+                    builder
+                        .ins()
+                        .brif(ptr_inbounds, body, &[src_inc, dest_inc], tail, &[]);
 
                     builder.seal_current();
                     builder.switch_to_block(tail);
@@ -347,8 +347,9 @@ fn clone_layout(
             } else if ty.requires_nontrivial_clone() {
                 let clone_innards = builder.create_block();
                 let next_clone = builder.create_block();
-                builder.ins().brnz(value_non_null, next_clone, &[]);
-                builder.ins().jump(clone_innards, &[]);
+                builder
+                    .ins()
+                    .brif(value_non_null, next_clone, &[], clone_innards, &[]);
 
                 builder.switch_to_block(clone_innards);
                 Some(next_clone)

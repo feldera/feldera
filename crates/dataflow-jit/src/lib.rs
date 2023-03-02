@@ -2,8 +2,8 @@ pub mod codegen;
 pub mod dataflow;
 pub mod ir;
 pub mod row;
+pub mod sqljson;
 
-mod sqljson;
 mod thin_str;
 mod utils;
 

@@ -77,8 +77,9 @@ impl Codegen {
 
                 let debug_start = builder.create_block();
                 let debug_failed = builder.false_byte();
-                builder.ins().brz(result, return_block, &[debug_failed]);
-                builder.ins().jump(debug_start, &[]);
+                builder
+                    .ins()
+                    .brif(result, debug_start, &[], return_block, &[debug_failed]);
                 builder.seal_block(entry_block);
 
                 builder.switch_to_block(debug_start);
@@ -96,8 +97,9 @@ impl Codegen {
                         // and then continue debugging any other fields
                         let debug_value = builder.create_block();
                         let write_null = builder.create_block();
-                        builder.ins().brnz(non_null, write_null, &[]);
-                        builder.ins().jump(debug_value, &[]);
+                        builder
+                            .ins()
+                            .brif(non_null, write_null, &[], debug_value, &[]);
                         builder.seal_current();
 
                         builder.switch_to_block(write_null);
@@ -108,8 +110,9 @@ impl Codegen {
 
                         // If writing `null` failed, return an error
                         let debug_failed = builder.false_byte();
-                        builder.ins().brz(call, return_block, &[debug_failed]);
-                        builder.ins().jump(after_debug, &[]);
+                        builder
+                            .ins()
+                            .brif(call, after_debug, &[], return_block, &[debug_failed]);
                         builder.seal_block(write_null);
 
                         builder.switch_to_block(debug_value);
@@ -192,8 +195,10 @@ impl Codegen {
 
                     // If writing the value failed, return an error
                     let debug_failed = builder.false_byte();
-                    let fail_branch = builder.ins().brz(result, return_block, &[debug_failed]);
-                    builder.ins().jump(after_debug, &[]);
+                    let fail_branch =
+                        builder
+                            .ins()
+                            .brif(result, after_debug, &[], return_block, &[debug_failed]);
                     builder.seal_block(builder.current_block().unwrap());
                     builder.switch_to_block(after_debug);
 
@@ -211,8 +216,13 @@ impl Codegen {
 
                         let debug_failed = builder.false_byte();
                         let debug_success = builder.true_byte();
-                        builder.ins().brz(result, return_block, &[debug_failed]);
-                        builder.ins().jump(return_block, &[debug_success]);
+                        builder.ins().brif(
+                            result,
+                            return_block,
+                            &[debug_success],
+                            return_block,
+                            &[debug_failed],
+                        );
 
                     // Otherwise comma-separate each column
                     } else {
@@ -222,8 +232,9 @@ impl Codegen {
                         let result = builder.call_fn(str_debug, &[comma_ptr, comma_len, fmt]);
 
                         let debug_failed = builder.false_byte();
-                        builder.ins().brz(result, return_block, &[debug_failed]);
-                        builder.ins().jump(next_debug, &[]);
+                        builder
+                            .ins()
+                            .brif(result, next_debug, &[], return_block, &[debug_failed]);
                         builder.switch_to_block(next_debug);
                     }
 

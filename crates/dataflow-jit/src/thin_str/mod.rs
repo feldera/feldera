@@ -76,6 +76,13 @@ impl ThinStr {
         unsafe { addr_of_mut!((*self.buf.as_ptr())._data).cast() }
     }
 
+    /// Returns the offset of the `length` field, used within codegen to access
+    /// a string's length
+    #[inline]
+    pub(crate) fn length_offset() -> usize {
+        addr_of!(EMPTY.length) as usize - addr_of!(EMPTY) as usize
+    }
+
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         // Safety: All bytes up to self.len() are valid

@@ -71,8 +71,9 @@ impl Codegen {
                         // For all other types we only hash the inner value if it's non-null
                         let hash_innards = builder.create_block();
                         let next_hash = builder.create_block();
-                        builder.ins().brz(non_null, next_hash, &[]);
-                        builder.ins().jump(hash_innards, &[]);
+                        builder
+                            .ins()
+                            .brif(non_null, hash_innards, &[], next_hash, &[]);
 
                         builder.seal_block(builder.current_block().unwrap());
                         builder.switch_to_block(hash_innards);

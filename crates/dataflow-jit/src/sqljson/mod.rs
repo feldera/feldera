@@ -6,8 +6,8 @@ use crate::{
     ir::{
         graph::{GraphContext, Subgraph},
         ColumnType, Constant, DataflowNode, Function, FunctionBuilder, Graph, GraphExt, LayoutId,
-        Node, NodeId, NodeIdGen, RowLayout, RowLayoutBuilder, RowLayoutCache, Terminator,
-        Validator,
+        Node, NodeId, NodeIdGen, RowLayout, RowLayoutBuilder, RowLayoutCache, Sink, StreamKind,
+        StreamLayout, Terminator, Validator,
     },
     row::{Row, UninitRow},
 };
@@ -31,12 +31,12 @@ pub struct SqlGraph {
 }
 
 impl SqlGraph {
-    // TODO: Make sure all referenced nodes/layouts/blocks/expressions exist (verify the generated graph)
+    // TODO: Make sure all referenced nodes/layouts/blocks/expressions exist (verify
+    // the generated graph)
     pub fn rematerialize(self) -> Graph {
         let Self { mut graph, layouts } = self;
 
-        // FIXME: This doesn't ensure that layout ids are continuous
-        let layout_cache = RowLayoutCache::from_layouts(layouts.into_values().collect());
+        let (layout_cache, layout_mappings) = Self::rematerialize_layouts(layouts);
 
         // Find the highest node id and create a generator to pick up where it left off
         let highest_node_id = Self::collect_highest_id(graph.graph());
@@ -49,7 +49,25 @@ impl SqlGraph {
         let (mut inputs, mut functions) = (Vec::with_capacity(8), Vec::with_capacity(8));
         Self::rebuild_subgraph(graph.graph_mut(), context, &mut inputs, &mut functions);
 
+        // Remap the graph's layouts
+        graph.remap_layouts(&layout_mappings);
+
         graph
+    }
+
+    /// The input we get contains duplicated layouts so we have to deduplicate them
+    fn rematerialize_layouts(
+        layouts: BTreeMap<LayoutId, RowLayout>,
+    ) -> (RowLayoutCache, BTreeMap<LayoutId, LayoutId>) {
+        let layout_cache = RowLayoutCache::with_capacity(layouts.len());
+        let mut mappings = BTreeMap::new();
+
+        for (old_layout_id, layout) in layouts {
+            let layout_id = layout_cache.add(layout);
+            mappings.insert(old_layout_id, layout_id);
+        }
+
+        (layout_cache, mappings)
     }
 
     // Collect the highest id assigned to any node within the graph
@@ -179,6 +197,90 @@ impl From<Graph> for SqlGraph {
 
         Self { graph, layouts }
     }
+}
+
+#[test]
+fn join_json() {
+    crate::utils::test_logger();
+
+    let mut graph = Graph::new();
+
+    let key = graph.layout_cache().add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::U32, true)
+            .build(),
+    );
+    let value = graph.layout_cache().add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+
+    let output = graph.layout_cache().add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::U32, true)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+    let unit = graph.layout_cache().unit();
+
+    let source = graph.source_map(key, value);
+    let source_index = graph.index_with(source, key, value, {
+        let mut builder = graph.function_builder();
+        let key_input = builder.add_input(key);
+        let value_input = builder.add_input(value);
+        let key_output = builder.add_output(key);
+        let value_output = builder.add_output(value);
+
+        let key = builder.load(key_input, 0);
+        builder.store(key_output, 0, key);
+
+        let value = builder.load(value_input, 0);
+        let value = builder.copy_val(value);
+        builder.store(value_output, 0, value);
+
+        builder.ret_unit();
+
+        builder.build()
+    });
+
+    let joined = graph.join_core(
+        source_index,
+        source_index,
+        {
+            let mut builder = graph.function_builder();
+            let key = builder.add_input(key);
+            let lhs_val = builder.add_input(value);
+            let rhs_val = builder.add_input(value);
+            let output = builder.add_output(output);
+            let _unit_output = builder.add_output(unit);
+
+            let key = builder.load(key, 0);
+            builder.store(output, 0, key);
+
+            let lhs_val = builder.load(lhs_val, 0);
+            let lhs_val = builder.copy_val(lhs_val);
+            builder.store(output, 1, lhs_val);
+
+            let rhs_val = builder.load(rhs_val, 0);
+            let rhs_val = builder.copy_val(rhs_val);
+            builder.store(output, 2, rhs_val);
+
+            builder.ret_unit();
+
+            builder.build()
+        },
+        output,
+        unit,
+        StreamKind::Set,
+    );
+
+    graph.sink(joined);
+
+    let graph = SqlGraph::from(graph);
+    let json_graph = serde_json::to_string_pretty(&graph).unwrap();
+    println!("{json_graph}");
 }
 
 #[test]

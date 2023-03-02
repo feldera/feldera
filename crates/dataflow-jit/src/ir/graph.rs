@@ -3,8 +3,8 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{Integrate, Node, Subgraph as SubgraphNode},
-    DataflowNode, Differentiate, ExportedNode, Filter, Function, IndexWith, LayoutId, Map, NodeId,
-    NodeIdGen, Sink, Source, SourceMap,
+    DataflowNode, Differentiate, ExportedNode, Filter, Function, FunctionBuilder, IndexWith,
+    JoinCore, LayoutId, Map, NodeId, NodeIdGen, Sink, Source, SourceMap, StreamKind,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,17 @@ pub trait GraphExt {
         }
     }
 
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        for node in self.nodes_mut().values_mut() {
+            node.remap_layouts(mappings);
+        }
+    }
+
     fn edges(&self) -> &DiGraphMap<NodeId, ()>;
+
+    fn function_builder(&self) -> FunctionBuilder {
+        FunctionBuilder::new(self.layout_cache().clone())
+    }
 
     fn source(&mut self, key_layout: LayoutId) -> NodeId {
         self.add_node(Source::new(key_layout))
@@ -87,6 +97,25 @@ pub trait GraphExt {
 
     fn integrate(&mut self, input: NodeId) -> NodeId {
         self.add_node(Integrate::new(input))
+    }
+
+    fn join_core(
+        &mut self,
+        lhs: NodeId,
+        rhs: NodeId,
+        join_fn: Function,
+        key_layout: LayoutId,
+        value_layout: LayoutId,
+        output_kind: StreamKind,
+    ) -> NodeId {
+        self.add_node(JoinCore::new(
+            lhs,
+            rhs,
+            join_fn,
+            key_layout,
+            value_layout,
+            output_kind,
+        ))
     }
 }
 
@@ -291,7 +320,7 @@ mod tests {
         codegen::{Codegen, CodegenConfig},
         dataflow::CompiledDataflow,
         ir::{
-            expr::{Constant, NullRow},
+            exprs::{Constant, NullRow},
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
             nodes::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
@@ -681,7 +710,7 @@ mod tests {
 
         let sink = graph.add_node(Sink::new(map));
 
-        let mut validator = Validator::new();
+        let mut validator = Validator::new(graph.layout_cache().clone());
         validator.validate_graph(&graph).unwrap();
 
         graph.optimize();

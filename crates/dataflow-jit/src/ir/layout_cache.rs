@@ -16,21 +16,17 @@ pub struct RowLayoutCache {
 impl RowLayoutCache {
     /// Creates a new row layout cache
     pub fn new() -> Self {
+        Self::with_capacity(0)
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(RowLayoutCacheInner::new())),
+            inner: Rc::new(RefCell::new(RowLayoutCacheInner::with_capacity(capacity))),
         }
     }
 
-    pub(crate) fn from_layouts(layouts: Vec<RowLayout>) -> Self {
-        let mut inner = RowLayoutCacheInner {
-            layouts,
-            unit_layout: LayoutId::new(1),
-        };
-        inner.unit_layout = inner.add(RowLayout::unit());
-
-        Self {
-            inner: Rc::new(RefCell::new(inner)),
-        }
+    pub fn contains(&self, layout_id: LayoutId) -> bool {
+        (layout_id.into_inner() as usize) < self.inner.borrow().layouts.len()
     }
 
     pub fn get(&self, layout_id: LayoutId) -> Ref<'_, RowLayout> {
@@ -84,9 +80,9 @@ struct RowLayoutCacheInner {
 }
 
 impl RowLayoutCacheInner {
-    fn new() -> Self {
+    fn with_capacity(capacity: usize) -> Self {
         let mut this = Self {
-            layouts: Vec::new(),
+            layouts: Vec::with_capacity(capacity + 1),
             unit_layout: LayoutId::MAX,
         };
 
@@ -100,7 +96,7 @@ impl RowLayoutCacheInner {
         // Get the layout from cache if possible
         if let Some(layout_idx) = self.layouts.iter().position(|cached| cached == &layout) {
             debug_assert!(
-                layout_idx <= u32::MAX as usize,
+                layout_idx < u32::MAX as usize,
                 "created more than {} layouts",
                 u32::MAX,
             );
@@ -110,7 +106,7 @@ impl RowLayoutCacheInner {
         // Insert the layout if it doesn't exist yet
         } else {
             debug_assert!(
-                self.layouts.len() <= u32::MAX as usize,
+                self.layouts.len() < u32::MAX as usize,
                 "created more than {} layouts",
                 u32::MAX,
             );

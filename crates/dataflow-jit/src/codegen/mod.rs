@@ -23,6 +23,7 @@ use crate::{
         Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, SetNull,
         Signature, Terminator, UnaryOp, UnaryOpKind,
     },
+    ThinStr,
 };
 use cranelift::{
     codegen::{
@@ -43,6 +44,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap},
     rc::Rc,
+    sync::Arc,
 };
 use target_lexicon::Triple;
 
@@ -199,7 +201,7 @@ impl Codegen {
         }
     }
 
-    fn target_isa() -> Box<dyn TargetIsa> {
+    fn target_isa() -> Arc<dyn TargetIsa> {
         let mut settings = settings::builder();
 
         let options = &[
@@ -866,8 +868,7 @@ impl<'a> CodegenCtx<'a> {
         self.debug_assert_bool_is_valid(cond, builder);
 
         // FIXME: bb args
-        builder.ins().brnz(cond, truthy, &[]);
-        builder.ins().jump(falsy, &[]);
+        builder.ins().brif(cond, truthy, &[], falsy, &[]);
 
         stack.extend([branch.truthy(), branch.falsy()]);
     }
@@ -1573,108 +1574,137 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
-        let (value, value_ty) = match unary.value() {
-            RValue::Expr(value_id) => {
-                let value = self.exprs[value_id];
-                let value_ty = self.expr_types[value_id];
-                debug_assert!(!value_ty.is_string() && !value_ty.is_unit());
+        let (value, value_ty) = {
+            let value_id = unary.value();
+            let value = self.exprs[&value_id];
+            let value_ty = self.expr_types[&value_id];
+            debug_assert!(
+                (unary.kind() == UnaryOpKind::StringLen || !value_ty.is_string())
+                    && !value_ty.is_unit()
+            );
 
-                let value = match unary.kind() {
-                    UnaryOpKind::Abs => {
-                        if value_ty.is_float() {
-                            builder.ins().fabs(value)
-                        } else if value_ty.is_signed_int() {
-                            builder.ins().iabs(value)
-                        } else {
-                            // Abs on unsigned types is a noop
-                            value
-                        }
+            let value = match unary.kind() {
+                UnaryOpKind::Abs => {
+                    if value_ty.is_float() {
+                        builder.ins().fabs(value)
+                    } else if value_ty.is_signed_int() {
+                        builder.ins().iabs(value)
+                    } else {
+                        // Abs on unsigned types is a noop
+                        value
+                    }
+                }
+
+                UnaryOpKind::Neg => {
+                    if value_ty.is_float() {
+                        builder.ins().fneg(value)
+                    } else {
+                        // TODO: Should we only use ineg for signed integers?
+                        builder.ins().ineg(value)
+                    }
+                }
+
+                UnaryOpKind::Not => {
+                    let not_value = builder.ins().bnot(value);
+                    if value_ty.is_bool() {
+                        // Mask all bits except for the one containing the boolean value
+                        builder.ins().band_imm(not_value, 0b0000_0001)
+                    } else {
+                        not_value
+                    }
+                }
+
+                UnaryOpKind::Ceil => {
+                    debug_assert!(value_ty.is_float());
+                    builder.ins().ceil(value)
+                }
+                UnaryOpKind::Floor => {
+                    debug_assert!(value_ty.is_float());
+                    builder.ins().floor(value)
+                }
+                UnaryOpKind::Trunc => {
+                    debug_assert!(value_ty.is_float());
+                    builder.ins().trunc(value)
+                }
+                UnaryOpKind::Sqrt => {
+                    if value_ty.is_float() {
+                        builder.ins().sqrt(value)
+                    } else {
+                        todo!("integer sqrt?")
+                    }
+                }
+
+                UnaryOpKind::CountOnes => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().popcnt(value)
+                }
+                UnaryOpKind::CountZeroes => {
+                    debug_assert!(value_ty.is_int());
+                    // count_zeroes(x) = count_ones(!x)
+                    let not_value = builder.ins().bnot(value);
+                    builder.ins().popcnt(not_value)
+                }
+
+                UnaryOpKind::LeadingOnes => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().cls(value)
+                }
+                UnaryOpKind::LeadingZeroes => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().clz(value)
+                }
+
+                UnaryOpKind::TrailingOnes => {
+                    debug_assert!(value_ty.is_int());
+                    // trailing_ones(x) = trailing_zeroes(!x)
+                    let not_value = builder.ins().bnot(value);
+                    builder.ins().ctz(not_value)
+                }
+                UnaryOpKind::TrailingZeroes => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().ctz(value)
+                }
+
+                UnaryOpKind::BitReverse => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().bitrev(value)
+                }
+                UnaryOpKind::ByteReverse => {
+                    debug_assert!(value_ty.is_int());
+                    builder.ins().bswap(value)
+                }
+
+                UnaryOpKind::StringLen => {
+                    debug_assert!(value_ty.is_string());
+
+                    // Get the offset of the length field
+                    let length_offset = ThinStr::length_offset();
+
+                    // Load the length field
+                    let length = builder.ins().load(
+                        self.pointer_type(),
+                        MemFlags::trusted(),
+                        value,
+                        length_offset as i32,
+                    );
+
+                    if let Some(writer) = self.comment_writer.as_deref() {
+                        writer.borrow_mut().add_comment(
+                            builder.func.dfg.value_def(length).unwrap_inst(),
+                            format!("get the length of the string {value}"),
+                        );
                     }
 
-                    UnaryOpKind::Neg => {
-                        if value_ty.is_float() {
-                            builder.ins().fneg(value)
-                        } else {
-                            // TODO: Should we only use ineg for signed integers?
-                            builder.ins().ineg(value)
-                        }
+                    // Extend the length to a u64
+                    if self.pointer_type() == types::I64 {
+                        length
+                    } else {
+                        builder.ins().uextend(types::I64, length)
                     }
+                }
+            };
 
-                    UnaryOpKind::Not => {
-                        let not_value = builder.ins().bnot(value);
-                        if value_ty.is_bool() {
-                            // Mask all bits except for the one containing the boolean value
-                            builder.ins().band_imm(not_value, 0b0000_0001)
-                        } else {
-                            not_value
-                        }
-                    }
-
-                    UnaryOpKind::Ceil => {
-                        debug_assert!(value_ty.is_float());
-                        builder.ins().ceil(value)
-                    }
-                    UnaryOpKind::Floor => {
-                        debug_assert!(value_ty.is_float());
-                        builder.ins().floor(value)
-                    }
-                    UnaryOpKind::Trunc => {
-                        debug_assert!(value_ty.is_float());
-                        builder.ins().trunc(value)
-                    }
-                    UnaryOpKind::Sqrt => {
-                        if value_ty.is_float() {
-                            builder.ins().sqrt(value)
-                        } else {
-                            todo!("integer sqrt?")
-                        }
-                    }
-
-                    UnaryOpKind::CountOnes => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().popcnt(value)
-                    }
-                    UnaryOpKind::CountZeroes => {
-                        debug_assert!(value_ty.is_int());
-                        // count_zeroes(x) = count_ones(!x)
-                        let not_value = builder.ins().bnot(value);
-                        builder.ins().popcnt(not_value)
-                    }
-
-                    UnaryOpKind::LeadingOnes => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().cls(value)
-                    }
-                    UnaryOpKind::LeadingZeroes => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().clz(value)
-                    }
-
-                    UnaryOpKind::TrailingOnes => {
-                        debug_assert!(value_ty.is_int());
-                        // trailing_ones(x) = trailing_zeroes(!x)
-                        let not_value = builder.ins().bnot(value);
-                        builder.ins().ctz(not_value)
-                    }
-                    UnaryOpKind::TrailingZeroes => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().ctz(value)
-                    }
-
-                    UnaryOpKind::BitReverse => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().bitrev(value)
-                    }
-                    UnaryOpKind::ByteReverse => {
-                        debug_assert!(value_ty.is_int());
-                        builder.ins().bswap(value)
-                    }
-                };
-
-                (value, value_ty)
-            }
-
-            RValue::Imm(_value) => todo!(),
+            (value, value_ty)
         };
 
         self.add_expr(expr_id, value, value_ty, None);
@@ -1821,5 +1851,95 @@ impl<'a> CodegenCtx<'a> {
 
         // left ^= shifted
         builder.ins().bxor(int, shifted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        codegen::{Codegen, CodegenConfig},
+        ir::{ColumnType, FunctionBuilder, RowLayoutBuilder, RowLayoutCache},
+        row::UninitRow,
+        utils, ThinStr,
+    };
+    use std::mem::transmute;
+
+    #[test]
+    fn string_length() {
+        utils::test_logger();
+
+        let layout_cache = RowLayoutCache::new();
+        let string = layout_cache.add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::String, false)
+                .build(),
+        );
+        let u64 = layout_cache.add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::U64, false)
+                .build(),
+        );
+
+        let function = {
+            let mut builder = FunctionBuilder::new(layout_cache.clone());
+            let string_input = builder.add_input(string);
+            let length_output = builder.add_output(u64);
+
+            let string = builder.load(string_input, 0);
+            let length = builder.string_len(string);
+            builder.store(length_output, 0, length);
+            builder.ret_unit();
+
+            builder.build()
+        };
+
+        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+        let function = codegen.codegen_func("string_length", &function);
+        let string_vtable = codegen.vtable_for(string);
+        let u64_vtable = codegen.vtable_for(u64);
+
+        let (jit, layout_cache) = codegen.finalize_definitions();
+        {
+            let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
+            let u64_vtable = Box::into_raw(Box::new(u64_vtable.marshalled(&jit)));
+
+            let string_length = unsafe {
+                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                    jit.get_finalized_function(function),
+                )
+            };
+
+            let mut input = UninitRow::new(unsafe { &*string_vtable });
+            unsafe {
+                input
+                    .as_mut_ptr()
+                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                    .cast::<ThinStr>()
+                    .write(ThinStr::from("foobarbaz"));
+            }
+            let input = unsafe { input.assume_init() };
+
+            let mut length = UninitRow::new(unsafe { &*u64_vtable });
+            string_length(input.as_ptr(), length.as_mut_ptr());
+            drop(input);
+
+            let length_row = unsafe { length.assume_init() };
+            let length = unsafe {
+                length_row
+                    .as_ptr()
+                    .add(layout_cache.layout_of(u64).offset_of(0) as usize)
+                    .cast::<u64>()
+                    .read()
+            };
+            drop(length_row);
+
+            unsafe {
+                drop(Box::from_raw(string_vtable));
+                drop(Box::from_raw(u64_vtable));
+            }
+
+            assert_eq!(length, 9);
+        }
+        unsafe { jit.free_memory() };
     }
 }
