@@ -121,7 +121,7 @@ impl ProjectStatus {
                 if let Ok(messages) = serde_json::from_str(&error) {
                     Ok(Self::SqlError(messages))
                 } else {
-                    error!("Expected valid json for SqlCompilerMessage but got {:?}, did you update struct without adjusting the database?", error);
+                    error!("Expected valid json for SqlCompilerMessage but got {:?}, did you update the struct without adjusting the database?", error);
                     Ok(Self::SystemError(error))
                 }
             }
