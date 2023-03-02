@@ -1,7 +1,8 @@
 use crate::ir::{
     block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
-    BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, Expr, ExprId, ExprIdGen, IsNull,
-    Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator, UninitRow,
+    BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, CopyVal, Expr, ExprId, ExprIdGen,
+    IsNull, Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator, UnaryOp,
+    UnaryOpKind, UninitRow,
 };
 use petgraph::{
     algo::dominators::{self, Dominators},
@@ -169,6 +170,20 @@ impl Function {
         self.simplify_branches();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
+    }
+
+    pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        for FuncArg { layout, .. } in &mut self.args {
+            *layout = mappings[layout];
+        }
+
+        for block in self.blocks.values_mut() {
+            for (_, expr) in block.body_mut() {
+                expr.remap_layouts(mappings);
+            }
+
+            // Terminators don't contain layout ids
+        }
     }
 
     #[allow(dead_code)]
@@ -505,6 +520,17 @@ impl FunctionBuilder {
         expr
     }
 
+    pub fn copy_val(&mut self, value: ExprId) -> ExprId {
+        let value_ty = self
+            .expr_types
+            .get(&value)
+            .unwrap_or_else(|| panic!("failed to get type of {value}"))
+            .expect("attempted to call `CopyVal` on a row value");
+        let expr = self.add_expr(CopyVal::new(value, value_ty));
+        self.set_expr_type(expr, Ok(value_ty));
+        expr
+    }
+
     pub fn load(&mut self, target: ExprId, column: usize) -> ExprId {
         let target_layout = self
             .expr_types
@@ -623,6 +649,32 @@ impl FunctionBuilder {
             | BinaryOpKind::GreaterThan
             | BinaryOpKind::LessThanOrEqual
             | BinaryOpKind::GreaterThanOrEqual => ColumnType::Bool,
+        };
+        self.set_expr_type(expr, Ok(output_ty));
+
+        expr
+    }
+
+    pub fn string_len(&mut self, value: ExprId) -> ExprId {
+        self.unary_op(value, UnaryOpKind::StringLen)
+    }
+
+    fn unary_op(&mut self, value: ExprId, kind: UnaryOpKind) -> ExprId {
+        let value_ty = self
+            .expr_types
+            .get(&value)
+            .unwrap_or_else(|| panic!("failed to get type of {value}"))
+            .expect("attempted to call a unary op on a row value");
+
+        let expr = self.add_expr(UnaryOp::new(value, value_ty, kind));
+
+        // TODO: Implement all unary op kinds
+        // TODO: Is this correct?
+        // TODO: Make this a method on `UnaryOpKind` for reuse
+        let output_ty = match kind {
+            UnaryOpKind::StringLen => ColumnType::U64,
+
+            _ => todo!(),
         };
         self.set_expr_type(expr, Ok(output_ty));
 

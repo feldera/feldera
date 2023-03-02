@@ -3,6 +3,7 @@ use crate::ir::{
     StreamLayout,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Differentiate {
@@ -46,6 +47,8 @@ impl DataflowNode for Differentiate {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -90,4 +93,6 @@ impl DataflowNode for Integrate {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }

@@ -320,8 +320,9 @@ impl Codegen {
                         // any other fields
                         let size_of_string = builder.create_block();
                         let next_size_of = builder.create_block();
-                        builder.ins().brnz(string_non_null, next_size_of, &[]);
-                        builder.ins().jump(size_of_string, &[]);
+                        builder
+                            .ins()
+                            .brif(string_non_null, next_size_of, &[], size_of_string, &[]);
 
                         builder.switch_to_block(size_of_string);
 

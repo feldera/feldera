@@ -3,18 +3,27 @@ name = "dataflow-jit"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+binary = ["clap"]
+
+[[bin]]
+name = "dataflow-jit"
+required-features = ["binary"]
+
 [dependencies]
 paste = "1.0.9"
+# pretty = "0.11.3"
 size-of = "0.1.4"
 tracing = "0.1.37"
 bitflags = "1.3.2"
-cranelift = "0.92.0"
+cranelift = "0.93.0"
 enum_dispatch = "0.3.8"
-cranelift-jit = "0.92.0"
+cranelift-jit = "0.93.0"
 target-lexicon = "0.12.5"
 dbsp = { path = "../../" }
-cranelift-module = "0.92.0"
-cranelift-native = "0.92.0"
+cranelift-module = "0.93.0"
+cranelift-native = "0.93.0"
 bitvec = { version = "1.0.1", features = ["serde"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
@@ -25,6 +34,9 @@ serde_with = "2.2.0"
 serde_json = "1.0.92"
 serde = { version = "1.0.152", features = ["derive"] }
 
+# Argument parsing for the binary
+clap = { version = "4.1.8", features = ["derive"], optional = true }
+
     [dependencies.chrono]
     version = "0.4.23"
     default-features = false
@@ -33,7 +45,7 @@ serde = { version = "1.0.152", features = ["derive"] }
     [dependencies.derive_more]
     version = "0.99.17"
     default-features = false
-    features = ["from", "is_variant", "unwrap", "display", "error"]
+    features = ["from", "is_variant", "unwrap", "display"]
 
     [dependencies.tinyvec]
     version = "1.6.0"

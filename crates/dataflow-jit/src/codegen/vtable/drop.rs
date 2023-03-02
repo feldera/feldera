@@ -118,8 +118,7 @@ impl Codegen {
                 let end_ptr = builder.ins().iadd(ptr, length_bytes);
 
                 // Check that `length` isn't zero and if so jump to the end
-                builder.ins().brz(length, tail, &[]);
-                builder.ins().jump(body, &[ptr]);
+                builder.ins().brif(length, body, &[ptr], tail, &[]);
 
                 builder.seal_block(entry_block);
                 builder.switch_to_block(body);
@@ -136,8 +135,7 @@ impl Codegen {
 
                 let ptr = builder.ins().iadd_imm(ptr, layout.size() as i64);
                 let ptr_inbounds = builder.ins().icmp(IntCC::UnsignedLessThan, ptr, end_ptr);
-                builder.ins().brnz(ptr_inbounds, body, &[ptr]);
-                builder.ins().jump(tail, &[]);
+                builder.ins().brif(ptr_inbounds, body, &[ptr], tail, &[]);
 
                 builder.seal_current();
                 builder.switch_to_block(tail);
@@ -181,8 +179,9 @@ fn drop_layout(
             // then continue dropping any other fields
             let drop_string = builder.create_block();
             let next_drop = builder.create_block();
-            builder.ins().brnz(string_non_null, next_drop, &[]);
-            builder.ins().jump(drop_string, &[]);
+            builder
+                .ins()
+                .brif(string_non_null, next_drop, &[], drop_string, &[]);
 
             builder.switch_to_block(drop_string);
 

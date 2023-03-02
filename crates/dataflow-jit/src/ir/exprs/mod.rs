@@ -1,6 +1,11 @@
+mod unary;
+
+pub use unary::{UnaryOp, UnaryOpKind};
+
 use crate::ir::{ColumnType, ExprId, LayoutId};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // TODO: Put type info into more expressions
 
@@ -22,8 +27,30 @@ pub enum Expr {
     UninitRow(UninitRow),
 }
 
+impl Expr {
+    pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        match self {
+            Self::Load(load) => load.source_layout = mappings[&load.source_layout],
+            Self::Store(store) => store.target_layout = mappings[&store.target_layout],
+            Self::IsNull(is_null) => is_null.target_layout = mappings[&is_null.target_layout],
+            Self::SetNull(set_null) => set_null.target_layout = mappings[&set_null.target_layout],
+            Self::CopyRowTo(copy_row) => copy_row.layout = mappings[&copy_row.layout],
+            Self::NullRow(null_row) => null_row.layout = mappings[&null_row.layout],
+            Self::UninitRow(uninit_row) => uninit_row.layout = mappings[&uninit_row.layout],
+
+            // These expressions don't contain `LayoutId`s
+            Self::Cast(_)
+            | Self::BinOp(_)
+            | Self::CopyVal(_)
+            | Self::UnaryOp(_)
+            | Self::Constant(_) => {}
+        }
+    }
+}
+
 /// An rvalue (right value) is either a reference to another expression or an
 /// immediate constant
+// TODO: Remove all uses of this
 #[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
 pub enum RValue {
     /// An expression
@@ -224,60 +251,6 @@ pub enum BinaryOpKind {
     /// Maximum
     Max,
     // TODO: shr, shl, rem, mod, rotl, rotr, pow
-}
-
-/// A unary operation, see [`UnaryOpKind`] for the possible kinds of
-/// operations being performed
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct UnaryOp {
-    /// The input value
-    value: RValue,
-    /// The type of the input value
-    value_ty: ColumnType,
-    /// The unary operation being performed
-    kind: UnaryOpKind,
-}
-
-impl UnaryOp {
-    pub fn new(value: RValue, value_ty: ColumnType, kind: UnaryOpKind) -> Self {
-        Self {
-            value,
-            value_ty,
-            kind,
-        }
-    }
-
-    pub const fn value(&self) -> &RValue {
-        &self.value
-    }
-
-    pub const fn value_ty(&self) -> ColumnType {
-        self.value_ty
-    }
-
-    pub const fn kind(&self) -> UnaryOpKind {
-        self.kind
-    }
-}
-
-/// The kind of unary operation being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub enum UnaryOpKind {
-    Abs,
-    Neg,
-    Not,
-    Ceil,
-    Floor,
-    Trunc,
-    Sqrt,
-    CountOnes,
-    CountZeroes,
-    LeadingOnes,
-    LeadingZeroes,
-    TrailingOnes,
-    TrailingZeroes,
-    BitReverse,
-    ByteReverse,
 }
 
 /// Copies a value

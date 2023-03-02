@@ -97,8 +97,9 @@ impl Codegen {
                         let null_eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
                         // If one is null and one is false, return inequal (`null_eq` will always
                         // hold `false` in this case)
-                        builder.ins().brz(null_eq, return_block, &[null_eq]);
-                        builder.ins().jump(check_nulls, &[]);
+                        builder
+                            .ins()
+                            .brif(null_eq, check_nulls, &[], return_block, &[null_eq]);
                         builder.seal_block(builder.current_block().unwrap());
                         builder.switch_to_block(check_nulls);
 
@@ -114,8 +115,13 @@ impl Codegen {
                             // At this point we know both `lhs_non_null` and `rhs_non_null` are
                             // equal, so we just test if the inner value
                             // is null or not
-                            builder.ins().brnz(lhs_non_null, next_compare, &[]);
-                            builder.ins().jump(compare_innards, &[]);
+                            builder.ins().brif(
+                                lhs_non_null,
+                                next_compare,
+                                &[],
+                                compare_innards,
+                                &[],
+                            );
 
                             builder.seal_block(check_nulls);
                             builder.switch_to_block(compare_innards);
@@ -181,8 +187,9 @@ impl Codegen {
                     };
 
                     // If the values aren't equal, return false (`are_equal` should contain `false`)
-                    builder.ins().brz(are_equal, return_block, &[are_equal]);
-                    builder.ins().jump(next_compare, &[]);
+                    builder
+                        .ins()
+                        .brif(are_equal, next_compare, &[], return_block, &[are_equal]);
                     builder.seal_block(builder.current_block().unwrap());
 
                     builder.switch_to_block(next_compare);
@@ -290,13 +297,12 @@ impl Codegen {
                                 rhs_non_null,
                             );
 
-                            // if isnt_less { continue }
+                            // if isnt_less { continue } else { return true }
                             let next = builder.create_block();
                             let true_val = builder.true_byte();
-                            builder.ins().brz(isnt_less, next, &[]);
-
-                            // else { return true }
-                            builder.ins().jump(return_block, &[true_val]);
+                            builder
+                                .ins()
+                                .brif(isnt_less, return_block, &[true_val], next, &[]);
 
                             builder.seal_current();
                             builder.switch_to_block(next);
@@ -307,8 +313,9 @@ impl Codegen {
                         let neither_null = builder.create_block();
                         let secondary_branch = builder.create_block();
                         let both_non_null = builder.ins().band(lhs_non_null, rhs_non_null);
-                        builder.ins().brz(both_non_null, neither_null, &[]);
-                        builder.ins().jump(secondary_branch, &[]);
+                        builder
+                            .ins()
+                            .brif(both_non_null, secondary_branch, &[], neither_null, &[]);
 
                         builder.seal_current();
                         builder.switch_to_block(secondary_branch);
@@ -316,18 +323,22 @@ impl Codegen {
                         let true_val = builder.true_byte();
                         let false_val = builder.false_byte();
 
-                        // if lhs_non_null && !rhs_non_null { return true }
+                        // if lhs_non_null && !rhs_non_null {
+                        //     return true
+                        // } else if (!lhs_non_null && rhs_non_null) || (!lhs_non_null &&
+                        // !rhs_non_null) {     return false
+                        // }
                         let non_null_and_null =
                             builder
                                 .ins()
                                 .icmp(IntCC::UnsignedLessThan, lhs_non_null, rhs_non_null);
-                        builder
-                            .ins()
-                            .brnz(non_null_and_null, return_block, &[true_val]);
-
-                        // if (!lhs_non_null && rhs_non_null) || (!lhs_non_null && !rhs_non_null) {
-                        // return false }
-                        builder.ins().jump(return_block, &[false_val]);
+                        builder.ins().brif(
+                            non_null_and_null,
+                            return_block,
+                            &[true_val],
+                            return_block,
+                            &[false_val],
+                        );
 
                         // Switch to the neither null block so that we can compare both values
                         builder.seal_block(secondary_branch);
@@ -387,8 +398,9 @@ impl Codegen {
 
                     let next = builder.create_block();
                     let true_val = builder.true_byte();
-                    builder.ins().brnz(is_less, return_block, &[true_val]);
-                    builder.ins().jump(next, &[]);
+                    builder
+                        .ins()
+                        .brif(is_less, return_block, &[true_val], next, &[]);
 
                     builder.seal_current();
                     builder.switch_to_block(next);
@@ -516,8 +528,9 @@ impl Codegen {
                                 .ins()
                                 .icmp(IntCC::UnsignedLessThan, lhs_non_null, rhs_non_null);
                         let ordering = builder.ins().select(less, less_than, greater_than);
-                        builder.ins().brz(eq, return_block, &[ordering]);
-                        builder.ins().jump(check_null, &[]);
+                        builder
+                            .ins()
+                            .brif(eq, check_null, &[], return_block, &[ordering]);
                         builder.seal_block(builder.current_block().unwrap());
 
                         let after_compare = builder.create_block();
@@ -526,8 +539,9 @@ impl Codegen {
                         // compare their inner value
                         builder.switch_to_block(check_null);
                         let either_null = builder.ins().bor(lhs_non_null, rhs_non_null);
-                        builder.ins().brnz(either_null, after_compare, &[]);
-                        builder.ins().jump(next_compare, &[]);
+                        builder
+                            .ins()
+                            .brif(either_null, after_compare, &[], next_compare, &[]);
                         builder.seal_block(check_null);
 
                         builder.switch_to_block(next_compare);
@@ -560,7 +574,9 @@ impl Codegen {
                             let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
                             let ordering = builder.ins().select(less, less_than, greater_than);
 
-                            builder.ins().brz(eq, return_block, &[ordering]);
+                            builder
+                                .ins()
+                                .brif(eq, next_compare, &[], return_block, &[ordering]);
                         }
 
                         // Signed integers
@@ -574,7 +590,9 @@ impl Codegen {
                             let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
                             let ordering = builder.ins().select(less, less_than, greater_than);
 
-                            builder.ins().brz(eq, return_block, &[ordering]);
+                            builder
+                                .ins()
+                                .brif(eq, next_compare, &[], return_block, &[ordering]);
                         }
 
                         // Floats
@@ -596,10 +614,14 @@ impl Codegen {
                             };
 
                             let ordering = builder.ins().select(less, less_than, greater_than);
-                            builder.ins().brz(eq, return_block, &[ordering]);
+                            builder
+                                .ins()
+                                .brif(eq, next_compare, &[], return_block, &[ordering]);
                         }
 
-                        ColumnType::Unit => {}
+                        ColumnType::Unit => {
+                            builder.ins().jump(next_compare, &[]);
+                        }
 
                         ColumnType::String => {
                             let string_cmp = imports.string_cmp(&mut self.module, builder.func);
@@ -609,13 +631,15 @@ impl Codegen {
 
                             // Zero is equal so if the value is non-zero we can return the ordering
                             // directly
-                            builder.ins().brnz(cmp, return_block, &[cmp]);
+                            builder
+                                .ins()
+                                .brif(cmp, return_block, &[cmp], next_compare, &[]);
                         }
                     }
 
-                    builder.ins().jump(next_compare, &[]);
-                    builder.seal_block(builder.current_block().unwrap());
+                    let current = builder.current_block().unwrap();
                     builder.switch_to_block(next_compare);
+                    builder.seal_block(current);
                 }
 
                 builder.ins().jump(return_block, &[equal_to]);

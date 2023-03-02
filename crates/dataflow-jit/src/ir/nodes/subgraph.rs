@@ -145,4 +145,8 @@ impl DataflowNode for Subgraph {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         self.subgraph.layouts(layouts);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.subgraph.remap_layouts(mappings);
+    }
 }

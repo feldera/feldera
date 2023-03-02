@@ -14,6 +14,8 @@
   - [ ] Type checking, make sure all accesses and operations are properly typed
   - [ ] Well-formedness checks
   - [ ] Initialization checks, make sure that all relevant columns are properly initialized
+  - [ ] Ensure that all things that require cloning are indeed cloned
+    - If a string comes from an `input` row, it must be cloned before being stored anywhere 
 - [ ] Row vectors
   - Instead of `OrdZSet<Row, Weight>` we want a custom collection that holds untyped values, a truly untyped `DynVec`
   - Requires changes in a lot of the more fundamental `Trace`-related traits
@@ -44,3 +46,10 @@
   - [ ] Automatic incrementalization
   - [ ] Push/pull exchanges
   - [ ] Push/pull gathers
+- [ ] Windowed aggregates
+- [ ] Basic block parameters
+  - [ ] Promote branched allocas to basic block args (or to `select`)
+- [ ] Textual debugging for graphs
+- [ ] Textual debugging for ir
+- [ ] Add the ability to drop values (mainly strings) within ir
+- [ ] Add a borrowed/static version of strings (maybe `&str` style `{ ptr, len }`)

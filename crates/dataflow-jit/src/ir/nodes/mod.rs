@@ -23,6 +23,7 @@ use crate::ir::{
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[enum_dispatch(DataflowNode)]
 #[derive(Debug, Clone, Deserialize, Serialize, IsVariant, Unwrap)]
@@ -72,6 +73,8 @@ pub trait DataflowNode {
     fn functions_mut<'a>(&'a mut self, _functions: &mut Vec<&'a mut Function>) {}
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>);
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>);
 }
 
 #[derive(
@@ -149,6 +152,8 @@ impl DataflowNode for Distinct {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 // FIXME: DelayedFeedback with maps
@@ -189,6 +194,10 @@ impl DataflowNode for DelayedFeedback {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.layout);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout = mappings[&self.layout];
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -228,6 +237,8 @@ impl DataflowNode for Delta0 {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -329,11 +340,18 @@ impl DataflowNode for IndexWith {
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.extend([self.key_layout, self.value_layout]);
     }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.key_layout = mappings[&self.key_layout];
+        self.value_layout = mappings[&self.value_layout];
+        self.index_fn.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Neg {
     input: NodeId,
+    // FIXME: Neg should be able to operate over maps as well
     output_layout: LayoutId,
 }
 
@@ -382,5 +400,9 @@ impl DataflowNode for Neg {
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.push(self.output_layout);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.output_layout = mappings[&self.output_layout];
     }
 }

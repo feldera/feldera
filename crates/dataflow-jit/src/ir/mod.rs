@@ -1,7 +1,7 @@
 pub mod graph;
 
 mod block;
-mod expr;
+mod exprs;
 mod function;
 mod ids;
 mod layout_cache;
@@ -11,7 +11,7 @@ mod types;
 mod validate;
 
 pub use block::Block;
-pub use expr::{
+pub use exprs::{
     BinaryOp, BinaryOpKind, Cast, Constant, CopyRowTo, CopyVal, Expr, IsNull, Load, NullRow,
     RValue, SetNull, Store, UnaryOp, UnaryOpKind, UninitRow,
 };

@@ -228,6 +228,10 @@ impl RowLayout {
         self.nullability[column]
     }
 
+    pub fn try_column_nullable(&self, column: usize) -> Option<bool> {
+        self.nullability.get(column).map(|nullable| *nullable)
+    }
+
     pub fn nullability(&self) -> &BitVec {
         &self.nullability
     }

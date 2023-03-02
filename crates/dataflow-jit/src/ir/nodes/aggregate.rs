@@ -1,8 +1,9 @@
 use crate::ir::{
-    expr::Expr, function::Function, layout_cache::RowLayoutCache, types::Signature, DataflowNode,
+    exprs::Expr, function::Function, layout_cache::RowLayoutCache, types::Signature, DataflowNode,
     LayoutId, NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Min {
@@ -43,6 +44,8 @@ impl DataflowNode for Min {
     fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+
+    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
 // TODO: Fully flesh this api out, init being an expr probably doesn't make
@@ -134,5 +137,13 @@ impl DataflowNode for Fold {
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
         layouts.extend([self.acc_layout, self.step_layout, self.output_layout]);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.acc_layout = mappings[&self.acc_layout];
+        self.step_layout = mappings[&self.step_layout];
+        self.output_layout = mappings[&self.output_layout];
+        self.step_fn.remap_layouts(mappings);
+        self.finish_fn.remap_layouts(mappings);
     }
 }
