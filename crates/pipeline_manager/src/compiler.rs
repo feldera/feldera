@@ -65,8 +65,6 @@ pub(crate) enum ProjectStatus {
     /// Compilation succeeded.
     Success,
     /// SQL compiler returned an error.
-    ///
-    /// The format is (exit-code, messages).
     SqlError(Vec<SqlCompilerMessage>),
     /// Rust compiler returned an error.
     RustError(String),
