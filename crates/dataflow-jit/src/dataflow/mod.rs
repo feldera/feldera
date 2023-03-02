@@ -1,23 +1,25 @@
 mod nodes;
 
 use crate::{
-    codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
+    codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
     dataflow::nodes::{
         DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterFn,
         FilterMap, FilterMapIndex, Integrate, JoinCore, MapFn, Min, Minus, Noop,
     },
     ir::{
-        graph, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId, StreamKind,
-        StreamLayout, Subgraph as SubgraphNode,
+        graph, Constant, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId,
+        NullableConstant, RowLiteral, StreamKind, StreamLayout, StreamLiteral,
+        Subgraph as SubgraphNode,
     },
     row::{Row, UninitRow},
+    ThinStr,
 };
 use cranelift_jit::JITModule;
 use cranelift_module::FuncId;
 use dbsp::{
-    operator::FilterMap as _,
+    operator::{FilterMap as _, Generator},
     time::NestedTimestamp32,
-    trace::{BatchReader, Cursor, Spine},
+    trace::{Batch, BatchReader, Batcher, Cursor, Spine},
     Circuit, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Stream,
 };
 use derive_more::{IsVariant, Unwrap};
@@ -108,6 +110,12 @@ pub enum RowStream<P> {
 pub enum RowTrace<P> {
     Set(Stream<P, Spine<OrdZSet<Row, i32>>>),
     Map(Stream<P, Spine<OrdIndexedZSet<Row, Row, i32>>>),
+}
+
+#[derive(Debug, Clone)]
+pub enum RowZSet {
+    Set(OrdZSet<Row, i32>),
+    Map(OrdIndexedZSet<Row, Row, i32>),
 }
 
 pub struct JitHandle {
@@ -303,6 +311,23 @@ impl CompiledDataflow {
                         collect_functions(codegen, functions, vtables, subgraph.subgraph());
                     }
 
+                    Node::Constant(constant) => match constant.layout() {
+                        StreamLayout::Set(key) => {
+                            vtables
+                                .entry(key)
+                                .or_insert_with(|| codegen.vtable_for(key));
+                        }
+
+                        StreamLayout::Map(key, value) => {
+                            vtables
+                                .entry(key)
+                                .or_insert_with(|| codegen.vtable_for(key));
+                            vtables
+                                .entry(value)
+                                .or_insert_with(|| codegen.vtable_for(value));
+                        }
+                    },
+
                     Node::Min(_)
                     | Node::Distinct(_)
                     | Node::Delta0(_)
@@ -337,6 +362,7 @@ impl CompiledDataflow {
             jit: &JITModule,
             node_streams: &BTreeMap<NodeId, Option<StreamLayout>>,
             node_functions: &BTreeMap<NodeId, Vec<FuncId>>,
+            layout_cache: &NativeLayoutCache,
         ) -> BTreeMap<NodeId, DataflowNode> {
             let mut nodes = BTreeMap::new();
             for (node_id, node) in graph.nodes() {
@@ -602,6 +628,7 @@ impl CompiledDataflow {
                                 jit,
                                 node_streams,
                                 node_functions,
+                                layout_cache,
                             ),
                             feedback_connections: subgraph.feedback_connections().clone(),
                         });
@@ -621,6 +648,64 @@ impl CompiledDataflow {
                         });
                         nodes.insert(*node_id, node);
                     }
+
+                    Node::Constant(constant) => {
+                        let value = match constant.value() {
+                            StreamLiteral::Set(set) => {
+                                let key_layout = constant.layout().unwrap_set();
+                                let key_vtable = unsafe { &*vtables[&key_layout] };
+                                let key_layout = layout_cache.layout_of(key_layout);
+
+                                let mut batch = Vec::with_capacity(set.len());
+                                for (literal, diff) in set {
+                                    let key = unsafe {
+                                        row_from_literal(literal, key_vtable, &key_layout)
+                                    };
+
+                                    batch.push((key, *diff));
+                                }
+
+                                // Build a batch from the set's values
+                                let mut batcher =
+                                    <OrdZSet<Row, i32> as Batch>::Batcher::new_batcher(());
+                                batcher.push_batch(&mut batch);
+                                RowZSet::Set(batcher.seal())
+                            }
+
+                            StreamLiteral::Map(map) => {
+                                let (key_layout, value_layout) = constant.layout().unwrap_map();
+                                let (key_vtable, value_vtable) =
+                                    unsafe { (&*vtables[&key_layout], &*vtables[&value_layout]) };
+                                let (key_layout, value_layout) = (
+                                    layout_cache.layout_of(key_layout),
+                                    layout_cache.layout_of(value_layout),
+                                );
+
+                                let mut batch = Vec::with_capacity(map.len());
+                                for (key_literal, value_literal, diff) in map {
+                                    let key = unsafe {
+                                        row_from_literal(key_literal, key_vtable, &key_layout)
+                                    };
+                                    let value = unsafe {
+                                        row_from_literal(value_literal, value_vtable, &value_layout)
+                                    };
+
+                                    batch.push(((key, value), *diff));
+                                }
+
+                                // Build a batch from the set's values
+                                let mut batcher =
+                                    <OrdIndexedZSet<Row, Row, i32> as Batch>::Batcher::new_batcher(
+                                        (),
+                                    );
+                                batcher.push_batch(&mut batch);
+                                RowZSet::Map(batcher.seal())
+                            }
+                        };
+
+                        let node = DataflowNode::Constant(nodes::Constant { value });
+                        nodes.insert(*node_id, node);
+                    }
                 }
             }
 
@@ -638,6 +723,7 @@ impl CompiledDataflow {
             &jit,
             &node_streams,
             &node_functions,
+            &native_layout_cache,
         );
 
         (
@@ -650,7 +736,7 @@ impl CompiledDataflow {
         )
     }
 
-    pub fn construct(self, circuit: &mut Circuit<()>) -> (Inputs, Outputs) {
+    pub fn construct(mut self, circuit: &mut Circuit<()>) -> (Inputs, Outputs) {
         let mut streams = BTreeMap::<NodeId, RowStream<Circuit<()>>>::new();
 
         let mut inputs = BTreeMap::new();
@@ -658,8 +744,7 @@ impl CompiledDataflow {
 
         let order = algo::toposort(&self.edges, None).unwrap();
         for node_id in order {
-            let node = &self.nodes[&node_id];
-            match node {
+            match self.nodes.remove(&node_id).unwrap() {
                 DataflowNode::Map(map) => {
                     let input = &streams[&map.input];
                     let vtable = map.output_vtable;
@@ -988,7 +1073,20 @@ impl CompiledDataflow {
 
                 DataflowNode::Export(_) => todo!(),
 
-                DataflowNode::Subgraph(subgraph) => {
+                DataflowNode::Constant(constant) => {
+                    let constant_stream = match constant.value {
+                        RowZSet::Set(set) => {
+                            RowStream::Set(circuit.add_source(Generator::new(move || set.clone())))
+                        }
+
+                        RowZSet::Map(map) => {
+                            RowStream::Map(circuit.add_source(Generator::new(move || map.clone())))
+                        }
+                    };
+                    streams.insert(node_id, constant_stream);
+                }
+
+                DataflowNode::Subgraph(mut subgraph) => {
                     let mut needs_consolidate = BTreeMap::new();
 
                     circuit
@@ -1002,7 +1100,24 @@ impl CompiledDataflow {
                                     continue;
                                 }
 
-                                match &subgraph.nodes[&node_id] {
+                                match subgraph.nodes.remove(&node_id).unwrap() {
+                                    DataflowNode::Constant(constant) => {
+                                        let constant_stream = match constant.value {
+                                            RowZSet::Set(set) => {
+                                                RowStream::Set(subcircuit.add_source(
+                                                    Generator::new(move || set.clone()),
+                                                ))
+                                            }
+
+                                            RowZSet::Map(map) => {
+                                                RowStream::Map(subcircuit.add_source(
+                                                    Generator::new(move || map.clone()),
+                                                ))
+                                            }
+                                        };
+                                        substreams.insert(node_id, constant_stream);
+                                    }
+
                                     DataflowNode::Map(map) => {
                                         let input = &substreams[&map.input];
                                         let vtable = map.output_vtable;
@@ -1428,6 +1543,64 @@ impl CompiledDataflow {
         }
 
         (inputs, outputs)
+    }
+}
+
+unsafe fn row_from_literal(
+    literal: &RowLiteral,
+    vtable: &'static VTable,
+    layout: &NativeLayout,
+) -> Row {
+    let mut row = UninitRow::new(vtable);
+
+    for (idx, column) in literal.rows().iter().enumerate() {
+        match column {
+            NullableConstant::NonNull(constant) => unsafe {
+                let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
+                write_constant_to(constant, column_ptr);
+            },
+
+            NullableConstant::Nullable(constant) => {
+                row.set_column_null(idx, layout, constant.is_none());
+
+                if let Some(constant) = constant {
+                    unsafe {
+                        let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
+
+                        write_constant_to(constant, column_ptr)
+                    }
+                }
+            }
+        }
+    }
+
+    unsafe { row.assume_init() }
+}
+
+unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
+    match *constant {
+        Constant::Unit => ptr.cast::<()>().write(()),
+
+        Constant::U8(value) => ptr.cast::<u8>().write(value),
+        Constant::I8(value) => ptr.cast::<i8>().write(value),
+
+        Constant::U16(value) => ptr.cast::<u16>().write(value),
+        Constant::I16(value) => ptr.cast::<i16>().write(value),
+
+        Constant::U32(value) => ptr.cast::<u32>().write(value),
+        Constant::I32(value) => ptr.cast::<i32>().write(value),
+
+        Constant::U64(value) => ptr.cast::<u64>().write(value),
+        Constant::I64(value) => ptr.cast::<i64>().write(value),
+
+        Constant::F32(value) => ptr.cast::<f32>().write(value),
+        Constant::F64(value) => ptr.cast::<f64>().write(value),
+
+        Constant::Bool(value) => ptr.cast::<bool>().write(value),
+
+        Constant::String(ref value) => ptr.cast::<ThinStr>().write(ThinStr::from(&**value)),
+        // Constant::Date(date) => ptr.cast::<i32>().write(date),
+        // Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp),
     }
 }
 

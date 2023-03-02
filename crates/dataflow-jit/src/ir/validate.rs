@@ -122,6 +122,11 @@ impl Validator {
                     self.node_outputs.insert(node_id, output);
                 }
 
+                Node::Constant(constant) => {
+                    // TODO: Verify that the layout of the row matches its literal value
+                    self.node_outputs.insert(node_id, constant.layout());
+                }
+
                 _ => todo!(),
             }
         }

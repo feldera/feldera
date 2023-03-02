@@ -1,5 +1,6 @@
 use crate::{
     codegen::VTable,
+    dataflow::RowZSet,
     ir::{NodeId, StreamKind, StreamLayout},
 };
 use petgraph::prelude::DiGraphMap;
@@ -33,6 +34,12 @@ pub enum DataflowNode {
     MonotonicJoin(MonotonicJoin),
     Differentiate(Differentiate),
     Integrate(Integrate),
+    Constant(Constant),
+}
+
+#[derive(Debug, Clone)]
+pub struct Constant {
+    pub value: RowZSet,
 }
 
 #[derive(Debug, Clone)]

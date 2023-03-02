@@ -1,24 +1,25 @@
 mod aggregate;
+mod constant;
 mod differentiate;
 mod filter_map;
+mod index;
 mod io;
 mod join;
 mod subgraph;
 mod sum;
 
 pub use aggregate::{Fold, Min};
+pub use constant::{ConstantStream, NullableConstant, RowLiteral, StreamLiteral};
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
+pub use index::IndexWith;
 pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
 pub use join::{JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
 
 use crate::ir::{
-    function::{Function, InputFlags},
-    layout_cache::RowLayoutCache,
-    types::Signature,
-    ColumnType, LayoutId, NodeId,
+    function::Function, layout_cache::RowLayoutCache, types::Signature, LayoutId, NodeId,
 };
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
@@ -50,6 +51,7 @@ pub enum Node {
     Export(Export),
     ExportedNode(ExportedNode),
     MonotonicJoin(MonotonicJoin),
+    Constant(ConstantStream),
     // TODO: OrderBy, Windows
 }
 
@@ -239,113 +241,6 @@ impl DataflowNode for Delta0 {
     fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct IndexWith {
-    input: NodeId,
-    /// Expects a function with a signature of `fn(input_layout, mut key_layout,
-    /// mut value_layout)`
-    index_fn: Function,
-    key_layout: LayoutId,
-    value_layout: LayoutId,
-}
-
-impl IndexWith {
-    pub fn new(
-        input: NodeId,
-        index_fn: Function,
-        key_layout: LayoutId,
-        value_layout: LayoutId,
-    ) -> Self {
-        Self {
-            input,
-            index_fn,
-            key_layout,
-            value_layout,
-        }
-    }
-
-    pub const fn input(&self) -> NodeId {
-        self.input
-    }
-
-    pub const fn index_fn(&self) -> &Function {
-        &self.index_fn
-    }
-
-    pub const fn key_layout(&self) -> LayoutId {
-        self.key_layout
-    }
-
-    pub const fn value_layout(&self) -> LayoutId {
-        self.value_layout
-    }
-}
-
-impl DataflowNode for IndexWith {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Map)
-    }
-
-    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(StreamLayout::Map(self.key_layout, self.value_layout))
-    }
-
-    fn signature(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        debug_assert_eq!(inputs.len(), 1);
-
-        let (args, flags) = match inputs[0] {
-            StreamLayout::Set(value) => (
-                vec![value, self.key_layout, self.value_layout],
-                vec![InputFlags::INPUT, InputFlags::OUTPUT, InputFlags::OUTPUT],
-            ),
-            StreamLayout::Map(key, value) => (
-                vec![key, value, self.key_layout, self.value_layout],
-                vec![
-                    InputFlags::INPUT,
-                    InputFlags::INPUT,
-                    InputFlags::OUTPUT,
-                    InputFlags::OUTPUT,
-                ],
-            ),
-        };
-
-        Signature::new(args, flags, ColumnType::Unit)
-    }
-
-    fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
-        assert_eq!(
-            self.signature(inputs, layout_cache),
-            self.index_fn.signature()
-        );
-    }
-
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
-        self.index_fn.optimize(layout_cache);
-    }
-
-    fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
-        functions.push(&self.index_fn);
-    }
-
-    fn functions_mut<'a>(&'a mut self, functions: &mut Vec<&'a mut Function>) {
-        functions.push(&mut self.index_fn);
-    }
-
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.key_layout, self.value_layout]);
-    }
-
-    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.key_layout = mappings[&self.key_layout];
-        self.value_layout = mappings[&self.value_layout];
-        self.index_fn.remap_layouts(mappings);
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
