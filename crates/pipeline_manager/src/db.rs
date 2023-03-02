@@ -513,6 +513,12 @@ CREATE TABLE IF NOT EXISTS pipeline (
     ///
     /// Updates project status to `status` if the current project version
     /// in the database matches `expected_version`.
+    ///
+    /// # Note
+    /// This intentionally does not throw an error if there is a project version
+    /// mismatch and instead does just not update. It's used by the compiler
+    /// to update status and in case there is a newer version it is expected
+    /// that the compiler just picks up and runs the next job.
     pub(crate) fn set_project_status_guarded(
         &mut self,
         project_id: ProjectId,
@@ -521,13 +527,14 @@ CREATE TABLE IF NOT EXISTS pipeline (
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
 
-        let _descr = self.get_project_guarded(project_id, expected_version)?;
-
-        self.dbclient
+        let descr = self.get_project(project_id)?;
+        if descr.version == expected_version {
+            self.dbclient
             .execute(
                 "UPDATE project SET status = $1, error = $2, status_since = unixepoch('now') WHERE id = $3",
                 (&status, &error, &project_id.0),
             )?;
+        }
 
         Ok(())
     }
