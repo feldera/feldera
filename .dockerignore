@@ -2,3 +2,7 @@
 target
 .git
 **/Dockerfile
+**/pipeline_data
+**/ldbc-graphalytics-data
+**/fraud_data
+demo
