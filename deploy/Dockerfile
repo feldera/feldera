@@ -34,8 +34,7 @@ RUN arch=`dpkg --print-architecture`; \
     && dpkg -i grafana-enterprise_9.3.6_$arch.deb \
     && rm grafana-enterprise_9.3.6_$arch.deb
 
-ADD ./dbsp_files.tar /database-stream-processor
-ADD ./sql_compiler_files.tar /database-stream-processor/sql-to-dbsp-compiler
+COPY . /database-stream-processor
 
 RUN cd /database-stream-processor/crates/pipeline_manager \
     && ~/.cargo/bin/cargo install --path . \
