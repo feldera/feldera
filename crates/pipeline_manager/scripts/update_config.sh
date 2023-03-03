@@ -19,4 +19,4 @@ ESCAPED_CONFIG="$(json_escape "$CONFIG")"
 
 # echo $ESCAPED_CONFIG
 
-curl -X PATCH http://localhost:8080/configs -H 'Content-Type: application/json' -d '{"config_id":'$1',"name":"'$2'","config":'"${ESCAPED_CONFIG}"'}'
+curl -X PATCH http://"${DBSP_MANAGER:-localhost:8080}"/configs -H 'Content-Type: application/json' -d '{"config_id":'$1',"name":"'$2'","config":'"${ESCAPED_CONFIG}"'}'

@@ -9,4 +9,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-curl http://localhost:8080/projects/$1/pipelines
+curl http://"${DBSP_MANAGER:-localhost:8080}"/projects/$1/pipelines

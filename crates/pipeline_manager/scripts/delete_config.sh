@@ -9,4 +9,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-curl -X DELETE http://localhost:8080/configs/$1  -H 'Content-Type: application/json' -d '{}'
+curl -X DELETE http://"${DBSP_MANAGER:-localhost:8080}"/configs/$1  -H 'Content-Type: application/json' -d '{}'
