@@ -11,4 +11,4 @@ fi
 
 # echo $ESCAPED_CODE
 
-curl http://localhost:8080/projects
+curl http://"${DBSP_MANAGER:-localhost:8080}"/projects
