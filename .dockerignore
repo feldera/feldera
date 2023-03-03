@@ -1,6 +1,5 @@
-# Ignore target and git directories
+# Ignore target and other large directories.
 target
-.git
 **/Dockerfile
 **/pipeline_data
 **/ldbc-graphalytics-data

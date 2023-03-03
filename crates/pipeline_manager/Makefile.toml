@@ -1,9 +1,6 @@
-[tasks.build]
-args = ["build", "--release"]
-
 [tasks.openapi_json]
 description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
-dependencies = ["build"]
+dependencies = ["build-release"]
 command = "cargo"
 args = ["run", "--release",  "--", "--dump-openapi"]
 
@@ -21,7 +18,7 @@ pip3 install .
 
 [tasks.start_manager]
 script = '''
-../../scripts/start_manager.sh $(python3 -c 'import tempfile; print(tempfile.gettempdir(), end="")')/pipeline_data
+../../scripts/start_manager.sh
 '''
 
 [tasks.python_api_test]
@@ -42,3 +39,6 @@ IN_CI=1 jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
 
 [tasks.python_test]
 dependencies = ["fraud_notebook_test", "python_api_test"]
+
+[tasks.test]
+dependencies = ["python_test"]

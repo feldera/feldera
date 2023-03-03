@@ -1,0 +1,3 @@
+[submodule "sql-to-dbsp-compiler"]
+	path = sql-to-dbsp-compiler
+	url = git@github.com:vmware/sql-to-dbsp-compiler.git
