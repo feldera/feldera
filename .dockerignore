@@ -1,0 +1,4 @@
+# Ignore target and git directories
+target
+.git
+**/Dockerfile
