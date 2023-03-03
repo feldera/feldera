@@ -5,6 +5,7 @@ services:
       dockerfile: deploy/Dockerfile
     ports:
       - "8081:8080"
+    stop_grace_period: 0s
     container_name: dbsp
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
