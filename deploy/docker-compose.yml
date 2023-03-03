@@ -1,17 +1,17 @@
 services:
-  web:
+  dbsp:
     build:
       context: ../
       dockerfile: deploy/Dockerfile
     ports:
-      - "8001:8000"
+      - "8081:8080"
     container_name: dbsp
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
     container_name: redpanda
     ports:
       - "3000:3000"
-      - "8081:8081"
-      - "8082:8082"
+      - "8083:8081"
+      - "8084:8082"
       - "9092:9092"
       - "9644:9644"
