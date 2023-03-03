@@ -304,7 +304,7 @@ scrape_configs:
         let start = Instant::now();
 
         let portnum_regex = Regex::new(r"Started HTTP server on port (\w+)\b").unwrap();
-        let error_regex = Regex::new(r"Failed to create server.*").unwrap();
+        let error_regex = Regex::new(r"Failed to create pipeline.*").unwrap();
 
         loop {
             if let Some(line) = log_file_lines.next_line().await? {

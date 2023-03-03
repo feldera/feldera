@@ -141,6 +141,10 @@ pub fn run_server<F>(
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
+    // NOTE: The pipeline manager monitors pipeline log for one of the following
+    // messages ("Failed to create pipeline..." or "Started HTTP server...").
+    // If you change these messages, make sure to make a corresponding change to
+    // `runner.rs`.
     let (port, server, mut terminate_receiver) =
         create_server(circuit_factory, yaml_config, meta, default_port)
             .map_err(|e| AnyError::msg(format!("Failed to create pipeline: {e}")))?;
