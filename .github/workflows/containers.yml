@@ -18,12 +18,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          submodules: true
 
       - name: Build Docker image
         run: |
-          git clone https://github.com/vmware/sql-to-dbsp-compiler sql-to-dbsp-compiler && \
           cd deploy && \
-          ./docker.sh
+          docker build -f Dockerfile -t dbspmanager ../
 
       - name: Run integration tests
         run: |

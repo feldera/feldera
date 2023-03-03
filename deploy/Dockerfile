@@ -8,8 +8,6 @@ RUN apt update && apt install libssl-dev build-essential pkg-config \
      curl openjdk-19-jre-headless maven netcat jq \
      adduser libfontconfig1 unzip -y
 
-RUN pip install gdown
-
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 # Install rpk
@@ -36,9 +34,17 @@ RUN arch=`dpkg --print-architecture`; \
 
 COPY . /database-stream-processor
 
+# Update SQL compiler submodule to the version specified in the repo, unless
+# the submodule is _not_ in detached head state, which indicates that the user
+# is working on the submodule and wants to build a container with their modified
+# SQL compiler version.
+RUN cd /database-stream-processor && \
+    if [[ ! -d sql-to-dbsp-compiler/.git || -z $(cd sql-to-dbsp-compiler && git branch --show-current) ]]; \
+    then git submodule update --init; fi
+
 RUN cd /database-stream-processor/crates/pipeline_manager \
     && ~/.cargo/bin/cargo install --path . \
-    && rm -rf /database-stream-processor/target
+    && rm -rf /database-stream-processor/target .git
 
 RUN cd /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
