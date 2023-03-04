@@ -49,7 +49,7 @@ class DBSPProject:
         start = time.time()
         while time.time() - start < timeout:
             status = self.status()
-            if status != 'Compiling' and status != 'Pending':
+            if status != 'CompilingSql' and status != 'CompilingRust' and status != 'Pending':
                 if status == 'Success':
                     return
                 else:
