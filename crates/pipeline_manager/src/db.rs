@@ -115,7 +115,8 @@ impl ProjectStatus {
             None => Ok(Self::None),
             Some("success") => Ok(Self::Success),
             Some("pending") => Ok(Self::Pending),
-            Some("compiling") => Ok(Self::Compiling),
+            Some("compiling_sql") => Ok(Self::CompilingSql),
+            Some("compiling_rust") => Ok(Self::CompilingRust),
             Some("sql_error") => {
                 let error = error_string.unwrap_or_default();
                 if let Ok(messages) = serde_json::from_str(&error) {
@@ -134,7 +135,8 @@ impl ProjectStatus {
             ProjectStatus::None => (None, None),
             ProjectStatus::Success => (Some("success".to_string()), None),
             ProjectStatus::Pending => (Some("pending".to_string()), None),
-            ProjectStatus::Compiling => (Some("compiling".to_string()), None),
+            ProjectStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
+            ProjectStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
             ProjectStatus::SqlError(error) => {
                 if let Ok(error_string) = serde_json::to_string(&error) {
                     (Some("sql_error".to_string()), Some(error_string))
@@ -553,7 +555,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
         // Do nothing if the project is already pending (we don't want to bump its
         // `status_since` field, which would move it to the end of the queue) or
         // if compilation is alread in progress.
-        if descr.status == ProjectStatus::Pending || descr.status == ProjectStatus::Compiling {
+        if descr.status == ProjectStatus::Pending || descr.status.is_compiling() {
             return Ok(());
         }
 
@@ -573,7 +575,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     ) -> AnyResult<()> {
         let descr = self.get_project_guarded(project_id, expected_version)?;
 
-        if descr.status != ProjectStatus::Pending || descr.status != ProjectStatus::Compiling {
+        if descr.status != ProjectStatus::Pending || !descr.status.is_compiling() {
             return Ok(());
         }
 

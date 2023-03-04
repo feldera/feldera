@@ -405,7 +405,7 @@ class ProjectDisplay extends WebClient implements IHtmlElement {
         this.refresh();
         if (typeof descr.status === 'string') {
             this.display.reportError(descr.status);
-            if (descr.status === 'Compiling') {
+            if (descr.status === 'CompilingSql' || descr.status == 'CompilingRust') {
                 runAfterDelay(1000, () => this.fetchStatus());
             }
         } else if (typeof descr.status === 'object') {

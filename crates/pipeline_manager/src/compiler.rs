@@ -60,8 +60,10 @@ pub(crate) enum ProjectStatus {
     /// Compilation request received from the user; project has been placed
     /// in the queue.
     Pending,
-    /// Compilation in progress.
-    Compiling,
+    /// Compilation of SQL -> Rust in progress.
+    CompilingSql,
+    /// Compiling Rust -> executable in progress
+    CompilingRust,
     /// Compilation succeeded.
     Success,
     /// SQL compiler returned an error.
@@ -70,6 +72,13 @@ pub(crate) enum ProjectStatus {
     RustError(String),
     /// System/OS returned an error when trying to invoke commands.
     SystemError(String),
+}
+
+impl ProjectStatus {
+    /// Return true if project is currently compiling.
+    pub(crate) fn is_compiling(&self) -> bool {
+        *self == ProjectStatus::CompilingRust || *self == ProjectStatus::CompilingSql
+    }
 }
 
 pub struct Compiler {
@@ -140,7 +149,7 @@ impl Compiler {
                         // to cancelled -- abort compilation.
                         let descr = db.lock().await.get_project_if_exists(job.project_id)?;
                         if let Some(descr) = descr {
-                            if descr.version != job.version || descr.status != ProjectStatus::Compiling {
+                            if descr.version != job.version || !descr.status.is_compiling() {
                                 cancel = true;
                             }
                         } else {
@@ -169,11 +178,18 @@ impl Compiler {
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
                             // SQL compiler succeeded -- start Rust job.
+                            db.set_project_status_guarded(
+                                project_id,
+                                version,
+                                ProjectStatus::CompilingRust,
+                            )?;
+                            debug!("Set ProjectStatus::CompilingRust '{project_id}', version '{version}'");
                             job = Some(CompilationJob::rust(&config, project_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
                             db.set_project_status_guarded(project_id, version, ProjectStatus::Success)?;
+                            debug!("Set ProjectStatus::Success '{project_id}', version '{version}'");
                             job = None;
                         }
                         Ok(status) => {
@@ -224,7 +240,7 @@ impl Compiler {
                     db.lock().await.set_project_status_guarded(
                         project_id,
                         version,
-                        ProjectStatus::Compiling,
+                        ProjectStatus::CompilingSql,
                     )?;
                 }
             }

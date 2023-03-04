@@ -490,7 +490,7 @@ define("dbsp-project", ["require", "exports", "errReporter", "ui"], function (re
             this.refresh();
             if (typeof descr.status === 'string') {
                 this.display.reportError(descr.status);
-                if (descr.status === 'Compiling') {
+                if (descr.status === 'CompilingSql' || descr.status == 'CompilingRust') {
                     (0, errReporter_1.runAfterDelay)(1000, () => this.fetchStatus());
                 }
             }
