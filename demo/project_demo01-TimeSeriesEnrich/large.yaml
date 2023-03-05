@@ -5,7 +5,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 topics: [fraud_demo_large_demographics]
         format:
@@ -15,7 +14,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 topics: [fraud_demo_large_transactions]
         format:
@@ -26,7 +24,6 @@ outputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 topic: fraud_demo_large_enriched
         format:
             name: csv

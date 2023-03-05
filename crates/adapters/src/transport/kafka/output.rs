@@ -2,6 +2,7 @@ use super::KafkaLogLevel;
 use crate::{OutputEndpoint, OutputTransport};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
+use log::debug;
 use rdkafka::{
     config::{FromClientConfigAndContext, RDKafkaLogLevel},
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
@@ -9,7 +10,7 @@ use rdkafka::{
 };
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, collections::BTreeMap, time::Duration};
+use std::{borrow::Cow, collections::BTreeMap, env, time::Duration};
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -46,7 +47,7 @@ const fn default_max_inflight_messages() -> u32 {
 }
 
 /// Output endpoint configuration.
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -76,6 +77,25 @@ pub struct KafkaOutputConfig {
     /// Defaults to 1000.
     #[serde(default = "default_max_inflight_messages")]
     max_inflight_messages: u32,
+}
+
+impl KafkaOutputConfig {
+    /// Set `option` to `val`, if missing.
+    fn set_option_if_missing(&mut self, option: &str, val: &str) {
+        self.kafka_options
+            .entry(option.to_string())
+            .or_insert_with(|| val.to_string());
+    }
+
+    /// Validate configuration, set default option values required by this
+    /// adapter.
+    fn validate(&mut self) -> AnyResult<()> {
+        self.set_option_if_missing(
+            "bootstrap.servers",
+            &env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string()),
+        );
+        Ok(())
+    }
 }
 
 // The auto-derived implementation gets confused by the flattened
@@ -173,10 +193,13 @@ struct KafkaOutputEndpoint {
 
 impl KafkaOutputEndpoint {
     fn new(
-        config: KafkaOutputConfig,
+        mut config: KafkaOutputConfig,
         async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<Self> {
-        // Create Kafka consumer configuration.
+        // Create Kafka producer configuration.
+        config.validate()?;
+        debug!("Starting Kafka output endpoint: {config:?}");
+
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {

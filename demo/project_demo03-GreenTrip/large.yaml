@@ -6,7 +6,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 topics: [green_trip_demo_large_input]
         format:
@@ -17,7 +16,6 @@ outputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 topic: green_trip_demo_large_output
         format:
             name: csv
