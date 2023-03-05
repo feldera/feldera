@@ -4,8 +4,6 @@ THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT="${THIS_DIR}/../"
 SERVER_DIR="${ROOT}/crates/pipeline_manager/"
 
-export REDPANDA_BROKERS=localhost:19092
-
 set -e
 
 # We want non-matching wildcards to return an empty list
