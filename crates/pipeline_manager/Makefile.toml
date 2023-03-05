@@ -19,10 +19,26 @@ pip3 install ./dbsp-api-client
 pip3 install .
 '''
 
-[tasks.python_test]
-description = "Test Python API"
-dependencies = ["openapi_python"]
+[tasks.start_manager]
 script = '''
 ../../scripts/start_manager.sh $(python3 -c 'import tempfile; print(tempfile.gettempdir(), end="")')/pipeline_data
+'''
+
+[tasks.python_api_test]
+description = "Test Python API"
+dependencies = ["openapi_python", "start_manager"]
+script = '''
 python3 ../../python/test.py
 '''
+
+[tasks.fraud_notebook_test]
+description = "Fraud detection Python notebook test"
+dependencies = ["openapi_python", "start_manager"]
+script = '''
+cd ../../demo/demo_notebooks
+pip3 install -r requirements.txt
+IN_CI=1 jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
+'''
+
+[tasks.python_test]
+dependencies = ["fraud_notebook_test", "python_api_test"]
