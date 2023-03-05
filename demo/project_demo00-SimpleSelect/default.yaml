@@ -4,7 +4,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 topics: [null_demo_input]
         format:
@@ -15,7 +14,6 @@ outputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 topic: null_demo_output
         format:
             name: csv

@@ -1,6 +1,7 @@
 use super::{refine_kafka_error, KafkaLogLevel};
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
+use log::debug;
 use num_traits::FromPrimitive;
 use rdkafka::{
     config::{FromClientConfigAndContext, RDKafkaLogLevel},
@@ -13,6 +14,7 @@ use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+    env,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
@@ -58,7 +60,7 @@ impl InputTransport for KafkaInputTransport {
 }
 
 /// Input endpoint configuration.
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -149,6 +151,11 @@ impl KafkaInputConfig {
     /// Validate configuration, set default option values required by this
     /// adapter.
     fn validate(&mut self) -> AnyResult<()> {
+        self.set_option_if_missing(
+            "bootstrap.servers",
+            &env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string()),
+        );
+
         // Commit automatically.
         // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
         self.enforce_option("enable.auto.commit", "true")?;
@@ -230,6 +237,7 @@ impl KafkaInputEndpointInner {
     fn new(mut config: KafkaInputConfig, consumer: Box<dyn InputConsumer>) -> AnyResult<Arc<Self>> {
         // Create Kafka consumer configuration.
         config.validate()?;
+        debug!("Starting Kafka input endpoint: {config:?}");
 
         let mut client_config = ClientConfig::new();
 
