@@ -19,11 +19,12 @@ then
 fi
 
 # Push test data to topics.
+printf -v pasteargs %*s 1000
+while read i; do
+  echo $i | rpk topic produce fraud_demo_large_demographics -f '%v'
+done <  <(cat "${THIS_DIR}"/demographics.csv | paste -d "\n" ${pasteargs// /- })
 
-while mapfile -t -n 1000 ary && ((${#ary[@]})); do
-    printf '%s\n' "${ary[@]}" | rpk topic produce fraud_demo_large_demographics -f '%v'
-done < "${THIS_DIR}"/demographics.csv
-
-while mapfile -t -n 5000 ary && ((${#ary[@]})); do
-    printf '%s\n' "${ary[@]}" | rpk topic produce fraud_demo_large_transactions -f '%v'
-done < "${THIS_DIR}"/transactions.csv
+printf -v pasteargs %*s 5000
+while read i; do
+  echo $i | rpk topic produce fraud_demo_large_transactions -f '%v'
+done <  <(cat "${THIS_DIR}"/transactions.csv | paste -d "\n" ${pasteargs// /- })
