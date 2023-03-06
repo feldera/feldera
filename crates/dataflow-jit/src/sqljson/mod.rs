@@ -5,9 +5,10 @@ use crate::{
     dataflow::CompiledDataflow,
     ir::{
         graph::{GraphContext, Subgraph},
+        literal::{NullableConstant, RowLiteral, StreamLiteral},
         ColumnType, Constant, ConstantStream, DataflowNode, Function, FunctionBuilder, Graph,
-        GraphExt, LayoutId, Node, NodeId, NodeIdGen, NullableConstant, RowLayout, RowLayoutBuilder,
-        RowLayoutCache, RowLiteral, Sink, StreamKind, StreamLayout, Terminator, Validator,
+        GraphExt, LayoutId, Node, NodeId, NodeIdGen, RowLayout, RowLayoutBuilder, RowLayoutCache,
+        Sink, StreamKind, StreamLayout, Terminator, Validator,
     },
     row::{Row, UninitRow},
 };
@@ -277,7 +278,7 @@ fn join_json() {
     // );
 
     let constant = graph.add_node(Node::Constant(ConstantStream::new(
-        crate::ir::StreamLiteral::Set(vec![
+        StreamLiteral::Set(vec![
             (
                 RowLiteral::new(vec![
                     NullableConstant::NonNull(Constant::U32(10)),

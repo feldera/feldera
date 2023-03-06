@@ -7,9 +7,10 @@ use crate::{
         FilterMap, FilterMapIndex, Integrate, JoinCore, MapFn, Min, Minus, Noop,
     },
     ir::{
-        graph, Constant, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId,
-        NullableConstant, RowLiteral, StreamKind, StreamLayout, StreamLiteral,
-        Subgraph as SubgraphNode,
+        graph,
+        literal::{NullableConstant, RowLiteral, StreamLiteral},
+        Constant, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId, StreamKind,
+        StreamLayout, Subgraph as SubgraphNode,
     },
     row::{Row, UninitRow},
     ThinStr,

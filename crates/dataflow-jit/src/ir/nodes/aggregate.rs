@@ -1,6 +1,6 @@
 use crate::ir::{
-    exprs::Expr, function::Function, layout_cache::RowLayoutCache, types::Signature, DataflowNode,
-    LayoutId, NodeId, StreamKind, StreamLayout,
+    function::Function, layout_cache::RowLayoutCache, literal::RowLiteral, types::Signature,
+    DataflowNode, LayoutId, NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -55,8 +55,7 @@ impl DataflowNode for Min {
 pub struct Fold {
     input: NodeId,
     /// The initial value of the fold, should be the same layout as `acc_layout`
-    #[allow(dead_code)]
-    init: Expr,
+    init: RowLiteral,
     /// The step function, should have a signature of
     /// `fn(acc_layout, input_layout, weight_layout) -> acc_layout`
     step_fn: Function,
@@ -74,7 +73,7 @@ pub struct Fold {
 impl Fold {
     pub fn new(
         input: NodeId,
-        init: Expr,
+        init: RowLiteral,
         step_fn: Function,
         finish_fn: Function,
         acc_layout: LayoutId,
@@ -92,12 +91,28 @@ impl Fold {
         }
     }
 
+    pub const fn init(&self) -> &RowLiteral {
+        &self.init
+    }
+
     pub const fn step_fn(&self) -> &Function {
         &self.step_fn
     }
 
     pub const fn finish_fn(&self) -> &Function {
         &self.finish_fn
+    }
+
+    pub const fn acc_layout(&self) -> LayoutId {
+        self.acc_layout
+    }
+
+    pub const fn step_layout(&self) -> LayoutId {
+        self.step_layout
+    }
+
+    pub const fn output_layout(&self) -> LayoutId {
+        self.output_layout
     }
 }
 

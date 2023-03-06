@@ -53,3 +53,7 @@
 - [ ] Textual debugging for ir
 - [ ] Add the ability to drop values (mainly strings) within ir
 - [ ] Add a borrowed/static version of strings (maybe `&str` style `{ ptr, len }`)
+- [ ] Inline small row values into the `Row` pointer
+- [ ] Linear aggregations
+- [ ] Max aggregate
+- [ ] C FFI

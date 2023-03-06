@@ -9,7 +9,7 @@ mod subgraph;
 mod sum;
 
 pub use aggregate::{Fold, Min};
-pub use constant::{ConstantStream, NullableConstant, RowLiteral, StreamLiteral};
+pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
 pub use index::IndexWith;
