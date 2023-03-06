@@ -320,9 +320,10 @@ mod tests {
         codegen::{Codegen, CodegenConfig},
         dataflow::CompiledDataflow,
         ir::{
-            exprs::{Constant, NullRow},
+            exprs::Constant,
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
+            literal::{NullableConstant, RowLiteral},
             nodes::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
@@ -445,7 +446,7 @@ mod tests {
         // ```
         let stream7861 = graph.add_node(Fold::new(
             stream7856,
-            NullRow::new(nullable_i32).into(),
+            RowLiteral::new(vec![NullableConstant::null()]),
             // FIXME: Fully move over to mutable `acc` instead of a return value
             // Equivalent to
             // ```rust

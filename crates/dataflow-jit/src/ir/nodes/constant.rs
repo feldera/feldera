@@ -1,44 +1,9 @@
 use crate::ir::{
-    layout_cache::RowLayoutCache, types::Signature, Constant, DataflowNode, LayoutId, NodeId,
-    StreamKind, StreamLayout,
+    layout_cache::RowLayoutCache, literal::StreamLiteral, types::Signature, DataflowNode, LayoutId,
+    NodeId, StreamKind, StreamLayout,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum StreamLiteral {
-    Set(Vec<(RowLiteral, i32)>),
-    Map(Vec<(RowLiteral, RowLiteral, i32)>),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum NullableConstant {
-    NonNull(Constant),
-    Nullable(Option<Constant>),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RowLiteral {
-    rows: Vec<NullableConstant>,
-}
-
-impl RowLiteral {
-    pub fn new(rows: Vec<NullableConstant>) -> Self {
-        Self { rows }
-    }
-
-    pub fn rows(&self) -> &[NullableConstant] {
-        &self.rows
-    }
-
-    pub fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConstantStream {

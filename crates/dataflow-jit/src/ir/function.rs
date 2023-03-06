@@ -1,8 +1,8 @@
 use crate::ir::{
     block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
     BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, CopyVal, Expr, ExprId, ExprIdGen,
-    IsNull, Jump, LayoutId, Load, RValue, Return, SetNull, Signature, Store, Terminator, UnaryOp,
-    UnaryOpKind, UninitRow,
+    IsNull, Jump, LayoutId, Load, RValue, Return, Select, SetNull, Signature, Store, Terminator,
+    UnaryOp, UnaryOpKind, UninitRow,
 };
 use petgraph::{
     algo::dominators::{self, Dominators},
@@ -679,6 +679,12 @@ impl FunctionBuilder {
         };
         self.set_expr_type(expr, Ok(output_ty));
 
+        expr
+    }
+
+    pub fn select(&mut self, cond: ExprId, if_true: ExprId, if_false: ExprId) -> ExprId {
+        let expr = self.add_expr(Select::new(cond, if_true, if_false));
+        self.set_expr_type(expr, self.expr_types[&if_true]);
         expr
     }
 

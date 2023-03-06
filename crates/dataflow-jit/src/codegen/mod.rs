@@ -2,6 +2,7 @@ mod intrinsics;
 mod layout;
 mod layout_cache;
 mod pretty_clif;
+mod tests;
 mod utils;
 mod vtable;
 
@@ -1869,95 +1870,5 @@ impl<'a> CodegenCtx<'a> {
 
         // left ^= shifted
         builder.ins().bxor(int, shifted)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        codegen::{Codegen, CodegenConfig},
-        ir::{ColumnType, FunctionBuilder, RowLayoutBuilder, RowLayoutCache},
-        row::UninitRow,
-        utils, ThinStr,
-    };
-    use std::mem::transmute;
-
-    #[test]
-    fn string_length() {
-        utils::test_logger();
-
-        let layout_cache = RowLayoutCache::new();
-        let string = layout_cache.add(
-            RowLayoutBuilder::new()
-                .with_column(ColumnType::String, false)
-                .build(),
-        );
-        let u64 = layout_cache.add(
-            RowLayoutBuilder::new()
-                .with_column(ColumnType::U64, false)
-                .build(),
-        );
-
-        let function = {
-            let mut builder = FunctionBuilder::new(layout_cache.clone());
-            let string_input = builder.add_input(string);
-            let length_output = builder.add_output(u64);
-
-            let string = builder.load(string_input, 0);
-            let length = builder.string_len(string);
-            builder.store(length_output, 0, length);
-            builder.ret_unit();
-
-            builder.build()
-        };
-
-        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-        let function = codegen.codegen_func("string_length", &function);
-        let string_vtable = codegen.vtable_for(string);
-        let u64_vtable = codegen.vtable_for(u64);
-
-        let (jit, layout_cache) = codegen.finalize_definitions();
-        {
-            let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
-            let u64_vtable = Box::into_raw(Box::new(u64_vtable.marshalled(&jit)));
-
-            let string_length = unsafe {
-                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                    jit.get_finalized_function(function),
-                )
-            };
-
-            let mut input = UninitRow::new(unsafe { &*string_vtable });
-            unsafe {
-                input
-                    .as_mut_ptr()
-                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
-                    .cast::<ThinStr>()
-                    .write(ThinStr::from("foobarbaz"));
-            }
-            let input = unsafe { input.assume_init() };
-
-            let mut length = UninitRow::new(unsafe { &*u64_vtable });
-            string_length(input.as_ptr(), length.as_mut_ptr());
-            drop(input);
-
-            let length_row = unsafe { length.assume_init() };
-            let length = unsafe {
-                length_row
-                    .as_ptr()
-                    .add(layout_cache.layout_of(u64).offset_of(0) as usize)
-                    .cast::<u64>()
-                    .read()
-            };
-            drop(length_row);
-
-            unsafe {
-                drop(Box::from_raw(string_vtable));
-                drop(Box::from_raw(u64_vtable));
-            }
-
-            assert_eq!(length, 9);
-        }
-        unsafe { jit.free_memory() };
     }
 }
