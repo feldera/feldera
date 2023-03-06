@@ -15,6 +15,7 @@ then
 fi
 
 # Push test data to topic.
-while mapfile -t -n 10000 ary && ((${#ary[@]})); do
-    printf '%s\n' "${ary[@]}" | rpk topic produce green_trip_demo_large_input -f '%v'
-done < "${THIS_DIR}"/green_tripdata.csv
+printf -v pasteargs %*s 10000
+while read i; do
+  echo $i | rpk topic produce green_trip_demo_large_input -f '%v'
+done <  <(cat "${THIS_DIR}"/green_tripdata.csv | paste -d "\n" ${pasteargs// /- })
