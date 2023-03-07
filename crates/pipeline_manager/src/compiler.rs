@@ -4,6 +4,7 @@ use fs_extra::{dir, dir::CopyOptions};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use std::{
+    path::PathBuf,
     process::{ExitStatus, Stdio},
     sync::Arc,
 };
@@ -177,18 +178,26 @@ impl Compiler {
 
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
-                            // SQL compiler succeeded -- start Rust job.
+                            // SQL compiler succeeded
+
+                            // 1st: Parse the generated schema so we can store it
+                            // in the DB (we trust the compiler that it put the
+                            // file there if it succeeded)
+                            let schema_json = fs::read_to_string(job.as_ref().unwrap().schema_path(&config)).await?;
+
+                            // 2nd: Start the Rust job.
                             db.set_project_status_guarded(
                                 project_id,
                                 version,
                                 ProjectStatus::CompilingRust,
+                                Some(schema_json)
                             )?;
                             debug!("Set ProjectStatus::CompilingRust '{project_id}', version '{version}'");
                             job = Some(CompilationJob::rust(&config, project_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
-                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success)?;
+                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success, None)?;
                             debug!("Set ProjectStatus::Success '{project_id}', version '{version}'");
                             job = None;
                         }
@@ -207,7 +216,7 @@ impl Compiler {
                                     // and we return a system error:
                                     ProjectStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status)?;
+                            db.set_project_status_guarded(project_id, version, status, None)?;
                             job = None;
                         }
                         Err(e) => {
@@ -216,7 +225,7 @@ impl Compiler {
                             } else {
                                 ProjectStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status)?;
+                            db.set_project_status_guarded(project_id, version, status, None)?;
                             job = None;
                         }
                     }
@@ -241,6 +250,7 @@ impl Compiler {
                         project_id,
                         version,
                         ProjectStatus::CompilingSql,
+                        None,
                     )?;
                 }
             }
@@ -262,12 +272,21 @@ struct CompilationJob {
 }
 
 impl CompilationJob {
+    const SCHEMA_FILE_NAME: &'static str = "schema.json";
+
     fn is_sql(&self) -> bool {
         self.stage == Stage::Sql
     }
 
     fn is_rust(&self) -> bool {
         self.stage == Stage::Rust
+    }
+
+    fn schema_path(&self, config: &ManagerConfig) -> PathBuf {
+        let sql_file_path = config.sql_file_path(self.project_id);
+        let project_directory = sql_file_path.parent().unwrap();
+
+        PathBuf::from(project_directory).join(CompilationJob::SCHEMA_FILE_NAME)
     }
 
     /// Run SQL-to-DBSP compiler.
@@ -312,7 +331,10 @@ impl CompilationJob {
         })?;
 
         // Run compiler, direct output to `main.rs`.
+        let schema_path = project_directory.join(CompilationJob::SCHEMA_FILE_NAME);
         let compiler_process = Command::new(config.sql_compiler_path())
+            .arg("-js")
+            .arg(schema_path)
             .arg(sql_file_path.as_os_str())
             .arg("-i")
             .arg("-je")
