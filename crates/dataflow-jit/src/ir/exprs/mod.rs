@@ -9,6 +9,12 @@ use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub trait VisitExprMut {
+    fn visit_expr_id(&mut self, expr_id: ExprId) -> ExprId {
+        expr_id
+    }
+}
+
 // TODO: Put type info into more expressions
 
 /// An expression within a basic block's body

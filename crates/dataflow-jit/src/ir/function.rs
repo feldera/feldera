@@ -167,9 +167,29 @@ impl Function {
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
         self.remove_unit_memory_operations(layout_cache);
+        self.deduplicate_input_loads();
         self.simplify_branches();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
+    }
+
+    fn deduplicate_input_loads(&mut self) {
+        // Holds all inputs valid for deduplication
+        let mut inputs = BTreeSet::new();
+        for arg in self.args() {
+            if arg.flags.is_readonly() {
+                inputs.insert(arg.id);
+            }
+        }
+
+        // The first load of each input valid for deduplication
+        let mut input_loads = BTreeMap::new();
+
+        for block in self.blocks.values_mut() {
+            for (expr_id, expr) in block.body_mut() {
+                todo!()
+            }
+        }
     }
 
     pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -194,6 +214,7 @@ impl Function {
     fn simplify_branches(&mut self) {
         // TODO: Consume const prop dataflow graph and turn conditional branches with
         // constant conditions into unconditional ones
+        // TODO: Simplify `select` calls
 
         // Replace any branches that have identical true/false targets with an
         // unconditional jump
