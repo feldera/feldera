@@ -79,6 +79,8 @@ where
     TOuter: DBTimestamp,
     TInner: DBTimestamp,
 {
+    type Nested = Product<Self, u32>;
+
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {

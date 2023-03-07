@@ -1,9 +1,10 @@
 use crate::data::{Edges, Node, Rank, RankMap, Ranks, Streamed, Vertices};
 use dbsp::{
     algebra::HasOne,
-    operator::{DelayedFeedback, FilterMap, Generator},
+    circuit::WithClock,
+    operator::{communication::new_exchange_operators, DelayedFeedback, FilterMap, Generator},
     trace::{Batch, BatchReader, Builder, Cursor},
-    DBData, OrdIndexedZSet, OrdZSet, Runtime,
+    Circuit, DBData, OrdIndexedZSet, OrdZSet, Runtime,
 };
 use std::{
     cmp::{min, Ordering},
@@ -235,7 +236,7 @@ fn count_vertices(vertices: &Vertices<()>) -> Streamed<(), u64> {
             return local_count;
         }
 
-        let (sender, receiver) = vertices.circuit().new_exchange_operators(
+        let (sender, receiver) = new_exchange_operators(
             &runtime,
             Runtime::worker_index(),
             Some(Location::caller()),
@@ -257,7 +258,7 @@ fn div_join_stream<S, K>(
     rhs: &Streamed<S, OrdZSet<K, Rank>>,
 ) -> Streamed<S, OrdZSet<K, Rank>>
 where
-    S: Clone + 'static,
+    S: WithClock + Clone + 'static,
     K: DBData + Send + Copy,
 {
     lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {

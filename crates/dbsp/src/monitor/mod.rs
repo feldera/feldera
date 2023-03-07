@@ -8,7 +8,7 @@ pub mod visual_graph;
 use crate::circuit::{
     metadata::OperatorLocation,
     trace::{CircuitEvent, SchedulerEvent},
-    Circuit, GlobalNodeId, NodeId,
+    GlobalNodeId, NodeId, RootCircuit,
 };
 use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
 use std::{
@@ -133,7 +133,7 @@ pub struct TraceMonitor(Arc<Mutex<TraceMonitorInternal>>);
 impl TraceMonitor {
     /// Attach trace monitor to a circuit.  The monitor will register for
     /// both `CircuitEvent`s and `SchedulerEvent`s.
-    pub fn attach(&self, circuit: &Circuit<()>, handler_name: &str) {
+    pub fn attach(&self, circuit: &RootCircuit, handler_name: &str) {
         TraceMonitorInternal::attach(self.0.clone(), circuit, true, handler_name);
     }
 
@@ -143,7 +143,7 @@ impl TraceMonitor {
     /// [`Self::visualize_circuit`] and [`Self::visualize_circuit_annotate`],
     /// but it will not validate scheduler events, nor incur the associated
     /// overheads.
-    pub fn attach_circuit_events(&self, circuit: &Circuit<()>, handler_name: &str) {
+    pub fn attach_circuit_events(&self, circuit: &RootCircuit, handler_name: &str) {
         TraceMonitorInternal::attach(self.0.clone(), circuit, false, handler_name);
     }
 
@@ -197,7 +197,7 @@ pub struct TraceMonitorInternal {
 impl TraceMonitorInternal {
     fn attach(
         this: Arc<Mutex<Self>>,
-        circuit: &Circuit<()>,
+        circuit: &RootCircuit,
         monitor_eval: bool,
         handler_name: &str,
     ) {

@@ -61,7 +61,7 @@ macro_rules! run_queries {
     // Returns a closure for a circuit with the nexmark source that returns
     // the input handle.
     (@circuit q13) => {
-        |circuit: &mut Circuit<()>| {
+        |circuit: &mut RootCircuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let (side_stream, mut side_input_handle) =
                 circuit.add_input_zset::<(usize, String, u64), isize>();
@@ -78,7 +78,7 @@ macro_rules! run_queries {
         }
     };
     (@circuit $query:ident) => {
-        |circuit: &mut Circuit<()>| {
+        |circuit: &mut RootCircuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = $query(stream);

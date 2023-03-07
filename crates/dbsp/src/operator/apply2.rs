@@ -7,18 +7,14 @@ use crate::circuit::{
 };
 use std::{borrow::Cow, panic::Location};
 
-impl<P, T1> Stream<Circuit<P>, T1>
+impl<C, T1> Stream<C, T1>
 where
-    P: Clone + 'static,
+    C: Circuit,
     T1: Clone + 'static,
 {
     /// Apply a user-provided binary function to its inputs at each timestamp.
     #[track_caller]
-    pub fn apply2<F, T2, T3>(
-        &self,
-        other: &Stream<Circuit<P>, T2>,
-        func: F,
-    ) -> Stream<Circuit<P>, T3>
+    pub fn apply2<F, T2, T3>(&self, other: &Stream<C, T2>, func: F) -> Stream<C, T3>
     where
         T2: Clone + 'static,
         T3: Clone + 'static,
@@ -31,11 +27,7 @@ where
     /// Apply a user-provided binary function to its inputs at each timestamp,
     /// consuming the first input.
     #[track_caller]
-    pub fn apply2_owned<F, T2, T3>(
-        &self,
-        other: &Stream<Circuit<P>, T2>,
-        func: F,
-    ) -> Stream<Circuit<P>, T3>
+    pub fn apply2_owned<F, T2, T3>(&self, other: &Stream<C, T2>, func: F) -> Stream<C, T3>
     where
         T2: Clone + 'static,
         T3: Clone + 'static,
@@ -153,12 +145,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::Generator, Circuit};
+    use crate::{operator::Generator, Circuit, RootCircuit};
     use std::vec;
 
     #[test]
     fn apply2_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut inputs1 = vec![1, 2, 3].into_iter();
             let mut inputs2 = vec![-1, -2, -3].into_iter();
 

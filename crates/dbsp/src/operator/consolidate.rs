@@ -13,9 +13,9 @@ use crate::{
 
 circuit_cache_key!(ConsolidateId<C, D>(GlobalNodeId => Stream<C, D>));
 
-impl<P, T> Stream<Circuit<P>, T>
+impl<C, T> Stream<C, T>
 where
-    P: Clone + 'static,
+    C: Circuit,
     T: Trace<Time = ()> + Clone,
 {
     // TODO: drop the `Time = ()` requirement?
@@ -30,7 +30,7 @@ where
     /// computed as the sum of deltas across all iterations of the circuit.
     /// Once the iteration has converged (e.g., reaching a fixed point) is a
     /// good time to consolidate the output.
-    pub fn consolidate(&self) -> Stream<Circuit<P>, T::Batch> {
+    pub fn consolidate(&self) -> Stream<C, T::Batch> {
         self.circuit()
             .cache_get_or_insert_with(ConsolidateId::new(self.origin_node_id().clone()), || {
                 let consolidated = self.circuit().add_unary_operator_with_preference(

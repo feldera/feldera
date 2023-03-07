@@ -70,12 +70,10 @@ fn main() -> Result<()> {
         // employee } then SkipLevel { grandmanager: manager, manager: common,
         // employee }.
         let skiplevels: Stream<_, SkipLevels> =
-            manages_by_employee.join::<(), _, _, _>(&manages_by_manager, |common, m1, m2| {
-                SkipLevel {
-                    grandmanager: m1.manager,
-                    manager: *common,
-                    employee: m2.employee,
-                }
+            manages_by_employee.join(&manages_by_manager, |common, m1, m2| SkipLevel {
+                grandmanager: m1.manager,
+                manager: *common,
+                employee: m2.employee,
             });
 
         (hmanages, skiplevels.output())

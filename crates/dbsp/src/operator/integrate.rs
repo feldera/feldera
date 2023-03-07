@@ -16,9 +16,9 @@ use std::ops::Add;
 circuit_cache_key!(IntegralId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(NestedIntegralId<C, D>(GlobalNodeId => Stream<C, D>));
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Add<Output = D>
         + AddByRef
         + AddAssignByRef
@@ -38,9 +38,9 @@ where
     /// ```
     /// # use dbsp::{
     /// #     operator::Generator,
-    /// #     Circuit,
+    /// #     Circuit, RootCircuit,
     /// # };
-    /// let circuit = Circuit::build(move |circuit| {
+    /// let circuit = RootCircuit::build(move |circuit| {
     ///     // Generate a stream of 1's.
     ///     let stream = circuit.add_source(Generator::new(|| 1));
     ///     // Integrate the stream.
@@ -64,7 +64,7 @@ where
     /// input:  1, 1, 1, 1, 1, ...
     /// output: 1, 2, 3, 4, 5, ...
     /// ```
-    pub fn integrate(&self) -> Stream<Circuit<P>, D> {
+    pub fn integrate(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(IntegralId::new(self.origin_node_id().clone()), || {
                 // Integration circuit:
@@ -133,7 +133,7 @@ where
     /// 2 3 4 5 1
     /// 4 5 6 5 1
     /// ```
-    pub fn integrate_nested(&self) -> Stream<Circuit<P>, D> {
+    pub fn integrate_nested(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(NestedIntegralId::new(self.origin_node_id().clone()), || {
                 self.circuit().region("integrate_nested", || {
@@ -161,12 +161,12 @@ mod test {
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
         trace::{ord::OrdZSet, Batch},
-        zset, Circuit,
+        zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn scalar_integrate() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let source = circuit.add_source(Generator::new(|| 1));
             let mut counter = 0;
             source.integrate().inspect(move |n| {
@@ -184,7 +184,7 @@ mod test {
 
     #[test]
     fn zset_integrate() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut counter1 = 0;
             let mut s = <OrdZSet<usize, isize>>::zero();
             let source = circuit.add_source(Generator::new(move || {
@@ -240,7 +240,7 @@ mod test {
     /// ```
     #[test]
     fn scalar_integrate_nested() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut input = vec![3, 4, 2, 5].into_iter();

@@ -15,10 +15,10 @@ use std::{borrow::Cow, marker::PhantomData};
 
 circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
 
-impl<P, CI> Stream<Circuit<P>, CI>
+impl<C, CI> Stream<C, CI>
 where
     CI: Clone + 'static,
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Convert input batches to an indexed representation.
     ///
@@ -26,7 +26,7 @@ where
     /// indexed Z-set using the first element of each tuple as a key and the
     /// second element as the value. The indexed Z-set representation is
     /// used as input to various join and aggregation operators.
-    pub fn index<K, V>(&self) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
+    pub fn index<K, V>(&self) -> Stream<C, OrdIndexedZSet<K, V, CI::R>>
     where
         K: DBData,
         V: DBData,
@@ -37,7 +37,7 @@ where
 
     /// Like [`index`](`Self::index`), but can return any indexed Z-set type,
     /// not just `OrdIndexedZSet`.
-    pub fn index_generic<CO>(&self) -> Stream<Circuit<P>, CO>
+    pub fn index_generic<CO>(&self) -> Stream<C, CO>
     where
         CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R>,
         CO: Batch<Time = ()>,
@@ -58,10 +58,7 @@ where
     /// resulting tuple as a key and the second element as the value.  The
     /// indexed Z-set representation is used as input to join and
     /// aggregation operators.
-    pub fn index_with<K, V, F>(
-        &self,
-        index_func: F,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, CI::R>>
+    pub fn index_with<K, V, F>(&self, index_func: F) -> Stream<C, OrdIndexedZSet<K, V, CI::R>>
     where
         CI: BatchReader<Time = (), Val = ()>,
         F: Fn(&CI::Key) -> (K, V) + Clone + 'static,
@@ -73,7 +70,7 @@ where
 
     /// Like [`index_with`](`Self::index_with`), but can return any indexed
     /// Z-set type, not just `OrdIndexedZSet`.
-    pub fn index_with_generic<CO, F>(&self, index_func: F) -> Stream<Circuit<P>, CO>
+    pub fn index_with_generic<CO, F>(&self, index_func: F) -> Stream<C, CO>
     where
         CI: BatchReader<Time = (), Val = ()>,
         CO: Batch<Time = (), R = CI::R>,
@@ -236,11 +233,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit};
+    use crate::{
+        indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, RootCircuit,
+    };
 
     #[test]
     fn index_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
                 zset!{ (1, 'a') => 1
                      , (1, 'b') => 1
@@ -273,7 +272,7 @@ mod test {
 
     #[test]
     fn index_with_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
                 zset!{ (1, 'a') => 1
                      , (1, 'b') => 1

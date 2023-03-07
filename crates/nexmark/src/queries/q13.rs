@@ -1,5 +1,5 @@
 use super::{process_time, NexmarkStream};
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
 
 use csv;
@@ -61,9 +61,9 @@ use std::{
 /// simple static file is used for this bounded side-input for the Nexmark tests
 /// and that is also what is tested here.
 
-type Q13Stream = Stream<Circuit<()>, OrdZSet<(u64, u64, usize, u64, String), isize>>;
+type Q13Stream = Stream<RootCircuit, OrdZSet<(u64, u64, usize, u64, String), isize>>;
 
-type SideInputStream = Stream<Circuit<()>, OrdZSet<(usize, String, u64), isize>>;
+type SideInputStream = Stream<RootCircuit, OrdZSet<(usize, String, u64), isize>>;
 
 const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
 
@@ -99,7 +99,7 @@ pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
 
     // Join on the key from the side input
     bids_by_auction_mod
-        .join::<(), _, _, _>(
+        .join(
             &side_input_indexed,
             |&_, &(auction, bidder, price, date_time, b_p_time), (input_value, input_p_time)| {
                 (
@@ -152,7 +152,7 @@ mod tests {
         ]]
         .into_iter();
 
-        let (circuit, (mut input_handle, mut side_input_handle)) = Circuit::build(move |circuit| {
+        let (circuit, (mut input_handle, mut side_input_handle)) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let (side_stream, side_input_handle) =
                 circuit.add_input_zset::<(usize, String, u64), isize>();

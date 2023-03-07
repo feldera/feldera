@@ -6,7 +6,7 @@
 // - We currently do not measure the time spent in `clock_start`/`clock_end`
 //   events, which can in theory do non-trivial work.
 
-use crate::circuit::{trace::SchedulerEvent, Circuit, GlobalNodeId};
+use crate::circuit::{trace::SchedulerEvent, GlobalNodeId, RootCircuit};
 use hashbrown::HashMap;
 use std::{
     cell::RefCell,
@@ -78,7 +78,7 @@ impl CPUProfiler {
 
     /// Attach CPU profiler to a circuit.  The profiler will start measuring
     /// circuit's CPU usage.
-    pub fn attach(&self, circuit: &Circuit<()>, handler_name: &str) {
+    pub fn attach(&self, circuit: &RootCircuit, handler_name: &str) {
         let self_clone = self.clone();
 
         circuit.register_scheduler_event_handler(handler_name, move |event| {

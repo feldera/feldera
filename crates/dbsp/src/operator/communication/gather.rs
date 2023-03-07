@@ -27,9 +27,9 @@ type NotifyCallback = dyn Fn() + Send + Sync + 'static;
 circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
 circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<T>>));
 
-impl<P, B> Stream<Circuit<P>, B>
+impl<C, B> Stream<C, B>
 where
-    P: Clone + 'static,
+    C: Circuit,
     B: Send + 'static,
 {
     /// Collect all shards of a stream at the same worker.
@@ -38,7 +38,7 @@ where
     /// input batches across all workers. The output streams in all other
     /// workers will contain empty batches.
     #[track_caller]
-    pub fn gather(&self, receiver_worker: usize) -> Stream<Circuit<P>, B>
+    pub fn gather(&self, receiver_worker: usize) -> Stream<C, B>
     where
         // FIXME: Remove `Time = ()` restriction currently imposed by `.consolidate()`
         B: Batch<Time = ()> + Send,

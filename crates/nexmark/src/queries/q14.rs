@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use arcstr::ArcStr;
 use rust_decimal::Decimal;
 use size_of::SizeOf;
@@ -47,7 +47,7 @@ use std::ops::Deref;
 #[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
 pub struct Q14Output(u64, u64, BincodeDecimal, BidTimeType, u64, ArcStr, usize);
 
-type Q14Stream = Stream<Circuit<()>, OrdZSet<Q14Output, isize>>;
+type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output, isize>>;
 
 /// Wrapper type for `Decimal` that implements Decode and Encode.
 /// 
@@ -178,7 +178,7 @@ mod tests {
         )]]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![expected_zset].into_iter();

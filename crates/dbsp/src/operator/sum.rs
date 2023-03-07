@@ -16,13 +16,13 @@ use std::{
     ops::Add,
 };
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
-    pub fn sum<'a, I>(&'a self, streams: I) -> Stream<Circuit<P>, D>
+    pub fn sum<'a, I>(&'a self, streams: I) -> Stream<C, D>
     where
         I: IntoIterator<Item = &'a Self>,
     {
@@ -132,12 +132,12 @@ mod test {
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         trace::{ord::OrdZSet, Batch},
-        zset, Circuit,
+        zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn zset_sum() {
-        let build_circuit = |circuit: &Circuit<()>| {
+        let build_circuit = |circuit: &RootCircuit| {
             let mut s = <OrdZSet<_, _> as HasZero>::zero();
             let source1 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
@@ -165,7 +165,7 @@ mod test {
         };
 
         // Allow `Sum` to consume all streams by value.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             build_circuit(circuit);
         })
         .unwrap()
@@ -176,7 +176,7 @@ mod test {
         }
 
         // Only consume source2, source3 by value.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let (source1, _source2, _source3) = build_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -192,7 +192,7 @@ mod test {
         }
 
         // Consume all streams by reference.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let (source1, source2, source3) = build_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),

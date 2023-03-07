@@ -7,6 +7,7 @@
 use crate::{
     circuit::GlobalNodeId,
     circuit_cache_key, default_hash,
+    operator::communication::exchange::new_exchange_operators,
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
     Circuit, Runtime, Stream,
 };
@@ -19,13 +20,13 @@ circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>)
 #[derive(Hash, PartialEq, Eq)]
 pub struct ShardingPolicy;
 
-fn sharding_policy<P>(_circuit: &Circuit<P>) -> ShardingPolicy {
+fn sharding_policy<C>(_circuit: &C) -> ShardingPolicy {
     ShardingPolicy
 }
 
-impl<P, IB> Stream<Circuit<P>, IB>
+impl<C, IB> Stream<C, IB>
 where
-    P: Clone + 'static,
+    C: Circuit,
     IB: BatchReader<Time = ()> + Clone,
     IB::Key: Ord + Clone + Hash,
     IB::Val: Ord + Clone,
@@ -85,7 +86,7 @@ where
     /// sharding can slow down the whole system and reduce gains from
     /// parallelization.
     #[track_caller]
-    pub fn shard(&self) -> Stream<Circuit<P>, IB>
+    pub fn shard(&self) -> Stream<C, IB>
     where
         IB: Batch + Send,
     {
@@ -102,7 +103,7 @@ where
     /// Returns `None` when the circuit is not running inside a multithreaded
     /// rutime or is running in a runtime with a single worker thread.
     #[track_caller]
-    pub fn shard_generic<OB>(&self) -> Option<Stream<Circuit<P>, OB>>
+    pub fn shard_generic<OB>(&self) -> Option<Stream<C, OB>>
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
@@ -125,7 +126,7 @@ where
                             // As a minor optimization, we reuse this array across all invocations
                             // of the sharding operator.
                             let mut builders = Vec::with_capacity(runtime.num_workers());
-                            let (sender, receiver) = self.circuit().new_exchange_operators(
+                            let (sender, receiver) = new_exchange_operators(
                                 &runtime,
                                 Runtime::worker_index(),
                                 Some(location),
@@ -198,9 +199,9 @@ where
     }
 }
 
-impl<P, T> Stream<Circuit<P>, T>
+impl<C, T> Stream<C, T>
 where
-    P: Clone + 'static,
+    C: Circuit,
     T: 'static,
 {
     /// Marks the data within the current stream as sharded, meaning that all
@@ -222,11 +223,10 @@ where
 
     /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
-        self.circuit()
-            .cache_contains(&ShardId::<Circuit<P>, T>::new((
-                self.origin_node_id().clone(),
-                sharding_policy(self.circuit()),
-            )))
+        self.circuit().cache_contains(&ShardId::<C, T>::new((
+            self.origin_node_id().clone(),
+            sharding_policy(self.circuit()),
+        )))
     }
 
     /// Returns the sharded version of the stream if it exists
@@ -242,9 +242,9 @@ where
     }
 
     /// Marks `self` as sharded if `input` has a sharded version of itself
-    pub fn mark_sharded_if<P2, U>(&self, input: &Stream<Circuit<P2>, U>)
+    pub fn mark_sharded_if<C2, U>(&self, input: &Stream<C2, U>)
     where
-        P2: Clone + 'static,
+        C2: Circuit,
         U: 'static,
     {
         if input.has_sharded_version() {
@@ -258,7 +258,7 @@ mod tests {
     use crate::{
         operator::Generator,
         trace::{Batch, BatchReader},
-        Circuit, OrdIndexedZSet, Runtime,
+        Circuit, OrdIndexedZSet, RootCircuit, Runtime,
     };
 
     #[test]
@@ -278,7 +278,7 @@ mod tests {
 
     fn do_test_shard(workers: usize) {
         let hruntime = Runtime::run(workers, || {
-            let circuit = Circuit::build(move |circuit| {
+            let circuit = RootCircuit::build(move |circuit| {
                 let input = circuit.add_source(Generator::new(|| {
                     let worker_index = Runtime::worker_index();
                     let num_workers = Runtime::runtime().unwrap().num_workers();

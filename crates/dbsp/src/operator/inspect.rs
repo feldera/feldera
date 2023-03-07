@@ -7,10 +7,10 @@ use crate::circuit::{
 };
 use std::{borrow::Cow, marker::PhantomData};
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
     D: Clone + 'static,
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Apply [`Inspect`] operator to `self`.
     ///
@@ -19,9 +19,9 @@ where
     /// ```
     /// # use dbsp::{
     /// #     operator::Generator,
-    /// #     Circuit,
+    /// #     Circuit, RootCircuit,
     /// # };
-    /// let circuit = Circuit::build(move |circuit| {
+    /// let circuit = RootCircuit::build(move |circuit| {
     ///     let mut n = 1;
     ///     let stream = circuit.add_source(Generator::new(move || {
     ///         let res = n;

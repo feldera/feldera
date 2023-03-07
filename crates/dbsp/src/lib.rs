@@ -25,7 +25,8 @@ pub use crate::time::Timestamp;
 
 pub use algebra::{IndexedZSet, ZSet};
 pub use circuit::{
-    Circuit, CircuitHandle, DBSPHandle, Runtime, RuntimeError, SchedulerError, Stream,
+    ChildCircuit, Circuit, CircuitHandle, DBSPHandle, RootCircuit, Runtime, RuntimeError,
+    SchedulerError, Stream,
 };
 pub use operator::{CollectionHandle, InputHandle, OutputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};

@@ -11,7 +11,7 @@ use crate::{
         operator_traits::{Operator, SinkOperator, SourceOperator},
         OwnershipPreference, Runtime, Scope,
     },
-    circuit_cache_key, Circuit,
+    circuit_cache_key,
 };
 use crossbeam_utils::CachePadded;
 use once_cell::sync::OnceCell;
@@ -296,7 +296,7 @@ where
 /// the operator becomes schedulable.
 ///
 /// `ExchangeSender` doesn't have a public constructor and must be instantiated
-/// using the [`Circuit::new_exchange_operators`] function, which creates an
+/// using the [`new_exchange_operators`] function, which creates an
 /// [`ExchangeSender`]/[`ExchangeReceiver`] pair of operators and connects them
 /// to their counterparts in other workers as in the diagram above.
 ///
@@ -315,13 +315,16 @@ where
 ///
 /// # #[cfg(not(miri))]
 /// # fn main() {
-/// use dbsp::{operator::Generator, Circuit, Runtime};
+/// use dbsp::{
+///     operator::{communication::new_exchange_operators, Generator},
+///     Circuit, RootCircuit, Runtime,
+/// };
 ///
 /// const WORKERS: usize = 16;
 /// const ROUNDS: usize = 10;
 ///
 /// let hruntime = Runtime::run(WORKERS, || {
-///     let circuit = Circuit::build(|circuit| {
+///     let circuit = RootCircuit::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
 ///         let mut n: usize = 0;
 ///         let source = circuit.add_source(Generator::new(move || {
@@ -331,7 +334,7 @@ where
 ///         }));
 ///
 ///         // Create an `ExchangeSender`/`ExchangeReceiver pair`.
-///         let (sender, receiver) = circuit.new_exchange_operators(
+///         let (sender, receiver) = new_exchange_operators(
 ///             &Runtime::runtime().unwrap(),
 ///             Runtime::worker_index(),
 ///             None,
@@ -557,55 +560,46 @@ where
     }
 }
 
-impl<P> Circuit<P>
+/// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
+///
+/// See [`ExchangeSender`] documentation for details and example usage.
+///
+/// # Arguments
+///
+/// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators
+///   are created.
+/// * `worker_index` - index of the current worker.
+/// * `partition` - partitioning logic that, for each element of the input
+///   stream, returns an iterator with exactly `runtime.num_workers()` values.
+/// * `combine` - re-assemble logic that combines values received from all peers
+///   into a single output value.
+///
+/// # Type arguments
+/// * `TI` - Type of values in the input stream consumed by `ExchangeSender`.
+/// * `TO` - Type of values in the output stream produced by `ExchangeReceiver`.
+/// * `TE` - Type of values sent across workers.
+/// * `PL` - Type of closure that splits a value of type `TI` into
+///   `runtime.num_workers()` values of type `TE`.
+/// * `I` - Iterator returned by `PL`.
+/// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
+///   value of type `TO`.
+pub fn new_exchange_operators<TI, TO, TE, PL, CL>(
+    runtime: &Runtime,
+    worker_index: usize,
+    location: OperatorLocation,
+    partition: PL,
+    combine: CL,
+) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
 where
-    P: Clone + 'static,
+    TO: Default + Clone,
+    TE: Send + 'static,
+    PL: FnMut(TI, &mut Vec<TE>) + 'static,
+    CL: Fn(&mut TO, TE) + 'static,
 {
-    /// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
-    ///
-    /// See [`ExchangeSender`] documentation for details and example usage.
-    ///
-    /// # Arguments
-    ///
-    /// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which
-    ///   operators are created.
-    /// * `worker_index` - index of the current worker.
-    /// * `partition` - partitioning logic that, for each element of the input
-    ///   stream, returns an iterator with exactly `runtime.num_workers()`
-    ///   values.
-    /// * `combine` - re-assemble logic that combines values received from all
-    ///   peers into a single output value.
-    ///
-    /// # Type arguments
-    /// * `TI` - Type of values in the input stream consumed by
-    ///   `ExchangeSender`.
-    /// * `TO` - Type of values in the output stream produced by
-    ///   `ExchangeReceiver`.
-    /// * `TE` - Type of values sent across workers.
-    /// * `PL` - Type of closure that splits a value of type `TI` into
-    ///   `runtime.num_workers()` values of type `TE`.
-    /// * `I` - Iterator returned by `PL`.
-    /// * `CL` - Type of closure that folds `num_workers` values of type `TE`
-    ///   into a value of type `TO`.
-    pub fn new_exchange_operators<TI, TO, TE, PL, CL>(
-        &self,
-        runtime: &Runtime,
-        worker_index: usize,
-        location: OperatorLocation,
-        partition: PL,
-        combine: CL,
-    ) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
-    where
-        TO: Default + Clone,
-        TE: Send + 'static,
-        PL: FnMut(TI, &mut Vec<TE>) + 'static,
-        CL: Fn(&mut TO, TE) + 'static,
-    {
-        let exchange_id = runtime.sequence_next(worker_index);
-        let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
-        let receiver = ExchangeReceiver::new(runtime, worker_index, location, exchange_id, combine);
-        (sender, receiver)
-    }
+    let exchange_id = runtime.sequence_next(worker_index);
+    let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
+    let receiver = ExchangeReceiver::new(runtime, worker_index, location, exchange_id, combine);
+    (sender, receiver)
 }
 
 #[cfg(test)]
@@ -616,8 +610,8 @@ mod tests {
             schedule::{DynamicScheduler, Scheduler, StaticScheduler},
             Runtime,
         },
-        operator::Generator,
-        Circuit,
+        operator::{communication::new_exchange_operators, Generator},
+        Circuit, RootCircuit,
     };
     use std::thread::yield_now;
 
@@ -692,7 +686,7 @@ mod tests {
             S: Scheduler + 'static,
         {
             let hruntime = Runtime::run(workers, move || {
-                let circuit = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
+                let circuit = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
                     let mut n: usize = 0;
                     let source = circuit.add_source(Generator::new(move || {
                         let result = n;
@@ -700,7 +694,7 @@ mod tests {
                         result
                     }));
 
-                    let (sender, receiver) = circuit.new_exchange_operators(
+                    let (sender, receiver) = new_exchange_operators(
                         &Runtime::runtime().unwrap(),
                         Runtime::worker_index(),
                         None,

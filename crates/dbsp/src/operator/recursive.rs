@@ -2,10 +2,10 @@
 
 use crate::{
     algebra::{IndexedZSet, ZRingValue},
-    circuit::{schedule::Error as SchedulerError, Circuit, Stream},
+    circuit::{schedule::Error as SchedulerError, ChildCircuit, Circuit, Stream, WithClock},
     operator::DelayedFeedback,
-    time::NestedTimestamp32,
     trace::Spine,
+    DBTimestamp,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use size_of::SizeOf;
@@ -14,7 +14,7 @@ use std::result::Result;
 /// Generalizes stream operators to groups of streams.
 ///
 /// This is a helper trait for the
-/// [`Circuit::recursive`](`crate::circuit::Circuit::recursive`) method.  The
+/// [`ChildCircuit::recursive`](`crate::ChildCircuit::recursive`) method.  The
 /// method internally performs several transformations on each recursive stream:
 /// `distinct`, `connect`, `export`, `consolidate`.  This trait generalizes
 /// these methods to operate on multiple streams (e.g., tuples and vectors) of
@@ -48,24 +48,27 @@ pub trait RecursiveStreams<C> {
     fn consolidate(exports: Self::Export) -> Self::Output;
 }
 
-impl<B> RecursiveStreams<Circuit<Circuit<()>>> for Stream<Circuit<Circuit<()>>, B>
+impl<C, B> RecursiveStreams<C> for Stream<C, B>
 where
+    C: Circuit,
+    C::Parent: Circuit,
+    <C as WithClock>::Time: DBTimestamp,
     B: IndexedZSet + Send,
     B::R: ZRingValue,
     Spine<B>: SizeOf,
 {
-    type Feedback = DelayedFeedback<Circuit<()>, B>;
-    type Export = Stream<Circuit<()>, Spine<B>>;
-    type Output = Stream<Circuit<()>, B>;
+    type Feedback = DelayedFeedback<C, B>;
+    type Export = Stream<C::Parent, Spine<B>>;
+    type Output = Stream<C::Parent, B>;
 
-    fn new(circuit: &Circuit<Circuit<()>>) -> (Self::Feedback, Self) {
+    fn new(circuit: &C) -> (Self::Feedback, Self) {
         let feedback = DelayedFeedback::new(circuit);
         let stream = feedback.stream().clone();
         (feedback, stream)
     }
 
     fn distinct(self) -> Self {
-        Stream::distinct::<NestedTimestamp32>(&self)
+        Stream::distinct(&self)
     }
 
     fn connect(&self, vars: Self::Feedback) {
@@ -120,7 +123,11 @@ impl<C> RecursiveStreams<C> for Tuple {
 // https://github.com/rust-lang/rustfmt/issues/5420 is resolved
 // (or we can run this doctest with persistence enabled)
 #[rustfmt::skip]
-impl<P: Clone + 'static> Circuit<P> {
+impl<P> ChildCircuit<P>
+where
+    P: WithClock,
+    Self: Circuit,
+{
     /// Create a nested circuit that computes one or more mutually recursive
     /// streams of Z-sets.
     ///
@@ -177,12 +184,12 @@ impl<P: Clone + 'static> Circuit<P> {
     ///     operator::Generator,
     ///     time::NestedTimestamp32,
     ///     trace::ord::OrdZSet,
-    ///     Circuit, Stream, zset, zset_set,
+    ///     Circuit, RootCircuit, Stream, zset, zset_set,
     /// };
     /// use std::vec;
     ///
     /// // Propagate labels along graph edges.
-    /// let root = Circuit::build(move |circuit| {
+    /// let root = RootCircuit::build(move |circuit| {
     ///     // Graph topology.
     ///     let mut edges = vec![
     ///         // Start with four nodes connected in a cycle.
@@ -226,7 +233,7 @@ impl<P: Clone + 'static> Circuit<P> {
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
     ///         let result = labels.index()
-    ///               .join::<NestedTimestamp32, _, _, _>(
+    ///               .join(
     ///                   &edges.index(),
     ///                   |_from, l, to| (*to, l.clone()),
     ///               )
@@ -247,8 +254,8 @@ impl<P: Clone + 'static> Circuit<P> {
     /// ```
     pub fn recursive<F, S>(&self, f: F) -> Result<S::Output, SchedulerError>
     where
-        S: RecursiveStreams<Circuit<Self>>,
-        F: FnOnce(&Circuit<Self>, S) -> Result<S, SchedulerError>,
+        S: RecursiveStreams<ChildCircuit<Self>>,
+        F: FnOnce(&ChildCircuit<Self>, S) -> Result<S, SchedulerError>,
     {
         // The actual circuit we build:
         //
@@ -290,15 +297,14 @@ impl<P: Clone + 'static> Circuit<P> {
 mod test {
     use crate::{
         operator::{FilterMap, Generator},
-        time::NestedTimestamp32,
         trace::ord::OrdZSet,
-        zset, Circuit, Stream,
+        zset, Circuit, RootCircuit, Stream,
     };
     use std::vec;
 
     #[test]
     fn reachability() {
-        let root = Circuit::build(move |circuit| {
+        let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { (1, 2) => 1 },
@@ -338,7 +344,7 @@ mod test {
                 let paths_indexed = paths.index_with(|&(x, y)| (y, x));
                 let edges_indexed = edges.index();
 
-                Ok(edges.plus(&paths_indexed.join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to))))
+                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| (*from, *to))))
             })
             .unwrap();
 
@@ -359,7 +365,7 @@ mod test {
     fn reachability2() {
         type Edges<S> = Stream<S, OrdZSet<(usize, usize), isize>>;
 
-        let root = Circuit::build(move |circuit| {
+        let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { (1, 2) => 1 },
@@ -404,8 +410,8 @@ mod test {
                 let reverse_edges = edges.map(|&(x, y)| (y, x));
                 let reverse_edges_indexed = reverse_edges.index();
 
-                Ok((edges.plus(&paths_indexed.join::<NestedTimestamp32, _, _, _>(&edges_indexed, |_via, from, to| (*from, *to))),
-                    reverse_edges.plus(&reverse_paths_indexed.join::<NestedTimestamp32, _, _, _>(&reverse_edges_indexed, |_via, from, to| (*from, *to)))
+                Ok((edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| (*from, *to))),
+                    reverse_edges.plus(&reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| (*from, *to)))
                 ))
             })
             .unwrap();

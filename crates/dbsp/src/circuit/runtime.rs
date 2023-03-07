@@ -112,13 +112,13 @@ impl Runtime {
     ///
     /// # #[cfg(not(all(windows, miri)))]
     /// # fn main() {
-    /// use dbsp::circuit::{Circuit, Runtime};
+    /// use dbsp::circuit::{Circuit, RootCircuit, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
     /// let hruntime = Runtime::run(4, || {
     ///     // This closure runs within each worker thread.
     ///
-    ///     let root = Circuit::build(move |circuit| {
+    ///     let root = RootCircuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
     ///     })
     ///     .unwrap()
@@ -351,7 +351,7 @@ mod tests {
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         operator::Generator,
-        Circuit,
+        Circuit, RootCircuit,
     };
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
@@ -374,7 +374,7 @@ mod tests {
         let hruntime = Runtime::run(4, || {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
-            let root = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
+            let root = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
                 let runtime = Runtime::runtime().unwrap();
                 // Generator that produces values using `sequence_next`.
                 circuit
@@ -415,7 +415,7 @@ mod tests {
     {
         let hruntime = Runtime::run(16, || {
             // Create a nested circuit that iterates forever.
-            let root = Circuit::build_with_scheduler::<_, _, S>(move |circuit| {
+            let root = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
                 circuit
                     .iterate_with_scheduler::<_, _, _, S>(|child| {
                         let mut n: usize = 0;

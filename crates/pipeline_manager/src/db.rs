@@ -179,14 +179,14 @@ pub(crate) struct ProjectDescr {
     ///
     /// The given SQL program:
     ///
-    /// ```no-run
+    /// ```no_run
     /// CREATE TABLE USERS ( name varchar );
     /// CREATE VIEW OUTPUT_USERS as SELECT * FROM USERS;
     /// ```
     ///
     /// Would lead the following JSON string in `schema`:
     ///
-    /// ```no-run
+    /// ```no_run
     /// {
     ///   "inputs": [{
     ///       "name": "USERS",

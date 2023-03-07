@@ -43,7 +43,7 @@ use dbsp::{
         spine_fueled::{MergeState, MergeVariant, Spine},
         Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, ValueConsumer,
     },
-    Circuit, DBData, DBWeight, NumEntries, OrdIndexedZSet, OrdZSet, Stream,
+    Circuit, DBData, DBWeight, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 use hashbrown::HashMap;
 use size_of::SizeOf;
@@ -60,8 +60,8 @@ pub fn personal_network(
     target: ArcStr,
     date_start: Option<u64>,
     date_end: Option<u64>,
-    events: &Stream<Circuit<()>, OrdZSet<PersonalNetworkGkgEntry, i32>>,
-) -> Stream<Circuit<()>, OrdZSet<(ArcStr, ArcStr), i32>> {
+    events: &Stream<RootCircuit, OrdZSet<PersonalNetworkGkgEntry, i32>>,
+) -> Stream<RootCircuit, OrdZSet<(ArcStr, ArcStr), i32>> {
     // Filter out events outside of our date range and that don't mention our target
     let events_filter: Box<dyn Fn(&PersonalNetworkGkgEntry) -> bool> = match (date_start, date_end)
     {
@@ -126,13 +126,12 @@ pub fn personal_network(
 }
 
 // TODO: Hash collections/traces
-fn hashjoin<C, F, Iter, K, V1, V2, R, Z>(
-    left: &Stream<Circuit<C>, OrdIndexedZSet<K, V1, R>>,
-    right: &Stream<Circuit<C>, OrdIndexedZSet<K, V2, R>>,
+fn hashjoin<F, Iter, K, V1, V2, R, Z>(
+    left: &Stream<RootCircuit, OrdIndexedZSet<K, V1, R>>,
+    right: &Stream<RootCircuit, OrdIndexedZSet<K, V2, R>>,
     join: F,
-) -> Stream<Circuit<C>, Z>
+) -> Stream<RootCircuit, Z>
 where
-    C: Clone + 'static,
     F: Fn(&K, &V1, &V2) -> Iter + Clone + 'static,
     Iter: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
     K: DBData,

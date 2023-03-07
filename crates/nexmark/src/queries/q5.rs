@@ -1,7 +1,7 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use dbsp::{
     operator::{FilterMap, Max},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use crate::model::Event;
 
@@ -68,7 +68,7 @@ use crate::model::Event;
 /// will aggregate within each window exactly once, which is what we implement
 /// here.
 
-type Q5Stream = Stream<Circuit<()>, OrdZSet<(u64, usize), isize>>;
+type Q5Stream = Stream<RootCircuit, OrdZSet<(u64, usize), isize>>;
 
 const WINDOW_WIDTH_SECONDS: u64 = 10;
 const TUMBLE_SECONDS: u64 = 2;
@@ -99,12 +99,12 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     let windowed_bids: Stream<_, OrdZSet<u64, _>> = bids_by_time.window(&window_bounds);
 
     // Count the number of bids per auction.
-    let auction_counts = windowed_bids.aggregate_linear::<(), _, _>(|&_key, &()| -> isize { 1 });
+    let auction_counts = windowed_bids.aggregate_linear(|&_key, &()| -> isize { 1 });
 
     // Find the largest number of bids across all auctions.
     let max_auction_count = auction_counts
         .map_index(|(_auction, count)| ((), *count))
-        .aggregate::<(), _>(Max)
+        .aggregate(Max)
         .map(|((), max_count)| *max_count);
 
     // Filter out auctions with the largest number of bids.
@@ -112,7 +112,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     // using `apply2`.
     let auction_by_count = auction_counts.map_index(|(auction, count)| (*count, *auction));
 
-    max_auction_count.join::<(), _, _, _>(&auction_by_count, |max_count, &(), &auction| {
+    max_auction_count.join(&auction_by_count, |max_count, &(), &auction| {
         (auction, *max_count as usize)
     })
 }
@@ -124,7 +124,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, Circuit};
+    use dbsp::{zset, RootCircuit};
     use rstest::rstest;
 
     #[rstest]
@@ -193,7 +193,7 @@ mod tests {
                         .collect()
                 });
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q5(stream);

@@ -44,7 +44,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{trace::Batch, Circuit, OrdZSet};
+    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
 
     #[test]
     fn test_q1() {
@@ -111,7 +111,7 @@ mod tests {
             ]
         }
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q1(stream);

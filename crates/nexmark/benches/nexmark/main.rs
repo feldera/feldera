@@ -11,7 +11,7 @@ use clap::Parser;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
     trace::ord::OrdZSet,
-    Circuit, CollectionHandle, DBSPHandle, Runtime,
+    CollectionHandle, DBSPHandle, RootCircuit, Runtime,
 };
 use dbsp_nexmark::{
     config::{Config as NexmarkConfig, Query as NexmarkQuery},

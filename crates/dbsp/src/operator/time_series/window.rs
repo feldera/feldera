@@ -10,9 +10,9 @@ use crate::{
 };
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
-impl<P, B> Stream<Circuit<P>, B>
+impl<C, B> Stream<C, B>
 where
-    P: Clone + 'static,
+    C: Circuit,
     B: IndexedZSet,
     B::R: NegByRef,
 {
@@ -66,10 +66,7 @@ where
     ///                     └┬─┘                           │
     ///                      └─────────────────────────────┘
     /// ```
-    pub fn window(
-        &self,
-        bounds: &Stream<Circuit<P>, (B::Key, B::Key)>,
-    ) -> Stream<Circuit<P>, OrdZSet<B::Val, B::R>> {
+    pub fn window(&self, bounds: &Stream<C, (B::Key, B::Key)>) -> Stream<C, OrdZSet<B::Val, B::R>> {
         let trace = self.integrate_trace().delay_trace();
         self.circuit()
             .add_ternary_operator(<Window<B>>::new(), &trace, self, bounds)
@@ -214,12 +211,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, Stream};
+    use crate::{
+        operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, RootCircuit, Stream,
+    };
     use std::vec;
 
     #[test]
     fn sliding() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![
@@ -282,7 +281,7 @@ mod test {
 
     #[test]
     fn tumbling() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![
@@ -344,7 +343,7 @@ mod test {
 
     #[test]
     fn shrinking() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             type Time = usize;
 
             let mut input = vec![

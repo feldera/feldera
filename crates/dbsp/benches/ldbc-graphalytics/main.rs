@@ -18,7 +18,7 @@ use dbsp::{
     operator::Generator,
     profile::CPUProfiler,
     trace::{BatchReader, Cursor},
-    Circuit,
+    Circuit, RootCircuit,
 };
 use hashbrown::HashMap;
 use indicatif::HumanBytes;
@@ -150,7 +150,7 @@ fn main() {
 
         let output_inner = output.clone();
         let args_for_circuit = args.clone();
-        let root = Circuit::build(move |circuit| {
+        let root = RootCircuit::build(move |circuit| {
             if config.profile && is_leader {
                 attach_profiling(dataset, circuit);
             }
@@ -415,7 +415,7 @@ fn main() {
     std::process::exit(incorrect_results_main.load(Ordering::Relaxed) as i32);
 }
 
-fn attach_profiling(dataset: DataSet, circuit: &mut Circuit<()>) {
+fn attach_profiling(dataset: DataSet, circuit: &mut RootCircuit) {
     let cpu_profiler = CPUProfiler::new();
     cpu_profiler.attach(circuit, "cpu profiler");
 

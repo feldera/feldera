@@ -12,16 +12,16 @@ use size_of::SizeOf;
 circuit_cache_key!(DifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(NestedDifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit + 'static,
     D: SizeOf + NumEntries + GroupValue,
 {
     /// Stream differentiation.
     ///
     /// Computes the difference between current and previous value
     /// of `self`: `differentiate(a) = a - z^-1(a)`.
-    pub fn differentiate(&self) -> Stream<Circuit<P>, D> {
+    pub fn differentiate(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
                 let differentiated = self.circuit().add_binary_operator(
@@ -36,7 +36,7 @@ where
     }
 
     /// Nested stream differentiation.
-    pub fn differentiate_nested(&self) -> Stream<Circuit<P>, D> {
+    pub fn differentiate_nested(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(
                 NestedDifferentiateId::new(self.origin_node_id().clone()),

@@ -96,12 +96,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::CsvSource, zset, Circuit, OrdZSet};
+    use crate::{operator::CsvSource, zset, Circuit, OrdZSet, RootCircuit};
     use csv::ReaderBuilder;
 
     #[test]
     fn test_csv_reader() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let expected = zset! {
                 (18, 3, 237641) => 1,
                 (237641, 4, 18) => 1,

@@ -1,5 +1,5 @@
 use super::NexmarkStream;
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
 use arcstr::ArcStr;
 use regex::Regex;
@@ -37,7 +37,7 @@ use regex::Regex;
 /// ```
 
 type Q21Set = OrdZSet<(u64, u64, usize, ArcStr, ArcStr), isize>;
-type Q21Stream = Stream<Circuit<()>, Q21Set>;
+type Q21Stream = Stream<RootCircuit, Q21Set>;
 
 pub fn q21(input: NexmarkStream) -> Q21Stream {
     let channel_regex = Regex::new(r"channel_id=([^&]*)").unwrap();
@@ -121,7 +121,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q21(stream);

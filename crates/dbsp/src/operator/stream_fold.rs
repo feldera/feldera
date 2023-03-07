@@ -1,11 +1,11 @@
 use crate::{
     circuit::OwnershipPreference,
     operator::{z1::DelayedId, Z1},
-    Circuit, NumEntries, Stream,
+    Circuit, NumEntries, RootCircuit, Stream,
 };
 use size_of::SizeOf;
 
-impl<T> Stream<Circuit<()>, T>
+impl<T> Stream<RootCircuit, T>
 where
     T: Clone + 'static,
 {
@@ -18,7 +18,7 @@ where
     /// * `fold_func` - closure that computes the new value of the accumulator
     ///   as a function of the previous value and the new input at each clock
     ///   cycle.
-    pub fn stream_fold<A, F>(&self, init: A, fold_func: F) -> Stream<Circuit<()>, A>
+    pub fn stream_fold<A, F>(&self, init: A, fold_func: F) -> Stream<RootCircuit, A>
     where
         F: Fn(A, &T) -> A + 'static,
         A: Eq + Clone + SizeOf + NumEntries + 'static,

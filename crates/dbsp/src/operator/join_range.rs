@@ -25,9 +25,9 @@ use crate::{
 };
 use std::{borrow::Cow, marker::PhantomData};
 
-impl<P, I1> Stream<Circuit<P>, I1>
+impl<C, I1> Stream<C, I1>
 where
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Range-join two streams into an `OrdZSet`.
     ///
@@ -38,10 +38,10 @@ where
     /// receives at each timestamp ignoring previous inputs.
     pub fn stream_join_range<RF, JF, It, I2>(
         &self,
-        other: &Stream<Circuit<P>, I2>,
+        other: &Stream<C, I2>,
         range_func: RF,
         join_func: JF,
-    ) -> Stream<Circuit<P>, OrdZSet<It::Item, I1::R>>
+    ) -> Stream<C, OrdZSet<It::Item, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone,
         I1::R: ZRingValue,
@@ -69,10 +69,10 @@ where
     /// receives at each timestamp ignoring previous inputs.
     pub fn stream_join_range_index<RF, JF, It, K, V, I2>(
         &self,
-        other: &Stream<Circuit<P>, I2>,
+        other: &Stream<C, I2>,
         range_func: RF,
         join_func: JF,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<K, V, I1::R>>
+    ) -> Stream<C, OrdIndexedZSet<K, V, I1::R>>
     where
         I1: BatchReader<Time = ()> + Clone,
         I1::R: ZRingValue,
@@ -89,10 +89,10 @@ where
     /// Like [`Self::stream_join_range`], but can return any indexed Z-set type.
     pub fn stream_join_range_generic<RF, JF, It, I2, O>(
         &self,
-        other: &Stream<Circuit<P>, I2>,
+        other: &Stream<C, I2>,
         range_func: RF,
         join_func: JF,
-    ) -> Stream<Circuit<P>, O>
+    ) -> Stream<C, O>
     where
         I1: BatchReader<Time = (), R = O::R> + Clone,
         I2: BatchReader<Time = (), R = O::R> + Clone,
@@ -198,11 +198,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::Generator, zset, Circuit};
+    use crate::{operator::Generator, zset, Circuit, RootCircuit};
 
     #[test]
     fn stream_join_range_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
                     (1, 'a') => 1,

@@ -14,7 +14,7 @@ use crate::{
         Aggregator,
     },
     trace::{Builder, Cursor, Spine},
-    Circuit, DBData, DBWeight, OrdIndexedZSet, Stream,
+    Circuit, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
@@ -52,7 +52,7 @@ impl<TS, A, B> PartitionedRadixTreeReader<TS, A> for B where
 
 type OrdPartitionedRadixTree<PK, TS, A, R> = OrdIndexedZSet<PK, (Prefix<TS>, TreeNode<TS, A>), R>;
 type OrdPartitionedRadixTreeStream<PK, TS, A, R> =
-    Stream<Circuit<()>, OrdPartitionedRadixTree<PK, TS, A, R>>;
+    Stream<RootCircuit, OrdPartitionedRadixTree<PK, TS, A, R>>;
 
 /// Cursor over partitioned radix tree.
 pub trait PartitionedRadixTreeCursor<'a, PK, TS, A, R>:
@@ -106,7 +106,7 @@ impl<'a, PK, TS, A, R, C> PartitionedRadixTreeCursor<'a, PK, TS, A, R> for C whe
 {
 }
 
-impl<Z> Stream<Circuit<()>, Z>
+impl<Z> Stream<RootCircuit, Z>
 where
     Z: Clone + 'static,
 {
@@ -133,7 +133,7 @@ where
     pub fn partitioned_tree_aggregate_generic<TS, V, Agg, O>(
         &self,
         aggregator: Agg,
-    ) -> Stream<Circuit<()>, O>
+    ) -> Stream<RootCircuit, O>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
         TS: DBData + PrimInt,
@@ -469,7 +469,7 @@ mod test {
         algebra::{DefaultSemigroup, HasZero, Semigroup},
         operator::Fold,
         trace::BatchReader,
-        Circuit, CollectionHandle, DBData,
+        CollectionHandle, DBData, RootCircuit,
     };
     use num::PrimInt;
     use std::{
@@ -535,7 +535,7 @@ mod test {
         let contents = Arc::new(Mutex::new(BTreeMap::new()));
         let contents_clone = contents.clone();
 
-        let (circuit, input) = Circuit::build(move |circuit| {
+        let (circuit, input) = RootCircuit::build(move |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<u64, (u64, u64), isize>();
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(

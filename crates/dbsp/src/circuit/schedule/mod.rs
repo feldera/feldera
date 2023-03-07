@@ -65,9 +65,9 @@ where
     /// This method is invoked at circuit construction time to perform any
     /// required preparatory computation, e.g., compute a complete static
     /// schedule or build data structures needed for dynamic scheduling.
-    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C) -> Result<Self, Error>
     where
-        P: Clone + 'static;
+        C: Circuit;
 
     /// Evaluate the circuit at runtime.
     ///
@@ -80,16 +80,16 @@ where
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for
     ///   which the schedule was computed.
-    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
+    fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
-        P: Clone + 'static;
+        C: Circuit;
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
-pub(crate) trait Executor<P>: 'static {
-    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error>;
+pub trait Executor<C>: 'static {
+    fn run(&self, circuit: &C) -> Result<(), Error>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -103,9 +103,9 @@ pub(crate) struct IterativeExecutor<F, S> {
 }
 
 impl<F, S> IterativeExecutor<F, S> {
-    pub(crate) fn new<P>(circuit: &Circuit<P>, termination_check: F) -> Result<Self, Error>
+    pub(crate) fn new<C>(circuit: &C, termination_check: F) -> Result<Self, Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
         S: Scheduler,
     {
         Ok(Self {
@@ -115,13 +115,13 @@ impl<F, S> IterativeExecutor<F, S> {
     }
 }
 
-impl<P, F, S> Executor<P> for IterativeExecutor<F, S>
+impl<C, F, S> Executor<C> for IterativeExecutor<F, S>
 where
     F: Fn() -> Result<bool, Error> + 'static,
-    P: Clone + 'static,
+    C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error> {
+    fn run(&self, circuit: &C) -> Result<(), Error> {
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start(0);
 
@@ -133,7 +133,7 @@ where
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
-        unsafe { circuit.clock_end(0) };
+        circuit.clock_end(0);
         Ok(())
     }
 }
@@ -149,9 +149,9 @@ where
     S: Scheduler,
     Self: Sized,
 {
-    pub(crate) fn new<P>(circuit: &Circuit<P>) -> Result<Self, Error>
+    pub(crate) fn new<C>(circuit: &C) -> Result<Self, Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         Ok(Self {
             scheduler: <S as Scheduler>::prepare(circuit)?,
@@ -159,12 +159,12 @@ where
     }
 }
 
-impl<P, S> Executor<P> for OnceExecutor<S>
+impl<C, S> Executor<C> for OnceExecutor<S>
 where
-    P: Clone + 'static,
+    C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &Circuit<P>) -> Result<(), Error> {
+    fn run(&self, circuit: &C) -> Result<(), Error> {
         self.scheduler.step(circuit)
     }
 }
@@ -177,7 +177,10 @@ mod util {
     use std::{collections::HashMap, ops::Deref};
 
     /// Dump circuit topology as a graph.
-    pub(crate) fn circuit_graph<P>(circuit: &Circuit<P>) -> DiGraphMap<NodeId, ()> {
+    pub(crate) fn circuit_graph<C>(circuit: &C) -> DiGraphMap<NodeId, ()>
+    where
+        C: Circuit,
+    {
         let mut g = DiGraphMap::<NodeId, ()>::new();
 
         for node_id in circuit.node_ids().into_iter() {
@@ -219,9 +222,10 @@ mod util {
     ///
     /// The function fails with [`Error::OwnershipConflict`] if the circuit has
     /// at least one node with multiple strong successors.
-    pub(crate) fn ownership_constraints<P>(
-        circuit: &Circuit<P>,
-    ) -> Result<Vec<(NodeId, NodeId)>, Error> {
+    pub(crate) fn ownership_constraints<C>(circuit: &C) -> Result<Vec<(NodeId, NodeId)>, Error>
+    where
+        C: Circuit,
+    {
         // Compute successors of each node in the circuit.  Note: we index successors by
         // origin id, not local node id, since the former uniquely identifies a
         // stream, but the latter doesn't, since a subcircuit node can have

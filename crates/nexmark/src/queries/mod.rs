@@ -1,10 +1,10 @@
 //! Nexmark Queries in DBSP.
 
 use super::model::Event;
-use dbsp::{Circuit, OrdZSet, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream};
 use std::time::SystemTime;
 
-type NexmarkStream = Stream<Circuit<()>, OrdZSet<Event, isize>>;
+type NexmarkStream = Stream<RootCircuit, OrdZSet<Event, isize>>;
 
 type OrdinalDate = (i32, u16);
 

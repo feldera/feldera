@@ -2,7 +2,7 @@ use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Min},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use arcstr::ArcStr;
 
@@ -38,7 +38,7 @@ use arcstr::ArcStr;
 /// ```
 
 type Q7Output = (u64, u64, usize, u64, ArcStr);
-type Q7Stream = Stream<Circuit<()>, OrdZSet<Q7Output, isize>>;
+type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output, isize>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -87,10 +87,10 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
             // using reverse cursors.
             ((), -(*price as isize))
         })
-        .aggregate::<(), _>(Min)
+        .aggregate(Min)
         .map(|((), price)| ((-*price) as usize))
         // Find _all_ bids with computed max price.
-        .join::<(), _, _, _>(&bids_by_price, |_price, &(), tuple| tuple.clone())
+        .join(&bids_by_price, |_price, &(), tuple| tuple.clone())
 }
 
 #[cfg(test)]
@@ -100,7 +100,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, Circuit};
+    use dbsp::{zset, RootCircuit};
     use rstest::rstest;
 
     type Q7Tuple = (u64, u64, usize, u64, ArcStr);
@@ -166,7 +166,7 @@ mod tests {
                 .collect()
         });
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q7(stream);

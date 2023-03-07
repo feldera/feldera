@@ -1,5 +1,5 @@
 use super::{process_time, NexmarkStream};
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
 
 ///
@@ -31,7 +31,7 @@ use crate::model::Event;
 /// GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);
 /// ```
 
-type Q12Stream = Stream<Circuit<()>, OrdZSet<(u64, u64, u64, u64), isize>>;
+type Q12Stream = Stream<RootCircuit, OrdZSet<(u64, u64, u64, u64), isize>>;
 const TUMBLE_SECONDS: u64 = 10;
 
 fn window_for_process_time(ptime: u64) -> (u64, u64) {
@@ -55,7 +55,7 @@ where
     });
 
     bids_by_bidder_window
-        .aggregate_linear::<(), _, _>(|&_key, &()| -> isize { 1 })
+        .aggregate_linear(|&_key, &()| -> isize { 1 })
         .map(|(&(bidder, starttime, endtime), &count)| (bidder, count as u64, starttime, endtime))
 }
 
@@ -70,7 +70,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, Circuit};
+    use dbsp::{zset, RootCircuit};
     use rstest::rstest;
     use std::cell::RefCell;
 
@@ -123,7 +123,7 @@ mod tests {
         let proc_time_iter = RefCell::new(proc_times.into_iter());
         let process_time = move || -> u64 { proc_time_iter.borrow_mut().next().unwrap() };
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q12_for_process_time(stream, process_time);

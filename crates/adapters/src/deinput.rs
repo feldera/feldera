@@ -144,11 +144,11 @@ pub trait DeCollectionHandle: Send {
     ///
     /// The `deserializer` argument wraps a single serialized record whose
     /// type depends on the underlying input stream: streams created by
-    /// [`Circuit::add_input_zset`](`dbsp::Circuit::add_input_zset`)
-    /// and [`Circuit::add_input_set`](`dbsp::Circuit::add_input_set`)
+    /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`)
+    /// and [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`)
     /// methods support deletion by value, hence the serialized record must
     /// match the value type of the stream.  Streams created with
-    /// [`Circuit::add_input_map`](`dbsp::Circuit::add_input_map`)
+    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
     /// support deletion by key, so the serialized record must match the key
     /// type of the stream.
     ///
@@ -197,7 +197,8 @@ pub trait DeCollectionHandle: Send {
 }
 
 /// An input handle that wraps a [`CollectionHandle<V, R>`](`CollectionHandle`)
-/// returned by [`Circuit::add_input_zset`](`dbsp::Circuit::add_input_zset`).
+/// returned by
+/// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, +1)` update for the underlying
@@ -265,7 +266,8 @@ where
 }
 
 /// An input handle that wraps a [`UpsertHandle<V, bool>`](`UpsertHandle`)
-/// returned by [`Circuit::add_input_set`](`dbsp::Circuit::add_input_set`).
+/// returned by
+/// [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, true)` update for the underlying
@@ -326,7 +328,8 @@ where
 }
 
 /// An input handle that wraps a [`UpsertHandle<K, Option<V>>`](`UpsertHandle`)
-/// returned by [`Circuit::add_input_map`](`dbsp::Circuit::add_input_map`).
+/// returned by
+/// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(key_func(v), Some(v))` update for the

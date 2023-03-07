@@ -9,12 +9,12 @@ use crate::{
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
     D: Clone + 'static + Neg<Output = D> + NegByRef,
-    P: Clone + 'static,
+    C: Circuit,
 {
-    pub fn neg(&self) -> Stream<Circuit<P>, D> {
+    pub fn neg(&self) -> Stream<C, D> {
         let negated = self
             .circuit()
             .add_unary_operator(UnaryMinus::new(), &self.try_sharded_version());
@@ -79,12 +79,12 @@ mod test {
         algebra::HasZero,
         operator::Generator,
         trace::{ord::OrdZSet, Batch},
-        zset, Circuit,
+        zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn zset_sum() {
-        let build_circuit = |circuit: &Circuit<()>| {
+        let build_circuit = |circuit: &RootCircuit| {
             let mut s = <OrdZSet<_, _> as HasZero>::zero();
             let source = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
@@ -98,7 +98,7 @@ mod test {
             source
         };
 
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             build_circuit(circuit);
         })
         .unwrap()

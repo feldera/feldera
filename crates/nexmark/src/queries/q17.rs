@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use dbsp::{
     operator::{FilterMap, Max, Min},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use crate::{model::Event, queries::OrdinalDate};
 use arcstr::ArcStr;
@@ -62,7 +62,7 @@ type Q17Output = (
     isize,
 );
 
-type Q17Stream = Stream<Circuit<()>, OrdZSet<Q17Output, isize>>;
+type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output, isize>>;
 
 pub fn q17(input: NexmarkStream) -> Q17Stream {
     let iso8601_day_format = &Iso8601::<
@@ -86,20 +86,20 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
     });
 
     let count_total_bids: Stream<_, OrdIndexedZSet<(u64, OrdinalDate), isize, _>> =
-        bids_indexed.aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+        bids_indexed.aggregate_linear(|_, _| -> isize { 1 });
     let count_rank1_bids = bids_indexed
         .filter(|(_auction_day, price)| *price < 10_000)
-        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+        .aggregate_linear(|_, _| -> isize { 1 });
     let count_rank2_bids = bids_indexed
         .filter(|(_auction_day, price)| *price >= 10_000 && *price < 1_000_000)
-        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
+        .aggregate_linear(|_, _| -> isize { 1 });
     let count_rank3_bids = bids_indexed
         .filter(|(_auction_day, price)| *price >= 1_000_000)
-        .aggregate_linear::<(), _, _>(|_, _| -> isize { 1 });
-    let min_price = bids_indexed.aggregate::<(), _>(Min);
-    let max_price = bids_indexed.aggregate::<(), _>(Max);
+        .aggregate_linear(|_, _| -> isize { 1 });
+    let min_price = bids_indexed.aggregate(Min);
+    let max_price = bids_indexed.aggregate(Max);
     let sum_price =
-        bids_indexed.aggregate_linear::<(), _, _>(|_, price| -> isize { *price as isize });
+        bids_indexed.aggregate_linear(|_, price| -> isize { *price as isize });
 
     // Another outer-join abomination to put all aggregates into single stream.
     count_total_bids
@@ -326,7 +326,7 @@ mod tests {
                 .collect()
         });
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q17(stream);

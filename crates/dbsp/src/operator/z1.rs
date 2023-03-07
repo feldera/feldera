@@ -21,20 +21,23 @@ circuit_cache_key!(NestedDelayedId<C, D>(GlobalNodeId => Stream<C, D>));
 /// Use this API instead of the low-level [`Circuit::add_feedback`] API to
 /// create feedback loops with `Z1` operator.  In addition to being more
 /// concise, this API takes advantage of [caching](`crate::circuit::cache`).
-pub struct DelayedFeedback<P, D> {
-    feedback: FeedbackConnector<Circuit<P>, D, D, Z1<D>>,
-    output: Stream<Circuit<P>, D>,
-    export: Stream<P, D>,
+pub struct DelayedFeedback<C, D>
+where
+    C: Circuit,
+{
+    feedback: FeedbackConnector<C, D, D, Z1<D>>,
+    output: Stream<C, D>,
+    export: Stream<C::Parent, D>,
 }
 
-impl<P, D> DelayedFeedback<P, D>
+impl<C, D> DelayedFeedback<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
-    pub fn new(circuit: &Circuit<P>) -> Self {
+    pub fn new(circuit: &C) -> Self {
         let (ExportStream { local, export }, feedback) =
             circuit.add_feedback_with_export(Z1::new(D::zero()));
 
@@ -46,12 +49,12 @@ where
     }
 
     /// Output stream of the `Z1` operator.
-    pub fn stream(&self) -> &Stream<Circuit<P>, D> {
+    pub fn stream(&self) -> &Stream<C, D> {
         &self.output
     }
 
     /// Connect `input` stream to the input of the `Z1` operator.
-    pub fn connect(self, input: &Stream<Circuit<P>, D>) {
+    pub fn connect(self, input: &Stream<C, D>) {
         let Self {
             feedback,
             output,
@@ -71,19 +74,19 @@ where
 /// Use this API instead of the low-level [`Circuit::add_feedback`] API to
 /// create feedback loops with `Z1Nested` operator.  In addition to being more
 /// concise, this API takes advantage of [caching](`crate::circuit::cache`).
-pub struct DelayedNestedFeedback<P, D> {
-    feedback: FeedbackConnector<Circuit<P>, D, D, Z1Nested<D>>,
-    output: Stream<Circuit<P>, D>,
+pub struct DelayedNestedFeedback<C, D> {
+    feedback: FeedbackConnector<C, D, D, Z1Nested<D>>,
+    output: Stream<C, D>,
 }
 
-impl<P, D> DelayedNestedFeedback<P, D>
+impl<C, D> DelayedNestedFeedback<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Eq + SizeOf + NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
-    pub fn new(circuit: &Circuit<P>) -> Self
+    pub fn new(circuit: &C) -> Self
     where
         D: HasZero,
     {
@@ -92,12 +95,12 @@ where
     }
 
     /// Output stream of the `Z1Nested` operator.
-    pub fn stream(&self) -> &Stream<Circuit<P>, D> {
+    pub fn stream(&self) -> &Stream<C, D> {
         &self.output
     }
 
     /// Connect `input` stream to the input of the `Z1Nested` operator.
-    pub fn connect(self, input: &Stream<Circuit<P>, D>) {
+    pub fn connect(self, input: &Stream<C, D>) {
         let Self { feedback, output } = self;
         let circuit = output.circuit().clone();
 
@@ -106,11 +109,13 @@ where
     }
 }
 
-impl<P, D> Stream<Circuit<P>, D> {
+impl<C, D> Stream<C, D>
+where
+    C: Circuit,
+{
     /// Applies [`Z1`] operator to `self`.
-    pub fn delay(&self) -> Stream<Circuit<P>, D>
+    pub fn delay(&self) -> Stream<C, D>
     where
-        P: Clone + 'static,
         D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
@@ -121,9 +126,8 @@ impl<P, D> Stream<Circuit<P>, D> {
     }
 
     /// Applies [`Z1Nested`] operator to `self`.
-    pub fn delay_nested(&self) -> Stream<Circuit<P>, D>
+    pub fn delay_nested(&self) -> Stream<C, D>
     where
-        P: Clone + 'static,
         D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,
     {
         self.circuit()
