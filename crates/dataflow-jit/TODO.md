@@ -1,13 +1,8 @@
 # Dataflow JIT Todo list
 
 - [ ] Cleanup dataflow generation code
-  - [ ] Implement dynamic scoping so that we can have arbitrarily nested scopes
-- [ ] Window operators
-  - [ ] Consult with Mihai to figure out the best design for this
-    - Two main options, either one (or a few) very generalized operators or a handful of specialized ones,
-      most window aggregations are likely fairly similar (since we're compiling SQL which has limited
-      expressivity) so we'd get the benefit of clearer semantics and more efficient (through specialization)
-      operators
+  - [ ] ~~Implement dynamic scoping so that we can have arbitrarily nested scopes~~
+  - [ ] Implement a fixed level of nesting (minimum of 3, 5 probably gives us some good leeway)
 - [ ] More codegen debug checks, make sure that none of our pointers ever go out of bounds of any of our objects
 - [ ] Add debug layout checks to all dataflow operators
 - [ ] Validation infrastructure
@@ -46,14 +41,26 @@
   - [ ] Automatic incrementalization
   - [ ] Push/pull exchanges
   - [ ] Push/pull gathers
-- [ ] Windowed aggregates
 - [ ] Basic block parameters
   - [ ] Promote branched allocas to basic block args (or to `select`)
 - [ ] Textual debugging for graphs
 - [ ] Textual debugging for ir
 - [ ] Add the ability to drop values (mainly strings) within ir
 - [ ] Add a borrowed/static version of strings (maybe `&str` style `{ ptr, len }`)
+- [ ] Arrays
 - [ ] Inline small row values into the `Row` pointer
-- [ ] Linear aggregations
-- [ ] Max aggregate
 - [ ] C FFI
+- [ ] Operators
+  - [ ] Flat Map
+  - [ ] Linear aggregations
+  - [ ] Max aggregate
+  - [ ] Windows
+- [ ] Intrinsic functions
+  - [ ] Proc macro for registering intrinsics
+  - [ ] `@dbsp.row.alloc`
+  - [ ] `@dbsp.row.dealloc`
+  - [ ] `@dbsp.vec.push`
+  - [ ] `@dbsp.vec.reserve`
+- [ ] Automatically deduplicate loads from input rows
+- [ ] Allow functions to be modified after they're built so they can be optimized
+- [ ] Constant folding
