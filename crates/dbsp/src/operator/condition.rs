@@ -3,22 +3,23 @@
 
 use crate::circuit::{
     schedule::{Error as SchedulerError, Scheduler},
-    Circuit, Stream,
+    ChildCircuit, Circuit, Stream, WithClock,
 };
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: 'static + Clone,
+    C: Circuit,
     D: 'static + Clone,
 {
     /// Attach a condition to a stream.
     ///
     /// A [`Condition`] is a condition on the value in the stream
     /// checked on each clock cycle, that can be used to terminate
-    /// the execution of the subcircuit (see [`Circuit::iterate_with_condition`]
-    /// and [`Circuit::iterate_with_conditions`]).
-    pub fn condition<F>(&self, condition_func: F) -> Condition<Circuit<P>>
+    /// the execution of the subcircuit (see
+    /// [`ChildCircuit::iterate_with_condition`] and
+    /// [`ChildCircuit::iterate_with_conditions`]).
+    pub fn condition<F>(&self, condition_func: F) -> Condition<C>
     where
         F: 'static + Fn(&D) -> bool,
     {
@@ -29,9 +30,10 @@ where
     }
 }
 
-impl<P> Circuit<P>
+impl<P> ChildCircuit<P>
 where
-    P: 'static + Clone,
+    P: WithClock,
+    Self: Circuit,
 {
     /// Create a subcircuit that iterates until a condition is satisfied.
     ///
@@ -47,7 +49,9 @@ where
     /// The subcircuit will iterate until the condition returns true.
     pub fn iterate_with_condition<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(Condition<Circuit<Self>>, T), SchedulerError>,
+        F: FnOnce(
+            &mut ChildCircuit<Self>,
+        ) -> Result<(Condition<ChildCircuit<Self>>, T), SchedulerError>,
     {
         self.iterate(|child| {
             let (condition, res) = constructor(child)?;
@@ -62,7 +66,9 @@ where
         constructor: F,
     ) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(Condition<Circuit<Self>>, T), SchedulerError>,
+        F: FnOnce(
+            &mut ChildCircuit<Self>,
+        ) -> Result<(Condition<ChildCircuit<Self>>, T), SchedulerError>,
         S: Scheduler + 'static,
     {
         self.iterate_with_scheduler::<_, _, _, S>(|child| {
@@ -79,7 +85,9 @@ where
     /// conditions are satisfied _simultaneously_ in the same clock cycle.
     pub fn iterate_with_conditions<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(Vec<Condition<Circuit<Self>>>, T), SchedulerError>,
+        F: FnOnce(
+            &mut ChildCircuit<Self>,
+        ) -> Result<(Vec<Condition<ChildCircuit<Self>>>, T), SchedulerError>,
     {
         self.iterate(|child| {
             let (conditions, res) = constructor(child)?;
@@ -94,7 +102,9 @@ where
         constructor: F,
     ) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(Vec<Condition<Circuit<Self>>>, T), SchedulerError>,
+        F: FnOnce(
+            &mut ChildCircuit<Self>,
+        ) -> Result<(Vec<Condition<ChildCircuit<Self>>>, T), SchedulerError>,
         S: 'static + Scheduler,
     {
         self.iterate_with_scheduler::<_, _, _, S>(|child| {
@@ -106,8 +116,8 @@ where
 
 /// A condition attached to a stream that can be used
 /// to terminate the execution of a subcircuit
-/// (see [`Circuit::iterate_with_condition`] and
-/// [`Circuit::iterate_with_conditions`]).
+/// (see [`ChildCircuit::iterate_with_condition`] and
+/// [`ChildCircuit::iterate_with_conditions`]).
 ///
 /// A condition is created by the [`Stream::condition`] method.
 pub struct Condition<C> {
@@ -135,7 +145,7 @@ mod test {
         monitor::TraceMonitor,
         operator::{DelayedFeedback, FilterMap, Generator},
         trace::ord::{OrdIndexedZSet, OrdZSet},
-        zset, Circuit, Stream,
+        zset, ChildCircuit, Circuit, RootCircuit, Stream,
     };
 
     #[test]
@@ -152,7 +162,7 @@ mod test {
     where
         S: Scheduler + 'static,
     {
-        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
+        let circuit = RootCircuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             // Graph edges
@@ -200,7 +210,7 @@ mod test {
                     //
                     // where suc computes the set of successor nodes.
                     let reachable_circuit =
-                        |init: Stream<Circuit<Circuit<()>>, OrdZSet<usize, isize>>| {
+                        |init: Stream<ChildCircuit<RootCircuit>, OrdZSet<usize, isize>>| {
                             let feedback = <DelayedFeedback<_, OrdZSet<usize, isize>>>::new(child);
 
                             let feedback_pairs: Stream<_, OrdZSet<(usize, ()), isize>> =

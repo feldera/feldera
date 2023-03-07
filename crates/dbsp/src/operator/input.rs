@@ -2,7 +2,7 @@ use crate::{
     algebra::ZRingValue,
     circuit::{
         operator_traits::{Operator, SourceOperator},
-        LocalStoreMarker, Scope,
+        LocalStoreMarker, RootCircuit, Scope,
     },
     default_hash,
     trace::Batch,
@@ -20,10 +20,10 @@ use std::{
 };
 use typedmap::TypedMapKey;
 
-pub type IndexedZSetStream<K, V, R> = Stream<Circuit<()>, OrdIndexedZSet<K, V, R>>;
-pub type ZSetStream<K, R> = Stream<Circuit<()>, OrdZSet<K, R>>;
+pub type IndexedZSetStream<K, V, R> = Stream<RootCircuit, OrdIndexedZSet<K, V, R>>;
+pub type ZSetStream<K, R> = Stream<RootCircuit, OrdZSet<K, R>>;
 
-impl Circuit<()> {
+impl RootCircuit {
     /// Create an input stream that carries values of type `T`.
     ///
     /// Input streams are used to push data to the circuit from the outside
@@ -162,7 +162,7 @@ impl Circuit<()> {
             // UpsertHandle shards its inputs.
             .mark_sharded();
 
-        sorted.upsert::<(), B>()
+        sorted.upsert::<B>()
     }
 
     /// Create an input table with set semantics.
@@ -508,7 +508,7 @@ where
 }
 
 /// A handle used to write data to an input stream created by
-/// the [`Circuit::add_input_stream`] method.
+/// the [`RootCircuit::add_input_stream`] method.
 ///
 /// Internally, the handle manages an array of mailboxes, one for
 /// each worker thread.  At the start of each clock cycle, the
@@ -573,14 +573,14 @@ where
 }
 
 /// A handle used to write data to an input stream created by
-/// [`add_input_zset`](`Circuit::add_input_zset`),
-/// and [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`)
+/// [`add_input_zset`](`RootCircuit::add_input_zset`),
+/// and [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`)
 /// methods.
 ///
 /// The handle provides an API to push updates to the stream in
 /// the form of `(key, value)` tuples.  See
-/// [`add_input_zset`](`Circuit::add_input_zset`),
-/// [`add_input_indexed_zset`](`Circuit::add_input_indexed_zset`) and
+/// [`add_input_zset`](`RootCircuit::add_input_zset`),
+/// [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`) and
 /// documentation for the exact semantics of these updates.
 ///
 /// Internally, the handle manages an array of mailboxes, one for
@@ -728,14 +728,14 @@ pub trait HashFunc<K>: Fn(&K) -> u32 + Send + Sync {}
 impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
 
 /// A handle used to write data to an input stream created by
-/// [`add_input_set`](`Circuit::add_input_set`) and
-/// [`add_input_map`](`Circuit::add_input_map`)
+/// [`add_input_set`](`RootCircuit::add_input_set`) and
+/// [`add_input_map`](`RootCircuit::add_input_map`)
 /// methods.
 ///
 /// The handle provides an API to push updates to the stream in
 /// the form of `(key, value)` tuples.  See
-/// [`add_input_set`](`Circuit::add_input_set`) and
-/// [`add_input_map`](`Circuit::add_input_map`)
+/// [`add_input_set`](`RootCircuit::add_input_set`) and
+/// [`add_input_map`](`RootCircuit::add_input_map`)
 /// documentation for the exact semantics of these updates.
 ///
 /// Internally, the handle manages an array of mailboxes, one for
@@ -949,7 +949,7 @@ mod test {
     use crate::{
         indexed_zset,
         trace::{cursor::Cursor, BatchReader},
-        zset, Circuit, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, Runtime,
+        zset, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime,
         UpsertHandle,
     };
     use std::iter::once;
@@ -979,7 +979,7 @@ mod test {
     }
 
     fn input_test_circuit(
-        circuit: &Circuit<()>,
+        circuit: &RootCircuit,
         nworkers: usize,
     ) -> InputHandle<OrdZSet<usize, isize>> {
         let (stream, handle) = circuit.add_input_stream::<OrdZSet<usize, isize>>();
@@ -1006,7 +1006,7 @@ mod test {
     #[test]
     fn input_test_st() {
         let (circuit, input_handle) =
-            Circuit::build(move |circuit| input_test_circuit(circuit, 1)).unwrap();
+            RootCircuit::build(move |circuit| input_test_circuit(circuit, 1)).unwrap();
 
         for batch in input_batches().into_iter() {
             input_handle.set_for_worker(0, batch);
@@ -1057,7 +1057,7 @@ mod test {
         input_test_mt(4);
     }
 
-    fn zset_test_circuit(circuit: &Circuit<()>) -> CollectionHandle<usize, isize> {
+    fn zset_test_circuit(circuit: &RootCircuit) -> CollectionHandle<usize, isize> {
         let (stream, handle) = circuit.add_input_zset::<usize, isize>();
 
         let mut expected_batches = input_batches()
@@ -1076,7 +1076,7 @@ mod test {
     #[test]
     fn zset_test_st() {
         let (circuit, mut input_handle) =
-            Circuit::build(move |circuit| zset_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_vecs().into_iter() {
             input_handle.append(&mut vec);
@@ -1163,7 +1163,7 @@ mod test {
             .collect()
     }
 
-    fn indexed_zset_test_circuit(circuit: &Circuit<()>) -> CollectionHandle<usize, (usize, isize)> {
+    fn indexed_zset_test_circuit(circuit: &RootCircuit) -> CollectionHandle<usize, (usize, isize)> {
         let (stream, handle) = circuit.add_input_indexed_zset::<usize, usize, isize>();
 
         let mut expected_batches = input_indexed_batches()
@@ -1181,7 +1181,7 @@ mod test {
     #[test]
     fn indexed_zset_test_st() {
         let (circuit, mut input_handle) =
-            Circuit::build(move |circuit| indexed_zset_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| indexed_zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_indexed_vecs().into_iter() {
             input_handle.append(&mut vec);
@@ -1245,7 +1245,7 @@ mod test {
         ]
     }
 
-    fn set_test_circuit(circuit: &Circuit<()>) -> UpsertHandle<usize, bool> {
+    fn set_test_circuit(circuit: &RootCircuit) -> UpsertHandle<usize, bool> {
         let (stream, handle) = circuit.add_input_set::<usize, isize>();
 
         let mut expected_batches = output_set_updates().into_iter();
@@ -1262,7 +1262,7 @@ mod test {
     #[test]
     fn set_test_st() {
         let (circuit, mut input_handle) =
-            Circuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
@@ -1270,7 +1270,7 @@ mod test {
         }
 
         let (circuit, input_handle) =
-            Circuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
             for (k, b) in vec.into_iter() {
@@ -1338,7 +1338,7 @@ mod test {
         ]
     }
 
-    fn map_test_circuit(circuit: &Circuit<()>) -> UpsertHandle<usize, Option<usize>> {
+    fn map_test_circuit(circuit: &RootCircuit) -> UpsertHandle<usize, Option<usize>> {
         let (stream, handle) = circuit.add_input_map::<usize, usize, isize>();
 
         let mut expected_batches = output_map_updates().into_iter();
@@ -1355,7 +1355,7 @@ mod test {
     #[test]
     fn map_test_st() {
         let (circuit, mut input_handle) =
-            Circuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
 
         for mut vec in input_map_updates().into_iter() {
             input_handle.append(&mut vec);
@@ -1363,7 +1363,7 @@ mod test {
         }
 
         let (circuit, input_handle) =
-            Circuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
 
         for vec in input_map_updates().into_iter() {
             for (k, v) in vec.into_iter() {

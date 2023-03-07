@@ -1,5 +1,5 @@
 use crate::{
-    circuit::runtime::RuntimeHandle, profile::Profiler, Circuit, Error as DBSPError, Runtime,
+    circuit::runtime::RuntimeHandle, profile::Profiler, Error as DBSPError, RootCircuit, Runtime,
     RuntimeError, SchedulerError,
 };
 use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
@@ -20,8 +20,8 @@ impl Runtime {
     /// the circuit and a user-defined value returned by the constructor.
     /// This value typically contains one or more input handles used to
     /// push data to the circuit at runtime (see
-    /// [`Circuit::add_input_stream`], [`Circuit::add_input_zset`], and related
-    /// methods).
+    /// [`RootCircuit::add_input_stream`], [`RootCircuit::add_input_zset`], and
+    /// related methods).
     ///
     /// To ensure that the multithreaded runtime has identical input/output
     /// behavior to a single-threaded circuit, the `constructor` closure
@@ -35,7 +35,7 @@ impl Runtime {
     /// thread-safe.
     pub fn init_circuit<F, T>(nworkers: usize, constructor: F) -> Result<(DBSPHandle, T), DBSPError>
     where
-        F: FnOnce(&mut Circuit<()>) -> T + Clone + Send + 'static,
+        F: FnOnce(&mut RootCircuit) -> T + Clone + Send + 'static,
         T: Clone + Send + 'static,
     {
         // When a worker finishes building the circuit, it sends completion status back
@@ -61,7 +61,7 @@ impl Runtime {
             let status_sender = status_senders.into_iter().nth(worker_index).unwrap();
             let command_receiver = command_receivers.into_iter().nth(worker_index).unwrap();
 
-            let (circuit, profiler) = match Circuit::build(|circuit| {
+            let (circuit, profiler) = match RootCircuit::build(|circuit| {
                 let profiler = Profiler::new(circuit);
                 let res = constructor(circuit);
                 (res, profiler)
@@ -312,7 +312,7 @@ impl Drop for DBSPHandle {
 
 #[cfg(test)]
 mod tests {
-    use crate::{operator::Generator, Error as DBSPError, Runtime, RuntimeError};
+    use crate::{operator::Generator, Circuit, Error as DBSPError, Runtime, RuntimeError};
 
     // Panic during initialization in worker thread.
     #[test]

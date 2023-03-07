@@ -3,6 +3,7 @@ use crate::{
         AddAssignByRef, AddByRef, GroupValue, HasOne, HasZero, IndexedZSet, MulByRef, NegByRef,
         ZRingValue,
     },
+    circuit::WithClock,
     trace::layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
     utils::VecExt,
     Circuit, DBData, DBTimestamp, DBWeight, OrdIndexedZSet, Stream,
@@ -193,9 +194,10 @@ where
     }
 }
 
-impl<P, Z> Stream<Circuit<P>, Z>
+impl<C, Z> Stream<C, Z>
 where
-    P: Clone + 'static,
+    C: Circuit,
+    <C as WithClock>::Time: DBTimestamp,
     Z: Clone + 'static,
 {
     /// Incremental average aggregate.
@@ -222,17 +224,15 @@ where
     /// computed by applying the `(sum, count) -> sum / count`
     /// transformation to its output.
     #[track_caller]
-    pub fn average<TS, A, F>(&self, f: F) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, Z::R>>
+    pub fn average<A, F>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet,
         Z::R: ZRingValue,
         Avg<A, Z::R>: MulByRef<Z::R, Output = Avg<A, Z::R>>,
         A: DBData + From<Z::R> + Div<Output = A> + GroupValue,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
     {
-        let aggregate =
-            self.aggregate_linear::<TS, _, _>(move |key, val| Avg::new(f(key, val), Z::R::one()));
+        let aggregate = self.aggregate_linear(move |key, val| Avg::new(f(key, val), Z::R::one()));
 
         // We're the only possible consumer of the aggregated stream so we can use an
         // owned consumer to skip any cloning

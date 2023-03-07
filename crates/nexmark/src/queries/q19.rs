@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold},
-    Circuit, OrdZSet, Stream,
+    RootCircuit, OrdZSet, Stream,
 };
 use crate::model::{Bid, Event};
 use std::collections::VecDeque;
@@ -33,7 +33,7 @@ use std::collections::VecDeque;
 /// WHERE rank_number <= 10;
 /// ```
 
-type Q19Stream = Stream<Circuit<()>, OrdZSet<Bid, isize>>;
+type Q19Stream = Stream<RootCircuit, OrdZSet<Bid, isize>>;
 
 const TOP_BIDS: usize = 10;
 
@@ -44,7 +44,7 @@ pub fn q19(input: NexmarkStream) -> Q19Stream {
     });
 
     bids_by_auction
-        .aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
+        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
             VecDeque::with_capacity(TOP_BIDS),
             |top: &mut VecDeque<Bid>, (_price, bid): &(usize, Bid), _w| {
                 if top.len() >= TOP_BIDS {
@@ -280,7 +280,7 @@ mod tests {
                 .collect()
         });
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q19(stream);

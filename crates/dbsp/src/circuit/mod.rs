@@ -20,8 +20,8 @@ pub mod trace;
 
 pub use activations::{Activations, Activator};
 pub use circuit_builder::{
-    Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NodeId,
-    OwnershipPreference, Scope, Stream,
+    ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
+    NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::DBSPHandle;
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};

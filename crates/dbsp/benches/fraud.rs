@@ -218,7 +218,7 @@ impl FraudBenchmark {
             let demographics_by_ccnum = demographics.map_index(|d| (d.cc_num, d.clone()));
 
             let enriched_transactions: Stream<_, EnrichedTransactions> = transactions_by_ccnum
-                .join_index::<(), _, _, _, _, _>(&demographics_by_ccnum, |cc_num, tran, dem| {
+                .join_index(&demographics_by_ccnum, |cc_num, tran, dem| {
                     let timestamp = tran.trans_date_trans_time.assume_utc().unix_timestamp();
                     Some(((*cc_num, timestamp), (tran.clone(), dem.clone())))
                 });
@@ -269,17 +269,16 @@ impl FraudBenchmark {
                 trans_freq_24.map_index(|(cc_num, (ts, freq))| ((*cc_num, *ts), freq.unwrap_or(0)));
 
             avg_spend_pw_indexed
-                .join_index::<(), _, _, _, _, _>(
-                    &avg_spend_pm_indexed,
-                    |&cc_num_ts, pw_avg, pm_avg| Some((cc_num_ts, (*pw_avg, *pm_avg))),
-                )
-                .join_index::<(), _, _, _, _, _>(
+                .join_index(&avg_spend_pm_indexed, |&cc_num_ts, pw_avg, pm_avg| {
+                    Some((cc_num_ts, (*pw_avg, *pm_avg)))
+                })
+                .join_index(
                     &trans_freq_24_indexed,
                     |&cc_num_ts, (pw_avg, pm_avg), freq| {
                         Some((cc_num_ts, (*pw_avg, *pm_avg, *freq)))
                     },
                 )
-                .join::<(), _, _, _>(
+                .join(
                     &enriched_transactions,
                     |(_cc_num, _ts), (pw_avg, pm_avg, freq), (tran, dem)| QueryResult {
                         avg_spend_pw: *pw_avg,

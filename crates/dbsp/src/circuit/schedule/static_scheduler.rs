@@ -23,9 +23,9 @@ impl Scheduler for StaticScheduler {
     // nodes in a topological order.
     // TODO: compute a schedule that takes into account operators that consume
     // inputs by-value.
-    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C) -> Result<Self, Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         let mut g = circuit_graph(circuit);
 
@@ -49,9 +49,9 @@ impl Scheduler for StaticScheduler {
         Ok(Self { schedule })
     }
 
-    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
+    fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         circuit.log_scheduler_event(&SchedulerEvent::step_start());
 
@@ -74,6 +74,7 @@ impl Scheduler for StaticScheduler {
                 }
             }
         }
+        circuit.tick();
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end());
         Ok(())

@@ -15,7 +15,7 @@ use crate::{
     },
     circuit::{
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, Scope, Stream,
+        Circuit, Scope, Stream, WithClock,
     },
     time::Timestamp,
     trace::{
@@ -155,9 +155,10 @@ where
     }
 }
 
-impl<P, Z> Stream<Circuit<P>, Z>
+impl<C, Z> Stream<C, Z>
 where
-    P: Clone + 'static,
+    C: Circuit,
+    <C as WithClock>::Time: DBTimestamp,
     Z: Clone + 'static,
 {
     /// Aggregate values associated with each key in an indexed Z-set.
@@ -171,7 +172,7 @@ where
     pub fn stream_aggregate<A>(
         &self,
         aggregator: A,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
+    ) -> Stream<C, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R>,
@@ -181,7 +182,7 @@ where
     }
 
     /// Like [`Self::stream_aggregate`], but can return any batch type.
-    pub fn stream_aggregate_generic<A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
+    pub fn stream_aggregate_generic<A, O>(&self, aggregator: A) -> Stream<C, O>
     where
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R>,
@@ -200,25 +201,20 @@ where
     /// changes to its aggregate computed by applying `aggregator` to each
     /// key in the input.
     #[allow(clippy::type_complexity)]
-    pub fn aggregate<TS, A>(
-        &self,
-        aggregator: A,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
+    pub fn aggregate<A>(&self, aggregator: A) -> Stream<C, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, TS, Z::R>,
+        A: Aggregator<Z::Val, <C as WithClock>::Time, Z::R>,
         Z::R: ZRingValue,
     {
-        self.aggregate_generic::<TS, A, OrdIndexedZSet<Z::Key, A::Output, Z::R>>(aggregator)
+        self.aggregate_generic::<A, OrdIndexedZSet<Z::Key, A::Output, Z::R>>(aggregator)
     }
 
     /// Like [`Self::aggregate`], but can return any batch type.
-    pub fn aggregate_generic<TS, A, O>(&self, aggregator: A) -> Stream<Circuit<P>, O>
+    pub fn aggregate_generic<A, O>(&self, aggregator: A) -> Stream<C, O>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet + Send,
-        A: Aggregator<Z::Val, TS, Z::R>,
+        A: Aggregator<Z::Val, <C as WithClock>::Time, Z::R>,
         O: Batch<Key = Z::Key, Val = A::Output, Time = ()>,
         O::R: ZRingValue,
     {
@@ -239,11 +235,11 @@ where
 
         circuit
             .add_binary_operator(
-                AggregateIncremental::new(aggregator),
+                AggregateIncremental::new(aggregator, circuit.clone()),
                 &stream,
-                &stream.trace::<Spine<TS::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
+                &stream.trace::<Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
             )
-            .upsert::<TS, O>()
+            .upsert::<O>()
             .mark_sharded()
     }
 
@@ -254,31 +250,26 @@ where
     /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
     /// incorrect results if `f` is not linear.  Linearity means that
     /// `f` can be defined per `(key, value)` tuple.
-    pub fn aggregate_linear<TS, F, A>(
-        &self,
-        f: F,
-    ) -> Stream<Circuit<P>, OrdIndexedZSet<Z::Key, A, Z::R>>
+    pub fn aggregate_linear<F, A>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet,
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
         Z::R: ZRingValue,
     {
-        self.aggregate_linear_generic::<TS, _, _>(f)
+        self.aggregate_linear_generic(f)
     }
 
     /// Like [`Self::aggregate_linear`], but can return any batch type.
-    pub fn aggregate_linear_generic<TS, F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    pub fn aggregate_linear_generic<F, O>(&self, f: F) -> Stream<C, O>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> O::Val + Clone + 'static,
         O: Batch<Key = Z::Key, Time = ()>,
         O::R: ZRingValue,
         O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue,
     {
-        self.weigh(f).aggregate_generic::<TS, _, _>(WeightedCount)
+        self.weigh(f).aggregate_generic(WeightedCount)
     }
 
     /// Convert indexed Z-set `Z` into a Z-set where the weight of each key
@@ -293,7 +284,7 @@ where
     /// ```
     ///
     /// This is a linear operator.
-    pub fn weigh<F, T>(&self, f: F) -> Stream<Circuit<P>, OrdZSet<Z::Key, T>>
+    pub fn weigh<F, T>(&self, f: F) -> Stream<C, OrdZSet<Z::Key, T>>
     where
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> T + 'static,
@@ -303,7 +294,7 @@ where
     }
 
     /// Like [`Self::weigh`], but can return any batch type.
-    pub fn weigh_generic<F, O>(&self, f: F) -> Stream<Circuit<P>, O>
+    pub fn weigh_generic<F, O>(&self, f: F) -> Stream<C, O>
     where
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> O::R + 'static,
@@ -398,6 +389,7 @@ where
 /// * `Z` - input batch type in the `delta` stream.
 /// * `IT` - input trace type.
 /// * `A` - aggregator to apply to each input group.
+/// * `Clk` - clock that keeps track of the current logical time.
 ///
 /// # Design
 ///
@@ -415,14 +407,12 @@ where
 /// aggregate value.  Of course these are not always true, and we may
 /// want to one day build an alternative implementation using the
 /// other approach.
-struct AggregateIncremental<Z, IT, A>
+struct AggregateIncremental<Z, IT, A, Clk>
 where
     IT: BatchReader,
 {
+    clock: Clk,
     aggregator: A,
-    // Current time.
-    // TODO: not needed once timekeeping is handled by the circuit.
-    time: IT::Time,
     // The last input batch was empty - used in fixedpoint computation.
     empty_input: bool,
     // The last output batch was empty - used in fixedpoint computation.
@@ -434,16 +424,17 @@ where
     _type: PhantomData<(Z, IT)>,
 }
 
-impl<Z, IT, A> AggregateIncremental<Z, IT, A>
+impl<Z, IT, A, Clk> AggregateIncremental<Z, IT, A, Clk>
 where
+    Clk: WithClock<Time = IT::Time>,
     Z: IndexedZSet,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     A: Aggregator<Z::Val, IT::Time, Z::R>,
 {
-    pub fn new(aggregator: A) -> Self {
+    pub fn new(aggregator: A, clock: Clk) -> Self {
         Self {
+            clock,
             aggregator,
-            time: <IT::Time as Timestamp>::clock_start(),
             empty_input: false,
             empty_output: false,
             keys_of_interest: BTreeMap::new(),
@@ -467,14 +458,14 @@ where
     /// aggregate as:
     ///
     /// ```text
-    /// (1) agg = aggregate({(v, w) | (v, t, w) ∈ input_cursor[key], t <= self.time})
+    /// (1) agg = aggregate({(v, w) | (v, t, w) ∈ input_cursor[key], t <= time})
     /// ```
     ///
     /// # Updating `keys_of_interest`
     ///
-    /// For each `(v, t, w)` tuple in `input_cursor`, such that `t <= self.time`
+    /// For each `(v, t, w)` tuple in `input_cursor`, such that `t <= time`
     /// does not hold, the tuple can affect the value of the aggregate at
-    /// time `self.time.join(t)`.  We compute the smallest (according to the
+    /// time `time.join(t)`.  We compute the smallest (according to the
     /// global lexicographic ordering of timestamps that reflects the order in
     /// which DBSP processes timestamps) such `t` and insert `key` in
     /// `keys_of_interest` for that time.
@@ -490,11 +481,12 @@ where
         key: &Z::Key,
         input_cursor: &mut IT::Cursor<'_>,
         output: &mut Vec<(Z::Key, Option<A::Output>)>,
+        time: &Clk::Time,
     ) {
         // println!(
         //     "{}: eval_key({key}) @ {:?}",
         //     Runtime::worker_index(),
-        //     self.time
+        //     time
         // );
 
         // Lookup key in input.
@@ -504,10 +496,10 @@ where
         // `0`.
         if input_cursor.key_valid() && input_cursor.key() == key {
             // Apply aggregator to a `CursorGroup` that iterates over the nested
-            // Z-set associated with `input_cursor.key()` at time `self.time`.
+            // Z-set associated with `input_cursor.key()` at time `time`.
             if let Some(aggregate) = self
                 .aggregator
-                .aggregate_and_finalize(&mut CursorGroup::new(input_cursor, self.time.clone()))
+                .aggregate_and_finalize(&mut CursorGroup::new(input_cursor, time.clone()))
             {
                 output.push((key.clone(), Some(aggregate)));
             } else {
@@ -525,21 +517,20 @@ where
                 let mut time_of_interest = None;
                 while input_cursor.val_valid() {
                     // TODO: More efficient lookup of the smallest timestamp exceeding
-                    // `self.time`, without scanning everything.
+                    // `time`, without scanning everything.
                     time_of_interest =
-                        input_cursor.fold_times(time_of_interest, |time_of_interest, time, _| {
-                            if !time.less_equal(&self.time) {
+                        input_cursor.fold_times(time_of_interest, |time_of_interest, ts, _| {
+                            if !ts.less_equal(time) {
                                 match time_of_interest {
-                                    None => Some(self.time.join(time)),
+                                    None => Some(time.join(ts)),
                                     Some(time_of_interest) => {
-                                        Some(min(time_of_interest, self.time.join(time)))
+                                        Some(min(time_of_interest, time.join(ts)))
                                     }
                                 }
                             } else {
                                 time_of_interest
                             }
                         });
-
                     input_cursor.step_val();
                 }
 
@@ -556,8 +547,9 @@ where
     }
 }
 
-impl<Z, IT, A> Operator for AggregateIncremental<Z, IT, A>
+impl<Z, IT, A, Clk> Operator for AggregateIncremental<Z, IT, A, Clk>
 where
+    Clk: WithClock<Time = IT::Time> + 'static,
     Z: 'static,
     IT: BatchReader + 'static,
     A: 'static,
@@ -575,17 +567,18 @@ where
 
     fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self.keys_of_interest.keys().all(|ts| {
-            if ts.less_equal(&self.time.epoch_end(scope)) {
-                println!("ts: {ts:?}, epoch_end: {:?}", self.time.epoch_end(scope));
+            if ts.less_equal(&self.clock.time().epoch_end(scope)) {
+                println!(
+                    "ts: {ts:?}, epoch_end: {:?}",
+                    self.clock.time().epoch_end(scope)
+                );
             }
-            !ts.less_equal(&self.time.epoch_end(scope))
+            !ts.less_equal(&self.clock.time().epoch_end(scope))
         }));
-
-        self.time = self.time.advance(scope + 1);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        let epoch_end = self.time.epoch_end(scope);
+        let epoch_end = self.clock.time().epoch_end(scope);
 
         self.empty_input
             && self.empty_output
@@ -596,9 +589,10 @@ where
     }
 }
 
-impl<Z, IT, A> BinaryOperator<Z, IT, Vec<(Z::Key, Option<A::Output>)>>
-    for AggregateIncremental<Z, IT, A>
+impl<Z, IT, A, Clk> BinaryOperator<Z, IT, Vec<(Z::Key, Option<A::Output>)>>
+    for AggregateIncremental<Z, IT, A, Clk>
 where
+    Clk: WithClock<Time = IT::Time> + 'static,
     Z: IndexedZSet,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone,
     A: Aggregator<Z::Val, IT::Time, Z::R> + 'static,
@@ -616,9 +610,11 @@ where
         let mut delta_cursor = delta.cursor();
         let mut input_trace_cursor = input_trace.cursor();
 
+        let time = self.clock.time();
+
         // Previously encountered keys that may affect output at the
         // current time.
-        let keys_of_interest = self.keys_of_interest.remove(&self.time).unwrap_or_default();
+        let keys_of_interest = self.keys_of_interest.remove(&time).unwrap_or_default();
 
         let mut keys_of_interest = keys_of_interest.iter();
 
@@ -631,17 +627,32 @@ where
             match delta_cursor.key().cmp(key_of_interest_ref) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
+                    self.eval_key(
+                        delta_cursor.key(),
+                        &mut input_trace_cursor,
+                        &mut result,
+                        &time,
+                    );
                     delta_cursor.step_key();
                 }
                 // Key only appears in `keys_of_interest`.
                 Ordering::Greater => {
-                    self.eval_key(key_of_interest_ref, &mut input_trace_cursor, &mut result);
+                    self.eval_key(
+                        key_of_interest_ref,
+                        &mut input_trace_cursor,
+                        &mut result,
+                        &time,
+                    );
                     key_of_interest = keys_of_interest.next();
                 }
                 // Key appears in both `delta` and `keys_of_interest`.
                 Ordering::Equal => {
-                    self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
+                    self.eval_key(
+                        delta_cursor.key(),
+                        &mut input_trace_cursor,
+                        &mut result,
+                        &time,
+                    );
                     delta_cursor.step_key();
                     key_of_interest = keys_of_interest.next();
                 }
@@ -649,7 +660,12 @@ where
         }
 
         while delta_cursor.key_valid() {
-            self.eval_key(delta_cursor.key(), &mut input_trace_cursor, &mut result);
+            self.eval_key(
+                delta_cursor.key(),
+                &mut input_trace_cursor,
+                &mut result,
+                &time,
+            );
             delta_cursor.step_key();
         }
 
@@ -658,12 +674,12 @@ where
                 key_of_interest.unwrap(),
                 &mut input_trace_cursor,
                 &mut result,
+                &time,
             );
             key_of_interest = keys_of_interest.next();
         }
 
         self.empty_output = result.is_empty();
-        self.time = self.time.advance(0);
         result
     }
 }
@@ -681,14 +697,13 @@ mod test {
         indexed_zset,
         operator::GeneratorNested,
         operator::{Fold, Min},
-        time::NestedTimestamp32,
         trace::{cursor::Cursor, Batch, BatchReader},
-        zset, Circuit, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+        zset, Circuit, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream,
     };
 
     type TestZSet = OrdZSet<(usize, isize), isize>;
 
-    fn aggregate_test_circuit(circuit: &mut Circuit<()>, inputs: Vec<Vec<TestZSet>>) {
+    fn aggregate_test_circuit(circuit: &mut RootCircuit, inputs: Vec<Vec<TestZSet>>) {
         let mut inputs = inputs.into_iter();
 
         circuit
@@ -718,12 +733,9 @@ mod test {
                 // value and is therefore linear.
                 let sum_linear = |_key: &usize, val: &isize| -> isize { *val };
 
-                let sum_inc = input
-                    .aggregate::<NestedTimestamp32, _>(sum.clone())
-                    .gather(0);
-                let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> = input
-                    .aggregate_linear::<NestedTimestamp32, _, _>(sum_linear)
-                    .gather(0);
+                let sum_inc = input.aggregate(sum.clone()).gather(0);
+                let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> =
+                    input.aggregate_linear(sum_linear).gather(0);
                 let sum_noninc = input
                     .integrate_nested()
                     .integrate()
@@ -783,7 +795,7 @@ mod test {
                     },
                 );
 
-                let min_inc = input.aggregate::<NestedTimestamp32, _>(Min).gather(0);
+                let min_inc = input.aggregate(Min).gather(0);
                 let min_noninc = input
                     .integrate_nested()
                     .integrate()
@@ -842,7 +854,7 @@ mod test {
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let circuit = Circuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
+            let circuit = RootCircuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
@@ -881,7 +893,7 @@ mod test {
         let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset();
             input_stream
-                .aggregate_linear::<(), _, _>(|_key, _value: &usize| 1isize)
+                .aggregate_linear(|_key, _value: &usize| 1isize)
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
@@ -890,7 +902,7 @@ mod test {
                 });
 
             input_stream
-                .aggregate_linear::<(), _, _>(|_key, value: &usize| *value as isize)
+                .aggregate_linear(|_key, value: &usize| *value as isize)
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
@@ -899,7 +911,7 @@ mod test {
                 });
 
             input_stream
-                .aggregate::<(), _>(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                .aggregate(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
                     0,
                     |sum: &mut usize, _v: &usize, _w| *sum += 1,
                 ))
@@ -911,7 +923,7 @@ mod test {
                 });
 
             input_stream
-                .aggregate::<(), _>(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
+                .aggregate(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
                     0,
                     |sum: &mut usize, v: &usize, _w| *sum += v,
                 ))

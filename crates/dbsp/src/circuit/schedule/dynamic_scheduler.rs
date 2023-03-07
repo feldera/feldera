@@ -193,9 +193,9 @@ impl Inner {
     }
 
     /// Process and dequeue new notifications.
-    fn process_notifications<P>(&mut self, circuit: &Circuit<P>)
+    fn process_notifications<C>(&mut self, circuit: &C)
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         let mut nodes = self.notifications.nodes.lock().unwrap();
 
@@ -226,9 +226,9 @@ impl Inner {
         }
     }
 
-    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C) -> Result<Self, Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         // Check that ownership constraints don't introduce cycles.
         let mut g = circuit_graph(circuit);
@@ -325,9 +325,9 @@ impl Inner {
         Ok(scheduler)
     }
 
-    fn step<P>(&mut self, circuit: &Circuit<P>) -> Result<(), Error>
+    fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         circuit.log_scheduler_event(&SchedulerEvent::step_start());
 
@@ -371,6 +371,7 @@ impl Inner {
                 }
             }
         }
+        circuit.tick();
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end());
         Ok(())
@@ -386,16 +387,16 @@ impl DynamicScheduler {
 }
 
 impl Scheduler for DynamicScheduler {
-    fn prepare<P>(circuit: &Circuit<P>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C) -> Result<Self, Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         Ok(Self(RefCell::new(Inner::prepare(circuit)?)))
     }
 
-    fn step<P>(&self, circuit: &Circuit<P>) -> Result<(), Error>
+    fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
-        P: Clone + 'static,
+        C: Circuit,
     {
         self.inner_mut().step(circuit)
     }

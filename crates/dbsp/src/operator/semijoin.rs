@@ -17,9 +17,9 @@ use std::{
 
 circuit_cache_key!(SemijoinId<C, D>((GlobalNodeId, GlobalNodeId) => Stream<C, D>));
 
-impl<S, Pairs> Stream<Circuit<S>, Pairs>
+impl<C, Pairs> Stream<C, Pairs>
 where
-    S: Clone + 'static,
+    C: Circuit,
 {
     /// Semijoin two streams of batches.
     ///
@@ -35,10 +35,7 @@ where
     /// * `Pairs` - batch type in the first input stream.
     /// * `Keys` - batch type in the second input stream.
     /// * `Out` - output Z-set type.
-    pub fn semijoin_stream<Keys, Out>(
-        &self,
-        keys: &Stream<Circuit<S>, Keys>,
-    ) -> Stream<Circuit<S>, Out>
+    pub fn semijoin_stream<Keys, Out>(&self, keys: &Stream<C, Keys>) -> Stream<C, Out>
     where
         // TODO: Associated type bounds (rust/#52662) really simplify things
         // TODO: Allow non-unit timestamps

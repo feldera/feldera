@@ -3,7 +3,7 @@ use dbsp::{
     algebra::{HasOne, Present, F64},
     default_hash,
     trace::{Batch, Batcher, Builder},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    ChildCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use reqwest::header::CONTENT_LENGTH;
@@ -35,7 +35,7 @@ pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
 pub type DistanceSet<D = Present> = OrdZSet<(Node, Distance), D>;
 pub type DistanceMap<D = Present> = OrdIndexedZSet<Node, Distance, D>;
 
-pub type Streamed<P, T> = Stream<Circuit<P>, T>;
+pub type Streamed<P, T> = Stream<ChildCircuit<P>, T>;
 
 pub type Ranks<P> = Streamed<P, RankMap>;
 pub type Edges<P, D = Present> = Streamed<P, EdgeMap<D>>;

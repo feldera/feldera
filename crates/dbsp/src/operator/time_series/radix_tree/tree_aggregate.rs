@@ -39,9 +39,9 @@ impl<TS, A, B> RadixTreeReader<TS, A> for B where
 
 pub type OrdRadixTree<TS, A, R> = OrdIndexedZSet<Prefix<TS>, TreeNode<TS, A>, R>;
 
-impl<P, Z> Stream<Circuit<P>, Z>
+impl<C, Z> Stream<C, Z>
 where
-    P: Clone + 'static,
+    C: Circuit,
     Z: Clone + 'static,
 {
     /// Given a batch of updates to a time series stream, computes a stream of
@@ -55,7 +55,7 @@ where
     pub fn tree_aggregate<Agg>(
         &self,
         aggregator: Agg,
-    ) -> Stream<Circuit<P>, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>
+    ) -> Stream<C, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
@@ -68,7 +68,7 @@ where
     }
 
     /// Like [`Self::tree_aggregate`], but can return any batch type.
-    pub fn tree_aggregate_generic<Agg, O>(&self, aggregator: Agg) -> Stream<Circuit<P>, O>
+    pub fn tree_aggregate_generic<Agg, O>(&self, aggregator: Agg) -> Stream<C, O>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
@@ -244,7 +244,8 @@ where
 mod test {
     use super::super::{test::test_aggregate_range, RadixTreeCursor};
     use crate::{
-        algebra::DefaultSemigroup, operator::Fold, trace::BatchReader, Circuit, CollectionHandle,
+        algebra::DefaultSemigroup, operator::Fold, trace::BatchReader, CollectionHandle,
+        RootCircuit,
     };
     use std::{
         collections::{btree_map::Entry, BTreeMap},
@@ -282,7 +283,7 @@ mod test {
         let contents = Arc::new(Mutex::new(BTreeMap::new()));
         let contents_clone = contents.clone();
 
-        let (circuit, input) = Circuit::build(move |circuit| {
+        let (circuit, input) = RootCircuit::build(move |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64, isize>();
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(

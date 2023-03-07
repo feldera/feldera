@@ -8,9 +8,10 @@
 //! [`SchedulerEvent`]s carrying information about circuit's runtime
 //! behavior.
 //!
-//! See [`super::Circuit::register_circuit_event_handler`] and
-//! [`super::CircuitHandle::register_scheduler_event_handler`] APIs for
-//! attaching event handlers to a circuit.
+//! See
+//! [`RootCircuit::register_circuit_event_handler`](`crate::RootCircuit::register_circuit_event_handler`)
+//! and [`CircuitHandle::register_scheduler_event_handler`](`crate::CircuitHandle::register_scheduler_event_handler`)
+//! APIs for attaching event handlers to a circuit.
 //!
 //! Event handlers are invoked synchronously and therefore must complete
 //! quickly, with any expensive processing completed asynchronously.
@@ -453,9 +454,10 @@ impl Display for CircuitEvent {
 ///                ClockEnd               StepEnd       EvalEnd(id)
 /// ```
 ///
-/// The root circuit automaton is instantiated by the [`super::Circuit::build`]
-/// function.  A subcircuit automaton is instantiated when its parent scheduler
-/// evaluates the node that contains this subcircuit (see below).
+/// The root circuit automaton is instantiated by the
+/// [`RootCircuit::build`](`crate::RootCircuit::build`) function.  A subcircuit
+/// automaton is instantiated when its parent scheduler evaluates the node that
+/// contains this subcircuit (see below).
 ///
 /// In the initial state, the circuit issues a
 /// [`ClockStart`](`SchedulerEvent::ClockStart`) event to reset its clock and

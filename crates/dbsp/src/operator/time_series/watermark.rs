@@ -1,11 +1,12 @@
 use crate::{
+    operator::communication::new_exchange_operators,
     trace::{cursor::Cursor, BatchReader},
-    Circuit, NumEntries, Runtime, Stream,
+    Circuit, NumEntries, RootCircuit, Runtime, Stream,
 };
 use size_of::SizeOf;
 use std::{cmp::max, panic::Location};
 
-impl<B> Stream<Circuit<()>, B>
+impl<B> Stream<RootCircuit, B>
 where
     B: BatchReader + Clone + 'static,
 {
@@ -29,7 +30,7 @@ where
     /// the previous watermark and the largest watermark in the new
     /// input batch.
     #[track_caller]
-    pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<Circuit<()>, TS>
+    pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<RootCircuit, TS>
     where
         W: Fn(&B::Key) -> TS + 'static,
         TS: Ord + Clone + Default + SizeOf + NumEntries + Send + 'static,
@@ -48,7 +49,7 @@ where
                 return local_watermark;
             }
 
-            let (sender, receiver) = self.circuit().new_exchange_operators(
+            let (sender, receiver) = new_exchange_operators(
                 &runtime,
                 Runtime::worker_index(),
                 Some(Location::caller()),

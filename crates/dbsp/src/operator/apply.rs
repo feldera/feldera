@@ -7,14 +7,14 @@ use crate::circuit::{
 };
 use std::{borrow::Cow, panic::Location};
 
-impl<P, T1> Stream<Circuit<P>, T1>
+impl<C, T1> Stream<C, T1>
 where
-    P: Clone + 'static,
+    C: Circuit,
     T1: Clone + 'static,
 {
     /// Apply  the `Apply` operator to `self`.
     #[track_caller]
-    pub fn apply<F, T2>(&self, func: F) -> Stream<Circuit<P>, T2>
+    pub fn apply<F, T2>(&self, func: F) -> Stream<C, T2>
     where
         F: FnMut(&T1) -> T2 + 'static,
         T2: Clone + 'static,
@@ -27,7 +27,7 @@ where
 
     /// Apply  the `Apply` operator to `self`.
     #[track_caller]
-    pub fn apply_named<N, F, T2>(&self, name: N, func: F) -> Stream<Circuit<P>, T2>
+    pub fn apply_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
         N: Into<Cow<'static, str>>,
         F: FnMut(&T1) -> T2 + 'static,
@@ -39,7 +39,7 @@ where
 
     /// Apply the `ApplyOwned` operator to `self`
     #[track_caller]
-    pub fn apply_owned<F, T2>(&self, func: F) -> Stream<Circuit<P>, T2>
+    pub fn apply_owned<F, T2>(&self, func: F) -> Stream<C, T2>
     where
         F: FnMut(T1) -> T2 + 'static,
         T2: Clone + 'static,
@@ -52,7 +52,7 @@ where
 
     /// Apply the `ApplyOwned` operator to `self` with a custom name
     #[track_caller]
-    pub fn apply_owned_named<N, F, T2>(&self, name: N, func: F) -> Stream<Circuit<P>, T2>
+    pub fn apply_owned_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
         N: Into<Cow<'static, str>>,
         F: FnMut(T1) -> T2 + 'static,
@@ -70,7 +70,7 @@ where
         owned: O,
         borrowed: B,
         fixpoint: F,
-    ) -> Stream<Circuit<P>, T2>
+    ) -> Stream<C, T2>
     where
         N: Into<Cow<'static, str>>,
         T2: Data,

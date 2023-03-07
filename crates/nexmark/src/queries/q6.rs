@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold, Max},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use crate::model::Event;
 use std::collections::VecDeque;
@@ -38,7 +38,7 @@ use std::collections::VecDeque;
 /// ) AS Q;
 /// ```
 
-type Q6Stream = Stream<Circuit<()>, OrdIndexedZSet<u64, usize, isize>>;
+type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, usize, isize>>;
 
 const NUM_AUCTIONS_PER_SELLER: usize = 10;
 
@@ -56,10 +56,10 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     });
 
     type BidsAuctionsJoin =
-        Stream<Circuit<()>, OrdZSet<((u64, u64, u64, u64), (usize, u64)), isize>>;
+        Stream<RootCircuit, OrdZSet<((u64, u64, u64, u64), (usize, u64)), isize>>;
 
     // Join to get bids for each auction.
-    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join::<(), _, _, _>(
+    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
         &bids_by_auction,
         |&auction_id, &(seller, a_date_time, a_expires), &(bid_price, bid_date_time)| {
             (
@@ -86,15 +86,15 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    type WinningBidsBySeller = Stream<Circuit<()>, OrdIndexedZSet<u64, (u64, usize), isize>>;
+    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, (u64, usize), isize>>;
     let winning_bids_by_seller_indexed: WinningBidsBySeller = bids_for_auctions_indexed
-        .aggregate::<(), _>(Max)
+        .aggregate(Max)
         .map_index(|(key, max)| (key.1, (key.0, *max)));
 
     // Finally, calculate the average winning bid per seller, using the last
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_seller_indexed.aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
+    winning_bids_by_seller_indexed.aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
         VecDeque::with_capacity(NUM_AUCTIONS_PER_SELLER),
         |top: &mut VecDeque<usize>, val: &(u64, usize), _w| {
             if top.len() >= NUM_AUCTIONS_PER_SELLER {
@@ -117,7 +117,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{indexed_zset, Circuit};
+    use dbsp::{indexed_zset, RootCircuit};
 
     #[test]
     fn test_q6_single_seller_single_auction() {
@@ -176,7 +176,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![
@@ -253,7 +253,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
@@ -493,7 +493,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
@@ -611,7 +611,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![

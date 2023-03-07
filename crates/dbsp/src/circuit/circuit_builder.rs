@@ -11,10 +11,10 @@
 //! ```
 //! use dbsp::{
 //!     operator::{Generator, Inspect},
-//!     Circuit,
+//!     Circuit, RootCircuit,
 //! };
 //!
-//! let circuit = Circuit::build(|circuit| {
+//! let circuit = RootCircuit::build(|circuit| {
 //!     // Add a source operator.
 //!     let source_stream = circuit.add_source(Generator::new(|| "Hello, world!".to_owned()));
 //!
@@ -42,6 +42,7 @@ use crate::{
     },
     circuit_cache_key,
     operator::communication::Exchange,
+    time::{Timestamp, UnitTimestamp},
     Runtime,
 };
 use std::{
@@ -147,10 +148,13 @@ impl<C, D> Stream<C, D> {
 }
 
 // Internal streams API only used inside this module.
-impl<P, D> Stream<Circuit<P>, D> {
+impl<C, D> Stream<C, D>
+where
+    C: Circuit,
+{
     /// Create a new stream within the given circuit, connected to the specified
     /// node id.
-    fn new(circuit: Circuit<P>, node_id: NodeId) -> Self {
+    fn new(circuit: C, node_id: NodeId) -> Self {
         Self {
             local_node_id: node_id,
             origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
@@ -166,9 +170,9 @@ impl<P, D> Stream<Circuit<P>, D> {
     ///
     /// This method currently only works for streams connected to a feedback
     /// `Z1` operator and will panic for other streams.
-    pub fn export(&self) -> Stream<P, D>
+    pub fn export(&self) -> Stream<C::Parent, D>
     where
-        P: Clone + 'static,
+        C::Parent: Circuit,
         D: 'static,
     {
         self.circuit()
@@ -249,9 +253,12 @@ where
 /// export stream available to the parent of the local circuit.
 /// The export stream contains the final value computed by the
 /// operator before `clock_end`.
-pub struct ExportStream<P, D> {
-    pub local: Stream<Circuit<P>, D>,
-    pub export: Stream<P, D>,
+pub struct ExportStream<C, D>
+where
+    C: Circuit,
+{
+    pub local: Stream<C, D>,
+    pub export: Stream<C::Parent, D>,
 }
 
 /// Relative location of a circuit in the hierarchy of nested circuits.
@@ -407,7 +414,10 @@ impl GlobalNodeId {
     }
 
     /// Generate global node id for a child node of `circuit`.
-    pub fn child_of<P>(circuit: &Circuit<P>, node_id: NodeId) -> Self {
+    pub fn child_of<C>(circuit: &C, node_id: NodeId) -> Self
+    where
+        C: Circuit,
+    {
         let mut ids = circuit.global_node_id().path().to_owned();
         ids.push(node_id);
         Self(ids)
@@ -535,7 +545,7 @@ impl Display for OwnershipPreference {
 /// operators or a dependency (i.e., a requirement that one operator
 /// must be evaluated before the other even if they are not connected
 /// by a stream).
-pub(super) struct Edge {
+pub struct Edge {
     /// Source node.
     pub from: NodeId,
     /// Destination node.
@@ -564,10 +574,656 @@ impl Edge {
 
 circuit_cache_key!(ExportId<C, D>(GlobalNodeId => Stream<C, D>));
 
+/// Trait for an object that has a clock associated with it.
+pub trait WithClock {
+    type Time: Timestamp;
+
+    /// Nesting depth of the circuit running this clock.
+    ///
+    /// 0 - for the top-level clock, 1 - first-level nested circuit, etc.
+    const NESTING_DEPTH: usize;
+
+    /// Returns `NESTING_DEPTH`.
+    ///
+    /// Helpful when using the trait via dynamic dispatch.
+    fn nesting_depth(&self) -> usize {
+        Self::NESTING_DEPTH
+    }
+
+    /// Current time.
+    fn time(&self) -> Self::Time;
+}
+
+/// This `impl` is only needed to bootstrap the
+/// recursive definition of `WithClock` for `ChildCircuit`.
+/// It is never actually used at runtime.
+impl WithClock for () {
+    type Time = UnitTimestamp;
+    const NESTING_DEPTH: usize = usize::MAX;
+
+    fn time(&self) -> Self::Time {
+        UnitTimestamp
+    }
+}
+
+impl<P> WithClock for ChildCircuit<P>
+where
+    P: WithClock,
+{
+    type Time = <<P as WithClock>::Time as Timestamp>::Nested;
+
+    const NESTING_DEPTH: usize = P::NESTING_DEPTH.wrapping_add(1);
+
+    fn time(&self) -> Self::Time {
+        self.time.borrow().clone()
+    }
+}
+
+/// A circuit interface.
+// There is only one implementation of this trait (by the `ChildCircuit`
+// type).  We factor its interface into a trait so we can make `Time`
+// and `Parent` associated types.
+pub trait Circuit: WithClock + Clone + 'static {
+    /// Parent circuit type or `()` for the root circuit.
+    type Parent;
+
+    /// Returns the parent circuit of `self`.
+    fn parent(&self) -> Self::Parent;
+
+    fn edges(&self) -> Ref<'_, [Edge]>;
+
+    /// Number of nodes in the circuit.
+    fn num_nodes(&self) -> usize;
+
+    /// Returns vector of local node ids in the circuit.
+    fn node_ids(&self) -> Vec<NodeId>;
+
+    /// Relative depth of `self` from the root circuit.
+    ///
+    /// Returns 0 if `self` is the root circuit, 1 if `self` is an immediate
+    /// child of the root circuit, etc.
+    fn root_scope(&self) -> Scope;
+
+    /// Circuit's node id within the parent circuit.
+    fn node_id(&self) -> NodeId;
+
+    /// Check if `this` and `other` refer to the same circuit instance.
+    fn ptr_eq(this: &Self, other: &Self) -> bool;
+
+    /// Returns circuit event handlers attached to the circuit.
+    fn circuit_event_handlers(&self) -> CircuitEventHandlers;
+
+    /// Returns scheduler event handlers attached to the circuit.
+    fn scheduler_event_handlers(&self) -> SchedulerEventHandlers;
+
+    /// Deliver `event` to all circuit event handlers.
+    fn log_circuit_event(&self, event: &CircuitEvent);
+
+    /// Deliver `event` to all scheduler event handlers.
+    fn log_scheduler_event(&self, event: &SchedulerEvent<'_>);
+
+    /// Circuit's global node id.
+    fn global_node_id(&self) -> GlobalNodeId;
+
+    /// Lookup a value in the circuit cache or create and insert a new value
+    /// if it does not exist.
+    ///
+    /// See [`cache`](`crate::circuit::cache`) module documentation for details.
+    fn cache_get_or_insert_with<K, F>(&self, key: K, f: F) -> RefMut<'_, K::Value>
+    where
+        K: 'static + TypedMapKey<CircuitStoreMarker>,
+        F: FnMut() -> K::Value;
+
+    /// Invoked by the scheduler at the end of a clock cycle, after all circuit
+    /// operators have been evaluated.
+    fn tick(&self);
+
+    /// Deliver `clock_start` notification to all nodes in the circuit.
+    fn clock_start(&self, scope: Scope);
+
+    /// Deliver `clock_end` notification to all nodes in the circuit.
+    fn clock_end(&self, scope: Scope);
+
+    /// `true` if the specified node is ready to execute (see
+    /// [`Operator::ready()`](super::operator_traits::Operator::ready)).
+    fn ready(&self, id: NodeId) -> bool;
+
+    /// Insert a value to the circuit cache, overwriting any existing value.
+    ///
+    /// See [`cache`](`crate::circuit::cache`) module documentation for
+    /// details.
+    fn cache_insert<K>(&self, key: K, val: K::Value)
+    where
+        K: TypedMapKey<CircuitStoreMarker> + 'static;
+
+    fn cache_contains<K>(&self, key: &K) -> bool
+    where
+        K: TypedMapKey<CircuitStoreMarker> + 'static;
+
+    fn cache_get<K>(&self, key: &K) -> Option<K::Value>
+    where
+        K: TypedMapKey<CircuitStoreMarker> + 'static,
+        K::Value: Clone;
+
+    /// Connect `stream` as input to `to`.
+    fn connect_stream<T>(
+        &self,
+        stream: &Stream<Self, T>,
+        to: NodeId,
+        ownership_preference: OwnershipPreference,
+    );
+
+    fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>);
+
+    fn is_async_node(&self, id: NodeId) -> bool;
+
+    /// Evaluate operator with the given id.
+    ///
+    /// This method should only be used by schedulers.
+    fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError>;
+
+    /// Evaluate closure `f` inside a new circuit region.
+    ///
+    /// A region is a logical grouping of circuit nodes.  Regions are used
+    /// exclusively for debugging and do not affect scheduling or evaluation
+    /// of the circuit.  This function creates a new region and executes
+    /// closure `f` inside it.  Any operators or subcircuits created by
+    /// `f` will belong to the new region.
+    #[track_caller]
+    fn region<F, T>(&self, name: &str, f: F) -> T
+    where
+        F: FnOnce() -> T;
+
+    /// Add a source operator to the circuit.  See [`SourceOperator`].
+    fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
+    where
+        O: Data,
+        Op: SourceOperator<O>;
+
+    /// Add a pair of operators that implement cross-worker communication.
+    ///
+    /// Operators that exchange data across workers are split into two
+    /// operators: the **sender** responsible for partitioning values read
+    /// from the input stream and distributing them across workers and the
+    /// **receiver**, which receives and reassembles data received from its
+    /// peers.  Splitting communication into two halves allows the scheduler
+    /// to schedule useful work in between them instead of blocking to wait
+    /// for the receiver.
+    ///
+    /// Exchange operators use some form of IPC or shared memory instead of
+    /// streams to communicate.  Therefore, the sender must implement trait
+    /// [`SinkOperator`], while the receiver implements [`SourceOperator`].
+    ///
+    /// This function adds both operators to the circuit and registers a
+    /// dependency between them, making sure that the scheduler will
+    /// evaluate the sender before the receiver even though there is no
+    /// explicit stream connecting them.
+    ///
+    /// Returns the output stream produced by the receiver operator.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the sender half of the pair.  The sender must be a sink
+    ///   operator
+    /// * `receiver` - the receiver half of the pair.  Must be a source
+    /// * `input_stream` - stream to connect as input to the `sender`.
+    fn add_exchange<I, SndOp, O, RcvOp>(
+        &self,
+        sender: SndOp,
+        receiver: RcvOp,
+        input_stream: &Stream<Self, I>,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        SndOp: SinkOperator<I>,
+        RcvOp: SourceOperator<O>;
+
+    /// Like [`Self::add_exchange`], but overrides the ownership
+    /// preference on the input stream with `input_preference`.
+    fn add_exchange_with_preference<I, SndOp, O, RcvOp>(
+        &self,
+        sender: SndOp,
+        receiver: RcvOp,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        SndOp: SinkOperator<I>,
+        RcvOp: SourceOperator<O>;
+
+    /// Add a sink operator (see [`SinkOperator`]).
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    where
+        I: Data,
+        Op: SinkOperator<I>;
+
+    /// Like [`Self::add_sink`], but overrides the ownership preference on the
+    /// input stream with `input_preference`.
+    fn add_sink_with_preference<I, Op>(
+        &self,
+        operator: Op,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) where
+        I: Data,
+        Op: SinkOperator<I>;
+
+    /// Add a unary operator (see [`UnaryOperator`]).
+    fn add_unary_operator<I, O, Op>(
+        &self,
+        operator: Op,
+        input_stream: &Stream<Self, I>,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: UnaryOperator<I, O>;
+
+    /// Like [`Self::add_unary_operator`], but overrides the ownership
+    /// preference on the input stream with `input_preference`.
+    fn add_unary_operator_with_preference<I, O, Op>(
+        &self,
+        operator: Op,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: UnaryOperator<I, O>;
+
+    /// Add a binary operator (see [`BinaryOperator`]).
+    fn add_binary_operator<I1, I2, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        O: Data,
+        Op: BinaryOperator<I1, I2, O>;
+
+    /// Like [`Self::add_binary_operator`], but overrides the ownership
+    /// preference on both input streams with `input_preference1` and
+    /// `input_preference2` respectively.
+    fn add_binary_operator_with_preference<I1, I2, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        O: Data,
+        Op: BinaryOperator<I1, I2, O>;
+
+    /// Add a ternary operator (see [`TernaryOperator`]).
+    fn add_ternary_operator<I1, I2, I3, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        O: Data,
+        Op: TernaryOperator<I1, I2, I3, O>;
+
+    /// Like [`Self::add_ternary_operator`], but overrides the ownership
+    /// preference on the input streams with specified values.
+    #[allow(clippy::too_many_arguments)]
+    fn add_ternary_operator_with_preference<I1, I2, I3, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        O: Data,
+        Op: TernaryOperator<I1, I2, I3, O>;
+
+    /// Add a quaternary operator (see [`QuaternaryOperator`]).
+    fn add_quaternary_operator<I1, I2, I3, I4, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+        input_stream4: &Stream<Self, I4>,
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        I4: Data,
+        O: Data,
+        Op: QuaternaryOperator<I1, I2, I3, I4, O>;
+
+    /// Like [`Self::add_quaternary_operator`], but overrides the ownership
+    /// preference on the input streams with specified values.
+    #[allow(clippy::too_many_arguments)]
+    fn add_quaternary_operator_with_preference<I1, I2, I3, I4, O, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+        input_stream4: (&Stream<Self, I4>, OwnershipPreference),
+    ) -> Stream<Self, O>
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        I4: Data,
+        O: Data,
+        Op: QuaternaryOperator<I1, I2, I3, I4, O>;
+
+    /// Add a N-ary operator (see [`NaryOperator`]).
+    fn add_nary_operator<'a, I, O, Op, Iter>(
+        &'a self,
+        operator: Op,
+        input_streams: Iter,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: NaryOperator<I, O>,
+        Iter: IntoIterator<Item = &'a Stream<Self, I>>;
+
+    /// Like [`Self::add_nary_operator`], but overrides the ownership
+    /// preference with `input_preference`.
+    fn add_nary_operator_with_preference<'a, I, O, Op, Iter>(
+        &'a self,
+        operator: Op,
+        input_streams: Iter,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        I: Data,
+        O: Data,
+        Op: NaryOperator<I, O>,
+        Iter: IntoIterator<Item = &'a Stream<Self, I>>;
+
+    /// Add a feedback loop to the circuit.
+    ///
+    /// Other methods in this API only support the construction of acyclic
+    /// graphs, as they require the input stream to exist before nodes that
+    /// consumes it are created.  This method instantiates an operator whose
+    /// input stream can be connected later, and thus may depend on
+    /// the operator's output.  This enables the construction of feedback loops.
+    /// Since all loops in a well-formed circuit must include a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator`
+    /// must be strict.
+    ///
+    /// Returns the output stream of the operator and an object that can be used
+    /// to later connect its input.
+    ///
+    /// # Examples
+    /// We build the following circuit to compute the sum of input values
+    /// received from `source`. `z1` stores the sum accumulated during
+    /// previous timestamps.  At every timestamp, the (`+`) operator
+    /// computes the sum of the new value received from source and the value
+    /// stored in `z1`.
+    ///
+    /// ```text
+    ///                ┌─┐
+    /// source ───────►│+├───┬─►
+    ///           ┌───►└─┘   │
+    ///           │          │ z1_feedback
+    /// z1_output │    ┌──┐  │
+    ///           └────┤z1│◄─┘
+    ///                └──┘
+    /// ```
+    ///
+    /// ```
+    /// # use dbsp::{
+    /// #     operator::{Z1, Generator},
+    /// #     Circuit, RootCircuit,
+    /// # };
+    /// # let circuit = RootCircuit::build(|circuit| {
+    /// // Create a data source.
+    /// let source = circuit.add_source(Generator::new(|| 10));
+    /// // Create z1.  `z1_output` will contain the output stream of `z1`; `z1_feedback`
+    /// // is a placeholder where we can later plug the input to `z1`.
+    /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
+    /// // Connect outputs of `source` and `z1` to the plus operator.
+    /// let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| n1 + n2);
+    /// // Connect the output of `+` as input to `z1`.
+    /// z1_feedback.connect(&plus);
+    /// # });
+    /// ```
+    fn add_feedback<I, O, Op>(
+        &self,
+        operator: Op,
+    ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>;
+
+    /// Like `add_feedback`, but additionally makes the output of the operator
+    /// available to the parent circuit.
+    ///
+    /// Normally a strict operator writes a value computed based on inputs from
+    /// previous clock cycles to its output stream at the start of each new
+    /// clock cycle.  When the local clock epoch ends, the last value
+    /// computed by the operator (that would otherwise be dropped) is
+    /// written to the export stream instead.
+    ///
+    /// # Examples
+    ///
+    /// See example in the [`Self::iterate`] method.
+    fn add_feedback_with_export<I, O, Op>(
+        &self,
+        operator: Op,
+    ) -> (ExportStream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>;
+
+    fn connect_feedback_with_preference<I, O, Op>(
+        &self,
+        output_node_id: NodeId,
+        operator: Rc<UnsafeCell<Op>>,
+        input_stream: &Stream<Self, I>,
+        input_preference: OwnershipPreference,
+    ) where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>;
+
+    /// Add a child circuit.
+    ///
+    /// Creates an empty circuit with `self` as parent and invokes
+    /// `child_constructor` to populate the circuit.  `child_constructor`
+    /// typically captures some of the streams in `self` and connects them
+    /// to source nodes of the child circuit.  It is also responsible for
+    /// attaching an executor to the child circuit.  The return type `T`
+    /// will typically contain output streams of the child.
+    ///
+    /// Most users should invoke higher-level APIs like [`Circuit::iterate`]
+    /// instead of using this method directly.
+    fn subcircuit<F, T, E>(
+        &self,
+        iterative: bool,
+        child_constructor: F,
+    ) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<ChildCircuit<Self>>;
+
+    /// Add an iteratively scheduled child circuit.
+    ///
+    /// Add a child circuit with a nested clock.  The child will execute
+    /// multiple times for each parent timestamp, until its termination
+    /// condition is satisfied.  Every time the child circuit is activated
+    /// by the parent (once per parent timestamp), the executor calls
+    /// [`clock_start`](`super::operator_traits::Operator::clock_start`)
+    /// on each child operator.  It then calls `eval` on all
+    /// child operators in a causal order and checks if the termination
+    /// condition is satisfied.  If the condition is `false`, the
+    /// executor `eval`s all operators again.  Once the termination
+    /// condition is `true`, the executor calls `clock_end` on all child
+    /// operators and returns control back to the parent scheduler.
+    ///
+    /// The `constructor` closure populates the child circuit and returns a
+    /// closure that checks the termination condition and an arbitrary
+    /// user-defined return value that typically contains output streams
+    /// of the child.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::{cell::RefCell, rc::Rc};
+    /// use dbsp::{
+    ///     operator::{Generator, Z1},
+    ///     Circuit, RootCircuit,
+    /// };
+    ///
+    /// let circuit = RootCircuit::build(|circuit| {
+    ///     // Generate sequence 0, 1, 2, ...
+    ///     let mut n: usize = 0;
+    ///     let source = circuit.add_source(Generator::new(move || {
+    ///         let result = n;
+    ///         n = n + 1;
+    ///         result
+    ///     }));
+    ///     // Compute factorial of each number in the sequence.
+    ///     let fact = circuit
+    ///         .iterate(|child| {
+    ///             let counter = Rc::new(RefCell::new(0));
+    ///             let counter_clone = counter.clone();
+    ///             let countdown = source.delta0(child).apply(move |parent_val| {
+    ///                 if *parent_val > 0 {
+    ///                     *counter_clone.borrow_mut() += *parent_val;
+    ///                 }
+    ///                 let res = *counter_clone.borrow();
+    ///                 *counter_clone.borrow_mut() -= 1;
+    ///                 res
+    ///             });
+    ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
+    ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
+    ///             z1_feedback.connect(&mul);
+    ///             Ok((move || Ok(*counter.borrow() <= 1), z1_output.export))
+    ///         })
+    ///         .unwrap();
+    ///     fact.inspect(|n| eprintln!("Output: {}", n));
+    /// });
+    /// ```
+    fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        C: Fn() -> Result<bool, SchedulerError> + 'static;
+
+    /// Add an iteratively scheduled child circuit.
+    ///
+    /// Similar to [`iterate`](`Self::iterate`), but with a user-specified
+    /// [`Scheduler`] implementation.
+    fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        C: Fn() -> Result<bool, SchedulerError> + 'static,
+        S: Scheduler + 'static;
+
+    /// Add a child circuit that will iterate to a fixed point.
+    ///
+    /// For each parent clock cycle, the child circuit will iterate until
+    /// reaching a fixed point, i.e., a state where the outputs of all
+    /// operators are guaranteed to remain the same, should the nested clock
+    /// continue ticking.
+    ///
+    /// The fixed point check is implemented by checking the following
+    /// condition:
+    ///
+    /// * All operators in the circuit are in such a state that, if their inputs
+    ///   remain constant (i.e., all future inputs are identical to the last
+    ///   input), then their outputs remain constant too.
+    ///
+    /// This is a necessary and sufficient condition that is also easy to check
+    /// by asking each operator if it is in a stable state (via the
+    /// [`Operator::fixedpoint`](`super::operator_traits::Operator::fixedpoint`)
+    /// API.
+    ///
+    /// # Warning
+    ///
+    /// The cost of checking this condition precisely can be high for some
+    /// operators, which implement approximate checks instead.  For instance,
+    /// delay operators ([`Z1`](`crate::operator::Z1`) and
+    /// [`Z1Nested`](`crate::operator::Z1Nested`)) require storing the last
+    /// two versions of the state instead of one and comparing them at each
+    /// cycle.  Instead, they conservatively check for _specific_ fixed points,
+    /// namely fixed points where both input and output of the operator are zero
+    /// As a result, the circuit may fail to detect other fixed points and may
+    /// iterate forever.
+    ///
+    /// The goal is to evolve the design so that circuits created using the
+    /// high-level API (`Stream::xxx` methods) implement accurate fixed point
+    /// checks, but there are currently no guardrails in the system against
+    /// constructing non-compliant circuits.
+    fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>;
+
+    /// Add a child circuit that will iterate to a fixed point.
+    ///
+    /// Similar to [`fixedpoint`](`Self::fixedpoint`), but with a user-specified
+    /// [`Scheduler`] implementation.
+    fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        S: Scheduler + 'static;
+
+    /// Make the contents of `parent_stream` available in the nested circuit
+    /// via an [`ImportOperator`].
+    ///
+    /// Typically invoked via a convenience wrapper, e.g., [`Stream::delta0`].
+    fn import_stream<I, O, Op>(
+        &self,
+        operator: Op,
+        parent_stream: &Stream<Self::Parent, I>,
+    ) -> Stream<Self, O>
+    where
+        Self::Parent: Circuit,
+        I: Data,
+        O: Data,
+        Op: ImportOperator<I, O>;
+
+    /// Like [`Self::import_stream`] but overrides the ownership
+    /// preference on the input stream with `input_preference.
+    fn import_stream_with_preference<I, O, Op>(
+        &self,
+        operator: Op,
+        parent_stream: &Stream<Self::Parent, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        Self::Parent: Circuit,
+        I: Data,
+        O: Data,
+        Op: ImportOperator<I, O>;
+}
+
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1
 /// is connected to an input of node2.
-struct CircuitInner<P> {
+struct CircuitInner<P>
+where
+    P: WithClock,
+{
     parent: P,
     root_scope: Scope,
     // Circuit's node id within the parent circuit.
@@ -580,7 +1236,10 @@ struct CircuitInner<P> {
     store: CircuitCache,
 }
 
-impl<P> CircuitInner<P> {
+impl<P> CircuitInner<P>
+where
+    P: WithClock,
+{
     fn new(
         parent: P,
         root_scope: Scope,
@@ -676,16 +1335,49 @@ impl<P> CircuitInner<P> {
 }
 
 /// A circuit.
-#[repr(transparent)]
-pub struct Circuit<P>(Rc<RefCell<CircuitInner<P>>>);
+///
+/// A single implementation that can operate as the the top-level
+/// circuit when instantiated with `P = ()` or a nested circuit,
+/// with `P = ChildCircuit<..>`.
+pub struct ChildCircuit<P>
+where
+    P: WithClock,
+{
+    inner: Rc<RefCell<CircuitInner<P>>>,
+    time: Rc<RefCell<<P::Time as Timestamp>::Nested>>,
+}
 
-impl<P> Clone for Circuit<P> {
+/// Top-level circuit.
+pub type RootCircuit = ChildCircuit<()>;
+
+impl<P> Clone for ChildCircuit<P>
+where
+    P: WithClock,
+{
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            inner: self.inner.clone(),
+            time: self.time.clone(),
+        }
     }
 }
 
-impl Circuit<()> {
+impl<P> ChildCircuit<P>
+where
+    P: WithClock,
+{
+    /// Mutably borrow the inner circuit.
+    fn inner_mut(&self) -> RefMut<'_, CircuitInner<P>> {
+        self.inner.borrow_mut()
+    }
+
+    /// Immutably borrow the inner circuit.
+    fn inner(&self) -> Ref<'_, CircuitInner<P>> {
+        self.inner.borrow()
+    }
+}
+
+impl RootCircuit {
     /// Create a circuit and prepare it for execution.
     ///
     /// Creates an empty circuit and populates it with operators by calling a
@@ -695,8 +1387,8 @@ impl Circuit<()> {
     /// Returns a handle to the newly-created circuit and a user-defined value
     /// returned by the constructor.  This value typically contains one or more
     /// input handles used to push data to the circuit at runtime (see
-    /// [`Circuit::add_input_stream`], [`Circuit::add_input_zset`], and related
-    /// methods).
+    /// [`RootCircuit::add_input_stream`], [`RootCircuit::add_input_zset`], and
+    /// related methods).
     ///
     /// The circuit created using this API does
     /// not have its own worker thread(s) and will instead execute in the
@@ -705,7 +1397,7 @@ impl Circuit<()> {
     // TODO: Allow `constructor` to fail.
     pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), SchedulerError>
     where
-        F: FnOnce(&mut Circuit<()>) -> T,
+        F: FnOnce(&mut RootCircuit) -> T,
     {
         Self::build_with_scheduler::<F, T, DynamicScheduler>(constructor)
     }
@@ -718,12 +1410,13 @@ impl Circuit<()> {
         constructor: F,
     ) -> Result<(CircuitHandle, T), SchedulerError>
     where
-        F: FnOnce(&mut Circuit<()>) -> T,
+        F: FnOnce(&mut RootCircuit) -> T,
         S: Scheduler + 'static,
     {
-        let mut circuit = Circuit::new();
+        let mut circuit = RootCircuit::new();
         let res = constructor(&mut circuit);
-        let executor = Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<()>>;
+        let executor =
+            Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<RootCircuit>>;
 
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
         // APIs, so that the user can reset the circuit at runtime and start
@@ -735,29 +1428,32 @@ impl Circuit<()> {
     }
 }
 
-impl Circuit<()> {
-    // Create new top-level circuit.  Clients invoke this via the [`Circuit::build`]
-    // API.
+impl RootCircuit {
+    // Create new top-level circuit.  Clients invoke this via the
+    // [`RootCircuit::build`] API.
     fn new() -> Self {
-        Self(Rc::new(RefCell::new(CircuitInner::new(
-            (),
-            0,
-            NodeId::root(),
-            GlobalNodeId::root(),
-            Rc::new(RefCell::new(HashMap::new())),
-            Rc::new(RefCell::new(HashMap::new())),
-        ))))
+        Self {
+            inner: Rc::new(RefCell::new(CircuitInner::new(
+                (),
+                0,
+                NodeId::root(),
+                GlobalNodeId::root(),
+                Rc::new(RefCell::new(HashMap::new())),
+                Rc::new(RefCell::new(HashMap::new())),
+            ))),
+            time: Rc::new(RefCell::new(())),
+        }
     }
 }
 
-impl Circuit<()> {
+impl RootCircuit {
     /// Attach a circuit event handler to the top-level circuit (see
     /// [`super::trace::CircuitEvent`] for a description of circuit events).
     ///
     /// This method should normally be called inside the closure passed to
-    /// [`Circuit::build`] before adding any operators to the circuit, so that
-    /// the handler gets to observe all nodes, edges, and subcircuits added
-    /// to the circuit.
+    /// [`RootCircuit::build`] before adding any operators to the circuit, so
+    /// that the handler gets to observe all nodes, edges, and subcircuits
+    /// added to the circuit.
     ///
     /// `name` - user-readable name assigned to the handler.  If a handler with
     /// the same name exists, it will be replaced by the new handler.
@@ -789,7 +1485,7 @@ impl Circuit<()> {
     /// events).
     ///
     /// This method can be used during circuit construction, inside the closure
-    /// provided to [`Circuit::build`].  Use
+    /// provided to [`RootCircuit::build`].  Use
     /// [`CircuitHandle::register_scheduler_event_handler`],
     /// [`CircuitHandle::unregister_scheduler_event_handler`] to manipulate
     /// scheduler callbacks at runtime.
@@ -813,78 +1509,45 @@ impl Circuit<()> {
     }
 }
 
-impl<P> Circuit<Circuit<P>>
+impl<P> ChildCircuit<P>
 where
-    P: Clone + 'static,
+    P: Circuit,
 {
     /// Create an empty nested circuit of `parent`.
-    fn with_parent(parent: Circuit<P>, id: NodeId) -> Self {
-        let global_node_id = GlobalNodeId::child_of(&parent, id);
-        let circuit_handlers = parent.inner().circuit_event_handlers.clone();
-        let sched_handlers = parent.inner().scheduler_event_handlers.clone();
+    fn with_parent(parent: P, id: NodeId) -> Self {
+        let global_node_id = parent.global_node_id().child(id);
+        let circuit_handlers = parent.circuit_event_handlers();
+        let sched_handlers = parent.scheduler_event_handlers();
         let root_scope = parent.root_scope() + 1;
 
-        Circuit(Rc::new(RefCell::new(CircuitInner::new(
-            parent,
-            root_scope,
-            id,
-            global_node_id,
-            circuit_handlers,
-            sched_handlers,
-        ))))
+        ChildCircuit {
+            inner: Rc::new(RefCell::new(CircuitInner::new(
+                parent,
+                root_scope,
+                id,
+                global_node_id,
+                circuit_handlers,
+                sched_handlers,
+            ))),
+            time: Rc::new(RefCell::new(Timestamp::clock_start())),
+        }
     }
 
     /// `true` if `self` is a subcircuit of `other`.
-    pub fn is_child_of(&self, other: &Circuit<P>) -> bool {
-        Circuit::ptr_eq(&self.inner().parent, other)
+    pub fn is_child_of(&self, other: &P) -> bool {
+        P::ptr_eq(&self.inner().parent, other)
     }
 }
 
 // Internal API.
-impl<P> Circuit<P> {
-    /// Mutably borrow the inner circuit.
-    fn inner_mut(&self) -> RefMut<'_, CircuitInner<P>> {
-        self.0.borrow_mut()
-    }
-
-    /// Immutably borrow the inner circuit.
-    fn inner(&self) -> Ref<'_, CircuitInner<P>> {
-        self.0.borrow()
-    }
-
+impl<P> ChildCircuit<P>
+where
+    P: WithClock,
+    Self: Circuit,
+{
     /// Circuit's node id within the parent circuit.
     fn node_id(&self) -> NodeId {
         self.inner().node_id
-    }
-
-    /// Circuit's global node id.
-    pub(super) fn global_node_id(&self) -> GlobalNodeId {
-        self.inner().global_node_id.clone()
-    }
-
-    /// Connect `stream` as input to `to`.
-    fn connect_stream<T>(
-        &self,
-        stream: &Stream<Self, T>,
-        to: NodeId,
-        ownership_preference: OwnershipPreference,
-    ) {
-        self.log_circuit_event(&CircuitEvent::stream(
-            stream.origin_node_id().clone(),
-            GlobalNodeId::child_of(self, to),
-            ownership_preference,
-        ));
-
-        // Safe because the circuit isn't running yet.
-        unsafe { (*stream.val.get()).consumers += 1 };
-
-        debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
-        self.inner_mut().add_edge(Edge {
-            from: stream.local_node_id(),
-            to,
-            origin: stream.origin_node_id().clone(),
-            ownership_preference: Some(ownership_preference),
-        });
     }
 
     /// Register a dependency between `from` and `to` nodes.  A dependency tells
@@ -893,11 +1556,11 @@ impl<P> Circuit<P> {
     /// connecting them.
     fn add_dependency(&self, from: NodeId, to: NodeId) {
         self.log_circuit_event(&CircuitEvent::dependency(
-            GlobalNodeId::child_of(self, from),
-            GlobalNodeId::child_of(self, to),
+            self.global_node_id().child(from),
+            self.global_node_id().child(to),
         ));
 
-        let origin = GlobalNodeId::child_of(self, from);
+        let origin = self.global_node_id().child(from);
         self.inner_mut().add_edge(Edge {
             from,
             to,
@@ -940,44 +1603,11 @@ impl<P> Circuit<P> {
         Ok(res)
     }
 
-    pub(super) fn edges(&self) -> Ref<'_, [Edge]> {
-        let circuit = self.inner();
-        Ref::map(circuit, |c| c.edges.as_slice())
-    }
-
-    /// Number of nodes in the circuit.
-    pub(super) fn num_nodes(&self) -> usize {
-        self.inner().nodes.len()
-    }
-
-    /// Returns vector of local node ids in the circuit.
-    pub(super) fn node_ids(&self) -> Vec<NodeId> {
-        self.inner()
-            .nodes
-            .iter()
-            .map(|node| node.local_id())
-            .collect()
-    }
-
     /// Recursively apply `f` to all nodes in `self` and its children.
     pub(crate) fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
         for node in self.inner().nodes.iter() {
             f(node.as_ref());
             node.map_nodes_recursive(f);
-        }
-    }
-
-    /// Deliver `clock_start` notification to all nodes in the circuit.
-    pub(super) fn clock_start(&self, scope: Scope) {
-        for node in self.inner_mut().nodes.iter_mut() {
-            node.clock_start(scope);
-        }
-    }
-
-    /// Deliver `clock_end` notification to all nodes in the circuit.
-    pub(super) unsafe fn clock_end(&self, scope: Scope) {
-        for node in self.inner_mut().nodes.iter_mut() {
-            node.clock_end(scope);
         }
     }
 
@@ -996,35 +1626,69 @@ impl<P> Circuit<P> {
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
     }
-
-    /// Check if `this` and `other` refer to the same circuit instance.
-    fn ptr_eq(this: &Self, other: &Self) -> bool {
-        Rc::ptr_eq(&this.0, &other.0)
-    }
 }
 
-impl<P> Circuit<P>
+impl<P> Circuit for ChildCircuit<P>
 where
-    P: 'static + Clone,
+    P: WithClock + Clone + 'static,
 {
-    /// Returns the parent circuit of `self`.
-    pub fn parent(&self) -> P {
+    type Parent = P;
+
+    fn parent(&self) -> P {
         self.inner().parent.clone()
     }
 
-    /// Relative depth of `self` from the root circuit.
-    ///
-    /// Returns 0 if `self` is the root circuit, 1 if `self` is an immediate
-    /// child of the root circuit, etc.
-    pub fn root_scope(&self) -> Scope {
+    fn edges(&self) -> Ref<'_, [Edge]> {
+        let circuit = self.inner();
+        Ref::map(circuit, |c| c.edges.as_slice())
+    }
+
+    fn num_nodes(&self) -> usize {
+        self.inner().nodes.len()
+    }
+
+    /// Returns vector of local node ids in the circuit.
+    fn node_ids(&self) -> Vec<NodeId> {
+        self.inner()
+            .nodes
+            .iter()
+            .map(|node| node.local_id())
+            .collect()
+    }
+
+    fn root_scope(&self) -> Scope {
         self.inner().root_scope
     }
 
-    /// Lookup a value in the circuit cache or create and insert a new value
-    /// if it does not exist.
-    ///
-    /// See [`cache`] module documentation for details.
-    pub(crate) fn cache_get_or_insert_with<K, F>(&self, key: K, mut f: F) -> RefMut<'_, K::Value>
+    fn node_id(&self) -> NodeId {
+        self.inner().node_id
+    }
+
+    fn global_node_id(&self) -> GlobalNodeId {
+        self.inner().global_node_id.clone()
+    }
+
+    fn ptr_eq(this: &Self, other: &Self) -> bool {
+        Rc::ptr_eq(&this.inner, &other.inner)
+    }
+
+    fn circuit_event_handlers(&self) -> CircuitEventHandlers {
+        self.inner().circuit_event_handlers.clone()
+    }
+
+    fn scheduler_event_handlers(&self) -> SchedulerEventHandlers {
+        self.inner().scheduler_event_handlers.clone()
+    }
+
+    fn log_circuit_event(&self, event: &CircuitEvent) {
+        self.inner().log_circuit_event(event);
+    }
+
+    fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
+        self.inner().log_scheduler_event(event);
+    }
+
+    fn cache_get_or_insert_with<K, F>(&self, key: K, mut f: F) -> RefMut<'_, K::Value>
     where
         K: 'static + TypedMapKey<CircuitStoreMarker>,
         F: FnMut() -> K::Value,
@@ -1042,28 +1706,71 @@ where
         RefMut::map(self.inner_mut(), |c| c.store.entry(key).or_insert(new))
     }
 
-    pub(crate) fn ready(&self, id: NodeId) -> bool {
+    fn connect_stream<T>(
+        &self,
+        stream: &Stream<Self, T>,
+        to: NodeId,
+        ownership_preference: OwnershipPreference,
+    ) {
+        self.log_circuit_event(&CircuitEvent::stream(
+            stream.origin_node_id().clone(),
+            self.global_node_id().child(to),
+            ownership_preference,
+        ));
+
+        // Safe because the circuit isn't running yet.
+        unsafe { (*stream.val.get()).consumers += 1 };
+
+        debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
+        self.inner_mut().add_edge(Edge {
+            from: stream.local_node_id(),
+            to,
+            origin: stream.origin_node_id().clone(),
+            ownership_preference: Some(ownership_preference),
+        });
+    }
+
+    fn tick(&self) {
+        let mut time = self.time.borrow_mut();
+        *time = time.advance(0);
+    }
+
+    fn clock_start(&self, scope: Scope) {
+        for node in self.inner_mut().nodes.iter_mut() {
+            node.clock_start(scope);
+        }
+    }
+
+    fn clock_end(&self, scope: Scope) {
+        for node in self.inner_mut().nodes.iter_mut() {
+            unsafe {
+                node.clock_end(scope);
+            }
+        }
+
+        let mut time = self.time.borrow_mut();
+        *time = time.advance(scope + 1);
+    }
+
+    fn ready(&self, id: NodeId) -> bool {
         self.inner().nodes[id.0].ready()
     }
 
-    /// Insert a value to the circuit cache, overwriting any existing value.
-    ///
-    /// See [`cache`] module documentation for details.
-    pub(crate) fn cache_insert<K>(&self, key: K, val: K::Value)
+    fn cache_insert<K>(&self, key: K, val: K::Value)
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
     {
         self.inner_mut().store.insert(key, val);
     }
 
-    pub(crate) fn cache_contains<K>(&self, key: &K) -> bool
+    fn cache_contains<K>(&self, key: &K) -> bool
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
     {
         self.inner_mut().store.contains_key(key)
     }
 
-    pub(crate) fn cache_get<K>(&self, key: &K) -> Option<K::Value>
+    fn cache_get<K>(&self, key: &K) -> Option<K::Value>
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone,
@@ -1071,18 +1778,15 @@ where
         self.inner_mut().store.get(key).cloned()
     }
 
-    pub(crate) fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {
+    fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {
         self.inner_mut().nodes[id.0].register_ready_callback(cb);
     }
 
-    pub(crate) fn is_async_node(&self, id: NodeId) -> bool {
+    fn is_async_node(&self, id: NodeId) -> bool {
         self.inner().nodes[id.0].is_async()
     }
 
-    /// Evaluate operator with the given id.
-    ///
-    /// This method should only be used by schedulers.
-    pub(crate) fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
+    fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
         let mut circuit = self.inner_mut();
         debug_assert!(id.0 < circuit.nodes.len());
 
@@ -1105,15 +1809,8 @@ where
         Ok(())
     }
 
-    /// Evaluate closure `f` inside a new circuit region.
-    ///
-    /// A region is a logical grouping of circuit nodes.  Regions are used
-    /// exclusively for debugging and do not affect scheduling or evaluation
-    /// of the circuit.  This function creates a new region and executes
-    /// closure `f` inside it.  Any operators or subcircuits created by
-    /// `f` will belong to the new region.
     #[track_caller]
-    pub fn region<F, T>(&self, name: &str, f: F) -> T
+    fn region<F, T>(&self, name: &str, f: F) -> T
     where
         F: FnOnce() -> T,
     {
@@ -1124,7 +1821,7 @@ where
     }
 
     /// Add a source operator to the circuit.  See [`SourceOperator`].
-    pub fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
+    fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
     where
         O: Data,
         Op: SourceOperator<O>,
@@ -1142,34 +1839,7 @@ where
         })
     }
 
-    /// Add a pair of operators that implement cross-worker communication.
-    ///
-    /// Operators that exchange data across workers are split into two
-    /// operators: the **sender** responsible for partitioning values read
-    /// from the input stream and distributing them across workers and the
-    /// **receiver**, which receives and reassembles data received from its
-    /// peers.  Splitting communication into two halves allows the scheduler
-    /// to schedule useful work in between them instead of blocking to wait
-    /// for the receiver.
-    ///
-    /// Exchange operators use some form of IPC or shared memory instead of
-    /// streams to communicate.  Therefore, the sender must implement trait
-    /// [`SinkOperator`], while the receiver implements [`SourceOperator`].
-    ///
-    /// This function adds both operators to the circuit and registers a
-    /// dependency between them, making sure that the scheduler will
-    /// evaluate the sender before the receiver even though there is no
-    /// explicit stream connecting them.
-    ///
-    /// Returns the output stream produced by the receiver operator.
-    ///
-    /// # Arguments
-    ///
-    /// * `sender` - the sender half of the pair.  The sender must be a sink
-    ///   operator
-    /// * `receiver` - the receiver half of the pair.  Must be a source
-    /// * `input_stream` - stream to connect as input to the `sender`.
-    pub fn add_exchange<I, SndOp, O, RcvOp>(
+    fn add_exchange<I, SndOp, O, RcvOp>(
         &self,
         sender: SndOp,
         receiver: RcvOp,
@@ -1185,9 +1855,7 @@ where
         self.add_exchange_with_preference(sender, receiver, input_stream, preference)
     }
 
-    /// Like [`Self::add_exchange`], but overrides the ownership
-    /// preference on the input stream with `input_preference`.
-    pub fn add_exchange_with_preference<I, SndOp, O, RcvOp>(
+    fn add_exchange_with_preference<I, SndOp, O, RcvOp>(
         &self,
         sender: SndOp,
         receiver: RcvOp,
@@ -1228,8 +1896,7 @@ where
         output_stream
     }
 
-    /// Add a sink operator (see [`SinkOperator`]).
-    pub fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
     where
         I: Data,
         Op: SinkOperator<I>,
@@ -1238,9 +1905,7 @@ where
         self.add_sink_with_preference(operator, input_stream, preference)
     }
 
-    /// Like [`Self::add_sink`], but overrides the ownership preference on the
-    /// input stream with `input_preference`.
-    pub fn add_sink_with_preference<I, Op>(
+    fn add_sink_with_preference<I, Op>(
         &self,
         operator: Op,
         input_stream: &Stream<Self, I>,
@@ -1266,8 +1931,7 @@ where
         });
     }
 
-    /// Add a unary operator (see [`UnaryOperator`]).
-    pub fn add_unary_operator<I, O, Op>(
+    fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
         input_stream: &Stream<Self, I>,
@@ -1281,9 +1945,7 @@ where
         self.add_unary_operator_with_preference(operator, input_stream, preference)
     }
 
-    /// Like [`Self::add_unary_operator`], but overrides the ownership
-    /// preference on the input stream with `input_preference`.
-    pub fn add_unary_operator_with_preference<I, O, Op>(
+    fn add_unary_operator_with_preference<I, O, Op>(
         &self,
         operator: Op,
         input_stream: &Stream<Self, I>,
@@ -1308,8 +1970,7 @@ where
         })
     }
 
-    /// Add a binary operator (see [`BinaryOperator`]).
-    pub fn add_binary_operator<I1, I2, O, Op>(
+    fn add_binary_operator<I1, I2, O, Op>(
         &self,
         operator: Op,
         input_stream1: &Stream<Self, I1>,
@@ -1329,10 +1990,7 @@ where
         )
     }
 
-    /// Like [`Self::add_binary_operator`], but overrides the ownership
-    /// preference on both input streams with `input_preference1` and
-    /// `input_preference2` respectively.
-    pub fn add_binary_operator_with_preference<I1, I2, O, Op>(
+    fn add_binary_operator_with_preference<I1, I2, O, Op>(
         &self,
         operator: Op,
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
@@ -1368,8 +2026,7 @@ where
         })
     }
 
-    /// Add a ternary operator (see [`TernaryOperator`]).
-    pub fn add_ternary_operator<I1, I2, I3, O, Op>(
+    fn add_ternary_operator<I1, I2, I3, O, Op>(
         &self,
         operator: Op,
         input_stream1: &Stream<Self, I1>,
@@ -1392,10 +2049,8 @@ where
         )
     }
 
-    /// Like [`Self::add_ternary_operator`], but overrides the ownership
-    /// preference on the input streams with specified values.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_ternary_operator_with_preference<I1, I2, I3, O, Op>(
+    fn add_ternary_operator_with_preference<I1, I2, I3, O, Op>(
         &self,
         operator: Op,
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
@@ -1436,8 +2091,7 @@ where
         })
     }
 
-    /// Add a quaternary operator (see [`QuaternaryOperator`]).
-    pub fn add_quaternary_operator<I1, I2, I3, I4, O, Op>(
+    fn add_quaternary_operator<I1, I2, I3, I4, O, Op>(
         &self,
         operator: Op,
         input_stream1: &Stream<Self, I1>,
@@ -1463,10 +2117,8 @@ where
         )
     }
 
-    /// Like [`Self::add_quaternary_operator`], but overrides the ownership
-    /// preference on the input streams with specified values.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_quaternary_operator_with_preference<I1, I2, I3, I4, O, Op>(
+    fn add_quaternary_operator_with_preference<I1, I2, I3, I4, O, Op>(
         &self,
         operator: Op,
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
@@ -1512,8 +2164,7 @@ where
         })
     }
 
-    /// Add a N-ary operator (see [`NaryOperator`]).
-    pub fn add_nary_operator<'a, I, O, Op, Iter>(
+    fn add_nary_operator<'a, I, O, Op, Iter>(
         &'a self,
         operator: Op,
         input_streams: Iter,
@@ -1528,9 +2179,7 @@ where
         self.add_nary_operator_with_preference(operator, input_streams, pref)
     }
 
-    /// Like [`Self::add_nary_operator`], but overrides the ownership
-    /// preference with `input_preference`.
-    pub fn add_nary_operator_with_preference<'a, I, O, Op, Iter>(
+    fn add_nary_operator_with_preference<'a, I, O, Op, Iter>(
         &'a self,
         operator: Op,
         input_streams: Iter,
@@ -1564,55 +2213,7 @@ where
         })
     }
 
-    /// Add a feedback loop to the circuit.
-    ///
-    /// Other methods in this API only support the construction of acyclic
-    /// graphs, as they require the input stream to exist before nodes that
-    /// consumes it are created.  This method instantiates an operator whose
-    /// input stream can be connected later, and thus may depend on
-    /// the operator's output.  This enables the construction of feedback loops.
-    /// Since all loops in a well-formed circuit must include a [strict
-    /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator`
-    /// must be strict.
-    ///
-    /// Returns the output stream of the operator and an object that can be used
-    /// to later connect its input.
-    ///
-    /// # Examples
-    /// We build the following circuit to compute the sum of input values
-    /// received from `source`. `z1` stores the sum accumulated during
-    /// previous timestamps.  At every timestamp, the (`+`) operator
-    /// computes the sum of the new value received from source and the value
-    /// stored in `z1`.
-    ///
-    /// ```text
-    ///                ┌─┐
-    /// source ───────►│+├───┬─►
-    ///           ┌───►└─┘   │
-    ///           │          │
-    ///           │    ┌──┐  │
-    ///           └────┤z1│◄─┘
-    ///                └──┘
-    /// ```
-    ///
-    /// ```
-    /// # use dbsp::{
-    /// #     operator::{Z1, Generator},
-    /// #     Circuit,
-    /// # };
-    /// # let circuit = Circuit::build(|circuit| {
-    /// // Create a data source.
-    /// let source = circuit.add_source(Generator::new(|| 10));
-    /// // Create z1.  `z1_output` will contain the output stream of `z1`; `z1_feedback`
-    /// // is a placeholder where we can later plug the input to `z1`.
-    /// let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
-    /// // Connect outputs of `source` and `z1` to the plus operator.
-    /// let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| n1 + n2);
-    /// // Connect the output of `+` as input to `z1`.
-    /// z1_feedback.connect(&plus);
-    /// # });
-    /// ```
-    pub fn add_feedback<I, O, Op>(
+    fn add_feedback<I, O, Op>(
         &self,
         operator: Op,
     ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
@@ -1625,22 +2226,10 @@ where
         (export_stream.local, connector)
     }
 
-    /// Like `add_feedback`, but additionally makes the output of the operator
-    /// available to the parent circuit.
-    ///
-    /// Normally a strict operator writes a value computed based on inputs from
-    /// previous clock cycles to its output stream at the start of each new
-    /// clock cycle.  When the local clock epoch ends, the last value
-    /// computed by the operator (that would otherwise be dropped) is
-    /// written to the export stream instead.
-    ///
-    /// # Examples
-    ///
-    /// See example in the [`Self::iterate`] method.
-    pub fn add_feedback_with_export<I, O, Op>(
+    fn add_feedback_with_export<I, O, Op>(
         &self,
         operator: Op,
-    ) -> (ExportStream<P, O>, FeedbackConnector<Self, I, O, Op>)
+    ) -> (ExportStream<Self, O>, FeedbackConnector<Self, I, O, Op>)
     where
         I: Data,
         O: Data,
@@ -1686,30 +2275,19 @@ where
         });
     }
 
-    /// Add a child circuit.
-    ///
-    /// Creates an empty circuit with `self` as parent and invokes
-    /// `child_constructor` to populate the circuit.  `child_constructor`
-    /// typically captures some of the streams in `self` and connects them
-    /// to source nodes of the child circuit.  It is also responsible for
-    /// attaching an executor to the child circuit.  The return type `T`
-    /// will typically contain output streams of the child.
-    ///
-    /// Most users should invoke higher-level APIs like [`iterate`] instead of
-    /// using this method directly.
-    pub(crate) fn subcircuit<F, T, E>(
+    fn subcircuit<F, T, E>(
         &self,
         iterative: bool,
         child_constructor: F,
     ) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(T, E), SchedulerError>,
-        E: Executor<Self>,
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<ChildCircuit<Self>>,
     {
         self.try_add_node(|id| {
             let global_id = GlobalNodeId::child_of(self, id);
             self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), iterative));
-            let mut child_circuit = Circuit::with_parent(self.clone(), id);
+            let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
             let child = <ChildNode<Self>>::new::<E>(child_circuit, executor);
             self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
@@ -1717,67 +2295,9 @@ where
         })
     }
 
-    /// Add an iteratively scheduled child circuit.
-    ///
-    /// Add a child circuit with a nested clock.  The child will execute
-    /// multiple times for each parent timestamp, until its termination
-    /// condition is satisfied.  Every time the child circuit is activated
-    /// by the parent (once per parent timestamp), the executor calls
-    /// [`clock_start`](`super::operator_traits::Operator::clock_start`)
-    /// on each child operator.  It then calls `eval` on all
-    /// child operators in a causal order and checks if the termination
-    /// condition is satisfied.  If the condition is `false`, the
-    /// executor `eval`s all operators again.  Once the termination
-    /// condition is `true`, the executor calls `clock_end` on all child
-    /// operators and returns control back to the parent scheduler.
-    ///
-    /// The `constructor` closure populates the child circuit and returns a
-    /// closure that checks the termination condition and an arbitrary
-    /// user-defined return value that typically contains output streams
-    /// of the child.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::{cell::RefCell, rc::Rc};
-    /// use dbsp::{
-    ///     operator::{Generator, Z1},
-    ///     Circuit,
-    /// };
-    ///
-    /// let circuit = Circuit::build(|circuit| {
-    ///     // Generate sequence 0, 1, 2, ...
-    ///     let mut n: usize = 0;
-    ///     let source = circuit.add_source(Generator::new(move || {
-    ///         let result = n;
-    ///         n = n + 1;
-    ///         result
-    ///     }));
-    ///     // Compute factorial of each number in the sequence.
-    ///     let fact = circuit
-    ///         .iterate(|child| {
-    ///             let counter = Rc::new(RefCell::new(0));
-    ///             let counter_clone = counter.clone();
-    ///             let countdown = source.delta0(child).apply(move |parent_val| {
-    ///                 if *parent_val > 0 {
-    ///                     *counter_clone.borrow_mut() += *parent_val;
-    ///                 }
-    ///                 let res = *counter_clone.borrow();
-    ///                 *counter_clone.borrow_mut() -= 1;
-    ///                 res
-    ///             });
-    ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
-    ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
-    ///             z1_feedback.connect(&mul);
-    ///             Ok((move || Ok(*counter.borrow() <= 1), z1_output.export))
-    ///         })
-    ///         .unwrap();
-    ///     fact.inspect(|n| eprintln!("Output: {}", n));
-    /// });
-    /// ```
-    pub fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: Fn() -> Result<bool, SchedulerError> + 'static,
     {
         self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
@@ -1787,9 +2307,9 @@ where
     ///
     /// Similar to [`iterate`](`Self::iterate`), but with a user-specified
     /// [`Scheduler`] implementation.
-    pub fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: Fn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
@@ -1800,55 +2320,16 @@ where
         })
     }
 
-    /// Add a child circuit that will iterate to a fixed point.
-    ///
-    /// For each parent clock cycle, the child circuit will iterate until
-    /// reaching a fixed point, i.e., a state where the outputs of all
-    /// operators are guaranteed to remain the same, should the nested clock
-    /// continue ticking.
-    ///
-    /// The fixed point check is implemented by checking the following
-    /// condition:
-    ///
-    /// * All operators in the circuit are in such a state that, if their inputs
-    ///   remain constant (i.e., all future inputs are identical to the last
-    ///   input), then their outputs remain constant too.
-    ///
-    /// This is a necessary and sufficient condition that is also easy to check
-    /// by asking each operator if it is in a stable state (via the
-    /// [`Operator::fixedpoint`](`super::operator_traits::Operator::fixedpoint`)
-    /// API.  
-    ///
-    /// # Warning
-    ///
-    /// The cost of checking this condition precisely can be high for some
-    /// operators, which implement approximate checks instead.  For instance,
-    /// delay operators ([`Z1`](`crate::operator::Z1`) and
-    /// [`Z1Nested`](`crate::operator::Z1Nested`)) require storing the last
-    /// two versions of the state instead of one and comparing them at each
-    /// cycle.  Instead, they conservatively check for _specific_ fixed points,
-    /// namely fixed points where both input and output of the operator are zero
-    /// As a result, the circuit may fail to detect other fixed points and may
-    /// iterate forever.
-    ///
-    /// The goal is to evolve the design so that circuits created using the
-    /// high-level API (`Stream::xxx` methods) implement accurate fixed point
-    /// checks, but there are currently no guardrails in the system against
-    /// constructing non-compliant circuits.
-    pub fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
     {
         self.fixedpoint_with_scheduler::<F, T, DynamicScheduler>(constructor)
     }
 
-    /// Add a child circuit that will iterate to a fixed point.
-    ///
-    /// Similar to [`fixedpoint`](`Self::fixedpoint`), but with a user-specified
-    /// [`Scheduler`] implementation.
-    pub fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut Circuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static,
     {
         match Runtime::runtime() {
@@ -1907,11 +2388,50 @@ where
             }),
         }
     }
+
+    fn import_stream<I, O, Op>(&self, operator: Op, parent_stream: &Stream<P, I>) -> Stream<Self, O>
+    where
+        Self::Parent: Circuit,
+        I: Data,
+        O: Data,
+        Op: ImportOperator<I, O>,
+    {
+        let preference = operator.input_preference();
+        self.import_stream_with_preference(operator, parent_stream, preference)
+    }
+
+    fn import_stream_with_preference<I, O, Op>(
+        &self,
+        operator: Op,
+        parent_stream: &Stream<P, I>,
+        input_preference: OwnershipPreference,
+    ) -> Stream<Self, O>
+    where
+        Self::Parent: Circuit,
+        I: Data,
+        O: Data,
+        Op: ImportOperator<I, O>,
+    {
+        assert!(self.is_child_of(parent_stream.circuit()));
+
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                self.global_node_id().child(id),
+                operator.name(),
+                operator.location(),
+            ));
+            let node = ImportNode::new(operator, self.clone(), parent_stream.clone(), id);
+            self.parent()
+                .connect_stream(parent_stream, self.node_id(), input_preference);
+            let output_stream = node.output_stream();
+            (node, output_stream)
+        })
+    }
 }
 
-impl<P> Circuit<Circuit<P>>
+impl<P> ChildCircuit<P>
 where
-    P: 'static + Clone,
+    P: Circuit,
 {
     /// Make the contents of `parent_stream` available in the nested circuit
     /// via an [`ImportOperator`].
@@ -1920,7 +2440,7 @@ where
     pub fn import_stream<I, O, Op>(
         &self,
         operator: Op,
-        parent_stream: &Stream<Circuit<P>, I>,
+        parent_stream: &Stream<P, I>,
     ) -> Stream<Self, O>
     where
         I: Data,
@@ -1936,7 +2456,7 @@ where
     pub fn import_stream_with_preference<I, O, Op>(
         &self,
         operator: Op,
-        parent_stream: &Stream<Circuit<P>, I>,
+        parent_stream: &Stream<P, I>,
         input_preference: OwnershipPreference,
     ) -> Stream<Self, O>
     where
@@ -1948,7 +2468,7 @@ where
 
         self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
+                self.global_node_id().child(id),
                 operator.name(),
                 operator.location(),
             ));
@@ -1961,23 +2481,22 @@ where
     }
 }
 
-struct ImportNode<P, I, O, Op> {
+struct ImportNode<C, I, O, Op>
+where
+    C: Circuit,
+{
     id: GlobalNodeId,
     operator: Op,
-    parent_stream: Stream<Circuit<P>, I>,
-    output_stream: Stream<Circuit<Circuit<P>>, O>,
+    parent_stream: Stream<C::Parent, I>,
+    output_stream: Stream<C, O>,
 }
 
-impl<P, I, O, Op> ImportNode<P, I, O, Op>
+impl<C, I, O, Op> ImportNode<C, I, O, Op>
 where
-    P: Clone + 'static,
+    C: Circuit,
+    C::Parent: Circuit,
 {
-    fn new(
-        operator: Op,
-        circuit: Circuit<Circuit<P>>,
-        parent_stream: Stream<Circuit<P>, I>,
-        id: NodeId,
-    ) -> Self {
+    fn new(operator: Op, circuit: C, parent_stream: Stream<C::Parent, I>, id: NodeId) -> Self {
         assert!(Circuit::ptr_eq(&circuit.parent(), parent_stream.circuit()));
 
         Self {
@@ -1988,13 +2507,15 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<Circuit<P>>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
-impl<P, I, O, Op> Node for ImportNode<P, I, O, Op>
+impl<C, I, O, Op> Node for ImportNode<C, I, O, Op>
 where
+    C: Circuit,
+    C::Parent: Circuit,
     I: Clone,
     O: Clone,
     Op: ImportOperator<I, O>,
@@ -2057,12 +2578,12 @@ struct SourceNode<C, O, Op> {
     output_stream: Stream<C, O>,
 }
 
-impl<P, O, Op> SourceNode<Circuit<P>, O, Op>
+impl<C, O, Op> SourceNode<C, O, Op>
 where
     Op: SourceOperator<O>,
-    P: Clone,
+    C: Circuit,
 {
-    fn new(operator: Op, circuit: Circuit<P>, id: NodeId) -> Self {
+    fn new(operator: Op, circuit: C, id: NodeId) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -2070,13 +2591,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, O, Op> Node for SourceNode<C, O, Op>
 where
+    C: Circuit,
     O: Clone,
     Op: SourceOperator<O>,
 {
@@ -2133,17 +2655,12 @@ struct UnaryNode<C, I, O, Op> {
     output_stream: Stream<C, O>,
 }
 
-impl<P, I, O, Op> UnaryNode<Circuit<P>, I, O, Op>
+impl<C, I, O, Op> UnaryNode<C, I, O, Op>
 where
     Op: UnaryOperator<I, O>,
-    P: Clone,
+    C: Circuit,
 {
-    fn new(
-        operator: Op,
-        input_stream: Stream<Circuit<P>, I>,
-        circuit: Circuit<P>,
-        id: NodeId,
-    ) -> Self {
+    fn new(operator: Op, input_stream: Stream<C, I>, circuit: C, id: NodeId) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -2152,13 +2669,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
+    C: Circuit,
     I: Clone,
     O: Clone,
     Op: UnaryOperator<I, O>,
@@ -2218,16 +2736,12 @@ struct SinkNode<C, I, Op> {
     input_stream: Stream<C, I>,
 }
 
-impl<P, I, Op> SinkNode<Circuit<P>, I, Op>
+impl<C, I, Op> SinkNode<C, I, Op>
 where
     Op: SinkOperator<I>,
+    C: Circuit,
 {
-    fn new(
-        operator: Op,
-        input_stream: Stream<Circuit<P>, I>,
-        circuit: Circuit<P>,
-        id: NodeId,
-    ) -> Self {
+    fn new(operator: Op, input_stream: Stream<C, I>, circuit: C, id: NodeId) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -2238,6 +2752,7 @@ where
 
 impl<C, I, Op> Node for SinkNode<C, I, Op>
 where
+    C: Circuit,
     I: Clone,
     Op: SinkOperator<I>,
 {
@@ -2300,16 +2815,16 @@ struct BinaryNode<C, I1, I2, O, Op> {
     is_alias: bool,
 }
 
-impl<P, I1, I2, O, Op> BinaryNode<Circuit<P>, I1, I2, O, Op>
+impl<C, I1, I2, O, Op> BinaryNode<C, I1, I2, O, Op>
 where
     Op: BinaryOperator<I1, I2, O>,
-    P: Clone,
+    C: Circuit,
 {
     fn new(
         operator: Op,
-        input_stream1: Stream<Circuit<P>, I1>,
-        input_stream2: Stream<Circuit<P>, I2>,
-        circuit: Circuit<P>,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        circuit: C,
         id: NodeId,
     ) -> Self {
         let is_alias = input_stream1.ptr_eq(&input_stream2);
@@ -2323,13 +2838,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, I1, I2, O, Op> Node for BinaryNode<C, I1, I2, O, Op>
 where
+    C: Circuit,
     I1: Clone,
     I2: Clone,
     O: Clone,
@@ -2417,20 +2933,20 @@ struct TernaryNode<C, I1, I2, I3, O, Op> {
     is_alias2: bool,
 }
 
-impl<P, I1, I2, I3, O, Op> TernaryNode<Circuit<P>, I1, I2, I3, O, Op>
+impl<C, I1, I2, I3, O, Op> TernaryNode<C, I1, I2, I3, O, Op>
 where
     I1: Clone,
     I2: Clone,
     I3: Clone,
     Op: TernaryOperator<I1, I2, I3, O>,
-    P: Clone,
+    C: Circuit,
 {
     fn new(
         operator: Op,
-        input_stream1: Stream<Circuit<P>, I1>,
-        input_stream2: Stream<Circuit<P>, I2>,
-        input_stream3: Stream<Circuit<P>, I3>,
-        circuit: Circuit<P>,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        input_stream3: Stream<C, I3>,
+        circuit: C,
         id: NodeId,
     ) -> Self {
         let is_alias1 =
@@ -2448,13 +2964,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, I1, I2, I3, O, Op> Node for TernaryNode<C, I1, I2, I3, O, Op>
 where
+    C: Circuit,
     I1: Clone,
     I2: Clone,
     I3: Clone,
@@ -2539,22 +3056,22 @@ struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
     is_alias3: bool,
 }
 
-impl<P, I1, I2, I3, I4, O, Op> QuaternaryNode<Circuit<P>, I1, I2, I3, I4, O, Op>
+impl<C, I1, I2, I3, I4, O, Op> QuaternaryNode<C, I1, I2, I3, I4, O, Op>
 where
     I1: Clone,
     I2: Clone,
     I3: Clone,
     I4: Clone,
     Op: QuaternaryOperator<I1, I2, I3, I4, O>,
-    P: Clone,
+    C: Circuit,
 {
     fn new(
         operator: Op,
-        input_stream1: Stream<Circuit<P>, I1>,
-        input_stream2: Stream<Circuit<P>, I2>,
-        input_stream3: Stream<Circuit<P>, I3>,
-        input_stream4: Stream<Circuit<P>, I4>,
-        circuit: Circuit<P>,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        input_stream3: Stream<C, I3>,
+        input_stream4: Stream<C, I4>,
+        circuit: C,
         id: NodeId,
     ) -> Self {
         let is_alias1 = input_stream1.ptr_eq(&input_stream2)
@@ -2577,13 +3094,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, I1, I2, I3, I4, O, Op> Node for QuaternaryNode<C, I1, I2, I3, I4, O, Op>
 where
+    C: Circuit,
     I1: Clone,
     I2: Clone,
     I3: Clone,
@@ -2672,15 +3190,15 @@ where
     output_stream: Stream<C, O>,
 }
 
-impl<P, I, O, Op> NaryNode<Circuit<P>, I, O, Op>
+impl<C, I, O, Op> NaryNode<C, I, O, Op>
 where
     I: Clone + 'static,
     Op: NaryOperator<I, O>,
-    P: Clone,
+    C: Circuit,
 {
-    fn new<Iter>(operator: Op, input_streams: Iter, circuit: Circuit<P>, id: NodeId) -> Self
+    fn new<Iter>(operator: Op, input_streams: Iter, circuit: C, id: NodeId) -> Self
     where
-        Iter: IntoIterator<Item = Stream<Circuit<P>, I>>,
+        Iter: IntoIterator<Item = Stream<C, I>>,
     {
         let mut input_streams: Vec<_> = input_streams
             .into_iter()
@@ -2707,13 +3225,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
 impl<C, I, O, Op> Node for NaryNode<C, I, O, Op>
 where
+    C: Circuit,
     I: Clone,
     O: Clone,
     Op: NaryOperator<I, O>,
@@ -2784,20 +3303,23 @@ where
 // node (i.e., it does not have an input stream) and thus gets evaluated first
 // in each time stamp.  `FeedbackInputNode` is a sink node.  This way the
 // circuit graph remains acyclic and can be scheduled in a topological order.
-struct FeedbackOutputNode<P, I, O, Op> {
+struct FeedbackOutputNode<C, I, O, Op>
+where
+    C: Circuit,
+{
     id: GlobalNodeId,
     operator: Rc<UnsafeCell<Op>>,
-    output_stream: Stream<Circuit<P>, O>,
-    export_stream: Stream<P, O>,
+    output_stream: Stream<C, O>,
+    export_stream: Stream<C::Parent, O>,
     phantom_input: PhantomData<I>,
 }
 
-impl<P, I, O, Op> FeedbackOutputNode<P, I, O, Op>
+impl<C, I, O, Op> FeedbackOutputNode<C, I, O, Op>
 where
-    P: Clone + 'static,
+    C: Circuit,
     Op: StrictUnaryOperator<I, O>,
 {
-    fn new(operator: Rc<UnsafeCell<Op>>, circuit: Circuit<P>, id: NodeId) -> Self {
+    fn new(operator: Rc<UnsafeCell<Op>>, circuit: C, id: NodeId) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -2811,13 +3333,14 @@ where
         }
     }
 
-    fn output_stream(&self) -> Stream<Circuit<P>, O> {
+    fn output_stream(&self) -> Stream<C, O> {
         self.output_stream.clone()
     }
 }
 
-impl<P, I, O, Op> Node for FeedbackOutputNode<P, I, O, Op>
+impl<C, I, O, Op> Node for FeedbackOutputNode<C, I, O, Op>
 where
+    C: Circuit,
     I: Data,
     O: Clone,
     Op: StrictUnaryOperator<I, O>,
@@ -2881,11 +3404,12 @@ struct FeedbackInputNode<C, I, O, Op> {
     phantom_output: PhantomData<O>,
 }
 
-impl<P, I, O, Op> FeedbackInputNode<Circuit<P>, I, O, Op>
+impl<C, I, O, Op> FeedbackInputNode<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
+    C: Circuit,
 {
-    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<Circuit<P>, I>, id: NodeId) -> Self {
+    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<C, I>, id: NodeId) -> Self {
         Self {
             id: input_stream.circuit().global_node_id().child(id),
             operator,
@@ -2977,24 +3501,24 @@ where
     }
 }
 
-impl<P, I, O, Op> FeedbackConnector<Circuit<P>, I, O, Op>
+impl<C, I, O, Op> FeedbackConnector<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
     O: Data,
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Connect `input_stream` as input to the operator.
     ///
     /// See [`Circuit::add_feedback`] for details.
     /// Returns node id of the input node.
-    pub fn connect(self, input_stream: &Stream<Circuit<P>, I>) {
+    pub fn connect(self, input_stream: &Stream<C, I>) {
         self.connect_with_preference(input_stream, OwnershipPreference::INDIFFERENT)
     }
 
     pub fn connect_with_preference(
         self,
-        input_stream: &Stream<Circuit<P>, I>,
+        input_stream: &Stream<C, I>,
         input_preference: OwnershipPreference,
     ) {
         self.circuit.connect_feedback_with_preference(
@@ -3007,13 +3531,19 @@ where
 }
 
 // A nested circuit instantiated as a node in a parent circuit.
-struct ChildNode<P> {
+struct ChildNode<P>
+where
+    P: Circuit,
+{
     id: GlobalNodeId,
-    circuit: Circuit<P>,
-    executor: Box<dyn Executor<P>>,
+    circuit: ChildCircuit<P>,
+    executor: Box<dyn Executor<ChildCircuit<P>>>,
 }
 
-impl<P> Drop for ChildNode<P> {
+impl<P> Drop for ChildNode<P>
+where
+    P: Circuit,
+{
     fn drop(&mut self) {
         // Explicitly deallocate all nodes in the circuit to break
         // cyclic `Rc` references between circuits and streams.
@@ -3021,22 +3551,25 @@ impl<P> Drop for ChildNode<P> {
     }
 }
 
-impl<P> ChildNode<P> {
-    fn new<E>(circuit: Circuit<P>, executor: E) -> Self
+impl<P> ChildNode<P>
+where
+    P: Circuit,
+{
+    fn new<E>(circuit: ChildCircuit<P>, executor: E) -> Self
     where
-        E: Executor<P>,
+        E: Executor<ChildCircuit<P>>,
     {
         Self {
             id: circuit.global_node_id(),
             circuit,
-            executor: Box::new(executor) as Box<dyn Executor<P>>,
+            executor: Box::new(executor) as Box<dyn Executor<ChildCircuit<P>>>,
         }
     }
 }
 
 impl<P> Node for ChildNode<P>
 where
-    P: 'static,
+    P: Circuit,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Subcircuit")
@@ -3083,8 +3616,8 @@ where
 
 /// Top-level circuit with executor.
 pub struct CircuitHandle {
-    circuit: Circuit<()>,
-    executor: Box<dyn Executor<()>>,
+    circuit: RootCircuit,
+    executor: Box<dyn Executor<RootCircuit>>,
 }
 
 impl Drop for CircuitHandle {
@@ -3096,7 +3629,7 @@ impl Drop for CircuitHandle {
         // and `clock_end` triggers another panic due to violated invariants
         // since the original panic interrupted normal execution.
         if !panicking() {
-            unsafe { self.circuit.clock_end(0) }
+            self.circuit.clock_end(0)
         }
 
         // We must explicitly deallocate all nodes in the circuit to break
@@ -3123,11 +3656,11 @@ impl CircuitHandle {
     /// Attach a scheduler event handler to the circuit.
     ///
     /// This method is identical to
-    /// [`Circuit::register_scheduler_event_handler`], but it can be used at
+    /// [`RootCircuit::register_scheduler_event_handler`], but it can be used at
     /// runtime, after the circuit has been fully constructed.
     ///
-    /// Use [`Circuit::register_scheduler_event_handler`],
-    /// [`Circuit::unregister_scheduler_event_handler`], to manipulate
+    /// Use [`RootCircuit::register_scheduler_event_handler`],
+    /// [`RootCircuit::unregister_scheduler_event_handler`], to manipulate
     /// handlers during circuit construction.
     pub fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
     where
@@ -3139,8 +3672,8 @@ impl CircuitHandle {
     /// Remove a scheduler event handler.
     ///
     /// This method is identical to
-    /// [`Circuit::unregister_scheduler_event_handler`], but it can be used at
-    /// runtime, after the circuit has been fully constructed.
+    /// [`RootCircuit::unregister_scheduler_event_handler`], but it can be used
+    /// at runtime, after the circuit has been fully constructed.
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.circuit.unregister_scheduler_event_handler(name)
     }
@@ -3152,7 +3685,7 @@ mod tests {
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
-        Circuit,
+        Circuit, RootCircuit,
     };
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
@@ -3174,7 +3707,7 @@ mod tests {
     {
         let actual_output: Rc<RefCell<Vec<isize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
-        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
+        let circuit = RootCircuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
             let mut n: isize = 0;
             let source = circuit.add_source(Generator::new(move || {
@@ -3220,7 +3753,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
+        let circuit = RootCircuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;
@@ -3273,7 +3806,7 @@ mod tests {
         let actual_output: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::with_capacity(100)));
         let actual_output_clone = actual_output.clone();
 
-        let circuit = Circuit::build_with_scheduler::<_, _, S>(|circuit| {
+        let circuit = RootCircuit::build_with_scheduler::<_, _, S>(|circuit| {
             TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
 
             let mut n: usize = 0;

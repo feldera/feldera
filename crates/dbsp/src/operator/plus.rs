@@ -13,9 +13,9 @@ use std::{
     ops::{Add, Neg},
 };
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + 'static,
 {
     /// Apply the [`Plus`] operator to `self` and `other`.
@@ -25,9 +25,9 @@ where
     /// ```
     /// # use dbsp::{
     /// #   operator::Generator,
-    /// #   Circuit,
+    /// #   Circuit, RootCircuit,
     /// # };
-    /// let circuit = Circuit::build(move |circuit| {
+    /// let circuit = RootCircuit::build(move |circuit| {
     ///     // Stream of non-negative values: 0, 1, 2, ...
     ///     let mut n = 0;
     ///     let source1 = circuit.add_source(Generator::new(move || {
@@ -52,7 +52,7 @@ where
     /// #     circuit.step().unwrap();
     /// # }
     /// ```
-    pub fn plus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
+    pub fn plus(&self, other: &Stream<C, D>) -> Stream<C, D> {
         // If both inputs are properly sharded then the sum of those inputs will be
         // sharded
         if self.has_sharded_version() && other.has_sharded_version() {
@@ -69,13 +69,13 @@ where
     }
 }
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
-    P: Clone + 'static,
+    C: Circuit,
     D: Add<Output = D> + AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
 {
     /// Apply the [`Minus`] operator to `self` and `other`.
-    pub fn minus(&self, other: &Stream<Circuit<P>, D>) -> Stream<Circuit<P>, D> {
+    pub fn minus(&self, other: &Stream<C, D>) -> Stream<C, D> {
         // If both inputs are properly sharded then the difference of those inputs will
         // be sharded
         if self.has_sharded_version() && other.has_sharded_version() {
@@ -216,12 +216,12 @@ mod test {
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         trace::{ord::OrdZSet, Batch},
-        zset, Circuit,
+        zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn scalar_plus() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut n = 0;
             let source1 = circuit.add_source(Generator::new(move || {
                 let res = n;
@@ -247,7 +247,7 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn zset_plus() {
-        let build_plus_circuit = |circuit: &Circuit<()>| {
+        let build_plus_circuit = |circuit: &RootCircuit| {
             let mut s = <OrdZSet<_, _>>::zero();
             let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
@@ -266,7 +266,7 @@ mod test {
             (source1, source2)
         };
 
-        let build_minus_circuit = |circuit: &Circuit<()>| {
+        let build_minus_circuit = |circuit: &RootCircuit| {
             let mut s = <OrdZSet<_, _>>::zero();
             let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
@@ -285,7 +285,7 @@ mod test {
             (source1, source2)
         };
         // Allow `Plus` to consume both streams by value.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             build_plus_circuit(circuit);
             build_minus_circuit(circuit);
         })
@@ -297,7 +297,7 @@ mod test {
         }
 
         // Only consume source2 by value.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let (source1, _source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -319,7 +319,7 @@ mod test {
         }
 
         // Only consume source1 by value.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let (_source1, source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),
@@ -342,7 +342,7 @@ mod test {
         }
 
         // Consume both streams by reference.
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let (source1, source2) = build_plus_circuit(circuit);
             circuit.add_unary_operator_with_preference(
                 Inspect::new(|_| {}),

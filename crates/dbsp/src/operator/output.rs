@@ -2,7 +2,7 @@ use super::Mailbox;
 use crate::{
     circuit::{
         operator_traits::{Operator, SinkOperator},
-        LocalStoreMarker, OwnershipPreference, Scope,
+        LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
     trace::{Batch, Spine, Trace},
     Circuit, Runtime, Stream,
@@ -15,7 +15,7 @@ use std::{
 };
 use typedmap::TypedMapKey;
 
-impl<T> Stream<Circuit<()>, T>
+impl<T> Stream<RootCircuit, T>
 where
     T: Clone + Send + 'static,
 {

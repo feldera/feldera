@@ -7,7 +7,7 @@ use crate::{
         GlobalNodeId,
     },
     monitor::TraceMonitor,
-    Circuit,
+    RootCircuit,
 };
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
@@ -21,14 +21,14 @@ pub use cpu::CPUProfiler;
 pub struct Profiler {
     cpu_profiler: CPUProfiler,
     monitor: TraceMonitor,
-    circuit: Circuit<()>,
+    circuit: RootCircuit,
 }
 
 impl Profiler {
     /// Create profiler; attach it to `circuit`.
     ///
     /// Profiler is created with CPU profiling disabled.
-    pub fn new(circuit: &Circuit<()>) -> Self {
+    pub fn new(circuit: &RootCircuit) -> Self {
         let cpu_profiler = CPUProfiler::new();
 
         let monitor = TraceMonitor::new_panic_on_error();

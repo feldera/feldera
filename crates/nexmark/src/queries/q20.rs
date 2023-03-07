@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::model::{Auction, Bid, Event};
 use dbsp::{
     operator::FilterMap,
-    Circuit, OrdZSet, Stream,
+    RootCircuit, OrdZSet, Stream,
 };
 
 ///
@@ -50,7 +50,7 @@ use dbsp::{
 // WHERE A.category = 10;
 //
 
-type Q20Stream = Stream<Circuit<()>, OrdZSet<(Bid, Auction), isize>>;
+type Q20Stream = Stream<RootCircuit, OrdZSet<(Bid, Auction), isize>>;
 
 const FILTERED_CATEGORY: usize = 10;
 
@@ -68,7 +68,7 @@ pub fn q20(input: NexmarkStream) -> Q20Stream {
         _ => None,
     });
 
-    bids_by_auction.join::<(), _, _, _>(&auctions_indexed, |_, bid, auction| {
+    bids_by_auction.join(&auctions_indexed, |_, bid, auction| {
         (bid.clone(), auction.clone())
     })
 }
@@ -232,7 +232,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q20(stream);

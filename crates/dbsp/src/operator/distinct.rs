@@ -5,7 +5,7 @@ use crate::{
     circuit::{
         metadata::{MetaItem, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, GlobalNodeId, Scope, Stream,
+        Circuit, GlobalNodeId, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     trace::{ord::OrdValSpine, Batch, BatchReader, Builder, Cursor as TraceCursor, Trace},
@@ -23,9 +23,9 @@ use std::{
 circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
 
-impl<P, Z> Stream<Circuit<P>, Z>
+impl<C, Z> Stream<C, Z>
 where
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Reduces input batches to one occurrence of each element.
     ///
@@ -37,7 +37,7 @@ where
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.
-    pub fn stream_distinct(&self) -> Stream<Circuit<P>, Z>
+    pub fn stream_distinct(&self) -> Stream<C, Z>
     where
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
@@ -61,16 +61,11 @@ where
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.
-    ///
-    /// `TS` is the timestamp type used by the circuit where the operator
-    /// is instantiated, e.g., `()` in the top-level circuit,
-    /// `NestedTimestamp32` in a nested circuit, `Product<NestedTimestamp32,
-    /// u32>` in a third-level circuit, etc.
-    pub fn distinct<TS>(&self) -> Stream<Circuit<P>, Z>
+    pub fn distinct(&self) -> Stream<C, Z>
     where
-        TS: DBTimestamp,
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
+        <C as WithClock>::Time: DBTimestamp,
     {
         let circuit = self.circuit();
         circuit
@@ -97,10 +92,10 @@ where
                             //                └─────┘                  └───────────────────┘
                             // ```
                             circuit.add_binary_operator(
-                                DistinctIncremental::new(circuit),
+                                DistinctIncremental::new(circuit.clone()),
                                 &stream,
                                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                                &stream.trace::<OrdValSpine<Z::Key, Z::Val, TS, Z::R>>(),
+                                &stream.trace::<OrdValSpine<Z::Key, Z::Val, <C as WithClock>::Time, Z::R>>(),
                             )
                         }
                         .mark_sharded()
@@ -275,16 +270,15 @@ where
 type KeysOfInterest<TS, K, V> = BTreeMap<TS, Vec<((K, V), Present)>>;
 
 #[derive(SizeOf)]
-struct DistinctIncremental<Z, T>
+struct DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
     T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
 {
+    #[size_of(skip)]
+    clock: Clk,
     // Keys that may need updating at future times.
     keys_of_interest: KeysOfInterest<T::Time, Z::Key, Z::Val>,
-    // Current time.
-    // TODO: not needed once timekeeping is handled by the circuit.
-    time: T::Time,
     // True if the operator received empty input during the last clock
     // tick.
     empty_input: bool,
@@ -296,19 +290,22 @@ where
     _type: PhantomData<(Z, T)>,
 }
 
-impl<Z, T> DistinctIncremental<Z, T>
+impl<Z, T, Clk> DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
     T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Z::R: ZRingValue,
+    Clk: WithClock<Time = T::Time>,
 {
-    fn new<P: Clone + 'static>(circuit: &Circuit<P>) -> Self {
+    fn new(clock: Clk) -> Self {
+        let depth = clock.nesting_depth();
+
         Self {
+            clock,
             keys_of_interest: BTreeMap::new(),
-            time: <T::Time as Timestamp>::clock_start(),
             empty_input: false,
             empty_output: false,
-            distinct_vals: vec![(None, HasZero::zero()); 2 << circuit.root_scope()],
+            distinct_vals: vec![(None, HasZero::zero()); 2 << depth],
             _type: PhantomData,
         }
     }
@@ -403,6 +400,7 @@ where
     /// `keys_of_interest[t2]` for candidates.
     fn eval_keyval(
         &mut self,
+        time: &Clk::Time,
         key: &Z::Key,
         val: &Z::Val,
         trace_cursor: &mut T::Cursor<'_>,
@@ -429,11 +427,11 @@ where
                         }
                     }
                     // Timestamp in the future - update `time_of_interest`.
-                    if !trace_ts.less_equal(&self.time) {
+                    if !trace_ts.less_equal(time) {
                         time_of_interest = match time_of_interest.take() {
-                            None => Some(self.time.join(trace_ts)),
+                            None => Some(time.join(trace_ts)),
                             Some(time_of_interest) => {
-                                Some(min(time_of_interest, self.time.join(trace_ts)))
+                                Some(min(time_of_interest, time.join(trace_ts)))
                             }
                         }
                     }
@@ -498,10 +496,11 @@ where
     }
 }
 
-impl<Z, T> Operator for DistinctIncremental<Z, T>
+impl<Z, T, Clk> Operator for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
     T: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
+    Clk: WithClock<Time = T::Time> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctIncremental")
@@ -528,17 +527,18 @@ where
 
     fn clock_end(&mut self, scope: Scope) {
         debug_assert!(self.keys_of_interest.keys().all(|ts| {
-            if ts.less_equal(&self.time.epoch_end(scope)) {
-                eprintln!("ts: {ts:?}, epoch_end: {:?}", self.time.epoch_end(scope));
+            if ts.less_equal(&self.clock.time().epoch_end(scope)) {
+                eprintln!(
+                    "ts: {ts:?}, epoch_end: {:?}",
+                    self.clock.time().epoch_end(scope)
+                );
             }
-            !ts.less_equal(&self.time.epoch_end(scope))
+            !ts.less_equal(&self.clock.time().epoch_end(scope))
         }));
-
-        self.time = self.time.advance(scope + 1);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        let epoch_end = self.time.epoch_end(scope);
+        let epoch_end = self.clock.time().epoch_end(scope);
 
         self.empty_input
             && self.empty_output
@@ -549,16 +549,19 @@ where
     }
 }
 
-impl<Z, T> BinaryOperator<Z, T, Z> for DistinctIncremental<Z, T>
+impl<Z, T, Clk> BinaryOperator<Z, T, Z> for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
     Z::R: ZRingValue,
     T: Trace<Key = Z::Key, Val = Z::Val, R = Z::R>,
+    Clk: WithClock<Time = T::Time> + 'static,
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
     fn eval(&mut self, delta: &Z, trace: &T) -> Z {
-        Self::init_distinct_vals(&mut self.distinct_vals, Some(self.time.clone()));
+        let time = self.clock.time();
+
+        Self::init_distinct_vals(&mut self.distinct_vals, Some(time.clone()));
         self.empty_input = delta.is_empty();
 
         // We iterate over keys and values in order, so it is safe to use `Builder`.
@@ -569,7 +572,7 @@ where
 
         // Previously encountered keys that may affect output at the
         // current time.
-        let keys_of_interest = self.keys_of_interest.remove(&self.time).unwrap_or_default();
+        let keys_of_interest = self.keys_of_interest.remove(&time).unwrap_or_default();
 
         let keys_of_interest =
             <OrdIndexedZSet<Z::Key, Z::Val, Present>>::from_tuples((), keys_of_interest);
@@ -584,6 +587,7 @@ where
 
                     while delta_cursor.val_valid() {
                         self.eval_keyval(
+                            &time,
                             delta_cursor.key(),
                             delta_cursor.val(),
                             &mut trace_cursor,
@@ -599,6 +603,7 @@ where
 
                     while keys_of_interest_cursor.val_valid() {
                         self.eval_keyval(
+                            &time,
                             keys_of_interest_cursor.key(),
                             keys_of_interest_cursor.val(),
                             &mut trace_cursor,
@@ -617,6 +622,7 @@ where
                         match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
                             Ordering::Less => {
                                 self.eval_keyval(
+                                    &time,
                                     delta_cursor.key(),
                                     delta_cursor.val(),
                                     &mut trace_cursor,
@@ -626,6 +632,7 @@ where
                             }
                             Ordering::Greater => {
                                 self.eval_keyval(
+                                    &time,
                                     keys_of_interest_cursor.key(),
                                     keys_of_interest_cursor.val(),
                                     &mut trace_cursor,
@@ -635,6 +642,7 @@ where
                             }
                             Ordering::Equal => {
                                 self.eval_keyval(
+                                    &time,
                                     delta_cursor.key(),
                                     delta_cursor.val(),
                                     &mut trace_cursor,
@@ -649,6 +657,7 @@ where
                     // Iterate over remaining `delta_cursor` values.
                     while delta_cursor.val_valid() {
                         self.eval_keyval(
+                            &time,
                             delta_cursor.key(),
                             delta_cursor.val(),
                             &mut trace_cursor,
@@ -660,6 +669,7 @@ where
                     // Iterate over remaining `keys_of_interest` values.
                     while keys_of_interest_cursor.val_valid() {
                         self.eval_keyval(
+                            &time,
                             keys_of_interest_cursor.key(),
                             keys_of_interest_cursor.val(),
                             &mut trace_cursor,
@@ -680,6 +690,7 @@ where
 
             while delta_cursor.val_valid() {
                 self.eval_keyval(
+                    &time,
                     delta_cursor.key(),
                     delta_cursor.val(),
                     &mut trace_cursor,
@@ -696,6 +707,7 @@ where
 
             while keys_of_interest_cursor.val_valid() {
                 self.eval_keyval(
+                    &time,
                     keys_of_interest_cursor.key(),
                     keys_of_interest_cursor.val(),
                     &mut trace_cursor,
@@ -708,7 +720,6 @@ where
 
         let result = result_builder.done();
         self.empty_output = result.is_empty();
-        self.time = self.time.advance(0);
 
         result
     }
@@ -725,9 +736,8 @@ mod test {
     use crate::{
         indexed_zset,
         operator::{Generator, GeneratorNested},
-        time::NestedTimestamp32,
         trace::Batch,
-        zset, Circuit, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
+        zset, Circuit, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
     };
 
     fn do_distinct_inc_test_mt(workers: usize) {
@@ -748,7 +758,7 @@ mod test {
 
     #[test]
     fn distinct_inc_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
                 vec![zset! { 2 => 1, 3 => 1 }, zset! { 3 => -2, 4 => -1 }],
@@ -775,7 +785,7 @@ mod test {
                         }
                     })));
 
-                    let distinct_inc = input.distinct::<crate::time::NestedTimestamp32>().gather(0);
+                    let distinct_inc = input.distinct().gather(0);
                     let distinct_noninc = input
                         // Non-incremental implementation of distinct_nested_incremental.
                         .integrate()
@@ -834,7 +844,7 @@ mod test {
                 });
 
             input
-                .distinct::<()>()
+                .distinct()
                 .integrate()
                 .gather(0)
                 .inspect(move |batch| {
@@ -919,7 +929,7 @@ mod test {
     }
 
     fn distinct_test_circuit(
-        circuit: &mut Circuit<()>,
+        circuit: &mut RootCircuit,
         inputs: Vec<TestZSet>,
     ) -> (OutputHandle<TestZSet>, OutputHandle<TestZSet>) {
         let mut inputs = inputs.into_iter();
@@ -932,14 +942,14 @@ mod test {
             }
         })));
 
-        let distinct_inc = input.distinct::<()>().output();
+        let distinct_inc = input.distinct().output();
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
         (distinct_inc, distinct_noninc)
     }
 
     fn distinct_indexed_test_circuit(
-        circuit: &mut Circuit<()>,
+        circuit: &mut RootCircuit,
         inputs: Vec<TestIndexedZSet>,
     ) -> (OutputHandle<TestIndexedZSet>, OutputHandle<TestIndexedZSet>) {
         let mut inputs = inputs.into_iter();
@@ -952,14 +962,14 @@ mod test {
             }
         })));
 
-        let distinct_inc = input.distinct::<()>().output();
+        let distinct_inc = input.distinct().output();
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
         (distinct_inc, distinct_noninc)
     }
 
     fn distinct_indexed_nested_test_circuit(
-        circuit: &mut Circuit<()>,
+        circuit: &mut RootCircuit,
         inputs: Vec<Vec<TestIndexedZSet>>,
     ) {
         let mut inputs = inputs.into_iter();
@@ -979,7 +989,7 @@ mod test {
                     }
                 })));
 
-                let distinct_inc = input.distinct::<NestedTimestamp32>().gather(0);
+                let distinct_inc = input.distinct().gather(0);
                 let distinct_noninc = input
                     .integrate_nested()
                     .integrate()
@@ -1017,7 +1027,7 @@ mod test {
         #[test]
         fn proptest_distinct_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let (circuit, (inc_output, noninc_output)) = Circuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+            let (circuit, (inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();

@@ -7,14 +7,14 @@
 
 use crate::data::{Distance, DistanceMap, DistanceSet, EdgeMap, Edges, Node, VertexSet, Vertices};
 use dbsp::{
+    circuit::WithClock,
     operator::{recursive::RecursiveStreams, FilterMap, Min},
-    time::NestedTimestamp32,
     trace::{Batch, BatchReader, Builder, Cursor},
-    Circuit, Stream,
+    ChildCircuit, DBTimestamp, Stream, Timestamp,
 };
 use std::iter::once;
 
-type Distances<P, D = i32> = Stream<Circuit<P>, DistanceSet<D>>;
+type Distances<P, D = i32> = Stream<ChildCircuit<P>, DistanceSet<D>>;
 
 // TODO: This straight up won't work on the quantities of data required by the
 //       higher scale factor benchmarks, there's simply too much data. We'll
@@ -22,8 +22,11 @@ type Distances<P, D = i32> = Stream<Circuit<P>, DistanceSet<D>>;
 //       loads the input data so we don't OOM
 pub fn bfs<P>(roots: Vertices<P>, vertices: Vertices<P>, edges: Edges<P>) -> Distances<P, i8>
 where
-    P: Clone + 'static,
-    Distances<Circuit<P>>: RecursiveStreams<Circuit<Circuit<P>>, Output = Distances<P>>,
+    P: WithClock + Clone + 'static,
+    <<P as WithClock>::Time as Timestamp>::Nested: DBTimestamp,
+    <<<P as WithClock>::Time as Timestamp>::Nested as Timestamp>::Nested: DBTimestamp,
+    Distances<ChildCircuit<P>>:
+        RecursiveStreams<ChildCircuit<ChildCircuit<P>>, Output = Distances<P>>,
 {
     // Initialize the roots to have a distance of zero
     let roots = roots
@@ -69,15 +72,12 @@ where
             let distances = nodes
                 .index()
                 // Iterate over each edge within the graph, increasing the distance on each step
-                .join_generic::<NestedTimestamp32, _, _, DistanceSet<i32>, _>(
-                    &edges,
-                    |_, &dist, &dest| once(((dest, dist + 1), ())),
-                )
+                .join_generic(&edges, |_, &dist, &dest| once(((dest, dist + 1), ())))
                 // Add in the root nodes
                 .plus(&roots)
                 .index::<Node, Distance>()
                 // Select only the shortest distance to continue iterating.
-                .aggregate_generic::<(), _, DistanceMap<i32>>(Min)
+                .aggregate_generic::<_, DistanceMap<i32>>(Min)
                 .map(|(&node, &distance)| (node, distance));
             Ok(distances)
         })
@@ -134,7 +134,7 @@ where
 // FIXME: Replace with a dedicated antijoin
 fn antijoin<P>(vertices: &Vertices<P, i8>, reachable_nodes: &Vertices<P, i8>) -> Vertices<P, i8>
 where
-    P: Clone + 'static,
+    P: WithClock + Clone + 'static,
 {
     let reachable_nodes =
         vertices.monotonic_stream_join::<_, _, _>(reachable_nodes, |&vertex, &(), &()| vertex);

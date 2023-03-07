@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Max},
-    Circuit, OrdIndexedZSet, OrdZSet, Stream,
+    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use arcstr::ArcStr;
 use size_of::SizeOf;
@@ -75,7 +75,7 @@ pub struct Q9Output(
     ArcStr,
 );
 
-type Q9Stream = Stream<Circuit<()>, OrdZSet<Q9Output, isize>>;
+type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output, isize>>;
 
 pub fn q9(input: NexmarkStream) -> Q9Stream {
     // Select auctions and index by auction id.
@@ -104,7 +104,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     });
 
     type BidsAuctionsJoin = Stream<
-        Circuit<()>,
+        RootCircuit,
         OrdZSet<
             (
                 (
@@ -126,7 +126,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     >;
 
     // Join to get bids for each auction.
-    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join::<(), _, _, _>(
+    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
         &bids_by_auction,
         |&auction_id,
          (
@@ -205,7 +205,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
     type AuctionsWithWinningBids = Stream<
-        Circuit<()>,
+        RootCircuit,
         OrdIndexedZSet<
             (
                 u64,
@@ -224,7 +224,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
         >,
     >;
     let auctions_with_winning_bids: AuctionsWithWinningBids =
-        bids_for_auctions_indexed.aggregate::<(), _>(Max);
+        bids_for_auctions_indexed.aggregate(Max);
 
     // Finally, put the output together as expected and flip the price/bidder
     // into the output order.
@@ -366,7 +366,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![

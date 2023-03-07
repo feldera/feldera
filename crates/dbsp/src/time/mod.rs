@@ -75,6 +75,8 @@ pub use product::Product;
 pub trait Timestamp:
     PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + 'static
 {
+    type Nested: Timestamp;
+
     /// A default `Batch` type for batches using this timestamp.
     ///
     /// We sometimes need to instantiate a batch with the given key, value,
@@ -168,7 +170,59 @@ pub trait Timestamp:
     fn epoch_end(&self, scope: Scope) -> Self;
 }
 
+/// Zero-dimensional clock that never ticks.
+///
+/// This type is only used to bootstrap the recursive definition of
+/// the `WithClock` trait.
+#[derive(
+    Clone, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, SizeOf, bincode::Encode, bincode::Decode,
+)]
+pub struct UnitTimestamp;
+
+impl PartialOrder for UnitTimestamp {
+    fn less_equal(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Lattice for UnitTimestamp {
+    fn join(&self, _other: &Self) -> Self {
+        UnitTimestamp
+    }
+
+    fn meet(&self, _other: &Self) -> Self {
+        UnitTimestamp
+    }
+}
+
+impl Timestamp for UnitTimestamp {
+    type Nested = ();
+
+    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
+
+    fn minimum() -> Self {
+        UnitTimestamp
+    }
+    fn advance(&self, _scope: Scope) -> Self {
+        UnitTimestamp
+    }
+    fn recede(&self, _scope: Scope) -> Self {
+        UnitTimestamp
+    }
+    fn checked_recede(&self, _scope: Scope) -> Option<Self> {
+        None
+    }
+    fn epoch_start(&self, _scope: Scope) -> Self {
+        UnitTimestamp
+    }
+    fn epoch_end(&self, _scope: Scope) -> Self {
+        UnitTimestamp
+    }
+}
+
 impl Timestamp for () {
+    type Nested = NestedTimestamp32;
+
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdIndexedZSet<K, V, R>;
 
     fn minimum() -> Self {}
@@ -182,6 +236,8 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
+    type Nested = NestedTimestamp32;
+
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
 
     fn minimum() -> Self {

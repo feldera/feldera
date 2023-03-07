@@ -1,9 +1,8 @@
 use dbsp::{
     mimalloc::MiMalloc,
     operator::{FilterMap, Generator},
-    time::NestedTimestamp32,
     trace::{ord::OrdZSet, Batch},
-    Circuit, Runtime, Stream,
+    Circuit, RootCircuit, Runtime, Stream,
 };
 
 #[global_allocator]
@@ -11,7 +10,7 @@ static ALLOC: MiMalloc = MiMalloc;
 
 fn main() {
     let hruntime = Runtime::run(16, || {
-        let circuit = Circuit::build(|circuit| {
+        let circuit = RootCircuit::build(|circuit| {
             /*
             use dbsp::{
                 circuit::{trace::SchedulerEvent, GlobalNodeId},
@@ -107,10 +106,7 @@ fn main() {
                     let edges_indexed = edges.index();
 
                     Ok(edges.plus(
-                        &paths_inverted_indexed.join::<NestedTimestamp32, _, _, _>(
-                            &edges_indexed,
-                            |_via, from, to| (*from, *to),
-                        ),
+                        &paths_inverted_indexed.join(&edges_indexed, |_via, from, to| (*from, *to)),
                     ))
                 })
                 .unwrap();

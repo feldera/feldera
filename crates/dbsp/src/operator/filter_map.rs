@@ -158,9 +158,9 @@ pub trait FilterMap<C> {
         O: Batch<Key = K, Val = V, Time = (), R = Self::R> + Clone + 'static;
 }
 
-impl<P, K, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdZSet<K, R>>
+impl<C, K, R> FilterMap<C> for Stream<C, OrdZSet<K, R>>
 where
-    P: Clone + 'static,
+    C: Circuit,
     K: DBData,
     R: DBWeight,
 {
@@ -179,7 +179,7 @@ where
         filtered
     }
 
-    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
+    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
         O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
@@ -190,7 +190,7 @@ where
         )
     }
 
-    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
+    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
         O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
@@ -201,7 +201,7 @@ where
         )
     }
 
-    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
@@ -215,7 +215,7 @@ where
         )
     }
 
-    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (KT, VT)> + 'static,
@@ -228,9 +228,9 @@ where
     }
 }
 
-impl<P, K, V, R> FilterMap<Circuit<P>> for Stream<Circuit<P>, OrdIndexedZSet<K, V, R>>
+impl<C, K, V, R> FilterMap<C> for Stream<C, OrdIndexedZSet<K, V, R>>
 where
-    P: Clone + 'static,
+    C: Circuit,
     R: DBWeight,
     K: DBData,
     V: DBData,
@@ -250,7 +250,7 @@ where
         filtered
     }
 
-    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
+    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
         O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
@@ -261,7 +261,7 @@ where
         )
     }
 
-    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<Circuit<P>, O>
+    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
         O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
@@ -269,7 +269,7 @@ where
         self.circuit().add_unary_operator(Map::new(map_func), self)
     }
 
-    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_generic<F, I, O>(&self, func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
@@ -281,7 +281,7 @@ where
         )
     }
 
-    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<C, O>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator<Item = (KT, VT)> + 'static,
@@ -730,13 +730,13 @@ mod test {
         indexed_zset,
         operator::{FilterMap, Generator},
         trace::ord::OrdZSet,
-        zset, Circuit,
+        zset, Circuit, RootCircuit,
     };
     use std::vec;
 
     #[test]
     fn filter_map_test() {
-        let circuit = Circuit::build(move |circuit| {
+        let circuit = RootCircuit::build(move |circuit| {
             let mut input: vec::IntoIter<OrdZSet<(isize, String), isize>> =
                 vec![zset! { (1, "1".to_string()) => 1, (-1, "-1".to_string()) => 1, (5, "5 foo".to_string()) => 1, (-2, "-2".to_string()) => 1 }].into_iter();
 

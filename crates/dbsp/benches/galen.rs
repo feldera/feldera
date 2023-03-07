@@ -6,8 +6,7 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::mimalloc::MiMalloc;
 use dbsp::{
-    monitor::TraceMonitor, operator::CsvSource, time::NestedTimestamp32, Circuit, OrdZSet, Runtime,
-    Stream,
+    monitor::TraceMonitor, operator::CsvSource, Circuit, OrdZSet, RootCircuit, Runtime, Stream,
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -95,7 +94,7 @@ fn main() -> Result<()> {
 
     let hruntime = Runtime::run(args.workers, move || {
         let monitor = TraceMonitor::new_panic_on_error();
-        let circuit = Circuit::build(|circuit| {
+        let circuit = RootCircuit::build(|circuit| {
             /*
             use dbsp::{circuit::trace::SchedulerEvent, profile::CPUProfiler};
             use std::{collections::HashMap, fmt::Write};
@@ -181,20 +180,15 @@ fn main() -> Result<()> {
                         let s_by_1 = s.delta0(child).index();
 
                         // IR1: p(x,z) :- p(x,y), p(y,z).
-                        let ir1 = child.region("IR1", || {
-                            p_by_2.join::<NestedTimestamp32, _, _, _>(&p_by_1, |&_y, &x, &z| (x, z))
-                        });
+                        let ir1 =
+                            child.region("IR1", || p_by_2.join(&p_by_1, |&_y, &x, &z| (x, z)));
                         /*ir1.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR2: q(x,r,z) := p(x,y), q(y,r,z)
-                        let ir2 = child.region("IR2", || {
-                            p_by_2
-                                .join::<NestedTimestamp32, _, _, _>(&q_by_1, |&_y, &x, &(r, z)| {
-                                    (x, r, z)
-                                })
-                        });
+                        let ir2 = child
+                            .region("IR2", || p_by_2.join(&q_by_1, |&_y, &x, &(r, z)| (x, r, z)));
 
                         /*ir2.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir2: {}", Runtime::worker_index(), zs.len())
@@ -203,14 +197,8 @@ fn main() -> Result<()> {
                         // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
                         let ir3 = child.region("IR3", || {
                             p_by_2
-                                .join_index::<NestedTimestamp32, _, _, _, _, _>(
-                                    &u_by_1,
-                                    |&_w, &y, &(r, z)| once(((r, y), z)),
-                                )
-                                .join::<NestedTimestamp32, _, _, _>(
-                                    &q_by_23,
-                                    |&(_r, _y), &z, &x| (x, z),
-                                )
+                                .join_index(&u_by_1, |&_w, &y, &(r, z)| once(((r, y), z)))
+                                .join(&q_by_23, |&(_r, _y), &z, &x| (x, z))
                         });
                         /*ir3.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir3: {}", Runtime::worker_index(), zs.len())
@@ -218,48 +206,32 @@ fn main() -> Result<()> {
 
                         // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
                         let ir4_1 = child.region("IR4-1", || {
-                            c_by_2.join_index::<NestedTimestamp32, _, _, _, _, _>(
-                                &p_by_2,
-                                |&_w, &(y, z), &x| once(((x, y), z)),
-                            )
+                            c_by_2.join_index(&p_by_2, |&_w, &(y, z), &x| once(((x, y), z)))
                         });
                         /*ir4_1.inspect(|zs: &OrdIndexedZSet<_, _, _>| {
                             println!("{}: ir4_1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
-                        let ir4 = child.region("IR4-2", || {
-                            ir4_1.join::<NestedTimestamp32, _, _, _>(
-                                &p_by_12,
-                                |&(x, _y), &z, &()| (x, z),
-                            )
-                        });
+                        let ir4 = child
+                            .region("IR4-2", || ir4_1.join(&p_by_12, |&(x, _y), &z, &()| (x, z)));
                         /*ir4.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir4: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR5: q(x,q,z) := q(x,r,z), s(r,q)
-                        let ir5 = child.region("IR5", || {
-                            q_by_2
-                                .join::<NestedTimestamp32, _, _, _>(&s_by_1, |&_r, &(x, z), &q| {
-                                    (x, q, z)
-                                })
-                        });
+                        let ir5 = child
+                            .region("IR5", || q_by_2.join(&s_by_1, |&_r, &(x, z), &q| (x, q, z)));
                         /*ir5.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir5: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
                         let ir6_1 = child.region("IR6_1", || {
-                            q_by_2.join_index::<NestedTimestamp32, _, _, _, _, _>(
-                                &r_by_1,
-                                |&_y, &(x, z), &(u, e)| once(((z, u), (x, e))),
-                            )
+                            q_by_2
+                                .join_index(&r_by_1, |&_y, &(x, z), &(u, e)| once(((z, u), (x, e))))
                         });
                         let ir6 = child.region("IR6", || {
-                            ir6_1.join::<NestedTimestamp32, _, _, _>(
-                                &q_by_12,
-                                |&(_z, _u), &(x, e), &o| (x, e, o),
-                            )
+                            ir6_1.join(&q_by_12, |&(_z, _u), &(x, e), &o| (x, e, o))
                         });
 
                         /*ir6.inspect(|zs: &OrdZSet<_, _>| {

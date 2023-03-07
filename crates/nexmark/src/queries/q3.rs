@@ -1,5 +1,5 @@
 use super::NexmarkStream;
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
 
 /// Local Item Suggestion
@@ -30,7 +30,7 @@ use crate::model::Event;
 const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
 const CATEGORY_OF_INTEREST: usize = 10;
 
-type Q3Stream = Stream<Circuit<()>, OrdZSet<(String, String, String, u64), isize>>;
+type Q3Stream = Stream<RootCircuit, OrdZSet<(String, String, String, u64), isize>>;
 
 pub fn q3(input: NexmarkStream) -> Q3Stream {
     // Select auctions of interest and index them by seller id.
@@ -49,7 +49,7 @@ pub fn q3(input: NexmarkStream) -> Q3Stream {
     });
 
     // In the future, it won't be necessary to specify type arguments to join.
-    auction_by_seller.join::<(), _, _, _>(
+    auction_by_seller.join(
         &person_by_id,
         |_seller, &auction_id, (name, city, state)| {
             (
@@ -69,7 +69,7 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Person},
     };
-    use dbsp::{trace::Batch, Circuit, OrdZSet};
+    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
 
     #[test]
     fn test_q3_people() {
@@ -163,7 +163,7 @@ mod tests {
             ],
         ];
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q3(stream);

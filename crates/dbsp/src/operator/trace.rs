@@ -3,6 +3,7 @@ use crate::{
         metadata::{MetaItem, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
         Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
+        WithClock,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
@@ -53,9 +54,9 @@ where
     builder.done()
 }
 
-impl<P, B> Stream<Circuit<P>, B>
+impl<C, B> Stream<C, B>
 where
-    P: Clone + 'static,
+    C: Circuit,
     B: Clone + 'static,
 {
     // TODO: derive timestamp type from the parent circuit.
@@ -64,10 +65,10 @@ where
     ///
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.  
-    pub fn trace<T>(&self) -> Stream<Circuit<P>, T>
+    pub fn trace<T>(&self) -> Stream<C, T>
     where
         B: BatchReader<Time = ()>,
-        T: Trace<Key = B::Key, Val = B::Val, R = B::R> + Clone,
+        T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
     {
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
@@ -77,7 +78,7 @@ where
                     let (ExportStream { local, export }, z1feedback) =
                         circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<T, B>>::new(),
+                        <TraceAppend<T, B, C>>::new(circuit.clone()),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (
                             &self.try_sharded_version(),
@@ -104,7 +105,7 @@ where
 
     // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
-    pub fn integrate_trace(&self) -> Stream<Circuit<P>, Spine<B>>
+    pub fn integrate_trace(&self) -> Stream<C, Spine<B>>
     where
         B: Batch,
         Spine<B>: SizeOf,
@@ -147,12 +148,12 @@ where
     }
 }
 
-impl<P, T> Stream<Circuit<P>, T>
+impl<C, T> Stream<C, T>
 where
-    P: Clone + 'static,
+    C: Circuit,
     T: Trace + 'static,
 {
-    pub fn delay_trace(&self) -> Stream<Circuit<P>, T> {
+    pub fn delay_trace(&self) -> Stream<C, T> {
         // The delayed trace should be automatically created while the real trace is
         // created via `.trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
@@ -237,55 +238,39 @@ where
     }
 }
 
-pub struct TraceAppend<T, B>
-where
-    T: Trace,
-{
-    time: T::Time,
-    _phantom: PhantomData<B>,
+pub struct TraceAppend<T, B, C> {
+    clock: C,
+    _phantom: PhantomData<(T, B)>,
 }
 
-impl<T, B> TraceAppend<T, B>
-where
-    T: Trace,
-{
-    pub fn new() -> Self {
+impl<T, B, C> TraceAppend<T, B, C> {
+    pub fn new(clock: C) -> Self {
         Self {
-            time: T::Time::clock_start(),
+            clock,
             _phantom: PhantomData,
         }
     }
 }
 
-impl<T, B> Default for TraceAppend<T, B>
+impl<T, B, Clk> Operator for TraceAppend<T, B, Clk>
 where
-    T: Trace,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T, B> Operator for TraceAppend<T, B>
-where
-    T: Trace + 'static,
+    T: 'static,
     B: 'static,
+    Clk: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("TraceAppend")
-    }
-    fn clock_end(&mut self, scope: Scope) {
-        self.time = self.time.advance(scope + 1);
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
 
-impl<T, B> BinaryOperator<T, B, T> for TraceAppend<T, B>
+impl<T, B, Clk> BinaryOperator<T, B, T> for TraceAppend<T, B, Clk>
 where
     B: BatchReader<Time = ()>,
-    T: Trace<Key = B::Key, Val = B::Val, R = B::R>,
+    Clk: WithClock + 'static,
+    T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = Clk::Time>,
 {
     fn eval(&mut self, _trace: &T, _batch: &B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
@@ -296,8 +281,7 @@ where
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
-        trace.insert(batch_add_time(batch, &self.time));
-        self.time = self.time.advance(0);
+        trace.insert(batch_add_time(batch, &self.clock.time()));
         trace
     }
 
@@ -308,8 +292,7 @@ where
     }
 
     fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        trace.insert(batch_add_time(&batch, &self.time));
-        self.time = self.time.advance(0);
+        trace.insert(batch_add_time(&batch, &self.clock.time()));
         trace
     }
 

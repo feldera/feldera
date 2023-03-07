@@ -15,7 +15,7 @@ use crate::{
         Aggregator,
     },
     trace::{Builder, Cursor, Spine},
-    Circuit, DBData, DBWeight, Stream,
+    Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
 use num::PrimInt;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
@@ -24,7 +24,7 @@ use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 // detail and can in principle be avoided.
 
 pub type OrdPartitionedOverStream<PK, TS, A, R> =
-    Stream<Circuit<()>, OrdPartitionedIndexedZSet<PK, TS, Option<A>, R>>;
+    Stream<RootCircuit, OrdPartitionedIndexedZSet<PK, TS, Option<A>, R>>;
 
 /// `Aggregator` object that computes a linear aggregation function.
 // TODO: we need this because we currently compute linear aggregates
@@ -100,7 +100,7 @@ where
     }
 }
 
-impl<B> Stream<Circuit<()>, B> {
+impl<B> Stream<RootCircuit, B> {
     /// Rolling aggregate of a partitioned stream over time range.
     ///
     /// For each record in the input stream, computes an aggregate
@@ -134,7 +134,7 @@ impl<B> Stream<Circuit<()>, B> {
         &self,
         aggregator: Agg,
         range: RelRange<TS>,
-    ) -> Stream<Circuit<()>, O>
+    ) -> Stream<RootCircuit, O>
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
@@ -241,7 +241,7 @@ impl<B> Stream<Circuit<()>, B> {
         f: F,
         output_func: OF,
         range: RelRange<TS>,
-    ) -> Stream<Circuit<()>, Out>
+    ) -> Stream<RootCircuit, Out>
     where
         B: PartitionedIndexedZSet<TS, V>,
         B::R: ZRingValue,
@@ -466,13 +466,13 @@ mod test {
             Fold,
         },
         trace::{Batch, BatchReader, Cursor},
-        Circuit, CollectionHandle, DBSPHandle, OrdIndexedZSet, Runtime, Stream,
+        CollectionHandle, DBSPHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
     };
 
     type DataBatch = OrdIndexedZSet<u64, (u64, i64), isize>;
-    type DataStream = Stream<Circuit<()>, DataBatch>;
+    type DataStream = Stream<RootCircuit, DataBatch>;
     type OutputBatch = OrdIndexedZSet<u64, (u64, Option<i64>), isize>;
-    type OutputStream = Stream<Circuit<()>, OutputBatch>;
+    type OutputStream = Stream<RootCircuit, OutputBatch>;
 
     // Reference implementation of `aggregate_range` for testing.
     fn aggregate_range_slow(batch: &DataBatch, partition: u64, range: Range<u64>) -> Option<i64> {

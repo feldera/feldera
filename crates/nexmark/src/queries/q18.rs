@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold},
-    Circuit, OrdZSet, Stream,
+    RootCircuit, OrdZSet, Stream,
 };
 use crate::model::{Bid, Event};
 
@@ -32,7 +32,7 @@ use crate::model::{Bid, Event};
 ///  WHERE rank_number <= 1;
 /// ```
 
-type Q18Stream = Stream<Circuit<()>, OrdZSet<Bid, isize>>;
+type Q18Stream = Stream<RootCircuit, OrdZSet<Bid, isize>>;
 
 pub fn q18(input: NexmarkStream) -> Q18Stream {
     let bids_by_auction_bidder = input.flat_map_index(|event| match event {
@@ -41,7 +41,7 @@ pub fn q18(input: NexmarkStream) -> Q18Stream {
     });
 
     bids_by_auction_bidder
-        .aggregate::<(), _>(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(Bid::default(), |top: &mut Bid, val: &Bid, _w| {
+        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(Bid::default(), |top: &mut Bid, val: &Bid, _w| {
             if val.date_time > top.date_time {
                 *top = val.clone();
             }
@@ -376,7 +376,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|b| (Event::Bid(b), 1)).collect());
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q18(stream);

@@ -2,7 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, PartialOrder, ZRingValue},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
-        ExportId, ExportStream, OwnershipPreference, Scope,
+        ExportId, ExportStream, OwnershipPreference, Scope, WithClock,
     },
     operator::trace::{DelayedTraceId, TraceAppend, TraceId, Z1Trace},
     trace::{
@@ -13,9 +13,10 @@ use crate::{
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-impl<P, K, V> Stream<Circuit<P>, Vec<(K, Option<V>)>>
+impl<C, K, V> Stream<C, Vec<(K, Option<V>)>>
 where
-    P: Clone + 'static,
+    C: Circuit,
+    <C as WithClock>::Time: DBTimestamp,
 {
     /// Convert a stream of upserts into a stream of updates.
     ///
@@ -33,13 +34,11 @@ where
     ///
     /// This is a stateful operator that internaly maintains the trace of the
     /// collection.
-    // TODO: Derive TS from circuit.
-    pub fn upsert<TS, B>(&self) -> Stream<Circuit<P>, B>
+    pub fn upsert<B>(&self) -> Stream<C, B>
     where
         K: DBData,
         V: DBData,
         B::R: DBData + ZRingValue,
-        TS: DBTimestamp,
         B: Batch<Key = K, Val = V, Time = ()>,
     {
         let circuit = self.circuit();
@@ -68,15 +67,23 @@ where
                 circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
             local.mark_sharded_if(self);
 
-            let delta = circuit.add_binary_operator(
-                <Upsert<Spine<TS::OrdValBatch<K, V, B::R>>, B>>::new(),
-                &local,
-                &self.try_sharded_version(),
-            );
+            let delta =
+                circuit.add_binary_operator(
+                    <Upsert<
+                        Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
+                        B,
+                    >>::new(),
+                    &local,
+                    &self.try_sharded_version(),
+                );
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<Spine<TS::OrdValBatch<K, V, B::R>>, B>>::new(),
+                <TraceAppend<
+                    Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
+                    B,
+                    C,
+                >>::new(circuit.clone()),
                 (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (
                     &delta.try_sharded_version(),

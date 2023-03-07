@@ -9,16 +9,19 @@ use crate::{
 };
 use std::borrow::Cow;
 
-impl<P, D> Stream<Circuit<P>, D>
+impl<C, D> Stream<C, D>
 where
     D: HasZero + Clone + 'static,
-    P: Clone + 'static,
+    C: Circuit,
 {
     /// Import `self` from the parent circuit to `subcircuit` via the `Delta0`
     /// operator.
     ///
     /// See [`Delta0`] operator documentation.
-    pub fn delta0(&self, subcircuit: &Circuit<Circuit<P>>) -> Stream<Circuit<Circuit<P>>, D> {
+    pub fn delta0<CC>(&self, subcircuit: &CC) -> Stream<CC, D>
+    where
+        CC: Circuit<Parent = C>,
+    {
         let delta = subcircuit.import_stream(Delta0::new(), &self.try_sharded_version());
         delta.mark_sharded_if(self);
 
@@ -27,11 +30,14 @@ where
 
     /// Like [`Self::delta0`], but overrides the ownership
     /// preference on the input stream with `input_preference`.
-    pub fn delta0_with_preference(
+    pub fn delta0_with_preference<CC>(
         &self,
-        subcircuit: &Circuit<Circuit<P>>,
+        subcircuit: &CC,
         input_preference: OwnershipPreference,
-    ) -> Stream<Circuit<Circuit<P>>, D> {
+    ) -> Stream<CC, D>
+    where
+        CC: Circuit<Parent = C>,
+    {
         let delta = subcircuit.import_stream_with_preference(
             Delta0::new(),
             &self.try_sharded_version(),

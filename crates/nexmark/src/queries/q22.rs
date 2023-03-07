@@ -1,5 +1,5 @@
 use super::NexmarkStream;
-use dbsp::{operator::FilterMap, Circuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
 use arcstr::ArcStr;
 
@@ -31,7 +31,7 @@ use arcstr::ArcStr;
 /// ```
 
 type Q22Set = OrdZSet<(u64, u64, usize, ArcStr, ArcStr, ArcStr, ArcStr), isize>;
-type Q22Stream = Stream<Circuit<()>, Q22Set>;
+type Q22Stream = Stream<RootCircuit, Q22Set>;
 
 pub fn q22(input: NexmarkStream) -> Q22Stream {
     input.flat_map(|event| match event {
@@ -107,7 +107,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q22(stream);

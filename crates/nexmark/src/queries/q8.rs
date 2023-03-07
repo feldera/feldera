@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, Circuit, OrdIndexedZSet, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, RootCircuit, OrdIndexedZSet, OrdZSet, Stream};
 use arcstr::ArcStr;
 
 ///
@@ -41,7 +41,7 @@ use arcstr::ArcStr;
 /// ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime;
 /// ```
 
-type Q8Stream = Stream<Circuit<()>, OrdZSet<(u64, ArcStr, u64), isize>>;
+type Q8Stream = Stream<RootCircuit, OrdZSet<(u64, ArcStr, u64), isize>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -81,7 +81,7 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
     let people_by_id = windowed_people.index();
 
     // Re-calculate the window start-time to include in the output.
-    people_by_id.join::<(), _, _, _>(&windowed_auctions, |&p_id, (p_name, p_date_time), ()| {
+    people_by_id.join(&windowed_auctions, |&p_id, (p_name, p_date_time), ()| {
         (
             p_id,
             p_name.clone(),
@@ -97,7 +97,7 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Event, Person},
     };
-    use dbsp::{zset, Circuit};
+    use dbsp::{zset, RootCircuit};
     use arcstr::ArcStr;
     use rstest::rstest;
 
@@ -196,7 +196,7 @@ mod tests {
                     .collect()
             });
 
-        let (circuit, mut input_handle) = Circuit::build(move |circuit| {
+        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q8(stream);
