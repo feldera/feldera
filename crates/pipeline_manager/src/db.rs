@@ -169,6 +169,17 @@ pub(crate) struct ProjectDescr {
     pub version: Version,
     /// Project compilation status.
     pub status: ProjectStatus,
+    /// SQL (inputs, outputs) schematics.
+    ///
+    /// The schema is set whenever the project reaches >=
+    /// `ProjectStatus::CompilingRust`. Its content coming from the SQL compiler
+    /// produced with the `-js` flag.
+    ///
+    /// # TODO
+    /// This is currently just a string containing JSON. At some point we
+    /// probably want to represent the schema in typed form on the backend as
+    /// well for better validation.
+    pub schema: Option<String>,
 }
 
 /// Project configuration descriptor.
@@ -211,6 +222,7 @@ CREATE TABLE IF NOT EXISTS project (
     name varchar UNIQUE,
     description varchar,
     code varchar,
+    schema varchar,
     status varchar,
     error varchar,
     status_since integer)"#,
@@ -256,11 +268,15 @@ CREATE TABLE IF NOT EXISTS pipeline (
         Ok(Self { dbclient })
     }
 
-    /// Reset all project statuses to `ProjectStatus::None` after server
-    /// restart.
+    /// Reset everything that is set through compilation of the project.
+    ///
+    /// - Set status to `ProjectStatus::None` after server restart.
+    /// - Reset `schema` to None.
     pub(crate) fn reset_project_status(&self) -> AnyResult<()> {
-        self.dbclient
-            .execute("UPDATE project SET status = NULL, error = NULL", ())?;
+        self.dbclient.execute(
+            "UPDATE project SET status = NULL, error = NULL, schema = NULL",
+            (),
+        )?;
 
         Ok(())
     }
@@ -269,7 +285,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     pub(crate) async fn list_projects(&self) -> AnyResult<Vec<ProjectDescr>> {
         let mut statement = self
             .dbclient
-            .prepare("SELECT id, name, description, version, status, error FROM project")?;
+            .prepare("SELECT id, name, description, version, status, error, schema FROM project")?;
         let mut rows = statement.query([])?;
 
         let mut result = Vec::new();
@@ -277,14 +293,15 @@ CREATE TABLE IF NOT EXISTS pipeline (
         while let Some(row) = rows.next()? {
             let status: Option<String> = row.get(4)?;
             let error: Option<String> = row.get(5)?;
-
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+            let schema: Option<String> = row.get(6)?;
 
             result.push(ProjectDescr {
                 project_id: ProjectId(row.get(0)?),
                 name: row.get(1)?,
                 description: row.get(2)?,
                 version: Version(row.get(3)?),
+                schema,
                 status,
             });
         }
@@ -296,7 +313,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     /// meta-data.
     pub(crate) fn project_code(&self, project_id: ProjectId) -> AnyResult<(ProjectDescr, String)> {
         let mut statement = self.dbclient.prepare(
-            "SELECT name, description, version, status, error, code FROM project WHERE id = $1",
+            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1",
         )?;
         let mut rows = statement.query([&project_id.0])?;
 
@@ -307,6 +324,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
             let status: Option<String> = row.get(3)?;
             let error: Option<String> = row.get(4)?;
             let code: String = row.get(5)?;
+            let schema: Option<String> = row.get(6)?;
 
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
@@ -317,6 +335,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                     description,
                     version,
                     status,
+                    schema,
                 },
                 code,
             ))
@@ -417,7 +436,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
         let mut statement = self.dbclient.prepare(
-            "SELECT name, description, version, status, error FROM project WHERE id = $1",
+            "SELECT name, description, version, status, error, schema FROM project WHERE id = $1",
         )?;
         let mut rows = statement.query([&project_id.0])?;
 
@@ -427,6 +446,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
             let version: Version = Version(row.get(2)?);
             let status: Option<String> = row.get(3)?;
             let error: Option<String> = row.get(4)?;
+            let schema: Option<String> = row.get(5)?;
 
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
@@ -436,6 +456,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                 description,
                 version,
                 status,
+                schema,
             }))
         } else {
             Ok(None)
@@ -445,7 +466,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     /// Lookup project by name
     pub(crate) fn lookup_project(&self, project_name: &str) -> AnyResult<Option<ProjectDescr>> {
         let mut statement = self.dbclient.prepare(
-            "SELECT id, description, version, status, error FROM project WHERE name = $1",
+            "SELECT id, description, version, status, error, schema FROM project WHERE name = $1",
         )?;
         let mut rows = statement.query([project_name])?;
 
@@ -455,6 +476,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
             let version: Version = Version(row.get(2)?);
             let status: Option<String> = row.get(3)?;
             let error: Option<String> = row.get(4)?;
+            let schema: Option<String> = row.get(5)?;
 
             let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
@@ -464,6 +486,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                 description,
                 version,
                 status,
+                schema,
             }))
         } else {
             Ok(None)
@@ -499,44 +522,56 @@ CREATE TABLE IF NOT EXISTS pipeline (
 
     /// Update project status.
     ///
-    /// Note: doesn't check that the project exists.
+    /// # Note
+    /// - Doesn't check that the project exists.
+    /// - Resets schema to null.
     fn set_project_status(&self, project_id: ProjectId, status: ProjectStatus) -> AnyResult<()> {
         let (status, error) = status.to_columns();
 
         self.dbclient
             .execute(
-                "UPDATE project SET status = $1, error = $2, status_since = unixepoch('now') WHERE id = $3",
+                "UPDATE project SET status = $1, error = $2, schema = null, status_since = unixepoch('now') WHERE id = $3",
                 (&status, &error, &project_id.0),
             )?;
 
         Ok(())
     }
 
-    /// Update project status after a version check.
+    /// Update project status and potentially the schema after a version check.
     ///
-    /// Updates project status to `status` if the current project version
-    /// in the database matches `expected_version`.
+    /// Updates project status to `status` if the current project version in the
+    /// database matches `expected_version`. Sets the schema if
+    /// `schema.is_some()`. Otherwise, the schema is not updated.
     ///
     /// # Note
     /// This intentionally does not throw an error if there is a project version
-    /// mismatch and instead does just not update. It's used by the compiler
-    /// to update status and in case there is a newer version it is expected
-    /// that the compiler just picks up and runs the next job.
+    /// mismatch and instead does just not update. It's used by the compiler to
+    /// update status and in case there is a newer version it is expected that
+    /// the compiler just picks up and runs the next job.
     pub(crate) fn set_project_status_guarded(
         &mut self,
         project_id: ProjectId,
         expected_version: Version,
         status: ProjectStatus,
+        schema: Option<String>,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
 
         let descr = self.get_project(project_id)?;
         if descr.version == expected_version {
-            self.dbclient
-            .execute(
-                "UPDATE project SET status = $1, error = $2, status_since = unixepoch('now') WHERE id = $3",
-                (&status, &error, &project_id.0),
-            )?;
+            if let Some(schema) = schema {
+                self.dbclient
+                .execute(
+                    "UPDATE project SET status = $1, error = $2, schema = $3, status_since = unixepoch('now') WHERE id = $4",
+                    (&status, &error, &schema, &project_id.0),
+                )?;
+            } else {
+                self.dbclient
+                .execute(
+                    "UPDATE project SET status = $1, error = $2, status_since = unixepoch('now') WHERE id = $3",
+                    (&status, &error, &project_id.0),
+                )?;
+            }
         }
 
         Ok(())
