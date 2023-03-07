@@ -19,12 +19,10 @@ then
 fi
 
 # Push test data to topics.
-printf -v pasteargs %*s 1000
-while read i; do
-  echo $i | rpk topic produce fraud_demo_large_demographics -f '%v'
-done <  <(cat "${THIS_DIR}"/demographics.csv | paste -d "\n" ${pasteargs// /- })
+while IFS= read -r line; do
+  { printf '%s\n' "$line"; head -n 999; } | rpk topic produce fraud_demo_large_demographics -f '%v'
+done < "${THIS_DIR}"/demographics.csv
 
-printf -v pasteargs %*s 5000
-while read i; do
-  echo $i | rpk topic produce fraud_demo_large_transactions -f '%v'
-done <  <(cat "${THIS_DIR}"/transactions.csv | paste -d "\n" ${pasteargs// /- })
+while IFS= read -r line; do
+  { printf '%s\n' "$line"; head -n 4999; } | rpk topic produce fraud_demo_large_transactions -f '%v'
+done < "${THIS_DIR}"/transactions.csv

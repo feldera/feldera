@@ -15,7 +15,6 @@ then
 fi
 
 # Push test data to topic.
-printf -v pasteargs %*s 10000
-while read i; do
-  echo $i | rpk topic produce green_trip_demo_large_input -f '%v'
-done <  <(cat "${THIS_DIR}"/green_tripdata.csv | paste -d "\n" ${pasteargs// /- })
+while IFS= read -r line; do
+  { printf '%s\n' "$line"; head -n 9999; }  | rpk topic produce green_trip_demo_large_input -f '%v'
+done < "${THIS_DIR}"/green_tripdata.csv 
