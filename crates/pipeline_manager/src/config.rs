@@ -345,7 +345,7 @@ impl ManagerConfig {
     /// The path to `schema.json` that contains a JSON description of input and
     /// output tables.
     pub(crate) fn schema_path(&self, project_id: ProjectId) -> PathBuf {
-        const SCHEMA_FILE_NAME: &'static str = "schema.json";
+        const SCHEMA_FILE_NAME: &str = "schema.json";
         let sql_file_path = self.sql_file_path(project_id);
         let project_directory = sql_file_path.parent().unwrap();
 
