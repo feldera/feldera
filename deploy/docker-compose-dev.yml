@@ -3,7 +3,9 @@ volumes:
 
 services:
   dbsp:
-    image: ghcr.io/vmware/dbspmanager:latest
+   build:
+     context: ../
+     dockerfile: deploy/Dockerfile
     ports:
       - "8085:8080"
     stop_grace_period: 0s
