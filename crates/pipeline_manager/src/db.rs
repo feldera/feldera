@@ -169,16 +169,35 @@ pub(crate) struct ProjectDescr {
     pub version: Version,
     /// Project compilation status.
     pub status: ProjectStatus,
-    /// SQL (inputs, outputs) schematics.
+    /// A JSON description of the SQL tables and view declarations including
+    /// field names and types.
     ///
-    /// The schema is set whenever the project reaches >=
-    /// `ProjectStatus::CompilingRust`. Its content coming from the SQL compiler
-    /// produced with the `-js` flag.
+    /// The schema is set/updated whenever the `status` field reaches >=
+    /// `ProjectStatus::CompilingRust`.
     ///
-    /// # TODO
-    /// This is currently just a string containing JSON. At some point we
-    /// probably want to represent the schema in typed form on the backend as
-    /// well for better validation.
+    /// # Example
+    ///
+    /// The given SQL program:
+    ///
+    /// ```no-run
+    /// CREATE TABLE USERS ( name varchar );
+    /// CREATE VIEW OUTPUT_USERS as SELECT * FROM USERS;
+    /// ```
+    ///
+    /// Would lead the following JSON string in `schema`:
+    ///
+    /// ```no-run
+    /// {
+    ///   "inputs": [{
+    ///       "name": "USERS",
+    ///       "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
+    ///     }],
+    ///   "outputs": [{
+    ///       "name": "OUTPUT_USERS",
+    ///       "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
+    ///     }]
+    /// }
+    /// ```
     pub schema: Option<String>,
 }
 
