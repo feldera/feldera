@@ -537,11 +537,10 @@ CREATE TABLE IF NOT EXISTS pipeline (
         Ok(())
     }
 
-    /// Update project status and potentially the schema after a version check.
+    /// Update project status after a version check.
     ///
     /// Updates project status to `status` if the current project version in the
-    /// database matches `expected_version`. Sets the schema if
-    /// `schema.is_some()`. Otherwise, the schema is not updated.
+    /// database matches `expected_version`.
     ///
     /// # Note
     /// This intentionally does not throw an error if there is a project version
@@ -553,26 +552,35 @@ CREATE TABLE IF NOT EXISTS pipeline (
         project_id: ProjectId,
         expected_version: Version,
         status: ProjectStatus,
-        schema: Option<String>,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
 
         let descr = self.get_project(project_id)?;
         if descr.version == expected_version {
-            if let Some(schema) = schema {
-                self.dbclient
-                .execute(
-                    "UPDATE project SET status = $1, error = $2, schema = $3, status_since = unixepoch('now') WHERE id = $4",
-                    (&status, &error, &schema, &project_id.0),
-                )?;
-            } else {
-                self.dbclient
+            self.dbclient
                 .execute(
                     "UPDATE project SET status = $1, error = $2, status_since = unixepoch('now') WHERE id = $3",
                     (&status, &error, &project_id.0),
                 )?;
-            }
         }
+
+        Ok(())
+    }
+
+    /// Update project schema.
+    ///
+    /// # Note
+    /// This should be called after the SQL compilation succeeded, e.g., in the
+    /// same transaction that sets status to  [`ProjectStatus::CompilingRust`].
+    pub(crate) fn set_project_schema(
+        &mut self,
+        project_id: ProjectId,
+        schema: String,
+    ) -> AnyResult<()> {
+        self.dbclient.execute(
+            "UPDATE project SET schema = $1 WHERE id = $2",
+            (&schema, &project_id.0),
+        )?;
 
         Ok(())
     }
