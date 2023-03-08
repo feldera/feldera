@@ -12,8 +12,8 @@ use std::{
 };
 
 // TODO: Encapsulate this into a method on `Graph`
-// TODO: Collect the highest block id and expression id for each function to allow
-//       modifying (read: optimizing) functions
+// TODO: Collect the highest block id and expression id for each function to
+// allow modifying (read: optimizing) functions
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SqlGraph {
@@ -47,7 +47,8 @@ impl SqlGraph {
         graph
     }
 
-    /// The input we get contains duplicated layouts so we have to deduplicate them
+    /// The input we get contains duplicated layouts so we have to deduplicate
+    /// them
     fn rematerialize_layouts(
         layouts: BTreeMap<LayoutId, RowLayout>,
     ) -> (RowLayoutCache, BTreeMap<LayoutId, LayoutId>) {

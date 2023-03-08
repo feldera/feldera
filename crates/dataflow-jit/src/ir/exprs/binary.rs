@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct BinaryOp {
     /// The left hand value
-    // TODO: Allow for immediates
     lhs: ExprId,
     /// The right hand value
     rhs: ExprId,
@@ -31,8 +30,16 @@ impl BinaryOp {
         self.lhs
     }
 
+    pub fn lhs_mut(&mut self) -> &mut ExprId {
+        &mut self.lhs
+    }
+
     pub const fn rhs(&self) -> ExprId {
         self.rhs
+    }
+
+    pub fn rhs_mut(&mut self) -> &mut ExprId {
+        &mut self.rhs
     }
 
     pub const fn operand_ty(&self) -> ColumnType {

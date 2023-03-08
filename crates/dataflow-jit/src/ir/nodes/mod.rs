@@ -2,6 +2,7 @@ mod aggregate;
 mod constant;
 mod differentiate;
 mod filter_map;
+mod flat_map;
 mod index;
 mod io;
 mod join;

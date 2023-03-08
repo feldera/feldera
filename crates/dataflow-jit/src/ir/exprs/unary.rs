@@ -26,6 +26,10 @@ impl UnaryOp {
         self.value
     }
 
+    pub fn value_mut(&mut self) -> &mut ExprId {
+        &mut self.value
+    }
+
     pub const fn value_ty(&self) -> ColumnType {
         self.value_ty
     }

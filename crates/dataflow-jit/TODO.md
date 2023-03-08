@@ -32,6 +32,9 @@
         using callback functions. This should be a significant speedup for things like filter and map
   - [ ] Auto-vectorization of operations over native row collections
   - [ ] When operating over persistent collections we can lazily deserialize/decode values, potentially benefiting projections
+  - [x] Automatically deduplicate loads from input rows
+  - [ ] Allow functions to be modified after they're built so they can be optimized
+  - [ ] Constant folding
 - [x] Add date and timestamp generation to proptesting so we can fuzz the relevant code
 - [ ] Deduplicate functions, could help in reducing the number of functions we optimize and compile and could
       even allow us to deduplicate nodes with previously different inner functions
@@ -61,6 +64,3 @@
   - [ ] `@dbsp.row.dealloc`
   - [ ] `@dbsp.vec.push`
   - [ ] `@dbsp.vec.reserve`
-- [ ] Automatically deduplicate loads from input rows
-- [ ] Allow functions to be modified after they're built so they can be optimized
-- [ ] Constant folding

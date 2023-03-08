@@ -166,30 +166,166 @@ impl Function {
 
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
+        self.dce();
         self.remove_unit_memory_operations(layout_cache);
         self.deduplicate_input_loads();
+        self.dce();
         self.simplify_branches();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
     }
 
-    fn deduplicate_input_loads(&mut self) {
-        // Holds all inputs valid for deduplication
-        let mut inputs = BTreeSet::new();
-        for arg in self.args() {
-            if arg.flags.is_readonly() {
-                inputs.insert(arg.id);
+    fn dce(&mut self) {
+        let mut used = BTreeSet::new();
+
+        // Collect all usages
+        for block in self.blocks.values() {
+            for (_, expr) in block.body() {
+                match expr {
+                    Expr::Cast(cast) => {
+                        used.insert(cast.value());
+                    }
+
+                    Expr::Load(load) => {
+                        used.insert(load.source());
+                    }
+
+                    Expr::Store(store) => {
+                        used.insert(store.target());
+                        if let &RValue::Expr(value) = store.value() {
+                            used.insert(value);
+                        }
+                    }
+
+                    Expr::Select(select) => {
+                        used.insert(select.cond());
+                        used.insert(select.if_true());
+                        used.insert(select.if_false());
+                    }
+
+                    Expr::IsNull(is_null) => {
+                        used.insert(is_null.target());
+                    }
+
+                    Expr::BinOp(binop) => {
+                        used.insert(binop.lhs());
+                        used.insert(binop.rhs());
+                    }
+
+                    Expr::CopyVal(copy) => {
+                        used.insert(copy.value());
+                    }
+
+                    Expr::UnaryOp(unary) => {
+                        used.insert(unary.value());
+                    }
+
+                    Expr::SetNull(set_null) => {
+                        used.insert(set_null.target());
+                        if let &RValue::Expr(is_null) = set_null.is_null() {
+                            used.insert(is_null);
+                        }
+                    }
+
+                    Expr::CopyRowTo(copy) => {
+                        used.insert(copy.src());
+                        used.insert(copy.dest());
+                    }
+
+                    // These contain no expressions
+                    Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
+                }
             }
         }
 
-        // The first load of each input valid for deduplication
-        let mut input_loads = BTreeMap::new();
-
+        // Remove all unused expressions
         for block in self.blocks.values_mut() {
-            for (expr_id, expr) in block.body_mut() {
-                todo!()
+            block.retain(|expr_id, _| !used.contains(&expr_id));
+        }
+    }
+
+    fn deduplicate_input_loads(&mut self) {
+        // The first load of each input valid for deduplication
+        let mut input_loads: BTreeMap<ExprId, ExprId> = BTreeMap::new();
+
+        {
+            // Holds all inputs valid for deduplication
+            let mut inputs = BTreeSet::new();
+            for arg in self.args() {
+                if arg.flags.is_readonly() {
+                    inputs.insert(arg.id);
+                }
+            }
+
+            // Collect the first load of any valid inputs
+            for block in self.blocks.values() {
+                for &(expr_id, ref expr) in block.body() {
+                    if let Expr::Load(load) = expr {
+                        if inputs.contains(&load.source()) {
+                            input_loads.entry(load.source()).or_insert(expr_id);
+                        }
+                    }
+                }
             }
         }
+
+        let remap = |expr_id: &mut ExprId| {
+            if let Some(&new_value) = input_loads.get(expr_id) {
+                *expr_id = new_value;
+            }
+        };
+
+        // Remap all uses of extraneous loads to use the first instance of the load
+        for block in self.blocks.values_mut() {
+            for (_, expr) in block.body_mut() {
+                match expr {
+                    Expr::Cast(cast) => remap(cast.value_mut()),
+
+                    // Note: Any of these would be redundant or self-referential right now
+                    // since we don't currently have nested rows
+                    Expr::Load(_) => {}
+
+                    Expr::Store(store) => {
+                        if let RValue::Expr(value) = store.value_mut() {
+                            remap(value);
+                        }
+                    }
+
+                    Expr::Select(select) => {
+                        remap(select.cond_mut());
+                        remap(select.if_true_mut());
+                        remap(select.if_false_mut());
+                    }
+
+                    // IsNull operates on row values and we currently don't have nested rows
+                    Expr::IsNull(_) => {}
+
+                    Expr::BinOp(binop) => {
+                        remap(binop.lhs_mut());
+                        remap(binop.rhs_mut());
+                    }
+
+                    Expr::CopyVal(copy) => remap(copy.value_mut()),
+
+                    Expr::UnaryOp(unary) => remap(unary.value_mut()),
+
+                    Expr::SetNull(set_null) => {
+                        remap(set_null.target_mut());
+                        if let RValue::Expr(is_null) = set_null.is_null_mut() {
+                            remap(is_null);
+                        }
+                    }
+
+                    // Constants contain no expressions
+                    Expr::Constant(_) => {}
+
+                    // These expressions operate exclusively on rows
+                    Expr::CopyRowTo(_) | Expr::NullRow(_) | Expr::UninitRow(_) => todo!(),
+                }
+            }
+        }
+
+        // Depends on DCE to eliminate unused loads
     }
 
     pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
