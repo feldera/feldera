@@ -127,6 +127,7 @@ impl ProjectStatus {
                 }
             }
             Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
+            Some("system_error") => Ok(Self::SystemError(error_string.unwrap_or_default())),
             Some(status) => Err(AnyError::msg(format!("invalid status string '{status}'"))),
         }
     }
