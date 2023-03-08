@@ -1384,7 +1384,11 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn binary_op(&mut self, expr_id: ExprId, binop: &BinaryOp, builder: &mut FunctionBuilder<'_>) {
-        let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
+        dbg!(expr_id);
+        let (lhs, rhs) = (
+            self.exprs[&dbg!(binop.lhs())],
+            self.exprs[&dbg!(binop.rhs())],
+        );
         let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
         debug_assert_eq!(
             builder.func.dfg.value_type(lhs),

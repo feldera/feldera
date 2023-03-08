@@ -1,7 +1,9 @@
 mod binary;
+mod select;
 mod unary;
 
 pub use binary::{BinaryOp, BinaryOpKind};
+pub use select::Select;
 pub use unary::{UnaryOp, UnaryOpKind};
 
 use crate::ir::{ColumnType, ExprId, LayoutId};
@@ -10,8 +12,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub trait VisitExprMut {
-    fn visit_expr_id(&mut self, expr_id: ExprId) -> ExprId {
-        expr_id
+    fn visit_expr_id(&mut self, _expr_id: &mut ExprId) {}
+
+    fn visit_cast(&mut self, cast: &mut Cast) {
+        self.visit_expr_id(&mut cast.value);
+    }
+
+    fn visit_load(&mut self, load: &mut Load) {
+        self.visit_expr_id(&mut load.source());
+    }
+
+    fn visit_store(&mut self, store: &mut Store) {
+        if let RValue::Expr(value) = &mut store.value {
+            self.visit_expr_id(value);
+        }
+        self.visit_expr_id(&mut store.target());
     }
 }
 
@@ -102,35 +117,6 @@ impl From<bool> for RValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct Select {
-    cond: ExprId,
-    if_true: ExprId,
-    if_false: ExprId,
-}
-
-impl Select {
-    pub fn new(cond: ExprId, if_true: ExprId, if_false: ExprId) -> Self {
-        Self {
-            cond,
-            if_true,
-            if_false,
-        }
-    }
-
-    pub const fn cond(&self) -> ExprId {
-        self.cond
-    }
-
-    pub const fn if_true(&self) -> ExprId {
-        self.if_true
-    }
-
-    pub const fn if_false(&self) -> ExprId {
-        self.if_false
-    }
-}
-
 /// A cast expression, changes the type of the given value
 ///
 /// Changes the type of `value` from `from` to `to`
@@ -174,6 +160,10 @@ impl Cast {
 
     pub const fn value(&self) -> ExprId {
         self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut ExprId {
+        &mut self.value
     }
 
     pub const fn from(&self) -> ColumnType {
@@ -233,6 +223,10 @@ impl CopyVal {
 
     pub const fn value(&self) -> ExprId {
         self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut ExprId {
+        &mut self.value
     }
 
     pub const fn value_ty(&self) -> ColumnType {
@@ -333,6 +327,10 @@ impl Store {
         &self.value
     }
 
+    pub fn value_mut(&mut self) -> &mut RValue {
+        &mut self.value
+    }
+
     pub const fn value_type(&self) -> ColumnType {
         self.value_type
     }
@@ -415,6 +413,10 @@ impl SetNull {
         self.target
     }
 
+    pub fn target_mut(&mut self) -> &mut ExprId {
+        &mut self.target
+    }
+
     pub const fn target_layout(&self) -> LayoutId {
         self.target_layout
     }
@@ -425,6 +427,10 @@ impl SetNull {
 
     pub const fn is_null(&self) -> &RValue {
         &self.is_null
+    }
+
+    pub fn is_null_mut(&mut self) -> &mut RValue {
+        &mut self.is_null
     }
 }
 
