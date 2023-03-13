@@ -20,6 +20,15 @@ use std::{
 pub struct OrderedLeaf<K, R> {
     /// Unordered values.
     pub vals: Vec<(K, R)>,
+    lower_bound: usize,
+}
+
+impl<K, R> OrderedLeaf<K, R> {
+    pub(crate) fn truncate(&mut self, lower_bound: usize) {
+        if lower_bound > self.lower_bound {
+            self.lower_bound = min(lower_bound, self.vals.len());
+        }
+    }
 }
 
 impl<K, R> Trie for OrderedLeaf<K, R>
@@ -34,7 +43,7 @@ where
 
     #[inline]
     fn keys(&self) -> usize {
-        self.vals.len()
+        self.vals.len() - self.lower_bound
     }
 
     #[inline]
@@ -49,6 +58,14 @@ where
             bounds: (lower, upper),
             pos: lower,
         }
+    }
+
+    fn lower_bound(&self) -> usize {
+        self.lower_bound
+    }
+
+    fn truncate_below(&mut self, lower_bound: usize) {
+        self.truncate(lower_bound);
     }
 }
 
@@ -127,6 +144,7 @@ where
                 .iter()
                 .map(|(k, v)| (k.clone(), v.neg_by_ref()))
                 .collect(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -141,6 +159,7 @@ where
     fn neg(self) -> Self {
         Self {
             vals: self.vals.into_iter().map(|(k, v)| (k, v.neg())).collect(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -151,11 +170,11 @@ where
     R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
 {
     fn num_entries_shallow(&self) -> usize {
-        self.keys()
+        self.vals.len()
     }
 
     fn num_entries_deep(&self) -> usize {
-        self.keys()
+        self.vals.len()
     }
 
     const CONST_NUM_ENTRIES: Option<usize> = None;
@@ -176,7 +195,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Build
         self.vals.len()
     }
     fn done(self) -> Self::Trie {
-        OrderedLeaf { vals: self.vals }
+        OrderedLeaf {
+            vals: self.vals,
+            lower_bound: 0,
+        }
     }
 }
 
@@ -328,7 +350,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Build
     }
     fn done(mut self) -> Self::Trie {
         self.boundary();
-        OrderedLeaf { vals: self.vals }
+        OrderedLeaf {
+            vals: self.vals,
+            lower_bound: 0,
+        }
     }
 }
 

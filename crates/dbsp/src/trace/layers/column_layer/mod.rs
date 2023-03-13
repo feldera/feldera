@@ -18,6 +18,7 @@ use crate::{
 };
 use size_of::SizeOf;
 use std::{
+    cmp::min,
     fmt::{self, Display},
     mem::MaybeUninit,
     ops::{Add, AddAssign, Neg},
@@ -31,6 +32,7 @@ pub struct ColumnLayer<K, R> {
     // Invariant: keys.len == diffs.len
     pub(super) keys: Vec<K>,
     pub(super) diffs: Vec<R>,
+    pub(super) lower_bound: usize,
 }
 
 impl<K, R> ColumnLayer<K, R> {
@@ -39,6 +41,7 @@ impl<K, R> ColumnLayer<K, R> {
         Self {
             keys: Vec::new(),
             diffs: Vec::new(),
+            lower_bound: 0,
         }
     }
 
@@ -46,12 +49,13 @@ impl<K, R> ColumnLayer<K, R> {
         Self {
             keys: Vec::with_capacity(capacity),
             diffs: Vec::with_capacity(capacity),
+            lower_bound: 0,
         }
     }
 
     /// Breaks an `ColumnLayer` into its component parts
-    pub fn into_parts(self) -> (Vec<K>, Vec<R>) {
-        (self.keys, self.diffs)
+    pub fn into_parts(self) -> (Vec<K>, Vec<R>, usize) {
+        (self.keys, self.diffs, self.lower_bound)
     }
 
     /// Creates a new `ColumnLayer` from the given keys and diffs
@@ -59,9 +63,15 @@ impl<K, R> ColumnLayer<K, R> {
     /// # Safety
     ///
     /// `keys` and `diffs` must have the same length
-    pub unsafe fn from_parts(keys: Vec<K>, diffs: Vec<R>) -> Self {
+    pub unsafe fn from_parts(keys: Vec<K>, diffs: Vec<R>, lower_bound: usize) -> Self {
         debug_assert_eq!(keys.len(), diffs.len());
-        Self { keys, diffs }
+        debug_assert!(lower_bound <= keys.len());
+
+        Self {
+            keys,
+            diffs,
+            lower_bound,
+        }
     }
 
     /// Get the length of the current leaf
@@ -114,6 +124,7 @@ impl<K, R> ColumnLayer<K, R> {
         unsafe { self.assume_invariants() }
         self.keys.truncate(length);
         self.diffs.truncate(length);
+        self.lower_bound = min(self.lower_bound, length);
         unsafe { self.assume_invariants() }
     }
 
@@ -123,7 +134,8 @@ impl<K, R> ColumnLayer<K, R> {
     ///
     /// Requires that `keys` and `diffs` have the exact same length
     pub(in crate::trace::layers) unsafe fn assume_invariants(&self) {
-        assume(self.keys.len() == self.diffs.len())
+        assume(self.keys.len() == self.diffs.len());
+        assume(self.lower_bound <= self.keys.len());
     }
 
     /// Turns the current `ColumnLayer<K, V>` into a leaf of
@@ -136,6 +148,7 @@ impl<K, R> ColumnLayer<K, R> {
         ColumnLayer {
             keys: cast_uninit_vec(self.keys),
             diffs: cast_uninit_vec(self.diffs),
+            lower_bound: self.lower_bound,
         }
     }
 
@@ -144,6 +157,17 @@ impl<K, R> ColumnLayer<K, R> {
         F: FnMut(&K, &R) -> bool,
     {
         let original_len = self.len();
+
+        let lower_bound = self.lower_bound;
+        self.lower_bound = 0;
+
+        // SAFETY: We initialize BackshiftOnDrop with `lower_bound` offset below,
+        // so these elements will never get touched again.
+        unsafe {
+            ptr::drop_in_place(&mut self.keys[0..lower_bound]);
+            ptr::drop_in_place(&mut self.diffs[0..lower_bound]);
+        }
+
         // Avoid double drop if the drop guard is not executed,
         // since we may make some holes during the process.
         unsafe { self.set_len(0) };
@@ -202,8 +226,8 @@ impl<K, R> ColumnLayer<K, R> {
         let mut shifter = BackshiftOnDrop {
             keys: &mut self.keys,
             diffs: &mut self.diffs,
-            processed_len: 0,
-            deleted_cnt: 0,
+            processed_len: lower_bound,
+            deleted_cnt: lower_bound,
             original_len,
         };
 
@@ -260,7 +284,9 @@ impl<K, R> ColumnLayer<K, R> {
         }
 
         // Stage 1: Nothing was deleted.
-        process_loop::<F, K, R, false>(original_len, &mut retain, &mut shifter);
+        if lower_bound == 0 {
+            process_loop::<F, K, R, false>(original_len, &mut retain, &mut shifter);
+        }
 
         // Stage 2: Some elements were deleted.
         process_loop::<F, K, R, true>(original_len, &mut retain, &mut shifter);
@@ -311,16 +337,26 @@ where
     type TupleBuilder = UnorderedColumnLayerBuilder<K, R>;
 
     fn keys(&self) -> usize {
-        self.len()
+        self.len() - self.lower_bound
     }
 
     fn tuples(&self) -> usize {
-        self.len()
+        self.len() - self.lower_bound
     }
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         unsafe { self.assume_invariants() }
         ColumnLayerCursor::new(lower, self, (lower, upper))
+    }
+
+    fn lower_bound(&self) -> usize {
+        self.lower_bound
+    }
+
+    fn truncate_below(&mut self, lower_bound: usize) {
+        if lower_bound > self.lower_bound {
+            self.lower_bound = min(lower_bound, self.keys.len());
+        }
     }
 }
 
@@ -399,6 +435,7 @@ where
         Self {
             keys: self.keys.clone(),
             diffs: self.diffs.iter().map(NegByRef::neg_by_ref).collect(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -414,6 +451,7 @@ where
         Self {
             keys: self.keys,
             diffs: self.diffs.into_iter().map(Neg::neg).collect(),
+            lower_bound: self.lower_bound,
         }
     }
 }

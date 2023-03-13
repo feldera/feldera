@@ -64,7 +64,7 @@ where
     /// Record batches in `self` in a trace.
     ///
     /// This operator labels each untimed batch in the stream with the current
-    /// timestamp and adds it to a trace.  
+    /// timestamp and adds it to a trace.
     pub fn trace<T>(&self) -> Stream<C, T>
     where
         B: BatchReader<Time = ()>,
