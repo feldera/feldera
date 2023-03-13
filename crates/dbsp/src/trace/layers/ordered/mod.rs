@@ -42,12 +42,13 @@ pub struct OrderedLayer<K, L, O = usize> {
     pub(crate) offs: Vec<O>,
     /// The ranges of values associated with the keys.
     pub(crate) vals: L,
+    pub(crate) lower_bound: usize,
 }
 
 impl<K, L, O> OrderedLayer<K, L, O> {
     /// Break down an `OrderedLayer` into its constituent parts
-    pub fn into_parts(self) -> (Vec<K>, Vec<O>, L) {
-        (self.keys, self.offs, self.vals)
+    pub fn into_parts(self) -> (Vec<K>, Vec<O>, L, usize) {
+        (self.keys, self.offs, self.vals, self.lower_bound)
     }
 
     /// Create a new `OrderedLayer` from its component parts
@@ -58,12 +59,18 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     ///   `offs` must be a valid value index into `vals`.
     /// - Every key's offset range must also be a valid range within `vals`
     /// - Every value range must be non-empty
-    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L) -> Self {
+    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L, lower_bound: usize) -> Self {
         // TODO: Maybe validate indices into `vals` when debug assertions are enabled
         // TODO: Maybe validate that value ranges are all valid
         debug_assert_eq!(keys.len() + 1, offs.len());
+        debug_assert!(lower_bound <= keys.len());
 
-        Self { keys, offs, vals }
+        Self {
+            keys,
+            offs,
+            vals,
+            lower_bound,
+        }
     }
 
     /// Assume the invariants of the current builder
@@ -72,7 +79,8 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     ///
     /// Requires that `offs` has a length of `keys + 1`
     unsafe fn assume_invariants(&self) {
-        assume(self.offs.len() == self.keys.len() + 1)
+        assume(self.offs.len() == self.keys.len() + 1);
+        assume(self.lower_bound <= self.keys.len());
     }
 }
 
@@ -91,6 +99,7 @@ impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
             keys: cast_uninit_vec(self.keys),
             offs: self.offs,
             vals: self.vals.into_uninit(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -98,17 +107,17 @@ impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
 impl<K, L, O> NumEntries for OrderedLayer<K, L, O>
 where
     K: Ord + Clone,
-    L: Trie,
+    L: Trie + NumEntries,
     O: OrdOffset,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
-        self.keys()
+        self.keys.len()
     }
 
     fn num_entries_deep(&self) -> usize {
-        self.tuples()
+        self.vals.num_entries_deep()
     }
 }
 
@@ -125,6 +134,7 @@ where
             // We assume that offsets in `vals` don't change after negation;
             // otherwise `self.offs` will be invalid.
             vals: self.vals.neg_by_ref(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -144,6 +154,7 @@ where
             // We assume that offsets in `vals` don't change after negation;
             // otherwise `self.offs` will be invalid.
             vals: self.vals.neg(),
+            lower_bound: self.lower_bound,
         }
     }
 }
@@ -222,7 +233,7 @@ where
 
     fn keys(&self) -> usize {
         unsafe { self.assume_invariants() }
-        self.keys.len()
+        self.keys.len() - self.lower_bound
     }
 
     fn tuples(&self) -> usize {
@@ -254,6 +265,19 @@ where
             }
         }
     }
+
+    fn lower_bound(&self) -> usize {
+        self.lower_bound
+    }
+
+    fn truncate_below(&mut self, lower_bound: usize) {
+        if lower_bound > self.lower_bound {
+            self.lower_bound = min(lower_bound, self.keys.len());
+        }
+
+        let vals_bound = self.offs[self.lower_bound];
+        self.vals.truncate_below(vals_bound.into_usize());
+    }
 }
 
 impl<K, L, O> Default for OrderedLayer<K, L, O>
@@ -267,6 +291,7 @@ where
             // `offs.len()` **must** be `keys.len() + 1`
             offs: vec![O::zero()],
             vals: L::default(),
+            lower_bound: 0,
         }
     }
 }
@@ -421,6 +446,7 @@ where
             keys: self.keys,
             offs: self.offs,
             vals: self.vals.done(),
+            lower_bound: 0,
         }
     }
 }

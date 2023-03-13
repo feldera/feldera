@@ -271,8 +271,13 @@ where
     W: DBWeight,
 {
     // Break the given `OrdIndexedZSet` into its components
-    let OrderedLayer { keys, offs, vals } = aggregate.layer;
-    let (aggregates, diffs) = vals.into_parts();
+    let OrderedLayer {
+        keys,
+        offs,
+        vals,
+        lower_bound,
+    } = aggregate.layer;
+    let (aggregates, diffs, lower_bound_avg) = vals.into_parts();
 
     // Average out the aggregated values
     // TODO: If we stored `Avg<A>` as two columns (one of `sum: A` and one of
@@ -290,14 +295,14 @@ where
     }
 
     // Safety: `averages.len() == diffs.len()`
-    let averages = unsafe { ColumnLayer::from_parts(averages, diffs) };
+    let averages = unsafe { ColumnLayer::from_parts(averages, diffs, lower_bound_avg) };
 
     // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
     // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them
     // or even touch their memory
     OrdIndexedZSet {
         // Safety: `keys.len() + 1 == offs.len()`
-        layer: unsafe { OrderedLayer::from_parts(keys, offs, averages) },
+        layer: unsafe { OrderedLayer::from_parts(keys, offs, averages, lower_bound) },
     }
 }
 

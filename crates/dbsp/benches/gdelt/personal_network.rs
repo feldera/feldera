@@ -452,7 +452,7 @@ impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
         O: OrdOffset,
     {
         // Finish the ordered layer and break it down to its components
-        let (layer_keys, offsets, values) = builder.done().into_parts();
+        let (layer_keys, offsets, values, _) = builder.done().into_parts();
 
         // Within the OrderedLayer (and transitively within `layer_keys`) the start of a
         // key's value range is implicit in the key's index in the vec. However, since

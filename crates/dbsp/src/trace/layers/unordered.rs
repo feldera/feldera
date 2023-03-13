@@ -60,11 +60,11 @@ where
     type TupleBuilder = UnorderedLeafBuilder<K, R>;
 
     fn keys(&self) -> usize {
-        self.len()
+        self.layer.len() - self.layer.lower_bound
     }
 
     fn tuples(&self) -> usize {
-        self.len()
+        self.layer.len() - self.layer.lower_bound
     }
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
@@ -74,6 +74,14 @@ where
             start: lower,
             end: upper,
         }
+    }
+
+    fn lower_bound(&self) -> usize {
+        self.layer.lower_bound
+    }
+
+    fn truncate_below(&mut self, lower_bound: usize) {
+        self.layer.truncate(lower_bound);
     }
 }
 

@@ -56,6 +56,7 @@ where
         ColumnLayer {
             keys: self.keys,
             diffs: self.diffs,
+            lower_bound: 0,
         }
     }
 }
@@ -260,6 +261,7 @@ where
         ColumnLayer {
             keys: self.keys,
             diffs: self.diffs,
+            lower_bound: 0,
         }
     }
 }
