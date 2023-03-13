@@ -39,7 +39,7 @@ COPY . /database-stream-processor
 # is working on the submodule and wants to build a container with their modified
 # SQL compiler version.
 RUN cd /database-stream-processor && \
-    if [[ ! -d sql-to-dbsp-compiler/.git || -z $(cd sql-to-dbsp-compiler && git branch --show-current) ]]; \
+    if [[ ! -e sql-to-dbsp-compiler/.git || -z $(cd sql-to-dbsp-compiler && git branch --show-current) ]]; \
     then git submodule update --init; fi
 
 RUN cd /database-stream-processor/crates/pipeline_manager \

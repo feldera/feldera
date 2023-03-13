@@ -10,7 +10,7 @@ MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
 #    exit 1
 # fi
 
-if [[ ! -d ${SQL_COMPILER_DIR}/.git || -z $(cd ${SQL_COMPILER_DIR} && git branch --show-current) ]]
+if [[ ! -e ${SQL_COMPILER_DIR}/.git || -z $(cd ${SQL_COMPILER_DIR} && git branch --show-current) ]]
 then
     git submodule update --init
 fi
