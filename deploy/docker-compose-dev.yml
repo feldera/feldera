@@ -6,12 +6,12 @@ services:
    build:
      context: ../
      dockerfile: deploy/Dockerfile
-    ports:
-      - "8085:8080"
-    stop_grace_period: 0s
-    container_name: dbsp
-    environment:
-      - REDPANDA_BROKERS=redpanda:9092
+   ports:
+     - "8085:8080"
+   stop_grace_period: 0s
+   container_name: dbsp
+   environment:
+     - REDPANDA_BROKERS=redpanda:9092
 
   redpanda:
     command:
