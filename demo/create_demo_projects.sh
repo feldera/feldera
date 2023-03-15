@@ -4,6 +4,7 @@ THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT="${THIS_DIR}/../"
 SERVER_DIR="${ROOT}/crates/pipeline_manager/"
 
+
 set -e
 
 # We want non-matching wildcards to return an empty list
@@ -28,14 +29,4 @@ do
         config_id=$("${SERVER_DIR}/scripts/new_config.sh" "${project_id}" "${config_name}"  < "${config_file}" | jq '.config_id')
         printf "OK(config_id=$config_id)\n"
     done
-done
-
-for project_dir in "${project_prefix}"*
-do
-    project_name=${project_dir#$project_prefix}
-
-    if test -f "${project_dir}/prepare.sh"; then
-        echo "  Running custom project setup script"
-        "${project_dir}"/prepare.sh
-    fi
 done

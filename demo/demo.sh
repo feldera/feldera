@@ -16,3 +16,4 @@ ${ROOT}/scripts/start_manager.sh ${THIS_DIR}/pipeline_data
 ${ROOT}/scripts/start_prometheus.sh ${THIS_DIR}/pipeline_data
 
 ${THIS_DIR}/create_demo_projects.sh
+${THIS_DIR}/prepare_demo_data.sh
