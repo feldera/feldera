@@ -7,3 +7,4 @@ set -e
 export REDPANDA_BROKERS=localhost:19092
 
 DBSP_MANAGER="localhost:8085" ${THIS_DIR}/create_demo_projects.sh
+DBSP_MANAGER="localhost:8085" ${THIS_DIR}/prepare_demo_data.sh
