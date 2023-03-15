@@ -30,6 +30,7 @@ const EPOCH_MASK: u32 = 0x80000000;
     bincode::Encode,
     bincode::Decode,
 )]
+#[repr(transparent)]
 pub struct NestedTimestamp32(u32);
 
 #[cfg(test)]

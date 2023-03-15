@@ -9,7 +9,7 @@ mod join;
 mod subgraph;
 mod sum;
 
-pub use aggregate::{Fold, Min};
+pub use aggregate::{Fold, Min, PartitionedRollingFold};
 pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
@@ -53,6 +53,7 @@ pub enum Node {
     ExportedNode(ExportedNode),
     MonotonicJoin(MonotonicJoin),
     Constant(ConstantStream),
+    PartitionedRollingFold(PartitionedRollingFold),
     // TODO: OrderBy, Windows
 }
 
@@ -100,6 +101,19 @@ pub enum StreamLayout {
 }
 
 impl StreamLayout {
+    pub const fn key_layout(self) -> LayoutId {
+        match self {
+            Self::Set(key) | Self::Map(key, _) => key,
+        }
+    }
+
+    pub const fn value_layout(self) -> Option<LayoutId> {
+        match self {
+            Self::Set(_) => None,
+            Self::Map(_, value) => Some(value),
+        }
+    }
+
     pub const fn kind(self) -> StreamKind {
         match self {
             Self::Set(_) => StreamKind::Set,

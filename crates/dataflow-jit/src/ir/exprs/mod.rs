@@ -1,8 +1,10 @@
 mod binary;
+mod call;
 mod select;
 mod unary;
 
 pub use binary::{BinaryOp, BinaryOpKind};
+pub use call::{ArgType, Call};
 pub use select::Select;
 pub use unary::{UnaryOp, UnaryOpKind};
 
@@ -35,6 +37,7 @@ pub trait VisitExprMut {
 /// An expression within a basic block's body
 #[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
 pub enum Expr {
+    Call(Call),
     Cast(Cast),
     Load(Load),
     Store(Store),
@@ -60,6 +63,13 @@ impl Expr {
             Self::CopyRowTo(copy_row) => copy_row.layout = mappings[&copy_row.layout],
             Self::NullRow(null_row) => null_row.layout = mappings[&null_row.layout],
             Self::UninitRow(uninit_row) => uninit_row.layout = mappings[&uninit_row.layout],
+            Self::Call(call) => {
+                for arg in call.arg_types_mut() {
+                    if let ArgType::Row(layout) = arg {
+                        *layout = mappings[layout];
+                    }
+                }
+            }
 
             // These expressions don't contain `LayoutId`s
             Self::Cast(_)

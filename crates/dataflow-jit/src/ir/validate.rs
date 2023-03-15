@@ -1,7 +1,7 @@
 use crate::ir::{
-    graph::GraphExt, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function,
-    Graph, InputFlags, IsNull, LayoutId, Load, Node, NodeId, NullRow, RValue, RowLayoutCache,
-    SetNull, Store, StreamKind, StreamLayout, UnaryOpKind, UninitRow,
+    exprs::ArgType, graph::GraphExt, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr,
+    ExprId, Function, Graph, InputFlags, IsNull, LayoutId, Load, Node, NodeId, NullRow, RValue,
+    RowLayoutCache, SetNull, Store, StreamKind, StreamLayout, UnaryOpKind, UninitRow,
 };
 use derive_more::Display;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     error::Error,
 };
 
-use super::exprs::Select;
+use super::exprs::{Call, Select};
 
 type ValidationResult<T = ()> = Result<T, ValidationError>;
 
@@ -299,6 +299,7 @@ impl FunctionValidator {
 
             for &(expr_id, ref expr) in block.body() {
                 match expr {
+                    Expr::Call(call) => self.call(expr_id, call)?,
                     Expr::Cast(cast) => self.cast(expr_id, cast)?,
                     Expr::Constant(constant) => self.constant(expr_id, constant)?,
                     Expr::Select(select) => self.select(expr_id, select)?,
@@ -633,6 +634,24 @@ impl FunctionValidator {
         assert_eq!(lhs_ty, rhs_ty);
 
         self.expr_types.insert(expr_id, lhs_ty);
+
+        Ok(())
+    }
+
+    fn call(&mut self, expr_id: ExprId, call: &Call) -> ValidationResult {
+        let actual_arg_types = call
+            .args()
+            .iter()
+            .map(|&arg| {
+                Ok(match self.expr_type(arg)? {
+                    Ok(scalar) => ArgType::Scalar(scalar),
+                    Err(layout) => ArgType::Row(layout),
+                })
+            })
+            .collect::<ValidationResult<Vec<_>>>()?;
+        assert_eq!(actual_arg_types, call.arg_types());
+
+        self.add_column_expr(expr_id, call.ret_ty());
 
         Ok(())
     }

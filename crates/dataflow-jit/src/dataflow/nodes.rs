@@ -2,7 +2,9 @@ use crate::{
     codegen::VTable,
     dataflow::RowZSet,
     ir::{NodeId, StreamKind, StreamLayout},
+    row::Row,
 };
+use dbsp::operator::time_series::RelRange;
 use petgraph::prelude::DiGraphMap;
 use std::collections::BTreeMap;
 
@@ -35,6 +37,31 @@ pub enum DataflowNode {
     Differentiate(Differentiate),
     Integrate(Integrate),
     Constant(Constant),
+    Fold(Fold),
+    PartitionedRollingFold(PartitionedRollingFold),
+}
+
+#[derive(Debug, Clone)]
+pub struct Fold {
+    pub input: NodeId,
+    pub init: Row,
+    pub acc_vtable: &'static VTable,
+    pub step_vtable: &'static VTable,
+    pub output_vtable: &'static VTable,
+    pub step_fn: unsafe extern "C" fn(*mut u8, *const u8, *const u8),
+    pub finish_fn: unsafe extern "C" fn(*mut u8, *mut u8),
+}
+
+#[derive(Debug, Clone)]
+pub struct PartitionedRollingFold {
+    pub input: NodeId,
+    pub range: RelRange<i32>,
+    pub init: Row,
+    pub acc_vtable: &'static VTable,
+    pub step_vtable: &'static VTable,
+    pub output_vtable: &'static VTable,
+    pub step_fn: unsafe extern "C" fn(*mut u8, *const u8, *const u8),
+    pub finish_fn: unsafe extern "C" fn(*mut u8, *mut u8),
 }
 
 #[derive(Debug, Clone)]

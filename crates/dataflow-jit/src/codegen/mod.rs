@@ -299,6 +299,7 @@ impl Codegen {
 
                 for &(expr_id, ref expr) in block_contents.body() {
                     match expr {
+                        Expr::Call(_call) => todo!(),
                         Expr::Cast(cast) => ctx.cast(expr_id, cast, &mut builder),
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),

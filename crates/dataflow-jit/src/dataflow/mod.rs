@@ -4,7 +4,8 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
     dataflow::nodes::{
         DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterFn,
-        FilterMap, FilterMapIndex, Integrate, JoinCore, MapFn, Min, Minus, Noop,
+        FilterMap, FilterMapIndex, Fold, Integrate, JoinCore, MapFn, Min, Minus, Noop,
+        PartitionedRollingFold,
     },
     ir::{
         graph,
@@ -18,6 +19,7 @@ use crate::{
 use cranelift_jit::JITModule;
 use cranelift_module::FuncId;
 use dbsp::{
+    algebra::UnimplementedSemigroup,
     operator::{FilterMap as _, Generator},
     time::NestedTimestamp32,
     trace::{Batch, BatchReader, Batcher, Cursor, Spine},
@@ -231,7 +233,8 @@ impl CompiledDataflow {
             for (&node_id, node) in graph.nodes() {
                 match node {
                     Node::Map(map) => {
-                        let map_fn = codegen.codegen_func("map_fn", map.map_fn());
+                        let map_fn =
+                            codegen.codegen_func(&format!("map_fn_{node_id}"), map.map_fn());
                         functions.insert(node_id, vec![map_fn]);
 
                         vtables
@@ -240,13 +243,16 @@ impl CompiledDataflow {
                     }
 
                     Node::Filter(filter) => {
-                        let filter_fn = codegen.codegen_func("filter_fn", filter.filter_fn());
+                        let filter_fn = codegen
+                            .codegen_func(&format!("filter_fn_{node_id}"), filter.filter_fn());
                         functions.insert(node_id, vec![filter_fn]);
                     }
 
                     Node::FilterMap(filter_map) => {
-                        let fmap_fn =
-                            codegen.codegen_func("filter_map_fn", filter_map.filter_map());
+                        let fmap_fn = codegen.codegen_func(
+                            &format!("filter_map_fn_{node_id}"),
+                            filter_map.filter_map(),
+                        );
                         functions.insert(node_id, vec![fmap_fn]);
 
                         vtables
@@ -255,13 +261,28 @@ impl CompiledDataflow {
                     }
 
                     Node::Fold(fold) => {
-                        let step_fn = codegen.codegen_func("fold_step_fn", fold.step_fn());
-                        let finish_fn = codegen.codegen_func("fold_finish_fn", fold.finish_fn());
+                        let step_fn = codegen
+                            .codegen_func(&format!("fold_step_fn_{node_id}"), fold.step_fn());
+                        let finish_fn = codegen
+                            .codegen_func(&format!("fold_finish_fn_{node_id}"), fold.finish_fn());
+                        functions.insert(node_id, vec![step_fn, finish_fn]);
+                    }
+
+                    Node::PartitionedRollingFold(fold) => {
+                        let step_fn = codegen.codegen_func(
+                            &format!("partitioned_rolling_fold_step_fn_{node_id}"),
+                            fold.step_fn(),
+                        );
+                        let finish_fn = codegen.codegen_func(
+                            &format!("partitioned_rolling_fold_finish_fn_{node_id}"),
+                            fold.finish_fn(),
+                        );
                         functions.insert(node_id, vec![step_fn, finish_fn]);
                     }
 
                     Node::IndexWith(index_with) => {
-                        let index_fn = codegen.codegen_func("index_fn", index_with.index_fn());
+                        let index_fn = codegen
+                            .codegen_func(&format!("index_fn_{node_id}"), index_with.index_fn());
                         functions.insert(node_id, vec![index_fn]);
 
                         vtables
@@ -288,7 +309,8 @@ impl CompiledDataflow {
                     }
 
                     Node::JoinCore(join) => {
-                        let join_fn = codegen.codegen_func("join_fn", join.join_fn());
+                        let join_fn =
+                            codegen.codegen_func(&format!("join_fn_{node_id}"), join.join_fn());
                         functions.insert(node_id, vec![join_fn]);
 
                         vtables
@@ -300,7 +322,8 @@ impl CompiledDataflow {
                     }
 
                     Node::MonotonicJoin(join) => {
-                        let join_fn = codegen.codegen_func("monotonic_join_fn", join.join_fn());
+                        let join_fn = codegen
+                            .codegen_func(&format!("monotonic_join_fn_{node_id}"), join.join_fn());
                         functions.insert(node_id, vec![join_fn]);
 
                         vtables
@@ -468,7 +491,66 @@ impl CompiledDataflow {
                         );
                     }
 
-                    Node::Fold(_) => todo!(),
+                    Node::Fold(fold) => {
+                        let (acc_vtable, step_vtable, output_vtable) = unsafe {
+                            (
+                                &*vtables[&fold.acc_layout()],
+                                &*vtables[&fold.step_layout()],
+                                &*vtables[&fold.output_layout()],
+                            )
+                        };
+                        let acc_layout = layout_cache.layout_of(fold.acc_layout());
+
+                        let init =
+                            unsafe { row_from_literal(fold.init(), acc_vtable, &acc_layout) };
+
+                        let (step_fn, finish_fn) = (
+                            jit.get_finalized_function(node_functions[node_id][0]),
+                            jit.get_finalized_function(node_functions[node_id][1]),
+                        );
+
+                        let fold = DataflowNode::Fold(Fold {
+                            input: fold.input(),
+                            init,
+                            acc_vtable,
+                            step_vtable,
+                            output_vtable,
+                            step_fn: unsafe { transmute(step_fn) },
+                            finish_fn: unsafe { transmute(finish_fn) },
+                        });
+                        nodes.insert(*node_id, fold);
+                    }
+
+                    Node::PartitionedRollingFold(fold) => {
+                        let (acc_vtable, step_vtable, output_vtable) = unsafe {
+                            (
+                                &*vtables[&fold.acc_layout()],
+                                &*vtables[&fold.step_layout()],
+                                &*vtables[&fold.output_layout()],
+                            )
+                        };
+                        let acc_layout = layout_cache.layout_of(fold.acc_layout());
+
+                        let init =
+                            unsafe { row_from_literal(fold.init(), acc_vtable, &acc_layout) };
+
+                        let (step_fn, finish_fn) = (
+                            jit.get_finalized_function(node_functions[node_id][0]),
+                            jit.get_finalized_function(node_functions[node_id][1]),
+                        );
+
+                        let fold = DataflowNode::PartitionedRollingFold(PartitionedRollingFold {
+                            input: fold.input(),
+                            range: fold.range(),
+                            init,
+                            acc_vtable,
+                            step_vtable,
+                            output_vtable,
+                            step_fn: unsafe { transmute(step_fn) },
+                            finish_fn: unsafe { transmute(finish_fn) },
+                        });
+                        nodes.insert(*node_id, fold);
+                    }
 
                     Node::Sink(sink) => {
                         nodes.insert(
@@ -989,9 +1071,109 @@ impl CompiledDataflow {
 
                 DataflowNode::DelayedFeedback(_) => todo!(),
 
-                DataflowNode::Min(_) => todo!(),
+                DataflowNode::Min(min) => {
+                    let min = match &streams[&min.input] {
+                        RowStream::Set(_) => todo!(),
+                        RowStream::Map(input) => {
+                            RowStream::Map(input.aggregate_generic::<(), _, _>(dbsp::operator::Min))
+                        }
+                    };
+                    streams.insert(node_id, min);
+                }
 
-                DataflowNode::Distinct(_) => todo!(),
+                DataflowNode::Fold(fold) => {
+                    let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                    let (acc_vtable, step_vtable, output_vtable) =
+                        (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                    let folded = match &streams[&fold.input] {
+                        RowStream::Set(_) => todo!(),
+
+                        RowStream::Map(input) => input.aggregate::<(), _>(dbsp::operator::Fold::<
+                            _,
+                            UnimplementedSemigroup<Row>,
+                            _,
+                            _,
+                        >::with_output(
+                            fold.init,
+                            move |acc: &mut Row, step: &Row, weight| unsafe {
+                                debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                                debug_assert_eq!(step.vtable().layout_id, step_vtable.layout_id);
+
+                                step_fn(
+                                    acc.as_mut_ptr(),
+                                    step.as_ptr(),
+                                    &weight as *const i32 as *const u8,
+                                );
+                            },
+                            move |mut acc: Row| unsafe {
+                                debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                                let mut row = UninitRow::new(output_vtable);
+                                finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                row.assume_init()
+                            },
+                        )),
+                    };
+                    streams.insert(node_id, RowStream::Map(folded));
+                }
+
+                DataflowNode::PartitionedRollingFold(fold) => {
+                    // /*
+                    let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                    let (acc_vtable, step_vtable, output_vtable) =
+                        (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                    let folded = match &streams[&fold.input] {
+                        RowStream::Set(_) => todo!(),
+
+                        RowStream::Map(input) => {
+                            let fold_agg = dbsp::operator::Fold::<
+                                _,
+                                UnimplementedSemigroup<_>,
+                                _,
+                                _,
+                            >::with_output(
+                                fold.init,
+                                move |acc: &mut Row, step: &Row, weight| unsafe {
+                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                                    debug_assert_eq!(
+                                        step.vtable().layout_id,
+                                        step_vtable.layout_id
+                                    );
+
+                                    step_fn(
+                                        acc.as_mut_ptr(),
+                                        step.as_ptr(),
+                                        &weight as *const i32 as *const u8,
+                                    );
+                                },
+                                move |mut acc: Row| unsafe {
+                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                                    let mut row = UninitRow::new(output_vtable);
+                                    finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                    (0, row.assume_init())
+                                },
+                            );
+
+                            input.partitioned_rolling_aggregate::<i32, Row, _>(fold_agg, fold.range)
+                        }
+                    };
+                    // streams.insert(node_id, RowStream::Map(folded));
+                    // */
+                    unimplemented!()
+                }
+
+                DataflowNode::Distinct(distinct) => {
+                    let distinct = match &streams[&distinct.input] {
+                        RowStream::Set(input) => {
+                            RowStream::Set(input.distinct::<NestedTimestamp32>())
+                        }
+                        RowStream::Map(_input) => todo!(),
+                    };
+                    streams.insert(node_id, distinct);
+                }
 
                 DataflowNode::JoinCore(join) => {
                     let lhs = streams[&join.lhs].clone();
@@ -1375,6 +1557,90 @@ impl CompiledDataflow {
                                             }
                                         };
                                         substreams.insert(node_id, min);
+                                    }
+
+                                    DataflowNode::Fold(fold) => {
+                                        let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                                        let (acc_vtable, step_vtable, output_vtable) =
+                                            (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                                        let folded = match &substreams[&fold.input] {
+                                            RowStream::Set(_) => todo!(),
+
+                                            RowStream::Map(input) => input.aggregate::<(), _>(dbsp::operator::Fold::<
+                                                _,
+                                                UnimplementedSemigroup<Row>,
+                                                _,
+                                                _,
+                                            >::with_output(
+                                                fold.init,
+                                                move |acc: &mut Row, step: &Row, weight| unsafe {
+                                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                                                    debug_assert_eq!(step.vtable().layout_id, step_vtable.layout_id);
+
+                                                    step_fn(
+                                                        acc.as_mut_ptr(),
+                                                        step.as_ptr(),
+                                                        &weight as *const i32 as *const u8,
+                                                    );
+                                                },
+                                                move |mut acc: Row| unsafe {
+                                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                                                    let mut row = UninitRow::new(output_vtable);
+                                                    finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                                    row.assume_init()
+                                                },
+                                            )),
+                                        };
+                                        substreams.insert(node_id, RowStream::Map(folded));
+                                    }
+
+                                    DataflowNode::PartitionedRollingFold(fold) => {
+                                         /*
+                                        let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                                        let (acc_vtable, step_vtable, output_vtable) =
+                                            (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                                        let folded = match &streams[&fold.input] {
+                                            RowStream::Set(_) => todo!(),
+
+                                            RowStream::Map(input) => {
+                                                let fold_agg = dbsp::operator::Fold::<
+                                                    _,
+                                                    UnimplementedSemigroup<_>,
+                                                    _,
+                                                    _,
+                                                >::with_output(
+                                                    fold.init,
+                                                    move |acc: &mut Row, step: &Row, weight| unsafe {
+                                                        debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                                                        debug_assert_eq!(
+                                                            step.vtable().layout_id,
+                                                            step_vtable.layout_id
+                                                        );
+
+                                                        step_fn(
+                                                            acc.as_mut_ptr(),
+                                                            step.as_ptr(),
+                                                            &weight as *const i32 as *const u8,
+                                                        );
+                                                    },
+                                                    move |mut acc: Row| unsafe {
+                                                        debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                                                        let mut row = UninitRow::new(output_vtable);
+                                                        finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                                        (0, row.assume_init())
+                                                    },
+                                                );
+
+                                                input.partitioned_rolling_aggregate::<i32, Row, _>(fold_agg, fold.range)
+                                            }
+                                        };
+                                        streams.insert(node_id, RowStream::Map(folded));
+                                         */
+                                        unimplemented!()
                                     }
 
                                     DataflowNode::Distinct(distinct) => {

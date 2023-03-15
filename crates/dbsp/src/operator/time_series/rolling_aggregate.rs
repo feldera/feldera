@@ -550,13 +550,9 @@ mod test {
             );
 
             let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
-            let expected_1000_0 =
-                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
+            let expected_1000_0 = partitioned_rolling_aggregate_slow(&input_stream, range_spec);
             let output_1000_0 = input_stream
-                .partitioned_rolling_aggregate::<u64, i64, _>(
-                    aggregator.clone(),
-                    range_spec.clone(),
-                )
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator.clone(), range_spec)
                 .gather(0)
                 .integrate();
             expected_1000_0.apply2(&output_1000_0, |expected, actual| {
@@ -576,13 +572,9 @@ mod test {
             });
 
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
-            let expected_500_500 =
-                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
+            let expected_500_500 = partitioned_rolling_aggregate_slow(&input_stream, range_spec);
             let output_500_500 = input_stream
-                .partitioned_rolling_aggregate::<u64, i64, _>(
-                    aggregator.clone(),
-                    range_spec.clone(),
-                )
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator.clone(), range_spec)
                 .gather(0)
                 .integrate();
             expected_500_500.apply2(&output_500_500, |expected, actual| {
@@ -602,8 +594,7 @@ mod test {
             });
 
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::Before(100));
-            let expected_500_100 =
-                partitioned_rolling_aggregate_slow(&input_stream, range_spec.clone());
+            let expected_500_100 = partitioned_rolling_aggregate_slow(&input_stream, range_spec);
             let output_500_100 = input_stream
                 .partitioned_rolling_aggregate::<u64, i64, _>(aggregator, range_spec)
                 .gather(0)

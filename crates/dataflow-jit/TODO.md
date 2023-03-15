@@ -3,6 +3,7 @@
 - [ ] Cleanup dataflow generation code
   - [ ] ~~Implement dynamic scoping so that we can have arbitrarily nested scopes~~
   - [ ] Implement a fixed level of nesting (minimum of 3, 5 probably gives us some good leeway)
+  - [ ] Dynamically generated timestamp types (e.g. dynamically generate timestamp impls for `[u32; 5]` for 5 levels of nesting)
 - [ ] More codegen debug checks, make sure that none of our pointers ever go out of bounds of any of our objects
 - [ ] Add debug layout checks to all dataflow operators
 - [ ] Validation infrastructure
@@ -14,6 +15,7 @@
 - [ ] Row vectors
   - Instead of `OrdZSet<Row, Weight>` we want a custom collection that holds untyped values, a truly untyped `DynVec`
   - Requires changes in a lot of the more fundamental `Trace`-related traits
+  - A switch to an internally iterated api could address this
 - [ ] Implement `bincode::{Encode, Decode}` for row values
 - [ ] Better layout algorithm
   - [ ] Add switch to make all null flags standalone booleans (that is, instead of bitsets make them each take up one byte)
