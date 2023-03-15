@@ -56,5 +56,8 @@ RUN cp /database-stream-processor/deploy/prometheus_datasource.yaml /etc/grafana
 
 ENV PATH="$PATH:/root/.cargo/bin"
 
+RUN /root/.cargo/bin/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --unix-daemon \
+    && /database-stream-processor/demo/create_demo_projects.sh
+
 CMD /database-stream-processor/scripts/start_prometheus.sh /working-dir && \
     /root/.cargo/bin/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
