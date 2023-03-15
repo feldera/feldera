@@ -232,6 +232,8 @@ impl Function {
                         used.insert(copy.dest());
                     }
 
+                    Expr::Call(call) => used.extend(call.args()),
+
                     // These contain no expressions
                     Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
                 }
@@ -313,6 +315,12 @@ impl Function {
                         remap(set_null.target_mut());
                         if let RValue::Expr(is_null) = set_null.is_null_mut() {
                             remap(is_null);
+                        }
+                    }
+
+                    Expr::Call(call) => {
+                        for arg in call.args_mut() {
+                            remap(arg);
                         }
                     }
 
@@ -438,6 +446,7 @@ impl Function {
             for block in self.blocks.values_mut() {
                 for (_, expr) in block.body() {
                     match expr {
+                        Expr::Call(_) => todo!(),
                         Expr::Load(_) => todo!(),
                         Expr::Store(_) => todo!(),
                         Expr::BinOp(_) => todo!(),

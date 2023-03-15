@@ -32,6 +32,7 @@ pub struct ErasedVTable {
     // Writes the string's length to the out pointer and returns the string's start
     pub type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
     pub hash: unsafe extern "C" fn(&mut &mut dyn Hasher, *const u8),
+    // pub default: unsafe extern "C" fn(*mut u8),
 }
 
 impl ErasedVTable {
@@ -262,6 +263,10 @@ where
             value.hash(hasher);
         }
 
+        // unsafe extern "C" fn default<T>(_place: *mut u8) {
+        //     unimplemented!()
+        // }
+
         ErasedVTable {
             size_of: size_of::<Self>(),
             align_of: match NonZeroUsize::new(align_of::<Self>()) {
@@ -280,6 +285,7 @@ where
             type_id: TypeId::of::<Self>,
             type_name: type_name::<Self>,
             hash: hash::<Self>,
+            // default: default::<Self>,
         }
     };
 }

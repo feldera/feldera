@@ -7,7 +7,8 @@ use std::{cmp::max, marker::PhantomData};
 /// Relative time offset.
 ///
 /// Specifies relative time as an offset.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum RelOffset<TS> {
     Before(TS),
     After(TS),
@@ -16,7 +17,8 @@ pub enum RelOffset<TS> {
 /// Relative time range.
 ///
 /// Specifies a time interval relative to a given point in time.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RelRange<TS> {
     from: RelOffset<TS>,
     to: RelOffset<TS>,

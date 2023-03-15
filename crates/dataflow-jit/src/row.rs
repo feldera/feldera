@@ -289,6 +289,39 @@ impl Decode for Row {
     }
 }
 
+impl Default for Row {
+    fn default() -> Self {
+        unimplemented!()
+    }
+}
+
+impl Clone for Row {
+    fn clone(&self) -> Self {
+        let mut data = UninitRow::new(self.inner.vtable);
+        unsafe { (self.vtable().clone)(self.as_ptr(), data.as_mut_ptr()) };
+
+        let clone = unsafe { data.assume_init() };
+        debug_assert_eq!(self, clone);
+
+        clone
+    }
+}
+
+unsafe impl Send for Row {}
+
+unsafe impl Sync for Row {}
+
+impl Drop for Row {
+    fn drop(&mut self) {
+        // Drop the row's inner data
+        if self.vtable().size_of != 0 {
+            unsafe { (self.vtable().drop_in_place)(self.as_mut_ptr()) }
+        }
+
+        // UninitRow::drop() cleans up the allocated memory
+    }
+}
+
 impl Debug for Row {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // If the alternative flag is passed, debug the raw bytes of the row
@@ -333,32 +366,5 @@ impl Debug for Row {
         } else {
             Err(fmt::Error)
         }
-    }
-}
-
-impl Clone for Row {
-    fn clone(&self) -> Self {
-        let mut data = UninitRow::new(self.inner.vtable);
-        unsafe { (self.vtable().clone)(self.as_ptr(), data.as_mut_ptr()) };
-
-        let clone = unsafe { data.assume_init() };
-        debug_assert_eq!(self, clone);
-
-        clone
-    }
-}
-
-unsafe impl Send for Row {}
-
-unsafe impl Sync for Row {}
-
-impl Drop for Row {
-    fn drop(&mut self) {
-        // Drop the row's inner data
-        if self.vtable().size_of != 0 {
-            unsafe { (self.vtable().drop_in_place)(self.as_mut_ptr()) }
-        }
-
-        // UninitRow::drop() cleans up the allocated memory
     }
 }
