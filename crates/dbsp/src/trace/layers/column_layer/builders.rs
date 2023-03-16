@@ -20,12 +20,6 @@ pub struct ColumnLayerBuilder<K, R> {
 }
 
 impl<K, R> ColumnLayerBuilder<K, R> {
-    #[inline]
-    pub fn from_columns(keys: Vec<K>, diffs: Vec<R>) -> Self {
-        assert_eq!(keys.len(), diffs.len());
-        Self { keys, diffs }
-    }
-
     /// Get the length of the current builder
     pub(crate) fn len(&self) -> usize {
         unsafe { self.assume_invariants() }

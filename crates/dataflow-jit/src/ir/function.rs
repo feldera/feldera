@@ -16,7 +16,7 @@ use std::{
 };
 
 bitflags::bitflags! {
-    #[derive(Deserialize, Serialize)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy, Deserialize, Serialize)]
     #[serde(try_from = "String", into = "String")]
     pub struct InputFlags: u8 {
         /// The parameter can be used as an input
@@ -24,7 +24,7 @@ bitflags::bitflags! {
         /// The parameter can be used as an output
         const OUTPUT = 1 << 1;
         /// The parameter can be used as both an input and output
-        const INOUT = Self::INPUT.bits | Self::OUTPUT.bits;
+        const INOUT = Self::INPUT.bits() | Self::OUTPUT.bits();
     }
 }
 

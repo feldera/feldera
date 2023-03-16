@@ -201,7 +201,7 @@ where
         )
     }
 
-    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<C, O>
     where
         F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,
@@ -269,7 +269,7 @@ where
         self.circuit().add_unary_operator(Map::new(map_func), self)
     }
 
-    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<Circuit<P>, O>
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<C, O>
     where
         F: FnMut(Self::ItemRef<'_>) -> I + 'static,
         I: IntoIterator + 'static,

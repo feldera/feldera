@@ -22,15 +22,16 @@ use cranelift_module::FuncId;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap as _, Generator},
-    time::NestedTimestamp32,
     trace::{Batch, BatchReader, Batcher, Cursor, Spine},
-    Circuit, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Stream,
+    Circuit, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Stream,
+    Timestamp,
 };
 use derive_more::{IsVariant, Unwrap};
 use nodes::{
     DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
 };
 use petgraph::{algo, prelude::DiGraphMap};
+use size_of::SizeOf;
 use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
 
 // TODO: Keep layout ids in dataflow nodes so we can do assertions that types
@@ -108,15 +109,33 @@ impl RowOutput {
 
 // TODO: Change the weight to a `Row`? Toggle between `i32` and `i64`?
 #[derive(Clone, IsVariant, Unwrap)]
-pub enum RowStream<P> {
-    Set(Stream<P, RowSet>),
-    Map(Stream<P, RowMap>),
+pub enum RowStream<C> {
+    Set(Stream<C, RowSet>),
+    Map(Stream<C, RowMap>),
+}
+
+impl<C> RowStream<C> {
+    pub const fn as_set(&self) -> Option<&Stream<C, RowSet>> {
+        if let Self::Set(set) = self {
+            Some(set)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_map(&self) -> Option<&Stream<C, RowMap>> {
+        if let Self::Map(map) = self {
+            Some(map)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, IsVariant, Unwrap)]
-pub enum RowTrace<P> {
-    Set(Stream<P, Spine<RowSet>>),
-    Map(Stream<P, Spine<RowMap>>),
+pub enum RowTrace<C> {
+    Set(Stream<C, Spine<RowSet>>),
+    Map(Stream<C, Spine<RowMap>>),
 }
 
 #[derive(Debug, Clone)]
@@ -887,8 +906,8 @@ impl CompiledDataflow {
         )
     }
 
-    pub fn construct(mut self, circuit: &mut Circuit<()>) -> (Inputs, Outputs) {
-        let mut streams = BTreeMap::<NodeId, RowStream<Circuit<()>>>::new();
+    pub fn construct(mut self, circuit: &mut RootCircuit) -> (Inputs, Outputs) {
+        let mut streams = BTreeMap::<NodeId, RowStream<RootCircuit>>::new();
 
         let mut inputs = BTreeMap::new();
         let mut outputs = BTreeMap::new();
@@ -1005,97 +1024,7 @@ impl CompiledDataflow {
                     streams.insert(node_id, mapped);
                 }
 
-                DataflowNode::FlatMap(flat_map) => {
-                    let input = streams[&flat_map.input].clone();
-                    let mapped = match flat_map.flat_map {
-                        FlatMapFn::SetSet {
-                            flat_map,
-                            key_vtable,
-                        } => RowStream::Set(input.unwrap_set().flat_map(move |key| {
-                            let mut output_keys = Vec::new();
-                            unsafe {
-                                flat_map(
-                                    key.as_ptr(),
-                                    &mut [
-                                        &mut output_keys as *mut _ as *mut u8,
-                                        key_vtable as *const _ as *mut u8,
-                                    ],
-                                )
-                            }
-                            output_keys
-                        })),
-
-                        FlatMapFn::SetMap {
-                            flat_map,
-                            key_vtable,
-                            value_vtable,
-                        } => RowStream::Map(input.unwrap_set().flat_map_index(move |key| {
-                            let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
-                            unsafe {
-                                flat_map(
-                                    key.as_ptr(),
-                                    &mut [
-                                        &mut output_keys as *mut _ as *mut u8,
-                                        key_vtable as *const _ as *mut u8,
-                                    ],
-                                    &mut [
-                                        &mut output_values as *mut _ as *mut u8,
-                                        value_vtable as *const _ as *mut u8,
-                                    ],
-                                )
-                            }
-
-                            debug_assert_eq!(output_keys.len(), output_values.len());
-                            output_keys.into_iter().zip(output_values)
-                        })),
-
-                        FlatMapFn::MapSet {
-                            flat_map,
-                            key_vtable,
-                        } => RowStream::Set(input.unwrap_map().flat_map(move |(key, value)| {
-                            let mut output_keys = Vec::new();
-                            unsafe {
-                                flat_map(
-                                    key.as_ptr(),
-                                    value.as_ptr(),
-                                    &mut [
-                                        &mut output_keys as *mut _ as *mut u8,
-                                        key_vtable as *const _ as *mut u8,
-                                    ],
-                                )
-                            }
-                            output_keys
-                        })),
-
-                        FlatMapFn::MapMap {
-                            flat_map,
-                            key_vtable,
-                            value_vtable,
-                        } => RowStream::Map(input.unwrap_map().flat_map_index(
-                            move |(key, value)| {
-                                let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
-                                unsafe {
-                                    flat_map(
-                                        key.as_ptr(),
-                                        value.as_ptr(),
-                                        &mut [
-                                            &mut output_keys as *mut _ as *mut u8,
-                                            key_vtable as *const _ as *mut u8,
-                                        ],
-                                        &mut [
-                                            &mut output_values as *mut _ as *mut u8,
-                                            value_vtable as *const _ as *mut u8,
-                                        ],
-                                    )
-                                }
-
-                                debug_assert_eq!(output_keys.len(), output_values.len());
-                                output_keys.into_iter().zip(output_values)
-                            },
-                        )),
-                    };
-                    streams.insert(node_id, mapped);
-                }
+                DataflowNode::FlatMap(flat_map) => self.flat_map(node_id, flat_map, &mut streams),
 
                 DataflowNode::IndexWith(index_with) => {
                     let input = &streams[&index_with.input];
@@ -1235,7 +1164,7 @@ impl CompiledDataflow {
                     let min = match &streams[&min.input] {
                         RowStream::Set(_) => todo!(),
                         RowStream::Map(input) => {
-                            RowStream::Map(input.aggregate_generic::<(), _, _>(dbsp::operator::Min))
+                            RowStream::Map(input.aggregate_generic(dbsp::operator::Min))
                         }
                     };
                     streams.insert(node_id, min);
@@ -1249,7 +1178,7 @@ impl CompiledDataflow {
                     let folded = match &streams[&fold.input] {
                         RowStream::Set(_) => todo!(),
 
-                        RowStream::Map(input) => input.aggregate::<(), _>(dbsp::operator::Fold::<
+                        RowStream::Map(input) => input.aggregate(dbsp::operator::Fold::<
                             _,
                             UnimplementedSemigroup<Row>,
                             _,
@@ -1325,15 +1254,7 @@ impl CompiledDataflow {
                     unimplemented!()
                 }
 
-                DataflowNode::Distinct(distinct) => {
-                    let distinct = match &streams[&distinct.input] {
-                        RowStream::Set(input) => {
-                            RowStream::Set(input.distinct::<NestedTimestamp32>())
-                        }
-                        RowStream::Map(_input) => todo!(),
-                    };
-                    streams.insert(node_id, distinct);
-                }
+                DataflowNode::Distinct(distinct) => self.distinct(node_id, distinct, &mut streams),
 
                 DataflowNode::JoinCore(join) => {
                     let lhs = streams[&join.lhs].clone();
@@ -1342,25 +1263,23 @@ impl CompiledDataflow {
                         (join.join_fn, join.key_vtable, join.value_vtable);
 
                     let joined = match join.output_kind {
-                        StreamKind::Set => {
-                            RowStream::Set(lhs.unwrap_map().join_generic::<(), _, _, _, _>(
-                                &rhs.unwrap_map(),
-                                move |key, lhs_val, rhs_val| {
-                                    let mut output = UninitRow::new(key_vtable);
-                                    unsafe {
-                                        join_fn(
-                                            key.as_ptr(),
-                                            lhs_val.as_ptr(),
-                                            rhs_val.as_ptr(),
-                                            output.as_mut_ptr(),
-                                            NonNull::<u8>::dangling().as_ptr(),
-                                        );
-                                    }
+                        StreamKind::Set => RowStream::Set(lhs.unwrap_map().join_generic(
+                            &rhs.unwrap_map(),
+                            move |key, lhs_val, rhs_val| {
+                                let mut output = UninitRow::new(key_vtable);
+                                unsafe {
+                                    join_fn(
+                                        key.as_ptr(),
+                                        lhs_val.as_ptr(),
+                                        rhs_val.as_ptr(),
+                                        output.as_mut_ptr(),
+                                        NonNull::<u8>::dangling().as_ptr(),
+                                    );
+                                }
 
-                                    iter::once((unsafe { output.assume_init() }, ()))
-                                },
-                            ))
-                        }
+                                iter::once((unsafe { output.assume_init() }, ()))
+                            },
+                        )),
 
                         StreamKind::Map => todo!(),
                     };
@@ -1429,632 +1348,8 @@ impl CompiledDataflow {
                     streams.insert(node_id, constant_stream);
                 }
 
-                DataflowNode::Subgraph(mut subgraph) => {
-                    let mut needs_consolidate = BTreeMap::new();
-
-                    circuit
-                        .fixedpoint(|subcircuit| {
-                            let mut substreams = BTreeMap::new();
-                            let mut feedbacks = BTreeMap::new();
-
-                            let nodes = algo::toposort(&subgraph.edges, None).unwrap();
-                            for node_id in nodes {
-                                if subgraph.inputs.contains_key(&node_id) {
-                                    continue;
-                                }
-
-                                match subgraph.nodes.remove(&node_id).unwrap() {
-                                    DataflowNode::Constant(constant) => {
-                                        let constant_stream = match constant.value {
-                                            RowZSet::Set(set) => {
-                                                RowStream::Set(subcircuit.add_source(
-                                                    Generator::new(move || set.clone()),
-                                                ))
-                                            }
-
-                                            RowZSet::Map(map) => {
-                                                RowStream::Map(subcircuit.add_source(
-                                                    Generator::new(move || map.clone()),
-                                                ))
-                                            }
-                                        };
-                                        substreams.insert(node_id, constant_stream);
-                                    }
-
-                                    DataflowNode::Map(map) => {
-                                        let input = &substreams[&map.input];
-                                        let vtable = map.output_vtable;
-
-                                        let mapped = match (input, map.map_fn) {
-                                            (RowStream::Set(input), MapFn::Set(map_fn)) => {
-                                                RowStream::Set(input.map(move |input| {
-                                                    let mut output = UninitRow::new(vtable);
-                                                    unsafe {
-                                                        map_fn(input.as_ptr(), output.as_mut_ptr());
-                                                        output.assume_init()
-                                                    }
-                                                }))
-                                            }
-
-                                            (RowStream::Map(input), MapFn::Map(map_fn)) => {
-                                                RowStream::Set(input.map(move |(key, value)| {
-                                                    let mut output = UninitRow::new(vtable);
-                                                    unsafe {
-                                                        map_fn(
-                                                            key.as_ptr(),
-                                                            value.as_ptr(),
-                                                            output.as_mut_ptr(),
-                                                        );
-                                                        output.assume_init()
-                                                    }
-                                                }))
-                                            }
-
-                                            _ => unreachable!(),
-                                        };
-
-                                        substreams.insert(node_id, mapped);
-                                    }
-
-                                    DataflowNode::Filter(filter) => {
-                                        let input = &substreams[&filter.input()];
-                                        let filtered = match (filter.filter_fn, input) {
-                                            (FilterFn::Set(filter_fn), RowStream::Set(input)) => {
-                                                let filtered = input.filter(move |input| unsafe {
-                                                    filter_fn(input.as_ptr())
-                                                });
-                                                RowStream::Set(filtered)
-                                            }
-
-                                            (FilterFn::Map(filter_fn), RowStream::Map(input)) => {
-                                                let filtered =
-                                                    input.filter(move |(key, value)| unsafe {
-                                                        filter_fn(key.as_ptr(), value.as_ptr())
-                                                    });
-                                                RowStream::Map(filtered)
-                                            }
-
-                                            _ => unreachable!(),
-                                        };
-
-                                        substreams.insert(node_id, filtered);
-                                    }
-
-                                    DataflowNode::FilterMap(map) => {
-                                        let input = &substreams[&map.input];
-                                        let mapped = match input {
-                                            RowStream::Set(input) => {
-                                                let (fmap_fn, vtable) =
-                                                    (map.filter_map, map.output_vtable);
-
-                                                let mut output = None;
-                                                RowStream::Set(input.flat_map(move |input| {
-                                                    let mut out = output
-                                                        .take()
-                                                        .unwrap_or_else(|| UninitRow::new(vtable));
-                                                    unsafe {
-                                                        if fmap_fn(input.as_ptr(), out.as_mut_ptr())
-                                                        {
-                                                            Some(out.assume_init())
-                                                        } else {
-                                                            output = Some(out);
-                                                            None
-                                                        }
-                                                    }
-                                                }))
-                                            }
-
-                                            RowStream::Map(_) => todo!(),
-                                        };
-
-                                        substreams.insert(node_id, mapped);
-                                    }
-
-                                    DataflowNode::FilterMapIndex(map) => {
-                                        let input = &substreams[&map.input];
-                                        let mapped = match input {
-                                            RowStream::Map(input) => {
-                                                let (fmap_fn, vtable) =
-                                                    (map.filter_map, map.output_vtable);
-
-                                                let mut output = None;
-                                                RowStream::Set(input.flat_map(
-                                                    move |(key, value)| {
-                                                        let mut out =
-                                                            output.take().unwrap_or_else(|| {
-                                                                UninitRow::new(vtable)
-                                                            });
-
-                                                        unsafe {
-                                                            if fmap_fn(
-                                                                key.as_ptr(),
-                                                                value.as_ptr(),
-                                                                out.as_mut_ptr(),
-                                                            ) {
-                                                                Some(out.assume_init())
-                                                            } else {
-                                                                output = Some(out);
-                                                                None
-                                                            }
-                                                        }
-                                                    },
-                                                ))
-                                            }
-
-                                            RowStream::Set(_) => todo!(),
-                                        };
-
-                                        substreams.insert(node_id, mapped);
-                                    }
-
-                                    DataflowNode::FlatMap(flat_map) => {
-                                        let input = substreams[&flat_map.input].clone();
-                                        let mapped = match flat_map.flat_map {
-                                            FlatMapFn::SetSet {
-                                                flat_map,
-                                                key_vtable,
-                                            } => RowStream::Set(input.unwrap_set().flat_map(move |key| {
-                                                let mut output_keys = Vec::new();
-                                                unsafe {
-                                                    flat_map(
-                                                        key.as_ptr(),
-                                                        &mut [
-                                                            &mut output_keys as *mut _ as *mut u8,
-                                                            key_vtable as *const _ as *mut u8,
-                                                        ],
-                                                    )
-                                                }
-                                                output_keys
-                                            })),
-
-                                            FlatMapFn::SetMap {
-                                                flat_map,
-                                                key_vtable,
-                                                value_vtable,
-                                            } => RowStream::Map(input.unwrap_set().flat_map_index(move |key| {
-                                                let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
-                                                unsafe {
-                                                    flat_map(
-                                                        key.as_ptr(),
-                                                        &mut [
-                                                            &mut output_keys as *mut _ as *mut u8,
-                                                            key_vtable as *const _ as *mut u8,
-                                                        ],
-                                                        &mut [
-                                                            &mut output_values as *mut _ as *mut u8,
-                                                            value_vtable as *const _ as *mut u8,
-                                                        ],
-                                                    )
-                                                }
-
-                                                debug_assert_eq!(output_keys.len(), output_values.len());
-                                                output_keys.into_iter().zip(output_values)
-                                            })),
-
-                                            FlatMapFn::MapSet {
-                                                flat_map,
-                                                key_vtable,
-                                            } => RowStream::Set(input.unwrap_map().flat_map(move |(key, value)| {
-                                                let mut output_keys = Vec::new();
-                                                unsafe {
-                                                    flat_map(
-                                                        key.as_ptr(),
-                                                        value.as_ptr(),
-                                                        &mut [
-                                                            &mut output_keys as *mut _ as *mut u8,
-                                                            key_vtable as *const _ as *mut u8,
-                                                        ],
-                                                    )
-                                                }
-                                                output_keys
-                                            })),
-
-                                            FlatMapFn::MapMap {
-                                                flat_map,
-                                                key_vtable,
-                                                value_vtable,
-                                            } => RowStream::Map(input.unwrap_map().flat_map_index(
-                                                move |(key, value)| {
-                                                    let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
-                                                    unsafe {
-                                                        flat_map(
-                                                            key.as_ptr(),
-                                                            value.as_ptr(),
-                                                            &mut [
-                                                                &mut output_keys as *mut _ as *mut u8,
-                                                                key_vtable as *const _ as *mut u8,
-                                                            ],
-                                                            &mut [
-                                                                &mut output_values as *mut _ as *mut u8,
-                                                                value_vtable as *const _ as *mut u8,
-                                                            ],
-                                                        )
-                                                    }
-
-                                                    debug_assert_eq!(output_keys.len(), output_values.len());
-                                                    output_keys.into_iter().zip(output_values)
-                                                },
-                                            )),
-                                        };
-                                        substreams.insert(node_id, mapped);
-                                    }
-
-                                    DataflowNode::IndexWith(index_with) => {
-                                        let input = &substreams[&index_with.input];
-                                        let (index_fn, key_vtable, value_vtable) = (
-                                            index_with.index_fn,
-                                            index_with.key_vtable,
-                                            index_with.value_vtable,
-                                        );
-
-                                        let indexed = match input {
-                                            RowStream::Set(input) => {
-                                                input.index_with(move |input| {
-                                                    let (mut key_output, mut value_output) = (
-                                                        UninitRow::new(key_vtable),
-                                                        UninitRow::new(value_vtable),
-                                                    );
-
-                                                    unsafe {
-                                                        index_fn(
-                                                            input.as_ptr(),
-                                                            key_output.as_mut_ptr(),
-                                                            value_output.as_mut_ptr(),
-                                                        );
-
-                                                        (
-                                                            key_output.assume_init(),
-                                                            value_output.assume_init(),
-                                                        )
-                                                    }
-                                                })
-                                            }
-
-                                            // FIXME: `.index_with()` requires that `Key` is a `()`
-                                            RowStream::Map(_) => todo!(),
-                                        };
-
-                                        substreams.insert(node_id, RowStream::Map(indexed));
-                                    }
-
-                                    DataflowNode::Sum(sum) => {
-                                        let sum = match &substreams[&sum.inputs[0]] {
-                                            RowStream::Set(first) => RowStream::Set(first.sum(
-                                                sum.inputs[1..].iter().map(|input| {
-                                                    if let RowStream::Set(input) =
-                                                        &substreams[input]
-                                                    {
-                                                        input
-                                                    } else {
-                                                        unreachable!()
-                                                    }
-                                                }),
-                                            )),
-                                            RowStream::Map(first) => RowStream::Map(first.sum(
-                                                sum.inputs[1..].iter().map(|input| {
-                                                    if let RowStream::Map(input) =
-                                                        &substreams[input]
-                                                    {
-                                                        input
-                                                    } else {
-                                                        unreachable!()
-                                                    }
-                                                }),
-                                            )),
-                                        };
-                                        substreams.insert(node_id, sum);
-                                    }
-
-                                    DataflowNode::Minus(minus) => {
-                                        let lhs = &substreams[&minus.lhs];
-                                        let rhs = substreams[&minus.rhs].clone();
-                                        let difference = match lhs {
-                                            RowStream::Set(first) => {
-                                                RowStream::Set(first.minus(&rhs.unwrap_set()))
-                                            }
-                                            RowStream::Map(first) => {
-                                                RowStream::Map(first.minus(&rhs.unwrap_map()))
-                                            }
-                                        };
-                                        substreams.insert(node_id, difference);
-                                    }
-
-                                    DataflowNode::Neg(neg) => {
-                                        let input = &substreams[&neg.input];
-                                        let negated = match input {
-                                            RowStream::Set(input) => RowStream::Set(input.neg()),
-                                            RowStream::Map(input) => RowStream::Map(input.neg()),
-                                        };
-
-                                        substreams.insert(node_id, negated);
-                                    }
-
-                                    DataflowNode::Sink(_)
-                                    | DataflowNode::Source(_)
-                                    | DataflowNode::SourceMap(_) => todo!(),
-
-                                    DataflowNode::Delta0(delta) => {
-                                        let input = &streams[&delta.input];
-                                        let delta0 = match input {
-                                            RowStream::Set(input) => {
-                                                RowStream::Set(input.delta0(subcircuit))
-                                            }
-                                            RowStream::Map(input) => {
-                                                RowStream::Map(input.delta0(subcircuit))
-                                            }
-                                        };
-
-                                        substreams.insert(node_id, delta0);
-                                    }
-
-                                    DataflowNode::DelayedFeedback(_feedback) => {
-                                        let feedback = dbsp::operator::DelayedFeedback::<
-                                            _,
-                                            RowSet,
-                                        >::new(
-                                            subcircuit
-                                        );
-                                        let stream = feedback.stream().clone();
-                                        substreams.insert(node_id, RowStream::Set(stream));
-                                        feedbacks.insert(node_id, feedback);
-                                    }
-
-                                    DataflowNode::Min(min) => {
-                                        let min = match &substreams[&min.input] {
-                                            RowStream::Set(_) => todo!(),
-                                            RowStream::Map(input) => {
-                                                RowStream::Map(input.aggregate_generic::<(), _, _>(
-                                                    dbsp::operator::Min,
-                                                ))
-                                            }
-                                        };
-                                        substreams.insert(node_id, min);
-                                    }
-
-                                    DataflowNode::Fold(fold) => {
-                                        let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
-                                        let (acc_vtable, step_vtable, output_vtable) =
-                                            (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
-
-                                        let folded = match &substreams[&fold.input] {
-                                            RowStream::Set(_) => todo!(),
-
-                                            RowStream::Map(input) => input.aggregate::<(), _>(dbsp::operator::Fold::<
-                                                _,
-                                                UnimplementedSemigroup<Row>,
-                                                _,
-                                                _,
-                                            >::with_output(
-                                                fold.init,
-                                                move |acc: &mut Row, step: &Row, weight| unsafe {
-                                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-                                                    debug_assert_eq!(step.vtable().layout_id, step_vtable.layout_id);
-
-                                                    step_fn(
-                                                        acc.as_mut_ptr(),
-                                                        step.as_ptr(),
-                                                        &weight as *const i32 as *const u8,
-                                                    );
-                                                },
-                                                move |mut acc: Row| unsafe {
-                                                    debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-
-                                                    let mut row = UninitRow::new(output_vtable);
-                                                    finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
-                                                    row.assume_init()
-                                                },
-                                            )),
-                                        };
-                                        substreams.insert(node_id, RowStream::Map(folded));
-                                    }
-
-                                    DataflowNode::PartitionedRollingFold(_fold) => {
-                                         /*
-                                        let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
-                                        let (acc_vtable, step_vtable, output_vtable) =
-                                            (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
-
-                                        let folded = match &streams[&fold.input] {
-                                            RowStream::Set(_) => todo!(),
-
-                                            RowStream::Map(input) => {
-                                                let fold_agg = dbsp::operator::Fold::<
-                                                    _,
-                                                    UnimplementedSemigroup<_>,
-                                                    _,
-                                                    _,
-                                                >::with_output(
-                                                    fold.init,
-                                                    move |acc: &mut Row, step: &Row, weight| unsafe {
-                                                        debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-                                                        debug_assert_eq!(
-                                                            step.vtable().layout_id,
-                                                            step_vtable.layout_id
-                                                        );
-
-                                                        step_fn(
-                                                            acc.as_mut_ptr(),
-                                                            step.as_ptr(),
-                                                            &weight as *const i32 as *const u8,
-                                                        );
-                                                    },
-                                                    move |mut acc: Row| unsafe {
-                                                        debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-
-                                                        let mut row = UninitRow::new(output_vtable);
-                                                        finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
-                                                        (0, row.assume_init())
-                                                    },
-                                                );
-
-                                                input.partitioned_rolling_aggregate::<i32, Row, _>(fold_agg, fold.range)
-                                            }
-                                        };
-                                        streams.insert(node_id, RowStream::Map(folded));
-                                         */
-                                        unimplemented!()
-                                    }
-
-                                    DataflowNode::Distinct(distinct) => {
-                                        let distinct = match &substreams[&distinct.input] {
-                                            RowStream::Set(input) => RowStream::Set(
-                                                input.distinct::<NestedTimestamp32>(),
-                                            ),
-                                            RowStream::Map(_input) => todo!(),
-                                        };
-                                        substreams.insert(node_id, distinct);
-                                    }
-
-                                    DataflowNode::JoinCore(join) => {
-                                        let lhs = substreams[&join.lhs].clone();
-                                        let rhs = substreams[&join.rhs].clone();
-                                        let (join_fn, key_vtable, _value_vtable) =
-                                            (join.join_fn, join.key_vtable, join.value_vtable);
-
-                                        let joined = match join.output_kind {
-                                            StreamKind::Set => RowStream::Set(
-                                                lhs.unwrap_map()
-                                                    .join_generic::<NestedTimestamp32, _, _, _, _>(
-                                                        &rhs.unwrap_map(),
-                                                        move |key, lhs_val, rhs_val| {
-                                                            let mut output =
-                                                                UninitRow::new(key_vtable);
-                                                            unsafe {
-                                                                join_fn(
-                                                                    key.as_ptr(),
-                                                                    lhs_val.as_ptr(),
-                                                                    rhs_val.as_ptr(),
-                                                                    output.as_mut_ptr(),
-                                                                    NonNull::<u8>::dangling()
-                                                                        .as_ptr(),
-                                                                );
-                                                            }
-
-                                                            iter::once((
-                                                                unsafe { output.assume_init() },
-                                                                (),
-                                                            ))
-                                                        },
-                                                    ),
-                                            ),
-
-                                            StreamKind::Map => todo!(),
-                                        };
-                                        substreams.insert(node_id, joined);
-                                    }
-
-                                    DataflowNode::MonotonicJoin(join) => {
-                                        let lhs = &substreams[&join.lhs];
-                                        let rhs = substreams[&join.rhs].clone();
-                                        let (join_fn, key_vtable) = (join.join_fn, join.key_vtable);
-
-                                        let joined = match lhs {
-                                            RowStream::Set(lhs) => RowStream::Set(
-                                                lhs.monotonic_stream_join::<_, _, _>(
-                                                    &rhs.unwrap_set(),
-                                                    move |key, lhs_val, rhs_val| {
-                                                        let mut output = UninitRow::new(key_vtable);
-                                                        unsafe {
-                                                            join_fn(
-                                                                key.as_ptr(),
-                                                                lhs_val as *const () as *const u8,
-                                                                rhs_val as *const () as *const u8,
-                                                                output.as_mut_ptr(),
-                                                            );
-
-                                                            output.assume_init()
-                                                        }
-                                                    },
-                                                ),
-                                            ),
-
-                                            RowStream::Map(lhs) => RowStream::Set(
-                                                lhs.monotonic_stream_join::<_, _, _>(
-                                                    &rhs.unwrap_map(),
-                                                    move |key, lhs_val, rhs_val| {
-                                                        let mut output = UninitRow::new(key_vtable);
-                                                        unsafe {
-                                                            join_fn(
-                                                                key.as_ptr(),
-                                                                lhs_val.as_ptr(),
-                                                                rhs_val.as_ptr(),
-                                                                output.as_mut_ptr(),
-                                                            );
-
-                                                            output.assume_init()
-                                                        }
-                                                    },
-                                                ),
-                                            ),
-                                        };
-                                        substreams.insert(node_id, joined);
-                                    }
-
-                                    DataflowNode::Export(export) => {
-                                        let exported = match &substreams[&export.input] {
-                                            RowStream::Set(input) => {
-                                                RowTrace::Set(input.integrate_trace().export())
-                                            }
-                                            RowStream::Map(input) => {
-                                                RowTrace::Map(input.integrate_trace().export())
-                                            }
-                                        };
-
-                                        needs_consolidate.insert(node_id, exported);
-                                    }
-
-                                    DataflowNode::Differentiate(diff) => {
-                                        let input = &streams[&diff.input];
-                                        let differentiated = match input {
-                                            RowStream::Set(input) => {
-                                                RowStream::Set(input.differentiate_nested())
-                                            }
-                                            RowStream::Map(input) => {
-                                                RowStream::Map(input.differentiate_nested())
-                                            }
-                                        };
-
-                                        streams.insert(node_id, differentiated);
-                                    }
-
-                                    DataflowNode::Integrate(diff) => {
-                                        let input = &streams[&diff.input];
-                                        let integrated = match input {
-                                            RowStream::Set(input) => {
-                                                RowStream::Set(input.integrate_nested())
-                                            }
-                                            RowStream::Map(input) => {
-                                                RowStream::Map(input.integrate_nested())
-                                            }
-                                        };
-
-                                        streams.insert(node_id, integrated);
-                                    }
-
-                                    DataflowNode::Subgraph(_) => todo!(),
-
-                                    DataflowNode::Noop(_) => {}
-                                }
-                            }
-
-                            // Connect all feedback nodes
-                            for (source, feedback) in subgraph.feedback_connections.iter() {
-                                let source = substreams[source].clone().unwrap_set();
-                                let feedback = feedbacks.remove(feedback).unwrap();
-                                feedback.connect(&source);
-                            }
-
-                            Ok(())
-                        })
-                        .unwrap();
-
-                    for (node_id, stream) in needs_consolidate {
-                        let consolidated = match stream {
-                            RowTrace::Set(stream) => RowStream::Set(stream.consolidate()),
-                            RowTrace::Map(stream) => RowStream::Map(stream.consolidate()),
-                        };
-                        streams.insert(node_id, consolidated);
-                    }
+                DataflowNode::Subgraph(subgraph) => {
+                    self.subgraph(subgraph, circuit, &mut streams);
                 }
 
                 DataflowNode::Noop(_) => {}
@@ -2062,6 +1357,627 @@ impl CompiledDataflow {
         }
 
         (inputs, outputs)
+    }
+
+    fn subgraph(
+        &mut self,
+        mut subgraph: DataflowSubgraph,
+        circuit: &mut RootCircuit,
+        streams: &mut BTreeMap<NodeId, RowStream<RootCircuit>>,
+    ) {
+        let mut needs_consolidate = BTreeMap::new();
+
+        circuit
+            .fixedpoint(|subcircuit| {
+                let mut substreams = BTreeMap::new();
+                let mut feedbacks = BTreeMap::new();
+
+                let nodes = algo::toposort(&subgraph.edges, None).unwrap();
+                for node_id in nodes {
+                    if subgraph.inputs.contains_key(&node_id) {
+                        continue;
+                    }
+
+                    match subgraph.nodes.remove(&node_id).unwrap() {
+                        DataflowNode::Constant(constant) => {
+                            let constant_stream = match constant.value {
+                                RowZSet::Set(set) => RowStream::Set(
+                                    subcircuit.add_source(Generator::new(move || set.clone())),
+                                ),
+
+                                RowZSet::Map(map) => RowStream::Map(
+                                    subcircuit.add_source(Generator::new(move || map.clone())),
+                                ),
+                            };
+                            substreams.insert(node_id, constant_stream);
+                        }
+
+                        DataflowNode::Map(map) => {
+                            let input = &substreams[&map.input];
+                            let vtable = map.output_vtable;
+
+                            let mapped = match (input, map.map_fn) {
+                                (RowStream::Set(input), MapFn::Set(map_fn)) => {
+                                    RowStream::Set(input.map(move |input| {
+                                        let mut output = UninitRow::new(vtable);
+                                        unsafe {
+                                            map_fn(input.as_ptr(), output.as_mut_ptr());
+                                            output.assume_init()
+                                        }
+                                    }))
+                                }
+
+                                (RowStream::Map(input), MapFn::Map(map_fn)) => {
+                                    RowStream::Set(input.map(move |(key, value)| {
+                                        let mut output = UninitRow::new(vtable);
+                                        unsafe {
+                                            map_fn(
+                                                key.as_ptr(),
+                                                value.as_ptr(),
+                                                output.as_mut_ptr(),
+                                            );
+                                            output.assume_init()
+                                        }
+                                    }))
+                                }
+
+                                _ => unreachable!(),
+                            };
+
+                            substreams.insert(node_id, mapped);
+                        }
+
+                        DataflowNode::Filter(filter) => {
+                            let input = &substreams[&filter.input()];
+                            let filtered = match (filter.filter_fn, input) {
+                                (FilterFn::Set(filter_fn), RowStream::Set(input)) => {
+                                    let filtered = input
+                                        .filter(move |input| unsafe { filter_fn(input.as_ptr()) });
+                                    RowStream::Set(filtered)
+                                }
+
+                                (FilterFn::Map(filter_fn), RowStream::Map(input)) => {
+                                    let filtered = input.filter(move |(key, value)| unsafe {
+                                        filter_fn(key.as_ptr(), value.as_ptr())
+                                    });
+                                    RowStream::Map(filtered)
+                                }
+
+                                _ => unreachable!(),
+                            };
+
+                            substreams.insert(node_id, filtered);
+                        }
+
+                        DataflowNode::FilterMap(map) => {
+                            let input = &substreams[&map.input];
+                            let mapped = match input {
+                                RowStream::Set(input) => {
+                                    let (fmap_fn, vtable) = (map.filter_map, map.output_vtable);
+
+                                    let mut output = None;
+                                    RowStream::Set(input.flat_map(move |input| {
+                                        let mut out =
+                                            output.take().unwrap_or_else(|| UninitRow::new(vtable));
+                                        unsafe {
+                                            if fmap_fn(input.as_ptr(), out.as_mut_ptr()) {
+                                                Some(out.assume_init())
+                                            } else {
+                                                output = Some(out);
+                                                None
+                                            }
+                                        }
+                                    }))
+                                }
+
+                                RowStream::Map(_) => todo!(),
+                            };
+
+                            substreams.insert(node_id, mapped);
+                        }
+
+                        DataflowNode::FilterMapIndex(map) => {
+                            let input = &substreams[&map.input];
+                            let mapped = match input {
+                                RowStream::Map(input) => {
+                                    let (fmap_fn, vtable) = (map.filter_map, map.output_vtable);
+
+                                    let mut output = None;
+                                    RowStream::Set(input.flat_map(move |(key, value)| {
+                                        let mut out =
+                                            output.take().unwrap_or_else(|| UninitRow::new(vtable));
+
+                                        unsafe {
+                                            if fmap_fn(
+                                                key.as_ptr(),
+                                                value.as_ptr(),
+                                                out.as_mut_ptr(),
+                                            ) {
+                                                Some(out.assume_init())
+                                            } else {
+                                                output = Some(out);
+                                                None
+                                            }
+                                        }
+                                    }))
+                                }
+
+                                RowStream::Set(_) => todo!(),
+                            };
+
+                            substreams.insert(node_id, mapped);
+                        }
+
+                        DataflowNode::FlatMap(flat_map) => {
+                            self.flat_map(node_id, flat_map, &mut substreams);
+                        }
+
+                        DataflowNode::IndexWith(index_with) => {
+                            let input = &substreams[&index_with.input];
+                            let (index_fn, key_vtable, value_vtable) = (
+                                index_with.index_fn,
+                                index_with.key_vtable,
+                                index_with.value_vtable,
+                            );
+
+                            let indexed = match input {
+                                RowStream::Set(input) => input.index_with(move |input| {
+                                    let (mut key_output, mut value_output) =
+                                        (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+
+                                    unsafe {
+                                        index_fn(
+                                            input.as_ptr(),
+                                            key_output.as_mut_ptr(),
+                                            value_output.as_mut_ptr(),
+                                        );
+
+                                        (key_output.assume_init(), value_output.assume_init())
+                                    }
+                                }),
+
+                                // FIXME: `.index_with()` requires that `Key` is a `()`
+                                RowStream::Map(_) => todo!(),
+                            };
+
+                            substreams.insert(node_id, RowStream::Map(indexed));
+                        }
+
+                        DataflowNode::Sum(sum) => {
+                            let sum = match &substreams[&sum.inputs[0]] {
+                                RowStream::Set(first) => {
+                                    RowStream::Set(first.sum(sum.inputs[1..].iter().map(|input| {
+                                        if let RowStream::Set(input) = &substreams[input] {
+                                            input
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })))
+                                }
+                                RowStream::Map(first) => {
+                                    RowStream::Map(first.sum(sum.inputs[1..].iter().map(|input| {
+                                        if let RowStream::Map(input) = &substreams[input] {
+                                            input
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })))
+                                }
+                            };
+                            substreams.insert(node_id, sum);
+                        }
+
+                        DataflowNode::Minus(minus) => {
+                            let lhs = &substreams[&minus.lhs];
+                            let rhs = substreams[&minus.rhs].clone();
+                            let difference = match lhs {
+                                RowStream::Set(first) => {
+                                    RowStream::Set(first.minus(&rhs.unwrap_set()))
+                                }
+                                RowStream::Map(first) => {
+                                    RowStream::Map(first.minus(&rhs.unwrap_map()))
+                                }
+                            };
+                            substreams.insert(node_id, difference);
+                        }
+
+                        DataflowNode::Neg(neg) => {
+                            let input = &substreams[&neg.input];
+                            let negated = match input {
+                                RowStream::Set(input) => RowStream::Set(input.neg()),
+                                RowStream::Map(input) => RowStream::Map(input.neg()),
+                            };
+
+                            substreams.insert(node_id, negated);
+                        }
+
+                        DataflowNode::Sink(_)
+                        | DataflowNode::Source(_)
+                        | DataflowNode::SourceMap(_) => todo!(),
+
+                        DataflowNode::Delta0(delta) => {
+                            let input = &streams[&delta.input];
+                            let delta0 = match input {
+                                RowStream::Set(input) => RowStream::Set(input.delta0(subcircuit)),
+                                RowStream::Map(input) => RowStream::Map(input.delta0(subcircuit)),
+                            };
+
+                            substreams.insert(node_id, delta0);
+                        }
+
+                        DataflowNode::DelayedFeedback(_feedback) => {
+                            let feedback =
+                                dbsp::operator::DelayedFeedback::<_, RowSet>::new(subcircuit);
+                            let stream = feedback.stream().clone();
+                            substreams.insert(node_id, RowStream::Set(stream));
+                            feedbacks.insert(node_id, feedback);
+                        }
+
+                        DataflowNode::Min(min) => {
+                            let min = match &substreams[&min.input] {
+                                RowStream::Set(_) => todo!(),
+                                RowStream::Map(input) => {
+                                    RowStream::Map(input.aggregate_generic(dbsp::operator::Min))
+                                }
+                            };
+                            substreams.insert(node_id, min);
+                        }
+
+                        DataflowNode::Fold(fold) => {
+                            let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                            let (acc_vtable, step_vtable, output_vtable) =
+                                (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                            let folded = match &substreams[&fold.input] {
+                                RowStream::Set(_) => todo!(),
+
+                                RowStream::Map(input) => input.aggregate(dbsp::operator::Fold::<
+                                    _,
+                                    UnimplementedSemigroup<Row>,
+                                    _,
+                                    _,
+                                >::with_output(
+                                    fold.init,
+                                    move |acc: &mut Row, step: &Row, weight| unsafe {
+                                        debug_assert_eq!(
+                                            acc.vtable().layout_id,
+                                            acc_vtable.layout_id
+                                        );
+                                        debug_assert_eq!(
+                                            step.vtable().layout_id,
+                                            step_vtable.layout_id
+                                        );
+
+                                        step_fn(
+                                            acc.as_mut_ptr(),
+                                            step.as_ptr(),
+                                            &weight as *const i32 as *const u8,
+                                        );
+                                    },
+                                    move |mut acc: Row| unsafe {
+                                        debug_assert_eq!(
+                                            acc.vtable().layout_id,
+                                            acc_vtable.layout_id
+                                        );
+
+                                        let mut row = UninitRow::new(output_vtable);
+                                        finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                        row.assume_init()
+                                    },
+                                )),
+                            };
+                            substreams.insert(node_id, RowStream::Map(folded));
+                        }
+
+                        DataflowNode::PartitionedRollingFold(_fold) => {
+                            /*
+                            let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+                            let (acc_vtable, step_vtable, output_vtable) =
+                                (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+                            let folded = match &streams[&fold.input] {
+                                RowStream::Set(_) => todo!(),
+
+                                RowStream::Map(input) => {
+                                    let fold_agg = dbsp::operator::Fold::<
+                                        _,
+                                        UnimplementedSemigroup<_>,
+                                        _,
+                                        _,
+                                    >::with_output(
+                                        fold.init,
+                                        move |acc: &mut Row, step: &Row, weight| unsafe {
+                                            debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                                            debug_assert_eq!(
+                                                step.vtable().layout_id,
+                                                step_vtable.layout_id
+                                            );
+
+                                            step_fn(
+                                                acc.as_mut_ptr(),
+                                                step.as_ptr(),
+                                                &weight as *const i32 as *const u8,
+                                            );
+                                        },
+                                        move |mut acc: Row| unsafe {
+                                            debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                                            let mut row = UninitRow::new(output_vtable);
+                                            finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                                            (0, row.assume_init())
+                                        },
+                                    );
+
+                                    input.partitioned_rolling_aggregate::<i32, Row, _>(fold_agg, fold.range)
+                                }
+                            };
+                            streams.insert(node_id, RowStream::Map(folded));
+                             */
+                            unimplemented!()
+                        }
+
+                        DataflowNode::Distinct(distinct) => {
+                            self.distinct(node_id, distinct, &mut substreams);
+                        }
+
+                        DataflowNode::JoinCore(join) => {
+                            let lhs = substreams[&join.lhs].clone();
+                            let rhs = substreams[&join.rhs].clone();
+                            let (join_fn, key_vtable, _value_vtable) =
+                                (join.join_fn, join.key_vtable, join.value_vtable);
+
+                            let joined = match join.output_kind {
+                                StreamKind::Set => RowStream::Set(lhs.unwrap_map().join_generic(
+                                    &rhs.unwrap_map(),
+                                    move |key, lhs_val, rhs_val| {
+                                        let mut output = UninitRow::new(key_vtable);
+                                        unsafe {
+                                            join_fn(
+                                                key.as_ptr(),
+                                                lhs_val.as_ptr(),
+                                                rhs_val.as_ptr(),
+                                                output.as_mut_ptr(),
+                                                NonNull::<u8>::dangling().as_ptr(),
+                                            );
+                                        }
+
+                                        iter::once((unsafe { output.assume_init() }, ()))
+                                    },
+                                )),
+
+                                StreamKind::Map => todo!(),
+                            };
+                            substreams.insert(node_id, joined);
+                        }
+
+                        DataflowNode::MonotonicJoin(join) => {
+                            let lhs = &substreams[&join.lhs];
+                            let rhs = substreams[&join.rhs].clone();
+                            let (join_fn, key_vtable) = (join.join_fn, join.key_vtable);
+
+                            let joined = match lhs {
+                                RowStream::Set(lhs) => {
+                                    RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                        &rhs.unwrap_set(),
+                                        move |key, lhs_val, rhs_val| {
+                                            let mut output = UninitRow::new(key_vtable);
+                                            unsafe {
+                                                join_fn(
+                                                    key.as_ptr(),
+                                                    lhs_val as *const () as *const u8,
+                                                    rhs_val as *const () as *const u8,
+                                                    output.as_mut_ptr(),
+                                                );
+
+                                                output.assume_init()
+                                            }
+                                        },
+                                    ))
+                                }
+
+                                RowStream::Map(lhs) => {
+                                    RowStream::Set(lhs.monotonic_stream_join::<_, _, _>(
+                                        &rhs.unwrap_map(),
+                                        move |key, lhs_val, rhs_val| {
+                                            let mut output = UninitRow::new(key_vtable);
+                                            unsafe {
+                                                join_fn(
+                                                    key.as_ptr(),
+                                                    lhs_val.as_ptr(),
+                                                    rhs_val.as_ptr(),
+                                                    output.as_mut_ptr(),
+                                                );
+
+                                                output.assume_init()
+                                            }
+                                        },
+                                    ))
+                                }
+                            };
+                            substreams.insert(node_id, joined);
+                        }
+
+                        DataflowNode::Export(export) => {
+                            let exported = match &substreams[&export.input] {
+                                RowStream::Set(input) => {
+                                    RowTrace::Set(input.integrate_trace().export())
+                                }
+                                RowStream::Map(input) => {
+                                    RowTrace::Map(input.integrate_trace().export())
+                                }
+                            };
+
+                            needs_consolidate.insert(node_id, exported);
+                        }
+
+                        DataflowNode::Differentiate(diff) => {
+                            let input = &streams[&diff.input];
+                            let differentiated = match input {
+                                RowStream::Set(input) => {
+                                    RowStream::Set(input.differentiate_nested())
+                                }
+                                RowStream::Map(input) => {
+                                    RowStream::Map(input.differentiate_nested())
+                                }
+                            };
+
+                            streams.insert(node_id, differentiated);
+                        }
+
+                        DataflowNode::Integrate(diff) => {
+                            let input = &streams[&diff.input];
+                            let integrated = match input {
+                                RowStream::Set(input) => RowStream::Set(input.integrate_nested()),
+                                RowStream::Map(input) => RowStream::Map(input.integrate_nested()),
+                            };
+
+                            streams.insert(node_id, integrated);
+                        }
+
+                        DataflowNode::Subgraph(_) => todo!(),
+
+                        DataflowNode::Noop(_) => {}
+                    }
+                }
+
+                // Connect all feedback nodes
+                for (source, feedback) in subgraph.feedback_connections.iter() {
+                    let source = substreams[source].clone().unwrap_set();
+                    let feedback = feedbacks.remove(feedback).unwrap();
+                    feedback.connect(&source);
+                }
+
+                Ok(())
+            })
+            .unwrap();
+
+        for (node_id, stream) in needs_consolidate {
+            let consolidated = match stream {
+                RowTrace::Set(stream) => RowStream::Set(stream.consolidate()),
+                RowTrace::Map(stream) => RowStream::Map(stream.consolidate()),
+            };
+            streams.insert(node_id, consolidated);
+        }
+    }
+
+    fn distinct<C>(
+        &mut self,
+        node_id: NodeId,
+        distinct: Distinct,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+        C::Time: Timestamp + SizeOf + Send,
+    {
+        let distinct = match &streams[&distinct.input] {
+            RowStream::Set(input) => RowStream::Set(input.distinct()),
+            RowStream::Map(input) => RowStream::Map(input.distinct()),
+        };
+        streams.insert(node_id, distinct);
+    }
+
+    fn flat_map<C>(
+        &mut self,
+        node_id: NodeId,
+        flat_map: FlatMap,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        let input = &streams[&flat_map.input];
+        let mapped = match flat_map.flat_map {
+            FlatMapFn::SetSet {
+                flat_map,
+                key_vtable,
+            } => {
+                let input = input.as_set().unwrap();
+                let flat_map =
+                    operators::FlatMap::new(move |key: &Row, output_keys: &mut Vec<Row>| unsafe {
+                        flat_map(
+                            key.as_ptr(),
+                            &mut [
+                                output_keys as *mut _ as *mut u8,
+                                key_vtable as *const _ as *mut u8,
+                            ],
+                        )
+                    });
+                RowStream::Set(input.circuit().add_unary_operator(flat_map, input))
+            }
+
+            FlatMapFn::SetMap {
+                flat_map,
+                key_vtable,
+                value_vtable,
+            } => {
+                let input = input.as_set().unwrap();
+                let flat_map = operators::FlatMap::new(
+                    move |key: &Row, output_keys: &mut Vec<Row>, output_values: &mut Vec<Row>| unsafe {
+                        flat_map(
+                            key.as_ptr(),
+                            &mut [
+                                output_keys as *mut _ as *mut u8,
+                                key_vtable as *const _ as *mut u8,
+                            ],
+                            &mut [
+                                output_values as *mut _ as *mut u8,
+                                value_vtable as *const _ as *mut u8,
+                            ],
+                        )
+                    },
+                );
+                RowStream::Map(input.circuit().add_unary_operator(flat_map, input))
+            }
+
+            FlatMapFn::MapSet {
+                flat_map,
+                key_vtable,
+            } => {
+                let input = input.as_map().unwrap();
+                let flat_map = operators::FlatMap::new(
+                    move |key: &Row, value: &Row, output_keys: &mut Vec<Row>| unsafe {
+                        flat_map(
+                            key.as_ptr(),
+                            value.as_ptr(),
+                            &mut [
+                                output_keys as *mut _ as *mut u8,
+                                key_vtable as *const _ as *mut u8,
+                            ],
+                        )
+                    },
+                );
+                RowStream::Set(input.circuit().add_unary_operator(flat_map, input))
+            }
+
+            FlatMapFn::MapMap {
+                flat_map,
+                key_vtable,
+                value_vtable,
+            } => {
+                let input = input.as_map().unwrap();
+                let flat_map = operators::FlatMap::new(
+                    move |key: &Row,
+                          value: &Row,
+                          output_keys: &mut Vec<Row>,
+                          output_values: &mut Vec<Row>| unsafe {
+                        flat_map(
+                            key.as_ptr(),
+                            value.as_ptr(),
+                            &mut [
+                                output_keys as *mut _ as *mut u8,
+                                key_vtable as *const _ as *mut u8,
+                            ],
+                            &mut [
+                                output_values as *mut _ as *mut u8,
+                                value_vtable as *const _ as *mut u8,
+                            ],
+                        )
+                    },
+                );
+                RowStream::Map(input.circuit().add_unary_operator(flat_map, input))
+            }
+        };
+
+        streams.insert(node_id, mapped);
     }
 }
 
