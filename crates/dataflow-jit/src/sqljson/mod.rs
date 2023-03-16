@@ -210,141 +210,25 @@ mod tests {
     };
 
     #[test]
-    fn join_json() {
+    fn flat_map_set_set() {
         crate::utils::test_logger();
 
         let mut graph = Graph::new();
 
-        // let key = graph.layout_cache().add(
-        //     RowLayoutBuilder::new()
-        //         .with_column(ColumnType::U32, true)
-        //         .build(),
-        // );
-        // let value = graph.layout_cache().add(
-        //     RowLayoutBuilder::new()
-        //         .with_column(ColumnType::String, false)
-        //         .build(),
-        // );
-
-        // let output = graph.layout_cache().add(
-        //     RowLayoutBuilder::new()
-        //         .with_column(ColumnType::U32, true)
-        //         .with_column(ColumnType::String, false)
-        //         .with_column(ColumnType::String, false)
-        //         .build(),
-        // );
-        // let unit = graph.layout_cache().unit();
-
-        // let source = graph.source_map(key, value);
-        // let source_index = graph.index_with(source, key, value, {
-        //     let mut builder = graph.function_builder();
-        //     let key_input = builder.add_input(key);
-        //     let value_input = builder.add_input(value);
-        //     let key_output = builder.add_output(key);
-        //     let value_output = builder.add_output(value);
-
-        //     let key = builder.load(key_input, 0);
-        //     builder.store(key_output, 0, key);
-
-        //     let value = builder.load(value_input, 0);
-        //     let value = builder.copy_val(value);
-        //     builder.store(value_output, 0, value);
-
-        //     builder.ret_unit();
-
-        //     builder.build()
-        // });
-
-        // let joined = graph.join_core(
-        //     source_index,
-        //     source_index,
-        //     {
-        //         let mut builder = graph.function_builder();
-        //         let key = builder.add_input(key);
-        //         let lhs_val = builder.add_input(value);
-        //         let rhs_val = builder.add_input(value);
-        //         let output = builder.add_output(output);
-        //         let _unit_output = builder.add_output(unit);
-
-        //         let key = builder.load(key, 0);
-        //         builder.store(output, 0, key);
-
-        //         let lhs_val = builder.load(lhs_val, 0);
-        //         let lhs_val = builder.copy_val(lhs_val);
-        //         builder.store(output, 1, lhs_val);
-
-        //         let rhs_val = builder.load(rhs_val, 0);
-        //         let rhs_val = builder.copy_val(rhs_val);
-        //         builder.store(output, 2, rhs_val);
-
-        //         builder.ret_unit();
-
-        //         builder.build()
-        //     },
-        //     output,
-        //     unit,
-        //     StreamKind::Set,
-        // );
-
-        let _null_i32 = graph.layout_cache().add(
-            RowLayoutBuilder::new()
-                .with_column(ColumnType::I32, true)
-                .build(),
-        );
         let i32 = graph.layout_cache().add(
             RowLayoutBuilder::new()
                 .with_column(ColumnType::I32, false)
                 .build(),
         );
-
-        let source = graph.source(i32);
-        // let constant = graph.add_node(Node::Fold(Fold::new(
-        //     source,
-        //     RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(0))]),
-        //     // Step
-        //     {
-        //         let mut builder = graph.function_builder();
-        //         let acc = builder.add_input(i32);
-        //         let input = builder.add_input(null_i32);
-        //         let weight = builder.add_input(i32);
-        //         let output = builder.add_output(i32);
-        //
-        //         let acc = builder.load(acc, 0);
-        //         let input_val = builder.load(input, 0);
-        //         let input_null = builder.is_null(input, 0);
-        //         let weight = builder.load(weight, 0);
-
-        //         let zero = builder.constant(Constant::I32(0));
-        //         let input_val = builder.select(input_null, zero, input_val);
-        //         let input_mul_weight = builder.mul(input_val, weight);
-        //
-        //         let acc_plus_input = builder.add(acc, input_mul_weight);
-        //         builder.store(output, 0, acc_plus_input);
-        //
-        //         builder.ret_unit();
-        //         builder.build()
-        //     },
-        //     // Finish
-        //     {
-        //         let mut builder = graph.function_builder();
-        //         let input = builder.add_input(i32);
-        //         let output = builder.add_output(i32);
-        //
-        //         builder.copy_row_to(input, output);
-        //         builder.ret_unit();
-        //         builder.build()
-        //     },
-        //     null_i32,
-        //     i32,
-        //     i32,
-        // )));
-
         let row_vec_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
                 .with_column(ColumnType::Ptr, false)
                 .with_column(ColumnType::Ptr, false)
                 .build(),
         );
+
+        let source = graph.source(i32);
+
         let flat_map = graph.add_node(Node::FlatMap(FlatMap::new(
             source,
             {
