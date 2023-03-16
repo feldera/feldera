@@ -187,7 +187,7 @@ impl Codegen {
                                 ctx.imports.string_debug(ctx.module, builder.func)
                             }
 
-                            ColumnType::Unit => unreachable!(),
+                            ColumnType::Ptr | ColumnType::Unit => unreachable!(),
                         };
 
                         builder.call_fn(debug_fn, &[value, fmt])

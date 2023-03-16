@@ -10,6 +10,35 @@ pub enum ArgType {
     Scalar(ColumnType),
 }
 
+impl ArgType {
+    /// Returns `true` if the arg type is [`Row`].
+    ///
+    /// [`Row`]: ArgType::Row
+    #[must_use]
+    #[inline]
+    pub const fn is_row(&self) -> bool {
+        matches!(self, Self::Row(..))
+    }
+
+    #[inline]
+    pub const fn as_row(self) -> Option<LayoutId> {
+        if let Self::Row(layout) = self {
+            Some(layout)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub const fn as_scalar(self) -> Option<ColumnType> {
+        if let Self::Scalar(scalar) = self {
+            Some(scalar)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Call {
     /// The name of the function being called

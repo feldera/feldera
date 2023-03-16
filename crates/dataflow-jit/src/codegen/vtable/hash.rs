@@ -122,7 +122,7 @@ impl Codegen {
                         ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
                         ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
                         ColumnType::String => imports.string_hash(ctx.module, builder.func),
-                        ColumnType::Unit => unreachable!(),
+                        ColumnType::Ptr | ColumnType::Unit => unreachable!(),
                     };
                     builder.ins().call(hash_function, &[hasher, value]);
 

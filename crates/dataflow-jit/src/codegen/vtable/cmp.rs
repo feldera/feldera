@@ -183,7 +183,7 @@ impl Codegen {
                         }
 
                         // Unit values have already been handled
-                        ColumnType::Unit => unreachable!(),
+                        ColumnType::Ptr | ColumnType::Unit => unreachable!(),
                     };
 
                     // If the values aren't equal, return false (`are_equal` should contain `false`)
@@ -388,7 +388,7 @@ impl Codegen {
                             }
                         }
 
-                        ColumnType::Unit => unreachable!(),
+                        ColumnType::Ptr | ColumnType::Unit => unreachable!(),
 
                         ColumnType::String => {
                             let string_lt = imports.string_lt(&mut self.module, builder.func);
@@ -635,6 +635,8 @@ impl Codegen {
                                 .ins()
                                 .brif(cmp, return_block, &[cmp], next_compare, &[]);
                         }
+
+                        ColumnType::Ptr => unreachable!(),
                     }
 
                     let current = builder.current_block().unwrap();

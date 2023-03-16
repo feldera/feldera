@@ -212,7 +212,7 @@ pub struct PartitionedRollingFold {
     input: NodeId,
     /// The time range to fold over
     // FIXME: Support more timestamps
-    range: RelRange<i32>,
+    range: RelRange<i64>,
     /// The initial value of the fold, should be the same layout as `acc_layout`
     init: RowLiteral,
     /// The step function, should have a signature of
@@ -233,7 +233,7 @@ impl PartitionedRollingFold {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         input: NodeId,
-        range: RelRange<i32>,
+        range: RelRange<i64>,
         init: RowLiteral,
         step_fn: Function,
         finish_fn: Function,
@@ -281,7 +281,7 @@ impl PartitionedRollingFold {
         self.output_layout
     }
 
-    pub const fn range(&self) -> RelRange<i32> {
+    pub const fn range(&self) -> RelRange<i64> {
         self.range
     }
 }
