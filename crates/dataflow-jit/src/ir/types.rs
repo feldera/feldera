@@ -89,6 +89,9 @@ column_type! {
 
     /// A unit value
     Unit = ("unit", return None),
+
+    /// A pointer value
+    Ptr = ("ptr", Ptr),
 }
 
 impl ColumnType {

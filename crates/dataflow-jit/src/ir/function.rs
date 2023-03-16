@@ -642,7 +642,7 @@ impl FunctionBuilder {
         })
     }
 
-    fn add_expr<E>(&mut self, expr: E) -> ExprId
+    pub(crate) fn add_expr<E>(&mut self, expr: E) -> ExprId
     where
         E: Into<Expr>,
     {

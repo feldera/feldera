@@ -1,14 +1,14 @@
 // Basic sketch:
-// - Flat map fn gets its normal params plus four additional pointers,
-//   `keys: &mut Vec<Row>`, `values: &mut Vec<Row>` and the vtable pointers
-//   for the key and value rows
+// - Flat map fn gets its normal params plus four additional pointers, `keys:
+//   &mut Vec<Row>`, `values: &mut Vec<Row>` and the vtable pointers for the key
+//   and value rows
 // - User calls `@dbsp.row.vec.push(vec: &mut Vec<Row>, row_ptr: *mut RawRow)`
 //   to push an element to a vec
-// - User produces outputs with successive `@dbsp.row.vec.push()` calls
-//   to key and value vecs
-// - `@dbsp.row.vec.push(vec: &mut Vec<Row>, row_ptr: *mut RawRow)`, takes
-//   the raw data of a row, allocates a `Row`, copies the raw data into it
-//   and sets the proper vtable pointer before pushing the row value to the vec
+// - User produces outputs with successive `@dbsp.row.vec.push()` calls to key
+//   and value vecs
+// - `@dbsp.row.vec.push(vec: &mut Vec<Row>, row_ptr: *mut RawRow)`, takes the
+//   raw data of a row, allocates a `Row`, copies the raw data into it and sets
+//   the proper vtable pointer before pushing the row value to the vec
 
 use crate::ir::{
     DataflowNode, Function, LayoutId, NodeId, RowLayoutCache, Signature, StreamKind, StreamLayout,
@@ -16,21 +16,49 @@ use crate::ir::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The flat map operator produces multiple (zero or more) outputs for each
+/// input pair
+///
+/// It's fairly polymorphic in its design, allowing taking set and map inputs
+/// and producing set and map outputs. A set or map can be produced regardless
+/// of the input stream's type.
+///
+/// If the input stream is a set, one key param will be required of the
+/// `flat_map` function. If the input stream is a map, one key param and one
+/// value param will be required. If the output stream is a set, one param with
+/// a layout of `{ ptr, ptr }` will be required, this is the vector that
+/// produced keys can be pushed to using `@dbsp.row.vec.push()`. If the output
+/// stream is a map, two params with layouts of `{ ptr, ptr }` will be required,
+/// forming the key and values vectors that produced keys and values can be
+/// pushed to using `@dbsp.row.vec.push()`.
+///
+/// #### Possible Function Signatures
+///
+/// | Input Stream | Output Stream | Function Signature                                                                         |
+/// | :----------: | :-----------: | ------------------------------------------------------------------------------------------ |
+/// |     Set      |      Set      | `fn(key: { ... }, output_keys: { ptr, ptr })`                                              |
+/// |     Set      |      Map      | `fn(key: { ... }, output_keys: { ptr, ptr }, output_values: { ptr, ptr })`                 |
+/// |     Map      |      Set      | `fn(key: { ... }, value: { ... }, output_keys: { ptr, ptr })`                              |
+/// |     Map      |      Map      | `fn(key: { ... }, value: { ... }, output_keys: { ptr, ptr }, output_values: { ptr, ptr })` |
+///
+/// `{ ... }` denotes an arbitrary layout, the `output_keys` and `output_values`
+/// vectors are typed in association with `output_layout`.
+///
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FlatMap {
     input: NodeId,
     flat_map: Function,
-    output: StreamLayout,
+    output_layout: StreamLayout,
     // TODO: Allow the compiler to infer an output size hint
     //       to enable buffer pre-allocation
 }
 
 impl FlatMap {
-    pub fn new(input: NodeId, flat_map: Function, output: StreamLayout) -> Self {
+    pub fn new(input: NodeId, flat_map: Function, output_layout: StreamLayout) -> Self {
         Self {
             input,
             flat_map,
-            output,
+            output_layout,
         }
     }
 
@@ -42,8 +70,8 @@ impl FlatMap {
         &self.flat_map
     }
 
-    pub const fn output(&self) -> StreamLayout {
-        self.output
+    pub const fn output_layout(&self) -> StreamLayout {
+        self.output_layout
     }
 }
 
@@ -53,11 +81,11 @@ impl DataflowNode for FlatMap {
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.output.kind())
+        Some(self.output_layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(self.output)
+        Some(self.output_layout)
     }
 
     fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
@@ -71,14 +99,14 @@ impl DataflowNode for FlatMap {
     }
 
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        match self.output {
+        match self.output_layout {
             StreamLayout::Set(key) => layouts.push(key),
             StreamLayout::Map(key, value) => layouts.extend([key, value]),
         }
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        match &mut self.output {
+        match &mut self.output_layout {
             StreamLayout::Set(key) => *key = mappings[key],
             StreamLayout::Map(key, value) => {
                 *key = mappings[key];

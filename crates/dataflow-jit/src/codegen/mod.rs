@@ -20,9 +20,9 @@ use crate::{
         utils::FunctionBuilderExt,
     },
     ir::{
-        BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr, ExprId,
-        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, Select,
-        SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
+        exprs::Call, BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr,
+        ExprId, Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutBuilder,
+        RowLayoutCache, Select, SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
     ThinStr,
 };
@@ -44,6 +44,7 @@ use std::{
     cell::{Ref, RefCell},
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap},
+    mem::align_of,
     rc::Rc,
     sync::Arc,
 };
@@ -52,6 +53,7 @@ use target_lexicon::Triple;
 const TRAP_NULL_PTR: TrapCode = TrapCode::User(0);
 const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(1);
 const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
+const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -299,7 +301,7 @@ impl Codegen {
 
                 for &(expr_id, ref expr) in block_contents.body() {
                     match expr {
-                        Expr::Call(_call) => todo!(),
+                        Expr::Call(call) => ctx.call(expr_id, call, &mut builder),
                         Expr::Cast(cast) => ctx.cast(expr_id, cast, &mut builder),
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
@@ -1805,6 +1807,86 @@ impl<'a> CodegenCtx<'a> {
             self.expr_types.get(&select.if_true()).copied(),
             self.expr_layouts.get(&select.if_true()).copied(),
         );
+    }
+
+    fn call(&mut self, _expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        match call.function() {
+            // fn(*mut {vec_ptr, row_vtable}, row_value)
+            "dbsp.row.vec.push" => {
+                let vec_layout = self.layout_cache.row_layout_cache().add(
+                    RowLayoutBuilder::new()
+                        .with_column(ColumnType::Ptr, false)
+                        .with_column(ColumnType::Ptr, false)
+                        .build(),
+                );
+                let native_vec_layout = self.layout_cache.layout_of(vec_layout);
+
+                debug_assert_eq!(call.args().len(), 2);
+                debug_assert_eq!(call.arg_types().len(), 2);
+                debug_assert_eq!(call.arg_types()[0].as_row(), Some(vec_layout));
+                let row_layout = self.expr_layouts[&call.args()[1]];
+                debug_assert_eq!(call.arg_types()[1].as_row(), Some(row_layout));
+
+                let (vec, row) = (self.value(call.args()[0]), self.value(call.args()[1]));
+
+                let ptr_ty = self.pointer_type();
+                let flags = MemFlags::trusted();
+                let vec_ptr =
+                    builder
+                        .ins()
+                        .load(ptr_ty, flags, vec, native_vec_layout.offset_of(0) as i32);
+                let vtable_ptr =
+                    builder
+                        .ins()
+                        .load(ptr_ty, flags, vec, native_vec_layout.offset_of(1) as i32);
+
+                if self.debug_assertions() {
+                    // Assert that the vec pointer is valid
+                    self.assert_ptr_valid(
+                        vec_ptr,
+                        align_of::<Vec<crate::row::Row>>() as u32,
+                        builder,
+                    );
+
+                    // Assert that the vtable pointer is valid
+                    self.assert_ptr_valid(vtable_ptr, align_of::<VTable>() as u32, builder);
+
+                    // Assert that the row pointer is valid
+                    let row_align = self.layout_cache.layout_of(row_layout).align();
+                    self.assert_ptr_valid(row, row_align, builder);
+
+                    // Assert that the vtable is associated with the correct layout
+                    let vtable_layout = builder.ins().load(
+                        types::I32,
+                        MemFlags::trusted(),
+                        vtable_ptr,
+                        VTable::layout_id_offset() as i32,
+                    );
+                    let expected_layout = builder
+                        .ins()
+                        .iconst(types::I32, row_layout.into_inner() as i64);
+                    let are_equal =
+                        builder
+                            .ins()
+                            .icmp(IntCC::Equal, vtable_layout, expected_layout);
+                    builder.ins().trapz(are_equal, TRAP_ASSERT_EQ);
+                }
+
+                let dbsp_row_vec_push = self.imports.row_vec_push(self.module, builder.func);
+                let call_inst = builder
+                    .ins()
+                    .call(dbsp_row_vec_push, &[vec_ptr, vtable_ptr, row]);
+
+                if let Some(writer) = self.comment_writer.as_deref() {
+                    let layout = self.layout_cache.layout_of(row_layout);
+                    writer
+                        .borrow_mut()
+                        .add_comment(call_inst, format!("call @dbsp.row.vec.push() for {layout}"));
+                }
+            }
+
+            unknown => todo!("unknown function call: @{unknown}"),
+        }
     }
 
     /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]

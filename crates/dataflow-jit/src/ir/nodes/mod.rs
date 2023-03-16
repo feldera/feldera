@@ -13,6 +13,7 @@ pub use aggregate::{Fold, Min, PartitionedRollingFold};
 pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
+pub use flat_map::FlatMap;
 pub use index::IndexWith;
 pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
 pub use join::{JoinCore, MonotonicJoin};
@@ -54,6 +55,7 @@ pub enum Node {
     MonotonicJoin(MonotonicJoin),
     Constant(ConstantStream),
     PartitionedRollingFold(PartitionedRollingFold),
+    FlatMap(FlatMap),
     // TODO: OrderBy, Windows
 }
 

@@ -1,4 +1,9 @@
-use crate::{codegen::pretty_clif::CommentWriter, thin_str::ThinStrRef, ThinStr};
+use crate::{
+    codegen::{pretty_clif::CommentWriter, VTable},
+    row::{Row, UninitRow},
+    thin_str::ThinStrRef,
+    ThinStr,
+};
 use chrono::{LocalResult, NaiveDate, TimeZone, Utc};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
@@ -159,6 +164,7 @@ intrinsics! {
     u64_hash = fn(ptr, u64),
     i64_hash = fn(ptr, i64),
     string_hash = fn(ptr, ptr),
+    row_vec_push = fn(ptr, ptr, ptr),
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -267,6 +273,22 @@ unsafe extern "C" fn dataflow_jit_timestamp_debug(
         tracing::error!("failed to create timestamp from {timestamp}");
         false
     }
+}
+
+unsafe extern "C" fn dataflow_jit_row_vec_push(
+    vec: &mut Vec<Row>,
+    vtable: &'static VTable,
+    row: *mut u8,
+) {
+    let mut uninit = UninitRow::new(vtable);
+    unsafe {
+        uninit
+            .as_mut_ptr()
+            .copy_from_nonoverlapping(row, vtable.size_of);
+    }
+
+    let row = unsafe { uninit.assume_init() };
+    vec.push(row);
 }
 
 macro_rules! hash {

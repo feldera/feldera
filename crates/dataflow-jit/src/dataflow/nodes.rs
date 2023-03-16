@@ -39,6 +39,59 @@ pub enum DataflowNode {
     Constant(Constant),
     Fold(Fold),
     PartitionedRollingFold(PartitionedRollingFold),
+    FlatMap(FlatMap),
+}
+
+#[derive(Debug, Clone)]
+pub struct FlatMap {
+    pub input: NodeId,
+    pub flat_map: FlatMapFn,
+}
+
+#[derive(Debug, Clone)]
+pub enum FlatMapFn {
+    // Set input, set output
+    SetSet {
+        // fn(*const input_key, keys: *mut { &mut Vec<Row>, &'static VTable })
+        flat_map: unsafe extern "C" fn(*const u8, *mut [*mut u8; 2]),
+        key_vtable: &'static VTable,
+    },
+
+    // Set input, map output
+    SetMap {
+        // ```
+        // fn(
+        //     key: *const input_key,
+        //     output_keys: *mut { &mut Vec<Row>, &'static VTable },
+        //     output_values: *mut { &mut Vec<Row>, &'static VTable },
+        // )
+        // ```
+        flat_map: unsafe extern "C" fn(*const u8, *mut [*mut u8; 2], *mut [*mut u8; 2]),
+        key_vtable: &'static VTable,
+        value_vtable: &'static VTable,
+    },
+
+    // Map input, set output
+    MapSet {
+        // fn(*const input_key, *const input_value, keys: *mut { &mut Vec<Row>, &'static VTable })
+        flat_map: unsafe extern "C" fn(*const u8, *const u8, *mut [*mut u8; 2]),
+        key_vtable: &'static VTable,
+    },
+
+    // Map input, map output
+    MapMap {
+        // ```
+        // fn(
+        //     key: *const input_key,
+        //     value: *const input_value,
+        //     output_keys: *mut { &mut Vec<Row>, &'static VTable },
+        //     output_values: *mut { &mut Vec<Row>, &'static VTable },
+        // )
+        // ```
+        flat_map: unsafe extern "C" fn(*const u8, *const u8, *mut [*mut u8; 2], *mut [*mut u8; 2]),
+        key_vtable: &'static VTable,
+        value_vtable: &'static VTable,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +108,7 @@ pub struct Fold {
 #[derive(Debug, Clone)]
 pub struct PartitionedRollingFold {
     pub input: NodeId,
-    pub range: RelRange<i32>,
+    pub range: RelRange<i64>,
     pub init: Row,
     pub acc_vtable: &'static VTable,
     pub step_vtable: &'static VTable,

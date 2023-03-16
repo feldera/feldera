@@ -4,8 +4,8 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
     dataflow::nodes::{
         DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterFn,
-        FilterMap, FilterMapIndex, Fold, Integrate, JoinCore, MapFn, Min, Minus, Noop,
-        PartitionedRollingFold,
+        FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn, Min,
+        Minus, Noop, PartitionedRollingFold,
     },
     ir::{
         graph,
@@ -280,6 +280,29 @@ impl CompiledDataflow {
                         functions.insert(node_id, vec![step_fn, finish_fn]);
                     }
 
+                    Node::FlatMap(flat_map) => {
+                        let flat_map_fn = codegen
+                            .codegen_func(&format!("flat_map_fn_{node_id}"), flat_map.flat_map());
+                        functions.insert(node_id, vec![flat_map_fn]);
+
+                        match flat_map.output_layout() {
+                            StreamLayout::Set(key) => {
+                                vtables
+                                    .entry(key)
+                                    .or_insert_with(|| codegen.vtable_for(key));
+                            }
+
+                            StreamLayout::Map(key, value) => {
+                                vtables
+                                    .entry(key)
+                                    .or_insert_with(|| codegen.vtable_for(key));
+                                vtables
+                                    .entry(value)
+                                    .or_insert_with(|| codegen.vtable_for(value));
+                            }
+                        }
+                    }
+
                     Node::IndexWith(index_with) => {
                         let index_fn = codegen
                             .codegen_func(&format!("index_fn_{node_id}"), index_with.index_fn());
@@ -466,6 +489,51 @@ impl CompiledDataflow {
                         };
 
                         nodes.insert(*node_id, node);
+                    }
+
+                    Node::FlatMap(flat_map) => {
+                        let flat_map_fn = jit.get_finalized_function(node_functions[node_id][0]);
+                        let input_is_map = node_streams[&flat_map.input()].unwrap().is_map();
+                        let flat_map = DataflowNode::FlatMap(FlatMap {
+                            input: flat_map.input(),
+                            flat_map: match flat_map.output_layout() {
+                                StreamLayout::Set(key) => {
+                                    let key_vtable = unsafe { &*vtables[&key] };
+
+                                    if input_is_map {
+                                        FlatMapFn::MapSet {
+                                            flat_map: unsafe { transmute(flat_map_fn) },
+                                            key_vtable,
+                                        }
+                                    } else {
+                                        FlatMapFn::SetSet {
+                                            flat_map: unsafe { transmute(flat_map_fn) },
+                                            key_vtable,
+                                        }
+                                    }
+                                }
+
+                                StreamLayout::Map(key, value) => {
+                                    let (key_vtable, value_vtable) =
+                                        unsafe { (&*vtables[&key], &*vtables[&value]) };
+
+                                    if input_is_map {
+                                        FlatMapFn::MapMap {
+                                            flat_map: unsafe { transmute(flat_map_fn) },
+                                            key_vtable,
+                                            value_vtable,
+                                        }
+                                    } else {
+                                        FlatMapFn::SetMap {
+                                            flat_map: unsafe { transmute(flat_map_fn) },
+                                            key_vtable,
+                                            value_vtable,
+                                        }
+                                    }
+                                }
+                            },
+                        });
+                        nodes.insert(*node_id, flat_map);
                     }
 
                     Node::Neg(neg) => {
@@ -937,6 +1005,98 @@ impl CompiledDataflow {
                     streams.insert(node_id, mapped);
                 }
 
+                DataflowNode::FlatMap(flat_map) => {
+                    let input = streams[&flat_map.input].clone();
+                    let mapped = match flat_map.flat_map {
+                        FlatMapFn::SetSet {
+                            flat_map,
+                            key_vtable,
+                        } => RowStream::Set(input.unwrap_set().flat_map(move |key| {
+                            let mut output_keys = Vec::new();
+                            unsafe {
+                                flat_map(
+                                    key.as_ptr(),
+                                    &mut [
+                                        &mut output_keys as *mut _ as *mut u8,
+                                        key_vtable as *const _ as *mut u8,
+                                    ],
+                                )
+                            }
+                            output_keys
+                        })),
+
+                        FlatMapFn::SetMap {
+                            flat_map,
+                            key_vtable,
+                            value_vtable,
+                        } => RowStream::Map(input.unwrap_set().flat_map_index(move |key| {
+                            let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
+                            unsafe {
+                                flat_map(
+                                    key.as_ptr(),
+                                    &mut [
+                                        &mut output_keys as *mut _ as *mut u8,
+                                        key_vtable as *const _ as *mut u8,
+                                    ],
+                                    &mut [
+                                        &mut output_values as *mut _ as *mut u8,
+                                        value_vtable as *const _ as *mut u8,
+                                    ],
+                                )
+                            }
+
+                            debug_assert_eq!(output_keys.len(), output_values.len());
+                            output_keys.into_iter().zip(output_values)
+                        })),
+
+                        FlatMapFn::MapSet {
+                            flat_map,
+                            key_vtable,
+                        } => RowStream::Set(input.unwrap_map().flat_map(move |(key, value)| {
+                            let mut output_keys = Vec::new();
+                            unsafe {
+                                flat_map(
+                                    key.as_ptr(),
+                                    value.as_ptr(),
+                                    &mut [
+                                        &mut output_keys as *mut _ as *mut u8,
+                                        key_vtable as *const _ as *mut u8,
+                                    ],
+                                )
+                            }
+                            output_keys
+                        })),
+
+                        FlatMapFn::MapMap {
+                            flat_map,
+                            key_vtable,
+                            value_vtable,
+                        } => RowStream::Map(input.unwrap_map().flat_map_index(
+                            move |(key, value)| {
+                                let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
+                                unsafe {
+                                    flat_map(
+                                        key.as_ptr(),
+                                        value.as_ptr(),
+                                        &mut [
+                                            &mut output_keys as *mut _ as *mut u8,
+                                            key_vtable as *const _ as *mut u8,
+                                        ],
+                                        &mut [
+                                            &mut output_values as *mut _ as *mut u8,
+                                            value_vtable as *const _ as *mut u8,
+                                        ],
+                                    )
+                                }
+
+                                debug_assert_eq!(output_keys.len(), output_values.len());
+                                output_keys.into_iter().zip(output_values)
+                            },
+                        )),
+                    };
+                    streams.insert(node_id, mapped);
+                }
+
                 DataflowNode::IndexWith(index_with) => {
                     let input = &streams[&index_with.input];
                     let (index_fn, key_vtable, value_vtable) = (
@@ -1118,8 +1278,8 @@ impl CompiledDataflow {
                     streams.insert(node_id, RowStream::Map(folded));
                 }
 
-                DataflowNode::PartitionedRollingFold(fold) => {
-                    // /*
+                DataflowNode::PartitionedRollingFold(_fold) => {
+                    /*
                     let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
                     let (acc_vtable, step_vtable, output_vtable) =
                         (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
@@ -1153,15 +1313,15 @@ impl CompiledDataflow {
 
                                     let mut row = UninitRow::new(output_vtable);
                                     finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
-                                    (0, row.assume_init())
+                                    row.assume_init()
                                 },
                             );
 
-                            input.partitioned_rolling_aggregate::<i32, Row, _>(fold_agg, fold.range)
+                            input.partitioned_rolling_aggregate(fold_agg, fold.range)
                         }
                     };
-                    // streams.insert(node_id, RowStream::Map(folded));
-                    // */
+                    streams.insert(node_id, RowStream::Map(folded));
+                    */
                     unimplemented!()
                 }
 
@@ -1427,6 +1587,98 @@ impl CompiledDataflow {
                                         substreams.insert(node_id, mapped);
                                     }
 
+                                    DataflowNode::FlatMap(flat_map) => {
+                                        let input = substreams[&flat_map.input].clone();
+                                        let mapped = match flat_map.flat_map {
+                                            FlatMapFn::SetSet {
+                                                flat_map,
+                                                key_vtable,
+                                            } => RowStream::Set(input.unwrap_set().flat_map(move |key| {
+                                                let mut output_keys = Vec::new();
+                                                unsafe {
+                                                    flat_map(
+                                                        key.as_ptr(),
+                                                        &mut [
+                                                            &mut output_keys as *mut _ as *mut u8,
+                                                            key_vtable as *const _ as *mut u8,
+                                                        ],
+                                                    )
+                                                }
+                                                output_keys
+                                            })),
+
+                                            FlatMapFn::SetMap {
+                                                flat_map,
+                                                key_vtable,
+                                                value_vtable,
+                                            } => RowStream::Map(input.unwrap_set().flat_map_index(move |key| {
+                                                let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
+                                                unsafe {
+                                                    flat_map(
+                                                        key.as_ptr(),
+                                                        &mut [
+                                                            &mut output_keys as *mut _ as *mut u8,
+                                                            key_vtable as *const _ as *mut u8,
+                                                        ],
+                                                        &mut [
+                                                            &mut output_values as *mut _ as *mut u8,
+                                                            value_vtable as *const _ as *mut u8,
+                                                        ],
+                                                    )
+                                                }
+
+                                                debug_assert_eq!(output_keys.len(), output_values.len());
+                                                output_keys.into_iter().zip(output_values)
+                                            })),
+
+                                            FlatMapFn::MapSet {
+                                                flat_map,
+                                                key_vtable,
+                                            } => RowStream::Set(input.unwrap_map().flat_map(move |(key, value)| {
+                                                let mut output_keys = Vec::new();
+                                                unsafe {
+                                                    flat_map(
+                                                        key.as_ptr(),
+                                                        value.as_ptr(),
+                                                        &mut [
+                                                            &mut output_keys as *mut _ as *mut u8,
+                                                            key_vtable as *const _ as *mut u8,
+                                                        ],
+                                                    )
+                                                }
+                                                output_keys
+                                            })),
+
+                                            FlatMapFn::MapMap {
+                                                flat_map,
+                                                key_vtable,
+                                                value_vtable,
+                                            } => RowStream::Map(input.unwrap_map().flat_map_index(
+                                                move |(key, value)| {
+                                                    let (mut output_keys, mut output_values) = (Vec::new(), Vec::new());
+                                                    unsafe {
+                                                        flat_map(
+                                                            key.as_ptr(),
+                                                            value.as_ptr(),
+                                                            &mut [
+                                                                &mut output_keys as *mut _ as *mut u8,
+                                                                key_vtable as *const _ as *mut u8,
+                                                            ],
+                                                            &mut [
+                                                                &mut output_values as *mut _ as *mut u8,
+                                                                value_vtable as *const _ as *mut u8,
+                                                            ],
+                                                        )
+                                                    }
+
+                                                    debug_assert_eq!(output_keys.len(), output_values.len());
+                                                    output_keys.into_iter().zip(output_values)
+                                                },
+                                            )),
+                                        };
+                                        substreams.insert(node_id, mapped);
+                                    }
+
                                     DataflowNode::IndexWith(index_with) => {
                                         let input = &substreams[&index_with.input];
                                         let (index_fn, key_vtable, value_vtable) = (
@@ -1596,7 +1848,7 @@ impl CompiledDataflow {
                                         substreams.insert(node_id, RowStream::Map(folded));
                                     }
 
-                                    DataflowNode::PartitionedRollingFold(fold) => {
+                                    DataflowNode::PartitionedRollingFold(_fold) => {
                                          /*
                                         let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
                                         let (acc_vtable, step_vtable, output_vtable) =

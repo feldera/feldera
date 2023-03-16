@@ -122,6 +122,7 @@ macro_rules! vtable {
         }
 
         #[derive(Clone, Copy)]
+        #[repr(C)]
         pub struct VTable {
             pub size_of: usize,
             pub align_of: NonZeroUsize,
@@ -139,6 +140,13 @@ macro_rules! vtable {
                     debug_assert!(std::str::from_utf8(bytes).is_ok());
                     std::str::from_utf8_unchecked(bytes)
                 }
+            }
+
+            pub(crate) fn layout_id_offset() -> usize {
+                use std::{mem::MaybeUninit, ptr::addr_of};
+
+                let x = MaybeUninit::<Self>::uninit();
+                unsafe { addr_of!((*x.as_ptr()).layout_id) as usize - addr_of!(x) as usize }
             }
         }
 

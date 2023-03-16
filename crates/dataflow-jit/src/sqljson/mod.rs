@@ -195,12 +195,18 @@ impl From<Graph> for SqlGraph {
 #[cfg(test)]
 mod tests {
     use crate::{
+        dataflow::CompiledDataflow,
         ir::{
-            literal::{NullableConstant, RowLiteral},
-            nodes::Fold,
-            ColumnType, Constant, Graph, GraphExt, Node, RowLayoutBuilder,
+            exprs::{ArgType, Call},
+            nodes::FlatMap,
+            ColumnType, Graph, GraphExt, Node, RowLayoutBuilder, StreamLayout,
         },
+        row::{Row, UninitRow},
         sqljson::SqlGraph,
+    };
+    use dbsp::{
+        trace::{Batch, Batcher},
+        OrdZSet, Runtime,
     };
 
     #[test]
@@ -280,7 +286,7 @@ mod tests {
         //     StreamKind::Set,
         // );
 
-        let null_i32 = graph.layout_cache().add(
+        let _null_i32 = graph.layout_cache().add(
             RowLayoutBuilder::new()
                 .with_column(ColumnType::I32, true)
                 .build(),
@@ -291,52 +297,140 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(null_i32);
-        let constant = graph.add_node(Node::Fold(Fold::new(
+        let source = graph.source(i32);
+        // let constant = graph.add_node(Node::Fold(Fold::new(
+        //     source,
+        //     RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(0))]),
+        //     // Step
+        //     {
+        //         let mut builder = graph.function_builder();
+        //         let acc = builder.add_input(i32);
+        //         let input = builder.add_input(null_i32);
+        //         let weight = builder.add_input(i32);
+        //         let output = builder.add_output(i32);
+        //
+        //         let acc = builder.load(acc, 0);
+        //         let input_val = builder.load(input, 0);
+        //         let input_null = builder.is_null(input, 0);
+        //         let weight = builder.load(weight, 0);
+
+        //         let zero = builder.constant(Constant::I32(0));
+        //         let input_val = builder.select(input_null, zero, input_val);
+        //         let input_mul_weight = builder.mul(input_val, weight);
+        //
+        //         let acc_plus_input = builder.add(acc, input_mul_weight);
+        //         builder.store(output, 0, acc_plus_input);
+        //
+        //         builder.ret_unit();
+        //         builder.build()
+        //     },
+        //     // Finish
+        //     {
+        //         let mut builder = graph.function_builder();
+        //         let input = builder.add_input(i32);
+        //         let output = builder.add_output(i32);
+        //
+        //         builder.copy_row_to(input, output);
+        //         builder.ret_unit();
+        //         builder.build()
+        //     },
+        //     null_i32,
+        //     i32,
+        //     i32,
+        // )));
+
+        let row_vec_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Ptr, false)
+                .with_column(ColumnType::Ptr, false)
+                .build(),
+        );
+        let flat_map = graph.add_node(Node::FlatMap(FlatMap::new(
             source,
-            RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(0))]),
-            // Step
             {
                 let mut builder = graph.function_builder();
-                let acc = builder.add_input(i32);
-                let input = builder.add_input(null_i32);
-                let weight = builder.add_input(i32);
-                let output = builder.add_output(i32);
+                let value = builder.add_input(i32);
+                let vec = builder.add_input(row_vec_layout);
 
-                let acc = builder.load(acc, 0);
-                let input_val = builder.load(input, 0);
-                let input_null = builder.is_null(input, 0);
-                let weight = builder.load(weight, 0);
-
-                let zero = builder.constant(Constant::I32(0));
-                let input_val = builder.select(input_null, zero, input_val);
-                let input_mul_weight = builder.mul(input_val, weight);
-
-                let acc_plus_input = builder.add(acc, input_mul_weight);
-                builder.store(output, 0, acc_plus_input);
+                for _ in 0..4 {
+                    builder.add_expr(Call::new(
+                        "dbsp.row.vec.push".into(),
+                        vec![vec, value],
+                        vec![ArgType::Row(row_vec_layout), ArgType::Row(i32)],
+                        ColumnType::Unit,
+                    ));
+                }
 
                 builder.ret_unit();
                 builder.build()
             },
-            // Finish
-            {
-                let mut builder = graph.function_builder();
-                let input = builder.add_input(i32);
-                let output = builder.add_output(i32);
-
-                builder.copy_row_to(input, output);
-                builder.ret_unit();
-                builder.build()
-            },
-            null_i32,
-            i32,
-            i32,
+            StreamLayout::Set(i32),
         )));
 
-        graph.sink(constant);
+        let sink = graph.sink(flat_map);
 
         let graph = SqlGraph::from(graph);
         let json_graph = serde_json::to_string_pretty(&graph).unwrap();
         println!("{json_graph}");
+
+        let graph = serde_json::from_str::<SqlGraph>(&json_graph)
+            .unwrap()
+            .rematerialize();
+
+        let (dataflow, jit_handle, layout_cache) =
+            CompiledDataflow::new(&graph, Default::default());
+        let i32_offset = layout_cache.layout_of(i32).offset_of(0) as usize;
+        let i32_vtable = unsafe { &*jit_handle.vtables()[&i32] };
+
+        {
+            let (mut runtime, (mut inputs, outputs)) =
+                Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
+
+            let mut values = Vec::with_capacity(10 * 10);
+            for k in 0..10 {
+                for v in 0..10 {
+                    let mut row = UninitRow::new(i32_vtable);
+                    unsafe {
+                        *row.as_mut_ptr().add(i32_offset).cast::<i32>() = k * v;
+                    }
+
+                    values.push((unsafe { row.assume_init() }, 1));
+                }
+            }
+            inputs
+                .get_mut(&source)
+                .unwrap()
+                .as_set_mut()
+                .unwrap()
+                .append(&mut values);
+
+            runtime.step().unwrap();
+
+            let output = outputs[&sink].as_set().unwrap().consolidate();
+
+            let mut batch = Vec::with_capacity(10 * 10 * 4);
+            for k in 0..10 {
+                for v in 0..10 {
+                    let row = unsafe {
+                        let mut row = UninitRow::new(i32_vtable);
+                        *row.as_mut_ptr().add(i32_offset).cast::<i32>() = k * v;
+                        row.assume_init()
+                    };
+
+                    for _ in 0..4 {
+                        batch.push((row.clone(), 1));
+                    }
+                }
+            }
+
+            let mut expected = <OrdZSet<Row, i32> as Batch>::Batcher::new_batcher(());
+            expected.push_batch(&mut batch);
+            let expected = expected.seal();
+            assert_eq!(output, expected);
+
+            runtime.kill().unwrap();
+        }
+
+        unsafe { jit_handle.free_memory() };
     }
 }

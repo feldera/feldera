@@ -398,7 +398,7 @@ fn clone_layout(
             }
 
             // Unit types have been handled
-            ColumnType::Unit => unreachable!(),
+            ColumnType::Ptr | ColumnType::Unit => unreachable!(),
         };
 
         // Store the cloned value
