@@ -852,7 +852,7 @@ where
         src1: &*tmp,
         dest1: pivot,
         src2: &*tmp2,
-        dest2: v2.as_mut_ptr(),
+        dest2: pivot2,
     };
     let pivot = &*tmp;
 

@@ -3,8 +3,8 @@
 mod proptests;
 
 use crate::trace::consolidation::{
-    consolidate, consolidate_from, consolidate_paired_slices, consolidate_slice,
-    dedup_payload_starting_at, quicksort::quicksort, retain_starting_at,
+    consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
+    consolidate_slice, dedup_payload_starting_at, quicksort::quicksort, retain_starting_at,
 };
 
 #[test]
@@ -264,4 +264,81 @@ fn offset_retain() {
         retain_starting_at(&mut input, starting_point, |(_, cond)| *cond);
         assert_eq!(input, output);
     }
+}
+
+#[test]
+fn consolidate_payload_corpus() {
+    let (mut keys, mut diffs): (Vec<_>, Vec<_>) = vec![
+        (0, 0),
+        (0, 0),
+        (2, 0),
+        (3, 0),
+        (8, 0),
+        (3, 0),
+        (2, 0),
+        (3, 0),
+        (3, 0),
+        (3, 0),
+        (3, 0),
+        (0, 0),
+        (2, 0),
+        (3, 0),
+        (3, 0),
+        (8, 0),
+        (5, 0),
+        (0, 0),
+        (5, 0),
+        (2, 0),
+        (0, 0),
+        (2, 0),
+        (5, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (0, 0),
+        (5, 1),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (5, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (0, 0),
+        (5, 0),
+        (5, 0),
+        (0, 0),
+        (5, 0),
+        (0, 0),
+    ]
+    .into_iter()
+    .unzip();
+
+    consolidate_payload_from(&mut keys, &mut diffs, 0);
+
+    assert_eq!(&keys, &[5]);
+    assert_eq!(&diffs, &[1]);
 }
