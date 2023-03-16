@@ -1,4 +1,5 @@
 mod nodes;
+mod operators;
 
 use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
@@ -35,6 +36,9 @@ use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
 // TODO: Keep layout ids in dataflow nodes so we can do assertions that types
 // are correct
 
+type RowSet = OrdZSet<Row, i32>;
+type RowMap = OrdIndexedZSet<Row, Row, i32>;
+
 type Inputs = BTreeMap<NodeId, RowInput>;
 type Outputs = BTreeMap<NodeId, RowOutput>;
 
@@ -64,12 +68,12 @@ impl RowInput {
 
 #[derive(Clone)]
 pub enum RowOutput {
-    Set(OutputHandle<OrdZSet<Row, i32>>),
-    Map(OutputHandle<OrdIndexedZSet<Row, Row, i32>>),
+    Set(OutputHandle<RowSet>),
+    Map(OutputHandle<RowMap>),
 }
 
 impl RowOutput {
-    pub const fn as_set(&self) -> Option<&OutputHandle<OrdZSet<Row, i32>>> {
+    pub const fn as_set(&self) -> Option<&OutputHandle<RowSet>> {
         if let Self::Set(handle) = self {
             Some(handle)
         } else {
@@ -77,7 +81,7 @@ impl RowOutput {
         }
     }
 
-    pub fn as_set_mut(&mut self) -> Option<&mut OutputHandle<OrdZSet<Row, i32>>> {
+    pub fn as_set_mut(&mut self) -> Option<&mut OutputHandle<RowSet>> {
         if let Self::Set(handle) = self {
             Some(handle)
         } else {
@@ -85,7 +89,7 @@ impl RowOutput {
         }
     }
 
-    pub const fn as_map(&self) -> Option<&OutputHandle<OrdIndexedZSet<Row, Row, i32>>> {
+    pub const fn as_map(&self) -> Option<&OutputHandle<RowMap>> {
         if let Self::Map(handle) = self {
             Some(handle)
         } else {
@@ -93,7 +97,7 @@ impl RowOutput {
         }
     }
 
-    pub fn as_map_mut(&mut self) -> Option<&mut OutputHandle<OrdIndexedZSet<Row, Row, i32>>> {
+    pub fn as_map_mut(&mut self) -> Option<&mut OutputHandle<RowMap>> {
         if let Self::Map(handle) = self {
             Some(handle)
         } else {
@@ -105,20 +109,20 @@ impl RowOutput {
 // TODO: Change the weight to a `Row`? Toggle between `i32` and `i64`?
 #[derive(Clone, IsVariant, Unwrap)]
 pub enum RowStream<P> {
-    Set(Stream<P, OrdZSet<Row, i32>>),
-    Map(Stream<P, OrdIndexedZSet<Row, Row, i32>>),
+    Set(Stream<P, RowSet>),
+    Map(Stream<P, RowMap>),
 }
 
 #[derive(Clone, IsVariant, Unwrap)]
 pub enum RowTrace<P> {
-    Set(Stream<P, Spine<OrdZSet<Row, i32>>>),
-    Map(Stream<P, Spine<OrdIndexedZSet<Row, Row, i32>>>),
+    Set(Stream<P, Spine<RowSet>>),
+    Map(Stream<P, Spine<RowMap>>),
 }
 
 #[derive(Debug, Clone)]
 pub enum RowZSet {
-    Set(OrdZSet<Row, i32>),
-    Map(OrdIndexedZSet<Row, Row, i32>),
+    Set(RowSet),
+    Map(RowMap),
 }
 
 pub struct JitHandle {
@@ -817,8 +821,7 @@ impl CompiledDataflow {
                                 }
 
                                 // Build a batch from the set's values
-                                let mut batcher =
-                                    <OrdZSet<Row, i32> as Batch>::Batcher::new_batcher(());
+                                let mut batcher = <RowSet as Batch>::Batcher::new_batcher(());
                                 batcher.push_batch(&mut batch);
                                 RowZSet::Set(batcher.seal())
                             }
@@ -845,10 +848,7 @@ impl CompiledDataflow {
                                 }
 
                                 // Build a batch from the set's values
-                                let mut batcher =
-                                    <OrdIndexedZSet<Row, Row, i32> as Batch>::Batcher::new_batcher(
-                                        (),
-                                    );
+                                let mut batcher = <RowMap as Batch>::Batcher::new_batcher(());
                                 batcher.push_batch(&mut batch);
                                 RowZSet::Map(batcher.seal())
                             }
@@ -1790,7 +1790,7 @@ impl CompiledDataflow {
                                     DataflowNode::DelayedFeedback(_feedback) => {
                                         let feedback = dbsp::operator::DelayedFeedback::<
                                             _,
-                                            OrdZSet<Row, i32>,
+                                            RowSet,
                                         >::new(
                                             subcircuit
                                         );

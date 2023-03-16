@@ -2,6 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
     time::AntichainRef,
     trace::{
+        consolidation::consolidate_paired_vecs_from,
         layers::{
             column_layer::{
                 ColumnLayer, ColumnLayerBuilder, ColumnLayerConsumer, ColumnLayerCursor,
@@ -30,20 +31,33 @@ pub struct OrdZSet<K, R> {
 }
 
 impl<K, R> OrdZSet<K, R> {
+    #[inline]
     pub fn len(&self) -> usize {
         self.layer.len()
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.layer.is_empty()
     }
 
+    #[inline]
     pub fn retain<F>(&mut self, retain: F)
     where
         F: FnMut(&K, &R) -> bool,
     {
         self.layer.retain(retain);
     }
+
+    // #[doc(hidden)]
+    // #[inline]
+    // pub fn from_columns(keys: Vec<K>, diffs: Vec<R>) -> Self {
+    //     consolidate_paired_vecs_from(keys, diffs, indices, offset)
+
+    //     Self {
+    //         builder: ColumnLayerBuilder::from_columns(keys, diffs),
+    //     }
+    // }
 }
 
 impl<K, R> Display for OrdZSet<K, R>
