@@ -164,85 +164,131 @@ impl Function {
         self.cfg = cfg;
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
-        self.dce();
         self.remove_unit_memory_operations(layout_cache);
-        self.deduplicate_input_loads();
         self.dce();
+        self.deduplicate_input_loads();
         self.simplify_branches();
+        self.dce();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
     }
 
     fn dce(&mut self) {
-        let mut used = BTreeSet::new();
+        // Remove unreachable blocks
+        {
+            let mut used = BTreeSet::new();
+            let mut stack = vec![self.entry_block];
 
-        // Collect all usages
-        for block in self.blocks.values() {
-            for (_, expr) in block.body() {
-                match expr {
-                    Expr::Cast(cast) => {
-                        used.insert(cast.value());
-                    }
-
-                    Expr::Load(load) => {
-                        used.insert(load.source());
-                    }
-
-                    Expr::Store(store) => {
-                        used.insert(store.target());
-                        if let &RValue::Expr(value) = store.value() {
-                            used.insert(value);
+            while let Some(block) = stack.pop() {
+                if used.insert(block) {
+                    match self.blocks[&block].terminator() {
+                        Terminator::Jump(jump) => stack.push(jump.target()),
+                        Terminator::Branch(branch) => {
+                            stack.extend([branch.truthy(), branch.falsy()]);
                         }
+                        Terminator::Return(_) => {}
                     }
-
-                    Expr::Select(select) => {
-                        used.insert(select.cond());
-                        used.insert(select.if_true());
-                        used.insert(select.if_false());
-                    }
-
-                    Expr::IsNull(is_null) => {
-                        used.insert(is_null.target());
-                    }
-
-                    Expr::BinOp(binop) => {
-                        used.insert(binop.lhs());
-                        used.insert(binop.rhs());
-                    }
-
-                    Expr::CopyVal(copy) => {
-                        used.insert(copy.value());
-                    }
-
-                    Expr::UnaryOp(unary) => {
-                        used.insert(unary.value());
-                    }
-
-                    Expr::SetNull(set_null) => {
-                        used.insert(set_null.target());
-                        if let &RValue::Expr(is_null) = set_null.is_null() {
-                            used.insert(is_null);
-                        }
-                    }
-
-                    Expr::CopyRowTo(copy) => {
-                        used.insert(copy.src());
-                        used.insert(copy.dest());
-                    }
-
-                    Expr::Call(call) => used.extend(call.args()),
-
-                    // These contain no expressions
-                    Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
                 }
             }
+
+            // Remove all unused blocks
+            let start_blocks = self.blocks.len();
+            self.blocks.retain(|&block_id, _| used.contains(&block_id));
+
+            let removed_blocks = start_blocks - self.blocks.len();
+            tracing::debug!(
+                "dce removed {removed_blocks} block{}",
+                if removed_blocks == 1 { "" } else { "s" },
+            );
         }
 
-        // Remove all unused expressions
-        for block in self.blocks.values_mut() {
-            block.retain(|expr_id, _| !used.contains(&expr_id));
+        // Remove unused expressions
+        {
+            let mut used = BTreeSet::new();
+
+            // Collect all usages
+            for block in self.blocks.values() {
+                for (_, expr) in block.body() {
+                    match expr {
+                        Expr::Cast(cast) => {
+                            used.insert(cast.value());
+                        }
+
+                        Expr::Load(load) => {
+                            used.insert(load.source());
+                        }
+
+                        Expr::Store(store) => {
+                            used.insert(store.target());
+                            if let &RValue::Expr(value) = store.value() {
+                                used.insert(value);
+                            }
+                        }
+
+                        Expr::Select(select) => {
+                            used.insert(select.cond());
+                            used.insert(select.if_true());
+                            used.insert(select.if_false());
+                        }
+
+                        Expr::IsNull(is_null) => {
+                            used.insert(is_null.target());
+                        }
+
+                        Expr::BinOp(binop) => {
+                            used.insert(binop.lhs());
+                            used.insert(binop.rhs());
+                        }
+
+                        Expr::CopyVal(copy) => {
+                            used.insert(copy.value());
+                        }
+
+                        Expr::UnaryOp(unary) => {
+                            used.insert(unary.value());
+                        }
+
+                        Expr::SetNull(set_null) => {
+                            used.insert(set_null.target());
+                            if let &RValue::Expr(is_null) = set_null.is_null() {
+                                used.insert(is_null);
+                            }
+                        }
+
+                        Expr::CopyRowTo(copy) => {
+                            used.insert(copy.src());
+                            used.insert(copy.dest());
+                        }
+
+                        Expr::Call(call) => used.extend(call.args()),
+
+                        // These contain no expressions
+                        Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
+                    }
+                }
+
+                match block.terminator() {
+                    Terminator::Jump(_) => {}
+                    Terminator::Branch(branch) => {
+                        if let &RValue::Expr(cond) = branch.cond() {
+                            used.insert(cond);
+                        }
+                    }
+                    Terminator::Return(ret) => {
+                        if let &RValue::Expr(ret) = ret.value() {
+                            used.insert(ret);
+                        }
+                    }
+                }
+            }
+
+            // Remove all unused expressions
+            for block in self.blocks.values_mut() {
+                block.retain(|expr_id, _| !used.contains(&expr_id));
+            }
         }
     }
 

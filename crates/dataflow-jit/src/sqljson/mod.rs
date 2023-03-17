@@ -257,9 +257,10 @@ mod tests {
         let json_graph = serde_json::to_string_pretty(&graph).unwrap();
         println!("{json_graph}");
 
-        let graph = serde_json::from_str::<SqlGraph>(&json_graph)
+        let mut graph = serde_json::from_str::<SqlGraph>(&json_graph)
             .unwrap()
             .rematerialize();
+        graph.optimize();
 
         let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, Default::default());
