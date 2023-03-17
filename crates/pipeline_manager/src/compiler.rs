@@ -147,7 +147,7 @@ impl Compiler {
                     if let Some(job) = &job {
                         // Project was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_project_if_exists(job.project_id)?;
+                        let descr = db.lock().await.get_project_if_exists(job.project_id).await?;
                         if let Some(descr) = descr {
                             if descr.version != job.version || !descr.status.is_compiling() {
                                 cancel = true;
@@ -173,7 +173,7 @@ impl Compiler {
                 }, if job.is_some() => {
                     let project_id = job.as_ref().unwrap().project_id;
                     let version = job.as_ref().unwrap().version;
-                    let mut db = db.lock().await;
+                    let db = db.lock().await;
 
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
@@ -182,7 +182,7 @@ impl Compiler {
                                 project_id,
                                 version,
                                 ProjectStatus::CompilingRust,
-                            )?;
+                            ).await?;
 
                             // Read the schema so we can store it in the DB.
                             //
@@ -192,14 +192,14 @@ impl Compiler {
                             // update in the same transaction as the project
                             // status above.
                             let schema_json = fs::read_to_string(config.schema_path(project_id)).await?;
-                            db.set_project_schema(project_id, schema_json)?;
+                            db.set_project_schema(project_id, schema_json).await?;
 
                             debug!("Set ProjectStatus::CompilingRust '{project_id}', version '{version}'");
                             job = Some(CompilationJob::rust(&config, project_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
-                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success)?;
+                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success).await?;
                             debug!("Set ProjectStatus::Success '{project_id}', version '{version}'");
                             job = None;
                         }
@@ -218,7 +218,7 @@ impl Compiler {
                                     // and we return a system error:
                                     ProjectStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status)?;
+                            db.set_project_status_guarded(project_id, version, status).await?;
                             job = None;
                         }
                         Err(e) => {
@@ -227,7 +227,7 @@ impl Compiler {
                             } else {
                                 ProjectStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status)?;
+                            db.set_project_status_guarded(project_id, version, status).await?;
                             job = None;
                         }
                     }
@@ -237,9 +237,9 @@ impl Compiler {
             if job.is_none() {
                 let project = {
                     let db = db.lock().await;
-                    if let Some((project_id, version)) = db.next_job()? {
+                    if let Some((project_id, version)) = db.next_job().await? {
                         trace!("Next project in the queue: '{project_id}', version '{version}'");
-                        let (_version, code) = db.project_code(project_id)?;
+                        let (_version, code) = db.project_code(project_id).await?;
                         Some((project_id, version, code))
                     } else {
                         None
@@ -248,11 +248,14 @@ impl Compiler {
 
                 if let Some((project_id, version, code)) = project {
                     job = Some(CompilationJob::sql(&config, &code, project_id, version).await?);
-                    db.lock().await.set_project_status_guarded(
-                        project_id,
-                        version,
-                        ProjectStatus::CompilingSql,
-                    )?;
+                    db.lock()
+                        .await
+                        .set_project_status_guarded(
+                            project_id,
+                            version,
+                            ProjectStatus::CompilingSql,
+                        )
+                        .await?;
                 }
             }
         }

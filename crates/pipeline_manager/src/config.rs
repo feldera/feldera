@@ -232,8 +232,16 @@ impl ManagerConfig {
     }
 
     /// SQlite database file.
-    pub(crate) fn database_file_path(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("manager.db")
+    pub(crate) fn database_connection_string(&self) -> String {
+        let mut s = "sqlite:".to_owned();
+        s.push_str(
+            Path::new(&self.working_directory)
+                // create the DB if it does not already exist
+                .join("manager.db?mode=rwc")
+                .to_str()
+                .unwrap(),
+        );
+        s
     }
 
     /// Directory where the manager generates Rust crate for the project.

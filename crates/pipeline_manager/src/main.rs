@@ -51,6 +51,7 @@ use clap::Parser;
 #[cfg(unix)]
 use daemonize::Daemonize;
 use env_logger::Env;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{read, write},
@@ -240,8 +241,6 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         ))
     })?;
 
-    let db = ProjectDB::connect(&config)?;
-
     #[cfg(unix)]
     if config.unix_daemon {
         let logfile = std::fs::File::create(config.logfile.as_ref().unwrap()).map_err(|e| {
@@ -268,13 +267,15 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 
     let dev_mode = config.dev_mode;
     rt::System::new().block_on(async {
+        let db =
+            ProjectDB::connect(&config.database_connection_string(), &config.initial_sql).await?;
         let db = Arc::new(Mutex::new(db));
         let compiler = Compiler::new(&config, db.clone()).await?;
 
         // Since we don't trust any file system state after restart,
         // reset all projects to `ProjectStatus::None`, which will force
         // us to recompile projects before running them.
-        db.lock().await.reset_project_status()?;
+        db.lock().await.reset_project_status().await?;
         let openapi = ApiDoc::openapi();
 
         let state = WebData::new(ServerState::new(config, db, compiler).await?);
@@ -374,6 +375,7 @@ impl ErrorResponse {
 }
 
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
+    debug!("Received {:?}", error);
     if let Some(db_error) = error.downcast_ref::<DBError>() {
         let message = db_error.to_string();
         match db_error {
@@ -494,6 +496,7 @@ async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .lock()
         .await
         .project_code(project_id)
+        .await
         .map(|(project, code)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -535,6 +538,7 @@ async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl R
         .lock()
         .await
         .get_project(project_id)
+        .await
         .map(|descr| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -604,7 +608,7 @@ async fn do_new_project(
     if request.overwrite_existing {
         let descr = {
             let db = state.db.lock().await;
-            let descr = db.lookup_project(&request.name)?;
+            let descr = db.lookup_project(&request.name).await?;
             drop(db);
             descr
         };
@@ -618,6 +622,7 @@ async fn do_new_project(
         .lock()
         .await
         .new_project(&request.name, &request.description, &request.code)
+        .await
         .map(|(project_id, version)| {
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -687,6 +692,7 @@ async fn update_project(
             &request.description,
             &request.code,
         )
+        .await
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -733,6 +739,7 @@ async fn compile_project(
         .lock()
         .await
         .set_project_pending(request.project_id, request.version)
+        .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -775,6 +782,7 @@ async fn cancel_project(
         .lock()
         .await
         .cancel_project(request.project_id, request.version)
+        .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -815,7 +823,7 @@ async fn do_delete_project(
 ) -> AnyResult<HttpResponse> {
     let db = state.db.lock().await;
 
-    for pipeline in db.list_project_pipelines(project_id)?.iter() {
+    for pipeline in db.list_project_pipelines(project_id).await?.iter() {
         state
             .runner
             .delete_pipeline(&db, pipeline.pipeline_id)
@@ -823,6 +831,7 @@ async fn do_delete_project(
     }
 
     db.delete_project(project_id)
+        .await
         .map(|_| HttpResponse::Ok().finish())
 }
 
@@ -868,6 +877,7 @@ async fn new_config(
         .lock()
         .await
         .new_config(request.project_id, &request.name, &request.config)
+        .await
         .map(|(config_id, version)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -919,6 +929,7 @@ async fn update_config(
         .lock()
         .await
         .update_config(request.config_id, &request.name, &request.config)
+        .await
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -955,6 +966,7 @@ async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Re
         .lock()
         .await
         .delete_config(config_id)
+        .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -991,6 +1003,7 @@ async fn list_project_configs(state: WebData<ServerState>, req: HttpRequest) -> 
         .lock()
         .await
         .list_project_configs(project_id)
+        .await
         .map(|configs| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1093,6 +1106,7 @@ async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -
         .lock()
         .await
         .list_project_pipelines(project_id)
+        .await
         .map(|pipelines| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))

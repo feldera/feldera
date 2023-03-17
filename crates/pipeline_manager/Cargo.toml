@@ -29,7 +29,8 @@ utoipa = { version = "=3.0.3", features = ["actix_extras", "chrono"] }
 utoipa-gen = { version = "=3.0.3" }
 utoipa-swagger-ui = { version = "3.0.2", features = ["actix-web"] }
 chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
-rusqlite = { version = "0.28.0", features = ["bundled", "chrono", "trace"] }
+sqlx = { version = "0.7.0-alpha.1", features = [  "runtime-tokio-native-tls", "sqlite", "postgres", "any" ] }
+tempfile = { version = "3" }
 
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.4.1" }
