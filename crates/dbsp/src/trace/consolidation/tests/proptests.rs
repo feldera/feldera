@@ -236,4 +236,17 @@ proptest! {
         prop_assert_eq!(values2, expected_values2);
         prop_assert_eq!(values3, expected_values3);
     }
+
+    #[test]
+    fn quicksort_correctness(mut batch in vec(any::<(u16, ())>(), 0..50_000)) {
+        let (mut keys, mut values): (Vec<_>, Vec<_>) = batch.clone().into_iter().unzip();
+        quicksort(&mut keys, &mut values);
+        prop_assert_eq!(keys.len(), values.len());
+        prop_assert_eq!(keys.len(), batch.len());
+
+        let results: Vec<_> = keys.into_iter().zip(values).collect();
+
+        batch.sort_by_key(|&(key, _)| key);
+        prop_assert_eq!(results, batch);
+    }
 }
