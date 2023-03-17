@@ -254,9 +254,11 @@ jobs:
           THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
           # Memory sanitizer reports uninitialized reads in `librdkafka`.
           SKIP_KAFKA: "${{ (matrix.sanitizer == 'memory' || matrix.sanitizer == 'thread') && '--skip kafka' || '' }}"
+          # Memory sanitizer reports a (presumably false) alarm in libsqlite3.
+          EXCLUDE_SQLITE3: "${{ matrix.sanitizer == 'memory' && '--exclude dbsp_pipeline_manager' || '' }}"
         with:
           command: test
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
+          args: ${{ env.EXCLUDE_SQLITE3 }} --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
