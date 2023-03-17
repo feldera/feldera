@@ -12,7 +12,9 @@ pub mod ordered_leaf;
 pub mod unordered;
 // pub mod hashed;
 // pub mod weighted;
-// pub mod unordered;
+
+#[cfg(test)]
+mod test;
 
 pub use advance::{advance, advance_erased, advance_raw};
 
