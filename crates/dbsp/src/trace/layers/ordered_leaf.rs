@@ -2,10 +2,7 @@
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::{
-        consolidation::consolidate_from,
-        layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
-    },
+    trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
@@ -39,7 +36,7 @@ where
     type Item = (K, R);
     type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = OrderedLeafBuilder<K, R>;
-    type TupleBuilder = UnorderedLeafBuilder<K, R>;
+    type TupleBuilder = OrderedLeafBuilder<K, R>;
 
     #[inline]
     fn keys(&self) -> usize {
@@ -181,7 +178,7 @@ where
 }
 
 /// A builder for unordered values.
-#[derive(SizeOf)]
+#[derive(Debug, SizeOf)]
 pub struct OrderedLeafBuilder<K, R> {
     /// Unordered values.
     pub vals: Vec<(K, R)>,
@@ -309,72 +306,6 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Tuple
     fn with_capacity(cap: usize) -> Self {
         OrderedLeafBuilder {
             vals: Vec::with_capacity(cap),
-        }
-    }
-
-    fn reserve_tuples(&mut self, additional: usize) {
-        self.vals.reserve(additional);
-    }
-
-    fn push_tuple(&mut self, tuple: (K, R)) {
-        self.vals.push(tuple)
-    }
-
-    fn extend_tuples<I>(&mut self, tuples: I)
-    where
-        I: IntoIterator<Item = Self::Item>,
-    {
-        self.vals.extend(tuples);
-    }
-
-    fn tuples(&self) -> usize {
-        self.vals.len()
-    }
-}
-
-#[derive(SizeOf)]
-pub struct UnorderedLeafBuilder<K, R> {
-    pub vals: Vec<(K, R)>,
-    boundary: usize,
-}
-
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Builder
-    for UnorderedLeafBuilder<K, R>
-{
-    type Trie = OrderedLeaf<K, R>;
-
-    fn boundary(&mut self) -> usize {
-        consolidate_from(&mut self.vals, self.boundary);
-        self.boundary = self.vals.len();
-        self.boundary
-    }
-    fn done(mut self) -> Self::Trie {
-        self.boundary();
-        OrderedLeaf {
-            vals: self.vals,
-            lower_bound: 0,
-        }
-    }
-}
-
-impl<K, R> TupleBuilder for UnorderedLeafBuilder<K, R>
-where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
-{
-    type Item = (K, R);
-
-    fn new() -> Self {
-        UnorderedLeafBuilder {
-            vals: Vec::new(),
-            boundary: 0,
-        }
-    }
-
-    fn with_capacity(capacity: usize) -> Self {
-        UnorderedLeafBuilder {
-            vals: Vec::with_capacity(capacity),
-            boundary: 0,
         }
     }
 

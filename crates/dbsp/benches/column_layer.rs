@@ -1,44 +1,21 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dbsp::{
     algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
-    trace::layers::{
-        column_layer::{ColumnLayer, ColumnLayerBuilder, UnorderedColumnLayerBuilder},
-        Builder, MergeBuilder, Trie, TupleBuilder,
+    trace::{
+        consolidation::consolidate,
+        layers::{
+            column_layer::{ColumnLayer, ColumnLayerBuilder},
+            Builder, MergeBuilder, Trie, TupleBuilder,
+        },
     },
 };
-use rand::{distributions::Standard, prelude::Distribution, seq::SliceRandom, Rng, SeedableRng};
+use rand::{distributions::Standard, prelude::Distribution, Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 
 const SEED: [u8; 32] = [
     0x7f, 0xc3, 0x59, 0x18, 0x45, 0x19, 0xc0, 0xaa, 0xd2, 0xec, 0x31, 0x26, 0xbb, 0x74, 0x2f, 0x8b,
     0x11, 0x7d, 0xc, 0xe4, 0x64, 0xbf, 0x72, 0x17, 0x46, 0x28, 0x46, 0x42, 0xb2, 0x4b, 0x72, 0x18,
 ];
-
-fn data<T>(length: usize) -> Vec<T>
-where
-    Standard: Distribution<T>,
-{
-    let mut rng = Xoshiro256StarStar::from_seed(SEED);
-
-    let mut data: Vec<T> = (0..length).map(|_| rng.gen()).collect();
-    data.shuffle(&mut rng);
-    data
-}
-
-fn data_builder<K, R>(length: usize) -> UnorderedColumnLayerBuilder<K, R>
-where
-    K: Ord + Clone,
-    R: MonoidValue,
-    Standard: Distribution<(K, R)>,
-{
-    let mut rng = Xoshiro256StarStar::from_seed(SEED);
-
-    let mut builder = UnorderedColumnLayerBuilder::new();
-    for _ in 0..length {
-        builder.push_tuple(rng.gen());
-    }
-    builder
-}
 
 fn data_leaf<K, R>(length: usize) -> ColumnLayer<K, R>
 where
@@ -47,11 +24,15 @@ where
     Standard: Distribution<(K, R)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
+    let mut data = Vec::with_capacity(length);
 
-    let mut builder = UnorderedColumnLayerBuilder::with_capacity(length);
     for _ in 0..length {
-        builder.push_tuple(rng.gen());
+        data.push(rng.gen());
     }
+    consolidate(&mut data);
+
+    let mut builder = <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length);
+    builder.extend_tuples(data.into_iter());
     builder.done()
 }
 
@@ -62,73 +43,30 @@ where
     Standard: Distribution<(K, R)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
+    let mut left = Vec::with_capacity(length / 2);
+    let mut right = Vec::with_capacity(length / 2);
 
-    let (mut right, mut left) = (
-        UnorderedColumnLayerBuilder::with_capacity(length / 2),
-        UnorderedColumnLayerBuilder::with_capacity(length / 2),
-    );
     for _ in 0..length / 2 {
-        left.push_tuple(rng.gen());
-        right.push_tuple(rng.gen());
+        left.push(rng.gen());
+        right.push(rng.gen());
     }
 
-    (left.done(), right.done())
+    consolidate(&mut left);
+    consolidate(&mut right);
+
+    let (mut right_builder, mut left_builder) = (
+        <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length / 2),
+        <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length / 2),
+    );
+
+    left_builder.extend_tuples(left.into_iter());
+    right_builder.extend_tuples(right.into_iter());
+
+    (left_builder.done(), right_builder.done())
 }
 
 macro_rules! leaf_benches {
     ($($name:literal = $size:literal),* $(,)?) => {
-        fn unordered_column_leaf_builder(c: &mut Criterion) {
-            let mut group = c.benchmark_group("build-unordered-pushing");
-            $(
-                group.bench_function($name, |b| {
-                    let unsorted = data::<(usize, isize)>($size);
-
-                    b.iter_batched(
-                        || unsorted.clone(),
-                        |unsorted| {
-                            let mut builder = UnorderedColumnLayerBuilder::new();
-                            for tuple in unsorted {
-                                builder.push_tuple(tuple);
-                            }
-                        },
-                        BatchSize::PerIteration,
-                    );
-                });
-            )*
-            group.finish();
-
-
-            let mut group = c.benchmark_group("build-unordered-boundary");
-            group.sample_size(10);
-            $(
-                group.bench_function($name, |b| {
-                    let builder = data_builder::<usize, isize>($size);
-
-                    b.iter_batched(
-                        || builder.clone(),
-                        |builder| black_box(builder).boundary(),
-                        BatchSize::PerIteration,
-                    );
-                });
-            )*
-            group.finish();
-
-            let mut group = c.benchmark_group("build-unordered-done");
-            group.sample_size(10);
-            $(
-                group.bench_function($name, |b| {
-                    let builder = data_builder::<usize, isize>($size);
-
-                    b.iter_batched(
-                        || builder.clone(),
-                        |builder| black_box(builder).done(),
-                        BatchSize::PerIteration,
-                    );
-                });
-            )*
-            group.finish();
-        }
-
         fn merge_ordered_column_leaf_builder(c: &mut Criterion) {
             let mut group = c.benchmark_group("ordered-builder-push-merge");
             $(
@@ -254,10 +192,5 @@ leaf_benches! {
     "100,000,000" = 100_000_000,
 }
 
-criterion_group!(
-    benches,
-    column_leaf,
-    unordered_column_leaf_builder,
-    merge_ordered_column_leaf_builder,
-);
+criterion_group!(benches, column_leaf, merge_ordered_column_leaf_builder,);
 criterion_main!(benches);

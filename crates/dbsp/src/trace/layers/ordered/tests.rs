@@ -3,7 +3,7 @@
 use crate::trace::{
     layers::{
         column_layer::ColumnLayerBuilder,
-        ordered::{OrderedLayerConsumer, UnorderedBuilder},
+        ordered::{OrderedLayerConsumer, OrderedBuilder},
         Builder, TupleBuilder,
     },
     Consumer, ValueConsumer,
@@ -11,7 +11,7 @@ use crate::trace::{
 
 fn empty_consumer() -> OrderedLayerConsumer<usize, usize, isize, usize> {
     OrderedLayerConsumer::from(
-        UnorderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new().done(),
+        OrderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new().done(),
     )
 }
 
@@ -19,8 +19,8 @@ fn empty_consumer() -> OrderedLayerConsumer<usize, usize, isize, usize> {
 fn consumer_smoke_test() {
     let expected = [0, 10, 20, 1000, 10000];
 
-    let mut builder: UnorderedBuilder<usize, ColumnLayerBuilder<usize, isize>, usize> =
-        UnorderedBuilder::with_capacity(10000);
+    let mut builder: OrderedBuilder<usize, ColumnLayerBuilder<usize, isize>, usize> =
+        OrderedBuilder::with_capacity(10000);
     for key in 0..20000 {
         builder.push_tuple((key, (100, -100)));
     }
@@ -54,7 +54,7 @@ fn empty_seek() {
 
 #[test]
 fn remaining_values() {
-    let mut builder = UnorderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new();
+    let mut builder = OrderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new();
     for idx in 0..10 {
         builder.push_tuple((0, (idx, 1)));
     }
@@ -90,7 +90,7 @@ fn peek_empty_consumer() {
 #[test]
 #[should_panic]
 fn next_empty_values() {
-    let mut builder = UnorderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new();
+    let mut builder = OrderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new();
     builder.push_tuple((1, (1, 1)));
     let mut consumer = OrderedLayerConsumer::from(builder.done());
 

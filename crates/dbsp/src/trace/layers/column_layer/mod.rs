@@ -6,7 +6,7 @@ mod consumer;
 mod cursor;
 mod tests;
 
-pub use builders::{ColumnLayerBuilder, UnorderedColumnLayerBuilder};
+pub use builders::ColumnLayerBuilder;
 pub use consumer::{ColumnLayerConsumer, ColumnLayerValues};
 pub use cursor::ColumnLayerCursor;
 
@@ -164,13 +164,19 @@ impl<K, R> ColumnLayer<K, R> {
         // SAFETY: We initialize BackshiftOnDrop with `lower_bound` offset below,
         // so these elements will never get touched again.
         unsafe {
-            ptr::drop_in_place(&mut self.keys[0..lower_bound]);
-            ptr::drop_in_place(&mut self.diffs[0..lower_bound]);
-        }
+            // Avoid double drop if the drop guard is not executed,
+            // or if dropping elements up to `lower_bound` panics
+            // since we may make some holes during the process.
+            self.set_len(0);
 
-        // Avoid double drop if the drop guard is not executed,
-        // since we may make some holes during the process.
-        unsafe { self.set_len(0) };
+            // Drop all keys up to `lower_bound`
+            let keys = ptr::slice_from_raw_parts_mut(self.keys.as_mut_ptr(), lower_bound);
+            ptr::drop_in_place(keys);
+
+            // Drop all diffs up to `lower_bound`
+            let diffs = ptr::slice_from_raw_parts_mut(self.diffs.as_mut_ptr(), lower_bound);
+            ptr::drop_in_place(diffs);
+        }
 
         // Vec: [Kept, Kept, Hole, Hole, Hole, Hole, Unchecked, Unchecked]
         //      |<-              processed len   ->| ^- next to check
@@ -334,7 +340,7 @@ where
     type Item = (K, R);
     type Cursor<'s> = ColumnLayerCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = ColumnLayerBuilder<K, R>;
-    type TupleBuilder = UnorderedColumnLayerBuilder<K, R>;
+    type TupleBuilder = ColumnLayerBuilder<K, R>;
 
     fn keys(&self) -> usize {
         self.len() - self.lower_bound
