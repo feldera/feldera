@@ -165,7 +165,7 @@ observed by the user is outdated, so the request is rejected."
         NewPipelineRequest,
         NewPipelineResponse,
         ShutdownPipelineRequest,
-    ),),
+    )),
     tags(
         (name = "Project", description = "Manage projects"),
         (name = "Config", description = "Manage project configurations"),
