@@ -67,7 +67,7 @@ fn recurse<'a, T, R, F>(
         // If too many bad pivot choices were made, simply fall back to heapsort in
         // order to guarantee `O(n * log(n))` worst-case.
         if limit == 0 {
-            heapsort(v, v2, is_less);
+            unsafe { heapsort(v, v2, is_less) };
             return;
         }
 
@@ -370,7 +370,7 @@ where
 /// Sorts `v` using heapsort, which guarantees *O*(*n* \* log(*n*))
 /// worst-case.
 #[cold]
-pub fn heapsort<T, R, F>(v: &mut [T], v2: &mut [R], mut is_less: F)
+unsafe fn heapsort<T, R, F>(v: &mut [T], v2: &mut [R], mut is_less: F)
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -378,8 +378,6 @@ where
 
     // This binary heap respects the invariant `parent >= child`.
     let mut sift_down = |v: &mut [T], v2: &mut [R], mut node| {
-        unsafe { assume(v.len() == v2.len()) }
-
         loop {
             // Children of `node`.
             let mut child = 2 * node + 1;
@@ -388,8 +386,11 @@ where
             }
 
             // Choose the greater child.
-            if child + 1 < v.len() && is_less(&v[child], &v[child + 1]) {
-                child += 1;
+            if child + 1 < v.len() {
+                // We need a branch to be sure not to out-of-bounds index,
+                // but it's highly predictable.  The comparison, however,
+                // is better done branchless, especially for primitives.
+                child += is_less(&v[child], &v[child + 1]) as usize;
             }
 
             // Stop if the invariant holds at `node`.

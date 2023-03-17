@@ -238,15 +238,30 @@ proptest! {
     }
 
     #[test]
-    fn quicksort_correctness(mut batch in vec(any::<(u16, ())>(), 0..50_000)) {
+    fn quicksort_correctness(mut batch in vec(any::<(u16, u16)>(), 0..50_000)) {
+        // Split the data into keys and values
         let (mut keys, mut values): (Vec<_>, Vec<_>) = batch.clone().into_iter().unzip();
+
+        // Sort the given data
         quicksort(&mut keys, &mut values);
+
+        // Make sure we didn't lose any elements
         prop_assert_eq!(keys.len(), values.len());
         prop_assert_eq!(keys.len(), batch.len());
 
-        let results: Vec<_> = keys.into_iter().zip(values).collect();
+        // Recombine the keys and values into a single vector
+        let mut results: Vec<_> = keys.into_iter().zip(values).collect();
 
-        batch.sort_by_key(|&(key, _)| key);
-        prop_assert_eq!(results, batch);
+        // Ensure that the results vec is properly sorted
+        prop_assert!(results.is_sorted_by_key(|&(key, _)| key));
+
+        // Sort both the input batch and the results the same way
+        // so that if their contents are equal (that is, if `quicksort()`
+        // didn't drop any elements) then both vectors will be equal
+        batch.sort();
+        results.sort();
+
+        // Ensure that no elements were lost during sorting
+        prop_assert_eq!(batch, results);
     }
 }

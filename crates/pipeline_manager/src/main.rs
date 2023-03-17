@@ -53,7 +53,7 @@ use daemonize::Daemonize;
 use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{read, write, File as StdFile},
+    fs::{read, write},
     net::TcpListener,
     sync::Arc,
 };
@@ -244,7 +244,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 
     #[cfg(unix)]
     if config.unix_daemon {
-        let logfile = StdFile::create(config.logfile.as_ref().unwrap()).map_err(|e| {
+        let logfile = std::fs::File::create(config.logfile.as_ref().unwrap()).map_err(|e| {
             AnyError::msg(format!(
                 "failed to create log file '{}': {e}",
                 &config.logfile.as_ref().unwrap()
