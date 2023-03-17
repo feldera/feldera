@@ -59,13 +59,17 @@ rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"
 clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
-time = { version = "0.3.14", features = [
-    "formatting",
-    "serde",
-    "serde-human-readable",
-] }
 serde_json = "1.0.87"
 arcstr = { version = "1.1.4", features = ["bincode"] }
+
+[dependencies.time]
+version = "0.3.20"
+features = [
+    "formatting",
+    "macros",
+    "serde",
+    "serde-human-readable",
+]
 
 [[bench]]
 name = "galen"
