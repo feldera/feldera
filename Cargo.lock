@@ -1509,6 +1509,7 @@ dependencies = [
  "static-files",
  "tokio",
  "utoipa",
+ "utoipa-gen",
  "utoipa-swagger-ui",
 ]
 
@@ -3931,9 +3932,9 @@ dependencies = [
 
 [[package]]
 name = "utoipa"
-version = "3.1.1"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5c8f9e0b41787ca45ea005ad7bc10441d1f117a092c058e4800229e2e137a7"
+checksum = "a15f6da6a2b471134ca44b7d18e8a76d73035cf8b3ed24c4dd5ca6a63aa439c5"
 dependencies = [
  "indexmap",
  "serde",
@@ -3943,9 +3944,9 @@ dependencies = [
 
 [[package]]
 name = "utoipa-gen"
-version = "3.1.1"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6c3db9326f8c5845749fba4d5e2e46b35ea40045ce69175d2e1629463c195ee"
+checksum = "6f2e33027986a4707b3f5c37ed01b33d0e5a53da30204b52ff18f80600f1d0ec"
 dependencies = [
  "lazy_static",
  "proc-macro-error",
