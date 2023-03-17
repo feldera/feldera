@@ -1,8 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
-    trace::{
-        consolidation::consolidate_payload_from,
-        layers::{advance, column_layer::ColumnLayer, Builder, MergeBuilder, Trie, TupleBuilder},
+    trace::layers::{
+        advance, column_layer::ColumnLayer, Builder, MergeBuilder, Trie, TupleBuilder,
     },
     utils::assume,
 };
@@ -13,7 +12,7 @@ use std::{
 };
 
 /// A builder for ordered values
-#[derive(SizeOf)]
+#[derive(SizeOf, Debug)]
 pub struct ColumnLayerBuilder<K, R> {
     // Invariant: `keys.len() == diffs.len()`
     keys: Vec<K>,
@@ -214,114 +213,5 @@ where
         self.keys.push(key);
         self.diffs.push(diff);
         unsafe { self.assume_invariants() }
-    }
-}
-
-/// A builder for unordered values
-#[derive(Debug, Clone, SizeOf)]
-pub struct UnorderedColumnLayerBuilder<K, R> {
-    keys: Vec<K>,
-    diffs: Vec<R>,
-    boundary: usize,
-}
-
-impl<K, R> UnorderedColumnLayerBuilder<K, R> {
-    /// Create a new `UnorderedColumnLayerBuilder`
-    pub const fn new() -> Self {
-        Self {
-            keys: Vec::new(),
-            diffs: Vec::new(),
-            boundary: 0,
-        }
-    }
-
-    /// Get the length of the current builder
-    pub(crate) fn len(&self) -> usize {
-        debug_assert_eq!(self.keys.len(), self.diffs.len());
-        self.keys.len()
-    }
-}
-
-impl<K, R> Builder for UnorderedColumnLayerBuilder<K, R>
-where
-    K: Ord + Clone,
-    R: HasZero + AddAssign + AddAssignByRef + Eq + Clone,
-{
-    type Trie = ColumnLayer<K, R>;
-
-    fn boundary(&mut self) -> usize {
-        consolidate_payload_from(&mut self.keys, &mut self.diffs, self.boundary);
-        self.boundary = self.len();
-        self.boundary
-    }
-
-    fn done(mut self) -> Self::Trie {
-        self.boundary();
-
-        ColumnLayer {
-            keys: self.keys,
-            diffs: self.diffs,
-            lower_bound: 0,
-        }
-    }
-}
-
-impl<K, R> TupleBuilder for UnorderedColumnLayerBuilder<K, R>
-where
-    K: Ord + Clone,
-    R: HasZero + AddAssign + AddAssignByRef + Eq + Clone,
-{
-    type Item = (K, R);
-
-    fn new() -> Self {
-        Self::new()
-    }
-
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            keys: Vec::with_capacity(capacity),
-            diffs: Vec::with_capacity(capacity),
-            boundary: 0,
-        }
-    }
-
-    fn reserve_tuples(&mut self, additional: usize) {
-        debug_assert!(self.boundary <= self.len());
-        debug_assert_eq!(self.keys.len(), self.diffs.len());
-
-        self.keys.reserve(additional);
-        self.diffs.reserve(additional);
-    }
-
-    fn tuples(&self) -> usize {
-        self.len()
-    }
-
-    fn push_tuple(&mut self, (key, diff): (K, R)) {
-        debug_assert!(self.boundary <= self.len());
-        debug_assert_eq!(self.keys.len(), self.diffs.len());
-
-        self.keys.push(key);
-        self.diffs.push(diff);
-    }
-
-    fn extend_tuples<I>(&mut self, tuples: I)
-    where
-        I: IntoIterator<Item = Self::Item>,
-    {
-        debug_assert!(self.boundary <= self.len());
-        debug_assert_eq!(self.keys.len(), self.diffs.len());
-
-        let tuples = tuples.into_iter();
-        let (lower, upper) = tuples.size_hint();
-        let size = upper.unwrap_or(lower);
-        self.reserve_tuples(size);
-        tuples.for_each(|tuple| self.push_tuple(tuple));
-    }
-}
-
-impl<K, R> Default for UnorderedColumnLayerBuilder<K, R> {
-    fn default() -> Self {
-        Self::new()
     }
 }

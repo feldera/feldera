@@ -18,7 +18,6 @@ use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{Debug, Display, Formatter},
-    marker::PhantomData,
     mem::MaybeUninit,
     ops::{Add, AddAssign, Neg},
 };
@@ -229,7 +228,7 @@ where
     type Item = (K, L::Item);
     type Cursor<'s> = OrderedCursor<'s, K, O, L> where K: 's, O: 's, L: 's;
     type MergeBuilder = OrderedBuilder<K, L::MergeBuilder, O>;
-    type TupleBuilder = UnorderedBuilder<K, L::TupleBuilder, O>;
+    type TupleBuilder = OrderedBuilder<K, L::TupleBuilder, O>;
 
     fn keys(&self) -> usize {
         unsafe { self.assume_invariants() }
@@ -309,7 +308,7 @@ where
 }
 
 /// Assembles a layer of this
-#[derive(SizeOf)]
+#[derive(SizeOf, Debug)]
 pub struct OrderedBuilder<K, L, O = usize> {
     /// Keys
     pub keys: Vec<K>,
@@ -586,83 +585,6 @@ where
             self.offs.push(O::zero()); // <-- indicates "unfinished".
         }
         self.vals.push_tuple(val);
-    }
-}
-
-pub struct UnorderedBuilder<K, L, O = usize>
-where
-    K: Ord,
-    L: TupleBuilder,
-    O: OrdOffset,
-{
-    pub vals: Vec<(K, L::Item)>,
-    _phantom: PhantomData<O>,
-}
-
-impl<K, L, O> Builder for UnorderedBuilder<K, L, O>
-where
-    K: Ord + Clone,
-    L: TupleBuilder,
-    O: OrdOffset,
-{
-    type Trie = OrderedLayer<K, L::Trie, O>;
-
-    fn boundary(&mut self) -> usize {
-        self.vals.len()
-    }
-
-    fn done(mut self) -> Self::Trie {
-        // Don't use `sort_unstable_by_key` to avoid cloning the key.
-        self.vals
-            .sort_unstable_by(|(k1, _), (k2, _)| K::cmp(k1, k2));
-        let mut builder = <OrderedBuilder<K, L, O> as TupleBuilder>::with_capacity(self.vals.len());
-
-        for (k, v) in self.vals.into_iter() {
-            builder.push_tuple((k, v));
-        }
-        builder.done()
-    }
-}
-
-impl<K, L, O> TupleBuilder for UnorderedBuilder<K, L, O>
-where
-    K: Ord + Clone,
-    L: TupleBuilder,
-    O: OrdOffset,
-{
-    type Item = (K, L::Item);
-
-    fn new() -> Self {
-        Self {
-            vals: Vec::new(),
-            _phantom: PhantomData,
-        }
-    }
-
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            vals: Vec::with_capacity(capacity),
-            _phantom: PhantomData,
-        }
-    }
-
-    fn reserve_tuples(&mut self, additional: usize) {
-        self.vals.reserve(additional);
-    }
-
-    fn tuples(&self) -> usize {
-        self.vals.len()
-    }
-
-    fn push_tuple(&mut self, kv: Self::Item) {
-        self.vals.push(kv);
-    }
-
-    fn extend_tuples<I>(&mut self, tuples: I)
-    where
-        I: IntoIterator<Item = Self::Item>,
-    {
-        self.vals.extend(tuples);
     }
 }
 

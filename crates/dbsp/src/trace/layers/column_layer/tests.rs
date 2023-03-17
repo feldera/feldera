@@ -4,7 +4,7 @@ use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::{
         layers::{
-            column_layer::{ColumnLayerConsumer, UnorderedColumnLayerBuilder},
+            column_layer::{ColumnLayerBuilder, ColumnLayerConsumer},
             Builder, TupleBuilder,
         },
         Consumer, ValueConsumer,
@@ -114,7 +114,7 @@ where
 }
 
 fn standard_consumer(canary: &Canary) -> ColumnLayerConsumer<Item<usize>, Item<i32>> {
-    let mut batcher = UnorderedColumnLayerBuilder::new();
+    let mut batcher = ColumnLayerBuilder::new();
     for idx in 0..TOTAL_TUPLES {
         batcher.push_tuple((Item::new(idx, canary.clone()), Item::new(1, canary.clone())));
     }
