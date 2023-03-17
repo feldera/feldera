@@ -226,6 +226,7 @@ impl ManagerConfig {
     }
 
     /// Manager pid file.
+    #[cfg(unix)]
     pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
         Path::new(&self.working_directory).join("manager.pid")
     }

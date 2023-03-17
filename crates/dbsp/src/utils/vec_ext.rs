@@ -37,6 +37,14 @@ pub(crate) trait VecExt<T> {
     fn is_sorted_by<F>(&self, compare: F) -> bool
     where
         F: FnMut(&T, &T) -> Option<Ordering>;
+
+    fn is_sorted_by_key<F, U>(&self, mut key: F) -> bool
+    where
+        F: FnMut(&T) -> U,
+        U: PartialOrd,
+    {
+        self.is_sorted_by(|a, b| key(a).partial_cmp(&key(b)))
+    }
 }
 
 impl<T> VecExt<T> for Vec<T> {
