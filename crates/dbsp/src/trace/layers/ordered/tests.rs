@@ -3,7 +3,7 @@
 use crate::trace::{
     layers::{
         column_layer::ColumnLayerBuilder,
-        ordered::{OrderedLayerConsumer, OrderedBuilder},
+        ordered::{OrderedBuilder, OrderedLayerConsumer},
         Builder, TupleBuilder,
     },
     Consumer, ValueConsumer,
