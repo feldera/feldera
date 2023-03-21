@@ -17,7 +17,10 @@ use crate::{
     DBData, DBTimestamp, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
-use std::{fmt::Debug, marker::PhantomData};
+use std::{
+    fmt::{self, Debug, Display},
+    marker::PhantomData,
+};
 
 pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, ColumnLayer<T, R>, O>;
 
@@ -29,6 +32,23 @@ pub struct OrdKeyBatch<K, T, R, O = usize> {
     pub layer: OrdKeyBatchLayer<K, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
+}
+
+impl<K, T, R, O> Display for OrdKeyBatch<K, T, R, O>
+where
+    K: DBData,
+    T: DBTimestamp,
+    R: DBWeight,
+    O: OrdOffset,
+    OrdKeyBatchLayer<K, T, R, O>: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "layer:\n{}",
+            textwrap::indent(&self.layer.to_string(), "    ")
+        )
+    }
 }
 
 impl<K, T, R, O> NumEntries for OrdKeyBatch<K, T, R, O>
@@ -90,6 +110,10 @@ where
 
     fn upper(&self) -> AntichainRef<'_, T> {
         self.upper.as_ref()
+    }
+
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
+        self.layer.truncate_keys_below(lower_bound);
     }
 }
 
@@ -228,10 +252,10 @@ where
         //assert!(batch1.upper() == batch2.lower());
 
         OrdKeyMerger {
-            lower1: 0,
-            upper1: batch1.layer.keys(),
-            lower2: 0,
-            upper2: batch2.layer.keys(),
+            lower1: batch1.layer.lower_bound(),
+            upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
+            lower2: batch2.layer.lower_bound(),
+            upper2: batch2.layer.lower_bound() + batch2.layer.keys(),
             result: <<OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),

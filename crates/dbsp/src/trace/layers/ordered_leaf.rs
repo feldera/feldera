@@ -28,6 +28,18 @@ impl<K, R> OrderedLeaf<K, R> {
     }
 }
 
+impl<K, R> OrderedLeaf<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+{
+    /// Truncate layer at the first key greater than or equal to `lower_bound`.
+    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
+        let index = advance(&self.vals, |(k, _r)| k < lower_bound);
+        self.truncate_below(index);
+    }
+}
+
 impl<K, R> Trie for OrderedLeaf<K, R>
 where
     K: Ord + Clone,

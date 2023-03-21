@@ -12,7 +12,7 @@ pub use cursor::ColumnLayerCursor;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::layers::Trie,
+    trace::layers::{advance, Trie},
     utils::{assume, cast_uninit_vec},
     DBData, DBWeight, NumEntries,
 };
@@ -299,6 +299,18 @@ impl<K, R> ColumnLayer<K, R> {
 
         // All item are processed. This can be optimized to `set_len` by LLVM.
         drop(shifter);
+    }
+}
+
+impl<K, R> ColumnLayer<K, R>
+where
+    K: Ord + Clone,
+    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+{
+    /// Remove keys smaller than `lower_bound` from the batch.
+    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
+        let index = advance(&self.keys, |k| k < lower_bound);
+        self.truncate_below(index);
     }
 }
 

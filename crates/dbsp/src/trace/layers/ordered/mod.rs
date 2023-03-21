@@ -82,6 +82,19 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     }
 }
 
+impl<K, L, O> OrderedLayer<K, L, O>
+where
+    K: Ord + Clone,
+    L: Trie,
+    O: OrdOffset,
+{
+    /// Truncate layer at the first key greater than or equal to `lower_bound`.
+    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
+        let index = advance(&self.keys, |k| k < lower_bound);
+        self.truncate_below(index);
+    }
+}
+
 impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
     /// Turns the current `OrderedLayer<K, ColumnLayer<V, R>, O>` into a
     /// layer of [`MaybeUninit`] values

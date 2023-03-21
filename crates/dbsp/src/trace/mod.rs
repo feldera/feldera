@@ -16,7 +16,6 @@ pub mod layers;
 pub mod ord;
 #[cfg(feature = "persistence")]
 pub mod persistent;
-pub mod rc_batch;
 pub mod spine_fueled;
 
 pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
@@ -24,6 +23,9 @@ pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
 pub use persistent::PersistentTrace as Spine;
 #[cfg(not(feature = "persistence"))]
 pub use spine_fueled::Spine;
+
+#[cfg(test)]
+mod test_batch;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
@@ -205,6 +207,12 @@ where
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
     fn upper(&self) -> AntichainRef<'_, Self::Time>;
+
+    /// Remove keys smaller than `lower_bound` from the batch.
+    ///
+    /// The removed tuples may not get deallocated instantly but they won't
+    /// appear when iterating over the batch.
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key);
 }
 
 /// An immutable collection of updates.

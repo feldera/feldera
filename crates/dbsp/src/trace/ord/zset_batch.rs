@@ -235,6 +235,10 @@ where
     fn upper(&self) -> AntichainRef<'_, ()> {
         AntichainRef::empty()
     }
+
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
+        self.layer.truncate_keys_below(lower_bound);
+    }
 }
 
 impl<K, R> Batch for OrdZSet<K, R>
