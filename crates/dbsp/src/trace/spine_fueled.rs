@@ -84,17 +84,16 @@ use crate::{
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::{Cursor, CursorList},
-        rc_batch::RcBatchCursor,
         Batch, BatchReader, Consumer, Merger, Trace, ValueConsumer,
     },
     NumEntries,
 };
 use size_of::SizeOf;
 use std::{
+    cmp::max,
     fmt::{self, Debug, Display},
     marker::PhantomData,
     mem::replace,
-    rc::Rc,
 };
 use textwrap::indent;
 
@@ -109,12 +108,13 @@ pub struct Spine<B>
 where
     B: Batch,
 {
-    pub merging: Vec<MergeState<Rc<B>>>,
+    pub merging: Vec<MergeState<B>>,
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     effort: usize,
     activator: Option<Activator>,
     dirty: bool,
+    lower_key_bound: Option<B::Key>,
 }
 
 impl<B> Display for Spine<B>
@@ -218,6 +218,18 @@ where
     fn consumer(self) -> Self::Consumer {
         todo!()
     }
+
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
+        self.complete_merges();
+
+        let bound = if let Some(bound) = &self.lower_key_bound {
+            max(bound, lower_bound).clone()
+        } else {
+            lower_bound.clone()
+        };
+        self.lower_key_bound = Some(bound.clone());
+        self.map_batches_mut(|batch| batch.truncate_keys_below(&bound));
+    }
 }
 
 impl<B> Spine<B>
@@ -282,7 +294,7 @@ where
 
 pub struct SpineCursor<'s, B: Batch + 's> {
     #[allow(clippy::type_complexity)]
-    cursor: CursorList<'s, B::Key, B::Val, B::Time, B::R, RcBatchCursor<'s, B>>,
+    cursor: CursorList<'s, B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
 }
 
 impl<'s, B: Batch> SpineCursor<'s, B>
@@ -290,7 +302,7 @@ where
     B::Key: Ord,
     B::Val: Ord,
 {
-    fn new(cursors: Vec<RcBatchCursor<'s, B>>) -> Self {
+    fn new(cursors: Vec<B::Cursor<'s>>) -> Self {
         Self {
             cursor: CursorList::new(cursors),
         }
@@ -512,14 +524,7 @@ where
         for merging in self.merging.into_iter() {
             if let MergeState::Single(Some(batch)) = merging {
                 if !batch.is_empty() {
-                    match Rc::try_unwrap(batch) {
-                        Ok(batch) => return Some(batch),
-                        Err(_) => {
-                            // Ref counter can only be >1 while iterating over batch,
-                            // which should be impossible as we own `self`.
-                            panic!("consolidate doesn't own its result");
-                        }
-                    }
+                    return Some(batch);
                 }
             }
         }
@@ -531,13 +536,17 @@ where
     // Ideally, this method acts as insertion of `batch`, even if we are not yet
     // able to begin merging the batch. This means it is a good time to perform
     // amortized work proportional to the size of batch.
-    fn insert(&mut self, batch: Self::Batch) {
+    fn insert(&mut self, mut batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
 
         // Ignore empty batches.
         // Note: we may want to use empty batches to artificially force compaction.
         if batch.is_empty() {
             return;
+        }
+
+        if let Some(bound) = &self.lower_key_bound {
+            batch.truncate_keys_below(bound);
         }
 
         self.dirty = true;
@@ -548,7 +557,7 @@ where
         //assert_eq!(batch.lower(), &self.upper);
 
         let index = batch.len().next_power_of_two();
-        self.introduce_batch(Some(Rc::new(batch)), index.trailing_zeros() as usize);
+        self.introduce_batch(Some(batch), index.trailing_zeros() as usize);
 
         // If more than one batch remains reschedule ourself.
         if !self.reduced() {
@@ -628,6 +637,7 @@ where
             effort,
             activator,
             dirty: false,
+            lower_key_bound: None,
         }
     }
 
@@ -636,7 +646,7 @@ where
     /// The level indication is often related to the size of the batch, but
     /// it can also be used to artificially fuel the computation by supplying
     /// empty batches at non-trivial indices, to move merges along.
-    pub fn introduce_batch(&mut self, batch: Option<Rc<B>>, batch_index: usize) {
+    pub fn introduce_batch(&mut self, batch: Option<B>, batch_index: usize) {
         // Step 0.  Determine an amount of fuel to use for the computation.
         //
         //          Fuel is used to drive maintenance of the data structure,
@@ -795,7 +805,7 @@ where
     /// This is a non-public internal method that can panic if we try and insert
     /// into a layer which already contains two batches (and is still in the
     /// process of merging).
-    fn insert_at(&mut self, batch: Option<Rc<B>>, index: usize) {
+    fn insert_at(&mut self, batch: Option<B>, index: usize) {
         // Ensure the spine is large enough.
         while self.merging.len() <= index {
             self.merging.push(MergeState::Vacant);
@@ -816,7 +826,7 @@ where
     }
 
     /// Completes and extracts what ever is at layer `index`.
-    fn complete_at(&mut self, index: usize) -> Option<Rc<B>> {
+    fn complete_at(&mut self, index: usize) -> Option<B> {
         self.merging[index].complete()
     }
 
@@ -894,7 +904,7 @@ where
     }
 
     /// Mutate all batches.  Can only be invoked when there are no in-progress
-    /// matches in the trait.
+    /// batches in the trace.
     fn map_batches_mut<F: FnMut(&mut <Self as Trace>::Batch)>(&mut self, mut f: F) {
         for batch in self.merging.iter_mut().rev() {
             match batch {
@@ -904,9 +914,9 @@ where
                 MergeState::Double(MergeVariant::Complete(Some(batch))) => {
                     // Ref counter can only be >1 while iterating over batch,
                     // which should be impossible as we hold a mutable reference to it.
-                    f(Rc::get_mut(batch).unwrap())
+                    f(batch)
                 }
-                MergeState::Single(Some(batch)) => f(Rc::get_mut(batch).unwrap()),
+                MergeState::Single(Some(batch)) => f(batch),
                 _ => {}
             }
         }
@@ -1110,6 +1120,149 @@ where
                 .field(merger)
                 .finish(),
             Self::Complete(batch) => f.debug_tuple("Complete").field(batch).finish(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        trace::{
+            ord::{OrdKeyBatch, OrdValBatch},
+            test_batch::{assert_batch_eq, TestBatch},
+            Batch, BatchReader, Spine, Trace,
+        },
+        OrdIndexedZSet, OrdZSet,
+    };
+    use proptest::{collection::vec, prelude::*};
+
+    fn kr_batches(
+        max_key: i32,
+        max_weight: i32,
+        max_tuples: usize,
+        max_batches: usize,
+    ) -> BoxedStrategy<Vec<(Vec<(i32, i32)>, i32)>> {
+        vec(
+            (
+                vec((0..max_key, -max_weight..max_weight), 0..max_tuples),
+                (0..max_key),
+            ),
+            0..max_batches,
+        )
+        .boxed()
+    }
+
+    fn kvr_batches(
+        max_key: i32,
+        max_val: i32,
+        max_weight: i32,
+        max_tuples: usize,
+        max_batches: usize,
+    ) -> BoxedStrategy<Vec<(Vec<((i32, i32), i32)>, i32)>> {
+        vec(
+            (
+                vec(
+                    ((0..max_key, 0..max_val), -max_weight..max_weight),
+                    0..max_tuples,
+                ),
+                (0..max_key),
+            ),
+            0..max_batches,
+        )
+        .boxed()
+    }
+
+    proptest! {
+        #[test]
+        fn test_zset_spine(batches in kr_batches(50, 2, 100, 20)) {
+            let mut trace: Spine<OrdZSet<i32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new(None);
+
+            for (tuples, bound) in batches.into_iter() {
+                let batch = OrdZSet::from_tuples((), tuples.clone());
+                let ref_batch = TestBatch::from_keys((), tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+
+                trace.insert(batch);
+                ref_trace.insert(ref_batch);
+
+                assert_batch_eq(&trace, &ref_trace);
+
+                trace.truncate_keys_below(&bound);
+                ref_trace.truncate_keys_below(&bound);
+
+                assert_batch_eq(&trace, &ref_trace);
+            }
+        }
+
+        #[test]
+        fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20)) {
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+
+            for (tuples, bound) in batches.into_iter() {
+                let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
+                let ref_batch = TestBatch::from_tuples((), tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+
+                trace.insert(batch);
+                ref_trace.insert(ref_batch);
+
+                assert_batch_eq(&trace, &ref_trace);
+
+                trace.truncate_keys_below(&bound);
+                ref_trace.truncate_keys_below(&bound);
+
+                assert_batch_eq(&trace, &ref_trace);
+            }
+        }
+
+        #[test]
+        fn test_zset_trace_spine(batches in kr_batches(100, 2, 500, 20)) {
+            let mut trace: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new(None);
+
+            for (time, (tuples, bound)) in batches.into_iter().enumerate() {
+                let batch = OrdKeyBatch::from_tuples(time as u32, tuples.clone());
+                let ref_batch = TestBatch::from_keys(time as u32, tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+
+                trace.insert(batch);
+                ref_trace.insert(ref_batch);
+
+                assert_batch_eq(&trace, &ref_trace);
+
+                trace.truncate_keys_below(&bound);
+                ref_trace.truncate_keys_below(&bound);
+
+                assert_batch_eq(&trace, &ref_trace);
+            }
+        }
+
+        #[test]
+        fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20)) {
+            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+
+            for (time, (tuples, bound)) in batches.into_iter().enumerate() {
+                let batch = OrdValBatch::from_tuples(time as u32, tuples.clone());
+                let ref_batch = TestBatch::from_tuples(time as u32, tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+
+                trace.insert(batch);
+                ref_trace.insert(ref_batch);
+
+                assert_batch_eq(&trace, &ref_trace);
+
+                trace.truncate_keys_below(&bound);
+                ref_trace.truncate_keys_below(&bound);
+
+                assert_batch_eq(&trace, &ref_trace);
+            }
         }
     }
 }

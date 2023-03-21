@@ -122,6 +122,10 @@ where
     fn upper(&self) -> AntichainRef<'_, T> {
         self.upper.as_ref()
     }
+
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
+        self.layer.truncate_keys_below(lower_bound);
+    }
 }
 
 impl<K, V, T, R, O> Batch for OrdValBatch<K, V, T, R, O>
@@ -302,10 +306,10 @@ where
         // assert!(batch1.upper() == batch2.lower());
 
         OrdValMerger {
-            lower1: 0,
-            upper1: batch1.layer.keys(),
-            lower2: 0,
-            upper2: batch2.layer.keys(),
+            lower1: batch1.layer.lower_bound(),
+            upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
+            lower2: batch2.layer.lower_bound(),
+            upper2: batch2.layer.lower_bound() + batch2.layer.keys(),
             result: <<OrdValBatchLayer<K, V, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
