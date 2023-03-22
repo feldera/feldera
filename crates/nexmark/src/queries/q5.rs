@@ -96,7 +96,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     });
 
     // Only consider bids within the current window.
-    let windowed_bids: Stream<_, OrdZSet<u64, _>> = bids_by_time.window(&window_bounds);
+    let windowed_bids = bids_by_time.window(&window_bounds).map(|(_time, auction)| auction.clone());
 
     // Count the number of bids per auction.
     let auction_counts = windowed_bids.aggregate_linear(|&_key, &()| -> isize { 1 });

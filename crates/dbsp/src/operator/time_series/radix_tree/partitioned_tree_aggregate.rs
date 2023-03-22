@@ -10,7 +10,7 @@ use crate::{
         time_series::{
             PartitionCursor, PartitionedBatch, PartitionedBatchReader, PartitionedIndexedZSet,
         },
-        trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
+        trace::{DelayedTraceId, IntegrateTraceId, TraceBounds, UntimedTraceAppend, Z1Trace},
         Aggregator,
     },
     trace::{Builder, Cursor, Spine},
@@ -170,9 +170,12 @@ where
                             //                                                    └────────────────────────────────┤Z1Trace│◄───────────┘
                             //                                                          output_trace_delayed       └───────┘
                             // ```
-                            let (output_trace_delayed, z1feedback) = circuit.add_feedback(
-                                <Z1Trace<Spine<O>>>::new(false, self.circuit().root_scope()),
-                            );
+                            let (output_trace_delayed, z1feedback) =
+                                circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
+                                    false,
+                                    self.circuit().root_scope(),
+                                    TraceBounds::unbounded(),
+                                ));
                             output_trace_delayed.mark_sharded();
 
                             let output = circuit
@@ -204,9 +207,11 @@ where
                                 DelayedTraceId::new(output_trace.origin_node_id().clone()),
                                 output_trace_delayed,
                             );
+
+                            let bounds = <TraceBounds<O::Key>>::unbounded();
                             circuit.cache_insert(
                                 IntegrateTraceId::new(output.origin_node_id().clone()),
-                                output_trace,
+                                (output_trace, bounds),
                             );
 
                             output

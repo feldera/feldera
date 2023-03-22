@@ -7,14 +7,91 @@ use crate::{
     },
     circuit_cache_key,
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
-    Timestamp,
+    DBData, Timestamp,
 };
 use size_of::SizeOf;
-use std::{borrow::Cow, marker::PhantomData};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
-circuit_cache_key!(TraceId<B, D>(GlobalNodeId => Stream<B, D>));
+circuit_cache_key!(TraceId<B, D, K>(GlobalNodeId => (Stream<B, D>, TraceBounds<K>)));
 circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
-circuit_cache_key!(IntegrateTraceId<B, D>(GlobalNodeId => Stream<B, D>));
+circuit_cache_key!(IntegrateTraceId<B, D, K>(GlobalNodeId => (Stream<B, D>, TraceBounds<K>)));
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct TraceBound<K>(Rc<RefCell<Option<K>>>);
+
+impl<K> Default for TraceBound<K> {
+    fn default() -> Self {
+        Self(Rc::new(RefCell::new(None)))
+    }
+}
+
+impl<K> TraceBound<K> {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn set(&self, bound: K) {
+        *self.0.borrow_mut() = Some(bound);
+    }
+
+    pub fn get(&self) -> Option<K>
+    where
+        K: Clone
+    {
+        self.0.borrow().clone()
+    }
+}
+
+#[derive(Clone)]
+pub struct TraceBounds<K>(Rc<RefCell<TraceBoundsInner<K>>>);
+
+impl<K> TraceBounds<K>
+where
+    K: DBData,
+{
+    fn bounded() -> Self {
+        Self(Rc::new(RefCell::new(TraceBoundsInner::Bounded(Vec::new()))))
+    }
+
+    pub(crate) fn unbounded() -> Self {
+        Self(Rc::new(RefCell::new(TraceBoundsInner::Unbounded)))
+    }
+
+    fn add_bound(&self, bound: TraceBound<K>) {
+        if let TraceBoundsInner::Bounded(bounds) = self.0.borrow_mut().deref_mut() {
+            bounds.push(bound);
+        }
+    }
+
+    fn make_unbounded(&self) {
+        *self.0.borrow_mut() = TraceBoundsInner::Unbounded;
+    }
+
+    fn effective_bound(&self) -> Option<K> {
+        match self.0.borrow().deref() {
+            TraceBoundsInner::Unbounded => None,
+            TraceBoundsInner::Bounded(bounds) => {
+                bounds
+                    .iter()
+                    .min()
+                    .expect("At least one trace bound must be set")
+                    .get()
+            }
+        }
+    }
+}
+
+enum TraceBoundsInner<K> {
+    Unbounded,
+    Bounded(Vec<TraceBound<K>>),
+}
 
 // TODO: add infrastructure to compact the trace during slack time.
 
@@ -70,13 +147,27 @@ where
         B: BatchReader<Time = ()>,
         T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
     {
-        self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
+        self.trace_with_bound(None)
+    }
+
+    pub fn trace_with_bound<T>(&self, lower_bound: Option<TraceBound<B::Key>>) -> Stream<C, T>
+    where
+        B: BatchReader<Time = ()>,
+        T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
+    {
+        let mut trace_bounds = self.circuit().cache_get_or_insert_with(
+            TraceId::new(self.origin_node_id().clone()),
+            || {
                 let circuit = self.circuit();
+                let bounds = TraceBounds::bounded();
 
                 circuit.region("trace", || {
-                    let (ExportStream { local, export }, z1feedback) =
-                        circuit.add_feedback_with_export(Z1Trace::new(false, circuit.root_scope()));
+                    let (ExportStream { local, export }, z1feedback) = circuit
+                        .add_feedback_with_export(Z1Trace::new(
+                            false,
+                            circuit.root_scope(),
+                            bounds.clone(),
+                        ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<T, B, C>>::new(circuit.clone()),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
@@ -97,10 +188,18 @@ where
                     circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
-                    trace
+                    (trace, bounds)
                 })
-            })
-            .clone()
+            },
+        );
+
+        let (trace, bounds) = trace_bounds.deref_mut();
+
+        match lower_bound {
+            None => bounds.make_unbounded(),
+            Some(bound) => bounds.add_bound(bound),
+        }
+        trace.clone()
     }
 
     // TODO: this method should replace `Stream::integrate()`.
@@ -110,13 +209,27 @@ where
         B: Batch,
         Spine<B>: SizeOf,
     {
-        self.circuit()
+        self.integrate_trace_with_bound(None)
+    }
+
+    #[track_caller]
+    pub fn integrate_trace_with_bound(&self, lower_bound: Option<TraceBound<B::Key>>) -> Stream<C, Spine<B>>
+    where
+        B: Batch,
+        Spine<B>: SizeOf,
+    {
+        let mut trace_bounds = self.circuit()
             .cache_get_or_insert_with(IntegrateTraceId::new(self.origin_node_id().clone()), || {
                 let circuit = self.circuit();
+                let bounds = TraceBounds::bounded();
 
                 circuit.region("integrate_trace", || {
-                    let (ExportStream { local, export }, z1feedback) =
-                        circuit.add_feedback_with_export(Z1Trace::new(true, circuit.root_scope()));
+                    let (ExportStream { local, export }, z1feedback) = circuit
+                        .add_feedback_with_export(Z1Trace::new(
+                            true,
+                            circuit.root_scope(),
+                            bounds.clone(),
+                        ));
 
                     let trace = circuit.add_binary_operator_with_preference(
                         UntimedTraceAppend::<Spine<B>>::new(),
@@ -141,10 +254,17 @@ where
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
 
-                    trace
+                    (trace, bounds)
                 })
-            })
-            .clone()
+            });
+
+        let (trace, bounds) = trace_bounds.deref_mut();
+
+        match lower_bound {
+            None => bounds.make_unbounded(),
+            Some(bound) => bounds.add_bound(bound),
+        }
+        trace.clone()
     }
 }
 
@@ -312,19 +432,23 @@ pub struct Z1Trace<T: Trace> {
     dirty: Vec<bool>,
     root_scope: Scope,
     reset_on_clock_start: bool,
+    bounds: TraceBounds<T::Key>,
+    effective_bound: Option<T::Key>,
 }
 
 impl<T> Z1Trace<T>
 where
     T: Trace,
 {
-    pub fn new(reset_on_clock_start: bool, root_scope: Scope) -> Self {
+    pub fn new(reset_on_clock_start: bool, root_scope: Scope, bounds: TraceBounds<T::Key>) -> Self {
         Self {
             time: T::Time::clock_start(),
             trace: None,
             dirty: vec![false; root_scope as usize + 1],
             root_scope,
             reset_on_clock_start,
+            bounds,
+            effective_bound: None,
         }
     }
 }
@@ -409,10 +533,19 @@ where
         unimplemented!()
     }
 
-    fn eval_strict_owned(&mut self, i: T) {
+    fn eval_strict_owned(&mut self, mut i: T) {
         self.time = self.time.advance(0);
 
         let dirty = i.dirty();
+
+        let effective_bound = self.bounds.effective_bound();
+        if effective_bound != self.effective_bound {
+            if let Some(bound) = &effective_bound {
+                i.truncate_keys_below(bound);
+            }
+        }
+        self.effective_bound = effective_bound;
+
         self.trace = Some(i);
 
         self.dirty[0] = dirty;

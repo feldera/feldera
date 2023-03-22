@@ -145,6 +145,10 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
+    fn position(&self) -> usize {
+        todo!()
+    }
+
     fn reposition(&mut self, _lower: usize, _upper: usize) {
         todo!()
     }

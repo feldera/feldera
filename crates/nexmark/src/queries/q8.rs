@@ -48,7 +48,7 @@ const TUMBLE_SECONDS: u64 = 10;
 pub fn q8(input: NexmarkStream) -> Q8Stream {
     // People indexed by the date they entered the system.
     let people_by_time = input.flat_map_index(|event| match event {
-        Event::Person(p) => Some((p.date_time, (p.id, (p.name.clone(), p.date_time)))),
+        Event::Person(p) => Some((p.date_time, (p.id, p.name.clone()))),
         _ => None,
     });
 
@@ -78,10 +78,10 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
     let windowed_people = people_by_time.window(&window_bounds);
     let windowed_auctions = auctions_by_time.window(&window_bounds);
 
-    let people_by_id = windowed_people.index();
+    let people_by_id = windowed_people.map_index(|(date_time, (id, name))| (*id, (name.clone(), date_time.clone())));
 
     // Re-calculate the window start-time to include in the output.
-    people_by_id.join(&windowed_auctions, |&p_id, (p_name, p_date_time), ()| {
+    people_by_id.join(&windowed_auctions.map(|(_date_time, seller)| *seller), |&p_id, (p_name, p_date_time), ()| {
         (
             p_id,
             p_name.clone(),

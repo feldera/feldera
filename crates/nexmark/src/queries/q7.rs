@@ -44,11 +44,11 @@ const TUMBLE_SECONDS: u64 = 10;
 
 pub fn q7(input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
-    let bids_by_time: Stream<_, OrdIndexedZSet<u64, Q7Output, _>> =
+    let bids_by_time: Stream<_, OrdIndexedZSet<u64, _, _>> =
         input.flat_map_index(|event| match event {
             Event::Bid(b) => Some((
                 b.date_time,
-                (b.auction, b.bidder, b.price, b.date_time, b.extra.clone()),
+                (b.auction, b.bidder, b.price, b.extra.clone()),
             )),
             _ => None,
         });
@@ -70,8 +70,8 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     });
 
     // Only consider bids within the current window.
-    let windowed_bids: Stream<_, OrdZSet<Q7Output, _>> = bids_by_time.window(&window_bounds);
-    let bids_by_price = windowed_bids.map_index(|(auction, bidder, price, date_time, extra)| {
+    let windowed_bids = bids_by_time.window(&window_bounds);
+    let bids_by_price = windowed_bids.map_index(|(date_time, (auction, bidder, price, extra))| {
         (
             *price,
             (*auction, *bidder, *price, *date_time, extra.clone()),
@@ -80,7 +80,7 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
 
     // Find the maximum bid across all bids.
     windowed_bids
-        .map_index(|(_auction, _bidder, price, _date_time, _extra)| {
+        .map_index(|(_date_time, (_auction, _bidder, price, _extra))| {
             // Negate price, so we can use the more efficient `Min` aggregate
             // instead of `Max`.
             // TODO: we can go back to using `Max` once we have an efficient implementation
