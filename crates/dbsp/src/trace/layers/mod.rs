@@ -219,6 +219,9 @@ pub trait Cursor<'s> {
     /// Rewinds the cursor to its initial state.
     fn rewind(&mut self);
 
+    /// Current position of the cursor.
+    fn position(&self) -> usize;
+
     /// Repositions the cursor to a different range of values.
     fn reposition(&mut self, lower: usize, upper: usize);
 }
@@ -363,5 +366,10 @@ impl<'s> Cursor<'s> for () {
         false
     }
     fn rewind(&mut self) {}
+
+    fn position(&self) -> usize {
+        0
+    }
+
     fn reposition(&mut self, _lower: usize, _upper: usize) {}
 }

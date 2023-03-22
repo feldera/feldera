@@ -7,7 +7,7 @@ use crate::{
     },
     circuit_cache_key,
     operator::{
-        trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
+        trace::{DelayedTraceId, IntegrateTraceId, TraceBounds, UntimedTraceAppend, Z1Trace},
         Aggregator,
     },
     trace::{Batch, BatchReader, Builder, Spine},
@@ -107,6 +107,7 @@ where
                             circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
                                 false,
                                 self.circuit().root_scope(),
+                                TraceBounds::unbounded(),
                             ));
 
                         let output = circuit.add_ternary_operator(
@@ -133,9 +134,11 @@ where
                             DelayedTraceId::new(output_trace.origin_node_id().clone()),
                             output_trace_delayed,
                         );
+
+                        let bounds = <TraceBounds<O::Key>>::unbounded();
                         circuit.cache_insert(
                             IntegrateTraceId::new(output.origin_node_id().clone()),
-                            output_trace,
+                            (output_trace, bounds),
                         );
 
                         output

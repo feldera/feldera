@@ -6,7 +6,8 @@ use crate::{
         operator_traits::{Operator, TernaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    trace::{cursor::Cursor, ord::OrdZSet, Batch, BatchReader, Spine},
+    operator::trace::TraceBound,
+    trace::{cursor::Cursor, BatchReader, Spine},
 };
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
@@ -71,8 +72,14 @@ where
     ///                      │            trace            │
     ///                      └─────────────────────────────┘
     /// ```
-    pub fn window(&self, bounds: &Stream<C, (B::Key, B::Key)>) -> Stream<C, OrdZSet<B::Val, B::R>> {
-        let trace = self.integrate_trace().delay_trace();
+    pub fn window(&self, bounds: &Stream<C, (B::Key, B::Key)>) -> Stream<C, B> {
+        let bound = TraceBound::new();
+        let bound_clone = bound.clone();
+        bounds.apply(move |(lower, _upper)| {
+            bound_clone.set(lower.clone());
+            ()
+        });
+        let trace = self.integrate_trace_with_bound(Some(bound)).delay_trace();
         self.circuit()
             .add_ternary_operator(<Window<B>>::new(), &trace, self, bounds)
     }
@@ -119,7 +126,7 @@ where
     }
 }
 
-impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), OrdZSet<B::Val, B::R>> for Window<B>
+impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), B> for Window<B>
 where
     B: IndexedZSet,
     B::R: NegByRef,
@@ -129,12 +136,16 @@ where
     /// * `trace` - trace of the input stream up to, but not including current
     ///   clock cycle.
     /// * `bounds` - window bounds.  The lower bound must grow monotonically.
+    // TODO: This can be optimized to add tuples in order, so we can use the
+    // builder API to construct the output batch.  This requires processing
+    // regions in order + extra cate to iterate over `batch` and `trace` jointly
+    // in region3.
     fn eval(
         &mut self,
         trace: Cow<'_, Spine<B>>,
         batch: Cow<'_, B>,
         bounds: Cow<'_, (B::Key, B::Key)>,
-    ) -> OrdZSet<B::Val, B::R> {
+    ) -> B {
         //           ┌────────────────────────────────────────┐
         //           │       previous window                  │
         //           │                                        │             e1
@@ -164,8 +175,10 @@ where
                 && trace_cursor.key() < &start1
                 && trace_cursor.key() < end0
             {
-                trace_cursor
-                    .map_values(|val, weight| tuples.push((val.clone(), weight.neg_by_ref())));
+                let key = trace_cursor.key().clone();
+                trace_cursor.map_values(|val, weight| {
+                    tuples.push((B::item_from(key.clone(), val.clone()), weight.neg_by_ref()))
+                });
                 trace_cursor.step_key();
             }
 
@@ -174,8 +187,10 @@ where
             if &end1 < end0 {
                 trace_cursor.seek_key(&end1);
                 while trace_cursor.key_valid() && trace_cursor.key() < end0 {
-                    trace_cursor
-                        .map_values(|val, weight| tuples.push((val.clone(), weight.neg_by_ref())));
+                    let key = trace_cursor.key().clone();
+                    trace_cursor.map_values(|val, weight| {
+                        tuples.push((B::item_from(key.clone(), val.clone()), weight.neg_by_ref()))
+                    });
                     trace_cursor.step_key();
                 }
             }
@@ -183,7 +198,10 @@ where
             // Add tuples in `trace` that slid into the window (region 3).
             trace_cursor.seek_key(max(end0, &start1));
             while trace_cursor.key_valid() && trace_cursor.key() < &end1 {
-                trace_cursor.map_values(|val, weight| tuples.push((val.clone(), weight.clone())));
+                let key = trace_cursor.key().clone();
+                trace_cursor.map_values(|val, weight| {
+                    tuples.push((B::item_from(key.clone(), val.clone()), weight.clone()))
+                });
                 trace_cursor.step_key();
             }
         };
@@ -191,12 +209,15 @@ where
         // Insert tuples in `batch` that fall within the new window.
         batch_cursor.seek_key(&start1);
         while batch_cursor.key_valid() && batch_cursor.key() < &end1 {
-            batch_cursor.map_values(|val, weight| tuples.push((val.clone(), weight.clone())));
+            let key = batch_cursor.key().clone();
+            batch_cursor.map_values(|val, weight| {
+                tuples.push((B::item_from(key.clone(), val.clone()), weight.clone()))
+            });
             batch_cursor.step_key();
         }
 
         self.window = Some((start1, end1));
-        OrdZSet::from_keys((), tuples)
+        B::from_tuples((), tuples)
     }
 
     fn input_preference(
@@ -217,9 +238,10 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, RootCircuit, Stream,
+        indexed_zset, operator::{Generator, trace::TraceBound}, zset, Circuit, OrdIndexedZSet, RootCircuit, Runtime, Stream,
     };
     use std::vec;
+    use size_of::SizeOf;
 
     #[test]
     fn sliding() {
@@ -253,12 +275,12 @@ mod test {
             .into_iter();
 
             let mut output = vec![
-                zset! { "900".to_string() => 1 , "950".to_string() => 1 , "999".to_string() => 1 },
-                zset! { "900".to_string() => -1 , "901".to_string() => 1 , "999".to_string() => 1 , "1000".to_string() => 2 },
-                zset! { "901".to_string() => -1 , "1001".to_string() => 1 },
-                zset! { "1002".to_string() => 1 },
-                zset! { "1003".to_string() => 1 },
-                zset! { "1004".to_string() => 1 },
+                indexed_zset! { 900 => {"900".to_string() => 1} , 950 => {"950".to_string() => 1} , 999 => {"999".to_string() => 1} },
+                indexed_zset! { 900 => {"900".to_string() => -1} , 901 => {"901".to_string() => 1} , 999 => {"999".to_string() => 1} , 1000 => {"1000".to_string() => 2} },
+                indexed_zset! { 901 => {"901".to_string() => -1} , 1001 => {"1001".to_string() => 1} },
+                indexed_zset! { 1002 => {"1002".to_string() => 1} },
+                indexed_zset! { 1003 => {"1003".to_string() => 1} },
+                indexed_zset! { 1004 => {"1004".to_string() => 1} },
             ]
             .into_iter();
 
@@ -308,17 +330,17 @@ mod test {
             .into_iter();
 
             let mut output = vec![
-                zset! { "995".to_string() => 1 , "996".to_string() => 1 , "999".to_string() => 1 },
-                zset! { "995".to_string() => 1 },
-                zset! { "999".to_string() => 1 },
-                zset! {},
-                zset! {},
-                zset! { "1000".to_string() => 2 , "1001".to_string() => 1 , "1002".to_string() => 1 , "1003".to_string() => 1 , "995".to_string() => -2 , "996".to_string() => -1 , "999".to_string() => -2 },
-                zset! {},
-                zset! { "1004".to_string() => 1 },
-                zset! {},
-                zset! {},
-                zset! { "1000".to_string() => -2 , "1001".to_string() => -1 , "1002".to_string() => -1 , "1003".to_string() => -1 , "1004".to_string() => -1 , "1005".to_string() => 2 },
+                indexed_zset! { 995 => {"995".to_string() => 1} , 996 => {"996".to_string() => 1} , 999 => {"999".to_string() => 1} },
+                indexed_zset! { 995 => {"995".to_string() => 1} },
+                indexed_zset! { 999 => {"999".to_string() => 1} },
+                indexed_zset! {},
+                indexed_zset! {},
+                indexed_zset! { 1000 => {"1000".to_string() => 2} , 1001 => {"1001".to_string() => 1} , 1002 => {"1002".to_string() => 1} , 1003 => {"1003".to_string() => 1} , 995 => {"995".to_string() => -2} , 996 => {"996".to_string() => -1} , 999 => {"999".to_string() => -2} },
+                indexed_zset! {},
+                indexed_zset! { 1004 => {"1004".to_string() => 1} },
+                indexed_zset! {},
+                indexed_zset! {},
+                indexed_zset! { 1000 => {"1000".to_string() => -2} , 1001 => {"1001".to_string() => -1} , 1002 => {"1002".to_string() => -1} , 1003 => {"1003".to_string() => -1} , 1004 => {"1004".to_string() => -1} , 1005 => {"1005".to_string() => 2} },
             ]
             .into_iter();
 
@@ -384,12 +406,12 @@ mod test {
             .into_iter();
 
             let mut output = vec![
-                zset! { "900".to_string() => 1 , "950".to_string() => 1 , "990".to_string() => 1, "999".to_string() => 1 },
-                zset! { "900".to_string() => -1 , "915".to_string() => 1 , "940".to_string() => 1 , "985".to_string() => 1, "990".to_string() => -1, "999".to_string() => -1 },
-                zset! { "915".to_string() => -1 , "985".to_string() => -1 },
-                zset! { "1000".to_string() => 2, "1001".to_string() => 1, "1002".to_string() => 1, "1003".to_string() => 1, "1004".to_string() => 1, "1010".to_string() => 1, "1020".to_string() => 1, "1039".to_string() => 1, "985".to_string() => 1, "990".to_string() => 1, "999".to_string() => 2 },
-                zset! { "1039".to_string() => -1, "940".to_string() => -1 },
-                zset! { "1020".to_string() => -1, "950".to_string() => -1 },
+                indexed_zset! { 900 => {"900".to_string() => 1} , 950 => {"950".to_string() => 1} , 990 => {"990".to_string() => 1}, 999 => {"999".to_string() => 1} },
+                indexed_zset! { 900 => {"900".to_string() => -1} , 915 => {"915".to_string() => 1} , 940 => {"940".to_string() => 1} , 985 => {"985".to_string() => 1}, 990 => {"990".to_string() => -1}, 999 => {"999".to_string() => -1} },
+                indexed_zset! { 915 => {"915".to_string() => -1} , 985 => {"985".to_string() => -1} },
+                indexed_zset! { 1000 => {"1000".to_string() => 2}, 1001 => {"1001".to_string() => 1}, 1002 => {"1002".to_string() => 1}, 1003 => {"1003".to_string() => 1}, 1004 => {"1004".to_string() => 1}, 1010 => {"1010".to_string() => 1}, 1020 => {"1020".to_string() => 1}, 1039 => {"1039".to_string() => 1}, 985 => {"985".to_string() => 1}, 990 => {"990".to_string() => 1}, 999 => {"999".to_string() => 2} },
+                indexed_zset! { 1039 => {"1039".to_string() => -1}, 940 => {"940".to_string() => -1} },
+                indexed_zset! { 1020 => {"1020".to_string() => -1}, 950 => {"950".to_string() => -1} },
             ]
             .into_iter();
 
@@ -422,6 +444,34 @@ mod test {
 
         for _ in 0..6 {
             circuit.step().unwrap();
+        }
+    }
+
+    #[test]
+    fn bounded_memory() {
+        let (mut dbsp, input_handle) = Runtime::init_circuit(8, |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<isize, isize>();
+            let bounds = input.watermark_monotonic(|ts| *ts).apply(|ts| (*ts - 1000, *ts));
+
+            let bound = TraceBound::new();
+            bound.set(isize::max_value());
+
+            input.window(&bounds);
+
+            input.integrate_trace_with_bound(Some(bound))
+                .apply(|trace| {
+                    assert!(trace.size_of().total_bytes() < 20000);
+                    ()
+                });
+
+            input_handle
+        }).unwrap();
+
+        for i in 0 .. 10000 {
+            for j in i * 100 .. (i + 1) * 100 {
+                input_handle.push(j, 1);
+            }
+            dbsp.step().unwrap();
         }
     }
 }

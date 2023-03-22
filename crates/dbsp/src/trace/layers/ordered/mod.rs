@@ -424,6 +424,132 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
     }
 }
 
+impl<K, V, L, O> OrderedBuilder<K, L, O>
+where
+    K: Ord + Clone,
+    O: OrdOffset,
+    L: MergeBuilder,
+    <L as Builder>::Trie: 'static,
+    for<'a, 'b> <<L as Builder>::Trie as Trie>::Cursor<'a>: Cursor<'a, Key<'b> = &'b V>,
+{
+    pub fn merge_step_truncate_values(
+        &mut self,
+        (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
+        (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
+        val_bound: &V,
+    ) {
+        match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
+            Ordering::Less => {
+                // determine how far we can advance lower1 until we reach/pass lower2
+                let step = 1 + advance(&trie1.keys[(1 + *lower1)..upper1], |x| {
+                    x < &trie2.keys[*lower2]
+                });
+                let step = min(step, 1_000);
+                self.copy_range_truncate_values(trie1, *lower1, *lower1 + step, val_bound);
+                *lower1 += step;
+            }
+
+            Ordering::Equal => {
+                let lower = self.vals.boundary();
+                let mut cursor1 = trie1.vals.cursor_from(
+                    trie1.offs[*lower1].into_usize(),
+                    trie1.offs[*lower1 + 1].into_usize(),
+                );
+                cursor1.seek(val_bound);
+
+                let mut cursor2 = trie2.vals.cursor_from(
+                    trie2.offs[*lower2].into_usize(),
+                    trie2.offs[*lower2 + 1].into_usize(),
+                );
+                cursor2.seek(val_bound);
+
+                // record vals_length so we can tell if anything was pushed.
+                let upper = self.vals.push_merge(cursor1, cursor2);
+
+                if upper > lower {
+                    self.keys.push(trie1.keys[*lower1].clone());
+                    self.offs.push(O::from_usize(upper));
+                }
+
+                *lower1 += 1;
+                *lower2 += 1;
+            }
+
+            Ordering::Greater => {
+                // determine how far we can advance lower2 until we reach/pass lower1
+                let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
+                    x < &trie1.keys[*lower1]
+                });
+                let step = min(step, 1_000);
+                self.copy_range_truncate_values(trie2, *lower2, *lower2 + step, val_bound);
+                *lower2 += step;
+            }
+        }
+    }
+
+    fn copy_range_truncate_values(
+        &mut self,
+        other: &<Self as Builder>::Trie,
+        lower: usize,
+        upper: usize,
+        val_bound: &V,
+    ) {
+        assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
+
+        for index in lower..upper {
+            let self_basis = self.vals.boundary();
+            let other_end = other.offs[index + 1].into_usize();
+
+            let mut cursor = other
+                .vals
+                .cursor_from(other.offs[index].into_usize(), other_end);
+
+            cursor.seek(val_bound);
+            let other_basis = cursor.position();
+
+            self.vals.copy_range(&other.vals, other_basis, other_end);
+
+            if other_end > other_basis {
+                self.keys.push(other.keys[index].clone());
+                self.offs
+                    .push(O::from_usize(self_basis + other_end - other_basis));
+            }
+        }
+    }
+
+    fn push_merge_truncate_values<'a>(
+        &'a mut self,
+        cursor1: <<Self as Builder>::Trie as Trie>::Cursor<'a>,
+        cursor2: <<Self as Builder>::Trie as Trie>::Cursor<'a>,
+        val_bound: &'a V,
+    ) -> usize {
+        let (mut lower1, upper1) = cursor1.bounds;
+        let (mut lower2, upper2) = cursor2.bounds;
+
+        let capacity = (upper1 - lower1) + (upper2 - lower2);
+        self.keys.reserve(capacity);
+        self.offs.reserve(capacity);
+
+        // while both mergees are still active
+        while lower1 < upper1 && lower2 < upper2 {
+            self.merge_step_truncate_values(
+                (cursor1.storage, &mut lower1, upper1),
+                (cursor2.storage, &mut lower2, upper2),
+                val_bound,
+            );
+        }
+
+        if lower1 < upper1 {
+            self.copy_range_truncate_values(cursor1.storage, lower1, upper1, val_bound);
+        }
+        if lower2 < upper2 {
+            self.copy_range_truncate_values(cursor2.storage, lower2, upper2, val_bound);
+        }
+
+        self.keys.len()
+    }
+}
+
 pub struct OrderedBuilderVals<'a, K, L, O> {
     builder: &'a mut OrderedBuilder<K, L, O>,
     pushes: &'a mut usize,
@@ -437,6 +563,14 @@ where
         *self.pushes += 1;
         self.builder.vals.push_tuple(value);
     }
+}
+
+impl<K, L, O> OrderedBuilder<K, L, O>
+where
+    K: Ord + Clone,
+    L: Builder,
+    O: OrdOffset,
+{
 }
 
 impl<K, L, O> Builder for OrderedBuilder<K, L, O>
@@ -845,6 +979,10 @@ where
                 self.storage.offs[self.pos + 1].into_usize(),
             );
         }
+    }
+
+    fn position(&self) -> usize {
+        self.pos
     }
 
     fn reposition(&mut self, lower: usize, upper: usize) {

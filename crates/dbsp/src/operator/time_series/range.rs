@@ -2,7 +2,11 @@
 
 use crate::trace::Cursor;
 use num::PrimInt;
-use std::{cmp::max, marker::PhantomData};
+use std::{
+    cmp::max,
+    marker::PhantomData,
+    ops::{Add, Neg, Sub},
+};
 
 /// Relative time offset.
 ///
@@ -14,14 +18,64 @@ pub enum RelOffset<TS> {
     After(TS),
 }
 
+impl<TS> Neg for RelOffset<TS> {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        match self {
+            Self::Before(ts) => Self::After(ts),
+            Self::After(ts) => Self::Before(ts),
+        }
+    }
+}
+
+impl<TS> Add<Self> for RelOffset<TS>
+where
+    TS: PrimInt,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Self::Before(ts1), Self::Before(ts2)) => Self::Before(ts1.saturating_add(ts2)),
+            (Self::After(ts1), Self::After(ts2)) => Self::After(ts1.saturating_add(ts2)),
+            (Self::After(ts1), Self::Before(ts2)) => {
+                if ts1 >= ts2 {
+                    Self::After(ts1.saturating_sub(ts2))
+                } else {
+                    Self::Before(ts2.saturating_sub(ts1))
+                }
+            }
+            (Self::Before(ts1), Self::After(ts2)) => {
+                if ts1 >= ts2 {
+                    Self::Before(ts1.saturating_sub(ts2))
+                } else {
+                    Self::After(ts2.saturating_sub(ts1))
+                }
+            }
+        }
+    }
+}
+
+impl<TS> Sub<Self> for RelOffset<TS>
+where
+    TS: PrimInt,
+{
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        self.add(rhs.neg())
+    }
+}
+
 /// Relative time range.
 ///
 /// Specifies a time interval relative to a given point in time.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RelRange<TS> {
-    from: RelOffset<TS>,
-    to: RelOffset<TS>,
+    pub from: RelOffset<TS>,
+    pub to: RelOffset<TS>,
 }
 
 impl<TS> RelRange<TS>

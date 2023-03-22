@@ -124,6 +124,10 @@ where
         self.pos = self.bounds.0;
     }
 
+    fn position(&self) -> usize {
+        self.pos
+    }
+
     fn reposition(&mut self, lower: usize, upper: usize) {
         self.pos = lower;
         self.bounds = (lower, upper);

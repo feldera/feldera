@@ -11,13 +11,13 @@ use crate::{
             OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
             PartitionedIndexedZSet,
         },
-        trace::{DelayedTraceId, IntegrateTraceId, UntimedTraceAppend, Z1Trace},
-        Aggregator,
+        trace::{DelayedTraceId, IntegrateTraceId, TraceBounds, UntimedTraceAppend, Z1Trace},
+        Aggregator, FilterMap,
     },
     trace::{Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
-use num::PrimInt;
+use num::{Bounded, PrimInt};
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 // TODO: `Default` trait bounds in this module are due to an implementation
@@ -100,6 +100,61 @@ where
     }
 }
 
+impl<B> Stream<RootCircuit, B>
+where
+    B: IndexedZSet,
+{
+    pub fn partitioned_rolling_aggregate_with_watermark<PK, TS, V, Agg, PF>(
+        &self,
+        watermark: &Stream<RootCircuit, TS>,
+        partition_func: PF,
+        aggregator: Agg,
+        range: RelRange<TS>,
+    ) -> OrdPartitionedOverStream<PK, TS, Agg::Output, B::R>
+    where
+        B: IndexedZSet<Key = TS>,
+        Self: for<'a> FilterMap<RootCircuit, ItemRef<'a> = (&'a B::Key, &'a B::Val), R = B::R>,
+        B::R: ZRingValue,
+        PK: DBData,
+        PF: Fn(&B::Val) -> (PK, V) + Clone + 'static,
+        Agg: Aggregator<V, (), B::R>,
+        Agg::Accumulator: Default,
+        TS: DBData + PrimInt,
+        V: DBData,
+    {
+        self.circuit().region("partitioned_rolling_aggregate_with_watermark", || {
+            let shifted_range = RelRange::new(
+                range.from.clone() - range.to.clone(),
+                range.to.clone() - range.to.clone(),
+                );
+
+            let bounds = watermark.apply(move |wm| {
+                (
+                    shifted_range
+                    .range_of(wm)
+                    .map(|range| range.from)
+                    .unwrap_or_else(|| Bounded::min_value()),
+                    Bounded::max_value(),
+                )
+            });
+            let window = self.window(&bounds);
+
+            let partition_func_clone = partition_func.clone();
+
+            let partitioned_window = window.map_index(move |(ts, v)| {
+                let (partition_key, val) = partition_func_clone(v);
+                (partition_key, (ts.clone(), val))
+            });
+            let partitioned_self = self.map_index(move |(ts, v)| {
+                let (partition_key, val) = partition_func(v);
+                (partition_key, (ts.clone(), val))
+            });
+
+            partitioned_self.partitioned_rolling_aggregate_inner(&partitioned_window, aggregator, range)
+        })
+    }
+}
+
 impl<B> Stream<RootCircuit, B> {
     /// Rolling aggregate of a partitioned stream over time range.
     ///
@@ -159,53 +214,77 @@ impl<B> Stream<RootCircuit, B> {
         //                                                            output_trace_delayed └────┘
         // ```
         self.circuit().region("partitioned_rolling_aggregate", || {
-            let circuit = self.circuit();
-            let stream = self.shard();
-
-            let tree = stream
-                .partitioned_tree_aggregate::<TS, V, Agg>(aggregator.clone())
-                .integrate_trace();
-            let input_trace = stream.integrate_trace();
-
-            let (output_trace_delayed, z1feedback) =
-                circuit.add_feedback(<Z1Trace<Spine<O>>>::new(false, self.circuit().root_scope()));
-            output_trace_delayed.mark_sharded();
-
-            let output = circuit
-                .add_quaternary_operator(
-                    <PartitionedRollingAggregate<TS, V, Agg>>::new(range, aggregator),
-                    &stream,
-                    &input_trace,
-                    &tree,
-                    &output_trace_delayed,
-                )
-                .mark_sharded();
-
-            let output_trace = circuit
-                .add_binary_operator_with_preference(
-                    <UntimedTraceAppend<Spine<O>>>::new(),
-                    (
-                        &output_trace_delayed,
-                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                    ),
-                    (&output, OwnershipPreference::PREFER_OWNED),
-                )
-                .mark_sharded();
-
-            z1feedback
-                .connect_with_preference(&output_trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-
-            circuit.cache_insert(
-                DelayedTraceId::new(output_trace.origin_node_id().clone()),
-                output_trace_delayed,
-            );
-            circuit.cache_insert(
-                IntegrateTraceId::new(output.origin_node_id().clone()),
-                output_trace,
-            );
-
-            output
+            self.partitioned_rolling_aggregate_inner(self, aggregator, range)
         })
+    }
+
+    pub fn partitioned_rolling_aggregate_inner<TS, V, Agg, O>(
+        &self,
+        self_window: &Self,
+        aggregator: Agg,
+        range: RelRange<TS>,
+    ) -> Stream<RootCircuit, O>
+    where
+        B: PartitionedIndexedZSet<TS, V>,
+        B::R: ZRingValue,
+        Agg: Aggregator<V, (), B::R>,
+        Agg::Accumulator: Default,
+        O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
+        TS: DBData + PrimInt,
+        V: DBData,
+    {
+        let circuit = self.circuit();
+        let stream = self.shard();
+        let stream_window = self_window.shard();
+
+        let tree = stream_window
+            .partitioned_tree_aggregate::<TS, V, Agg>(aggregator.clone())
+            .integrate_trace();
+        let input_trace = stream_window.integrate_trace();
+
+        let (output_trace_delayed, z1feedback) =
+            circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
+                false,
+                circuit.root_scope(),
+                TraceBounds::unbounded(),
+            ));
+        output_trace_delayed.mark_sharded();
+
+        let output = circuit
+            .add_quaternary_operator(
+                <PartitionedRollingAggregate<TS, V, Agg>>::new(range, aggregator),
+                &stream,
+                &input_trace,
+                &tree,
+                &output_trace_delayed,
+            )
+            .mark_sharded();
+
+        let output_trace = circuit
+            .add_binary_operator_with_preference(
+                <UntimedTraceAppend<Spine<O>>>::new(),
+                (
+                    &output_trace_delayed,
+                    OwnershipPreference::STRONGLY_PREFER_OWNED,
+                ),
+                (&output, OwnershipPreference::PREFER_OWNED),
+            )
+            .mark_sharded();
+
+        z1feedback
+            .connect_with_preference(&output_trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+        circuit.cache_insert(
+            DelayedTraceId::new(output_trace.origin_node_id().clone()),
+            output_trace_delayed,
+        );
+        let bounds = <TraceBounds<O::Key>>::unbounded();
+        circuit.cache_insert(
+            IntegrateTraceId::new(output.origin_node_id().clone()),
+            (output_trace, bounds),
+        );
+
+        output
     }
 
     /// A version of [`Self::partitioned_rolling_aggregate`] optimized for
@@ -463,7 +542,7 @@ mod test {
                 range::{Range, RelOffset, RelRange},
                 PartitionCursor,
             },
-            Fold,
+            FilterMap, Fold,
         },
         trace::{Batch, BatchReader, Cursor},
         CollectionHandle, DBSPHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
@@ -539,10 +618,13 @@ mod test {
 
     type RangeHandle = CollectionHandle<u64, ((u64, i64), isize)>;
 
-    fn partition_rolling_aggregate_circuit() -> (DBSPHandle, RangeHandle) {
-        Runtime::init_circuit(4, |circuit| {
+    fn partition_rolling_aggregate_circuit(lateness: u64) -> (DBSPHandle, RangeHandle) {
+        Runtime::init_circuit(4, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, (u64, i64), isize>();
+
+            let watermark = input_stream.watermark_monotonic(move |ts| ts.saturating_sub(lateness));
+            let input_by_time = input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0i64,
@@ -556,6 +638,20 @@ mod test {
                 .gather(0)
                 .integrate();
             expected_1000_0.apply2(&output_1000_0, |expected, actual| {
+                assert_eq!(expected, actual)
+            });
+
+            let output_1000_0_watermark = input_by_time
+                .partitioned_rolling_aggregate_with_watermark(
+                    &watermark,
+                    |(partition, val)| (*partition, *val),
+                    aggregator.clone(),
+                    range_spec.clone(),
+                )
+                .gather(0)
+                .integrate();
+
+            expected_1000_0.apply2(&output_1000_0_watermark, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
@@ -578,6 +674,20 @@ mod test {
                 .gather(0)
                 .integrate();
             expected_500_500.apply2(&output_500_500, |expected, actual| {
+                assert_eq!(expected, actual)
+            });
+
+            let output_500_500_watermark = input_by_time
+                .partitioned_rolling_aggregate_with_watermark(
+                    &watermark,
+                    |(partition, val)| (*partition, *val),
+                    aggregator.clone(),
+                    range_spec.clone(),
+                )
+                .gather(0)
+                .integrate();
+
+            expected_500_500.apply2(&output_500_500_watermark, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
@@ -610,7 +720,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range_2() {
-        let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
 
         circuit.step().unwrap();
 
@@ -625,7 +735,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range() {
-        let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
 
         circuit.step().unwrap();
 
@@ -667,16 +777,18 @@ mod test {
     type InputTuple = (u64, ((u64, i64), isize));
     type InputBatch = Vec<InputTuple>;
 
-    fn input_tuple(partitions: u64, epoch: u64) -> impl Strategy<Value = InputTuple> {
-        ((0..partitions), ((0..epoch, 100..101i64), 1..2isize))
+    fn input_tuple(partitions: u64, window: (u64, u64)) -> impl Strategy<Value = InputTuple> {
+        ((0..partitions), ((window.0..window.1, 100..101i64), 1..2isize))
     }
+
     fn input_batch(
         partitions: u64,
-        epoch: u64,
+        window: (u64, u64),
         max_batch_size: usize,
     ) -> impl Strategy<Value = InputBatch> {
-        collection::vec(input_tuple(partitions, epoch), 0..max_batch_size)
+        collection::vec(input_tuple(partitions, window), 0..max_batch_size)
     }
+
     fn input_trace(
         partitions: u64,
         epoch: u64,
@@ -684,16 +796,39 @@ mod test {
         max_batches: usize,
     ) -> impl Strategy<Value = Vec<InputBatch>> {
         collection::vec(
-            input_batch(partitions, epoch, max_batch_size),
+            input_batch(partitions, (0, epoch), max_batch_size),
             0..max_batches,
         )
+    }
+
+    fn input_trace_quasi_monotone(
+        partitions: u64,
+        window_size: u64,
+        window_step: u64,
+        max_batch_size: usize,
+        batches: usize,
+    ) -> impl Strategy<Value = Vec<InputBatch>> {
+        (0..batches).map(|i| input_batch(partitions, (i as u64 * window_step, i as u64 * window_step + window_size), max_batch_size).boxed()).collect::<Vec<_>>()
     }
 
     proptest! {
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
-            let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
+
+            for mut batch in trace {
+                input.append(&mut batch);
+                circuit.step().unwrap();
+            }
+
+            circuit.kill().unwrap();
+        }
+
+        #[test]
+        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 20)) {
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(10000);
 
             for mut batch in trace {
                 input.append(&mut batch);
@@ -706,7 +841,7 @@ mod test {
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 1_000, 50, 20)) {
-            let (mut circuit, mut input) = partition_rolling_aggregate_circuit();
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
 
             for mut batch in trace {
                 input.append(&mut batch);
