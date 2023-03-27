@@ -1,0 +1,26 @@
+version: "2.2"
+name: nexmark
+services:
+  jobmanager:
+    image: localhost/nexmark:latest
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+
+  taskmanager:
+    image: localhost/nexmark:latest
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    deploy:
+      mode: replicated
+      replicas: 8
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2
