@@ -1,6 +1,6 @@
 \section{Incremental recursive programs}\label{sec:nested}
 
-In \secref{sec:streams}--\ref{sec:relational} 
+In \secref{sec:streams}--\ref{sec:relational}
 we showed how to incrementalize a relational query by
 compiling it into a circuit, lifting the circuit to compute on streams, and
 applying the $\inc{\cdot}$ operator.  In \secref{sec:recursion} we showed
@@ -18,7 +18,7 @@ a stream of adjustments to the fixed point computation, using
 Nested streams, or streams of streams, $\stream{\stream{A}} = \N \rightarrow (\N
 \rightarrow A)$, are well defined, since streams form an abelian group.
 Equivalently, a nested stream is a value in $\N \times \N \to A$, i.e., a matrix
-with an infinite number of rows, indexed by two-dimensional time $(t_0, t_1)$. 
+with an infinite number of rows, indexed by two-dimensional time $(t_0, t_1)$.
 where each row is a stream.  Please refer to our companion report for
 example computations on nested streams~\cite{tr}.
 
@@ -40,14 +40,14 @@ Proposition~\ref{prop-unique-fix} holds for this extended notion of strictness, 
 The operator $\lift{\zm}: \stream{\stream{A}} \to \stream{\stream{A}}$ is strict (in its second dimension).
 \end{proposition}
 
-The operator $\zm$ on nested streams delays ``rows'' of the matrix, 
-while $\lift{\zm}$ delays ``columns''.  
+The operator $\zm$ on nested streams delays ``rows'' of the matrix,
+while $\lift{\zm}$ delays ``columns''.
 The $\I$ operator on $\stream{\stream{A}}$ operates on rows
 of the matrix, treating each row as a single value.
-Lifting a stream operator computing on $\stream{A}$, 
+Lifting a stream operator computing on $\stream{A}$,
 such as $\I: \stream{A} \to \stream{A}$, also produces an operator on nested streams, but
 this time computing on the columns of the matrix
-$\lift{\I}: \stream{\stream{A}} \to \stream{\stream{A}}.$  
+$\lift{\I}: \stream{\stream{A}} \to \stream{\stream{A}}.$
 
 \begin{proposition}[Lifting cycles]
 \label{prop-lift-cycle}
@@ -83,11 +83,11 @@ itself.  For example, we have:
 
 This proposition gives the ability to lift
 entire circuits, including circuits computing on streams and having feedback edges,
-which are well-defined, due to Proposition~\ref{prop-liftz}.  
+which are well-defined, due to Proposition~\ref{prop-liftz}.
 With this machinery we can now apply Algorithm~\ref{algorithm-inc} to arbitrary
-circuits, even circuits built for recursively-defined relations.  
+circuits, even circuits built for recursively-defined relations.
 
-Step 1: Start with the ``semi-naive'' circuit~(\ref{eq:seminaive}):
+\noindent Step 1: Start with the ``semi-naive'' circuit~(\ref{eq:seminaive}):
 \begin{center}
 \begin{tikzpicture}[>=latex]
   \node[] (Iinput) {\code{I}};
@@ -103,10 +103,9 @@ Step 1: Start with the ``semi-naive'' circuit~(\ref{eq:seminaive}):
   \draw[->] (z) -| (f);
   \draw[->] (Idelta) -- (f);
 \end{tikzpicture}
-\vspace{-2mm}
 \end{center}
 \noindent Step 2: nothing to do (for $\distinct$). \\
-\noindent Steps 3 and 4: Lift the circuit (using~\ref{prop-lift-cycle}) and incrementalize: \\
+\noindent Steps 3 and 4: Lift the circuit (using~\ref{prop-lift-cycle}) and incrementalize:
 \begin{center}
 \begin{tikzpicture}[>=latex]
   \node[] (Iinput) {$\Delta$\code{I}};
@@ -130,7 +129,6 @@ Step 1: Start with the ``semi-naive'' circuit~(\ref{eq:seminaive}):
 
 \noindent Step 5: apply the chain rule and linearity of $\lift{\delta_0}$ and $\lift{\int}$:
 \begin{equation}
-\vspace{-2.1ex}
 \begin{aligned}
 \label{eq:increcursive}
 \begin{tikzpicture}[>=latex]
@@ -150,8 +148,8 @@ Step 1: Start with the ``semi-naive'' circuit~(\ref{eq:seminaive}):
 \end{aligned}
 \end{equation}
 
-\vspace{1mm}
-This is the incremental version of an arbitrary recursive query.  An example can be found in the TR~\cite{tr}.
+This is the incremental version of an arbitrary recursive query.  An
+example for a transitive closure query is in our report~\cite{tr}.
 
 %\refsec{sec:recursive-incremental-example} shows how Algorithm~\ref{algorithm-inc} is
 %applied to the \dbsp circuit produced by the example from~\refsec{sec:recursive-example},
@@ -165,17 +163,15 @@ The time complexity of an incremental recursive query can be estimated as a prod
 the number of fixed point iterations and the complexity of each iteration. The
 incrementalized circuit (\ref{eq:increcursive}) never performs more
 iterations than the non-incremental circuit (\ref{eq:seminaive}):
-once the non-incremental circuit reaches the fixed point, its output is constant, 
+once the non-incremental circuit reaches the fixed point, its output is constant,
 and the derivative of corresponding value in the incrementalized circuit becomes 0.
 
 Moreover, the work performed by each operator in the incremental
-circuit is asymptotically less than the non-incremental
-one\footnote{Under the standard assumptions enumerated
-in~\refsec{sec:complexity}.}.  A detailed analysis can be found in our
-companion report~\cite{tr}.
+circuit is asymptotically less than the non-incremental one.  A
+detailed analysis can be found in our companion report~\cite{tr}.
 
 %As a concrete example, consider a join in a recursive circuit.
-%A non-incremental implementation is shown in the Appendix in 
+%A non-incremental implementation is shown in the Appendix in
 %example~\ref{recursive-join}.  The incremental implementation
 %of the same circuit is in circuit~\ref{join-expansion}, and contains
 %4 join operators.  The work performed by the non-incremental join is $O(|DB|^2)$ for
@@ -191,12 +187,9 @@ $\sum_{t_2}\sum_{t_1}|s[t_1][t_2]|$, i.e., the total size of changes
 aggregated over columns of the matrix.  The unoptimized circuit integrates
 and differentiates respectively inputs and outputs of the recursive program
 fragment.  As we move $\I$ and $\D$ inside the circuit using the chain rule, we
-additionally store changes to intermediate streams.  Effectively we cache results of 
+additionally store changes to intermediate streams.  Effectively we cache results of
 fixed point iterations from earlier timestamps to update them efficiently as new input changes arrive.
-Notice that space usage is proportional to the \emph{number of iterations of the inner loop} 
-that computes the fixed-point.  
+Notice that space usage is proportional to the \emph{number of iterations of the inner loop}
+that computes the fixed-point.
 Fortunately, many recursive algorithms converge in a relatively small number of steps
 (for example, transitive closure requires a number of steps  log(graph diameter).
-
-
-

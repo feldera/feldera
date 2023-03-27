@@ -1,7 +1,7 @@
 \section{Stream computations}\label{sec:streams}
 
 The core notion of our theory of IVM is the \textbf{stream}.
-In this section we introduce formally streams as 
+In this section we introduce formally streams as
 infinite sequences of values, and define computations on streams.
 Stream operators (\secref{sec:notation}) are the basic building block of stream
 computations.  Operators can be composed with simple rules (\secref{sec:abelian})
@@ -23,8 +23,7 @@ $A$-streams.
 \end{definition}
 
 When $s\in\stream{A}$ and $t\in\N$ we
-write $s[t]$ for the $t$-th element of the stream $s$ instead of the usual $s(t)$
-to distinguish it from other function applications.
+write $s[t]$ for the $t$-th element of the stream $s$ instead of the usual $s(t)$.
 We think of the index $t\in\N$ as (discrete) time and of $s[t]\in A$
 as the value of the the stream $s$ ``at time'' $t$.
 \ifstreamexamples
@@ -36,15 +35,14 @@ $\sv{0 1 2 3 4}$.
 A \defined{stream operator} with $n$ inputs is a function
 $T:\stream{A_0}\times\cdots\times\stream{A_{n-1}}\to\stream{B}$.
 \end{definition}
-
 In general we use ``operator'' for functions on streams, and
 ``function'' for computations on ``scalar'' values.
 
-DBSP is an extension of the simply-typed lambda calculus ---
+\dbsp is an extension of the simply-typed lambda calculus ---
 we will introduce its elements gradually.  However, in many cases we find it more readable to
-use circuit diagrams to depict \dbsp programs
-\footnote{Circuits however hide the \emph{order} of the inputs of an operator; for non-commutative
-operators we have to label the operator inputs.}.
+use circuit diagrams to depict \dbsp programs.
+(Circuits do hide the \emph{order} of the inputs of an operator; for non-commutative
+operators we have to distinguish the operator inputs.)
 In a circuit a rectangle represents an operator application (labeled
 with the operator name, e.g., $T$), while an arrow is a stream.
 
@@ -169,8 +167,8 @@ For example, $\zm(\id) = \sv{0 0 1 2 3}$.
 
 \begin{definition}[Time invariance]
 A stream operator $S: \stream{A} \to \stream{B}$ is \defined{time-invariant} (TI) if
-$S(\zm_A(s)) = \zm_B(S(s))$ for all $s \in \stream{A}$, or, in other words, if the
-following two circuits are equivalent:
+$S(\zm_A(s)) = \zm_B(S(s))$ for all $s \in \stream{A}$; in other words, if
+the following two circuits are equivalent:
 
 \begin{tabular}{m{3cm}m{.5cm}m{3cm}}
 \begin{tikzpicture}[auto,>=latex]
@@ -249,12 +247,12 @@ For a strict $F: \stream{A} \to \stream{A}$ the equation ~$\alpha=F(\alpha)$~ ha
 solution $\alpha \in \stream{A}$, denoted by $\fix{\alpha}{F(\alpha)}$.
 \end{proposition}
 
-Thus every strict operator from a set to itself has a unique fixed point.
-The simple proof relies on strong induction, showing that $\alpha[t]$
-depends only on the values of $\alpha$ prior to $t$.
+Thus every strict operator from a set to itself has a unique fixed
+point.  The simple proof relies on strong induction, showing that the
+solution $\alpha[t]$ depends only on the values of $\alpha$ prior to
+$t$.
 
-The next lemma show that the following circuit, having a strict
-``feedback'' edge $F$, is a well-defined function on streams:
+Consider a circuit with a strict feedback edge:
 \begin{center}
 \begin{tikzpicture}[>=latex]
     \node[] (input) {$s$};
@@ -267,6 +265,8 @@ The next lemma show that the following circuit, having a strict
     \draw[->] (z.west) -- ++(-.3,0) |- ([yshift=1mm]f.south west);
 \end{tikzpicture}
 \end{center}
+
+This circuit is a well-defined function on streams:
 
 %\begin{lemma}
 %\label{lemma-causal-strict}
@@ -281,15 +281,8 @@ the operator $Q(s)=\fix{\alpha}{T(s,F(\alpha))}$ is well-defined and causal.
 If, moreover, $F$ and $T$ are TI then so is $Q$.
 \end{lemma}
 
-All stream computations in \dbsp are built from the primitive operators
-we have described: lifted operators and delays (we add two more operators in \secref{sec:nested}).
-%Circuits composed of such operators can be efficiently implemented
-%using Dataflow machines~\cite{lee-ieee95}.
-
-%Circuits with feedback are used for two purposes: defining an
-%integration operator (in the next section), and defining recursive computations (\secref{sec:recursion}).  In turn, the
-%integration operator will be instrumental in defining incremental
-%computations (\secref{sec:incremental}).
+All \dbsp computations are built using just lifted functions and
+delays.  We add two more operators in \secref{sec:nested}.
 
 \subsection{Integration and differentiation}\label{sec:abelianstreams}
 
@@ -310,9 +303,8 @@ $S: \stream{A} \rightarrow \stream{B}$ \defined{linear} if it is a group homomor
 $S(a+b)=S(a)+S(b)$ (and therefore $S(0)=0$ and $S(-a)=-S(a)$).
 \end{definition}
 
-Lifting a linear function $f: A \to B$ produces
-a stream operator $\lift{f}$ that is linear and TI (LTI).
-$\zm$ is also LTI.
+Given a linear function $f: A \to B$, the stream operator $\lift{f}$
+is linear and TI (LTI).  $\zm$ is also LTI.
 
 \begin{definition}(bilinear)
 A function of two arguments $f: A \times B \to C$ with $A, B, C$ groups, is \emph{bilinear}
@@ -321,8 +313,8 @@ $\forall a, b, c, d . f(a+b, c) = f(a, c) + f(b, c)$, and $f(a, c+d) = f(a, c) +
 \end{definition}
 
 This definition extends to stream operators.
-Lifting a bilinear function $f: A \times B \to C$ produces
-a bilinear stream operator $\lift{f}$.  An example bilinear operator over $\stream{\Z}$
+The lifting of a bilinear function $f$ is
+a bilinear stream operator $\lift{f}$.  An example
 is lifted multiplication:
 $f: \stream{\N} \times \stream{\N} \to \stream{\N}, f(a, b)[t] = a[t]\cdot b[t]$.
 
@@ -333,7 +325,7 @@ The ``feedback loop'' of a linear operator is linear:
 
 \begin{proposition}
 \label{prop-rec-linear}
-Let $S$ be a unary causal LTI operator. The
+Let $S$ be a unary, causal, LTI operator. The
 operator $Q(s)=\fix{\alpha}{S(s+\zm(\alpha))}$ is well-defined and LTI:
 
 \begin{center}
@@ -394,7 +386,7 @@ is defined by $\I(s) \defn \lambda s . \fix{\alpha}{(s + \zm(\alpha))}$:
     \node[] (input) {s};
     \node[block, shape=circle, right of=input, inner sep=0pt] (plus) {$+$};
     \node[right of=plus, node distance=1.5cm] (output) {$\I(s)$};
-    \node[block, below of=plus, node distance=.7cm] (z) {$z^{-1}$};
+    \node[block, below of=plus, node distance=.6cm] (z) {$z^{-1}$};
     \draw[->] (input) -- (plus);
     \draw[->] (plus) -- node (o) {} (output);
     \draw[->] (o) |- (z);
@@ -463,7 +455,7 @@ $\forall s . \I(\D(s)) = \D(\I(s)) = s$.
 
 \section{Incremental view maintenance}\label{sec:incremental}
 
-In this section we give a precise definition of IVM and analyze its properties.
+Here we define IVM and analyze its properties.
 
 \begin{definition}
 Given a unary stream operator $Q: \stream{A} \to \stream{B}$ we define the
@@ -478,7 +470,9 @@ e.g., if $T: \stream{A} \times \stream{B} \rightarrow \stream{C}$ then
 $\inc{T}(a, b) \defn \D (T(\I(a), \I(b)))$.
 \end{definition}
 
-The following diagram illustrates the intuition behind this definition:
+%The following diagram illustrates the intuition behind this
+%definition:
+\begin{center}
 \begin{tikzpicture}[auto,>=latex]
     \node[] (input) {$\Delta s$};
     \node[block, right of=input] (I) {$\I$};
@@ -490,7 +484,7 @@ The following diagram illustrates the intuition behind this definition:
     \draw[->] (Q) -- node (o) {$o$} (D);
     \draw[->] (D) -- (output);
 \end{tikzpicture}
-
+\end{center}
 If $Q(s) = o$ is a computation, then $\inc{Q}$ performs
 the ``same'' computation as $Q$,
 but between streams of changes $\Delta s$ and $\Delta o$.
@@ -500,24 +494,23 @@ computations; this is in contrast to classic definitions, e.g.~\cite{gupta-idb95
 consider only one change.  Generalizing the definition to operate on streams gives us
 additional power, especially when operating with recursive queries.
 
-The following proposition is one of our central results.
+The following proposition is one of our central results:
 
 \begin{proposition}(Properties of the incremental version):
-For computations of appropriate types, the following hold:
 \label{prop-inc-properties}
 \begin{description}[nosep, leftmargin=\parindent]
 \item[inversion:] $Q\mapsto\inc{Q}$ is bijective; its inverse is $Q\mapsto \I\circ Q\circ\D$.
 \item[invariance:] $\inc{+} = +, \inc{(\zm)} = \zm, \inc{-} = -, \inc{\I}=\I, \inc{\D}=\D$
 \item[push/pull:] \label{prop-part-commutation}
     $Q \circ \I = \I \circ \inc{Q}$; $\D\circ Q = \inc{Q}\circ\D$
-\item[chain:] $\inc{(Q_1\circ Q_2)} = \inc{Q_1}\circ\inc{Q_2}$ (This generalizes to operators with multiple inputs.)
+\item[chain:] $\inc{(Q_1\circ Q_2)} = \inc{Q_1}\circ\inc{Q_2}$ (Generalizes to multiple inputs.)
 \item[add:] $\inc{(Q_1 + Q_2)} = \inc{Q_1} + \inc{Q_2}$
 \item[cycle:] $\inc{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))} = \lambda s. \fix{\alpha}{\inc{T}(s,\zm(\alpha)})$
 \end{description}
 \end{proposition}
 
-These properties are very useful; for example, the \defined{chain rule}  states
-that the following two circuits are equivalent:
+The \defined{chain rule} states that these two circuits are
+equivalent:
 
 \noindent
 \begin{tabular}{m{4cm}m{.2cm}m{2.5cm}}
@@ -560,7 +553,7 @@ The \defined{cycle rule} states that the following circuits are equivalent:
     \node[block, right of=I] (f) {$T$};
     \node[block, right of=f] (D) {$\D$};
     \node[right of=D] (output) {$o$};
-    \node[block, below of=f, node distance=.7cm] (z) {$\zm$};
+    \node[block, below of=f, node distance=.6cm] (z) {$\zm$};
     \draw[->] (input) -- (I);
     \draw[->] (I) -- (f);
     \draw[->] (f) -- node (mid) {} (D);
@@ -572,7 +565,7 @@ The \defined{cycle rule} states that the following circuits are equivalent:
     \node[] (input) {$s$};
     \node[block, right of=input] (f) {$\inc{T}$};
     \node[right of=f, node distance=1.2cm] (output) {$o$};
-    \node[block, below of=f, node distance=.7cm] (z) {$\zm$};
+    \node[block, below of=f, node distance=.6cm] (z) {$\zm$};
     \draw[->] (input) -- (f);
     \draw[->] (f) -- node (mid) {} (output);
     \draw[->] (mid.center) |-  (z);
@@ -670,6 +663,7 @@ $\cong$ &
 \end{tabular}
 \end{theorem}
 
-If Theorem~\ref{bilinear} is rewritten using $\Delta a$ for the stream of changes to $a$ we
+Rewriting Theorem~\ref{bilinear} using $\Delta a$ for the stream of changes to $a$ we
 get the familiar formula for incremental equi-joins:
-$\Delta(a\times b) =\Delta a \times \Delta b + a\times(\Delta b) + (\Delta a)\times b$; this is true because equi-joins are bilinear.
+$\Delta(a\times b) =\Delta a \times \Delta b + a\times(\Delta b) +
+(\Delta a)\times b$; equi-joins are indeed bilinear.

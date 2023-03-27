@@ -9,24 +9,25 @@ balance  % equalize columns on last page
 
 %% The following content must be adapted for the final version
 % paper-specific
-\newcommand\vldbdoi{XX.XX/XXX.XX}
-\newcommand\vldbpages{XXX-XXX}
+\newcommand\vldbdoi{10.14778/3587136.3587137}
+\newcommand\vldbpages{1601-1614}
 % issue-specific
-\newcommand\vldbvolume{14}
-\newcommand\vldbissue{1}
-\newcommand\vldbyear{2020}
+\newcommand\vldbvolume{16}
+\newcommand\vldbissue{7}
+\newcommand\vldbyear{2023}
 % should be fine as it is
 \newcommand\vldbauthors{\authors}
 \newcommand\vldbtitle{\shorttitle}
 % leave empty if no availability url should be set
 \newcommand\vldbavailabilityurl{https://github.com/vmware/database-stream-processor}
 % whether page numbers should be shown or not, use 'plain' for review versions, 'empty' for camera ready
-\newcommand\vldbpagestyle{plain}
+\newcommand\vldbpagestyle{empty}
 
 
 %\acmConference[CONF]{Conference}{2022}{USA}
 %\settopmatter{printfolios=true} % print page numbers
 
+\usepackage[a-2b]{pdfx}
 \usepackage{amsmath}
 \usepackage{amsfonts}
 \usepackage[utf8]{inputenc}
@@ -38,10 +39,8 @@ balance  % equalize columns on last page
 \usepackage{listofitems}
 \usepackage{graphicx}
 \usepackage[final]{listings}
-\usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{amsthm}
-%\usepackage{titlesec}
 \usepackage{ifthen}
 
 % space saving tricks
@@ -153,20 +152,6 @@ balance  % equalize columns on last page
 \end{array}
 {]}
 }
-
-\newcommand{\st}{\;|\;}
-
-\newcommand{\cut}[2]{#1|_{_{\leq #2}}}
-\newcommand{\scut}[2]{#1|_{_{< #2}}}
-
-\setlength{\marginparwidth}{1.5cm}
-%\newcommand{\scream}[2]{\marginpar{\raggedright \footnotesize \textbf{#1}: #2}}
-\newcommand{\scream}[2]{{\color{red} \textbf{#1}: #2}}
-\newcommand{\val}[1]{\scream{VAL}{#1}}
-\newcommand{\mihai}[1]{\scream{MIHAI}{#1}}
-\newcommand{\leonid}[1]{\scream{LEONID}{#1}}
-\newcommand{\frank}[1]{\scream{FRANK}{#1}}
-\newcommand{\tej}[1]{\scream{TEJ}{#1}}
 
 \title{\dbsp: Automatic Incremental View Maintenance for Rich Query Languages}
 \author{Mihai Budiu}
