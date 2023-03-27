@@ -4,7 +4,7 @@ Recursive queries are very useful in a many applications.
 For example, graph algorithms such as graph reachability
 or transitive closure are naturally expressed using recursive queries.
 
-We introduce two new simple stream operators that are used for
+We introduce two simple \dbsp stream operators that are used for
 expressing recursive query evaluation.  These operators allow us
 to build circuits implementing looping constructs, which
 are used to iterate computations until a fixed-point is reached.
@@ -54,10 +54,9 @@ $\int$ is closely related to $\I$; if $\I$ is the
 indefinite (discrete) integral, $\int$ is the definite (discrete) integral on the
 interval $0 - \infty$.  For example, $\int(\sv{1 2 3 0 0}) = 6$.
 
-For many classes of queries (including
-relational and Datalog queries given below) the $\int$
-operator can be implemented precisely by integrating until the
-first 0 value encountered.
+For many classes of queries (including relational and Datalog queries
+given below) the $\int$ operator can be ``approximated'' without loss
+of precision by integrating until the first 0 value encountered.
 
 \begin{comment}
 Here is a diagram using the $\int$ operator; note that  the result it
@@ -126,7 +125,7 @@ input relations and $R$ is a relational (non-recursive) query.
 
 We describe the algorithm for
 the simpler case of a single-input, single-output query\footnote{The general case
-can be found in the companion technical report~\anonymize{\cite{tr}}, and is only
+in the companion technical report~\anonymize{\cite{tr}} is only
 slightly more involved.}.  The input of our algorithm is a Datalog query of the form
 $O = R(I, O)$, where $R$ is a relational, non-recursive query,
 producing a set as a result, but whose output $O$ is also an input.
@@ -179,7 +178,7 @@ recursive input via a delay:
   \node[right of=R, node distance=1.5cm] (O) {\code{O}};
   \node[block, below of=R, node distance=.7cm] (z) {$\zm$};
   \draw[->] (I) -- (R);
-  \draw[->] (R) -- node(o) {$o$} (O);
+  \draw[->] (R) -- node(o) {} (O);
   \draw[->] (o) |- (z);
   \draw[->] (z) -- (R);
  \end{tikzpicture}
@@ -198,7 +197,7 @@ recursive input via a delay:
   \draw[->] (Iinput) -- (ID);
   \draw[->] (ID) -- (II);
   \draw[->] (II) -- (f);
-  \draw[->] (f) -- node (o) {$o$} (D);
+  \draw[->] (f) -- node (o) {} (D);
   \draw[->] (D) -- (S);
   \draw[->] (S) -- (output);
   \node[block, below of=f, node distance=.7cm] (z) {$\zm$};
@@ -216,7 +215,7 @@ When the set of new facts becomes empty, the fixed point has been reached:
 \begin{theorem}[Recursion correctness]\label{theorem:recursion}
 If $\isset(\code{I})$, the output of the circuit above is
 the relation $\code{O}$ as defined by the Datalog semantics of given program
-as a function of the input relation \code{I}.
+$R$ as a function of the input relation \code{I}.
 \end{theorem}
 \label{proof-recursion}
 %\begin{proof}
@@ -246,10 +245,10 @@ as a function of the input relation \code{I}.
 %$\code{O} = \fix{x}{R(\code{I}, x)}$.
 %\end{proof}
 
-Note that if the query $R$ computes over unbounded data domains
-(e.g., using integers with arithmetic), this construction does
-not guarantee convergence.  But if a program does converge,
-the above construction will find the least fixed point.
+Note that if the query $R$ computes over unbounded data domains (e.g.,
+using integers with arithmetic), this construction does not guarantee
+that at runtime a fixed point is reached.  But if a program does converge, the
+above construction will find the least fixed point.
 
 In fact, this circuit implements the standard \defined{na\"{\i}ve evaluation}
 algorithm (e.g., see Algorithm~1 in \cite{greco-sldm15}).
@@ -277,9 +276,10 @@ Using the cycle rule of Proposition~\ref{prop-inc-properties} we can rewrite thi
 \end{aligned}
 \end{equation}
 
-This last circuit effectively implements the \defined{semi-na\"{\i}ve evaluation}
-algorithm (Algorithm~2 from~\cite{greco-sldm15}).  We have just proven the correctness
-of semi-na\"{\i}ve evaluation as an immediate consequence of the cycle rule.
+This circuit implements \defined{semi-na\"{\i}ve evaluation}
+(Algorithm~2 from~\cite{greco-sldm15}).  We have just proven the
+correctness of semi-na\"{\i}ve evaluation as an immediate consequence
+of the cycle rule!
 
 %In \refsec{sec:recursive-example} we show a concrete example, applying Algorithm~\ref{algorithm-rec}
 %to a recursive query computing the transitive closure of a graph.

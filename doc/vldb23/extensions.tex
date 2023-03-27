@@ -25,8 +25,7 @@ The SQL \texttt{COUNT} aggregation function is implemented on \zrs by $a_\texttt
 computes a \emph{sum} of all the element weights: $a_\texttt{COUNT}(s) = \sum_{x \in s} s[x]$.
 The SQL \texttt{SUM} aggregation function is implemented on \zrs by $a_\texttt{SUM}: \Z[\R] \to \R$ which
 performs a \emph{weighted sum} of all (real) values: $a_\texttt{SUM}(s) = \sum_{x \in s} x \times s[x]$.
-Both these implementations work correctly for sets and multisets.\footnote{If \texttt{COUNT DISTINCT} is needed,
-the function would sum 1 for each element rather than its weight.}
+Both these implementations work correctly for sets and multisets.
 
 With this definition the aggregation functions $a_\texttt{COUNT}$ and $a_\texttt{SUM}$ are in
 fact linear transformations between the group $\Z[A]$ and the result group ($\Z$, and $\R$ respectively).
@@ -46,7 +45,7 @@ In conclusion, the following SQL query:
 is implemented as the following circuit:\footnote{The actual SQL \texttt{SUM} aggregate is
 even more complicated, because it needs to skip \texttt{NULL}s,
 and it returns \texttt{NULL} for an empty input set;
-this behavior can be accurately implemented in \dbsp.}
+this can be implemented in \dbsp.}
 
 \begin{tikzpicture}[auto,>=latex]
   \node[] (I) {\code{I}};
@@ -99,12 +98,7 @@ such as Reactive Aggregator~\cite{tangwongsan-vldb15} can be implemented as cust
 the amortized cost per update to $O(\log |DB|)$.  This approach is similar to the
 customized implementation of the $\distinct$ operator, and it is another facet of
 the modularity of \dbsp, which allows optimized operator implementations to be
-mixed and matched, and can always fallback to brute-force.%
-%\footnote{SQL's \code{ORDER BY} can also be modeled in \dbsp as
-%a non-linear aggregate function that emits an ordered list.  However,
-%such an implementation is not efficiently incrementalizable in \dbsp,
-%doing $O(|DB|)$ work for every update.
-%We leave the efficient handling of ORDER BY to future work.}
+mixed and matched.
 
 \subsection{Grouping; indexed relations}\label{sec:grouping}
 
@@ -137,7 +131,7 @@ The grouping function $G_p$ is linear for any key function $p$!
 It follows that the group-by implementation in \dbsp is automatically
 incremental: given some changes
 to the input relation we can apply the partitioning function
-to each change separately to compute how each grouping changes.
+to each row changed in the input separately to compute how each grouping changes.
 
 Notice that, unlike SQL, \dbsp can express naturally computations
 on indexed \zrs, they are just an instance of a group structure.
@@ -329,25 +323,6 @@ is still needed to define $\zm$ and time-invariance.  Circuits that
 mix streams over groups with arbitrary streams are well-defined.  However,
 the zero-preservation property is required even for such general computations,
 for the time-invariance of the resulting circuits.
-\end{comment}
-
-\begin{comment}
-\item[Checkpoint/restore:]
-
-The entire ``state'' of a streaming circuits is ``stored'' in its $\zm$ and $\lift{\zm}$
-elements.  Saving this state amounts to taking a checkpoint of the streaming
-system.  Restoring the state amounts to restoring a previous state.  These
-operations can be the fundamental primitives for providing a fault-tolerant
-implementation of a streaming query system.
-
-\item[Materialized views:]
-
-An incremental view maintenance system is not a database -- it only computes changes
-to views when given changes to tables.  However, it can be integrated with a
-database, by providing capabilities for \emph{querying} both tables and views.
-An input table is just the integral of all the changes to the table.  This makes
-possible building a system that is both stateful (like a database) and streaming
-(like an incremental view maintenance system).
 \end{comment}
 
 \subsection{Relational while queries}

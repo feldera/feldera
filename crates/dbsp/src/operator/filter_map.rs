@@ -120,7 +120,7 @@ pub trait FilterMap<C> {
     /// records into `OrdZSet` batches.
     ///
     /// The output of `func` can be any type that implements `trait
-    /// IntoIterator`, e.v., `Option<>` or `Vec<>`.
+    /// IntoIterator`, e.g., `Option<>` or `Vec<>`.
     fn flat_map<F, I>(&self, func: F) -> Stream<C, OrdZSet<I::Item, Self::R>>
     where
         F: Fn(Self::ItemRef<'_>) -> I + 'static,

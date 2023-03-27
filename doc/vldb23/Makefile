@@ -1,9 +1,12 @@
-SOURCES=appendix.tex example1.tex example3.tex implementation.tex	\
+SOURCES=example1.tex implementation.tex	\
 	main.tex recursion.tex relational.tex conclusions.tex		\
-	example2.tex extensions.tex intro2.tex nested.tex related.tex	\
+	extensions.tex intro2.tex nested.tex related.tex	\
 	streams.tex
 
-main.pdf: $(SOURCES) main.bib
+TARGET = main.pdf # p955-budiu.pdf
+
+$(TARGET): $(SOURCES) main.bib
 	pdflatex main
 	bibtex main
 	pdflatex main
+	mv main.pdf $@
