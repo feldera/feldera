@@ -73,6 +73,10 @@ column_type! {
     U64 = ("u64", U64),
     /// A signed 64 bit integer
     I64 = ("i64", I64),
+    /// An unsigned pointer-width integer
+    Usize = ("usize", Usize),
+    /// A signed pointer-width integer
+    Isize = ("isize", Isize),
 
     /// A 32 bit floating point value
     F32 = ("f32", F32),
@@ -90,7 +94,7 @@ column_type! {
     /// A unit value
     Unit = ("unit", return None),
 
-    /// A pointer value
+    /// A raw pointer value
     Ptr = ("ptr", Ptr),
 }
 
@@ -108,20 +112,28 @@ impl ColumnType {
                 | Self::U32
                 | Self::I32
                 | Self::U64
-                | Self::I64,
+                | Self::I64
+                | Self::Usize
+                | Self::Isize,
         )
     }
 
     /// Returns `true` if the column type is a signed integer of any width
     #[must_use]
     pub const fn is_signed_int(self) -> bool {
-        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize,
+        )
     }
 
     /// Returns `true` if the column type is an unsigned integer of any width
     #[must_use]
     pub const fn is_unsigned_int(self) -> bool {
-        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64)
+        matches!(
+            self,
+            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::Usize,
+        )
     }
 
     /// Returns `true` if the column type is a floating point value
@@ -267,6 +279,16 @@ impl RowLayout {
 
         Self {
             columns: vec![ColumnType::I32],
+            nullability,
+        }
+    }
+
+    pub fn row_vector() -> RowLayout {
+        let mut nullability = BitVec::with_capacity(2);
+        nullability.extend([false; 2]);
+
+        Self {
+            columns: vec![ColumnType::Ptr, ColumnType::Ptr],
             nullability,
         }
     }

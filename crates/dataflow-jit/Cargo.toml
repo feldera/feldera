@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-binary = ["clap"]
+binary = ["clap", "tracing-subscriber"]
 
 [[bin]]
 name = "dataflow-jit"
@@ -36,6 +36,9 @@ serde = { version = "1.0.152", features = ["derive"] }
 
 # Argument parsing for the binary
 clap = { version = "4.1.8", features = ["derive"], optional = true }
+tracing-subscriber = { version = "0.3.16", features = [
+    "env-filter",
+], optional = true }
 
     [dependencies.chrono]
     version = "0.4.23"

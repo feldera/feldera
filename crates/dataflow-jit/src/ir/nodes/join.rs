@@ -1,6 +1,8 @@
 use crate::ir::{
-    function::Function, layout_cache::RowLayoutCache, types::Signature, DataflowNode, LayoutId,
-    NodeId, StreamKind, StreamLayout,
+    function::Function,
+    layout_cache::RowLayoutCache,
+    nodes::{DataflowNode, StreamKind, StreamLayout},
+    LayoutId, NodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -61,8 +63,20 @@ impl JoinCore {
 }
 
 impl DataflowNode for JoinCore {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.extend([self.lhs, self.rhs]);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.lhs);
+        map(self.rhs);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.lhs);
+        map(&mut self.rhs);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -76,17 +90,13 @@ impl DataflowNode for JoinCore {
         })
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
         if self.output_kind.is_set() {
             assert_eq!(self.value_layout, layout_cache.unit());
         }
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.join_fn.optimize(layout_cache);
     }
 
@@ -98,8 +108,13 @@ impl DataflowNode for JoinCore {
         functions.push(&mut self.join_fn);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.key_layout, self.value_layout]);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.key_layout);
+        map(self.value_layout);
+        self.join_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -146,8 +161,20 @@ impl MonotonicJoin {
 }
 
 impl DataflowNode for MonotonicJoin {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.extend([self.lhs, self.rhs]);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.lhs);
+        map(self.rhs);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.lhs);
+        map(&mut self.rhs);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -158,13 +185,9 @@ impl DataflowNode for MonotonicJoin {
         Some(StreamLayout::Set(self.key_layout))
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.join_fn.optimize(layout_cache);
     }
 
@@ -176,12 +199,86 @@ impl DataflowNode for MonotonicJoin {
         functions.push(&mut self.join_fn);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.push(self.key_layout);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.key_layout);
+        self.join_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.key_layout = mappings[&self.key_layout];
         self.join_fn.remap_layouts(mappings);
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Antijoin {
+    lhs: NodeId,
+    rhs: NodeId,
+    layout: StreamLayout,
+}
+
+impl Antijoin {
+    pub const fn new(lhs: NodeId, rhs: NodeId, layout: StreamLayout) -> Self {
+        Self { lhs, rhs, layout }
+    }
+
+    pub const fn lhs(&self) -> NodeId {
+        self.lhs
+    }
+
+    pub const fn rhs(&self) -> NodeId {
+        self.rhs
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
+    }
+}
+
+impl DataflowNode for Antijoin {
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.lhs);
+        map(self.rhs);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.lhs);
+        map(&mut self.rhs);
+    }
+
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
+        Some(self.layout.kind())
+    }
+
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
+    }
+
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn functions<'a>(&'a self, _functions: &mut Vec<&'a Function>) {}
+
+    fn functions_mut<'a>(&'a mut self, _functions: &mut Vec<&'a mut Function>) {}
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.layout.map_layouts(map);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
     }
 }

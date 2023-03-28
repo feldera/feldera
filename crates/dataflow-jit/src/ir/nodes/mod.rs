@@ -16,13 +16,11 @@ pub use filter_map::{Filter, FilterMap, Map};
 pub use flat_map::FlatMap;
 pub use index::IndexWith;
 pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
-pub use join::{JoinCore, MonotonicJoin};
+pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
 
-use crate::ir::{
-    function::Function, layout_cache::RowLayoutCache, types::Signature, LayoutId, NodeId,
-};
+use crate::ir::{function::Function, layout_cache::RowLayoutCache, LayoutId, NodeId};
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
@@ -56,29 +54,40 @@ pub enum Node {
     Constant(ConstantStream),
     PartitionedRollingFold(PartitionedRollingFold),
     FlatMap(FlatMap),
+    Antijoin(Antijoin),
     // TODO: OrderBy, Windows
 }
 
 // TODO: Fully flesh this out, make it useful
 #[enum_dispatch]
 pub trait DataflowNode {
-    fn inputs(&self, inputs: &mut Vec<NodeId>);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId);
+
+    fn inputs(&self, inputs: &mut Vec<NodeId>) {
+        self.map_inputs(&mut |node_id| inputs.push(node_id));
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId);
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind>;
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout>;
 
-    fn signature(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) -> Signature;
-
     fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache);
 
-    fn optimize(&mut self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache);
+    fn optimize(&mut self, layout_cache: &RowLayoutCache);
 
     fn functions<'a>(&'a self, _functions: &mut Vec<&'a Function>) {}
 
     fn functions_mut<'a>(&'a mut self, _functions: &mut Vec<&'a mut Function>) {}
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId);
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>);
 }
@@ -122,6 +131,29 @@ impl StreamLayout {
             Self::Map(_, _) => StreamKind::Map,
         }
     }
+
+    pub(crate) fn map_layouts<F>(self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        match self {
+            Self::Set(key) => map(key),
+            Self::Map(key, value) => {
+                map(key);
+                map(value);
+            }
+        }
+    }
+
+    pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        match self {
+            Self::Set(key) => *key = mappings[key],
+            Self::Map(key, value) => {
+                *key = mappings[key];
+                *value = mappings[value];
+            }
+        }
+    }
 }
 
 #[derive(
@@ -148,8 +180,18 @@ impl Distinct {
 }
 
 impl DataflowNode for Distinct {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -160,17 +202,17 @@ impl DataflowNode for Distinct {
         Some(inputs[0])
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+        // There's no particular constraints on distinct nodes
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+    fn map_layouts<F>(&self, _map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+    }
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
@@ -192,7 +234,17 @@ impl DelayedFeedback {
 }
 
 impl DataflowNode for DelayedFeedback {
-    fn inputs(&self, _inputs: &mut Vec<NodeId>) {}
+    fn map_inputs<F>(&self, _map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+    }
+
+    fn map_inputs_mut<F>(&mut self, _map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+    }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
         Some(StreamKind::Set)
@@ -202,16 +254,15 @@ impl DataflowNode for DelayedFeedback {
         Some(StreamLayout::Set(self.layout))
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.push(self.layout);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.layout);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -235,8 +286,18 @@ impl Delta0 {
 }
 
 impl DataflowNode for Delta0 {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -247,15 +308,15 @@ impl DataflowNode for Delta0 {
         Some(inputs[0])
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+    fn map_layouts<F>(&self, _map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+    }
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
@@ -285,8 +346,18 @@ impl Neg {
 }
 
 impl DataflowNode for Neg {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -300,18 +371,15 @@ impl DataflowNode for Neg {
         })
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
-    }
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
-
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.push(self.output_layout);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.output_layout);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {

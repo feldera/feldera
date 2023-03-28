@@ -1,13 +1,13 @@
 use crate::ir::{
     graph::{GraphContext, Subgraph},
-    DataflowNode, Function, Graph, GraphExt, LayoutId, Node, NodeId, NodeIdGen, RowLayout,
-    RowLayoutCache, Terminator,
+    nodes::{DataflowNode, Node},
+    Function, Graph, GraphExt, LayoutId, NodeId, NodeIdGen, RowLayout, RowLayoutCache, Terminator,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::max,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     mem::{take, ManuallyDrop},
 };
 
@@ -28,7 +28,14 @@ impl SqlGraph {
     pub fn rematerialize(self) -> Graph {
         let Self { mut graph, layouts } = self;
 
-        let (layout_cache, layout_mappings) = Self::rematerialize_layouts(layouts);
+        // Collect all layouts used within the dataflow graph
+        let mut used_layouts = BTreeSet::new();
+        graph.map_layouts(|layout_id| {
+            used_layouts.insert(layout_id);
+        });
+
+        // Deduplicate all layouts and remove any unused ones
+        let (layout_cache, layout_mappings) = Self::rematerialize_layouts(layouts, used_layouts);
 
         // Find the highest node id and create a generator to pick up where it left off
         let highest_node_id = Self::collect_highest_id(graph.graph());
@@ -51,13 +58,16 @@ impl SqlGraph {
     /// them
     fn rematerialize_layouts(
         layouts: BTreeMap<LayoutId, RowLayout>,
+        used_layouts: BTreeSet<LayoutId>,
     ) -> (RowLayoutCache, BTreeMap<LayoutId, LayoutId>) {
         let layout_cache = RowLayoutCache::with_capacity(layouts.len());
         let mut mappings = BTreeMap::new();
 
         for (old_layout_id, layout) in layouts {
-            let layout_id = layout_cache.add(layout);
-            mappings.insert(old_layout_id, layout_id);
+            if used_layouts.contains(&old_layout_id) {
+                let layout_id = layout_cache.add(layout);
+                mappings.insert(old_layout_id, layout_id);
+            }
         }
 
         (layout_cache, mappings)
@@ -198,8 +208,8 @@ mod tests {
         dataflow::CompiledDataflow,
         ir::{
             exprs::{ArgType, Call},
-            nodes::FlatMap,
-            ColumnType, Graph, GraphExt, Node, RowLayoutBuilder, StreamLayout,
+            nodes::{FilterMap, FlatMap, Node, StreamLayout},
+            ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
         row::{Row, UninitRow},
         sqljson::SqlGraph,
@@ -317,5 +327,44 @@ mod tests {
         }
 
         unsafe { jit_handle.free_memory() };
+    }
+
+    #[test]
+    fn filter_map() {
+        crate::utils::test_logger();
+
+        let mut graph = Graph::new();
+
+        let i32 = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::I32, false)
+                .build(),
+        );
+
+        let source = graph.source(i32);
+
+        let filter_map = graph.add_node(Node::FilterMap(FilterMap::new(
+            source,
+            {
+                let mut builder = graph.function_builder().with_return_type(ColumnType::Bool);
+                let input = builder.add_input(i32);
+                let output = builder.add_output(i32);
+
+                let value = builder.load(input, 0);
+                builder.store(output, 0, input);
+                let one_hundred = builder.constant(Constant::I32(100));
+                let should_keep = builder.lt(value, one_hundred);
+                builder.ret(should_keep);
+
+                builder.build()
+            },
+            i32,
+        )));
+
+        graph.sink(filter_map);
+
+        let graph = SqlGraph::from(graph);
+        let json_graph = serde_json::to_string_pretty(&graph).unwrap();
+        println!("{json_graph}");
     }
 }

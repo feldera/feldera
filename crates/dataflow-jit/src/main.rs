@@ -14,6 +14,15 @@ use std::{
 };
 
 fn main() -> ExitCode {
+    {
+        use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
+
+        tracing_subscriber::registry()
+            .with(EnvFilter::try_from_env("DATAFLOW_JIT_LOG").unwrap_or_default())
+            .with(fmt::layer())
+            .init();
+    }
+
     let args = Args::parse();
 
     let source: Box<dyn Read> = if args.file == Path::new("-") {

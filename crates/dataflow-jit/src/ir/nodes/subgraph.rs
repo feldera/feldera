@@ -2,9 +2,8 @@ use crate::ir::{
     function::Function,
     graph::{self, GraphExt},
     layout_cache::RowLayoutCache,
-    types::Signature,
-    DataflowNode, DelayedFeedback, Delta0, Export, LayoutId, Node, NodeId, StreamKind,
-    StreamLayout,
+    nodes::{DataflowNode, DelayedFeedback, Delta0, Export, Node, StreamKind, StreamLayout},
+    LayoutId, NodeId,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -115,11 +114,26 @@ impl GraphExt for Subgraph {
     fn edges(&self) -> &DiGraphMap<NodeId, ()> {
         self.subgraph.edges()
     }
+
+    fn edges_mut(&mut self) -> &mut DiGraphMap<NodeId, ()> {
+        self.subgraph.edges_mut()
+    }
 }
 
 impl DataflowNode for Subgraph {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.extend(self.inputs.keys().copied());
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        self.inputs.keys().copied().for_each(map);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        self.subgraph_mut().map_inputs_mut_inner(map);
+        // TODO: Probably need to map over the feedback nodes as well
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -130,20 +144,21 @@ impl DataflowNode for Subgraph {
         None
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {
+        self.subgraph_mut().optimize();
+    }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
         self.subgraph.functions(functions);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        self.subgraph.layouts(layouts);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.subgraph.map_layouts_inner(map)
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {

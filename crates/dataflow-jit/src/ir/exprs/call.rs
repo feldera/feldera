@@ -11,13 +11,22 @@ pub enum ArgType {
 }
 
 impl ArgType {
-    /// Returns `true` if the arg type is [`Row`].
+    /// Returns `true` if the arg type is a [`Row`].
     ///
     /// [`Row`]: ArgType::Row
     #[must_use]
     #[inline]
     pub const fn is_row(&self) -> bool {
         matches!(self, Self::Row(..))
+    }
+
+    /// Returns `true` if the arg type is a [`Scalar`].
+    ///
+    /// [`Scalar`]: ArgType::Scalar
+    #[must_use]
+    #[inline]
+    pub const fn is_scalar(&self) -> bool {
+        matches!(self, Self::Scalar(..))
     }
 
     #[inline]
@@ -39,6 +48,14 @@ impl ArgType {
     }
 }
 
+/// The call instruction, calls a function
+///
+/// ### Functions
+///
+/// - `@dbsp.row.vec.push(vec: { ptr, ptr }, row: { .. })`
+/// - `@dbsp.str.truncate(string: str, length: usize)`
+/// - `@dbsp.str.clear(string: str)`
+/// - `@dbsp.str.concat(first: str, second: str)`
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Call {
     /// The name of the function being called

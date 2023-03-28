@@ -27,12 +27,13 @@ pub enum NativeType {
     Ptr,
     Bool,
     Usize,
+    Isize,
 }
 
 impl NativeType {
     pub(crate) fn native_type(self, target: &TargetFrontendConfig) -> ClifType {
         match self {
-            Self::Ptr | Self::Usize => target.pointer_type(),
+            Self::Ptr | Self::Usize | Self::Isize => target.pointer_type(),
             Self::U64 | Self::I64 => types::I64,
             Self::U32 | Self::I32 => types::I32,
             Self::F64 => types::F64,
@@ -44,7 +45,7 @@ impl NativeType {
 
     pub(crate) fn size(self, target: &TargetFrontendConfig) -> u32 {
         match self {
-            Self::Ptr | Self::Usize => target.pointer_bytes() as u32,
+            Self::Ptr | Self::Usize | Self::Isize => target.pointer_bytes() as u32,
             Self::U64 | Self::I64 | Self::F64 => 8,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U16 | Self::I16 => 2,
@@ -54,7 +55,7 @@ impl NativeType {
 
     pub(crate) fn align(self, target: &TargetFrontendConfig) -> u32 {
         match self {
-            Self::Ptr | Self::Usize => target.pointer_bytes() as u32,
+            Self::Ptr | Self::Usize | Self::Isize => target.pointer_bytes() as u32,
             Self::U64 | Self::I64 | Self::F64 => 8,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U16 | Self::I16 => 2,
@@ -89,6 +90,7 @@ impl NativeType {
             Self::Ptr => "ptr",
             Self::Bool => "bool",
             Self::Usize => "usize",
+            Self::Isize => "isize",
         }
     }
 
@@ -147,14 +149,28 @@ impl NativeType {
         matches!(self, Self::Ptr)
     }
 
+    /// Returns `true` if the native type is a [`Bool`].
+    ///
+    /// [`Bool`]: NativeType::Bool
     #[must_use]
     pub const fn is_bool(&self) -> bool {
         matches!(self, Self::Bool)
     }
 
+    /// Returns `true` if the native type is a [`Usize`].
+    ///
+    /// [`Usize`]: NativeType::Usize
     #[must_use]
     pub const fn is_usize(&self) -> bool {
         matches!(self, Self::Usize)
+    }
+
+    /// Returns `true` if the native type is an [`Isize`].
+    ///
+    /// [`Isize`]: NativeType::Isize
+    #[must_use]
+    pub const fn is_isize(&self) -> bool {
+        matches!(self, Self::Isize)
     }
 }
 
@@ -246,6 +262,7 @@ impl TryFrom<NativeType> for BitSetType {
             | NativeType::F64
             | NativeType::Ptr
             | NativeType::Usize
+            | NativeType::Isize
             | NativeType::Bool => return Err(InvalidBitsetType),
         })
     }

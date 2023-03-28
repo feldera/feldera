@@ -165,6 +165,7 @@ intrinsics! {
     i64_hash = fn(ptr, i64),
     string_hash = fn(ptr, ptr),
     row_vec_push = fn(ptr, ptr, ptr),
+    string_with_capacity = fn(ptr) -> ptr,
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -289,6 +290,10 @@ unsafe extern "C" fn dataflow_jit_row_vec_push(
 
     let row = unsafe { uninit.assume_init() };
     vec.push(row);
+}
+
+unsafe extern "C" fn dataflow_jit_string_with_capacity(capacity: usize) -> ThinStr {
+    ThinStr::with_capacity(capacity)
 }
 
 macro_rules! hash {

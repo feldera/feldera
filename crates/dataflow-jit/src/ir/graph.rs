@@ -2,9 +2,12 @@
 
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    nodes::{Integrate, Node, Subgraph as SubgraphNode},
-    DataflowNode, Differentiate, ExportedNode, Filter, Function, FunctionBuilder, IndexWith,
-    JoinCore, LayoutId, Map, NodeId, NodeIdGen, Sink, Source, SourceMap, StreamKind,
+    nodes::{
+        DataflowNode, Differentiate, ExportedNode, Filter, IndexWith, JoinCore, Map, Sink, Source,
+        SourceMap, StreamKind,
+    },
+    nodes::{Distinct, Integrate, Node, Subgraph as SubgraphNode},
+    optimize, Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -43,10 +46,40 @@ pub trait GraphExt {
         }
     }
 
+    fn map_layouts<F>(&self, mut map: F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.map_layouts_inner(&mut map);
+    }
+
+    #[doc(hidden)]
+    fn map_layouts_inner<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.nodes().values().for_each(|node| node.map_layouts(map));
+    }
+
+    fn map_inputs_mut<F>(&mut self, mut map: F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        self.map_inputs_mut_inner(&mut map);
+    }
+
+    #[doc(hidden)]
+    fn map_inputs_mut_inner<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        self.nodes_mut()
+            .values_mut()
+            .for_each(|node| node.map_inputs_mut(map));
+    }
+
     fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        for node in self.nodes().values() {
-            node.layouts(layouts);
-        }
+        self.map_layouts(|layout_id| layouts.push(layout_id));
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -56,6 +89,8 @@ pub trait GraphExt {
     }
 
     fn edges(&self) -> &DiGraphMap<NodeId, ()>;
+
+    fn edges_mut(&mut self) -> &mut DiGraphMap<NodeId, ()>;
 
     fn function_builder(&self) -> FunctionBuilder {
         FunctionBuilder::new(self.layout_cache().clone())
@@ -79,6 +114,10 @@ pub trait GraphExt {
 
     fn map(&mut self, input: NodeId, key_layout: LayoutId, map_fn: Function) -> NodeId {
         self.add_node(Map::new(input, map_fn, key_layout))
+    }
+
+    fn distinct(&mut self, input: NodeId) -> NodeId {
+        self.add_node(Distinct::new(input))
     }
 
     fn index_with(
@@ -173,11 +212,15 @@ impl GraphExt for Graph {
     }
 
     fn optimize(&mut self) {
-        self.graph.optimize();
+        optimize::optimize_graph(self);
     }
 
     fn edges(&self) -> &DiGraphMap<NodeId, ()> {
         self.graph.edges()
+    }
+
+    fn edges_mut(&mut self) -> &mut DiGraphMap<NodeId, ()> {
+        self.graph.edges_mut()
     }
 }
 
@@ -277,12 +320,16 @@ impl GraphExt for Subgraph {
     fn optimize(&mut self) {
         // TODO: Validate before and after optimizing
         for node in self.nodes.values_mut() {
-            node.optimize(&[], &self.ctx.layout_cache);
+            node.optimize(&self.ctx.layout_cache);
         }
     }
 
     fn edges(&self) -> &DiGraphMap<NodeId, ()> {
         &self.edges
+    }
+
+    fn edges_mut(&mut self) -> &mut DiGraphMap<NodeId, ()> {
+        &mut self.edges
     }
 }
 

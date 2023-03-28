@@ -56,13 +56,19 @@
 - [ ] Inline small row values into the `Row` pointer
 - [ ] C FFI
 - [ ] Operators
-  - [ ] Flat Map
+  - [x] Flat Map
+  - [x] Fold
   - [ ] Linear aggregations
   - [ ] Max aggregate
   - [ ] Windows
 - [ ] Intrinsic functions
   - [ ] Proc macro for registering intrinsics
-  - [ ] `@dbsp.row.alloc`
-  - [ ] `@dbsp.row.dealloc`
-  - [ ] `@dbsp.vec.push`
-  - [ ] `@dbsp.vec.reserve`
+  - [x] `@dbsp.row.vec.push`
+  - [ ] `@dbsp.row.vec.reserve`
+  - [ ] String manipulation
+    - [x] `@dbsp.str.truncate`
+    - [ ] `@dbsp.str.truncate_clone`
+    - [x] `@dbsp.str.clear`
+    - [ ] `@dbsp.str.concat`
+    - [ ] `@dbsp.str.concat_clone`
+  - [ ] Vec/Array manipulation

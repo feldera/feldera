@@ -1,6 +1,7 @@
 use crate::ir::{
-    layout_cache::RowLayoutCache, types::Signature, DataflowNode, LayoutId, NodeId, StreamKind,
-    StreamLayout,
+    layout_cache::RowLayoutCache,
+    nodes::{DataflowNode, StreamKind, StreamLayout},
+    LayoutId, NodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -21,8 +22,18 @@ impl Sum {
 }
 
 impl DataflowNode for Sum {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.extend(self.inputs.iter().copied());
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        self.inputs.iter().copied().for_each(map);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        self.inputs.iter_mut().for_each(map);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -33,17 +44,19 @@ impl DataflowNode for Sum {
         Some(inputs[0])
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert!(inputs
+            .iter()
+            .all(|layout1| inputs.iter().all(|layout2| layout1 == layout2)));
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn map_layouts<F>(&self, _map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
     }
-
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
-
-    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
@@ -69,8 +82,20 @@ impl Minus {
 }
 
 impl DataflowNode for Minus {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.extend([self.lhs, self.rhs]);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.lhs);
+        map(self.rhs);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.lhs);
+        map(&mut self.rhs);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -81,18 +106,18 @@ impl DataflowNode for Minus {
         Some(inputs[0])
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
         assert_eq!(inputs.len(), 2);
         assert_eq!(inputs[0], inputs[1]);
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+    fn map_layouts<F>(&self, _map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+    }
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }

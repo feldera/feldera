@@ -4,15 +4,15 @@ mod operators;
 use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
     dataflow::nodes::{
-        DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export, FilterFn,
-        FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn, Min,
-        Minus, Noop, PartitionedRollingFold,
+        Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
+        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn,
+        Min, Minus, Noop, PartitionedRollingFold,
     },
     ir::{
         graph,
         literal::{NullableConstant, RowLiteral, StreamLiteral},
-        Constant, DataflowNode as _, Graph, GraphExt, LayoutId, Node, NodeId, StreamKind,
-        StreamLayout, Subgraph as SubgraphNode,
+        nodes::{DataflowNode as _, Node, StreamKind, StreamLayout, Subgraph as SubgraphNode},
+        Constant, Graph, GraphExt, LayoutId, NodeId,
     },
     row::{Row, UninitRow},
     ThinStr,
@@ -182,6 +182,8 @@ impl CompiledDataflow {
         let mut node_kinds = BTreeMap::new();
         let mut node_streams: BTreeMap<NodeId, Option<_>> = BTreeMap::new();
 
+        dbg!(graph);
+
         let (mut inputs, mut input_nodes) = (Vec::with_capacity(16), Vec::with_capacity(16));
         let order = algo::toposort(graph.edges(), None).unwrap();
         for node_id in order {
@@ -192,7 +194,11 @@ impl CompiledDataflow {
             let node = &graph.nodes()[&node_id];
 
             node.inputs(&mut input_nodes);
-            inputs.extend(input_nodes.iter().filter_map(|input| node_streams[input]));
+            inputs.extend(
+                input_nodes
+                    .iter()
+                    .filter_map(|input| node_streams[dbg!(input)]),
+            );
 
             node_kinds.insert(node_id, node.output_kind(&inputs));
             node_streams.insert(node_id, node.output_stream(&inputs));
@@ -409,7 +415,8 @@ impl CompiledDataflow {
                     | Node::Sink(_)
                     | Node::Export(_)
                     | Node::ExportedNode(_)
-                    | Node::Minus(_) => {}
+                    | Node::Minus(_)
+                    | Node::Antijoin(_) => {}
                 }
             }
         }
@@ -788,6 +795,14 @@ impl CompiledDataflow {
                                 >(join_fn)
                             },
                             key_vtable,
+                        });
+                        nodes.insert(*node_id, node);
+                    }
+
+                    Node::Antijoin(antijoin) => {
+                        let node = DataflowNode::Antijoin(Antijoin {
+                            lhs: antijoin.lhs(),
+                            rhs: antijoin.rhs(),
                         });
                         nodes.insert(*node_id, node);
                     }
@@ -1333,6 +1348,8 @@ impl CompiledDataflow {
                     streams.insert(node_id, joined);
                 }
 
+                DataflowNode::Antijoin(antijoin) => self.antijoin(node_id, antijoin, &mut streams),
+
                 DataflowNode::Export(_) => todo!(),
 
                 DataflowNode::Constant(constant) => {
@@ -1348,9 +1365,7 @@ impl CompiledDataflow {
                     streams.insert(node_id, constant_stream);
                 }
 
-                DataflowNode::Subgraph(subgraph) => {
-                    self.subgraph(subgraph, circuit, &mut streams);
-                }
+                DataflowNode::Subgraph(subgraph) => self.subgraph(subgraph, circuit, &mut streams),
 
                 DataflowNode::Noop(_) => {}
             }
@@ -1797,6 +1812,10 @@ impl CompiledDataflow {
                             substreams.insert(node_id, joined);
                         }
 
+                        DataflowNode::Antijoin(antijoin) => {
+                            self.antijoin(node_id, antijoin, &mut substreams)
+                        }
+
                         DataflowNode::Export(export) => {
                             let exported = match &substreams[&export.input] {
                                 RowStream::Set(input) => {
@@ -1979,6 +1998,25 @@ impl CompiledDataflow {
 
         streams.insert(node_id, mapped);
     }
+
+    fn antijoin<C>(
+        &self,
+        node_id: NodeId,
+        antijoin: Antijoin,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+        C::Time: Timestamp + SizeOf + Send,
+    {
+        let antijoined = match (&streams[&antijoin.lhs], &streams[&antijoin.rhs]) {
+            (RowStream::Set(lhs), RowStream::Set(rhs)) => RowStream::Set(lhs.antijoin(rhs)),
+            (RowStream::Set(lhs), RowStream::Map(rhs)) => RowStream::Set(lhs.antijoin(rhs)),
+            (RowStream::Map(lhs), RowStream::Set(rhs)) => RowStream::Map(lhs.antijoin(rhs)),
+            (RowStream::Map(lhs), RowStream::Map(rhs)) => RowStream::Map(lhs.antijoin(rhs)),
+        };
+
+        streams.insert(node_id, antijoined);
+    }
 }
 
 unsafe fn row_from_literal(
@@ -2028,6 +2066,9 @@ unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
         Constant::U64(value) => ptr.cast::<u64>().write(value),
         Constant::I64(value) => ptr.cast::<i64>().write(value),
 
+        Constant::Usize(value) => ptr.cast::<usize>().write(value),
+        Constant::Isize(value) => ptr.cast::<isize>().write(value),
+
         Constant::F32(value) => ptr.cast::<f32>().write(value),
         Constant::F64(value) => ptr.cast::<f64>().write(value),
 
@@ -2045,11 +2086,15 @@ mod tests {
         codegen::CodegenConfig,
         dataflow::{CompiledDataflow, RowOutput},
         ir::{
-            graph::GraphExt, ColumnType, Constant, Distinct, FunctionBuilder, Graph, IndexWith,
-            JoinCore, Map, Min, Minus, MonotonicJoin, RowLayoutBuilder, Sink, Source, SourceMap,
-            StreamKind, StreamLayout, Sum,
+            graph::GraphExt,
+            nodes::{
+                Distinct, IndexWith, JoinCore, Map, Min, Minus, MonotonicJoin, Sink, Source,
+                SourceMap, StreamKind, StreamLayout, Sum,
+            },
+            ColumnType, Constant, FunctionBuilder, Graph, RowLayoutBuilder,
         },
         row::UninitRow,
+        utils,
     };
     use dbsp::{
         trace::{BatchReader, Cursor},
@@ -2058,6 +2103,8 @@ mod tests {
 
     #[test]
     fn compiled_dataflow() {
+        utils::test_logger();
+
         let mut graph = Graph::new();
 
         let unit_layout = graph.layout_cache().unit();

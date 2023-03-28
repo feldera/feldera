@@ -7,7 +7,20 @@ pub enum StreamLiteral {
     Map(Vec<(RowLiteral, RowLiteral, i32)>),
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+impl StreamLiteral {
+    pub fn len(&self) -> usize {
+        match self {
+            StreamLiteral::Set(set) => set.len(),
+            StreamLiteral::Map(map) => map.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum NullableConstant {
     NonNull(Constant),
     Nullable(Option<Constant>),
@@ -19,7 +32,7 @@ impl NullableConstant {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct RowLiteral {
     rows: Vec<NullableConstant>,
 }

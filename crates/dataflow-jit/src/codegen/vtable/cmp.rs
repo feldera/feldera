@@ -152,9 +152,11 @@ impl Codegen {
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
+                        | ColumnType::Usize
                         | ColumnType::I16
                         | ColumnType::I32
                         | ColumnType::I64
+                        | ColumnType::Isize
                         | ColumnType::Date
                         | ColumnType::Timestamp => builder.ins().icmp(IntCC::Equal, lhs, rhs),
 
@@ -366,12 +368,16 @@ impl Codegen {
                         | ColumnType::U8
                         | ColumnType::U16
                         | ColumnType::U32
-                        | ColumnType::U64 => builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
+                        | ColumnType::U64
+                        | ColumnType::Usize => {
+                            builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
+                        }
 
                         ColumnType::I8
                         | ColumnType::I16
                         | ColumnType::I32
                         | ColumnType::I64
+                        | ColumnType::Isize
                         | ColumnType::Date
                         | ColumnType::Timestamp => {
                             builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
@@ -564,19 +570,43 @@ impl Codegen {
                     };
 
                     match row_type {
+                        // Booleans
+                        ColumnType::Bool => {
+                            // TODO: ctx.debug_assert_bool_is_valid(lhs); ctx.debug_assert_bool_is_valid(rhs);
+
+                            // Boolean values will always be zero or one, so their difference will be -1, 0 or 1
+                            let ordering = builder.ins().isub(lhs, rhs);
+
+                            builder.ins().brif(
+                                ordering,
+                                return_block,
+                                &[ordering],
+                                next_compare,
+                                &[],
+                            );
+                        }
+
                         // Unsigned integers
-                        ColumnType::Bool
-                        | ColumnType::U8
+                        ColumnType::U8
                         | ColumnType::U16
                         | ColumnType::U32
-                        | ColumnType::U64 => {
-                            let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                            let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
-                            let ordering = builder.ins().select(less, less_than, greater_than);
+                        | ColumnType::U64
+                        | ColumnType::Usize => {
+                            let zero = builder.ins().iconst(types::I8, 0);
 
-                            builder
-                                .ins()
-                                .brif(eq, next_compare, &[], return_block, &[ordering]);
+                            let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
+                            let ordering = builder.ins().isub(zero, less);
+
+                            let greater = builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs);
+                            let ordering = builder.ins().iadd(ordering, greater);
+
+                            builder.ins().brif(
+                                ordering,
+                                return_block,
+                                &[ordering],
+                                next_compare,
+                                &[],
+                            );
                         }
 
                         // Signed integers
@@ -584,15 +614,24 @@ impl Codegen {
                         | ColumnType::I16
                         | ColumnType::I32
                         | ColumnType::I64
+                        | ColumnType::Isize
                         | ColumnType::Date
                         | ColumnType::Timestamp => {
-                            let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                            let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
-                            let ordering = builder.ins().select(less, less_than, greater_than);
+                            let zero = builder.ins().iconst(types::I8, 0);
 
-                            builder
-                                .ins()
-                                .brif(eq, next_compare, &[], return_block, &[ordering]);
+                            let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+                            let ordering = builder.ins().isub(zero, less);
+
+                            let greater = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
+                            let ordering = builder.ins().iadd(ordering, greater);
+
+                            builder.ins().brif(
+                                ordering,
+                                return_block,
+                                &[ordering],
+                                next_compare,
+                                &[],
+                            );
                         }
 
                         // Floats
