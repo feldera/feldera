@@ -405,7 +405,7 @@ impl ProjectDB {
     }
 
     /// Create a new project.
-    pub(crate) fn new_project(
+    pub(crate) async fn new_project(
         &self,
         project_name: &str,
         project_description: &str,
@@ -482,7 +482,7 @@ impl ProjectDB {
     /// Retrieve project descriptor.
     ///
     /// Returns `None` if `project_id` is not found in the database.
-    pub(crate) fn get_project_if_exists(
+    pub(crate) async fn get_project_if_exists(
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
@@ -554,8 +554,9 @@ impl ProjectDB {
     ///
     /// Returns a `DBError:UnknownProject` error if `project_id` is not found in
     /// the database.
-    pub(crate) fn get_project(&self, project_id: ProjectId) -> AnyResult<ProjectDescr> {
-        self.get_project_if_exists(project_id)?
+    pub(crate) async fn get_project(&self, project_id: ProjectId) -> AnyResult<ProjectDescr> {
+        self.get_project_if_exists(project_id)
+            .await?
             .ok_or_else(|| anyhow!(DBError::UnknownProject(project_id)))
     }
 
@@ -564,12 +565,12 @@ impl ProjectDB {
     /// Returns `DBError::UnknownProject` if `project_id` is not found in the
     /// database. Returns `DBError::OutdatedProjectVersion` if the current
     /// project version differs from `expected_version`.
-    pub(crate) fn get_project_guarded(
+    pub(crate) async fn get_project_guarded(
         &self,
         project_id: ProjectId,
         expected_version: Version,
     ) -> AnyResult<ProjectDescr> {
-        let descr = self.get_project(project_id)?;
+        let descr = self.get_project(project_id).await?;
         if descr.version != expected_version {
             return Err(anyhow!(DBError::OutdatedProjectVersion(expected_version)));
         }
@@ -655,12 +656,14 @@ impl ProjectDB {
     /// [`ProjectStatus::Pending`].
     ///
     /// Change project status to [`ProjectStatus::Pending`].
-    pub(crate) fn set_project_pending(
+    pub(crate) async fn set_project_pending(
         &self,
         project_id: ProjectId,
         expected_version: Version,
     ) -> AnyResult<()> {
-        let descr = self.get_project_guarded(project_id, expected_version)?;
+        let descr = self
+            .get_project_guarded(project_id, expected_version)
+            .await?;
 
         // Do nothing if the project is already pending (we don't want to bump its
         // `status_since` field, which would move it to the end of the queue) or
@@ -669,7 +672,8 @@ impl ProjectDB {
             return Ok(());
         }
 
-        self.set_project_status(project_id, ProjectStatus::Pending)?;
+        self.set_project_status(project_id, ProjectStatus::Pending)
+            .await?;
 
         Ok(())
     }
@@ -678,18 +682,21 @@ impl ProjectDB {
     ///
     /// Cancels compilation request if the project is pending in the queue
     /// or already being compiled.
-    pub(crate) fn cancel_project(
+    pub(crate) async fn cancel_project(
         &self,
         project_id: ProjectId,
         expected_version: Version,
     ) -> AnyResult<()> {
-        let descr = self.get_project_guarded(project_id, expected_version)?;
+        let descr = self
+            .get_project_guarded(project_id, expected_version)
+            .await?;
 
         if descr.status != ProjectStatus::Pending || !descr.status.is_compiling() {
             return Ok(());
         }
 
-        self.set_project_status(project_id, ProjectStatus::None)?;
+        self.set_project_status(project_id, ProjectStatus::None)
+            .await?;
 
         Ok(())
     }
@@ -714,7 +721,7 @@ impl ProjectDB {
     ///
     /// Returns a pending project with the most recent `status_since` or `None`
     /// if there are no pending projects in the DB.
-    pub(crate) fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
+    pub(crate) async fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
         // Find the oldest pending project.
         let res = sqlx::query("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')")
             .fetch_one(&self.conn).await;
@@ -726,19 +733,10 @@ impl ProjectDB {
         } else {
             Ok(None)
         }
-
-        if let Some(row) = rows.next()? {
-            let project_id: ProjectId = ProjectId(row.get(0)?);
-            let version: Version = Version(row.get(1)?);
-
-            Ok(Some((project_id, version)))
-        } else {
-            Ok(None)
-        }
     }
 
     /// List configs associated with `project_id`.
-    pub(crate) fn list_project_configs(
+    pub(crate) async fn list_project_configs(
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Vec<ConfigDescr>> {
@@ -789,7 +787,7 @@ impl ProjectDB {
     }
 
     /// Create a new project config.
-    pub(crate) fn new_config(
+    pub(crate) async fn new_config(
         &self,
         project_id: ProjectId,
         config_name: &str,
@@ -798,7 +796,7 @@ impl ProjectDB {
         debug!("new_config {project_id} {config_name} {config}");
         // Check that the project exists, so we return correct error status
         // instead of Internal Server Error due to the next query failing.
-        let _descr = self.get_project(project_id)?;
+        let _descr = self.get_project(project_id).await?;
 
         let row = sqlx::query(
             "INSERT INTO project_config (project_id, version, name, config) VALUES(?, 1, ?, ?) RETURNING id")
@@ -819,7 +817,7 @@ impl ProjectDB {
         config_name: &str,
         config: &Option<String>,
     ) -> AnyResult<Version> {
-        let descr = self.get_config(config_id)?;
+        let descr = self.get_config(config_id).await?;
 
         let config = config.clone().unwrap_or(descr.config);
 
@@ -849,7 +847,7 @@ impl ProjectDB {
     }
 
     /// Insert a new record to the `pipeline` table.
-    pub(crate) fn new_pipeline(
+    pub(crate) async fn new_pipeline(
         &self,
         project_id: ProjectId,
         project_version: Version,
@@ -912,13 +910,13 @@ impl ProjectDB {
     }
 
     /// List pipelines associated with `project_id`.
-    pub(crate) fn list_project_pipelines(
+    pub(crate) async fn list_project_pipelines(
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Vec<PipelineDescr>> {
         // Check that the project exists, so we return an error instead of an
         // empty list of pipelines.
-        let _descr = self.get_project(project_id)?;
+        let _descr = self.get_project(project_id).await?;
 
         let rows = sqlx::query(
             "SELECT id, project_version, port, killed, created FROM pipeline WHERE project_id = ?",
