@@ -23,7 +23,7 @@ use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap as _, Generator},
     trace::{Batch, BatchReader, Batcher, Cursor, Spine},
-    Circuit, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Stream,
+    Circuit, CollectionHandle, DBData, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Stream,
     Timestamp,
 };
 use derive_more::{IsVariant, Unwrap};
@@ -31,7 +31,6 @@ use nodes::{
     DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
 };
 use petgraph::{algo, prelude::DiGraphMap};
-use size_of::SizeOf;
 use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
 
 // TODO: Keep layout ids in dataflow nodes so we can do assertions that types
@@ -194,11 +193,7 @@ impl CompiledDataflow {
             let node = &graph.nodes()[&node_id];
 
             node.inputs(&mut input_nodes);
-            inputs.extend(
-                input_nodes
-                    .iter()
-                    .filter_map(|input| node_streams[dbg!(input)]),
-            );
+            inputs.extend(input_nodes.iter().filter_map(|input| node_streams[input]));
 
             node_kinds.insert(node_id, node.output_kind(&inputs));
             node_streams.insert(node_id, node.output_stream(&inputs));
@@ -929,7 +924,7 @@ impl CompiledDataflow {
 
         let order = algo::toposort(&self.edges, None).unwrap();
         for node_id in order {
-            match self.nodes.remove(&node_id).unwrap() {
+            match self.nodes.remove(&dbg!(node_id)).unwrap() {
                 DataflowNode::Map(map) => {
                     let input = &streams[&map.input];
                     let vtable = map.output_vtable;
@@ -1886,7 +1881,7 @@ impl CompiledDataflow {
         streams: &mut BTreeMap<NodeId, RowStream<C>>,
     ) where
         C: Circuit,
-        C::Time: Timestamp + SizeOf + Send,
+        C::Time: Timestamp + DBData,
     {
         let distinct = match &streams[&distinct.input] {
             RowStream::Set(input) => RowStream::Set(input.distinct()),
@@ -2006,7 +2001,7 @@ impl CompiledDataflow {
         streams: &mut BTreeMap<NodeId, RowStream<C>>,
     ) where
         C: Circuit,
-        C::Time: Timestamp + SizeOf + Send,
+        C::Time: Timestamp + DBData,
     {
         let antijoined = match (&streams[&antijoin.lhs], &streams[&antijoin.rhs]) {
             (RowStream::Set(lhs), RowStream::Set(rhs)) => RowStream::Set(lhs.antijoin(rhs)),

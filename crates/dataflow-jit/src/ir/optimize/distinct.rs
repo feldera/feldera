@@ -18,13 +18,15 @@ impl Subgraph {
             self.collect_distinct_nodes(&mut is_distinct, &mut redirects, &mut buffer);
         }
 
-        // Perform all redirects, redirecting consumers of a redundant nodes
-        // (e.g. turning `distinct(distinct(x))` into `distinct(x)`)
-        self.map_inputs_mut(|node| {
-            if let Some(&redirect) = redirects.get(node) {
-                *node = redirect;
-            }
-        });
+        if !redirects.is_empty() {
+            // Perform all redirects, redirecting consumers of a redundant nodes
+            // (e.g. turning `distinct(distinct(x))` into `distinct(x)`)
+            self.map_inputs_mut(|node| {
+                if let Some(&redirect) = redirects.get(node) {
+                    *node = redirect;
+                }
+            });
+        }
     }
 
     fn collect_distinct_nodes(
