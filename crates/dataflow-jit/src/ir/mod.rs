@@ -2,6 +2,7 @@ pub mod exprs;
 pub mod graph;
 pub mod literal;
 pub mod nodes;
+pub mod visit;
 
 mod block;
 mod function;
