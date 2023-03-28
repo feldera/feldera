@@ -11,7 +11,8 @@
 //   the proper vtable pointer before pushing the row value to the vec
 
 use crate::ir::{
-    DataflowNode, Function, LayoutId, NodeId, RowLayoutCache, Signature, StreamKind, StreamLayout,
+    nodes::{DataflowNode, StreamKind, StreamLayout},
+    Function, LayoutId, NodeId, RowLayoutCache,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -76,8 +77,18 @@ impl FlatMap {
 }
 
 impl DataflowNode for FlatMap {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -88,31 +99,10 @@ impl DataflowNode for FlatMap {
         Some(self.output_layout)
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.flat_map.optimize(layout_cache);
-    }
-
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        match self.output_layout {
-            StreamLayout::Set(key) => layouts.push(key),
-            StreamLayout::Map(key, value) => layouts.extend([key, value]),
-        }
-    }
-
-    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        match &mut self.output_layout {
-            StreamLayout::Set(key) => *key = mappings[key],
-            StreamLayout::Map(key, value) => {
-                *key = mappings[key];
-                *value = mappings[value];
-            }
-        }
     }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
@@ -121,5 +111,18 @@ impl DataflowNode for FlatMap {
 
     fn functions_mut<'a>(&'a mut self, functions: &mut Vec<&'a mut Function>) {
         functions.push(&mut self.flat_map);
+    }
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.output_layout.map_layouts(map);
+        self.flat_map.map_layouts(map);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.output_layout.remap_layouts(mappings);
+        self.flat_map.remap_layouts(mappings);
     }
 }

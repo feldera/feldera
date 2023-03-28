@@ -83,6 +83,33 @@ impl ThinStr {
         addr_of!(EMPTY.length) as usize - addr_of!(EMPTY) as usize
     }
 
+    /// Returns the offset of the `capacity` field, used within codegen to access
+    /// a string's capacity
+    #[inline]
+    pub(crate) fn capacity_offset() -> usize {
+        addr_of!(EMPTY.capacity) as usize - addr_of!(EMPTY) as usize
+    }
+
+    /// Returns the offset of the start of the string's data, used within codegen
+    /// to compute a string's data pointer
+    #[inline]
+    pub(crate) fn pointer_offset() -> usize {
+        addr_of!(EMPTY._data) as usize - addr_of!(EMPTY) as usize
+    }
+
+    /// Returns the offset of the `capacity` field, used within codegen to access
+    /// a string's capacity
+    #[inline]
+    pub(crate) fn sigil_addr() -> usize {
+        addr_of!(EMPTY) as usize
+    }
+
+    /// Returns `true` if the current `ThinStr` points to the sigil empty string
+    #[inline]
+    fn is_sigil(&self) -> bool {
+        ptr::eq(self.buf.as_ptr(), &EMPTY)
+    }
+
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         // Safety: All bytes up to self.len() are valid
@@ -394,10 +421,42 @@ impl ThinStr {
         Self::from_str(std::str::from_utf8_unchecked(bytes))
     }
 
-    /// Returns `true` if the current `ThinStr` points to the sigil empty string
     #[inline]
-    fn is_sigil(&self) -> bool {
-        self.buf == NonNull::from(&EMPTY)
+    pub fn with_capacity(capacity: usize) -> ThinStr {
+        unsafe { Self::with_capacity_uninit(capacity, 0) }
+    }
+
+    pub fn concat(first: &str, second: &str) -> Self {
+        #[inline(never)]
+        #[cold]
+        fn thin_str_concat_length_overflow(first_len: usize, second_len: usize) -> ! {
+            panic!("attempted to concatenate a string with a length of {first_len} and a string with a length of {second_len}, overflowing a usize")
+        }
+
+        let length = match first.len().checked_add(second.len()) {
+            Some(length) => length,
+            None => thin_str_concat_length_overflow(first.len(), second.len()),
+        };
+
+        // Allocate a string with enough capacity to fit both strings
+        let mut this = Self::with_capacity(length);
+
+        // Copy the data from both of the strings into the allocated string
+        unsafe {
+            // Copy the data from the first string into `0..first.len()`
+            this.as_mut_ptr()
+                .copy_from_nonoverlapping(first.as_ptr(), first.len());
+
+            // Copy the data from the second string into `first.len()..second.len()`
+            this.as_mut_ptr()
+                .add(first.len())
+                .copy_from_nonoverlapping(second.as_ptr(), second.len());
+
+            // Set the length to that of the initialized data
+            this.set_len(length);
+        }
+
+        this
     }
 }
 

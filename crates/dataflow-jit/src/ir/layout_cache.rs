@@ -41,6 +41,10 @@ impl RowLayoutCache {
         self.inner.borrow().unit_layout
     }
 
+    pub fn row_vector(&self) -> LayoutId {
+        self.inner.borrow().row_vector_layout
+    }
+
     pub fn layouts(&self) -> Ref<'_, Vec<RowLayout>> {
         Ref::map(self.inner.borrow(), |cache| &cache.layouts)
     }
@@ -77,6 +81,7 @@ impl Debug for RowLayoutCache {
 struct RowLayoutCacheInner {
     layouts: Vec<RowLayout>,
     unit_layout: LayoutId,
+    row_vector_layout: LayoutId,
 }
 
 impl RowLayoutCacheInner {
@@ -84,10 +89,14 @@ impl RowLayoutCacheInner {
         let mut this = Self {
             layouts: Vec::with_capacity(capacity + 1),
             unit_layout: LayoutId::MAX,
+            row_vector_layout: LayoutId::MAX,
         };
 
         let unit_layout = this.add(RowLayout::unit());
         this.unit_layout = unit_layout;
+
+        let row_vector_layout = this.add(RowLayout::row_vector());
+        this.row_vector_layout = row_vector_layout;
 
         this
     }

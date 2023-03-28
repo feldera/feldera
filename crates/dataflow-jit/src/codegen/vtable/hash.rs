@@ -119,6 +119,30 @@ impl Codegen {
                         ColumnType::I64 | ColumnType::Timestamp => {
                             imports.i64_hash(ctx.module, builder.func)
                         }
+                        ColumnType::Usize => {
+                            let ptr_ty = ctx.pointer_type();
+                            if ptr_ty == types::I64 {
+                                imports.u64_hash(ctx.module, builder.func)
+                            } else if ptr_ty == types::I32 {
+                                imports.u32_hash(ctx.module, builder.func)
+                            } else if ptr_ty == types::I16 {
+                                imports.u16_hash(ctx.module, builder.func)
+                            } else {
+                                unreachable!("unsupported pointer width: {ptr_ty}")
+                            }
+                        }
+                        ColumnType::Isize => {
+                            let ptr_ty = ctx.pointer_type();
+                            if ptr_ty == types::I64 {
+                                imports.i64_hash(ctx.module, builder.func)
+                            } else if ptr_ty == types::I32 {
+                                imports.i32_hash(ctx.module, builder.func)
+                            } else if ptr_ty == types::I16 {
+                                imports.i16_hash(ctx.module, builder.func)
+                            } else {
+                                unreachable!("unsupported pointer width: {ptr_ty}")
+                            }
+                        }
                         ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
                         ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
                         ColumnType::String => imports.string_hash(ctx.module, builder.func),

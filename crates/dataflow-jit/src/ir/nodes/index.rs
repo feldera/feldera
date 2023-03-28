@@ -1,6 +1,8 @@
 use crate::ir::{
-    function::Function, layout_cache::RowLayoutCache, types::Signature, ColumnType, DataflowNode,
-    InputFlags, LayoutId, NodeId, StreamKind, StreamLayout,
+    function::Function,
+    layout_cache::RowLayoutCache,
+    nodes::{DataflowNode, StreamKind, StreamLayout},
+    LayoutId, NodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,8 +50,18 @@ impl IndexWith {
 }
 
 impl DataflowNode for IndexWith {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -60,36 +72,11 @@ impl DataflowNode for IndexWith {
         Some(StreamLayout::Map(self.key_layout, self.value_layout))
     }
 
-    fn signature(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        debug_assert_eq!(inputs.len(), 1);
-
-        let (args, flags) = match inputs[0] {
-            StreamLayout::Set(value) => (
-                vec![value, self.key_layout, self.value_layout],
-                vec![InputFlags::INPUT, InputFlags::OUTPUT, InputFlags::OUTPUT],
-            ),
-            StreamLayout::Map(key, value) => (
-                vec![key, value, self.key_layout, self.value_layout],
-                vec![
-                    InputFlags::INPUT,
-                    InputFlags::INPUT,
-                    InputFlags::OUTPUT,
-                    InputFlags::OUTPUT,
-                ],
-            ),
-        };
-
-        Signature::new(args, flags, ColumnType::Unit)
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        // TODO
     }
 
-    fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
-        assert_eq!(
-            self.signature(inputs, layout_cache),
-            self.index_fn.signature()
-        );
-    }
-
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.index_fn.optimize(layout_cache);
     }
 
@@ -101,8 +88,13 @@ impl DataflowNode for IndexWith {
         functions.push(&mut self.index_fn);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.key_layout, self.value_layout]);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.key_layout);
+        map(self.value_layout);
+        self.index_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {

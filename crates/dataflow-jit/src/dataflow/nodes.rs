@@ -1,7 +1,10 @@
 use crate::{
     codegen::VTable,
     dataflow::RowZSet,
-    ir::{NodeId, StreamKind, StreamLayout},
+    ir::{
+        nodes::{StreamKind, StreamLayout},
+        NodeId,
+    },
     row::Row,
 };
 use dbsp::operator::time_series::RelRange;
@@ -40,6 +43,13 @@ pub enum DataflowNode {
     Fold(Fold),
     PartitionedRollingFold(PartitionedRollingFold),
     FlatMap(FlatMap),
+    Antijoin(Antijoin),
+}
+
+#[derive(Debug, Clone)]
+pub struct Antijoin {
+    pub lhs: NodeId,
+    pub rhs: NodeId,
 }
 
 #[derive(Debug, Clone)]

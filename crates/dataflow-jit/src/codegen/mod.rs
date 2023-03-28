@@ -1,3 +1,4 @@
+mod call;
 mod intrinsics;
 mod layout;
 mod layout_cache;
@@ -20,9 +21,9 @@ use crate::{
         utils::FunctionBuilderExt,
     },
     ir::{
-        exprs::Call, BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr,
-        ExprId, Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutBuilder,
-        RowLayoutCache, Select, SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
+        BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr, ExprId,
+        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, Select,
+        SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
     ThinStr,
 };
@@ -44,7 +45,6 @@ use std::{
     cell::{Ref, RefCell},
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap},
-    mem::align_of,
     rc::Rc,
     sync::Arc,
 };
@@ -54,6 +54,7 @@ const TRAP_NULL_PTR: TrapCode = TrapCode::User(0);
 const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(1);
 const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
 const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
+const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -404,7 +405,7 @@ impl Codegen {
                             );
                         }
 
-                        Expr::CopyVal(copy_val) => {
+                        Expr::Copy(copy_val) => {
                             let value = ctx.exprs[&copy_val.value()];
                             let ty = ctx.expr_types.get(&copy_val.value()).copied();
                             let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
@@ -751,6 +752,8 @@ impl<'a> CodegenCtx<'a> {
             Constant::I32(int) => int as i64,
             Constant::U64(int) => int as i64,
             Constant::I64(int) => int,
+            Constant::Usize(int) => int as i64,
+            Constant::Isize(int) => int as i64,
             Constant::Bool(bool) => bool as i64,
 
             Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
@@ -1379,19 +1382,11 @@ impl<'a> CodegenCtx<'a> {
                         .store(MemFlags::trusted(), value, addr, offset as i32);
                 }
             }
-
-            // // Fill the stack slot with whatever our nullish sigil is
-            // self.emit_small_memset(addr, 0b1111_1111, null.layout(),
-            // builder);
         }
     }
 
     fn binary_op(&mut self, expr_id: ExprId, binop: &BinaryOp, builder: &mut FunctionBuilder<'_>) {
-        dbg!(expr_id);
-        let (lhs, rhs) = (
-            self.exprs[&dbg!(binop.lhs())],
-            self.exprs[&dbg!(binop.rhs())],
-        );
+        let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
         let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
         debug_assert_eq!(
             builder.func.dfg.value_type(lhs),
@@ -1685,31 +1680,8 @@ impl<'a> CodegenCtx<'a> {
 
                 UnaryOpKind::StringLen => {
                     debug_assert!(value_ty.is_string());
-
-                    // Get the offset of the length field
-                    let length_offset = ThinStr::length_offset();
-
-                    // Load the length field
-                    let length = builder.ins().load(
-                        self.pointer_type(),
-                        MemFlags::trusted(),
-                        value,
-                        length_offset as i32,
-                    );
-
-                    if let Some(writer) = self.comment_writer.as_deref() {
-                        writer.borrow_mut().add_comment(
-                            builder.func.dfg.value_def(length).unwrap_inst(),
-                            format!("get the length of the string {value}"),
-                        );
-                    }
-
-                    // Extend the length to a u64
-                    if self.pointer_type() == types::I64 {
-                        length
-                    } else {
-                        builder.ins().uextend(types::I64, length)
-                    }
+                    // TODO: Activate readonly when possible
+                    self.string_length(value, false, builder)
                 }
             };
 
@@ -1809,84 +1781,86 @@ impl<'a> CodegenCtx<'a> {
         );
     }
 
-    fn call(&mut self, _expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        match call.function() {
-            // fn(*mut {vec_ptr, row_vtable}, row_value)
-            "dbsp.row.vec.push" => {
-                let vec_layout = self.layout_cache.row_layout_cache().add(
-                    RowLayoutBuilder::new()
-                        .with_column(ColumnType::Ptr, false)
-                        .with_column(ColumnType::Ptr, false)
-                        .build(),
-                );
-                let native_vec_layout = self.layout_cache.layout_of(vec_layout);
+    fn string_length(
+        &self,
+        string: Value,
+        readonly: bool,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
 
-                debug_assert_eq!(call.args().len(), 2);
-                debug_assert_eq!(call.arg_types().len(), 2);
-                debug_assert_eq!(call.arg_types()[0].as_row(), Some(vec_layout));
-                let row_layout = self.expr_layouts[&call.args()[1]];
-                debug_assert_eq!(call.arg_types()[1].as_row(), Some(row_layout));
+        // Get the offset of the length field
+        let length_offset = ThinStr::length_offset();
 
-                let (vec, row) = (self.value(call.args()[0]), self.value(call.args()[1]));
-
-                let ptr_ty = self.pointer_type();
-                let flags = MemFlags::trusted();
-                let vec_ptr =
-                    builder
-                        .ins()
-                        .load(ptr_ty, flags, vec, native_vec_layout.offset_of(0) as i32);
-                let vtable_ptr =
-                    builder
-                        .ins()
-                        .load(ptr_ty, flags, vec, native_vec_layout.offset_of(1) as i32);
-
-                if self.debug_assertions() {
-                    // Assert that the vec pointer is valid
-                    self.assert_ptr_valid(
-                        vec_ptr,
-                        align_of::<Vec<crate::row::Row>>() as u32,
-                        builder,
-                    );
-
-                    // Assert that the vtable pointer is valid
-                    self.assert_ptr_valid(vtable_ptr, align_of::<VTable>() as u32, builder);
-
-                    // Assert that the row pointer is valid
-                    let row_align = self.layout_cache.layout_of(row_layout).align();
-                    self.assert_ptr_valid(row, row_align, builder);
-
-                    // Assert that the vtable is associated with the correct layout
-                    let vtable_layout = builder.ins().load(
-                        types::I32,
-                        MemFlags::trusted(),
-                        vtable_ptr,
-                        VTable::layout_id_offset() as i32,
-                    );
-                    let expected_layout = builder
-                        .ins()
-                        .iconst(types::I32, row_layout.into_inner() as i64);
-                    let are_equal =
-                        builder
-                            .ins()
-                            .icmp(IntCC::Equal, vtable_layout, expected_layout);
-                    builder.ins().trapz(are_equal, TRAP_ASSERT_EQ);
-                }
-
-                let dbsp_row_vec_push = self.imports.row_vec_push(self.module, builder.func);
-                let call_inst = builder
-                    .ins()
-                    .call(dbsp_row_vec_push, &[vec_ptr, vtable_ptr, row]);
-
-                if let Some(writer) = self.comment_writer.as_deref() {
-                    let layout = self.layout_cache.layout_of(row_layout);
-                    writer
-                        .borrow_mut()
-                        .add_comment(call_inst, format!("call @dbsp.row.vec.push() for {layout}"));
-                }
-            }
-
-            unknown => todo!("unknown function call: @{unknown}"),
+        let mut flags = MemFlags::trusted();
+        if readonly {
+            flags.set_readonly();
         }
+
+        // Load the length field
+        let length = builder
+            .ins()
+            .load(self.pointer_type(), flags, string, length_offset as i32);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(length).unwrap_inst(),
+                format!("get the length of the string {string}"),
+            );
+        }
+
+        length
+    }
+
+    fn string_capacity(
+        &self,
+        string: Value,
+        readonly: bool,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
+
+        // Get the offset of the capacity field
+        let capacity_offset = ThinStr::capacity_offset();
+
+        let mut flags = MemFlags::trusted();
+        if readonly {
+            flags.set_readonly();
+        }
+
+        // Load the capacity field
+        let capacity =
+            builder
+                .ins()
+                .load(self.pointer_type(), flags, string, capacity_offset as i32);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(capacity).unwrap_inst(),
+                format!("get the capacity of the string {string}"),
+            );
+        }
+
+        capacity
+    }
+
+    fn string_ptr(&self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
+
+        // Get the offset of the pointer field
+        let pointer_offset = ThinStr::pointer_offset();
+
+        // Offset the thin string's pointer to the start of its data
+        let pointer = builder.ins().iadd_imm(string, pointer_offset as i64);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.func.dfg.value_def(pointer).unwrap_inst(),
+                format!("get the pointer to the string {string}'s data"),
+            );
+        }
+
+        pointer
     }
 
     /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]

@@ -383,9 +383,11 @@ fn clone_layout(
             | ColumnType::U16
             | ColumnType::U32
             | ColumnType::U64
+            | ColumnType::Usize
             | ColumnType::I16
             | ColumnType::I32
             | ColumnType::I64
+            | ColumnType::Isize
             | ColumnType::F32
             | ColumnType::F64
             | ColumnType::Date

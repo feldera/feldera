@@ -1,7 +1,10 @@
 use crate::ir::{
-    exprs::ArgType, graph::GraphExt, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr,
-    ExprId, Function, Graph, InputFlags, IsNull, LayoutId, Load, Node, NodeId, NullRow, RValue,
-    RowLayoutCache, SetNull, Store, StreamKind, StreamLayout, UnaryOpKind, UninitRow,
+    exprs::ArgType,
+    graph::GraphExt,
+    nodes::{Node, StreamKind, StreamLayout},
+    BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph, InputFlags,
+    IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull, Store, UnaryOpKind,
+    UninitRow,
 };
 use derive_more::Display;
 use std::{
@@ -41,6 +44,8 @@ impl Validator {
     }
 
     // FIXME: Make this return a result instead of panicking
+    // TODO: Ensure that delta0 only occurs within subgraphs
+    // TODO: Validate nested subgraphs
     pub fn validate_graph(&mut self, graph: &Graph) -> ValidationResult {
         self.clear();
 
@@ -314,7 +319,7 @@ impl FunctionValidator {
                     Expr::BinOp(binop) => {
                         let lhs_ty = self.expr_types.get(&binop.lhs()).unwrap().unwrap();
                         let rhs_ty = self.expr_types.get(&binop.rhs()).unwrap().unwrap();
-                        assert_eq!(lhs_ty, rhs_ty);
+                        assert_eq!(lhs_ty, rhs_ty, "mismatched binop types in {expr_id}");
 
                         match binop.kind() {
                             BinaryOpKind::Eq
@@ -389,7 +394,31 @@ impl FunctionValidator {
                         }
                     }
 
-                    Expr::CopyVal(_) | Expr::CopyRowTo(_) => todo!(),
+                    Expr::Copy(copy) => {
+                        assert_eq!(
+                            self.expr_types.get(&copy.value()).unwrap().unwrap(),
+                            copy.value_ty(),
+                        );
+                        let prev = self.expr_types.insert(expr_id, Ok(copy.value_ty()));
+                        assert!(prev.is_none());
+                    }
+
+                    Expr::CopyRowTo(copy) => {
+                        assert_eq!(
+                            self.expr_types.get(&copy.src()).unwrap().unwrap_err(),
+                            copy.layout(),
+                        );
+                        assert_eq!(
+                            self.expr_types.get(&copy.dest()).unwrap().unwrap_err(),
+                            copy.layout(),
+                        );
+                        assert!(self.expr_row_mutability[&copy.dest()]);
+
+                        let prev = self.expr_types.insert(expr_id, Err(copy.layout()));
+                        assert!(prev.is_none());
+
+                        self.expr_row_mutability.insert(copy.dest(), true);
+                    }
                 }
             }
         }
@@ -651,6 +680,160 @@ impl FunctionValidator {
             .collect::<ValidationResult<Vec<_>>>()?;
         assert_eq!(actual_arg_types, call.arg_types());
 
+        match call.function() {
+            "dbsp.row.vec.push" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                let vec_layout = self.layout_cache.row_vector();
+                if actual_arg_types[0] != ArgType::Row(vec_layout) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be vec layout {vec_layout} but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1].is_scalar() {
+                    todo!("passed a scalar as the second argument to `@dbsp.row.vec.push()` in {expr_id} when it should be a row value")
+                }
+            }
+
+            "dbsp.str.truncate" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1] != ArgType::Scalar(ColumnType::Usize) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+            }
+
+            "dbsp.str.truncate_clone" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1] != ArgType::Scalar(ColumnType::Usize) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::String));
+            }
+
+            "dbsp.str.clear" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+            }
+
+            "dbsp.str.concat" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+            }
+
+            "dbsp.str.concat_clone" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::String));
+            }
+
+            unknown => {
+                return Err(ValidationError::UnknownFunction {
+                    expr_id,
+                    function: unknown.to_owned(),
+                })
+            }
+        }
+
         self.add_column_expr(expr_id, call.ret_ty());
 
         Ok(())
@@ -767,6 +950,21 @@ pub enum ValidationError {
         join: NodeId,
         value_layout: LayoutId,
         layout: String,
+    },
+
+    #[display(
+        fmt = "unknown function call in expression {expr_id}: `@{function}()` does not exist"
+    )]
+    UnknownFunction { expr_id: ExprId, function: String },
+
+    #[display(
+        fmt = "incorrect number of function arguments to `@{function}()` in {expr_id}, expected {expected_args} arguments but got {args}"
+    )]
+    IncorrectFunctionArgLen {
+        expr_id: ExprId,
+        function: String,
+        expected_args: usize,
+        args: usize,
     },
 }
 

@@ -1,8 +1,10 @@
 use crate::ir::{
-    block::UnsealedBlock, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind, Block, BlockId,
-    BlockIdGen, Branch, Cast, ColumnType, Constant, CopyRowTo, CopyVal, Expr, ExprId, ExprIdGen,
-    IsNull, Jump, LayoutId, Load, RValue, Return, Select, SetNull, Signature, Store, Terminator,
-    UnaryOp, UnaryOpKind, UninitRow,
+    block::UnsealedBlock,
+    exprs::{ArgType, Call},
+    layout_cache::RowLayoutCache,
+    BinaryOp, BinaryOpKind, Block, BlockId, BlockIdGen, Branch, Cast, ColumnType, Constant, Copy,
+    CopyRowTo, Expr, ExprId, ExprIdGen, IsNull, Jump, LayoutId, Load, RValue, Return, Select,
+    SetNull, Signature, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
 };
 use petgraph::{
     algo::dominators::{self, Dominators},
@@ -168,12 +170,97 @@ impl Function {
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
         self.remove_unit_memory_operations(layout_cache);
-        self.dce();
         self.deduplicate_input_loads();
         self.simplify_branches();
+        self.truncate_zero();
+        self.concat_empty_strings();
         self.dce();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
+    }
+
+    fn concat_empty_strings(&mut self) {
+        // TODO: Simplify/eliminate concat calls where one of the strings is empty
+        // TODO: Propagate string length info around so that we can do this in more
+        // general situations
+        // TODO: Constant propagation
+        // TODO: Do the same with `concat_clone`, except clone the non-empty string
+
+        let mut empty_strings = BTreeSet::new();
+        for block in self.blocks.values() {
+            for &(expr_id, ref expr) in block.body() {
+                if let Expr::Constant(Constant::String(string)) = expr {
+                    if string.is_empty() {
+                        empty_strings.insert(expr_id);
+                    }
+                }
+            }
+        }
+
+        for block in self.blocks.values_mut() {
+            for (_, expr) in block.body_mut() {
+                if let Expr::Call(call) = expr {
+                    if call.function() == "dbsp.str.concat" {
+                        let (lhs, rhs) = (call.args()[0], call.args()[1]);
+                        let (lhs_empty, rhs_empty) =
+                            (empty_strings.contains(&lhs), empty_strings.contains(&rhs));
+
+                        // If both strings are empty we turn the expression into an empty string constant
+                        if lhs_empty && rhs_empty {
+                            tracing::debug!(
+                                "turned @dbsp.str.truncate({lhs}, {rhs}) into an empty string constant (both strings are empty)",
+                            );
+                            *expr = Expr::Constant(Constant::String(String::new()));
+
+                        // If just one of them is empty we want to rewrite all uses of the expression
+                        // to consume the non-empty string
+                        } else if lhs_empty {
+                            todo!()
+                        } else if rhs_empty {
+                            todo!()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Turn all `@dbsp.str.truncate(string, 0)` calls into `@dbsp.str.clear(string)` calls
+    // TODO: Eliminate all truncate/clear calls when the length is already less than
+    // or equal to the target length
+    // TODO: Do the same with `truncate_clone`
+    fn truncate_zero(&mut self) {
+        // TODO: Constant propagation
+        let mut zeroes = BTreeSet::new();
+        for block in self.blocks.values() {
+            for &(expr_id, ref expr) in block.body() {
+                if let Expr::Constant(Constant::Usize(0)) = *expr {
+                    zeroes.insert(expr_id);
+                }
+            }
+        }
+
+        for block in self.blocks.values_mut() {
+            for (_, expr) in block.body_mut() {
+                if let Expr::Call(call) = expr {
+                    if call.function() == "dbsp.str.truncate" && zeroes.contains(&call.args()[1]) {
+                        let string = call.args()[0];
+                        tracing::debug!(
+                            "turned @dbsp.str.truncate({string}, {}) into @dbsp.str.clear({string})",
+                            call.args()[1],
+                        );
+
+                        // Turn the truncate call into a clear call
+                        *call = Call::new(
+                            "dbsp.str.clear".to_owned(),
+                            vec![string],
+                            vec![ArgType::Scalar(ColumnType::String)],
+                            ColumnType::Unit,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn dce(&mut self) {
@@ -199,10 +286,12 @@ impl Function {
             self.blocks.retain(|&block_id, _| used.contains(&block_id));
 
             let removed_blocks = start_blocks - self.blocks.len();
-            tracing::debug!(
-                "dce removed {removed_blocks} block{}",
-                if removed_blocks == 1 { "" } else { "s" },
-            );
+            if removed_blocks != 0 {
+                tracing::debug!(
+                    "dce removed {removed_blocks} block{}",
+                    if removed_blocks == 1 { "" } else { "s" },
+                );
+            }
         }
 
         // Remove unused expressions
@@ -211,7 +300,7 @@ impl Function {
 
             // Collect all usages
             for block in self.blocks.values() {
-                for (_, expr) in block.body() {
+                for &(expr_id, ref expr) in block.body() {
                     match expr {
                         Expr::Cast(cast) => {
                             used.insert(cast.value());
@@ -222,7 +311,8 @@ impl Function {
                         }
 
                         Expr::Store(store) => {
-                            used.insert(store.target());
+                            // Stores are always regarded as used within dce
+                            used.extend([expr_id, store.target()]);
                             if let &RValue::Expr(value) = store.value() {
                                 used.insert(value);
                             }
@@ -243,7 +333,7 @@ impl Function {
                             used.insert(binop.rhs());
                         }
 
-                        Expr::CopyVal(copy) => {
+                        Expr::Copy(copy) => {
                             used.insert(copy.value());
                         }
 
@@ -252,18 +342,25 @@ impl Function {
                         }
 
                         Expr::SetNull(set_null) => {
-                            used.insert(set_null.target());
+                            // Stores are always regarded as used within dce
+                            used.extend([expr_id, set_null.target()]);
                             if let &RValue::Expr(is_null) = set_null.is_null() {
                                 used.insert(is_null);
                             }
                         }
 
                         Expr::CopyRowTo(copy) => {
-                            used.insert(copy.src());
-                            used.insert(copy.dest());
+                            // Stores are always regarded as used within dce
+                            used.extend([expr_id, copy.src(), copy.dest()]);
                         }
 
-                        Expr::Call(call) => used.extend(call.args()),
+                        Expr::Call(call) => {
+                            // Regard all calls as effectful, in the future we'll want to
+                            // be able to specify whether a function call has side effects
+                            // or not
+                            used.insert(expr_id);
+                            used.extend(call.args());
+                        }
 
                         // These contain no expressions
                         Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
@@ -287,7 +384,7 @@ impl Function {
 
             // Remove all unused expressions
             for block in self.blocks.values_mut() {
-                block.retain(|expr_id, _| !used.contains(&expr_id));
+                block.retain(|expr_id, _| used.contains(&expr_id));
             }
         }
     }
@@ -353,7 +450,7 @@ impl Function {
                         remap(binop.rhs_mut());
                     }
 
-                    Expr::CopyVal(copy) => remap(copy.value_mut()),
+                    Expr::Copy(copy) => remap(copy.value_mut()),
 
                     Expr::UnaryOp(unary) => remap(unary.value_mut()),
 
@@ -380,6 +477,23 @@ impl Function {
         }
 
         // Depends on DCE to eliminate unused loads
+    }
+
+    pub fn map_layouts<F>(&self, mut map: F)
+    where
+        F: FnMut(LayoutId),
+    {
+        for FuncArg { layout, .. } in &self.args {
+            map(*layout);
+        }
+
+        for block in self.blocks.values() {
+            for (_, expr) in block.body() {
+                expr.map_layouts(&mut map);
+            }
+
+            // Terminators don't contain layout ids
+        }
     }
 
     pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -459,7 +573,7 @@ impl Function {
                         }
                     }
 
-                    Expr::CopyVal(copy) => {
+                    Expr::Copy(copy) => {
                         if scalar_exprs.contains(&copy.value()) {
                             scalar_exprs.insert(expr_id);
                             substitutions.insert(expr_id, copy.value());
@@ -498,7 +612,7 @@ impl Function {
                         Expr::BinOp(_) => todo!(),
                         Expr::UnaryOp(_) => todo!(),
                         Expr::IsNull(_) => todo!(),
-                        Expr::CopyVal(_) => todo!(),
+                        Expr::Copy(_) => todo!(),
                         Expr::NullRow(_) => todo!(),
                         Expr::SetNull(_) => todo!(),
                         Expr::Constant(_) => {}
@@ -578,7 +692,7 @@ impl Function {
                     !layout.columns()[store.column()].is_unit()
                 }
 
-                Expr::CopyVal(copy) => {
+                Expr::Copy(copy) => {
                     if unit_exprs.contains(&copy.value()) {
                         unit_exprs.insert(expr_id);
                         false
@@ -739,7 +853,7 @@ impl FunctionBuilder {
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
             .expect("attempted to call `CopyVal` on a row value");
-        let expr = self.add_expr(CopyVal::new(value, value_ty));
+        let expr = self.add_expr(Copy::new(value, value_ty));
         self.set_expr_type(expr, Ok(value_ty));
         expr
     }

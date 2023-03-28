@@ -1,7 +1,9 @@
 use crate::ir::{
-    function::Function, layout_cache::RowLayoutCache, literal::RowLiteral, types::Signature,
-    ColumnType, DataflowNode, InputFlags, LayoutId, NodeId, RowLayoutBuilder, StreamKind,
-    StreamLayout,
+    function::Function,
+    layout_cache::RowLayoutCache,
+    literal::RowLiteral,
+    nodes::{DataflowNode, StreamKind, StreamLayout},
+    ColumnType, InputFlags, LayoutId, NodeId, RowLayoutBuilder,
 };
 use dbsp::operator::time_series::RelRange;
 use serde::{Deserialize, Serialize};
@@ -23,8 +25,18 @@ impl Min {
 }
 
 impl DataflowNode for Min {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -35,17 +47,17 @@ impl DataflowNode for Min {
         Some(inputs[0])
     }
 
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
-    }
-
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
         todo!()
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn layouts(&self, _layouts: &mut Vec<LayoutId>) {}
+    fn map_layouts<F>(&self, _map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+    }
 
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
@@ -120,8 +132,18 @@ impl Fold {
 }
 
 impl DataflowNode for Fold {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -134,10 +156,6 @@ impl DataflowNode for Fold {
             inputs[0].unwrap_map().0,
             self.output_layout,
         ))
-    }
-
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
     }
 
     fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
@@ -181,7 +199,7 @@ impl DataflowNode for Fold {
         }
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.step_fn.optimize(layout_cache);
         self.finish_fn.optimize(layout_cache);
     }
@@ -194,8 +212,15 @@ impl DataflowNode for Fold {
         functions.extend([&mut self.step_fn, &mut self.finish_fn]);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.acc_layout, self.step_layout, self.output_layout]);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.acc_layout);
+        map(self.step_layout);
+        map(self.output_layout);
+        self.step_fn.map_layouts(&mut *map);
+        self.finish_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
@@ -287,8 +312,18 @@ impl PartitionedRollingFold {
 }
 
 impl DataflowNode for PartitionedRollingFold {
-    fn inputs(&self, inputs: &mut Vec<NodeId>) {
-        inputs.push(self.input);
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
     }
 
     fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
@@ -301,10 +336,6 @@ impl DataflowNode for PartitionedRollingFold {
             inputs[0].unwrap_map().0,
             self.output_layout,
         ))
-    }
-
-    fn signature(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) -> Signature {
-        todo!()
     }
 
     fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
@@ -348,7 +379,7 @@ impl DataflowNode for PartitionedRollingFold {
         }
     }
 
-    fn optimize(&mut self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+    fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.step_fn.optimize(layout_cache);
         self.finish_fn.optimize(layout_cache);
     }
@@ -361,8 +392,15 @@ impl DataflowNode for PartitionedRollingFold {
         functions.extend([&mut self.step_fn, &mut self.finish_fn]);
     }
 
-    fn layouts(&self, layouts: &mut Vec<LayoutId>) {
-        layouts.extend([self.acc_layout, self.step_layout, self.output_layout]);
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.acc_layout);
+        map(self.step_layout);
+        map(self.output_layout);
+        self.step_fn.map_layouts(&mut *map);
+        self.finish_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {

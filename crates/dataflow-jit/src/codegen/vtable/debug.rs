@@ -169,11 +169,27 @@ impl Codegen {
                             }
                             ColumnType::U64 => ctx.imports.uint_debug(ctx.module, builder.func),
 
+                            ColumnType::Usize if ptr_ty == types::I64 => {
+                                ctx.imports.uint_debug(ctx.module, builder.func)
+                            }
+                            ColumnType::Usize => {
+                                value = builder.ins().uextend(types::I64, value);
+                                ctx.imports.uint_debug(ctx.module, builder.func)
+                            }
+
                             ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
                                 value = builder.ins().sextend(types::I64, value);
                                 ctx.imports.int_debug(ctx.module, builder.func)
                             }
                             ColumnType::I64 => ctx.imports.int_debug(ctx.module, builder.func),
+
+                            ColumnType::Isize if ptr_ty == types::I64 => {
+                                ctx.imports.int_debug(ctx.module, builder.func)
+                            }
+                            ColumnType::Isize => {
+                                value = builder.ins().sextend(types::I64, value);
+                                ctx.imports.int_debug(ctx.module, builder.func)
+                            }
 
                             ColumnType::F32 => ctx.imports.f32_debug(ctx.module, builder.func),
                             ColumnType::F64 => ctx.imports.f64_debug(ctx.module, builder.func),
