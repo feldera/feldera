@@ -23,8 +23,8 @@ use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap as _, Generator},
     trace::{Batch, BatchReader, Batcher, Cursor, Spine},
-    Circuit, CollectionHandle, DBData, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Stream,
-    Timestamp,
+    Circuit, CollectionHandle, DBTimestamp, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit,
+    Stream,
 };
 use derive_more::{IsVariant, Unwrap};
 use nodes::{
@@ -1881,7 +1881,7 @@ impl CompiledDataflow {
         streams: &mut BTreeMap<NodeId, RowStream<C>>,
     ) where
         C: Circuit,
-        C::Time: Timestamp + DBData,
+        C::Time: DBTimestamp,
     {
         let distinct = match &streams[&distinct.input] {
             RowStream::Set(input) => RowStream::Set(input.distinct()),
@@ -2001,7 +2001,7 @@ impl CompiledDataflow {
         streams: &mut BTreeMap<NodeId, RowStream<C>>,
     ) where
         C: Circuit,
-        C::Time: Timestamp + DBData,
+        C::Time: DBTimestamp,
     {
         let antijoined = match (&streams[&antijoin.lhs], &streams[&antijoin.rhs]) {
             (RowStream::Set(lhs), RowStream::Set(rhs)) => RowStream::Set(lhs.antijoin(rhs)),
