@@ -58,6 +58,24 @@ pub enum Node {
     // TODO: OrderBy, Windows
 }
 
+impl Node {
+    pub const fn as_constant(&self) -> Option<&ConstantStream> {
+        if let Self::Constant(constant) = self {
+            Some(constant)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_antijoin(&self) -> Option<&Antijoin> {
+        if let Self::Antijoin(antijoin) = self {
+            Some(antijoin)
+        } else {
+            None
+        }
+    }
+}
+
 // TODO: Fully flesh this out, make it useful
 #[enum_dispatch]
 pub trait DataflowNode {

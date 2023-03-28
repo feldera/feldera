@@ -70,11 +70,14 @@ impl Subgraph {
                 }
             }
 
-            if node.is_constant()
-                || node.is_source()
+            if node.is_source()
                 || node.is_source_map()
                 || node.is_delayed_feedback()
                 || node.is_delta_0()
+                // Don't mark empty streams as reachable
+                || node
+                    .as_constant()
+                    .map_or(false, |constant| !constant.value().is_empty())
                 || self
                     .edges()
                     .edges_directed(node_id, Direction::Incoming)

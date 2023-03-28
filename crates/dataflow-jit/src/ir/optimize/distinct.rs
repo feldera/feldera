@@ -105,13 +105,24 @@ impl Subgraph {
 
                 // Delta0 preserves the distinct-ness of its input stream
                 Node::Delta0(delta0) => {
-                    if is_distinct.contains(&delta0.input()) {
+                    if is_distinct.contains(&delta0.input()) && is_distinct.insert(node_id) {
                         tracing::trace!(
                             "marking delta0 node {node_id} as distinct, its input stream {} is distinct",
                             delta0.input(),
                         );
+                        changed = true;
+                    }
+                }
 
-                        changed |= is_distinct.insert(node_id);
+                // Antijoin preserves it's left hand stream's distinct-ness
+                // (distinct is automatically applied to the right hand stream)
+                Node::Antijoin(antijoin) => {
+                    if is_distinct.contains(&antijoin.lhs()) && is_distinct.insert(node_id) {
+                        tracing::trace!(
+                            "marking antijoin node {node_id} as distinct, its left hand input stream {} is distinct",
+                            antijoin.lhs(),
+                        );
+                        changed = true;
                     }
                 }
 
