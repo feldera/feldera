@@ -1,3 +1,5 @@
+pub mod visit;
+
 mod binary;
 mod call;
 mod select;
@@ -8,7 +10,7 @@ pub use call::{ArgType, Call};
 pub use select::Select;
 pub use unary::{UnaryOp, UnaryOpKind};
 
-use crate::ir::{ColumnType, ExprId, LayoutId};
+use crate::ir::{exprs::visit::MapLayouts, ColumnType, ExprId, LayoutId};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::BTreeMap, mem};
@@ -85,30 +87,7 @@ impl Expr {
     where
         F: FnMut(LayoutId),
     {
-        match self {
-            Self::Load(load) => map(load.source_layout),
-            Self::Store(store) => map(store.target_layout),
-            Self::IsNull(is_null) => map(is_null.target_layout),
-            Self::SetNull(set_null) => map(set_null.target_layout),
-            Self::CopyRowTo(copy_row) => map(copy_row.layout),
-            Self::NullRow(null_row) => map(null_row.layout),
-            Self::UninitRow(uninit_row) => map(uninit_row.layout),
-            Self::Call(call) => {
-                for arg in call.arg_types() {
-                    if let ArgType::Row(layout) = *arg {
-                        map(layout);
-                    }
-                }
-            }
-
-            // These expressions don't contain `LayoutId`s
-            Self::Cast(_)
-            | Self::BinOp(_)
-            | Self::Select(_)
-            | Self::Copy(_)
-            | Self::UnaryOp(_)
-            | Self::Constant(_) => {}
-        }
+        self.apply(&mut MapLayouts::new(map));
     }
 }
 
