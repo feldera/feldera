@@ -28,7 +28,6 @@ use textwrap::indent;
 /// In this representation, the values for `keys[i]` are found at `vals[offs[i]
 /// .. offs[i+1]]`.
 // False positive from clippy
-#[allow(unknown_lints, clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, SizeOf, PartialEq, Eq, Clone)]
 pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
@@ -126,6 +125,7 @@ where
     L: Trie + NegByRef,
     O: OrdOffset,
 {
+    // TODO: We can eliminate elements from `0..lower_bound` when creating the negated layer
     fn neg_by_ref(&self) -> Self {
         Self {
             keys: self.keys.clone(),
@@ -146,6 +146,7 @@ where
 {
     type Output = Self;
 
+    // TODO: We can eliminate elements from `0..lower_bound` when creating the negated layer
     fn neg(self) -> Self {
         Self {
             keys: self.keys,

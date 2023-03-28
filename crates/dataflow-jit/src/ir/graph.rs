@@ -2,11 +2,11 @@
 
 use crate::ir::{
     layout_cache::RowLayoutCache,
+    nodes::{ConstantStream, Distinct, Integrate, Node, StreamLayout, Subgraph as SubgraphNode},
     nodes::{
         DataflowNode, Differentiate, ExportedNode, Filter, IndexWith, JoinCore, Map, Sink, Source,
         SourceMap, StreamKind,
     },
-    nodes::{Distinct, Integrate, Node, Subgraph as SubgraphNode},
     optimize, Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
 };
 use petgraph::prelude::DiGraphMap;
@@ -155,6 +155,19 @@ pub trait GraphExt {
             value_layout,
             output_kind,
         ))
+    }
+
+    fn empty_set(&mut self, key_layout: LayoutId) -> NodeId {
+        self.empty_stream(StreamLayout::Set(key_layout))
+    }
+
+    fn empty_map(&mut self, key_layout: LayoutId, value_layout: LayoutId) -> NodeId {
+        self.empty_stream(StreamLayout::Map(key_layout, value_layout))
+    }
+
+    // TODO: Make a dedicated empty stream node?
+    fn empty_stream(&mut self, layout: StreamLayout) -> NodeId {
+        self.add_node(ConstantStream::empty(layout))
     }
 }
 

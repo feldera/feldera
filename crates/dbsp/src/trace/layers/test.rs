@@ -535,11 +535,11 @@ where
 {
     // Check that map- and layer-based representations of
     // input datasets are identical.
-    let left_map = tuples_to_map1(&left);
-    let right_map = tuples_to_map1(&right);
+    let left_map = tuples_to_map1(left);
+    let right_map = tuples_to_map1(right);
 
-    let left_trie = tuples_to_trie1::<_, _, Tr>(&left);
-    let right_trie = tuples_to_trie1::<_, _, Tr>(&right);
+    let left_trie = tuples_to_trie1::<_, _, Tr>(left);
+    let right_trie = tuples_to_trie1::<_, _, Tr>(right);
 
     assert_eq_trie_map1(&left_trie, &left_map, trie_to_map);
     assert_eq_trie_map1(&right_trie, &right_map, trie_to_map);
@@ -569,11 +569,11 @@ where
     Tr::TupleBuilder: std::fmt::Debug,
     F: Fn(&Tr) -> Map2<K, T, R>,
 {
-    let left_map = tuples_to_map2(&left);
-    let right_map = tuples_to_map2(&right);
+    let left_map = tuples_to_map2(left);
+    let right_map = tuples_to_map2(right);
 
-    let left_trie = tuples_to_trie2::<_, _, _, Tr>(&left);
-    let right_trie = tuples_to_trie2::<_, _, _, Tr>(&right);
+    let left_trie = tuples_to_trie2::<_, _, _, Tr>(left);
+    let right_trie = tuples_to_trie2::<_, _, _, Tr>(right);
 
     assert_eq_trie_map2(&left_trie, &left_map, trie_to_map);
 
@@ -606,11 +606,11 @@ fn test_trie3<K, V, T, R, Tr, F>(
     Tr::TupleBuilder: std::fmt::Debug,
     F: Fn(&Tr) -> Map3<K, V, T, R>,
 {
-    let left_map = tuples_to_map3(&left);
-    let right_map = tuples_to_map3(&right);
+    let left_map = tuples_to_map3(left);
+    let right_map = tuples_to_map3(right);
 
-    let left_trie = tuples_to_trie3::<_, _, _, _, Tr>(&left);
-    let right_trie = tuples_to_trie3::<_, _, _, _, Tr>(&right);
+    let left_trie = tuples_to_trie3::<_, _, _, _, Tr>(left);
+    let right_trie = tuples_to_trie3::<_, _, _, _, Tr>(right);
 
     assert_eq_trie_map3(&left_trie, &left_map, trie_to_map);
 
@@ -641,7 +641,7 @@ proptest! {
             trie.truncate_below(2);
 
             retain_map1(&mut map, |k, _v| k != &key);
-            map = truncate_map1(&mut map, 2);
+            map = truncate_map1(&map, 2);
 
             assert_eq_trie_map1(&trie, &map, column_layer_to_map1);
         }

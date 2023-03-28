@@ -61,7 +61,7 @@ impl<K, R> OrdZSet<K, R> {
         Self {
             // Safety: We've ensured that keys and diffs are the same length
             // and are sorted & consolidated
-            layer: unsafe { ColumnLayer::from_parts(keys, diffs) },
+            layer: unsafe { ColumnLayer::from_parts(keys, diffs, 0) },
         }
     }
 }

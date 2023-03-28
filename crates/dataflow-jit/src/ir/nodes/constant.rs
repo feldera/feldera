@@ -16,12 +16,23 @@ pub struct ConstantStream {
 }
 
 impl ConstantStream {
-    pub fn new(value: StreamLiteral, layout: StreamLayout) -> Self {
+    pub const fn new(value: StreamLiteral, layout: StreamLayout) -> Self {
         Self {
             value,
             layout,
             consolidated: false,
         }
+    }
+
+    /// Create an empty stream
+    pub const fn empty(layout: StreamLayout) -> Self {
+        Self::new(
+            match layout {
+                StreamLayout::Set(_) => StreamLiteral::Set(Vec::new()),
+                StreamLayout::Map(..) => StreamLiteral::Map(Vec::new()),
+            },
+            layout,
+        )
     }
 
     pub const fn value(&self) -> &StreamLiteral {
