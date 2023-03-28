@@ -205,14 +205,16 @@ impl Function {
                         let (lhs_empty, rhs_empty) =
                             (empty_strings.contains(&lhs), empty_strings.contains(&rhs));
 
-                        // If both strings are empty we turn the expression into an empty string constant
+                        // If both strings are empty we turn the expression into an empty string
+                        // constant
                         if lhs_empty && rhs_empty {
                             tracing::debug!(
                                 "turned @dbsp.str.truncate({lhs}, {rhs}) into an empty string constant (both strings are empty)",
                             );
                             *expr = Expr::Constant(Constant::String(String::new()));
 
-                        // If just one of them is empty we want to rewrite all uses of the expression
+                        // If just one of them is empty we want to rewrite all
+                        // uses of the expression
                         // to consume the non-empty string
                         } else if lhs_empty {
                             todo!()
@@ -225,9 +227,9 @@ impl Function {
         }
     }
 
-    // Turn all `@dbsp.str.truncate(string, 0)` calls into `@dbsp.str.clear(string)` calls
-    // TODO: Eliminate all truncate/clear calls when the length is already less than
-    // or equal to the target length
+    // Turn all `@dbsp.str.truncate(string, 0)` calls into `@dbsp.str.clear(string)`
+    // calls TODO: Eliminate all truncate/clear calls when the length is already
+    // less than or equal to the target length
     // TODO: Do the same with `truncate_clone`
     fn truncate_zero(&mut self) {
         // TODO: Constant propagation

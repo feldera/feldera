@@ -139,7 +139,8 @@ impl DataflowNode for ConstantStream {
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
         // TODO: Ensure that the data matches the node's layout
-        // TODO: Ensure that the data's actually consolidated if `self.consolidated == true`
+        // TODO: Ensure that the data's actually consolidated if `self.consolidated ==
+        // true`
         todo!()
     }
 

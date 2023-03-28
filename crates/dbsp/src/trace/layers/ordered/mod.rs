@@ -125,7 +125,8 @@ where
     L: Trie + NegByRef,
     O: OrdOffset,
 {
-    // TODO: We can eliminate elements from `0..lower_bound` when creating the negated layer
+    // TODO: We can eliminate elements from `0..lower_bound` when creating the
+    // negated layer
     fn neg_by_ref(&self) -> Self {
         Self {
             keys: self.keys.clone(),
@@ -146,7 +147,8 @@ where
 {
     type Output = Self;
 
-    // TODO: We can eliminate elements from `0..lower_bound` when creating the negated layer
+    // TODO: We can eliminate elements from `0..lower_bound` when creating the
+    // negated layer
     fn neg(self) -> Self {
         Self {
             keys: self.keys,

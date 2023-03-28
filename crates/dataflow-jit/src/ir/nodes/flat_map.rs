@@ -35,16 +35,19 @@ use std::collections::BTreeMap;
 ///
 /// #### Possible Function Signatures
 ///
-/// | Input Stream | Output Stream | Function Signature                                                                         |
-/// | :----------: | :-----------: | ------------------------------------------------------------------------------------------ |
-/// |     Set      |      Set      | `fn(key: { ... }, output_keys: { ptr, ptr })`                                              |
-/// |     Set      |      Map      | `fn(key: { ... }, output_keys: { ptr, ptr }, output_values: { ptr, ptr })`                 |
-/// |     Map      |      Set      | `fn(key: { ... }, value: { ... }, output_keys: { ptr, ptr })`                              |
-/// |     Map      |      Map      | `fn(key: { ... }, value: { ... }, output_keys: { ptr, ptr }, output_values: { ptr, ptr })` |
+/// | Input Stream | Output Stream | Function Signature
+/// | | :----------: | :-----------: |
+/// ------------------------------------------------------------------------------------------
+/// | |     Set      |      Set      | `fn(key: { ... }, output_keys: { ptr, ptr
+/// })`                                              | |     Set      |      Map
+/// | `fn(key: { ... }, output_keys: { ptr, ptr }, output_values: { ptr, ptr })`
+/// | |     Map      |      Set      | `fn(key: { ... }, value: { ... },
+/// output_keys: { ptr, ptr })`                              | |     Map      |
+/// Map      | `fn(key: { ... }, value: { ... }, output_keys: { ptr, ptr },
+/// output_values: { ptr, ptr })` |
 ///
 /// `{ ... }` denotes an arbitrary layout, the `output_keys` and `output_values`
 /// vectors are typed in association with `output_layout`.
-///
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FlatMap {
     input: NodeId,

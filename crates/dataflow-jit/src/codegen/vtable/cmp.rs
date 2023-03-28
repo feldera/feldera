@@ -572,9 +572,11 @@ impl Codegen {
                     match row_type {
                         // Booleans
                         ColumnType::Bool => {
-                            // TODO: ctx.debug_assert_bool_is_valid(lhs); ctx.debug_assert_bool_is_valid(rhs);
+                            // TODO: ctx.debug_assert_bool_is_valid(lhs);
+                            // ctx.debug_assert_bool_is_valid(rhs);
 
-                            // Boolean values will always be zero or one, so their difference will be -1, 0 or 1
+                            // Boolean values will always be zero or one, so their difference will
+                            // be -1, 0 or 1
                             let ordering = builder.ins().isub(lhs, rhs);
 
                             builder.ins().brif(
