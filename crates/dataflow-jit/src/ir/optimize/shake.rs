@@ -62,7 +62,6 @@ impl Subgraph {
 
                 if lhs_reachable {
                     source_reachable.insert(node_id);
-
                     if !rhs_reachable {
                         redundant_antijoins.insert(node_id, antijoin.lhs());
                     }
@@ -71,18 +70,18 @@ impl Subgraph {
                 }
             }
 
-            if node.is_source()
-                || node.is_source_map()
-                || node.is_delayed_feedback()
-                || node.is_delta_0()
+            if node
+                .as_constant()
                 // Don't mark empty streams as reachable
-                || node
-                    .as_constant()
-                    .map_or(false, |constant| !constant.value().is_empty())
-                || self
-                    .edges()
-                    .edges_directed(node_id, Direction::Incoming)
-                    .all(|(src, ..)| source_reachable.contains(&src))
+                .map_or(true, |constant| !constant.value().is_empty())
+                && (node.is_source()
+                    || node.is_source_map()
+                    || node.is_delayed_feedback()
+                    || node.is_delta_0()
+                    || self
+                        .edges()
+                        .edges_directed(node_id, Direction::Incoming)
+                        .all(|(src, ..)| source_reachable.contains(&src)))
             {
                 source_reachable.insert(node_id);
             } else {
@@ -90,12 +89,14 @@ impl Subgraph {
             }
         }
 
-        // Reroute all antijoins against empty streams to the original stream
-        self.map_inputs_mut(|node| {
-            if let Some(&redirect) = redundant_antijoins.get(node) {
-                *node = redirect;
-            }
-        });
+        if !redundant_antijoins.is_empty() {
+            // Reroute all antijoins against empty streams to the original stream
+            self.map_inputs_mut(|node| {
+                if let Some(&redirect) = redundant_antijoins.get(node) {
+                    *node = redirect;
+                }
+            });
+        }
 
         // Remove unreachable nodes
         self.nodes_mut().retain(|node_id, _| {
