@@ -53,7 +53,8 @@ where
         let mut cursor = input.cursor();
 
         while cursor.key_valid() {
-            // TODO: Sets always have a single valid unit value, we could remove the value loop
+            // TODO: Sets always have a single valid unit value, we could remove the value
+            // loop
             while cursor.val_valid() {
                 debug_assert_eq!(keys.len(), diffs.len());
 
@@ -63,7 +64,8 @@ where
                 // Apply the flat map function and produce an arbitrary number of keys
                 (self.flat_map)(cursor.key(), &mut keys);
 
-                // Figure out the number of keys that the closure added and add that number of diffs
+                // Figure out the number of keys that the closure added and add that number of
+                // diffs
                 let added_keys = keys.len() - len;
                 if added_keys > 0 {
                     let weight = cursor.weight();
@@ -94,7 +96,8 @@ where
             let (mut keys, mut values) = (Vec::new(), Vec::new());
 
             while cursor.key_valid() {
-                // TODO: Sets always have a single valid unit value, we could remove the value loop
+                // TODO: Sets always have a single valid unit value, we could remove the value
+                // loop
                 while cursor.val_valid() {
                     debug_assert!(keys.is_empty() && values.is_empty());
 
@@ -147,7 +150,8 @@ where
                 // Apply the flat map function and produce an arbitrary number of keys
                 (self.flat_map)(cursor.key(), cursor.val(), &mut keys);
 
-                // Figure out the number of keys that the closure added and add that number of diffs
+                // Figure out the number of keys that the closure added and add that number of
+                // diffs
                 let added_keys = keys.len() - len;
                 if added_keys > 0 {
                     let weight = cursor.weight();
@@ -178,7 +182,8 @@ where
             let (mut keys, mut values) = (Vec::new(), Vec::new());
 
             while cursor.key_valid() {
-                // TODO: Sets always have a single valid unit value, we could remove the value loop
+                // TODO: Sets always have a single valid unit value, we could remove the value
+                // loop
                 while cursor.val_valid() {
                     debug_assert!(keys.is_empty() && values.is_empty());
 

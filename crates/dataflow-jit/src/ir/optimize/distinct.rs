@@ -13,7 +13,8 @@ impl Subgraph {
             let mut buffer = DfsSpace::default();
 
             // Iteratively collect distinct nodes and propagate their distinct-ness
-            // as much as possible (in and out of subgraphs, backwards through feedbacks, etc.)
+            // as much as possible (in and out of subgraphs, backwards through feedbacks,
+            // etc.)
             self.collect_distinct_nodes(&mut is_distinct, &mut redirects, &mut buffer);
         }
 
@@ -56,7 +57,8 @@ impl Subgraph {
     ) -> bool {
         let mut changed = false;
 
-        // Collect all distinct nodes and splices that we need to make (replace now-redundant nodes)
+        // Collect all distinct nodes and splices that we need to make (replace
+        // now-redundant nodes)
         for &node_id in order {
             // TODO: Look at the inside of `Constant`s to see if they're distinct
             // TODO: Antijoins don't effect distinct (I think?)
@@ -68,7 +70,8 @@ impl Subgraph {
                         changed = true;
                         tracing::trace!("marking distinct node {node_id} as distinct");
 
-                        // If the input to the distinct node is itself distinct, eliminate this distinct node
+                        // If the input to the distinct node is itself distinct, eliminate this
+                        // distinct node
                         if is_distinct.contains(&distinct.input()) {
                             tracing::trace!(
                                 "distinct node {node_id} is redundant, its input {} is distinct",
@@ -170,7 +173,8 @@ impl Subgraph {
 
                 Node::Constant(constant) => {
                     if constant.consolidated() && !is_distinct.contains(&node_id) {
-                        // If all tuples/rows within the stream have a weight of 1, the stream is distinct
+                        // If all tuples/rows within the stream have a weight of 1, the stream is
+                        // distinct
                         let constant_is_distinct = match constant.value() {
                             StreamLiteral::Set(set) => set.iter().all(|&(_, weight)| weight == 1),
                             StreamLiteral::Map(map) => map.iter().all(|&(.., weight)| weight == 1),

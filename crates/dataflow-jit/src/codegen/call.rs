@@ -99,9 +99,9 @@ impl CodegenCtx<'_> {
         let (string, truncated_length) = (self.value(call.args()[0]), self.value(call.args()[1]));
 
         // Right now with the current design of strings (having them be a
-        // pointer to { length, capacity, ..data } instead of { length, capacity, *data })
-        // we have to branch when setting the string's length since `ThinStr` has a sigil
-        // value for empty strings that we can't mutate
+        // pointer to { length, capacity, ..data } instead of { length, capacity, *data
+        // }) we have to branch when setting the string's length since `ThinStr`
+        // has a sigil value for empty strings that we can't mutate
         let after_block = builder.create_block();
         let set_string_length = builder.create_block();
 
@@ -188,9 +188,9 @@ impl CodegenCtx<'_> {
         let (string, truncated_length) = (self.value(call.args()[0]), self.value(call.args()[1]));
 
         // Right now with the current design of strings (having them be a
-        // pointer to { length, capacity, ..data } instead of { length, capacity, *data })
-        // we have to branch when setting the string's length since `ThinStr` has a sigil
-        // value for empty strings that we can't mutate
+        // pointer to { length, capacity, ..data } instead of { length, capacity, *data
+        // }) we have to branch when setting the string's length since `ThinStr`
+        // has a sigil value for empty strings that we can't mutate
         let after_block = builder.create_block();
         builder.append_block_param(after_block, self.pointer_type());
 
@@ -278,9 +278,9 @@ impl CodegenCtx<'_> {
         let string = self.value(call.args()[0]);
 
         // Right now with the current design of strings (having them be a
-        // pointer to { length, capacity, ..data } instead of { length, capacity, *data })
-        // we have to branch when setting the string's length since `ThinStr` has a sigil
-        // value for empty strings that we can't mutate
+        // pointer to { length, capacity, ..data } instead of { length, capacity, *data
+        // }) we have to branch when setting the string's length since `ThinStr`
+        // has a sigil value for empty strings that we can't mutate
         let after_block = builder.create_block();
         let set_string_length = builder.create_block();
 
@@ -328,7 +328,8 @@ impl CodegenCtx<'_> {
         builder.seal_block(set_string_length);
     }
 
-    // FIXME: Handle the case where both strings are empty, we can't write to a sigil string
+    // FIXME: Handle the case where both strings are empty, we can't write to a
+    // sigil string
     fn string_concat_clone(
         &mut self,
         expr_id: ExprId,

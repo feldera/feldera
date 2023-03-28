@@ -2,11 +2,12 @@
 //!
 //! Nodes will be kept if they're reachable from an input of some kind
 //! (sources, constant streams, etc.) and from an output, with a few exceptions,
-//! e.g. `antijoin(x, unreachable_or_empty)` is not eliminated and is instead turned
-//! into `x`. Side effects also need to be considered, but that's another can of worms
+//! e.g. `antijoin(x, unreachable_or_empty)` is not eliminated and is instead
+//! turned into `x`. Side effects also need to be considered, but that's another
+//! can of worms
 //!
-//! So really this isn't a reachability check so much as it's an "produces outputs"
-//! check which has slightly different semantics
+//! So really this isn't a reachability check so much as it's an "produces
+//! outputs" check which has slightly different semantics
 
 use crate::ir::{graph::Subgraph, nodes::Node, GraphExt, NodeId};
 use petgraph::{

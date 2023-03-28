@@ -83,22 +83,22 @@ impl ThinStr {
         addr_of!(EMPTY.length) as usize - addr_of!(EMPTY) as usize
     }
 
-    /// Returns the offset of the `capacity` field, used within codegen to access
-    /// a string's capacity
+    /// Returns the offset of the `capacity` field, used within codegen to
+    /// access a string's capacity
     #[inline]
     pub(crate) fn capacity_offset() -> usize {
         addr_of!(EMPTY.capacity) as usize - addr_of!(EMPTY) as usize
     }
 
-    /// Returns the offset of the start of the string's data, used within codegen
-    /// to compute a string's data pointer
+    /// Returns the offset of the start of the string's data, used within
+    /// codegen to compute a string's data pointer
     #[inline]
     pub(crate) fn pointer_offset() -> usize {
         addr_of!(EMPTY._data) as usize - addr_of!(EMPTY) as usize
     }
 
-    /// Returns the offset of the `capacity` field, used within codegen to access
-    /// a string's capacity
+    /// Returns the offset of the `capacity` field, used within codegen to
+    /// access a string's capacity
     #[inline]
     pub(crate) fn sigil_addr() -> usize {
         addr_of!(EMPTY) as usize

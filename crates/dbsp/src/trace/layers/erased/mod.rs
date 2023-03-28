@@ -289,7 +289,8 @@ impl ErasedLayer {
             diffs.set_len(self.diffs.len());
         }
 
-        // TODO: We can eliminate elements from `0..lower_bound` when creating the negated layer
+        // TODO: We can eliminate elements from `0..lower_bound` when creating the
+        // negated layer
         Self {
             keys: self.keys.clone(),
             diffs,
