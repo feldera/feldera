@@ -1,4 +1,5 @@
 mod antijoin_self;
+mod dedup;
 mod distinct;
 mod shake;
 
@@ -18,5 +19,6 @@ pub(super) fn optimize_graph(graph: &mut Graph) {
     graph.optimize();
     graph.remove_redundant_distinct();
     graph.remove_self_antijoins();
+    graph.dedup_nodes();
     graph.shake_dead_nodes();
 }
