@@ -1,5 +1,8 @@
 //! Contains the dataflow graph that users construct
 
+// TODO: Changing things to operate around a port-oriented design should
+// simplify rerouting edges and removing nodes
+
 use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{ConstantStream, Distinct, Integrate, Node, StreamLayout, Subgraph as SubgraphNode},

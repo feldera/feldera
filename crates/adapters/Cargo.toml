@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [features]
-default = [] # ["with-kafka", "server"]
+default = ["with-kafka", "server"]
 with-kafka = ["rdkafka"]
 server = ["actix", "actix-test", "actix-web", "actix-web-actors", "actix-http", "bytes", "byteorder", "futures", "serde_json", "mime", "with-kafka"]
 test-utils = ["size-of", "futures", "proptest", "proptest-derive", "actix-codec"]

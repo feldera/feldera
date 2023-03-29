@@ -1100,8 +1100,7 @@ mod test {
             .unwrap();
         let desc = db.get_project_if_exists(project_id).await.unwrap().unwrap();
         assert_eq!(ProjectStatus::None, desc.status);
-        let _ = db
-            .set_project_status(project_id, ProjectStatus::CompilingRust)
+        db.set_project_status(project_id, ProjectStatus::CompilingRust)
             .await
             .unwrap();
         let desc = db.get_project_if_exists(project_id).await.unwrap().unwrap();
