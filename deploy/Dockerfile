@@ -42,8 +42,11 @@ RUN cd /database-stream-processor && \
     if [[ ! -e sql-to-dbsp-compiler/.git || -z $(cd sql-to-dbsp-compiler && git branch --show-current) ]]; \
     then git submodule update --init; fi
 
-RUN cd /database-stream-processor/crates/pipeline_manager && ~/.cargo/bin/cargo build --release
-RUN cd /sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
+RUN cd /database-stream-processor/crates/pipeline_manager \
+    && ~/.cargo/bin/cargo install --path . \
+    && rm -rf /database-stream-processor/target .git
+
+RUN cd /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
 # Provision Prometheus data source + DBSP dashboard in Grafana.
 RUN cp /database-stream-processor/deploy/prometheus_datasource.yaml /etc/grafana/provisioning/datasources/ \

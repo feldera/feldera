@@ -16,12 +16,12 @@ paste = "1.0.9"
 # pretty = "0.11.3"
 size-of = "0.1.4"
 tracing = "0.1.37"
-cranelift = "0.93.0"
+cranelift = "0.94.0"
 enum_dispatch = "0.3.8"
-cranelift-jit = "0.93.0"
+cranelift-jit = "0.94.0"
 target-lexicon = "0.12.5"
-cranelift-module = "0.93.0"
-cranelift-native = "0.93.0"
+cranelift-module = "0.94.0"
+cranelift-native = "0.94.0"
 dbsp = { path = "../dbsp", features = ["serde"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 bitflags = { version = "2.0.1", features = ["serde"] }
@@ -36,9 +36,11 @@ serde = { version = "1.0.152", features = ["derive"] }
 
 # Argument parsing for the binary
 clap = { version = "4.1.8", features = ["derive"], optional = true }
-tracing-subscriber = { version = "0.3.16", features = [
-    "env-filter",
-], optional = true }
+
+    [dependencies.tracing-subscriber]
+    version = "0.3.16"
+    features = ["env-filter"]
+    optional = true
 
     [dependencies.chrono]
     version = "0.4.23"
