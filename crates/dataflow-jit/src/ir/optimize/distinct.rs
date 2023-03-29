@@ -1,7 +1,10 @@
 //! Remove distinct over distinct streams
 
 use crate::ir::{graph::Subgraph, literal::StreamLiteral, nodes::Node, GraphExt, NodeId};
-use petgraph::algo::{toposort, DfsSpace};
+use petgraph::{
+    algo::{toposort, DfsSpace},
+    Direction,
+};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 impl Subgraph {
@@ -26,6 +29,20 @@ impl Subgraph {
                     *node = redirect;
                 }
             });
+
+            let mut edges = Vec::new();
+            for (old_node, new_node) in redirects {
+                edges.extend(
+                    self.edges_mut()
+                        .edges_directed(old_node, Direction::Outgoing)
+                        .map(|(src, dest, _)| (src, dest)),
+                );
+
+                for (src, dest) in edges.drain(..) {
+                    self.edges_mut().remove_edge(src, dest);
+                    self.edges_mut().add_edge(new_node, dest, ());
+                }
+            }
         }
     }
 

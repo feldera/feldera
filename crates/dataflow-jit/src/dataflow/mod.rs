@@ -181,8 +181,6 @@ impl CompiledDataflow {
         let mut node_kinds = BTreeMap::new();
         let mut node_streams: BTreeMap<NodeId, Option<_>> = BTreeMap::new();
 
-        dbg!(graph);
-
         let (mut inputs, mut input_nodes) = (Vec::with_capacity(16), Vec::with_capacity(16));
         let order = algo::toposort(graph.edges(), None).unwrap();
         for node_id in order {
@@ -924,7 +922,12 @@ impl CompiledDataflow {
 
         let order = algo::toposort(&self.edges, None).unwrap();
         for node_id in order {
-            match self.nodes.remove(&dbg!(node_id)).unwrap() {
+            let node = match self.nodes.remove(&node_id) {
+                Some(node) => node,
+                None => continue,
+            };
+
+            match node {
                 DataflowNode::Map(map) => {
                     let input = &streams[&map.input];
                     let vtable = map.output_vtable;
@@ -1388,7 +1391,11 @@ impl CompiledDataflow {
                         continue;
                     }
 
-                    match subgraph.nodes.remove(&node_id).unwrap() {
+                    let node = match subgraph.nodes.remove(&node_id) {
+                        Some(node) => node,
+                        None => continue,
+                    };
+                    match node {
                         DataflowNode::Constant(constant) => {
                             let constant_stream = match constant.value {
                                 RowZSet::Set(set) => RowStream::Set(
@@ -2082,10 +2089,7 @@ mod tests {
         dataflow::{CompiledDataflow, RowOutput},
         ir::{
             graph::GraphExt,
-            nodes::{
-                Distinct, IndexWith, JoinCore, Map, Min, Minus, MonotonicJoin, Sink, Source,
-                SourceMap, StreamKind, StreamLayout, Sum,
-            },
+            nodes::{Min, Minus, MonotonicJoin, StreamKind, StreamLayout, Sum},
             ColumnType, Constant, FunctionBuilder, Graph, RowLayoutBuilder,
         },
         row::UninitRow,
@@ -2115,65 +2119,52 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.add_node(Source::new(xy_layout));
+        let source = graph.source(xy_layout);
 
-        let mul = graph.add_node(Map::new(
-            source,
-            {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let input = func.add_input(xy_layout);
-                let output = func.add_output(x_layout);
+        let mul = graph.map(source, x_layout, {
+            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+            let input = func.add_input(xy_layout);
+            let output = func.add_output(x_layout);
 
-                let x = func.load(input, 0);
-                let y = func.load(input, 1);
-                let xy = func.mul(x, y);
-                func.store(output, 0, xy);
+            let x = func.load(input, 0);
+            let y = func.load(input, 1);
+            let xy = func.mul(x, y);
+            func.store(output, 0, xy);
 
-                func.ret_unit();
-                func.build()
-            },
-            x_layout,
-        ));
+            func.ret_unit();
+            func.build()
+        });
 
-        let y_index = graph.add_node(IndexWith::new(
-            source,
-            {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let input = func.add_input(xy_layout);
-                let key = func.add_output(unit_layout);
-                let value = func.add_output(x_layout);
+        let y_index = graph.index_with(source, unit_layout, x_layout, {
+            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+            let input = func.add_input(xy_layout);
+            let key = func.add_output(unit_layout);
+            let value = func.add_output(x_layout);
 
-                func.store(key, 0, Constant::Unit);
+            func.store(key, 0, Constant::Unit);
 
-                let y = func.load(input, 0);
-                func.store(value, 0, y);
+            let y = func.load(input, 0);
+            func.store(value, 0, y);
 
-                func.ret_unit();
-                func.build()
-            },
-            unit_layout,
-            x_layout,
-        ));
-        let y_squared = graph.add_node(Map::new(
-            y_index,
-            {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let _key = func.add_input(unit_layout);
-                let value = func.add_input(x_layout);
-                let output = func.add_output(x_layout);
+            func.ret_unit();
+            func.build()
+        });
+        let y_squared = graph.map(y_index, x_layout, {
+            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+            let _key = func.add_input(unit_layout);
+            let value = func.add_input(x_layout);
+            let output = func.add_output(x_layout);
 
-                let y = func.load(value, 0);
-                let y_squared = func.mul(y, y);
-                func.store(output, 0, y_squared);
+            let y = func.load(value, 0);
+            let y_squared = func.mul(y, y);
+            func.store(output, 0, y_squared);
 
-                func.ret_unit();
-                func.build()
-            },
-            x_layout,
-        ));
+            func.ret_unit();
+            func.build()
+        });
 
-        let mul_sink = graph.add_node(Sink::new(mul));
-        let y_squared_sink = graph.add_node(Sink::new(y_squared));
+        let mul_sink = graph.sink(mul);
+        let y_squared_sink = graph.sink(y_squared);
 
         // let mut validator = Validator::new();
         // validator.validate_graph(&graph);
@@ -2275,9 +2266,9 @@ mod tests {
                 .build(),
         );
 
-        let roots = graph.add_node(Source::new(u64x2));
-        let edges = graph.add_node(SourceMap::new(u64x1, u64x1));
-        let vertices = graph.add_node(Source::new(u64x1));
+        let roots = graph.source(u64x2);
+        let edges = graph.source_map(u64x1, u64x1);
+        let vertices = graph.source(u64x1);
 
         let (_recursive, distances) = graph.subgraph(|subgraph| {
             let nodes = subgraph.delayed_feedback(u64x2);
@@ -2285,26 +2276,21 @@ mod tests {
             let roots = subgraph.delta0(roots);
             let edges = subgraph.delta0(edges);
 
-            let nodes_index = subgraph.add_node(IndexWith::new(
-                nodes,
-                {
-                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
-                    let input = func.add_input(u64x2);
-                    let key = func.add_output(u64x1);
-                    let value = func.add_output(u64x1);
+            let nodes_index = subgraph.index_with(nodes, u64x1, u64x1, {
+                let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
+                let input = func.add_input(u64x2);
+                let key = func.add_output(u64x1);
+                let value = func.add_output(u64x1);
 
-                    let node = func.load(input, 0);
-                    let dist = func.load(input, 1);
-                    func.store(key, 0, node);
-                    func.store(value, 0, dist);
+                let node = func.load(input, 0);
+                let dist = func.load(input, 1);
+                func.store(key, 0, node);
+                func.store(value, 0, dist);
 
-                    func.ret_unit();
-                    func.build()
-                },
-                u64x1,
-                u64x1,
-            ));
-            let nodes_join_edges = subgraph.add_node(JoinCore::new(
+                func.ret_unit();
+                func.build()
+            });
+            let nodes_join_edges = subgraph.join_core(
                 nodes_index,
                 edges,
                 {
@@ -2328,68 +2314,55 @@ mod tests {
                 u64x2,
                 unit,
                 StreamKind::Set,
-            ));
+            );
 
             let joined_plus_roots = subgraph.add_node(Sum::new(vec![nodes_join_edges, roots]));
-            let joined_plus_roots = subgraph.add_node(IndexWith::new(
-                joined_plus_roots,
-                {
-                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
-                    let input = func.add_input(u64x2);
-                    let key = func.add_output(u64x1);
-                    let value = func.add_output(u64x1);
+            let joined_plus_roots = subgraph.index_with(joined_plus_roots, u64x1, u64x1, {
+                let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
+                let input = func.add_input(u64x2);
+                let key = func.add_output(u64x1);
+                let value = func.add_output(u64x1);
 
-                    let node = func.load(input, 0);
-                    let dist = func.load(input, 1);
-                    func.store(key, 0, node);
-                    func.store(value, 0, dist);
+                let node = func.load(input, 0);
+                let dist = func.load(input, 1);
+                func.store(key, 0, node);
+                func.store(value, 0, dist);
 
-                    func.ret_unit();
-                    func.build()
-                },
-                u64x1,
-                u64x1,
-            ));
+                func.ret_unit();
+                func.build()
+            });
 
             let min = subgraph.add_node(Min::new(joined_plus_roots));
-            let min_set = subgraph.add_node(Map::new(
-                min,
-                {
-                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
-                    let key = func.add_input(u64x1);
-                    let value = func.add_input(u64x1);
-                    let output = func.add_output(u64x2);
+            let min_set = subgraph.map(min, u64x2, {
+                let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
+                let key = func.add_input(u64x1);
+                let value = func.add_input(u64x1);
+                let output = func.add_output(u64x2);
 
-                    let key = func.load(key, 0);
-                    let value = func.load(value, 0);
-                    func.store(output, 0, key);
-                    func.store(output, 1, value);
+                let key = func.load(key, 0);
+                let value = func.load(value, 0);
+                func.store(output, 0, key);
+                func.store(output, 1, value);
 
-                    func.ret_unit();
-                    func.build()
-                },
-                u64x2,
-            ));
-            let min_set_distinct = subgraph.add_node(Distinct::new(min_set));
+                func.ret_unit();
+                func.build()
+            });
+            let min_set_distinct = subgraph.distinct(min_set);
             subgraph.connect_feedback(min_set_distinct, nodes);
             subgraph.export(min_set_distinct, StreamLayout::Set(u64x2))
         });
 
-        let reachable_nodes = graph.add_node(Map::new(
-            distances,
-            {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let distance = func.add_input(u64x2);
-                let output = func.add_output(u64x1);
+        let reachable_nodes = graph.map(distances, u64x1, {
+            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+            let distance = func.add_input(u64x2);
+            let output = func.add_output(u64x1);
 
-                let node = func.load(distance, 0);
-                func.store(output, 0, node);
+            let node = func.load(distance, 0);
+            func.store(output, 0, node);
 
-                func.ret_unit();
-                func.build()
-            },
-            u64x1,
-        ));
+            func.ret_unit();
+            func.build()
+        });
 
         let reachable_nodes = graph.add_node(MonotonicJoin::new(
             vertices,
@@ -2410,27 +2383,23 @@ mod tests {
             u64x1,
         ));
         let unreachable_nodes = graph.add_node(Minus::new(vertices, reachable_nodes));
-        let unreachable_nodes = graph.add_node(Map::new(
-            unreachable_nodes,
-            {
-                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-                let node = func.add_input(u64x1);
-                let output = func.add_output(u64x2);
+        let unreachable_nodes = graph.map(unreachable_nodes, u64x2, {
+            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+            let node = func.add_input(u64x1);
+            let output = func.add_output(u64x2);
 
-                let node = func.load(node, 0);
-                func.store(output, 0, node);
+            let node = func.load(node, 0);
+            func.store(output, 0, node);
 
-                let weight = func.constant(Constant::U64(i64::MAX as u64));
-                func.store(output, 1, weight);
+            let weight = func.constant(Constant::U64(i64::MAX as u64));
+            func.store(output, 1, weight);
 
-                func.ret_unit();
-                func.build()
-            },
-            u64x2,
-        ));
+            func.ret_unit();
+            func.build()
+        });
 
         let distances = graph.add_node(Sum::new(vec![distances, unreachable_nodes]));
-        let sink = graph.add_node(Sink::new(distances));
+        let sink = graph.sink(distances);
 
         let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());

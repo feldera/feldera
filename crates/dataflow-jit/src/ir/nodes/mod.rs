@@ -182,7 +182,7 @@ pub enum StreamKind {
     Map,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Distinct {
     input: NodeId,
 }

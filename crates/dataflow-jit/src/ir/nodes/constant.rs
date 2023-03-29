@@ -7,7 +7,7 @@ use crate::ir::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct ConstantStream {
     value: StreamLiteral,
     layout: StreamLayout,

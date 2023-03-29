@@ -473,7 +473,7 @@ impl Function {
                     Expr::Constant(_) => {}
 
                     // These expressions operate exclusively on rows
-                    Expr::CopyRowTo(_) | Expr::NullRow(_) | Expr::UninitRow(_) => todo!(),
+                    Expr::CopyRowTo(_) | Expr::NullRow(_) | Expr::UninitRow(_) => {}
                 }
             }
         }

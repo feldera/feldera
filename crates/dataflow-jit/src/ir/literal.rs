@@ -1,7 +1,7 @@
 use crate::ir::Constant;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum StreamLiteral {
     Set(Vec<(RowLiteral, i32)>),
     Map(Vec<(RowLiteral, RowLiteral, i32)>),

@@ -10,7 +10,9 @@ use crate::ir::{
         DataflowNode, Differentiate, ExportedNode, Filter, IndexWith, JoinCore, Map, Sink, Source,
         SourceMap, StreamKind,
     },
-    optimize, Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
+    optimize,
+    visit::{MutNodeVisitor, NodeVisitor},
+    Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
 };
 use petgraph::prelude::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -94,6 +96,24 @@ pub trait GraphExt {
     fn edges(&self) -> &DiGraphMap<NodeId, ()>;
 
     fn edges_mut(&mut self) -> &mut DiGraphMap<NodeId, ()>;
+
+    fn accept<V>(&self, visitor: &mut V)
+    where
+        V: NodeVisitor + ?Sized,
+    {
+        for (&node_id, node) in self.nodes() {
+            node.accept(node_id, visitor);
+        }
+    }
+
+    fn accept_mut<V>(&mut self, visitor: &mut V)
+    where
+        V: MutNodeVisitor + ?Sized,
+    {
+        for (&node_id, node) in self.nodes_mut() {
+            node.accept_mut(node_id, visitor);
+        }
+    }
 
     fn function_builder(&self) -> FunctionBuilder {
         FunctionBuilder::new(self.layout_cache().clone())
