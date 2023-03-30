@@ -803,60 +803,63 @@ mod tests {
 
         let (dataflow, jit_handle, layout_cache) =
             CompiledDataflow::new(&graph, CodegenConfig::debug());
-        let (mut runtime, (mut inputs, outputs)) =
-            Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
-        let (xy_x_offset, xy_y_offset) = {
-            let xy_layout = layout_cache.layout_of(xy_layout);
-            (
-                xy_layout.offset_of(0) as usize,
-                xy_layout.offset_of(1) as usize,
-            )
-        };
+        {
+            let (mut runtime, (mut inputs, outputs)) =
+                Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
-        let mut values = Vec::new();
-        for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
-            unsafe {
-                let mut row = UninitRow::new(&*jit_handle.vtables()[&xy_layout]);
-                row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
-                row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
+            let (xy_x_offset, xy_y_offset) = {
+                let xy_layout = layout_cache.layout_of(xy_layout);
+                (
+                    xy_layout.offset_of(0) as usize,
+                    xy_layout.offset_of(1) as usize,
+                )
+            };
 
-                values.push((row.assume_init(), 1i32));
+            let mut values = Vec::new();
+            for (x, y) in [(1, 2), (0, 0), (1000, 2000), (12, 12)] {
+                unsafe {
+                    let mut row = UninitRow::new(&*jit_handle.vtables()[&xy_layout]);
+                    row.as_mut_ptr().add(xy_x_offset).cast::<u32>().write(x);
+                    row.as_mut_ptr().add(xy_y_offset).cast::<u32>().write(y);
+
+                    values.push((row.assume_init(), 1i32));
+                }
             }
-        }
-        inputs
-            .get_mut(&source)
-            .unwrap()
-            .as_set_mut()
-            .unwrap()
-            .append(&mut values);
+            inputs
+                .get_mut(&source)
+                .unwrap()
+                .as_set_mut()
+                .unwrap()
+                .append(&mut values);
 
-        runtime.step().unwrap();
+            runtime.step().unwrap();
 
-        let output = outputs.get(&sink).unwrap().as_set().unwrap().consolidate();
-        let mut cursor = output.cursor();
-        while cursor.key_valid() {
-            let weight = cursor.weight();
-            let key = cursor.key();
-            println!("{key:?}: {weight}");
+            let output = outputs.get(&sink).unwrap().as_set().unwrap().consolidate();
+            let mut cursor = output.cursor();
+            while cursor.key_valid() {
+                let weight = cursor.weight();
+                let key = cursor.key();
+                println!("{key:?}: {weight}");
 
-            cursor.step_key();
-        }
-
-        let x_x_offset = layout_cache.layout_of(x_layout).offset_of(0) as usize;
-
-        let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
-        for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
-            unsafe {
-                let mut row = UninitRow::new(&*jit_handle.vtables()[&x_layout]);
-                row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
-
-                expected.push((row.assume_init(), weight));
+                cursor.step_key();
             }
-        }
-        assert_eq!(output, expected.done());
 
-        runtime.kill().unwrap();
+            let x_x_offset = layout_cache.layout_of(x_layout).offset_of(0) as usize;
+
+            let mut expected = <OrdZSet<Row, i32> as Batch>::Builder::new_builder(());
+            for (key, weight) in [(0, 1), (2, 1), (144, 1), (2_000_000, 1)] {
+                unsafe {
+                    let mut row = UninitRow::new(&*jit_handle.vtables()[&x_layout]);
+                    row.as_mut_ptr().add(x_x_offset).cast::<u32>().write(key);
+
+                    expected.push((row.assume_init(), weight));
+                }
+            }
+            assert_eq!(output, expected.done());
+
+            runtime.kill().unwrap();
+        }
 
         unsafe { jit_handle.free_memory() }
     }

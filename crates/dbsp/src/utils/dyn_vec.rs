@@ -900,7 +900,7 @@ mod tests {
         assert_eq!(unsafe { *vec.index(0).cast::<(usize, usize)>() }, (1, 2));
         assert_eq!(vec.index_as::<(usize, usize)>(0), &(1, 2));
         assert_eq!(unsafe { *vec.index(1).cast::<(usize, usize)>() }, (3, 4));
-        assert_eq!(vec.index_as::<(usize, usize)>(0), &(3, 4));
+        assert_eq!(vec.index_as::<(usize, usize)>(1), &(3, 4));
     }
 
     // FIXME: `#[should_panic]` isn't working for some reason?
