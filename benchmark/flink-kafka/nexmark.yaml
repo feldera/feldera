@@ -1,0 +1,73 @@
+################################################################################
+#  Licensed to the Apache Software Foundation (ASF) under one
+#  or more contributor license agreements.  See the NOTICE file
+#  distributed with this work for additional information
+#  regarding copyright ownership.  The ASF licenses this file
+#  to you under the Apache License, Version 2.0 (the
+#  "License"); you may not use this file except in compliance
+#  with the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+
+#==============================================================================
+# Rest & web frontend
+#==============================================================================
+
+# The metric reporter server host.
+nexmark.metric.reporter.host: nexmark_jobmanager_1
+# The metric reporter server port.
+nexmark.metric.reporter.port: 9098
+
+#==============================================================================
+# Benchmark workload configuration (events.num)
+#==============================================================================
+
+# nexmark.workload.suite.100m.events.num: 100000000
+# nexmark.workload.suite.100m.tps: 10000000
+# nexmark.workload.suite.100m.queries: "q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22"
+# nexmark.workload.suite.100m.queries.cep: "q0,q1,q2,q3"
+# nexmark.workload.suite.100m.warmup.durartion: 120s
+# nexmark.workload.suite.100m.warmup.events.num: 100000000
+# nexmark.workload.suite.100m.warmup.tps: 10000000
+
+#==============================================================================
+# Benchmark workload configuration (tps, legacy mode)
+# Without events.num and with monitor.duration
+# NOTE: The numerical value of TPS is unstable
+#==============================================================================
+
+# When to monitor the metrics, default 3min after job is started
+nexmark.metric.monitor.delay: 3min
+# How long to monitor the metrics, default 3min, i.e. monitor from 3min to 6min after job is started
+nexmark.metric.monitor.duration: 3min
+
+nexmark.workload.suite.10m.tps: 10000000
+nexmark.workload.suite.10m.queries: "q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22"
+
+#==============================================================================
+# Workload for data generation
+#==============================================================================
+
+nexmark.workload.suite.datagen.tps: 10000000
+nexmark.workload.suite.datagen.queries: "insert_kafka"
+nexmark.workload.suite.datagen.queries.cep: "insert_kafka"
+
+#==============================================================================
+# Flink REST
+#==============================================================================
+
+flink.rest.address: localhost
+flink.rest.port: 8081
+
+#==============================================================================
+# Kafka config
+#==============================================================================
+
+kafka.bootstrap.servers: broker:29092
