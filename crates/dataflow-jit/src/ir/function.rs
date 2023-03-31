@@ -942,7 +942,7 @@ impl FunctionBuilder {
         self.binary_op(lhs, rhs, BinaryOpKind::GreaterThanOrEqual)
     }
 
-    fn binary_op(&mut self, lhs: ExprId, rhs: ExprId, kind: BinaryOpKind) -> ExprId {
+    pub fn binary_op(&mut self, lhs: ExprId, rhs: ExprId, kind: BinaryOpKind) -> ExprId {
         let lhs_ty = self
             .expr_types
             .get(&lhs)
@@ -966,6 +966,10 @@ impl FunctionBuilder {
             | BinaryOpKind::Sub
             | BinaryOpKind::Mul
             | BinaryOpKind::Div
+            | BinaryOpKind::DivFloor
+            | BinaryOpKind::Rem
+            | BinaryOpKind::Mod
+            | BinaryOpKind::ModFloor
             | BinaryOpKind::And
             | BinaryOpKind::Or
             | BinaryOpKind::Xor

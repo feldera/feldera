@@ -12,7 +12,10 @@ use std::{
     error::Error,
 };
 
-use super::exprs::{Call, Select};
+use super::{
+    exprs::{Call, Select},
+    BinaryOp,
+};
 
 type ValidationResult<T = ()> = Result<T, ValidationError>;
 
@@ -314,39 +317,7 @@ impl FunctionValidator {
                     Expr::SetNull(set_null) => self.set_null(expr_id, set_null)?,
                     Expr::NullRow(null_row) => self.null_row(expr_id, null_row)?,
                     Expr::UninitRow(uninit_row) => self.uninit_row(expr_id, uninit_row)?,
-
-                    // FIXME: Better errors
-                    Expr::BinOp(binop) => {
-                        let lhs_ty = self.expr_types.get(&binop.lhs()).unwrap().unwrap();
-                        let rhs_ty = self.expr_types.get(&binop.rhs()).unwrap().unwrap();
-                        assert_eq!(lhs_ty, rhs_ty, "mismatched binop types in {expr_id}");
-
-                        match binop.kind() {
-                            BinaryOpKind::Eq
-                            | BinaryOpKind::Neq
-                            | BinaryOpKind::LessThan
-                            | BinaryOpKind::GreaterThan
-                            | BinaryOpKind::LessThanOrEqual
-                            | BinaryOpKind::GreaterThanOrEqual => {
-                                let prev = self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
-                                assert!(prev.is_none());
-                            }
-
-                            BinaryOpKind::Add
-                            | BinaryOpKind::Sub
-                            | BinaryOpKind::Mul
-                            | BinaryOpKind::Div
-                            | BinaryOpKind::And
-                            | BinaryOpKind::Or
-                            | BinaryOpKind::Xor
-                            | BinaryOpKind::Min
-                            | BinaryOpKind::Max => {
-                                assert_ne!(lhs_ty, ColumnType::String);
-                                let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
-                                assert!(prev.is_none());
-                            }
-                        }
-                    }
+                    Expr::BinOp(binop) => self.binop(expr_id, binop)?,
 
                     Expr::UnaryOp(unary) => {
                         let value_ty = self.expr_types.get(&unary.value()).unwrap().unwrap();
@@ -883,11 +854,44 @@ impl FunctionValidator {
                 self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
             }
 
-            "dbsp.date.second"
+            "dbsp.timestamp.to_date" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::Date));
+            }
+
+            "dbsp.date.hour"
             | "dbsp.date.minute"
+            | "dbsp.date.second"
             | "dbsp.date.millisecond"
             | "dbsp.date.microsecond"
-            | "dbsp.date.year" => {
+            | "dbsp.date.year"
+            | "dbsp.date.month"
+            | "dbsp.date.day"
+            | "dbsp.date.quarter"
+            | "dbsp.date.decade"
+            | "dbsp.date.century"
+            | "dbsp.date.millennium"
+            | "dbsp.date.iso_year"
+            | "dbsp.date.week"
+            | "dbsp.date.day_of_week"
+            | "dbsp.date.iso_day_of_week"
+            | "dbsp.date.day_of_year"
+            | "dbsp.date.epoch" => {
                 if call.args().len() != 1 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
                         expr_id,
@@ -907,6 +911,26 @@ impl FunctionValidator {
                 self.expr_types.insert(expr_id, Ok(ColumnType::I32));
             }
 
+            "dbsp.date.to_timestamp" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Date) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a date but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
+            }
+
             unknown => {
                 return Err(ValidationError::UnknownFunction {
                     expr_id,
@@ -916,6 +940,53 @@ impl FunctionValidator {
         }
 
         self.add_column_expr(expr_id, call.ret_ty());
+
+        Ok(())
+    }
+
+    fn binop(&mut self, expr_id: ExprId, binop: &BinaryOp) -> ValidationResult {
+        let lhs_ty = self.expr_types.get(&binop.lhs()).unwrap().unwrap();
+        let rhs_ty = self.expr_types.get(&binop.rhs()).unwrap().unwrap();
+        assert_eq!(lhs_ty, rhs_ty, "mismatched binop types in {expr_id}");
+
+        match binop.kind() {
+            BinaryOpKind::Eq
+            | BinaryOpKind::Neq
+            | BinaryOpKind::LessThan
+            | BinaryOpKind::GreaterThan
+            | BinaryOpKind::LessThanOrEqual
+            | BinaryOpKind::GreaterThanOrEqual => {
+                let prev = self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
+                assert!(prev.is_none());
+            }
+
+            BinaryOpKind::Add
+            | BinaryOpKind::Sub
+            | BinaryOpKind::Mul
+            | BinaryOpKind::Div
+            | BinaryOpKind::And
+            | BinaryOpKind::Or
+            | BinaryOpKind::Xor
+            | BinaryOpKind::Min
+            | BinaryOpKind::Max => {
+                assert_ne!(lhs_ty, ColumnType::String);
+                let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
+                assert!(prev.is_none());
+            }
+
+            BinaryOpKind::Mod => {
+                assert!(lhs_ty.is_int() || lhs_ty.is_float());
+                let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
+                assert!(prev.is_none());
+            }
+
+            // TODO: Implement all of these for floats
+            BinaryOpKind::Rem | BinaryOpKind::DivFloor | BinaryOpKind::ModFloor => {
+                assert!(lhs_ty.is_int());
+                let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
+                assert!(prev.is_none());
+            }
+        }
 
         Ok(())
     }

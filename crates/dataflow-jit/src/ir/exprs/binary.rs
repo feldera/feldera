@@ -62,6 +62,14 @@ pub enum BinaryOpKind {
     Mul,
     /// Division
     Div,
+    /// Floored division
+    DivFloor,
+    /// Remainder
+    Rem,
+    /// Modulus (Euclidean division)
+    Mod,
+    /// Floored modulus
+    ModFloor,
     /// Equality (`==`)
     Eq,
     /// Inequality (`!=`)
@@ -84,5 +92,5 @@ pub enum BinaryOpKind {
     Min,
     /// Maximum
     Max,
-    // TODO: shr, shl, rem, mod, rotl, rotr, pow
+    // TODO: shr, shl, rotl, rotr, pow
 }

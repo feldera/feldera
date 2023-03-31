@@ -44,7 +44,7 @@ macro_rules! intrinsics {
                     $(
                         let $intrinsic = module
                             .declare_function(
-                                stringify!([<dataflow_jit_ $intrinsic>]),
+                                stringify!($intrinsic),
                                 Linkage::Import,
                                 &{
                                     let mut sig = ClifSignature::new(call_conv);
@@ -68,11 +68,11 @@ macro_rules! intrinsics {
                     $(
                         // Ensure all functions have `extern "C"` abi
                         let _: unsafe extern "C" fn($(intrinsics!(@replace $arg _),)+) $(-> intrinsics!(@replace $ret _))?
-                            = [<dataflow_jit_ $intrinsic>];
+                            = $intrinsic;
 
                         builder.symbol(
-                            stringify!([<dataflow_jit_ $intrinsic>]),
-                            [<dataflow_jit_ $intrinsic>] as *const u8,
+                            stringify!($intrinsic),
+                            $intrinsic as *const u8,
                         );
                     )+
                 }
@@ -110,7 +110,7 @@ macro_rules! intrinsics {
                                 if let Some(writer) = self.comment_writer.as_deref() {
                                     writer.borrow_mut().add_comment(
                                         func_ref,
-                                        stringify!([<dataflow_jit_ $intrinsic>]),
+                                        stringify!($intrinsic),
                                     );
                                 }
 
@@ -186,54 +186,65 @@ intrinsics! {
     timestamp_minute = fn(i64) -> i64,
     timestamp_hour = fn(i64) -> i64,
     timestamp_floor_week = fn(i64) -> i64,
+
+    // Date functions
+    date_year = fn(i32) -> i32,
+    date_month = fn(i32) -> i32,
+    date_day = fn(i32) -> i32,
+    date_quarter = fn(i32) -> i32,
+    date_decade = fn(i32) -> i32,
+    date_century = fn(i32) -> i32,
+    date_millennium = fn(i32) -> i32,
+    date_iso_year = fn(i32) -> i32,
+    date_week = fn(i32) -> i32,
+    date_day_of_week = fn(i32) -> i32,
+    date_iso_day_of_week = fn(i32) -> i32,
+    date_day_of_year = fn(i32) -> i32,
+
+    fmod = fn(f64, f64) -> f64,
+    fmodf = fn(f32, f32) -> f32,
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
 // FIXME: Technically this can unwind
-extern "C" fn dataflow_jit_string_eq(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
+extern "C" fn string_eq(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
     lhs == rhs
 }
 
 /// Returns `true` if `lhs` is less than `rhs`
 // FIXME: Technically this can unwind
-extern "C" fn dataflow_jit_string_lt(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
+extern "C" fn string_lt(lhs: ThinStrRef, rhs: ThinStrRef) -> bool {
     lhs < rhs
 }
 
 /// Compares the given strings
 // FIXME: Technically this can unwind
-extern "C" fn dataflow_jit_string_cmp(lhs: ThinStrRef, rhs: ThinStrRef) -> Ordering {
+extern "C" fn string_cmp(lhs: ThinStrRef, rhs: ThinStrRef) -> Ordering {
     lhs.cmp(&rhs)
 }
 
 /// Clones a thin string
 // FIXME: Technically this can unwind
-extern "C" fn dataflow_jit_string_clone(string: ThinStrRef) -> ThinStr {
+extern "C" fn string_clone(string: ThinStrRef) -> ThinStr {
     string.to_owned()
 }
 
 /// Drops the given [`ThinStr`]
 // FIXME: Technically this can unwind
-unsafe extern "C" fn dataflow_jit_string_drop_in_place(mut string: ManuallyDrop<ThinStr>) {
+unsafe extern "C" fn string_drop_in_place(mut string: ManuallyDrop<ThinStr>) {
     drop_in_place(&mut string);
 }
 
-unsafe extern "C" fn dataflow_jit_string_size_of_children(
-    string: ThinStrRef,
-    context: &mut size_of::Context,
-) {
+unsafe extern "C" fn string_size_of_children(string: ThinStrRef, context: &mut size_of::Context) {
     string.owned_size_of_children(context);
 }
 
-unsafe extern "C" fn dataflow_jit_string_debug(
-    string: ThinStrRef,
-    fmt: *mut fmt::Formatter<'_>,
-) -> bool {
+unsafe extern "C" fn string_debug(string: ThinStrRef, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(string.as_str(), &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_str_debug(
+unsafe extern "C" fn str_debug(
     ptr: *const u8,
     length: usize,
     fmt: *mut fmt::Formatter<'_>,
@@ -245,32 +256,32 @@ unsafe extern "C" fn dataflow_jit_str_debug(
     (*fmt).write_str(string).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_bool_debug(boolean: bool, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn bool_debug(boolean: bool, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&boolean, &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_int_debug(int: i64, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn int_debug(int: i64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&int, &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_uint_debug(uint: u64, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn uint_debug(uint: u64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&uint, &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_f32_debug(float: f32, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn f32_debug(float: f32, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&float, &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_f64_debug(double: f64, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn f64_debug(double: f64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
     Debug::fmt(&double, &mut *fmt).is_ok()
 }
 
-unsafe extern "C" fn dataflow_jit_date_debug(date: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn date_debug(date: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
 
     // TODO: UTC?
@@ -282,10 +293,7 @@ unsafe extern "C" fn dataflow_jit_date_debug(date: i32, fmt: *mut fmt::Formatter
     }
 }
 
-unsafe extern "C" fn dataflow_jit_timestamp_debug(
-    timestamp: i64,
-    fmt: *mut fmt::Formatter<'_>,
-) -> bool {
+unsafe extern "C" fn timestamp_debug(timestamp: i64, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
 
     if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(timestamp) {
@@ -296,11 +304,7 @@ unsafe extern "C" fn dataflow_jit_timestamp_debug(
     }
 }
 
-unsafe extern "C" fn dataflow_jit_row_vec_push(
-    vec: &mut Vec<Row>,
-    vtable: &'static VTable,
-    row: *mut u8,
-) {
+unsafe extern "C" fn row_vec_push(vec: &mut Vec<Row>, vtable: &'static VTable, row: *mut u8) {
     let mut uninit = UninitRow::new(vtable);
     unsafe {
         uninit
@@ -312,22 +316,30 @@ unsafe extern "C" fn dataflow_jit_row_vec_push(
     vec.push(row);
 }
 
-unsafe extern "C" fn dataflow_jit_string_with_capacity(capacity: usize) -> ThinStr {
+unsafe extern "C" fn string_with_capacity(capacity: usize) -> ThinStr {
     ThinStr::with_capacity(capacity)
+}
+
+unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {
+    libm::fmod(lhs, rhs)
+}
+
+unsafe extern "C" fn fmodf(lhs: f32, rhs: f32) -> f32 {
+    libm::fmodf(lhs, rhs)
 }
 
 macro_rules! timestamp_intrinsics {
     ($($name:ident => $expr:expr),+ $(,)?) => {
         paste::paste! {
             $(
-                unsafe extern "C" fn [<dataflow_jit_timestamp_ $name>](timestamp: i64) -> i64 {
-                    if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(timestamp) {
+                unsafe extern "C" fn [<timestamp_ $name>](millis: i64) -> i64 {
+                    if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(millis) {
                         let expr: fn(DateTime<Utc>) -> i64 = $expr;
                         expr(timestamp)
                     } else {
                         tracing::error!(
-                            "failed to create timestamp from {timestamp} in {}",
-                            stringify!([<dataflow_jit_timestamp_ $name>]),
+                            "failed to create timestamp from {millis} in {}",
+                            stringify!([<timestamp_ $name>]),
                         );
                         0
                     }
@@ -337,6 +349,7 @@ macro_rules! timestamp_intrinsics {
     }
 }
 
+// TODO: Some of these really return u32 or i32
 timestamp_intrinsics! {
     millennium => |time| ((time.year() + 999) / 1000) as i64,
     century => |time| ((time.year() + 99) / 100) as i64,
@@ -366,11 +379,48 @@ timestamp_intrinsics! {
     }
 }
 
+macro_rules! date_intrinsics {
+    ($($name:ident => $expr:expr),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<date_ $name>](days: i32) -> i32 {
+                    if let LocalResult::Single(date) = Utc.timestamp_opt(days as i64 * 86400, 0) {
+                        let expr: fn(DateTime<Utc>) -> i32 = $expr;
+                        expr(date)
+                    } else {
+                        tracing::error!(
+                            "failed to create date from {days} in {}",
+                            stringify!([<date_ $name>]),
+                        );
+                        0
+                    }
+                }
+            )+
+        }
+    }
+}
+
+// TODO: Some of these really return u32s
+date_intrinsics! {
+    year => |date| date.year(),
+    month => |date| date.month() as i32,
+    day => |date| date.day() as i32,
+    quarter => |date| date.month0() as i32 / 3 + 1,
+    decade => |date| date.year() / 10,
+    century => |date| (date.year() + 99) / 100,
+    millennium => |date| (date.year() + 999) / 1000,
+    iso_year => |date| date.iso_week().year(),
+    week => |date| date.iso_week().week() as i32,
+    day_of_week => |date| date.weekday().num_days_from_sunday() as i32 + 1,
+    iso_day_of_week => |date| date.weekday().num_days_from_monday() as i32 + 1,
+    day_of_year => |date| date.ordinal() as i32,
+}
+
 macro_rules! hash {
     ($($name:ident = $ty:ty),+ $(,)?) => {
         paste::paste! {
             $(
-                unsafe extern "C" fn [<dataflow_jit_ $name _hash>](hasher: &mut &mut dyn Hasher, value: $ty) {
+                unsafe extern "C" fn [< $name _hash>](hasher: &mut &mut dyn Hasher, value: $ty) {
                     value.hash(hasher);
                 }
             )+

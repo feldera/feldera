@@ -92,21 +92,24 @@
     - [x] `@dbsp.timestamp.minute`
     - [x] `@dbsp.timestamp.hour`
     - [x] `@dbsp.timestamp.floor_week`
+    - [x] `@dbsp.timestamp.to_date`
   - [ ] Date manipulation
-    - [ ] `@dbsp.date.year`
-    - [ ] `@dbsp.date.month`
-    - [ ] `@dbsp.date.day`
-    - [ ] `@dbsp.date.quarter`
-    - [ ] `@dbsp.date.decade`
-    - [ ] `@dbsp.date.century`
-    - [ ] `@dbsp.date.millennium`
-    - [ ] `@dbsp.date.isoyear`
-    - [ ] `@dbsp.date.week`
-    - [ ] `@dbsp.date.day_of_week`
-    - [ ] `@dbsp.date.iso_day_of_week`
-    - [ ] `@dbsp.date.day_of_year`
-    - [ ] `@dbsp.date.epoch`
+    - [x] `@dbsp.date.year`
+    - [x] `@dbsp.date.month`
+    - [x] `@dbsp.date.day`
+    - [x] `@dbsp.date.quarter`
+    - [x] `@dbsp.date.decade`
+    - [x] `@dbsp.date.century`
+    - [x] `@dbsp.date.millennium`
+    - [x] `@dbsp.date.iso_year`
+    - [x] `@dbsp.date.week`
+    - [x] `@dbsp.date.day_of_week`
+    - [x] `@dbsp.date.iso_day_of_week`
+    - [x] `@dbsp.date.day_of_year`
+    - [x] `@dbsp.date.epoch`
+    - [x] `@dbsp.date.hour` (returns constant zero)
     - [x] `@dbsp.date.second` (returns constant zero)
     - [x] `@dbsp.date.minute` (returns constant zero)
     - [x] `@dbsp.date.millisecond` (returns constant zero)
     - [x] `@dbsp.date.microsecond` (returns constant zero)
+    - [x] `@dbsp.date.to_timestamp`

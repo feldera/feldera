@@ -2,6 +2,7 @@ mod call;
 mod intrinsics;
 mod layout;
 mod layout_cache;
+mod math;
 mod pretty_clif;
 mod tests;
 mod utils;
@@ -285,7 +286,7 @@ impl Codegen {
                     continue;
                 }
 
-                let block = ctx.switch_to_block(block_id, &mut builder);
+                ctx.switch_to_block(block_id, &mut builder);
 
                 // Ensure that all input pointers are valid
                 // TODO: This may need changes if we ever have scalar function inputs
@@ -447,7 +448,7 @@ impl Codegen {
 
                 ctx.terminator(block_contents.terminator(), &mut stack, &mut builder);
 
-                builder.seal_block(block);
+                builder.seal_current();
             }
 
             // Seal any unfinished blocks
@@ -1423,6 +1424,7 @@ impl<'a> CodegenCtx<'a> {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
             }
+            // TODO: rhs != 0 assertion/panic
             BinaryOpKind::Div => {
                 if lhs_ty.is_float() {
                     builder.ins().fdiv(lhs, rhs)
@@ -1434,20 +1436,48 @@ impl<'a> CodegenCtx<'a> {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
             }
+            // TODO: rhs != 0 assertion/panic
+            BinaryOpKind::DivFloor => self.div_floor(lhs_ty.is_signed_int(), lhs, rhs, builder),
+            // TODO: rhs != 0 assertion/panic
+            BinaryOpKind::Rem => {
+                if lhs_ty.is_float() {
+                    self.fmod(lhs, rhs, builder)
+                } else if lhs_ty.is_signed_int() {
+                    builder.ins().srem(lhs, rhs)
+                } else if lhs_ty.is_unsigned_int() {
+                    builder.ins().urem(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+            // TODO: rhs != 0 assertion/panic
+            BinaryOpKind::Mod => {
+                if lhs_ty.is_float() {
+                    self.frem_euclid(lhs, rhs, builder)
+                } else if lhs_ty.is_signed_int() {
+                    self.srem_euclid(lhs, rhs, builder)
+                } else if lhs_ty.is_unsigned_int() {
+                    builder.ins().urem(lhs, rhs)
+                } else {
+                    todo!("unknown binop type: {lhs_ty} ({binop:?})")
+                }
+            }
+            // TODO: rhs != 0 assertion/panic
+            BinaryOpKind::ModFloor => self.mod_floor(lhs_ty.is_signed_int(), lhs, rhs, builder),
 
             BinaryOpKind::Eq => {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
                             self.normalize_float(lhs, builder),
                             self.normalize_float(rhs, builder),
-                        )
+                        );
+                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
                     } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                    }
                 } else {
                     builder.ins().icmp(IntCC::Equal, lhs, rhs)
                 }
@@ -1456,15 +1486,15 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
                             self.normalize_float(lhs, builder),
                             self.normalize_float(rhs, builder),
-                        )
+                        );
+                        builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
                     } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+                        builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+                    }
                 } else {
                     builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
                 }
@@ -1473,15 +1503,7 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
-                            self.normalize_float(lhs, builder),
-                            self.normalize_float(rhs, builder),
-                        )
-                    } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+                    self.float_lt(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
                 } else {
@@ -1492,15 +1514,7 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
-                            self.normalize_float(lhs, builder),
-                            self.normalize_float(rhs, builder),
-                        )
-                    } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+                    self.float_gt(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
                 } else {
@@ -1511,15 +1525,15 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
                             self.normalize_float(lhs, builder),
                             self.normalize_float(rhs, builder),
-                        )
+                        );
+                        builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
                     } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
+                        builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
+                    }
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
                 } else {
@@ -1530,15 +1544,17 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    let (lhs, rhs) = if self.config.total_float_comparisons {
-                        (
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
                             self.normalize_float(lhs, builder),
                             self.normalize_float(rhs, builder),
-                        )
+                        );
+                        builder
+                            .ins()
+                            .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs)
                     } else {
-                        (lhs, rhs)
-                    };
-                    builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+                        builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+                    }
                 } else if lhs_ty.is_signed_int() {
                     builder
                         .ins()
@@ -1552,7 +1568,15 @@ impl<'a> CodegenCtx<'a> {
 
             BinaryOpKind::Min => {
                 if lhs_ty.is_float() {
-                    builder.ins().fmin(lhs, rhs)
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        );
+                        builder.ins().smin(lhs, rhs)
+                    } else {
+                        builder.ins().fmin(lhs, rhs)
+                    }
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smin(lhs, rhs)
                 } else {
@@ -1561,7 +1585,15 @@ impl<'a> CodegenCtx<'a> {
             }
             BinaryOpKind::Max => {
                 if lhs_ty.is_float() {
-                    builder.ins().fmax(lhs, rhs)
+                    if self.config.total_float_comparisons {
+                        let (lhs, rhs) = (
+                            self.normalize_float(lhs, builder),
+                            self.normalize_float(rhs, builder),
+                        );
+                        builder.ins().smax(lhs, rhs)
+                    } else {
+                        builder.ins().fmax(lhs, rhs)
+                    }
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smax(lhs, rhs)
                 } else {
@@ -1863,73 +1895,13 @@ impl<'a> CodegenCtx<'a> {
         pointer
     }
 
-    /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]
-    /// implementations
-    ///
-    /// ```rust,ignore
-    /// // f32::total_cmp()
-    /// pub fn total_cmp(&self, other: &Self) -> Ordering {
-    ///     let mut left = self.to_bits() as i32;
-    ///     let mut right = other.to_bits() as i32;
-    ///
-    ///     // In case of negatives, flip all the bits except the sign
-    ///     // to achieve a similar layout as two's complement integers
-    ///     //
-    ///     // Why does this work? IEEE 754 floats consist of three fields:
-    ///     // Sign bit, exponent and mantissa. The set of exponent and mantissa
-    ///     // fields as a whole have the property that their bitwise order is
-    ///     // equal to the numeric magnitude where the magnitude is defined.
-    ///     // The magnitude is not normally defined on NaN values, but
-    ///     // IEEE 754 totalOrder defines the NaN values also to follow the
-    ///     // bitwise order. This leads to order explained in the doc comment.
-    ///     // However, the representation of magnitude is the same for negative
-    ///     // and positive numbers – only the sign bit is different.
-    ///     // To easily compare the floats as signed integers, we need to
-    ///     // flip the exponent and mantissa bits in case of negative numbers.
-    ///     // We effectively convert the numbers to "two's complement" form.
-    ///     //
-    ///     // To do the flipping, we construct a mask and XOR against it.
-    ///     // We branchlessly calculate an "all-ones except for the sign bit"
-    ///     // mask from negative-signed values: right shifting sign-extends
-    ///     // the integer, so we "fill" the mask with sign bits, and then
-    ///     // convert to unsigned to push one more zero bit.
-    ///     // On positive values, the mask is all zeros, so it's a no-op.
-    ///     left ^= (((left >> 31) as u32) >> 1) as i32;
-    ///     right ^= (((right >> 31) as u32) >> 1) as i32;
-    ///
-    ///     left.cmp(&right)
-    /// }
-    /// ```
-    ///
-    /// [`f32::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
-    /// [`f64::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
-    fn normalize_float(&self, float: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        let ty = builder.func.dfg.value_type(float);
-        let (int_ty, first_shift) = if ty == types::F32 {
-            (types::I32, 31)
-        } else if ty == types::F64 {
-            (types::I64, 63)
-        } else {
-            unreachable!("normalize_float() can only be called on f32 and f64: {ty}")
-        };
-
-        // float.to_bits()
-        // TODO: Should we apply any flags to this?
-        let int = builder.ins().bitcast(int_ty, MemFlags::new(), float);
-
+    fn comment<F, S>(&self, inst: Inst, make_comment: F)
+    where
+        F: FnOnce() -> S,
+        S: Into<String> + AsRef<str>,
+    {
         if let Some(writer) = self.comment_writer.as_deref() {
-            writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(int).unwrap_inst(),
-                format!("normalize {ty} for totalOrder"),
-            );
+            writer.borrow_mut().add_comment(inst, make_comment());
         }
-
-        // left >> {31, 63}
-        let shifted = builder.ins().sshr_imm(int, first_shift);
-        // ((left >> {31, 63}) as {u32, u64}) >> 1
-        let shifted = builder.ins().ushr_imm(shifted, 1);
-
-        // left ^= shifted
-        builder.ins().bxor(int, shifted)
     }
 }
