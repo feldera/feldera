@@ -826,6 +826,87 @@ impl FunctionValidator {
                 self.expr_types.insert(expr_id, Ok(ColumnType::String));
             }
 
+            "dbsp.timestamp.epoch"
+            | "dbsp.timestamp.year"
+            | "dbsp.timestamp.month"
+            | "dbsp.timestamp.day"
+            | "dbsp.timestamp.quarter"
+            | "dbsp.timestamp.decade"
+            | "dbsp.timestamp.century"
+            | "dbsp.timestamp.millennium"
+            | "dbsp.timestamp.iso_year"
+            | "dbsp.timestamp.week"
+            | "dbsp.timestamp.day_of_week"
+            | "dbsp.timestamp.iso_day_of_week"
+            | "dbsp.timestamp.day_of_year"
+            | "dbsp.timestamp.millisecond"
+            | "dbsp.timestamp.microsecond"
+            | "dbsp.timestamp.second"
+            | "dbsp.timestamp.minute"
+            | "dbsp.timestamp.hour" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::I64));
+            }
+
+            "dbsp.timestamp.floor_week" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
+            }
+
+            "dbsp.date.second"
+            | "dbsp.date.minute"
+            | "dbsp.date.millisecond"
+            | "dbsp.date.microsecond"
+            | "dbsp.date.year" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Date) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a date but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::I32));
+            }
+
             unknown => {
                 return Err(ValidationError::UnknownFunction {
                     expr_id,

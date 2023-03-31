@@ -72,3 +72,41 @@
     - [ ] `@dbsp.str.concat`
     - [ ] `@dbsp.str.concat_clone`
   - [ ] Vec/Array manipulation
+  - [ ] Timestamp manipulation
+    - [x] `@dbsp.timestamp.epoch`
+    - [x] `@dbsp.timestamp.year`
+    - [x] `@dbsp.timestamp.month`
+    - [x] `@dbsp.timestamp.day`
+    - [x] `@dbsp.timestamp.quarter`
+    - [x] `@dbsp.timestamp.decade`
+    - [x] `@dbsp.timestamp.century`
+    - [x] `@dbsp.timestamp.millennium`
+    - [x] `@dbsp.timestamp.iso_year`
+    - [x] `@dbsp.timestamp.week`
+    - [x] `@dbsp.timestamp.day_of_week`
+    - [x] `@dbsp.timestamp.iso_day_of_week`
+    - [x] `@dbsp.timestamp.day_of_year`
+    - [x] `@dbsp.timestamp.millisecond`
+    - [x] `@dbsp.timestamp.microsecond`
+    - [x] `@dbsp.timestamp.second`
+    - [x] `@dbsp.timestamp.minute`
+    - [x] `@dbsp.timestamp.hour`
+    - [x] `@dbsp.timestamp.floor_week`
+  - [ ] Date manipulation
+    - [ ] `@dbsp.date.year`
+    - [ ] `@dbsp.date.month`
+    - [ ] `@dbsp.date.day`
+    - [ ] `@dbsp.date.quarter`
+    - [ ] `@dbsp.date.decade`
+    - [ ] `@dbsp.date.century`
+    - [ ] `@dbsp.date.millennium`
+    - [ ] `@dbsp.date.isoyear`
+    - [ ] `@dbsp.date.week`
+    - [ ] `@dbsp.date.day_of_week`
+    - [ ] `@dbsp.date.iso_day_of_week`
+    - [ ] `@dbsp.date.day_of_year`
+    - [ ] `@dbsp.date.epoch`
+    - [x] `@dbsp.date.second` (returns constant zero)
+    - [x] `@dbsp.date.minute` (returns constant zero)
+    - [x] `@dbsp.date.millisecond` (returns constant zero)
+    - [x] `@dbsp.date.microsecond` (returns constant zero)

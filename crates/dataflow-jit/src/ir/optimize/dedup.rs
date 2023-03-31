@@ -1,13 +1,12 @@
 //! Node deduplication
 
-use petgraph::Direction;
-
 use crate::ir::{
     graph::Subgraph,
     nodes::{ConstantStream, Distinct, Subgraph as SubgraphNode},
     visit::MutNodeVisitor,
     GraphExt, NodeId,
 };
+use petgraph::Direction;
 use std::collections::{btree_map::Entry, BTreeMap};
 
 impl Subgraph {
