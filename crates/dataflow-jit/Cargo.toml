@@ -12,6 +12,7 @@ name = "dataflow-jit"
 required-features = ["binary"]
 
 [dependencies]
+libm = "0.2.6"
 paste = "1.0.9"
 # pretty = "0.11.3"
 size-of = "0.1.4"
@@ -58,5 +59,6 @@ clap = { version = "4.1.8", features = ["derive"], optional = true }
 
 [dev-dependencies]
 proptest = "1.0.0"
+num-integer = "0.1.45"
 proptest-derive = "0.3.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }

@@ -1,5 +1,5 @@
 use cranelift::{
-    codegen::ir::FuncRef,
+    codegen::ir::{FuncRef, Inst},
     prelude::{types, Block, FunctionBuilder, InstBuilder, MemFlags, Value},
 };
 
@@ -23,6 +23,8 @@ pub(crate) trait FunctionBuilderExt {
     ///
     /// Panics if `func` doesn't return any values
     fn call_fn(&mut self, func: FuncRef, args: &[Value]) -> Value;
+
+    fn value_inst(&self, value: Value) -> Inst;
 }
 
 impl FunctionBuilderExt for FunctionBuilder<'_> {
@@ -48,6 +50,10 @@ impl FunctionBuilderExt for FunctionBuilder<'_> {
     fn call_fn(&mut self, func: FuncRef, args: &[Value]) -> Value {
         let call = self.ins().call(func, args);
         self.func.dfg.first_result(call)
+    }
+
+    fn value_inst(&self, value: Value) -> Inst {
+        self.func.dfg.value_def(value).unwrap_inst()
     }
 }
 

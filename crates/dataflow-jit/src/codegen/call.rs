@@ -29,6 +29,9 @@ impl CodegenCtx<'_> {
             // `fn(string: str)` (mutates the given string)
             "dbsp.str.clear" => self.string_clear(call, builder),
 
+            // `fn(timestamp) -> date
+            "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
+
             // `fn(timestamp) -> i64`
             "dbsp.timestamp.epoch" => self.timestamp_epoch(expr_id, call, builder),
 
@@ -56,9 +59,32 @@ impl CodegenCtx<'_> {
             "dbsp.timestamp.hour" => self.timestamp_hour(expr_id, call, builder),
             "dbsp.timestamp.floor_week" => self.timestamp_floor_week(expr_id, call, builder),
 
+            // `fn(date) -> timestamp
+            "dbsp.date.to_timestamp" => self.date_to_timestamp(expr_id, call, builder),
+
+            // `fn(date) -> i32`
+            "dbsp.date.epoch" => self.date_epoch(expr_id, call, builder),
+
+            // TODO: Implement these all natively, they're all simple functions
+            // and function dispatch is a heavy price (this is especially important
+            // for frequently-used functions like `@dbsp.date.year()`)
+            "dbsp.date.year" => self.date_year(expr_id, call, builder),
+            "dbsp.date.month" => self.date_month(expr_id, call, builder),
+            "dbsp.date.day" => self.date_day(expr_id, call, builder),
+            "dbsp.date.quarter" => self.date_quarter(expr_id, call, builder),
+            "dbsp.date.decade" => self.date_decade(expr_id, call, builder),
+            "dbsp.date.century" => self.date_century(expr_id, call, builder),
+            "dbsp.date.millennium" => self.date_millennium(expr_id, call, builder),
+            "dbsp.date.iso_year" => self.date_iso_year(expr_id, call, builder),
+            "dbsp.date.week" => self.date_week(expr_id, call, builder),
+            "dbsp.date.day_of_week" => self.date_day_of_week(expr_id, call, builder),
+            "dbsp.date.iso_day_of_week" => self.date_iso_day_of_week(expr_id, call, builder),
+            "dbsp.date.day_of_year" => self.date_day_of_year(expr_id, call, builder),
+
             // Date functions that always return zero
-            function @ ("dbsp.date.second"
+            function @ ("dbsp.date.hour"
             | "dbsp.date.minute"
+            | "dbsp.date.second"
             | "dbsp.date.millisecond"
             | "dbsp.date.microsecond") => {
                 self.constant_zero_date_function(expr_id, call, function, builder);
@@ -448,25 +474,6 @@ impl CodegenCtx<'_> {
         }
     }
 
-    fn constant_zero_date_function(
-        &mut self,
-        expr_id: ExprId,
-        call: &Call,
-        function: &str,
-        builder: &mut FunctionBuilder<'_>,
-    ) {
-        let zero = builder.ins().iconst(types::I32, 0);
-        self.add_expr(expr_id, zero, ColumnType::I32, None);
-
-        if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(zero).unwrap_inst();
-            writer.borrow_mut().add_comment(
-                inst,
-                format!("call @{function}({})", self.value(call.args()[0])),
-            );
-        }
-    }
-
     fn timestamp_floor_week(
         &mut self,
         expr_id: ExprId,
@@ -484,6 +491,84 @@ impl CodegenCtx<'_> {
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @dbsp.timestamp.floor_week({timestamp})"),
+            );
+        }
+    }
+
+    fn timestamp_to_date(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let timestamp = self.value(call.args()[0]);
+
+        // (timestamp.milliseconds() / (86400 * 1000)) as i32
+        let days = builder.ins().sdiv_imm(timestamp, 86400 * 1000);
+        let days_i32 = builder.ins().ireduce(types::I32, days);
+        self.add_expr(expr_id, days_i32, ColumnType::I32, None);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.func.dfg.value_def(days).unwrap_inst();
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @dbsp.timestamp.to_date({timestamp})"));
+        }
+    }
+
+    fn date_to_timestamp(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let date = self.value(call.args()[0]);
+
+        // date.days() as i64 * 86400 * 1000
+        let days = builder.ins().uextend(types::I64, date);
+        let milliseconds = builder.ins().imul_imm(days, 86400 * 1000);
+        self.add_expr(expr_id, milliseconds, ColumnType::Timestamp, None);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.func.dfg.value_def(days).unwrap_inst();
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @dbsp.date.to_timestamp({date})"));
+        }
+    }
+
+    fn date_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let date = self.value(call.args()[0]);
+
+        // date.days() as i64 * 86400
+        // TODO: The real code uses an i64 but we keep it as an i32 here
+        // let date = builder.ins().uextend(types::I64, date);
+        let epoch = builder.ins().imul_imm(date, 86400);
+        self.add_expr(expr_id, epoch, ColumnType::I32, None);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.func.dfg.value_def(epoch).unwrap_inst();
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @dbsp.date.epoch({date})"));
+        }
+    }
+
+    fn constant_zero_date_function(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        function: &str,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let zero = builder.ins().iconst(types::I32, 0);
+        self.add_expr(expr_id, zero, ColumnType::I32, None);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.func.dfg.value_def(zero).unwrap_inst();
+            writer.borrow_mut().add_comment(
+                inst,
+                format!("call @{function}({})", self.value(call.args()[0])),
             );
         }
     }
@@ -535,4 +620,47 @@ timestamp_intrinsics! {
     second,
     minute,
     hour,
+}
+
+macro_rules! date_intrinsics {
+    ($($name:ident),+ $(,)?) => {
+        impl CodegenCtx<'_> {
+            paste::paste! {
+                $(
+                    fn [<date_ $name>](&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+                        let date = self.value(call.args()[0]);
+
+                        let intrinsic = self
+                            .imports
+                            .[<date_ $name>](self.module, builder.func);
+                        let value = builder.call_fn(intrinsic, &[date]);
+                        self.add_expr(expr_id, value, ColumnType::I64, None);
+
+                        if let Some(writer) = self.comment_writer.as_deref() {
+                            let inst = builder.func.dfg.value_def(value).unwrap_inst();
+                            writer.borrow_mut().add_comment(
+                                inst,
+                                format!("call @dbsp.date.{}({date})", stringify!($name)),
+                            );
+                        }
+                    }
+                )+
+            }
+        }
+    };
+}
+
+date_intrinsics! {
+    day,
+    week,
+    month,
+    quarter,
+    year,
+    decade,
+    century,
+    millennium,
+    iso_year,
+    day_of_week,
+    iso_day_of_week,
+    day_of_year,
 }
