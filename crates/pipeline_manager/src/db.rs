@@ -26,6 +26,13 @@ use utoipa::ToSchema;
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
     conn: Pool<Any>,
+    db_type: DbType,
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+enum DbType {
+    Sqlite,
+    Postgres,
 }
 
 /// Unique project id.
@@ -242,57 +249,90 @@ impl ProjectDB {
         Self::connect_inner(connection_str, PoolOptions::new(), initial_sql).await
     }
 
+    fn auto_increment(db_type: &DbType) -> &str {
+        match db_type {
+            DbType::Sqlite => "INTEGER PRIMARY KEY AUTOINCREMENT",
+            DbType::Postgres => "SERIAL PRIMARY KEY",
+        }
+    }
+
+    fn current_time(&self) -> &str {
+        match self.db_type {
+            DbType::Sqlite => "unixepoch('now')",
+            DbType::Postgres => "extract(epoch from now())",
+        }
+    }
+
     /// Connect to the project database.
     async fn connect_inner(
         connection_str: &str,
         pool_options: PoolOptions<Any>,
         initial_sql: &Option<String>,
     ) -> AnyResult<Self> {
+        let db_type = if connection_str.starts_with("sqlite") {
+            DbType::Sqlite
+        } else if connection_str.starts_with("postgres") {
+            DbType::Postgres
+        } else {
+            panic!("Unsupported connection string {}", connection_str)
+        };
         sqlx::any::install_default_drivers();
         debug!("Opening connection to {:?}", connection_str);
         let options =
             AnyConnectOptions::from_str(connection_str)?.log_statements(log::LevelFilter::Trace);
         let conn = pool_options.connect_with(options).await?;
         sqlx::query(
-            r#"
+            format!(
+                "
         CREATE TABLE IF NOT EXISTS project (
-            id integer PRIMARY KEY AUTOINCREMENT,
+            id {},
             version integer NOT NULL,
-            name varchar UNIQUE NOT NULL,
-            description varchar NOT NULL,
-            code varchar NOT NULL,
-            schema varchar NOT NULL,
-            status varchar NOT NULL,
-            error varchar NOT NULL,
-            status_since integer NOT NULL)"#,
+            name text UNIQUE NOT NULL,
+            description text NOT NULL,
+            code text NOT NULL,
+            schema text NOT NULL,
+            status text NOT NULL,
+            error text NOT NULL,
+            status_since integer NOT NULL)",
+                Self::auto_increment(&db_type),
+            )
+            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            r#"
+            format!(
+                "
         CREATE TABLE IF NOT EXISTS project_config (
-            id integer PRIMARY KEY AUTOINCREMENT,
+            id {},
             project_id integer NOT NULL,
             version integer NOT NULL,
-            name varchar NOT NULL,
-            config varchar NOT NULL,
-            FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE);"#,
+            name text NOT NULL,
+            config text NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE);",
+                Self::auto_increment(&db_type)
+            )
+            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            r#"
+            format!(
+                "
         CREATE TABLE IF NOT EXISTS pipeline (
-            id integer PRIMARY KEY AUTOINCREMENT,
+            id {},
             project_id integer NOT NULL,
             project_version integer NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port integer,
             killed integer NOT NULL,
             created integer NOT NULL,
-            FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE)"#,
+            FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE)",
+                Self::auto_increment(&db_type)
+            )
+            .as_str(),
         )
         // killed should be a boolean but the Any driver does not support it for sqlite
         .execute(&conn)
@@ -306,7 +346,7 @@ impl ProjectDB {
             }
         }
 
-        Ok(Self { conn })
+        Ok(Self { conn, db_type })
     }
 
     /// Reset everything that is set through compilation of the project.
@@ -359,7 +399,7 @@ impl ProjectDB {
         project_id: ProjectId,
     ) -> AnyResult<(ProjectDescr, String)> {
         let fetched = sqlx::query(
-            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = ?",
+            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1",
         ).bind(project_id.0).fetch_one(&self.conn).await;
 
         if let Ok(row) = fetched {
@@ -414,16 +454,23 @@ impl ProjectDB {
         debug!("new_project {project_name} {project_description} {project_code}");
         // Avoid nulls until this bug is fixed https://github.com/launchbadge/sqlx/issues/2416
 
-        sqlx::query("INSERT INTO project (version, name, description, code, schema, status, error, status_since) VALUES(1, ?, ?, ?, '', '', '', unixepoch('now'))")
-            .bind(project_name)
-            .bind(project_description)
-            .bind(project_code)
-            .execute(&self.conn)
-            .await
-            .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
+        sqlx::query(
+            format!(
+                "INSERT INTO project (version, name, description, code,
+                schema, status, error, status_since) VALUES(1, $1, $2, $3, '', '', '', {});",
+                self.current_time()
+            )
+            .as_str(),
+        )
+        .bind(project_name)
+        .bind(project_description)
+        .bind(project_code)
+        .execute(&self.conn)
+        .await
+        .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
 
         // name has a UNIQUE constraint
-        let id = sqlx::query("SELECT id FROM project WHERE name = ?")
+        let id = sqlx::query("SELECT id FROM project WHERE name = $1")
             .bind(project_name)
             .fetch_one(&self.conn)
             .await?
@@ -442,7 +489,7 @@ impl ProjectDB {
         project_code: &Option<String>,
     ) -> AnyResult<Version> {
         let (mut version, old_code): (Version, String) =
-            sqlx::query("SELECT version, code FROM project where id = ?")
+            sqlx::query("SELECT version, code FROM project where id = $1")
                 .bind(project_id.0)
                 .map(|row: AnyRow| (Version(row.get(0)), row.get(1)))
                 .fetch_one(&self.conn)
@@ -455,7 +502,7 @@ impl ProjectDB {
                 // current version.
                 version = version.increment();
                 sqlx::query(
-                        "UPDATE project SET version = ?, name = ?, description = ?, code = ?, status = '', error = '' WHERE id = ?")
+                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = '', error = '' WHERE id = $5")
                         .bind(version.0)
                         .bind(project_name)
                         .bind(project_description)
@@ -466,7 +513,7 @@ impl ProjectDB {
                         .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
             _ => {
-                sqlx::query("UPDATE project SET name = ?, description = ? WHERE id = ?")
+                sqlx::query("UPDATE project SET name = $1, description = $2 WHERE id = $3")
                     .bind(project_name)
                     .bind(project_description)
                     .bind(project_id.0)
@@ -487,7 +534,7 @@ impl ProjectDB {
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
         let row = sqlx::query(
-            "SELECT name, description, version, status, error, schema FROM project WHERE id = ?",
+            "SELECT name, description, version, status, error, schema FROM project WHERE id = $1",
         )
         .bind(project_id.0)
         .fetch_one(&self.conn)
@@ -522,7 +569,7 @@ impl ProjectDB {
         project_name: &str,
     ) -> AnyResult<Option<ProjectDescr>> {
         let row = sqlx::query(
-            "SELECT id, description, version, status, error, schema FROM project WHERE name = ?",
+            "SELECT id, description, version, status, error, schema FROM project WHERE name = $1",
         )
         .bind(project_name)
         .fetch_one(&self.conn)
@@ -590,7 +637,9 @@ impl ProjectDB {
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         sqlx::query(
-                "UPDATE project SET status = ?, error = ?, schema = '', status_since = unixepoch('now') WHERE id = ?"
+            format!(
+                "UPDATE project SET status = $1, error = $2, schema = '', status_since = {} WHERE id = $3",
+                self.current_time()).as_str()
             )
             .bind(status.unwrap_or_default())
             .bind(error.unwrap_or_default())
@@ -622,11 +671,16 @@ impl ProjectDB {
         let descr = self.get_project(project_id).await?;
         if descr.version == expected_version {
             sqlx::query(
-                "UPDATE project SET status = ?, error = ?, status_since = unixepoch('now') WHERE id = ?")
-                .bind(status.unwrap_or_default())
-                .bind(error.unwrap_or_default())
-                .bind(project_id.0)
-                .execute(&self.conn)
+                format!(
+                    "UPDATE project SET status = $1, error = $2, status_since = {} WHERE id = $3",
+                    self.current_time()
+                )
+                .as_str(),
+            )
+            .bind(status.unwrap_or_default())
+            .bind(error.unwrap_or_default())
+            .bind(project_id.0)
+            .execute(&self.conn)
             .await?;
         }
 
@@ -643,7 +697,7 @@ impl ProjectDB {
         project_id: ProjectId,
         schema: String,
     ) -> AnyResult<()> {
-        sqlx::query("UPDATE project SET schema = ? WHERE id = ?")
+        sqlx::query("UPDATE project SET schema = $1 WHERE id = $2")
             .bind(schema)
             .bind(project_id.0)
             .execute(&self.conn)
@@ -705,7 +759,7 @@ impl ProjectDB {
     ///
     /// This will delete all project configs and pipelines.
     pub(crate) async fn delete_project(&self, project_id: ProjectId) -> AnyResult<()> {
-        let res = sqlx::query("DELETE FROM project WHERE id = ?")
+        let res = sqlx::query("DELETE FROM project WHERE id = $1")
             .bind(project_id.0)
             .execute(&self.conn)
             .await?;
@@ -744,7 +798,7 @@ impl ProjectDB {
         // empty list of configs.
         let _descr = self.get_project(project_id).await?;
         let rows = sqlx::query(
-            "SELECT id, version, name, config FROM project_config WHERE project_id = ?",
+            "SELECT id, version, name, config FROM project_config WHERE project_id = $1",
         )
         .bind(project_id.0)
         .fetch_all(&self.conn)
@@ -768,7 +822,7 @@ impl ProjectDB {
     /// Retrieve project config.
     pub(crate) async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
         let descr: Result<ConfigDescr, DBError> = sqlx::query(
-            "SELECT project_id, version, name, config FROM project_config WHERE id = ?",
+            "SELECT project_id, version, name, config FROM project_config WHERE id = $1",
         )
         .bind(config_id.0)
         .fetch_one(&self.conn)
@@ -799,7 +853,7 @@ impl ProjectDB {
         let _descr = self.get_project(project_id).await?;
 
         let row = sqlx::query(
-            "INSERT INTO project_config (project_id, version, name, config) VALUES(?, 1, ?, ?) RETURNING id")
+            "INSERT INTO project_config (project_id, version, name, config) VALUES($1, 1, $2, $3) RETURNING id")
             .bind(project_id.0)
             .bind(config_name)
             .bind(config)
@@ -822,7 +876,7 @@ impl ProjectDB {
         let config = config.clone().unwrap_or(descr.config);
 
         let version = descr.version.increment();
-        sqlx::query("UPDATE project_config SET version = ?, name = ?, config = ? WHERE id = ?")
+        sqlx::query("UPDATE project_config SET version = $1, name = $2, config = $3 WHERE id = $4")
             .bind(version.0)
             .bind(config_name)
             .bind(config)
@@ -835,7 +889,7 @@ impl ProjectDB {
 
     /// Delete project config.
     pub(crate) async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
-        let res = sqlx::query("DELETE FROM project_config WHERE id = ?")
+        let res = sqlx::query("DELETE FROM project_config WHERE id = $1")
             .bind(config_id.0)
             .execute(&self.conn)
             .await?;
@@ -853,7 +907,9 @@ impl ProjectDB {
         project_version: Version,
     ) -> AnyResult<PipelineId> {
         let row = sqlx::query(
-                "INSERT INTO pipeline (project_id, project_version, killed, created) VALUES(?, ?, 0, unixepoch('now')) RETURNING id"
+            format!(
+                "INSERT INTO pipeline (project_id, project_version, killed, created) VALUES($1, $2, 0, {}) RETURNING id",
+            self.current_time()).as_str()
             )
             .bind(project_id.0)
             .bind(project_version.0)
@@ -868,7 +924,7 @@ impl ProjectDB {
         pipeline_id: PipelineId,
         port: u16,
     ) -> AnyResult<()> {
-        let _ = sqlx::query("UPDATE pipeline SET port = ? where id = ?")
+        let _ = sqlx::query("UPDATE pipeline SET port = $1 where id = $2")
             .bind(port as i32) // bind(u64) forces the typechecker to expect Sqlite
             .bind(pipeline_id.0)
             .execute(&self.conn)
@@ -880,7 +936,7 @@ impl ProjectDB {
     ///
     /// Returns pipeline port number and `killed` flag.
     pub(crate) async fn pipeline_status(&self, pipeline_id: PipelineId) -> AnyResult<(u16, bool)> {
-        let row = sqlx::query("SELECT port, killed FROM pipeline WHERE id = ?")
+        let row = sqlx::query("SELECT port, killed FROM pipeline WHERE id = $1")
             .bind(pipeline_id.0)
             .fetch_one(&self.conn)
             .await
@@ -893,7 +949,7 @@ impl ProjectDB {
 
     /// Set `killed` flag to `true`.
     pub(crate) async fn set_pipeline_killed(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
-        let res = sqlx::query("UPDATE pipeline SET killed=1 WHERE id = ?")
+        let res = sqlx::query("UPDATE pipeline SET killed=1 WHERE id = $1")
             .bind(pipeline_id.0)
             .execute(&self.conn)
             .await?;
@@ -919,7 +975,7 @@ impl ProjectDB {
         let _descr = self.get_project(project_id).await?;
 
         let rows = sqlx::query(
-            "SELECT id, project_version, port, killed, created FROM pipeline WHERE project_id = ?",
+            "SELECT id, project_version, port, killed, created FROM pipeline WHERE project_id = $1",
         )
         .bind(project_id.0)
         .fetch_all(&self.conn)
@@ -952,29 +1008,54 @@ impl ProjectDB {
 
 #[cfg(test)]
 mod test {
-    use super::{ProjectDB, ProjectDescr, ProjectStatus};
+    use super::{DbType, ProjectDB, ProjectDescr, ProjectStatus};
     use crate::db::DBError;
+    use rstest::rstest;
+    use serial_test::serial;
     use sqlx::pool::PoolOptions;
     use sqlx::{Any, Row};
     use tempfile::TempDir;
 
-    async fn test_setup() -> (ProjectDB, TempDir) {
+    async fn test_setup(db_type: &DbType) -> (ProjectDB, TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let s = format!(
-            "sqlite:{}",
-            temp_dir.path().join("db.sqlite?mode=rwc").to_str().unwrap()
-        );
-        (
-            ProjectDB::connect_inner(s.as_str(), PoolOptions::<Any>::new(), &Some("".to_string()))
-                .await
-                .unwrap(),
-            temp_dir,
-        )
+        match db_type {
+            DbType::Sqlite => {
+                let s = format!(
+                    "sqlite:{}",
+                    temp_dir.path().join("db.sqlite?mode=rwc").to_str().unwrap()
+                );
+                (
+                    ProjectDB::connect_inner(
+                        s.as_str(),
+                        PoolOptions::<Any>::new(),
+                        &Some("".to_string()),
+                    )
+                    .await
+                    .unwrap(),
+                    temp_dir,
+                )
+            }
+            DbType::Postgres => {
+                let s = "postgres://";
+                let conn =
+                    ProjectDB::connect_inner(s, PoolOptions::<Any>::new(), &Some("".to_string()))
+                        .await
+                        .unwrap();
+                for table in vec!["project", "project_config", "pipeline"] {
+                    sqlx::query(format!("truncate table {} cascade;", table).as_str())
+                        .execute(&conn.conn)
+                        .await
+                        .unwrap();
+                }
+                (conn, temp_dir)
+            }
+        }
     }
 
     #[tokio::test]
+    #[serial]
     async fn schema_creation() {
-        let (db, _dir) = test_setup().await;
+        let (db, _dir) = test_setup(&DbType::Sqlite).await;
         let rows = sqlx::query("SELECT name FROM sqlite_schema WHERE type = 'table'")
             .fetch_all(&db.conn)
             .await
@@ -991,9 +1072,21 @@ mod test {
         }
     }
 
+    fn ignore_postgres(db: DbType) -> bool {
+        let toggle = std::env::var("RUN_POSTGRES_TESTS");
+        db == DbType::Postgres && (toggle.is_err() || toggle.unwrap() == "0")
+    }
+
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn project_creation() {
-        let (db, _dir) = test_setup().await;
+    async fn project_creation(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let res = db
             .new_project("test1", "project desc", "ignored")
             .await
@@ -1012,9 +1105,16 @@ mod test {
         assert_eq!(&expected, actual);
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn duplicate_project() {
-        let (db, _dir) = test_setup().await;
+    async fn duplicate_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let _ = db.new_project("test1", "project desc", "ignored").await;
         let res = db
             .new_project("test1", "project desc", "ignored")
@@ -1024,9 +1124,16 @@ mod test {
         assert_eq!(format!("{}", res), format!("{}", expected));
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn project_reset() {
-        let (db, _dir) = test_setup().await;
+    async fn project_reset(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         db.new_project("test1", "project desc", "ignored")
             .await
             .unwrap();
@@ -1046,9 +1153,16 @@ mod test {
         assert_eq!(0, results.unwrap().len());
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn project_code() {
-        let (db, _dir) = test_setup().await;
+    async fn project_code(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let (project_id, _) = db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
@@ -1059,9 +1173,16 @@ mod test {
         assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn update_project() {
-        let (db, _dir) = test_setup().await;
+    async fn update_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let (project_id, _) = db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
@@ -1076,9 +1197,16 @@ mod test {
         assert_eq!("some new description", row.description);
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn project_queries() {
-        let (db, _dir) = test_setup().await;
+    async fn project_queries(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let (project_id, _) = db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
@@ -1091,9 +1219,16 @@ mod test {
         assert!(desc.is_none());
     }
 
+    #[rstest]
+    #[serial]
+    #[trace]
     #[tokio::test]
-    async fn update_status() {
-        let (db, _dir) = test_setup().await;
+    async fn update_status(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
+        if ignore_postgres(db_type) {
+            println!("Ignoring postgres test");
+            return;
+        };
+        let (db, _dir) = test_setup(&db_type).await;
         let (project_id, _) = db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
