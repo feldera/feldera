@@ -23,6 +23,10 @@ fn default_sql_compiler_home() -> String {
     "../sql-to-dbsp-compiler".to_string()
 }
 
+fn default_db_connection_string() -> String {
+    "sqlite".to_string()
+}
+
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -94,6 +98,14 @@ pub(crate) struct ManagerConfig {
     #[serde(default)]
     #[arg(long)]
     pub unix_daemon: bool,
+
+    /// Point to a relational database to use for state management.
+    /// Accepted values are "sqlite" or "postgres://<host>:<port>".
+    /// For sqlite, we simply create a DB in the current working directory.
+    /// For postgres, we use the connection string as provided.
+    #[serde(default = "default_db_connection_string")]
+    #[arg(short, long, default_value_t = default_db_connection_string())]
+    pub db_connection_string: String,
 
     /// [Developers only] serve static content from the specified directory.
     /// Allows modifying JavaScript without restarting the server.
@@ -233,15 +245,21 @@ impl ManagerConfig {
 
     /// SQlite database file.
     pub(crate) fn database_connection_string(&self) -> String {
-        let mut s = "sqlite:".to_owned();
-        s.push_str(
-            Path::new(&self.working_directory)
-                // create the DB if it does not already exist
-                .join("manager.db?mode=rwc")
-                .to_str()
-                .unwrap(),
-        );
-        s
+        if "sqlite" == self.db_connection_string {
+            let mut s = "sqlite:".to_owned();
+            s.push_str(
+                Path::new(&self.working_directory)
+                    // create the DB if it does not already exist
+                    .join("manager.db?mode=rwc")
+                    .to_str()
+                    .unwrap(),
+            );
+            s
+        } else if self.db_connection_string.starts_with("postgres://") {
+            self.db_connection_string.clone()
+        } else {
+            panic!("Invalid connection string {}", self.db_connection_string)
+        }
     }
 
     /// Directory where the manager generates Rust crate for the project.
