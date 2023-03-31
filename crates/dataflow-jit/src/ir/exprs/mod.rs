@@ -458,9 +458,9 @@ impl SetNull {
 /// Both the `src` and `dest` rows must have the same layout.
 ///
 /// Semantically equivalent to [`Load`]-ing each column within `src`, calling
-/// [`CopyVal`] on the loaded value and then [`Store`]-ing the copied value to
-/// `dest` (along with any required [`IsNull`]/[`SetNull`] juggling that has to
-/// be done due to nullable columns)
+/// [`struct@Copy`] on the loaded value and then [`Store`]-ing the copied value
+/// to `dest` (along with any required [`IsNull`]/[`SetNull`] juggling that has
+/// to be done due to nullable columns)
 // TODO: We need to offer a drop operator of some kind so that rows can be deinitialized if needed
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct CopyRowTo {
