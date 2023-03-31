@@ -53,9 +53,17 @@ impl ArgType {
 /// ### Functions
 ///
 /// - `@dbsp.row.vec.push(vec: { ptr, ptr }, row: { .. })`
-/// - `@dbsp.str.truncate(string: str, length: usize)`
-/// - `@dbsp.str.clear(string: str)`
-/// - `@dbsp.str.concat(first: str, second: str)`
+/// - `@dbsp.str.truncate(str, usize)`
+/// - `@dbsp.str.truncate_clone(str, usize) -> str`
+/// - `@dbsp.str.clear(str)`
+/// - `@dbsp.str.concat(str, str)`
+/// - `@dbsp.str.concat_clone(str, str) -> str`
+/// - `@dbsp.timestamp.epoch(timestamp) -> i64`
+/// - `@dbsp.date.second(date) -> i32`
+/// - `@dbsp.date.minute(date) -> i32`
+/// - `@dbsp.date.millisecond(date) -> i32`
+/// - `@dbsp.date.microsecond(date) -> i32`
+/// - `@dbsp.date.year(date) -> i32`
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Call {
     /// The name of the function being called

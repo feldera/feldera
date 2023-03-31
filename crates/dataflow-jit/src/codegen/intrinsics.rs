@@ -4,7 +4,7 @@ use crate::{
     thin_str::ThinStrRef,
     ThinStr,
 };
-use chrono::{LocalResult, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, LocalResult, NaiveDate, TimeZone, Timelike, Utc};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
     prelude::{types, AbiParam, Signature as ClifSignature},
@@ -166,6 +166,26 @@ intrinsics! {
     string_hash = fn(ptr, ptr),
     row_vec_push = fn(ptr, ptr, ptr),
     string_with_capacity = fn(ptr) -> ptr,
+
+    // Timestamp functions
+    timestamp_year = fn(i64) -> i64,
+    timestamp_month = fn(i64) -> i64,
+    timestamp_day = fn(i64) -> i64,
+    timestamp_quarter = fn(i64) -> i64,
+    timestamp_decade = fn(i64) -> i64,
+    timestamp_century = fn(i64) -> i64,
+    timestamp_millennium = fn(i64) -> i64,
+    timestamp_iso_year = fn(i64) -> i64,
+    timestamp_week = fn(i64) -> i64,
+    timestamp_day_of_week = fn(i64) -> i64,
+    timestamp_iso_day_of_week = fn(i64) -> i64,
+    timestamp_day_of_year = fn(i64) -> i64,
+    timestamp_millisecond = fn(i64) -> i64,
+    timestamp_microsecond = fn(i64) -> i64,
+    timestamp_second = fn(i64) -> i64,
+    timestamp_minute = fn(i64) -> i64,
+    timestamp_hour = fn(i64) -> i64,
+    timestamp_floor_week = fn(i64) -> i64,
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -294,6 +314,56 @@ unsafe extern "C" fn dataflow_jit_row_vec_push(
 
 unsafe extern "C" fn dataflow_jit_string_with_capacity(capacity: usize) -> ThinStr {
     ThinStr::with_capacity(capacity)
+}
+
+macro_rules! timestamp_intrinsics {
+    ($($name:ident => $expr:expr),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<dataflow_jit_timestamp_ $name>](timestamp: i64) -> i64 {
+                    if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(timestamp) {
+                        let expr: fn(DateTime<Utc>) -> i64 = $expr;
+                        expr(timestamp)
+                    } else {
+                        tracing::error!(
+                            "failed to create timestamp from {timestamp} in {}",
+                            stringify!([<dataflow_jit_timestamp_ $name>]),
+                        );
+                        0
+                    }
+                }
+            )+
+        }
+    }
+}
+
+timestamp_intrinsics! {
+    millennium => |time| ((time.year() + 999) / 1000) as i64,
+    century => |time| ((time.year() + 99) / 100) as i64,
+    decade => |time| (time.year() / 10) as i64,
+    year => |time| time.year() as i64,
+    iso_year => |time| time.iso_week().year() as i64,
+    quarter => |time| (time.month0() / 3 + 1) as i64,
+    month => |time| time.month() as i64,
+    week => |time| time.iso_week().week() as i64,
+    day => |time| time.day() as i64,
+    hour => |time| time.hour() as i64,
+    minute => |time| time.minute() as i64,
+    second => |time| time.second() as i64,
+    millisecond => |time| (time.second() * 1000 + time.timestamp_subsec_millis()) as i64,
+    microsecond => |time| (time.second() * 1_000_000 + time.timestamp_subsec_micros()) as i64,
+    day_of_week => |time| (time.weekday().num_days_from_sunday() as i64) + 1,
+    iso_day_of_week => |time| (time.weekday().num_days_from_monday() as i64) + 1,
+    day_of_year => |time| time.ordinal() as i64,
+    floor_week => |time| {
+        let no_time = time
+            .with_hour(0).unwrap()
+            .with_minute(0).unwrap()
+            .with_second(0).unwrap()
+            .with_nanosecond(0).unwrap();
+        let weekday = time.weekday().num_days_from_sunday() as i64;
+        no_time.timestamp_millis() - (weekday * 86400 * 1000)
+    }
 }
 
 macro_rules! hash {
