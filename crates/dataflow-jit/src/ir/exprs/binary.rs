@@ -66,7 +66,7 @@ pub enum BinaryOpKind {
     DivFloor,
     /// Remainder
     Rem,
-    /// Modulus (Euclidean division)
+    /// Modulus (Euclidean remainder)
     Mod,
     /// Floored modulus
     ModFloor,
