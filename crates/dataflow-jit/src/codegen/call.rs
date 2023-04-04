@@ -35,10 +35,16 @@ impl CodegenCtx<'_> {
             // `fn(timestamp) -> i64`
             "dbsp.timestamp.epoch" => self.timestamp_epoch(expr_id, call, builder),
 
+            // `fn(timestamp) -> i64`
+            "dbsp.timestamp.year" => {
+                let millis = self.value(call.args()[0]);
+                let year = self.timestamp_year(millis, builder);
+                self.add_expr(expr_id, year, ColumnType::I64, None);
+            }
+
             // TODO: Implement these all natively, they're all simple functions
             // and function dispatch is a heavy price (this is especially important
             // for frequently-used functions like `@dbsp.timestamp.year()`)
-            "dbsp.timestamp.year" => self.timestamp_year(expr_id, call, builder),
             "dbsp.timestamp.month" => self.timestamp_month(expr_id, call, builder),
             "dbsp.timestamp.day" => self.timestamp_day(expr_id, call, builder),
             "dbsp.timestamp.quarter" => self.timestamp_quarter(expr_id, call, builder),
@@ -603,7 +609,7 @@ macro_rules! timestamp_intrinsics {
 }
 
 timestamp_intrinsics! {
-    year,
+    // year,
     month,
     day,
     quarter,

@@ -168,7 +168,7 @@ intrinsics! {
     string_with_capacity = fn(ptr) -> ptr,
 
     // Timestamp functions
-    timestamp_year = fn(i64) -> i64,
+    // timestamp_year = fn(i64) -> i64,
     timestamp_month = fn(i64) -> i64,
     timestamp_day = fn(i64) -> i64,
     timestamp_quarter = fn(i64) -> i64,
@@ -354,7 +354,7 @@ timestamp_intrinsics! {
     millennium => |time| ((time.year() + 999) / 1000) as i64,
     century => |time| ((time.year() + 99) / 100) as i64,
     decade => |time| (time.year() / 10) as i64,
-    year => |time| time.year() as i64,
+    // year => |time| time.year() as i64,
     iso_year => |time| time.iso_week().year() as i64,
     quarter => |time| (time.month0() / 3 + 1) as i64,
     month => |time| time.month() as i64,

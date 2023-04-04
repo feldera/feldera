@@ -5,6 +5,7 @@ mod layout_cache;
 mod math;
 mod pretty_clif;
 mod tests;
+mod timestamp;
 mod utils;
 mod vtable;
 
@@ -56,6 +57,7 @@ const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(1);
 const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
 const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
+const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -1429,7 +1431,7 @@ impl<'a> CodegenCtx<'a> {
                 if lhs_ty.is_float() {
                     builder.ins().fdiv(lhs, rhs)
                 } else if lhs_ty.is_signed_int() {
-                    builder.ins().sdiv(lhs, rhs)
+                    self.sdiv_checked(lhs, rhs, builder)
                 } else if lhs_ty.is_unsigned_int() {
                     builder.ins().udiv(lhs, rhs)
                 } else {

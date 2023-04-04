@@ -200,12 +200,15 @@ impl ThinStr {
             return Self::new();
         }
 
+        let length = string.len();
+        let mut this = Self::with_capacity(length);
+
         unsafe {
-            let length = string.len();
-            let mut this = Self::with_capacity_uninit(length, length);
             ptr::copy_nonoverlapping(string.as_ptr(), this.as_mut_ptr(), length);
-            this
+            this.set_len(length);
         }
+
+        this
     }
 
     /// Allocates a `ThinStr` with capacity for `capacity` string bytes
@@ -475,40 +478,22 @@ impl Clone for ThinStr {
             return ThinStr::new();
         }
 
-        let length = string.len();
-        // Safety: The layout was created in order for `self` to exist, so it's valid
-        let layout = unsafe { ThinStr::layout_for_unchecked(length) };
-
-        debug_assert_ne!(layout.size(), 0);
-        let ptr = unsafe { std::alloc::alloc(layout) };
-        let buf = match NonNull::new(ptr.cast::<StrHeader>()) {
-            Some(buf) => buf,
-            None => std::alloc::handle_alloc_error(layout),
-        };
-
-        // Safety: buf is a valid allocation
+        let mut this = Self::with_capacity(string.len());
         unsafe {
-            // Write the string's length
-            addr_of_mut!((*buf.as_ptr()).length).write(length);
-            // Write the allocated capacity
-            addr_of_mut!((*buf.as_ptr()).capacity).write(length);
-
-            // Copy over the string's bytes
-            ptr::copy_nonoverlapping(
-                string.as_ptr(),
-                addr_of_mut!((*buf.as_ptr())._data).cast(),
-                length,
-            );
+            // Copy over the source string's bytes
+            ptr::copy_nonoverlapping(string.as_ptr(), this.as_mut_ptr(), string.len());
+            // Set the clone's length
+            this.set_len(string.len());
         }
 
-        Self { buf }
+        this
     }
 
     fn clone_from(&mut self, source: &Self) {
         // If self is sigil, we can't reallocate it
-        if self.is_sigil() {
+        if self.is_empty() {
             // If self is sigil and source isn't we can just directly clone source
-            if !source.is_sigil() {
+            if !source.is_empty() {
                 *self = source.clone();
             }
             // Otherwise if both self and source are sigil, we're done
@@ -542,7 +527,7 @@ impl Clone for ThinStr {
 
 impl Drop for ThinStr {
     fn drop(&mut self) {
-        if !self.is_sigil() {
+        if !self.is_empty() {
             // Safety: The current layout is valid since we must have created it in order to
             // make the current `ThinStr` and we're deallocating a valid allocation
             unsafe {
