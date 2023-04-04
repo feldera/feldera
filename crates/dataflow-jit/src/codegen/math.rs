@@ -1,4 +1,4 @@
-use crate::codegen::{utils::FunctionBuilderExt, CodegenCtx};
+use crate::codegen::{utils::FunctionBuilderExt, CodegenCtx, TRAP_DIV_OVERFLOW};
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
 
 impl CodegenCtx<'_> {
@@ -148,12 +148,12 @@ impl CodegenCtx<'_> {
 
         let (div, rem) = self.div_rem(true, lhs, rhs, builder);
 
-        if let Some(writer) = self.comment_writer.as_deref() {
-            writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(div).unwrap_inst(),
-                format!("div_mod_floor({lhs}, {rhs})"),
-            );
-        }
+        // if let Some(writer) = self.comment_writer.as_deref() {
+        //     writer.borrow_mut().add_comment(
+        //         builder.func.dfg.value_def(div).unwrap_inst(),
+        //         format!("div_mod_floor({lhs}, {rhs})"),
+        //     );
+        // }
 
         let zero = builder.ins().iconst(lhs_ty, 0);
         let rem_gt_zero = builder.ins().icmp(IntCC::SignedGreaterThan, rem, zero);
@@ -289,7 +289,7 @@ impl CodegenCtx<'_> {
         builder: &mut FunctionBuilder<'_>,
     ) -> (Value, Value) {
         if signed {
-            let div = builder.ins().sdiv(lhs, rhs);
+            let div = self.sdiv_checked(lhs, rhs, builder);
             let rem = builder.ins().srem(lhs, rhs);
             (div, rem)
         } else {
@@ -321,7 +321,7 @@ impl CodegenCtx<'_> {
         // ```
         let zero = builder.ins().iconst(lhs_ty, 0);
 
-        let q = builder.ins().sdiv(lhs, rhs);
+        let q = self.sdiv_checked(lhs, rhs, builder);
         self.comment(builder.value_inst(q), || {
             format!("sdiv_euclid({lhs}, {rhs})")
         });
@@ -518,5 +518,56 @@ impl CodegenCtx<'_> {
 
             modulus
         }
+    }
+
+    pub(super) fn sdiv_checked(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        let (quotient, overflowed) = self.sdiv_overflowing(lhs, rhs, builder);
+        builder.ins().trapnz(overflowed, TRAP_DIV_OVERFLOW);
+        quotient
+    }
+
+    pub(super) fn sdiv_overflowing(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> (Value, Value) {
+        let lhs_ty = builder.func.dfg.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        debug_assert!(lhs_ty.is_int());
+
+        // if (lhs == Self::MIN) & (rhs == -1) {
+        //     (lhs, true)
+        // } else {
+        //    (lhs / rhs, false)
+        // }
+        let lhs_min = builder
+            .ins()
+            .icmp_imm(IntCC::Equal, lhs, 1 << (lhs_ty.bits() - 1));
+        let rhs_neg1 = builder.ins().icmp_imm(IntCC::Equal, lhs, -1);
+        let overflowed = builder.ins().band(lhs_min, rhs_neg1);
+
+        let div_block = builder.create_block();
+        let after_block = builder.create_block();
+        builder.append_block_param(after_block, lhs_ty);
+
+        builder
+            .ins()
+            .brif(overflowed, after_block, &[lhs], div_block, &[]);
+        builder.seal_current();
+        builder.switch_to_block(div_block);
+
+        let quotient = builder.ins().sdiv(lhs, rhs);
+        builder.ins().jump(after_block, &[quotient]);
+        builder.seal_current();
+        builder.switch_to_block(after_block);
+
+        let quotient = builder.block_params(after_block)[0];
+        (quotient, overflowed)
     }
 }

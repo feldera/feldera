@@ -375,6 +375,9 @@ fn unwrap_optional_bool() {
     unsafe { jit.free_memory() };
 }
 
+// TODO: Min/max with and without normalization
+// TODO: More binops
+// TODO: Test different codegen options
 mod proptests {
     use crate::{
         codegen::{Codegen, CodegenConfig},
@@ -389,409 +392,239 @@ mod proptests {
     };
     use std::mem::transmute;
 
-    // TODO: Min/max with and without normalization
-    // TODO: Test different codegen options
-    macro_rules! proptest_binops {
-        ($($ty:ident = $col:ident),+ $(,)?) => {
+    macro_rules! tests {
+        ($test:tt, $op:ident, $ty:ident, $col:ident, $guard:expr, $expected:expr $(,)?) => {
             paste::paste! {
-                $(
-                    #[test]
-                    fn [<div_ $ty>]() {
-                        utils::test_logger();
+                #[test]
+                fn [<$test _ $ty>]() {
+                    utils::test_logger();
 
-                        let layout_cache = RowLayoutCache::new();
-                        let int = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-                        let intx2 = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
+                    let layout_cache = RowLayoutCache::new();
+                    let int = layout_cache.add(
+                        RowLayoutBuilder::new()
+                            .with_column(ColumnType::$col, false)
+                            .build(),
+                    );
+                    let intx2 = layout_cache.add(
+                        RowLayoutBuilder::new()
+                            .with_column(ColumnType::$col, false)
+                            .with_column(ColumnType::$col, false)
+                            .build(),
+                    );
 
-                        let function = {
-                            let mut builder = FunctionBuilder::new(layout_cache.clone());
-                            let input = builder.add_input(intx2);
-                            let output = builder.add_output(int);
+                    let func = {
+                        let mut builder = FunctionBuilder::new(layout_cache.clone());
+                        let input = builder.add_input(intx2);
+                        let output = builder.add_output(int);
 
-                            let lhs = builder.load(input, 0);
-                            let rhs = builder.load(input, 1);
-                            let div = builder.binary_op(lhs, rhs, BinaryOpKind::Div);
-                            builder.store(output, 0, div);
-                            builder.ret_unit();
+                        let lhs = builder.load(input, 0);
+                        let rhs = builder.load(input, 1);
+                        let div = builder.binary_op(lhs, rhs, BinaryOpKind::$op);
+                        builder.store(output, 0, div);
+                        builder.ret_unit();
 
-                            builder.build()
+                        builder.build()
+                    };
+
+                    let test_name = concat!(module_path!(), "::", stringify!($test), "_", stringify!($ty));
+
+                    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+                    let func = codegen.codegen_func(test_name, &func);
+
+                    let (jit, _) = codegen.finalize_definitions();
+
+                    let mut runner = TestRunner::new(Config {
+                        test_name: Some(test_name),
+                        source_file: Some(file!()),
+                        ..Config::default()
+                    });
+
+                    let result = {
+                        let jit_fn = unsafe {
+                            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                                jit.get_finalized_function(func),
+                            )
                         };
 
-                        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-                        let function = codegen.codegen_func(concat!("div_", stringify!($ty)), &function);
+                        runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
+                            ($guard)(lhs, rhs)?;
 
-                        let mut runner = TestRunner::new(Config {
-                            test_name: Some(concat!("codegen::tests::proptests::div_", stringify!($ty))),
-                            ..Config::default()
-                        });
+                            let expected: fn($ty, $ty) -> $ty = $expected;
+                            let expected = expected(lhs, rhs);
 
-                        let (jit, _) = codegen.finalize_definitions();
-                        let result = {
-                            let div_jit = unsafe {
-                                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                                    jit.get_finalized_function(function),
-                                )
-                            };
+                            let input: [$ty; 2] = [lhs, rhs];
+                            let mut result: $ty = 0 as $ty;
+                            jit_fn(
+                                &input as *const [$ty; 2] as *const u8,
+                                &mut result as *mut $ty as *mut u8,
+                            );
 
-                            runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
-                                prop_assume!(rhs != 0 as $ty);
+                            prop_assert_eq!(result, expected);
 
-                                let input = [lhs, rhs];
-                                let mut result = 0 as $ty;
-                                div_jit(
-                                    &input as *const [$ty; 2] as *const u8,
-                                    &mut result as *mut $ty as *mut u8,
-                                );
+                            Ok(())
+                        })
+                    };
 
-                                let expected = lhs / rhs;
-                                prop_assert_eq!(result, expected);
+                    unsafe { jit.free_memory() }
 
-                                Ok(())
-                            })
-                        };
-
-                        unsafe { jit.free_memory() }
-
-                        if let Err(err) = result {
-                            panic!("{}\n{}", err, runner);
-                        }
+                    if let Err(error) = result {
+                        panic!("{error}\n{runner}");
                     }
-
-                    #[test]
-                    fn [<mod_ $ty>]() {
-                        utils::test_logger();
-
-                        let layout_cache = RowLayoutCache::new();
-                        let int = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-                        let intx2 = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-
-                        let function = {
-                            let mut builder = FunctionBuilder::new(layout_cache.clone());
-                            let input = builder.add_input(intx2);
-                            let output = builder.add_output(int);
-
-                            let lhs = builder.load(input, 0);
-                            let rhs = builder.load(input, 1);
-                            let modulus = builder.binary_op(lhs, rhs, BinaryOpKind::Mod);
-                            builder.store(output, 0, modulus);
-                            builder.ret_unit();
-
-                            builder.build()
-                        };
-
-                        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-                        let function = codegen.codegen_func(concat!("mod_", stringify!($ty)), &function);
-
-                        let mut runner = TestRunner::new(Config {
-                            test_name: Some(concat!("codegen::tests::proptests::mod_", stringify!($ty))),
-                            ..Config::default()
-                        });
-
-                        let (jit, _) = codegen.finalize_definitions();
-                        let result = {
-                            let mod_jit = unsafe {
-                                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                                    jit.get_finalized_function(function),
-                                )
-                            };
-
-                            runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
-                                prop_assume!(rhs != 0 as $ty);
-
-                                let input = [lhs, rhs];
-                                let mut result = 0 as $ty;
-                                mod_jit(
-                                    &input as *const [$ty; 2] as *const u8,
-                                    &mut result as *mut $ty as *mut u8,
-                                );
-
-                                let expected = lhs.rem_euclid(rhs);
-                                prop_assert_eq!(result, expected);
-
-                                Ok(())
-                            })
-                        };
-
-                        unsafe { jit.free_memory() }
-
-                        if let Err(err) = result {
-                            panic!("{}\n{}", err, runner);
-                        }
-                    }
-
-                    #[test]
-                    fn [<rem_ $ty>]() {
-                        utils::test_logger();
-
-                        let layout_cache = RowLayoutCache::new();
-                        let int = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-                        let intx2 = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-
-                        let function = {
-                            let mut builder = FunctionBuilder::new(layout_cache.clone());
-                            let input = builder.add_input(intx2);
-                            let output = builder.add_output(int);
-
-                            let lhs = builder.load(input, 0);
-                            let rhs = builder.load(input, 1);
-                            let rem = builder.binary_op(lhs, rhs, BinaryOpKind::Rem);
-                            builder.store(output, 0, rem);
-                            builder.ret_unit();
-
-                            builder.build()
-                        };
-
-                        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-                        let function = codegen.codegen_func(concat!("rem_", stringify!($ty)), &function);
-
-                        let mut runner = TestRunner::new(Config {
-                            test_name: Some(concat!("codegen::tests::proptests::rem_", stringify!($ty))),
-                            ..Config::default()
-                        });
-
-                        let (jit, _) = codegen.finalize_definitions();
-                        let result = {
-                            let div_floor_jit = unsafe {
-                                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                                    jit.get_finalized_function(function),
-                                )
-                            };
-
-                            runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
-                                prop_assume!(rhs != 0 as $ty);
-
-                                let input = [lhs, rhs];
-                                let mut result = 0 as $ty;
-                                div_floor_jit(
-                                    &input as *const [$ty; 2] as *const u8,
-                                    &mut result as *mut $ty as *mut u8,
-                                );
-
-                                let expected = lhs % rhs;
-                                prop_assert_eq!(result, expected);
-
-                                Ok(())
-                            })
-                        };
-
-                        unsafe { jit.free_memory() }
-
-                        if let Err(err) = result {
-                            panic!("{}\n{}", err, runner);
-                        }
-                    }
-                )+
+                }
             }
-        }
-    }
-
-    // Binops that apply to floats and integers
-    proptest_binops! {
-        u8 = U8,
-        i8 = I8,
-
-        u16 = U16,
-        i16 = I16,
-
-        u32 = U32,
-        i32 = I32,
-
-        u64 = U64,
-        i64 = I64,
-
-        f32 = F32,
-        f64 = F64,
+        };
     }
 
     macro_rules! proptest_int_binops {
         ($($ty:ident = $col:ident),+ $(,)?) => {
-            paste::paste! {
-                $(
-                    #[test]
-                    fn [<div_floor_ $ty>]() {
-                        utils::test_logger();
+            $(
+                tests!(
+                    div, Div, $ty, $col,
+                    |lhs, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs / rhs,
+                );
+                tests!(
+                    div_floor, DivFloor, $ty, $col,
+                    |lhs, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        Ok(())
+                    },
+                    div_floor,
+                );
 
-                        let layout_cache = RowLayoutCache::new();
-                        let int = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-                        let intx2 = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
+                tests!(mod, Mod, $ty, $col,
+                    |lhs, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs.rem_euclid(rhs),
+                );
+                tests!(
+                    mod_floor, ModFloor, $ty, $col,
+                    |lhs, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        Ok(())
+                    },
+                    mod_floor,
+                );
 
-                        let function = {
-                            let mut builder = FunctionBuilder::new(layout_cache.clone());
-                            let input = builder.add_input(intx2);
-                            let output = builder.add_output(int);
-
-                            let lhs = builder.load(input, 0);
-                            let rhs = builder.load(input, 1);
-                            let div_floor = builder.binary_op(lhs, rhs, BinaryOpKind::DivFloor);
-                            builder.store(output, 0, div_floor);
-                            builder.ret_unit();
-
-                            builder.build()
-                        };
-
-                        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-                        let function = codegen.codegen_func(concat!("div_floor_", stringify!($ty)), &function);
-
-                        let mut runner = TestRunner::new(Config {
-                            test_name: Some(concat!("codegen::tests::proptests::div_floor_", stringify!($ty))),
-                            ..Config::default()
-                        });
-
-                        let (jit, _) = codegen.finalize_definitions();
-                        let result = {
-                            let div_floor_jit = unsafe {
-                                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                                    jit.get_finalized_function(function),
-                                )
-                            };
-
-                            runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
-                                prop_assume!(rhs != 0);
-
-                                let input = [lhs, rhs];
-                                let mut result = 0;
-                                div_floor_jit(
-                                    &input as *const [$ty; 2] as *const u8,
-                                    &mut result as *mut $ty as *mut u8,
-                                );
-
-                                let expected = div_floor(lhs, rhs);
-                                prop_assert_eq!(result, expected);
-
-                                Ok(())
-                            })
-                        };
-
-                        unsafe { jit.free_memory() }
-
-                        if let Err(err) = result {
-                            panic!("{}\n{}", err, runner);
-                        }
-                    }
-
-                    #[test]
-                    fn [<mod_floor_ $ty>]() {
-                        utils::test_logger();
-
-                        let layout_cache = RowLayoutCache::new();
-                        let int = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-                        let intx2 = layout_cache.add(
-                            RowLayoutBuilder::new()
-                                .with_column(ColumnType::$col, false)
-                                .with_column(ColumnType::$col, false)
-                                .build(),
-                        );
-
-                        let function = {
-                            let mut builder = FunctionBuilder::new(layout_cache.clone());
-                            let input = builder.add_input(intx2);
-                            let output = builder.add_output(int);
-
-                            let lhs = builder.load(input, 0);
-                            let rhs = builder.load(input, 1);
-                            let mod_floor = builder.binary_op(lhs, rhs, BinaryOpKind::ModFloor);
-                            builder.store(output, 0, mod_floor);
-                            builder.ret_unit();
-
-                            builder.build()
-                        };
-
-                        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-                        let function = codegen.codegen_func(concat!("mod_floor_", stringify!($ty)), &function);
-
-                        let mut runner = TestRunner::new(Config {
-                            test_name: Some(concat!("codegen::tests::proptests::mod_floor_", stringify!($ty))),
-                            ..Config::default()
-                        });
-
-                        let (jit, _) = codegen.finalize_definitions();
-                        let result = {
-                            let mod_floor_jit = unsafe {
-                                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
-                                    jit.get_finalized_function(function),
-                                )
-                            };
-
-                            runner.run(&(any::<$ty>(), any::<$ty>()), |(lhs, rhs)| {
-                                prop_assume!(rhs != 0);
-
-                                let input = [lhs, rhs];
-                                let mut result = 0;
-                                mod_floor_jit(
-                                    &input as *const [$ty; 2] as *const u8,
-                                    &mut result as *mut $ty as *mut u8,
-                                );
-
-                                let expected = mod_floor(lhs, rhs);
-                                prop_assert_eq!(result, expected);
-
-                                Ok(())
-                            })
-                        };
-
-                        unsafe { jit.free_memory() }
-
-                        if let Err(err) = result {
-                            panic!("{}\n{}", err, runner);
-                        }
-                    }
-                )+
-            }
+                tests!(
+                    rem, Rem, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs.wrapping_rem(rhs),
+                );
+            )+
         }
     }
 
     // Binops that just apply to integers
     proptest_int_binops! {
-        u8 = U8,
         i8 = I8,
-
-        u16 = U16,
         i16 = I16,
-
-        u32 = U32,
         i32 = I32,
-
-        u64 = U64,
         i64 = I64,
+    }
+
+    macro_rules! proptest_uint_binops {
+        ($($ty:ident = $col:ident),+ $(,)?) => {
+            $(
+                tests!(
+                    div, Div, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs / rhs,
+                );
+                tests!(
+                    div_floor, DivFloor, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    div_floor,
+                );
+
+                tests!(mod, Mod, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs.rem_euclid(rhs),
+                );
+                tests!(
+                    mod_floor, ModFloor, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    mod_floor,
+                );
+
+                tests!(
+                    rem, Rem, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs.wrapping_rem(rhs),
+                );
+            )+
+        }
+    }
+
+    proptest_uint_binops! {
+        u8 = U8,
+        u16 = U16,
+        u32 = U32,
+        u64 = U64,
+    }
+
+    macro_rules! proptest_float_binops {
+        ($($ty:ident = $col:ident),+ $(,)?) => {
+            $(
+                tests!(
+                    div, Div, $ty, $col,
+                    |lhs, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs / rhs,
+                );
+
+                tests!(mod, Mod, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs.rem_euclid(rhs),
+                );
+
+                tests!(
+                    rem, Rem, $ty, $col,
+                    |_, rhs| {
+                        prop_assume!(rhs != 0 as $ty);
+                        Ok(())
+                    },
+                    |lhs, rhs| lhs % rhs,
+                );
+            )+
+        }
+    }
+
+    proptest_float_binops! {
+        f32 = F32,
+        f64 = F64,
     }
 }
