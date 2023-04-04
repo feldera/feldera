@@ -106,6 +106,10 @@ jobs:
       # We split building the tests into a separate step
       # so that we can easily distinguish between build
       # errors and failing tests
+      - name: Install openssl using vcpkg
+        if: runner.os == 'Windows'
+        run: vcpkg install openssl:x64-windows-static-md
+
       - name: Build tests with all features
         uses: actions-rs/cargo@v1
         with:
