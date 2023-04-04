@@ -219,7 +219,9 @@ impl ThinStr {
     /// This leaves all of the allocated capacity uninitialized, so all
     /// elements up to `length` must be initialized after calling this
     unsafe fn with_capacity_uninit(capacity: usize, length: usize) -> Self {
-        let layout = Self::layout_for(capacity);
+        debug_assert!(length <= capacity);
+
+        let (capacity, layout) = Self::layout_for(capacity);
 
         debug_assert_ne!(layout.size(), 0);
         let ptr = unsafe { std::alloc::alloc(layout) };
@@ -236,8 +238,13 @@ impl ThinStr {
         Self { buf }
     }
 
+    /// Calculates the layout for the given capacity
+    ///
+    /// Returns the capacity that the layout can contain and the layout itself,
+    /// the returned capacity will likely be different than the given one since
+    /// capacities are rounded to fit alignment requirements
     #[inline]
-    fn layout_for(capacity: usize) -> Layout {
+    fn layout_for(capacity: usize) -> (usize, Layout) {
         #[cold]
         #[inline(never)]
         fn failed_thinstr_layout(capacity: usize) -> ! {
@@ -254,7 +261,12 @@ impl ThinStr {
             .unwrap_or_else(|_| failed_thinstr_layout(capacity));
 
         // Pad out the layout
-        layout.pad_to_align()
+        let layout = layout.pad_to_align();
+
+        // Calculate the total allocated capacity minus the length and capacity usizes
+        let capacity = layout.size() - (size_of::<usize>() * 2);
+
+        (capacity, layout)
     }
 
     /// Create a layout for the given capacity without checking that it's valid
@@ -309,16 +321,15 @@ impl ThinStr {
         let capacity = next_multiple_of(capacity, 16);
 
         // For sigil values, allocate
-        if self.is_sigil() {
-            debug_assert_eq!(self.capacity(), 0);
-            unsafe { *self = Self::with_capacity_uninit(additional, 0) };
+        if self.capacity() == 0 {
+            *self = Self::with_capacity(capacity);
 
         // Otherwise realloc
         } else {
-            debug_assert!(!self.is_sigil());
+            debug_assert!(!self.is_sigil() && self.capacity() != 0);
 
-            let current_layout = Self::layout_for(self.capacity());
-            let new_layout = Self::layout_for(capacity);
+            let current_layout = unsafe { Self::layout_for_unchecked(self.capacity()) };
+            let (capacity, new_layout) = Self::layout_for(capacity);
 
             let ptr = unsafe {
                 std::alloc::realloc(self.buf.as_ptr().cast(), current_layout, new_layout.size())
@@ -333,21 +344,21 @@ impl ThinStr {
         }
     }
 
+    // FIXME: Does not allocate an exact capacity
     fn grow_exact(&mut self, capacity: usize) {
         debug_assert!(capacity > 0);
 
         // For sigil values, allocate
-        if self.is_sigil() {
-            debug_assert_eq!(self.capacity(), 0);
-            unsafe { *self = Self::with_capacity_uninit(capacity, 0) };
+        if self.capacity() == 0 {
+            *self = Self::with_capacity(capacity);
 
         // Otherwise realloc
         } else {
-            debug_assert!(!self.is_sigil());
+            debug_assert!(!self.is_sigil() && self.capacity() != 0);
 
             // Safety: The current layout was created in order to
             let current_layout = unsafe { Self::layout_for_unchecked(self.capacity()) };
-            let new_layout = Self::layout_for(capacity);
+            let (capacity, new_layout) = Self::layout_for(capacity);
 
             let ptr = unsafe {
                 std::alloc::realloc(self.buf.as_ptr().cast(), current_layout, new_layout.size())
@@ -377,9 +388,30 @@ impl ThinStr {
             self.grow(string_len - remaining);
         }
 
+        unsafe { self.push_str_unchecked(string) }
+    }
+
+    /// Appends the given string to the end of the current [`ThinStr`] without
+    /// checking if the current `ThinStr` has enough allocated capacity to
+    /// fit `string`
+    ///
+    /// # Safety
+    ///
+    /// The current string must have enough remaining capacity to fit all
+    /// bytes of `string` in it, `self.len() + string.len() <= self.capacity()`
+    #[inline]
+    pub unsafe fn push_str_unchecked(&mut self, string: &str) {
+        let final_len = self.len() + string.len();
+        debug_assert!(!self.is_sigil() && final_len <= self.capacity());
+
         unsafe {
-            debug_assert!(!self.is_sigil());
-            ptr::copy_nonoverlapping(string.as_ptr(), self.as_mut_ptr().add(len), string_len);
+            ptr::copy_nonoverlapping(
+                string.as_ptr(),
+                self.as_mut_ptr().add(self.len()),
+                string.len(),
+            );
+
+            self.set_len(final_len);
         }
     }
 
@@ -387,8 +419,8 @@ impl ThinStr {
         if self.capacity() > self.len() {
             debug_assert!(!self.is_sigil());
 
-            let current_layout = Self::layout_for(self.capacity());
-            let new_layout = Self::layout_for(self.len());
+            let current_layout = unsafe { Self::layout_for_unchecked(self.capacity()) };
+            let (capacity, new_layout) = Self::layout_for(self.len());
 
             unsafe {
                 let ptr = std::alloc::realloc(
@@ -402,7 +434,7 @@ impl ThinStr {
                 };
 
                 self.buf = buf;
-                self.set_capacity(self.len());
+                self.set_capacity(capacity);
             }
         }
     }
@@ -491,7 +523,7 @@ impl Clone for ThinStr {
 
     fn clone_from(&mut self, source: &Self) {
         // If self is sigil, we can't reallocate it
-        if self.is_empty() {
+        if self.is_sigil() {
             // If self is sigil and source isn't we can just directly clone source
             if !source.is_empty() {
                 *self = source.clone();
@@ -527,7 +559,7 @@ impl Clone for ThinStr {
 
 impl Drop for ThinStr {
     fn drop(&mut self) {
-        if !self.is_empty() {
+        if self.capacity() != 0 {
             // Safety: The current layout is valid since we must have created it in order to
             // make the current `ThinStr` and we're deallocating a valid allocation
             unsafe {

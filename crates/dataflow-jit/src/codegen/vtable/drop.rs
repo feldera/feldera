@@ -172,7 +172,7 @@ fn drop_layout(
 
         let next_drop = if nullable {
             // Zero = string isn't null, non-zero = string is null
-            let string_non_null = column_non_null(idx, ptr, layout, builder, true);
+            let string_null = column_non_null(idx, ptr, layout, builder, false);
 
             // If the string is null, jump to the `next_drop` block and don't drop
             // the current string. Otherwise (if the string isn't null) drop it and
@@ -181,7 +181,7 @@ fn drop_layout(
             let next_drop = builder.create_block();
             builder
                 .ins()
-                .brif(string_non_null, next_drop, &[], drop_string, &[]);
+                .brif(string_null, next_drop, &[], drop_string, &[]);
 
             builder.switch_to_block(drop_string);
 
@@ -195,9 +195,7 @@ fn drop_layout(
         let native_ty = layout
             .type_of(idx)
             .native_type(&module.isa().frontend_config());
-        // Readonly isn't transitive and doesn't apply to the data pointed to
-        // by the pointer we're loading
-        let flags = MemFlags::trusted().with_readonly();
+        let flags = MemFlags::trusted();
         let string = builder.ins().load(native_ty, flags, ptr, offset);
 
         // Drop the string

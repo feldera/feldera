@@ -321,8 +321,7 @@ impl Codegen {
 
                     let next_size_of = if nullable {
                         // Zero = string isn't null, non-zero = string is null
-                        let string_non_null =
-                            column_non_null(idx, ptr, &layout, &mut builder, true);
+                        let string_null = column_non_null(idx, ptr, &layout, &mut builder, true);
 
                         // If the string is null, jump to the `next_size_of` block and don't
                         // get the size of the current string (since it's null). Otherwise
@@ -332,7 +331,7 @@ impl Codegen {
                         let next_size_of = builder.create_block();
                         builder
                             .ins()
-                            .brif(string_non_null, next_size_of, &[], size_of_string, &[]);
+                            .brif(string_null, next_size_of, &[], size_of_string, &[]);
 
                         builder.switch_to_block(size_of_string);
 
