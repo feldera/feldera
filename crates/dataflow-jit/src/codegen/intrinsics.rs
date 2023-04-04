@@ -16,8 +16,6 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
-    mem::ManuallyDrop,
-    ptr::drop_in_place,
     rc::Rc,
     slice,
 };
@@ -231,8 +229,8 @@ extern "C" fn string_clone(string: ThinStrRef) -> ThinStr {
 
 /// Drops the given [`ThinStr`]
 // FIXME: Technically this can unwind
-unsafe extern "C" fn string_drop_in_place(mut string: ManuallyDrop<ThinStr>) {
-    drop_in_place(&mut string);
+unsafe extern "C" fn string_drop_in_place(string: ThinStr) {
+    drop(string);
 }
 
 unsafe extern "C" fn string_size_of_children(string: ThinStrRef, context: &mut size_of::Context) {
