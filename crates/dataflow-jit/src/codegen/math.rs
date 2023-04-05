@@ -322,9 +322,9 @@ impl CodegenCtx<'_> {
         let zero = builder.ins().iconst(lhs_ty, 0);
 
         let q = self.sdiv_checked(lhs, rhs, builder);
-        self.comment(builder.value_inst(q), || {
-            format!("sdiv_euclid({lhs}, {rhs})")
-        });
+        // self.comment(builder.value_inst(q), || {
+        //     format!("sdiv_euclid({lhs}, {rhs})")
+        // });
 
         let lt_zero = builder.create_block();
         let after = builder.create_block();
@@ -541,14 +541,20 @@ impl CodegenCtx<'_> {
         debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
+        let min = match lhs_ty {
+            types::I8 => i8::MIN as i64,
+            types::I16 => i16::MIN as i64,
+            types::I32 => i32::MIN as i64,
+            types::I64 => i64::MIN,
+            _ => unreachable!("unsupported type {lhs_ty}"),
+        };
+
         // if (lhs == Self::MIN) & (rhs == -1) {
         //     (lhs, true)
         // } else {
         //    (lhs / rhs, false)
         // }
-        let lhs_min = builder
-            .ins()
-            .icmp_imm(IntCC::Equal, lhs, 1 << (lhs_ty.bits() - 1));
+        let lhs_min = builder.ins().icmp_imm(IntCC::Equal, lhs, min);
         let rhs_neg1 = builder.ins().icmp_imm(IntCC::Equal, lhs, -1);
         let overflowed = builder.ins().band(lhs_min, rhs_neg1);
 
