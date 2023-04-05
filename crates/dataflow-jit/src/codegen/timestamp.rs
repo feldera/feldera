@@ -26,59 +26,74 @@ impl CodegenCtx<'_> {
         // if millis % 1000 < 0 {
         //     secs -= 1;
         // }
-        let one = builder.ins().iconst(types::I64, 1);
-        let one_thousand = builder.ins().iconst(types::I64, 1000);
-        let secs = builder.ins().sdiv(millis, one_thousand);
-        let secs_sub_one = builder.ins().isub(secs, one);
-        let millis_mod_1000 = self.srem_euclid(millis, one_thousand, builder);
-        let millis_lt_zero = builder
-            .ins()
-            .icmp_imm(IntCC::SignedLessThan, millis_mod_1000, 0);
-        let secs = builder.ins().select(millis_lt_zero, secs_sub_one, secs);
+        let secs = {
+            let one = builder.ins().iconst(types::I64, 1);
+            let one_thousand = builder.ins().iconst(types::I64, 1000);
+
+            let secs = builder.ins().sdiv(millis, one_thousand);
+            let secs_sub_one = builder.ins().isub(secs, one);
+
+            let millis_mod_1000 = builder.ins().srem(millis, one_thousand);
+
+            let millis_lt_zero = builder
+                .ins()
+                .icmp_imm(IntCC::SignedLessThan, millis_mod_1000, 0);
+
+            builder.ins().select(millis_lt_zero, secs_sub_one, secs)
+        };
 
         // let days = div_floor(secs, 86_400);
-        let secs_in_day = builder.ins().iconst(types::I64, 86_400);
-        let days = self.div_floor(true, secs, secs_in_day, builder);
+        let days = {
+            let secs_in_day = builder.ins().iconst(types::I64, 86_400);
+            self.div_floor(true, secs, secs_in_day, builder)
+        };
 
         // let days = if (i32::MIN as i64) <= days && days <= (i32::MAX as i64) {
         //     days as i32
         // } else {
         //     return TIMESTAMP_YEAR_ERROR;
         // };
-        let days_ge_min =
+        let days = {
+            let days_ge_min =
+                builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, days, i32::MIN as i64);
+            let days_le_max =
+                builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedLessThanOrEqual, days, i32::MAX as i64);
+            let days_inbounds = builder.ins().band(days_ge_min, days_le_max);
+
+            let days_valid = builder.create_block();
             builder
                 .ins()
-                .icmp_imm(IntCC::SignedGreaterThanOrEqual, days, i32::MIN as i64);
-        let days_le_max =
-            builder
-                .ins()
-                .icmp_imm(IntCC::SignedLessThanOrEqual, days, i32::MAX as i64);
-        let days_inbounds = builder.ins().band(days_ge_min, days_le_max);
+                .brif(days_inbounds, days_valid, &[], result_block, &[error_year]);
 
-        let days_valid = builder.create_block();
-        builder
-            .ins()
-            .brif(days_inbounds, days_valid, &[], result_block, &[error_year]);
+            builder.seal_current();
+            builder.switch_to_block(days_valid);
 
-        builder.seal_current();
-        builder.switch_to_block(days_valid);
+            builder.ins().ireduce(types::I32, days)
+        };
 
         // let days = if let Some(days) = days.checked_add(719_163) {
         //     days
         // } else {
         //     return TIMESTAMP_YEAR_ERROR;
         // };
-        let days = builder.ins().ireduce(types::I32, days);
-        let offset = builder.ins().iconst(types::I32, 719_163);
-        let (days, add_overflowed) = builder.ins().iadd_cout(days, offset);
+        let days = {
+            let offset = builder.ins().iconst(types::I32, 719_163);
+            let (days, add_overflowed) = builder.ins().iadd_cout(days, offset);
 
-        let days_valid = builder.create_block();
-        builder
-            .ins()
-            .brif(add_overflowed, result_block, &[error_year], days_valid, &[]);
+            let days_valid = builder.create_block();
+            builder
+                .ins()
+                .brif(add_overflowed, result_block, &[error_year], days_valid, &[]);
 
-        builder.seal_current();
-        builder.switch_to_block(days_valid);
+            builder.seal_current();
+            builder.switch_to_block(days_valid);
+
+            days
+        };
 
         // let days = days + 365;
         let days_in_year = builder.ins().iconst(types::I32, 365);
@@ -94,12 +109,7 @@ impl CodegenCtx<'_> {
         // let delta = YEAR_DELTAS[year_mod_400 as usize] as u32;
         let year_deltas_ptr = builder.ins().symbol_value(ptr_type, year_deltas);
         let delta = {
-            let year_mod_400_usize = if ptr_type == types::I64 {
-                builder.ins().uextend(types::I64, year_mod_400)
-            } else {
-                debug_assert_eq!(ptr_type, types::I32);
-                year_mod_400
-            };
+            let year_mod_400_usize = self.cast_to_ptr_size(year_mod_400, builder);
             let delta_ptr = builder.ins().iadd(year_deltas_ptr, year_mod_400_usize);
             let delta =
                 builder
@@ -114,59 +124,56 @@ impl CodegenCtx<'_> {
         // } else {
         //     ordinal0 -= delta;
         // }
-        let ordinal0_is_lt = builder.create_block();
-        let ordinal0_is_ge = builder.create_block();
+        let (year_mod_400, ordinal0) = {
+            let ordinal0_is_lt = builder.create_block();
+            let ordinal0_is_ge = builder.create_block();
 
-        let with_ordinal0 = builder.create_block();
-        builder.append_block_param(with_ordinal0, types::I32);
-        builder.append_block_param(with_ordinal0, types::I32);
+            let with_ordinal0 = builder.create_block();
+            builder.append_block_param(with_ordinal0, types::I32);
+            builder.append_block_param(with_ordinal0, types::I32);
 
-        let ordinal0_lt_delta = builder.ins().icmp(IntCC::UnsignedLessThan, ordinal0, delta);
-        builder
-            .ins()
-            .brif(ordinal0_lt_delta, ordinal0_is_lt, &[], ordinal0_is_ge, &[]);
+            let ordinal0_lt_delta = builder.ins().icmp(IntCC::UnsignedLessThan, ordinal0, delta);
+            builder
+                .ins()
+                .brif(ordinal0_lt_delta, ordinal0_is_lt, &[], ordinal0_is_ge, &[]);
 
-        builder.seal_current();
-        builder.switch_to_block(ordinal0_is_lt);
+            builder.seal_current();
+            builder.switch_to_block(ordinal0_is_lt);
 
-        {
-            //     year_mod_400 -= 1;
-            let one = builder.ins().iconst(types::I32, 1);
-            let year_mod_400 = builder.ins().isub(year_mod_400, one);
-            let year_mod_400_usize = if ptr_type == types::I64 {
-                builder.ins().uextend(types::I64, year_mod_400)
-            } else {
-                debug_assert_eq!(ptr_type, types::I32);
-                year_mod_400
-            };
+            {
+                //     year_mod_400 -= 1;
+                let one = builder.ins().iconst(types::I32, 1);
+                let year_mod_400 = builder.ins().isub(year_mod_400, one);
 
-            //     ordinal0 += 365 - YEAR_DELTAS[year_mod_400 as usize] as u32;
-            let delta_ptr = builder.ins().iadd(year_deltas_ptr, year_mod_400_usize);
-            let delta =
-                builder
-                    .ins()
-                    .load(types::I8, MemFlags::trusted().with_readonly(), delta_ptr, 0);
-            let delta = builder.ins().uextend(types::I32, delta);
-            let days_in_year_sub_delta = builder.ins().isub(days_in_year, delta);
-            let ordinal0 = builder.ins().iadd(ordinal0, days_in_year_sub_delta);
+                //     ordinal0 += 365 - YEAR_DELTAS[year_mod_400 as usize] as u32;
+                let year_mod_400_usize = self.cast_to_ptr_size(year_mod_400, builder);
+                let delta_ptr = builder.ins().iadd(year_deltas_ptr, year_mod_400_usize);
+                let delta = builder.ins().load(
+                    types::I8,
+                    MemFlags::trusted().with_readonly(),
+                    delta_ptr,
+                    0,
+                );
+                let delta = builder.ins().uextend(types::I32, delta);
 
-            builder.ins().jump(with_ordinal0, &[year_mod_400, ordinal0]);
+                let days_in_year_sub_delta = builder.ins().isub(days_in_year, delta);
+                let ordinal0 = builder.ins().iadd(ordinal0, days_in_year_sub_delta);
+
+                builder.ins().jump(with_ordinal0, &[year_mod_400, ordinal0]);
+            }
 
             builder.seal_current();
             builder.switch_to_block(ordinal0_is_ge);
-        }
 
-        {
-            //     ordinal0 -= delta;
-            let ordinal0 = builder.ins().isub(ordinal0, delta);
-
-            builder.ins().jump(with_ordinal0, &[year_mod_400, ordinal0]);
+            {
+                //     ordinal0 -= delta;
+                let ordinal0 = builder.ins().isub(ordinal0, delta);
+                builder.ins().jump(with_ordinal0, &[year_mod_400, ordinal0]);
+            }
 
             builder.seal_current();
             builder.switch_to_block(with_ordinal0);
-        }
 
-        let (year_mod_400, ordinal0) = {
             let params = builder.block_params(with_ordinal0);
             (params[0], params[1])
         };
@@ -176,12 +183,7 @@ impl CodegenCtx<'_> {
 
         // let flags = YEAR_TO_FLAGS[year_mod_400 as usize];
         let flags = {
-            let year_mod_400_usize = if ptr_type == types::I64 {
-                builder.ins().uextend(types::I64, year_mod_400)
-            } else {
-                debug_assert_eq!(ptr_type, types::I32);
-                year_mod_400
-            };
+            let year_mod_400_usize = self.cast_to_ptr_size(year_mod_400, builder);
             let year_to_flags_ptr = builder.ins().symbol_value(ptr_type, year_to_flags);
             let flags_ptr = builder.ins().iadd(year_to_flags_ptr, year_mod_400_usize);
 
@@ -246,7 +248,7 @@ impl CodegenCtx<'_> {
         let ol_valid = builder.ins().band(ol_ge_min, ol_le_max);
         let is_valid = builder.ins().band(year_valid, ol_valid);
 
-        let wide_year = builder.ins().uextend(types::I64, year);
+        let wide_year = builder.ins().sextend(types::I64, year);
         builder.ins().brif(
             is_valid,
             result_block,
@@ -450,17 +452,17 @@ mod tests {
         };
 
         let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
-        let function = codegen.codegen_func(concat!("div_", stringify!($ty)), &function);
+        let function = codegen.codegen_func("timestamp_year", &function);
 
         let mut runner = TestRunner::new(Config {
-            test_name: Some(concat!(module_path!(), "::div_", stringify!($ty))),
+            test_name: Some(concat!(module_path!(), "::timestamp_year")),
             source_file: Some(file!()),
             ..Config::default()
         });
 
         let (jit, _) = codegen.finalize_definitions();
         let result = {
-            let div_jit = unsafe {
+            let timestamp_year_jit = unsafe {
                 transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
                     jit.get_finalized_function(function),
                 )
@@ -468,7 +470,7 @@ mod tests {
 
             runner.run(&any::<i64>(), |millis| {
                 let mut result = 0;
-                div_jit(
+                timestamp_year_jit(
                     &millis as *const i64 as *const u8,
                     &mut result as *mut i64 as *mut u8,
                 );
@@ -485,5 +487,69 @@ mod tests {
         if let Err(err) = result {
             panic!("{}\n{}", err, runner);
         }
+    }
+
+    #[test]
+    fn timestamp_year_corpus() {
+        utils::test_logger();
+        let corpus = &[-62167219200001];
+
+        let layout_cache = RowLayoutCache::new();
+        let timestamp = layout_cache.add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Timestamp, false)
+                .build(),
+        );
+        let i64 = layout_cache.add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::I64, false)
+                .build(),
+        );
+
+        let function = {
+            let mut builder = FunctionBuilder::new(layout_cache.clone());
+            let input = builder.add_input(timestamp);
+            let output = builder.add_output(i64);
+
+            let timestamp = builder.load(input, 0);
+            let div = builder.add_expr(Call::new(
+                "dbsp.timestamp.year".into(),
+                vec![timestamp],
+                vec![ArgType::Scalar(ColumnType::Timestamp)],
+                ColumnType::I64,
+            ));
+            builder.store(output, 0, div);
+            builder.ret_unit();
+
+            builder.build()
+        };
+
+        let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+        let function = codegen.codegen_func("timestamp_year", &function);
+
+        let (jit, _) = codegen.finalize_definitions();
+        {
+            let timestamp_year_jit = unsafe {
+                transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                    jit.get_finalized_function(function),
+                )
+            };
+
+            for &millis in corpus {
+                let expected = year_of_timestamp(millis);
+                let reference = inlined_year_of_timestamp(millis);
+                assert_eq!(reference, expected);
+
+                let mut result = 0;
+                timestamp_year_jit(
+                    &millis as *const i64 as *const u8,
+                    &mut result as *mut i64 as *mut u8,
+                );
+
+                assert_eq!(result, expected);
+            }
+        }
+
+        unsafe { jit.free_memory() }
     }
 }

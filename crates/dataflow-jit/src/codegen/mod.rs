@@ -1906,4 +1906,25 @@ impl<'a> CodegenCtx<'a> {
             writer.borrow_mut().add_comment(inst, make_comment());
         }
     }
+
+    fn cast_to_ptr_size(&self, int: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        let value_ty = builder.func.dfg.value_type(int);
+        debug_assert!(value_ty.is_int());
+
+        match (value_ty, self.pointer_type()) {
+            (value_ty, ptr_ty) if value_ty == ptr_ty => int,
+
+            (value_ty, ptr_ty) if value_ty.bits() < ptr_ty.bits() => {
+                builder.ins().uextend(ptr_ty, int)
+            }
+
+            (value_ty, ptr_ty) if value_ty.bits() > ptr_ty.bits() => {
+                builder.ins().ireduce(ptr_ty, int)
+            }
+
+            (value_ty, ptr_ty) => {
+                unreachable!("tried to cast {value_ty} to pointer-sized {ptr_ty}")
+            }
+        }
+    }
 }
