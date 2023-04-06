@@ -51,7 +51,7 @@ use clap::Parser;
 #[cfg(unix)]
 use daemonize::Daemonize;
 use env_logger::Env;
-use log::debug;
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{read, write},
@@ -69,7 +69,10 @@ mod runner;
 
 pub(crate) use compiler::{Compiler, ProjectStatus};
 pub(crate) use config::ManagerConfig;
-use db::{ConfigId, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, Version};
+use db::{
+    AttachedConnectorId, ConfigId, ConnectorId, ConnectorType, DBError, PipelineId, ProjectDB,
+    ProjectDescr, ProjectId, Version,
+};
 use runner::{Runner, RunnerError};
 
 #[derive(OpenApi)]
@@ -117,19 +120,27 @@ observed by the user is outdated, so the request is rejected."
         new_config,
         update_config,
         delete_config,
-        list_project_configs,
+        list_configs,
+        config_status,
         new_pipeline,
-        list_project_pipelines,
+        list_pipelines,
         pipeline_status,
         pipeline_metadata,
         pipeline_start,
         pipeline_pause,
         pipeline_shutdown,
         pipeline_delete,
+        list_connectors,
+        new_connector,
+        update_connector,
+        connector_status,
+        delete_connector
     ),
     components(schemas(
         compiler::SqlCompilerMessage,
         db::ProjectDescr,
+        db::ConnectorDescr,
+        db::ConnectorType,
         db::ConfigDescr,
         db::PipelineDescr,
         dbsp_adapters::PipelineConfig,
@@ -145,9 +156,13 @@ observed by the user is outdated, so the request is rejected."
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::format::CsvEncoderConfig,
         dbsp_adapters::format::CsvParserConfig,
+        AttachedConnector,
+        Direction,
         ProjectId,
         PipelineId,
         ConfigId,
+        ConnectorId,
+        AttachedConnectorId,
         Version,
         ProjectStatus,
         ErrorResponse,
@@ -165,11 +180,16 @@ observed by the user is outdated, so the request is rejected."
         NewPipelineRequest,
         NewPipelineResponse,
         ShutdownPipelineRequest,
+        NewConnectorRequest,
+        NewConnectorResponse,
+        UpdateConnectorRequest,
+        UpdateConnectorResponse,
     ),),
     tags(
         (name = "Project", description = "Manage projects"),
         (name = "Config", description = "Manage project configurations"),
         (name = "Pipeline", description = "Manage project pipelines"),
+        (name = "Connector", description = "Manage data connectors"),
     ),
 )]
 pub struct ApiDoc;
@@ -324,15 +344,21 @@ where
         .service(new_config)
         .service(update_config)
         .service(delete_config)
-        .service(list_project_configs)
+        .service(list_configs)
+        .service(config_status)
         .service(new_pipeline)
-        .service(list_project_pipelines)
+        .service(list_pipelines)
         .service(pipeline_status)
         .service(pipeline_metadata)
         .service(pipeline_start)
         .service(pipeline_pause)
         .service(pipeline_shutdown)
         .service(pipeline_delete)
+        .service(list_connectors)
+        .service(new_connector)
+        .service(update_connector)
+        .service(connector_status)
+        .service(delete_connector)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
 
     if let Some(static_html) = &state.config.static_html {
@@ -384,6 +410,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
             DBError::OutdatedProjectVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownConfig(_) => HttpResponse::NotFound(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
+            DBError::UnknownConnector(_) => HttpResponse::NotFound(),
         }
         .json(ErrorResponse::new(&message))
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
@@ -393,6 +420,8 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
         }
         .json(ErrorResponse::new(&message))
     } else {
+        warn!("Unexpected error in http_resp_from_error: {}", error);
+        warn!("Backtrace: {:#?}", error.backtrace());
         HttpResponse::InternalServerError().json(ErrorResponse::new(&error.to_string()))
     }
 }
@@ -822,14 +851,6 @@ async fn do_delete_project(
     project_id: ProjectId,
 ) -> AnyResult<HttpResponse> {
     let db = state.db.lock().await;
-
-    for pipeline in db.list_project_pipelines(project_id).await?.iter() {
-        state
-            .runner
-            .delete_pipeline(&db, pipeline.pipeline_id)
-            .await?;
-    }
-
     db.delete_project(project_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
@@ -838,12 +859,16 @@ async fn do_delete_project(
 /// Request to create a new project configuration.
 #[derive(Deserialize, ToSchema)]
 struct NewConfigRequest {
-    /// Project to create config for.
-    project_id: ProjectId,
     /// Config name.
     name: String,
+    /// Config description.
+    description: String,
+    /// Project to create config for.
+    project_id: Option<ProjectId>,
     /// YAML code for the config.
     config: String,
+    /// Attached connectors.
+    connectors: Option<Vec<AttachedConnector>>,
 }
 
 /// Response to a config creation request.
@@ -876,7 +901,13 @@ async fn new_config(
         .db
         .lock()
         .await
-        .new_config(request.project_id, &request.name, &request.config)
+        .new_config(
+            request.project_id,
+            &request.name,
+            &request.description,
+            &request.config,
+            &request.connectors,
+        )
         .await
         .map(|(config_id, version)| {
             HttpResponse::Ok()
@@ -886,6 +917,27 @@ async fn new_config(
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
+/// Is the attached connection an Input or an Output?
+#[derive(Deserialize, Eq, PartialEq, Serialize, ToSchema, Debug, Copy, Clone)]
+enum Direction {
+    Input,
+    Output,
+    InputOutput,
+}
+
+/// Format to add attached connectors during a config update.
+#[derive(Deserialize, Serialize, ToSchema, Debug)]
+pub(crate) struct AttachedConnector {
+    /// A unique identifier for this attachement.
+    uuid: String,
+    /// Is this an input or an output?
+    direction: Direction,
+    /// The id of the connector to attach.
+    connector_id: ConnectorId,
+    /// The YAML config for this attached connector.
+    config: String,
+}
+
 /// Request to update an existing project configuration.
 #[derive(Deserialize, ToSchema)]
 struct UpdateConfigRequest {
@@ -893,21 +945,33 @@ struct UpdateConfigRequest {
     config_id: ConfigId,
     /// New config name.
     name: String,
+    /// New config description.
+    description: String,
+    /// New project to create config for. If absent, project will be set to
+    /// NULL.
+    project_id: Option<ProjectId>,
     /// New config YAML. If absent, existing YAML will be kept unmodified.
     config: Option<String>,
+    /// Attached connectors.
+    ///
+    /// - If absent, existing connectors will be kept unmodified.
+    ///
+    /// - If present all existing connectors will be replaced with the new
+    /// specified list.
+    connectors: Option<Vec<AttachedConnector>>,
 }
 
 /// Response to a config update request.
 #[derive(Serialize, ToSchema)]
 struct UpdateConfigResponse {
-    /// New config version.  Equals the previous version +1.
+    /// New config version. Equals the previous version +1.
     version: Version,
 }
 
 /// Update existing project configuration.
 ///
-/// Updates project config name and, optionally, code.
-/// On success, increments config version by 1.
+/// Updates project config name, description and code and, optionally, config
+/// and connectors. On success, increments config version by 1.
 #[utoipa::path(
     request_body = UpdateConfigRequest,
     responses(
@@ -916,6 +980,10 @@ struct UpdateConfigResponse {
             , description = "Specified `config_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+        (status = NOT_FOUND
+            , description = "A connector ID in `connectors` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
     ),
     tag = "Config"
 )]
@@ -928,7 +996,14 @@ async fn update_config(
         .db
         .lock()
         .await
-        .update_config(request.config_id, &request.name, &request.config)
+        .update_config(
+            request.config_id,
+            request.project_id,
+            &request.name,
+            &request.description,
+            &request.config,
+            &request.connectors,
+        )
         .await
         .map(|version| {
             HttpResponse::Ok()
@@ -971,38 +1046,57 @@ async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Re
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// List project configurations.
+/// List configurations.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project config list retrieved successfully.", body = [ConfigDescr]),
-        (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
-        (status = BAD_REQUEST
-            , description = "Specified `project_id` is not a valid integer."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid project id 'a'"))),
-    ),
-    params(
-        ("project_id" = i64, Path, description = "Unique project identifier")
+        (status = OK, description = "Config list retrieved successfully.", body = [ConfigDescr]),
     ),
     tag = "Config"
 )]
-#[get("/projects/{project_id}/configs")]
-async fn list_project_configs(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match parse_project_id_param(&req) {
+#[get("/configs")]
+async fn list_configs(state: WebData<ServerState>) -> impl Responder {
+    state
+        .db
+        .lock()
+        .await
+        .list_configs()
+        .await
+        .map(|configs| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(configs)
+        })
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Retrieve an existing configuration.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Config retrieved successfully.", body = ConfigDescr),
+        (status = NOT_FOUND
+            , description = "Specified `config_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+    ),
+    params(
+        ("config_id" = i64, Path, description = "Unique configuration identifier")
+    ),
+    tag = "Config"
+)]
+#[get("/configs/{config_id}")]
+async fn config_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let config_id = match parse_config_id_param(&req) {
         Err(e) => {
             return e;
         }
-        Ok(project_id) => project_id,
+        Ok(config_id) => config_id,
     };
 
     state
         .db
         .lock()
         .await
-        .list_project_configs(project_id)
+        .get_config(config_id)
         .await
         .map(|configs| {
             HttpResponse::Ok()
@@ -1015,10 +1109,6 @@ async fn list_project_configs(state: WebData<ServerState>, req: HttpRequest) -> 
 /// Request to create a new pipeline.
 #[derive(Deserialize, ToSchema)]
 pub(self) struct NewPipelineRequest {
-    /// Project id to create pipeline for.
-    project_id: ProjectId,
-    /// Latest project version known to the client.
-    project_version: Version,
     /// Project config to run the pipeline with.
     config_id: ConfigId,
     /// Latest config version known to the client.
@@ -1074,38 +1164,20 @@ async fn new_pipeline(
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// List pipelines associated with a project.
+/// List pipelines.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project pipeline list retrieved successfully.", body = [PipelineDescr]),
-        (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
-        (status = BAD_REQUEST
-            , description = "Specified `project_id` is not a valid integer."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid project id 'a'"))),
-    ),
-    params(
-        ("project_id" = i64, Path, description = "Unique project identifier")
+        (status = OK, description = "Project pipeline list retrieved successfully.", body = [PipelineDescr])
     ),
     tag = "Pipeline"
 )]
-#[get("/projects/{project_id}/pipelines")]
-async fn list_project_pipelines(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match parse_project_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(project_id) => project_id,
-    };
-
+#[get("/pipelines")]
+async fn list_pipelines(state: WebData<ServerState>) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_project_pipelines(project_id)
+        .list_pipelines()
         .await
         .map(|pipelines| {
             HttpResponse::Ok()
@@ -1346,5 +1418,221 @@ async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl 
         .runner
         .delete_pipeline(&db, pipeline_id)
         .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+fn parse_connector_id_param(req: &HttpRequest) -> Result<ConnectorId, HttpResponse> {
+    match req.match_info().get("connector_id") {
+        None => Err(HttpResponse::BadRequest().body("missing connector id argument")),
+        Some(connector_id) => match connector_id.parse::<i64>() {
+            Err(e) => Err(HttpResponse::BadRequest()
+                .body(format!("invalid connector id '{connector_id}': {e}"))),
+            Ok(connector_id) => Ok(ConnectorId(connector_id)),
+        },
+    }
+}
+
+/// Enumerate the connector database.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "List of connectors retrieved successfully", body = [ConnectorDescr]),
+    ),
+    tag = "Connector"
+)]
+#[get("/connectors")]
+async fn list_connectors(state: WebData<ServerState>) -> impl Responder {
+    state
+        .db
+        .lock()
+        .await
+        .list_connectors()
+        .await
+        .map(|connectors| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(connectors)
+        })
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Request to create a new connector.
+#[derive(Deserialize, ToSchema)]
+pub(self) struct NewConnectorRequest {
+    /// connector name.
+    name: String,
+    /// connector description.
+    description: String,
+    /// connector type.
+    typ: ConnectorType,
+    /// connector config.
+    config: String,
+}
+
+/// Response to a connector creation request.
+#[derive(Serialize, ToSchema)]
+struct NewConnectorResponse {
+    /// Unique id assigned to the new connector.
+    connector_id: ConnectorId,
+}
+
+/// Create a new connector configuration.
+#[utoipa::path(
+    request_body = NewConnectorRequest,
+    responses(
+        (status = OK, description = "connector successfully created.", body = NewConnectorResponse),
+    ),
+    tag = "Connector"
+)]
+#[post("/connector")]
+async fn new_connector(
+    state: WebData<ServerState>,
+    request: web::Json<NewConnectorRequest>,
+) -> impl Responder {
+    state
+        .db
+        .lock()
+        .await
+        .new_connector(
+            &request.name,
+            &request.description,
+            request.typ,
+            &request.config,
+        )
+        .await
+        .map(|connector_id| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(&NewConnectorResponse { connector_id })
+        })
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Request to update an existing data-connector.
+#[derive(Deserialize, ToSchema)]
+struct UpdateConnectorRequest {
+    /// connector id.
+    connector_id: ConnectorId,
+    /// New connector name.
+    name: String,
+    /// New connector description.
+    description: String,
+    /// New config YAML. If absent, existing YAML will be kept unmodified.
+    config: Option<String>,
+}
+
+/// Response to a config update request.
+#[derive(Serialize, ToSchema)]
+struct UpdateConnectorResponse {}
+
+/// Update existing project connector.
+///
+/// Updates project config name and, optionally, code.
+/// On success, increments config version by 1.
+#[utoipa::path(
+    request_body = UpdateConnectorRequest,
+    responses(
+        (status = OK, description = "connector successfully updated.", body = UpdateConnectorResponse),
+        (status = NOT_FOUND
+            , description = "Specified `connector_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
+    ),
+    tag = "Connector"
+)]
+#[patch("/connectors")]
+async fn update_connector(
+    state: WebData<ServerState>,
+    request: web::Json<UpdateConnectorRequest>,
+) -> impl Responder {
+    state
+        .db
+        .lock()
+        .await
+        .update_connector(
+            request.connector_id,
+            &request.name,
+            &request.description,
+            &request.config,
+        )
+        .await
+        .map(|_r| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(&UpdateConnectorResponse {})
+        })
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Delete existing connector.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "connector successfully deleted."),
+        (status = NOT_FOUND
+            , description = "Specified `connector_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
+    ),
+    params(
+        ("connector_id" = i64, Path, description = "Unique connector identifier")
+    ),
+    tag = "Connector"
+)]
+#[delete("/connector/{connector_id}")]
+async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let connector_id = match parse_connector_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(connector_id) => connector_id,
+    };
+
+    state
+        .db
+        .lock()
+        .await
+        .delete_connector(connector_id)
+        .await
+        .map(|_| HttpResponse::Ok().finish())
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Returns connector descriptor.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "connector status retrieved successfully.", body = ConnectorDescr),
+        (status = BAD_REQUEST
+            , description = "Missing or invalid `connector_id` parameter."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Missing 'connector_id' parameter."))),
+        (status = NOT_FOUND
+            , description = "Specified `connector_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown connector id '42'"))),
+    ),
+    params(
+        ("connector_id" = i64, Path, description = "Unique connector identifier")
+    ),
+    tag = "Connector"
+)]
+#[get("/connectors/{connector_id}")]
+async fn connector_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let connector_id = match parse_connector_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(connector_id) => connector_id,
+    };
+
+    state
+        .db
+        .lock()
+        .await
+        .get_connector(connector_id)
+        .await
+        .map(|descr| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(&descr)
+        })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

@@ -4,11 +4,13 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt update && apt install libssl-dev build-essential pkg-config \
-     git gcc clang libclang-dev python3-pip hub numactl cmake \
+     git gcc clang libclang-dev python3-pip python3-plumbum hub numactl cmake \
      curl openjdk-19-jre-headless maven netcat jq \
      adduser libfontconfig1 unzip -y
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+RUN ~/.cargo/bin/cargo install --no-default-features --force cargo-make
 
 # Install rpk
 RUN arch=`dpkg --print-architecture`; \
@@ -45,6 +47,9 @@ RUN cd /database-stream-processor && \
 RUN cd /database-stream-processor/crates/pipeline_manager \
     && ~/.cargo/bin/cargo install --path . \
     && rm -rf /database-stream-processor/target .git
+
+RUN cd /database-stream-processor/crates/pipeline_manager \
+    && ~/.cargo/bin/cargo make openapi_python
 
 RUN cd /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
