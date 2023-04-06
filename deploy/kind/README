@@ -14,12 +14,8 @@ First, set up a kind cluster, the required Helm charts and the demo pod docker c
 $: ./setup.sh
 ```
 
-Next, launch and login to the demo pod and run the demo script:
+Next, bring up the DBSP namespace, manager, service and ingress rules:
 
 ```
-# Will take a while the first time it is run
-$: ./login.sh
-
-# From within the demo pod
-$: database-stream-processor/demo/demo.sh
+$: kubectl apply -f dbsp-deploy.yml
 ```
