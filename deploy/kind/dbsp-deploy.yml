@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dbsp
+  labels:
+    name: dbsp
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: dbsp-manager
+  namespace: dbsp
+  labels:
+    app: dbsp
+spec:
+  containers:
+  - image: localhost:5001/dbspmanager
+    name: dbsp-manager
+    ports:
+    - containerPort: 8080
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: dbsp-service
+  namespace: dbsp
+spec:
+  selector:
+    app: dbsp
+  ports:
+  # Default port used by the image
+  - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cluster-ingress
+  namespace: dbsp
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: dbsp-service
+            port:
+              number: 8080
+---

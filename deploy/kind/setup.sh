@@ -71,3 +71,7 @@ helm repo update
 helm install redpanda redpanda/redpanda --version 2.6.1 --set statefulset.replicas=1
 
 docker tag dbspmanager localhost:5001/dbspmanager && docker push localhost:5001/dbspmanager
+
+
+#### Set up ingress controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
