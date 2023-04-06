@@ -1,5 +1,6 @@
 import tempfile
 import os
+import sys
 
 from dbsp import DBSPConnection
 from dbsp import DBSPPipelineConfig
@@ -117,7 +118,7 @@ def main():
         suffix='.csv', prefix='output', text=True)
     os.close(outfd)
 
-    dbsp = DBSPConnection()
+    dbsp = DBSPConnection() if len(sys.argv) == 1 else DBSPConnection(sys.argv[1])
     print("Connection established")
 
     project = dbsp.create_or_replace_project(name="foo", sql_code=sql_code)
