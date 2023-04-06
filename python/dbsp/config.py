@@ -76,6 +76,21 @@ class DBSPPipelineConfig:
             DBSPConnector(self.api_client, name, ConnectorType.KAFKAIN, TransportConfig(
                 name="kafka",
                 config=config), format=format))
+    
+    def add_http_input(self, stream: str, format_: FormatConfig):
+        """Add an HTTP input endpoint
+
+        Args:
+            stream (str): Input stream name to connect the endpoint to.
+            format_ (FormatConfig): Data format specification, e.g., CsvInputFormatConfig().
+        """
+        self.add_input(
+                stream,
+                InputEndpointConfig(
+                    stream = stream,
+                    transport = TransportConfig(
+                        name = "http"),
+                    format_ = format_))
 
     def add_kafka_output(self, name: str, stream: str, config: KafkaOutputConfig, format: FormatConfig):
         """Add a Kafka output connector to the pipeline configuration.
@@ -135,6 +150,23 @@ class DBSPPipelineConfig:
             DBSPConnector(self.api_client, filepath, ConnectorType.FILE, TransportConfig(
                 name="file",
                 config=FileOutputConfig.from_dict(dict({'path': filepath}))), format=format))
+
+    def add_http_output(self, stream: str, format_: FormatConfig): 
+        """Add an HTTP output endpoint
+
+        Args:
+            stream (str): Output stream name to connect the endpoint to.
+            format_ (FormatConfig): Data format specification, e.g., CsvOutputFormatConfig().
+        """
+        self.add_output(
+                stream,
+                OutputEndpointConfig(
+                    stream = stream,
+                    transport = TransportConfig(
+                        name = "http"),
+                    format_ = format_))
+
+
 
     def yaml(self) -> str:
         """Convert pipeline configuration to YAML format."""
