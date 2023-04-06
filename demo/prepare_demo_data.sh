@@ -14,8 +14,9 @@ for project_dir in "${project_prefix}"*
 do
     project_name=${project_dir#$project_prefix}
 
-    if test -f "${project_dir}/prepare.sh"; then
-        echo "  Running custom project setup script"
-        "${project_dir}"/prepare.sh
+    # TimeSeriesEnrich data is the same as we loaded in SimpleSelect
+    if [ "$project_name" != "demo01-TimeSeriesEnrich" ]
+    then
+        python3  "${project_dir}/run.py" prepare
     fi
 done

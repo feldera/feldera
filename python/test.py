@@ -11,6 +11,7 @@ from dbsp import FileInputConfig
 from dbsp import FileOutputConfig
 from dbsp import CsvInputFormatConfig
 from dbsp import CsvOutputFormatConfig
+from dbsp import DBSPConnector
 
 demographics = """4218196001337,172,1,866,131,34,12043,42.684,-74.4939,8509,4,1968-10-03
 4351161559407816183,107,0,319,34,34,13027,43.162,-76.3237,31637,357,1948-06-07
@@ -99,33 +100,39 @@ CREATE VIEW transactions_with_demographics as
         transactions JOIN demographics
         ON transactions.cc_num = demographics.cc_num;"""
 
+
 def main():
-    demfd, dempath = tempfile.mkstemp(suffix='.csv', prefix='demographics', text=True)
+    demfd, dempath = tempfile.mkstemp(
+        suffix='.csv', prefix='demographics', text=True)
     with os.fdopen(demfd, 'w') as f:
         f.write(demographics)
     print("Demographics data written to '" + dempath + "'")
 
-    transfd, transpath = tempfile.mkstemp(suffix='.csv', prefix='transactions', text=True)
+    transfd, transpath = tempfile.mkstemp(
+        suffix='.csv', prefix='transactions', text=True)
     with os.fdopen(transfd, 'w') as f:
         f.write(transactions)
 
-    outfd, outpath = tempfile.mkstemp(suffix='.csv', prefix='output', text=True)
+    outfd, outpath = tempfile.mkstemp(
+        suffix='.csv', prefix='output', text=True)
     os.close(outfd)
 
     dbsp = DBSPConnection()
     print("Connection established")
 
-    project = dbsp.create_or_replace_project(name = "foo", sql_code = sql_code)
+    project = dbsp.create_or_replace_project(name="foo", sql_code=sql_code)
     print("Project created")
 
     status = project.status()
     print("Project status: " + status)
 
     config = DBSPPipelineConfig(project, 6)
-
-    config.add_file_input(stream = 'DEMOGRAPHICS', filepath = dempath, format_ = CsvInputFormatConfig())
-    config.add_file_input(stream = 'TRANSACTIONS', filepath = transpath, format_ = CsvInputFormatConfig())
-    config.add_file_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', filepath = outpath, format_ = CsvOutputFormatConfig())
+    config.add_file_input(stream='DEMOGRAPHICS',
+                          filepath=dempath, format=CsvInputFormatConfig())
+    config.add_file_input(stream='TRANSACTIONS',
+                          filepath=transpath, format=CsvInputFormatConfig())
+    config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
+                           filepath=outpath, format=CsvOutputFormatConfig())
 
     project.compile()
     print("Project compiled")

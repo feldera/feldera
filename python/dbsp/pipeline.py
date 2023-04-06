@@ -11,15 +11,19 @@ from dbsp_api_client.api.pipeline import pipeline_delete
 from dbsp_api_client.api.pipeline import pipeline_metadata
 from dbsp_api_client.api.pipeline import pipeline_status
 from dbsp_api_client.models.shutdown_pipeline_request import ShutdownPipelineRequest
+from dbsp.error import TimeoutException
+
 
 class DBSPPipeline:
     """DBSP pipeline instance.
     """
 
-    def __init__(self, api_client: Client, pipeline_id: int):
+    def __init__(self, config, api_client: Client, pipeline_id: int):
         self.api_client = api_client
         self.pipeline_id = pipeline_id
-        pipeline_start.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to start pipeline")
+        self.config = config
+        pipeline_start.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to start pipeline")
 
     def pause(self):
         """Pause pipeline.
@@ -28,7 +32,8 @@ class DBSPPipeline:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        pipeline_pause.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to pause pipeline")
+        pipeline_pause.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to pause pipeline")
 
     def start(self):
         """Start paused pipeline.
@@ -37,7 +42,8 @@ class DBSPPipeline:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        pipeline_start.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to start pipeline")
+        pipeline_start.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to start pipeline")
 
 #    def shutdown(self):
 #        """Terminate the execution of a pipeline.
@@ -65,7 +71,9 @@ class DBSPPipeline:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        pipeline_delete.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to delete pipeline")
+        pipeline_delete.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to delete pipeline")
+        self.config.pipeline_id = None
 
     def status(self) -> Dict[str, Any]:
         """Retrieve pipeline status and performance counters.
@@ -74,7 +82,8 @@ class DBSPPipeline:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        status = pipeline_status.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to retrieve pipeline status")
+        status = pipeline_status.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to retrieve pipeline status")
         return status.additional_properties
 
     def wait(self, timeout: float = sys.maxsize):
@@ -93,7 +102,8 @@ class DBSPPipeline:
             if status['global_metrics']['pipeline_complete'] == True:
                 return
             time.sleep(0.5)
-        raise TimeoutException("Timeout waiting for the pipeline to complete after " + str(timeout) + "s")
+        raise TimeoutException(
+            "Timeout waiting for the pipeline to complete after " + str(timeout) + "s")
 
     def metadata(self) -> Dict[str, Any]:
         """Retrieve pipeline metadata.
@@ -102,5 +112,6 @@ class DBSPPipeline:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        meta = pipeline_metadata.sync_detailed(client = self.api_client, pipeline_id = self.pipeline_id).unwrap("Failed to retrieve pipeline metadata")
+        meta = pipeline_metadata.sync_detailed(client=self.api_client, pipeline_id=self.pipeline_id).unwrap(
+            "Failed to retrieve pipeline metadata")
         return meta.additional_properties
