@@ -2505,9 +2505,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.24.2"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898745e570c7d0453cc1fbc4a701eb6c662ed54e8fec8b7d14be137ebeeb9d14"
+checksum = "afc22eff61b133b115c6e8c74e818c628d6d5e7a502afea6f64dee076dd94326"
 dependencies = [
  "cc",
  "pkg-config",
@@ -4016,9 +4016,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8de3b03a925878ed54a954f621e64bf55a3c1bd29652d0d1a17830405350188"
+version = "0.6.2"
+source = "git+https://github.com/gz/sqlx.git?branch=v0.6.3-upgrade#736a9ab47f92e8ef0b941d69703edf55ef53b11c"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -4026,9 +4025,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-core"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa8241483a83a3f33aa5fff7e7d9def398ff9990b2752b6c6112b83c6d246029"
+version = "0.6.2"
+source = "git+https://github.com/gz/sqlx.git?branch=v0.6.3-upgrade#736a9ab47f92e8ef0b941d69703edf55ef53b11c"
 dependencies = [
  "ahash 0.7.6",
  "atoi",
@@ -4079,9 +4077,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9966e64ae989e7e575b19d7265cb79d7fc3cbbdf179835cb0d716f294c2049c9"
+version = "0.6.2"
+source = "git+https://github.com/gz/sqlx.git?branch=v0.6.3-upgrade#736a9ab47f92e8ef0b941d69703edf55ef53b11c"
 dependencies = [
  "dotenvy",
  "either",
@@ -4098,9 +4095,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-rt"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "804d3f245f894e61b1e6263c84b23ca675d96753b5abfd5cc8597d86806e8024"
+version = "0.6.2"
+source = "git+https://github.com/gz/sqlx.git?branch=v0.6.3-upgrade#736a9ab47f92e8ef0b941d69703edf55ef53b11c"
 dependencies = [
  "native-tls",
  "once_cell",
