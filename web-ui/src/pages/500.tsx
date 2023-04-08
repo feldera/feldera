@@ -1,22 +1,12 @@
-// ** React Imports
 import { ReactNode } from 'react'
-
-// ** Next Import
 import Link from 'next/link'
-
-// ** MUI Components
 import Button from '@mui/material/Button'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import Box, { BoxProps } from '@mui/material/Box'
-
-// ** Layout Import
 import BlankLayout from 'src/@core/layouts/BlankLayout'
+import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
-// ** Demo Imports
-import FooterIllustrations from 'src/views/pages/misc/FooterIllustrations'
-
-// ** Styled Components
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '90vw'
@@ -55,7 +45,7 @@ const Error500 = () => {
           <Typography variant='h5' sx={{ mb: 1, fontSize: '1.5rem !important' }}>
             Internal server error 👨🏻‍💻
           </Typography>
-          <Typography variant='body2'>Oops, something went wrong!</Typography>
+          <Typography variant='body2'>Oops, something went wrong on the server!</Typography>
         </BoxWrapper>
         <Img height='487' alt='error-illustration' src='/images/pages/500.png' />
         <Link passHref href='/'>

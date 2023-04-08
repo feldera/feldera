@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "strictPropertyInitialization": false,
+    "experimentalDecorators": true,
     "baseUrl": ".",
     "rootDir": "src",
     "target": "es6",
@@ -30,7 +32,8 @@
     }
   },
   "include": [
-    "src"
+    "src",
+    "declaration.d.ts"
   ],
   "exclude": [
     "node_modules"

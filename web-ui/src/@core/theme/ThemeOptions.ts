@@ -1,25 +1,19 @@
-// ** MUI Theme Provider
 import { deepmerge } from '@mui/utils'
 import { ThemeOptions } from '@mui/material'
-
-// ** Type Import
 import { Settings } from 'src/@core/context/settingsContext'
-
-// ** Theme Override Imports
 import palette from './palette'
 import spacing from './spacing'
 import shadows from './shadows'
 import breakpoints from './breakpoints'
 
 const themeOptions = (settings: Settings): ThemeOptions => {
-  // ** Vars
   const { mode, themeColor } = settings
 
   const themeConfig = {
     palette: palette(mode, themeColor),
     typography: {
       fontFamily: [
-        'Inter',
+        'Public Sans',
         'sans-serif',
         '-apple-system',
         'BlinkMacSystemFont',
