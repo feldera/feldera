@@ -128,12 +128,21 @@ def main():
     print("Project status: " + status)
 
     config = DBSPPipelineConfig(project, 6)
-    config.add_file_input(stream='DEMOGRAPHICS',
-                          filepath=dempath, format=CsvInputFormatConfig())
-    config.add_file_input(stream='TRANSACTIONS',
-                          filepath=transpath, format=CsvInputFormatConfig())
-    config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
-                           filepath=outpath, format=CsvOutputFormatConfig())
+
+    # config.add_file_input(stream='DEMOGRAPHICS',
+    #                       filepath=dempath, format=CsvInputFormatConfig())
+    # config.add_file_input(stream='TRANSACTIONS',
+    #                       filepath=transpath, format=CsvInputFormatConfig())
+    # config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
+    #                        filepath=outpath, format=CsvOutputFormatConfig())
+
+    config.add_http_input(stream = 'DEMOGRAPHICS', format_ = CsvInputFormatConfig())
+    config.add_http_input(stream = 'TRANSACTIONS', format_ = CsvInputFormatConfig())
+    config.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', format_ = CsvOutputFormatConfig())
+
+    # config.add_file_input(stream = 'DEMOGRAPHICS', filepath = dempath, format_ = CsvInputFormatConfig())
+    # config.add_file_input(stream = 'TRANSACTIONS', filepath = transpath, format_ = CsvInputFormatConfig())
+    # config.add_file_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', filepath = outpath, format_ = CsvOutputFormatConfig())
 
     project.compile()
     print("Project compiled")
@@ -147,26 +156,26 @@ def main():
     print("Pipeline status: " + str(pipeline.status()))
     print("Pipeline metadata: " + str(pipeline.metadata()))
 
-    pipeline.pause()
-    print("Pipeline paused")
+    # pipeline.pause()
+    # print("Pipeline paused")
 
-    pipeline.start()
-    print("Pipeline restarted")
+    # pipeline.start()
+    # print("Pipeline restarted")
 
-    pipeline.wait()
-    print("Pipeline finished")
+    # pipeline.wait()
+    # print("Pipeline finished")
 
-    # pipeline.shutdown()
-    # print("Pipeline terminated")
+    # # pipeline.shutdown()
+    # # print("Pipeline terminated")
 
-    pipeline.delete()
-    print("Pipeline deleted")
+    # pipeline.delete()
+    # print("Pipeline deleted")
 
-    with open(outpath, 'r') as outfile:
-        output = outfile.read()
+    # with open(outpath, 'r') as outfile:
+    #     output = outfile.read()
 
-    print("Output read from '" + outpath + "':")
-    print(output)
+    # print("Output read from '" + outpath + "':")
+    # print(output)
 
 
 if __name__ == "__main__":

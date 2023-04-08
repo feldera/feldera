@@ -42,7 +42,7 @@ proptest = { version = "1.0.0", optional = true }
 proptest-derive = { version = "0.3.0", optional = true }
 env_logger = "0.10.0"
 clap = { version = "4.0.32", features = ["derive"] }
-tokio = { version = "1.25.0", features = ["sync"] }
+tokio = { version = "1.25.0", features = ["sync", "macros"] }
 prometheus = "0.13.3"
 utoipa = { version = "3.0.1" }
 actix-codec = { version = "0.5.0", optional = true }
@@ -56,6 +56,7 @@ proptest-derive = "0.3.0"
 futures = "0.3.25"
 bytestring = "1.2.0"
 actix-codec = "0.5.0"
+websocket = "0.26.5"
 
 [build-dependencies]
 static-files = "0.2.3"

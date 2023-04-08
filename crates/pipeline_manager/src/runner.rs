@@ -3,9 +3,15 @@ use crate::{
     NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB, ProjectId, ProjectStatus,
     Version,
 };
-use actix_web::{http::Method, HttpResponse};
+use actix_web::{
+    http::{Error, Method},
+    web::BytesMut,
+    HttpRequest, HttpResponse,
+};
+use actix_web_actors::ws::handshake;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use awc::Client;
+use futures_util::StreamExt;
 use log::error;
 use regex::Regex;
 use serde::Serialize;
@@ -15,7 +21,7 @@ use std::{
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all, remove_file, File},
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, BufReader, SeekFrom},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncWriteExt, BufReader, SeekFrom},
     process::{Child, Command},
     sync::Mutex,
     time::{sleep, Duration, Instant},
@@ -262,7 +268,7 @@ scrape_configs:
             ac: &AttachedConnector,
         ) -> AnyResult<()> {
             let ident = 4;
-            config.push_str(format!("{:ident$}connector-{}:\n", "", ac.uuid.as_str()).as_str());
+            config.push_str(format!("{:ident$}{}:\n", "", ac.uuid.as_str()).as_str());
             let ident = 8;
             config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
             let connector = db.get_connector(ac.connector_id).await?;
@@ -594,5 +600,57 @@ scrape_configs:
         }
 
         Ok(response_builder.body(response_body))
+    }
+
+    pub(crate) async fn forward_to_pipeline_as_stream(
+        &self,
+        pipeline_id: PipelineId,
+        uuid: &str,
+        req: HttpRequest,
+        mut body: actix_web::web::Payload,
+    ) -> AnyResult<HttpResponse> {
+        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
+        if pipeline_descr.killed {
+            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+        }
+        let port = pipeline_descr.port;
+        let direction = self
+            .db
+            .lock()
+            .await
+            .get_attached_connector_direction(uuid)
+            .await?;
+        let url = if direction == Direction::Input {
+            format!("ws://localhost:{port}/input_endpoint/{uuid}")
+        } else {
+            format!("ws://localhost:{port}/output_endpoint/{uuid}")
+        };
+
+        let (_, socket) = awc::Client::new().ws(url).connect().await.unwrap();
+        let mut io = socket.into_parts().io;
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let mut buf = BytesMut::new();
+        actix_web::rt::spawn(async move {
+            loop {
+                tokio::select! {
+                    res = body.next() => {
+                        match res {
+                            None => return,
+                            Some(body) => {
+                                let bytes = body.unwrap();
+                                io.write_all(&bytes).await.unwrap();
+                            }
+                        }
+                    }
+                    res = io.read_buf(&mut buf) => {
+                        let size = res.unwrap();
+                        let bytes = buf.split_to(size).freeze();
+                        tx.unbounded_send(Ok::<_, Error>(bytes)).unwrap();
+                    }
+                }
+            }
+        });
+        let mut resp = handshake(&req).unwrap();
+        Ok(resp.streaming(rx))
     }
 }
