@@ -1,11 +1,6 @@
-// ** React Imports
 import { ElementType, ReactNode } from 'react'
-
-// ** Next Imports
 import Link from 'next/link'
 import { useRouter } from 'next/router'
-
-// ** MUI Imports
 import Chip from '@mui/material/Chip'
 import ListItem from '@mui/material/ListItem'
 import { styled } from '@mui/material/styles'
@@ -13,18 +8,10 @@ import Typography from '@mui/material/Typography'
 import Box, { BoxProps } from '@mui/material/Box'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemButton, { ListItemButtonProps } from '@mui/material/ListItemButton'
-
-// ** Configs Import
 import themeConfig from 'src/configs/themeConfig'
-
-// ** Types
 import { NavLink } from 'src/@core/layouts/types'
 import { Settings } from 'src/@core/context/settingsContext'
-
-// ** Custom Components Imports
-import UserIcon from 'src/layouts/components/UserIcon'
-
-// ** Utils
+import { Icon } from '@iconify/react'
 import { handleURLQueries } from 'src/@core/layouts/utils'
 
 interface Props {
@@ -63,11 +50,8 @@ const MenuItemTextMetaWrapper = styled(Box)<BoxProps>({
 })
 
 const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
-  // ** Hooks
   const router = useRouter()
-
-  const IconTag: ReactNode = item.icon
-
+  const IconTag: string = item.icon || ''
   const isNavLinkActive = () => {
     if (router.pathname === item.path || handleURLQueries(router, item.path)) {
       return true
@@ -109,7 +93,7 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
               transition: 'margin .25s ease-in-out'
             }}
           >
-            <UserIcon icon={IconTag} />
+            <Icon icon={IconTag} style={{ fontSize: '1.5rem'}} />
           </ListItemIcon>
 
           <MenuItemTextMetaWrapper>

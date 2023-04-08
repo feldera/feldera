@@ -1,30 +1,32 @@
-// ** Type Imports
 import { PaletteMode } from '@mui/material'
 import { ThemeColor } from 'src/@core/layouts/types'
 
 const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
-  // ** Vars
-  const lightColor = '58, 53, 65'
-  const darkColor = '231, 227, 252'
+  const whiteColor = '#FFF'
+  const lightColor = '50, 71, 92'
+  const darkColor = '219, 219, 235'
+  const darkPaperBgColor = '#2B2C40'
+
   const mainColor = mode === 'light' ? lightColor : darkColor
 
   const primaryGradient = () => {
     if (themeColor === 'primary') {
-      return '#C6A7FE'
+      return '#8082FF'
     } else if (themeColor === 'secondary') {
-      return '#9C9FA4'
+      return '#97A2B1'
     } else if (themeColor === 'success') {
-      return '#93DD5C'
+      return '#86E255'
     } else if (themeColor === 'error') {
-      return '#FF8C90'
+      return '#FF5B3F'
     } else if (themeColor === 'warning') {
-      return '#FFCF5C'
+      return '#FFB826'
     } else {
       return '#6ACDFF'
     }
   }
 
   return {
+    mode: mode,
     customColors: {
       main: mainColor,
       primaryGradient: primaryGradient(),
@@ -32,44 +34,43 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
     },
     common: {
       black: '#000',
-      white: '#FFF'
+      white: whiteColor
     },
-    mode: mode,
     primary: {
-      light: '#9E69FD',
-      main: '#9155FD',
-      dark: '#804BDF',
-      contrastText: '#FFF'
+      light: '#8082FF',
+      main: '#696CFF',
+      dark: '#6062E8',
+      contrastText: whiteColor
     },
     secondary: {
-      light: '#9C9FA4',
-      main: '#8A8D93',
-      dark: '#777B82',
-      contrastText: '#FFF'
-    },
-    success: {
-      light: '#6AD01F',
-      main: '#56CA00',
-      dark: '#4CB200',
-      contrastText: '#FFF'
+      light: '#97A2B1',
+      main: '#8592A3',
+      dark: '#798594',
+      contrastText: whiteColor
     },
     error: {
-      light: '#FF6166',
-      main: '#FF4C51',
-      dark: '#E04347',
-      contrastText: '#FFF'
+      light: '#FF5B3F',
+      main: '#FF3E1D',
+      dark: '#E8381A',
+      contrastText: whiteColor
     },
     warning: {
-      light: '#FFCA64',
-      main: '#FFB400',
-      dark: '#E09E00',
-      contrastText: '#FFF'
+      light: '#FFB826',
+      main: '#FFAB00',
+      dark: '#E89C00',
+      contrastText: whiteColor
     },
     info: {
-      light: '#32BAFF',
-      main: '#16B1FF',
-      dark: '#139CE0',
-      contrastText: '#FFF'
+      light: '#29CCEF',
+      main: '#03C3EC',
+      dark: '#03B1D7',
+      contrastText: whiteColor
+    },
+    success: {
+      light: '#86E255',
+      main: '#71DD37',
+      dark: '#67C932',
+      contrastText: whiteColor
     },
     grey: {
       50: '#FAFAFA',
@@ -82,27 +83,27 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
       700: '#616161',
       800: '#424242',
       900: '#212121',
-      A100: '#D5D5D5',
-      A200: '#AAAAAA',
-      A400: '#616161',
-      A700: '#303030'
+      A100: '#F5F5F5',
+      A200: '#EEEEEE',
+      A400: '#BDBDBD',
+      A700: '#616161'
     },
     text: {
       primary: `rgba(${mainColor}, 0.87)`,
-      secondary: `rgba(${mainColor}, 0.68)`,
+      secondary: `rgba(${mainColor}, 0.6)`,
       disabled: `rgba(${mainColor}, 0.38)`
     },
     divider: `rgba(${mainColor}, 0.12)`,
     background: {
-      paper: mode === 'light' ? '#FFF' : '#312D4B',
-      default: mode === 'light' ? '#F4F5FA' : '#28243D'
+      paper: mode === 'light' ? whiteColor : darkPaperBgColor,
+      default: mode === 'light' ? '#F5F5F9' : '#232333'
     },
     action: {
       active: `rgba(${mainColor}, 0.54)`,
       hover: `rgba(${mainColor}, 0.04)`,
       selected: `rgba(${mainColor}, 0.08)`,
-      disabled: `rgba(${mainColor}, 0.3)`,
-      disabledBackground: `rgba(${mainColor}, 0.18)`,
+      disabled: `rgba(${mainColor}, 0.26)`,
+      disabledBackground: `rgba(${mainColor}, 0.12)`,
       focus: `rgba(${mainColor}, 0.12)`
     }
   }

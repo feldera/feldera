@@ -1,22 +1,12 @@
-// ** React Imports
 import { ReactNode } from 'react'
-
-// ** Next Import
 import Link from 'next/link'
-
-// ** MUI Components
 import Button from '@mui/material/Button'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import Box, { BoxProps } from '@mui/material/Box'
-
-// ** Layout Import
 import BlankLayout from 'src/@core/layouts/BlankLayout'
+import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
-// ** Demo Imports
-import FooterIllustrations from 'src/views/pages/misc/FooterIllustrations'
-
-// ** Styled Components
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '90vw'
@@ -46,7 +36,7 @@ const Error401 = () => {
           <Typography variant='h5' sx={{ mb: 1, fontSize: '1.5rem !important' }}>
             You are not authorized! 🔐
           </Typography>
-          <Typography variant='body2'>You don&prime;t have permission to access this page. Go Home!</Typography>
+          <Typography variant='body2'>You don&prime;t have permission to access this page.</Typography>
         </BoxWrapper>
         <Img height='487' alt='error-illustration' src='/images/pages/401.png' />
         <Link passHref href='/'>

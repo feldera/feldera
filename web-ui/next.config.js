@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const path = require('path')
 
 module.exports = {
@@ -5,7 +6,7 @@ module.exports = {
   reactStrictMode: false,
   experimental: {
     esmExternals: false,
-    jsconfigPaths: true // enables it for both jsconfig.json and tsconfig.json
+    jsconfigPaths: true
   },
   webpack: config => {
     config.resolve.alias = {
