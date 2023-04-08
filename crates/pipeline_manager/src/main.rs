@@ -134,7 +134,8 @@ observed by the user is outdated, so the request is rejected."
         new_connector,
         update_connector,
         connector_status,
-        delete_connector
+        delete_connector,
+        http_input
     ),
     components(schemas(
         compiler::SqlCompilerMessage,
@@ -359,6 +360,7 @@ where
         .service(update_connector)
         .service(connector_status)
         .service(delete_connector)
+        .service(http_input)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
 
     if let Some(static_html) = &state.config.static_html {
@@ -457,6 +459,17 @@ fn parse_pipeline_id_param(req: &HttpRequest) -> Result<PipelineId, HttpResponse
             Err(e) => Err(HttpResponse::BadRequest()
                 .body(format!("invalid pipeline id '{pipeline_id}': {e}"))),
             Ok(pipeline_id) => Ok(PipelineId(pipeline_id)),
+        },
+    }
+}
+
+fn parse_connector_name_param(req: &HttpRequest) -> Result<String, HttpResponse> {
+    match req.match_info().get("connector_name") {
+        None => Err(HttpResponse::BadRequest().body("missing connector_name argument")),
+        Some(connector_name) => match connector_name.parse::<String>() {
+            Err(e) => Err(HttpResponse::BadRequest()
+                .body(format!("invalid connector_name '{connector_name}': {e}"))),
+            Ok(connector_name) => Ok(connector_name),
         },
     }
 }
@@ -1634,5 +1647,61 @@ async fn connector_status(state: WebData<ServerState>, req: HttpRequest) -> impl
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&descr)
         })
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Connect to an HTTP input/output websocket
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "Pipeline successfully connected to."
+            , content_type = "application/json"
+            , body = String
+            , example = json!("Pipeline successfully connected to")),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+        (status = NOT_FOUND
+            , description = "Specified `connector_name` does not exist for the pipeline."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown stream name 'MyTable'"))),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
+    ),
+    params(
+        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier"),
+        ("connector_name" = String, Path, description = "Connector name")
+    ),
+    tag = "Pipeline"
+)]
+#[get("/pipelines/{pipeline_id}/connector/{connector_name}")]
+async fn http_input(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+    body: web::Payload,
+) -> impl Responder {
+    debug!("Received {:?}", req);
+
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+    debug!("Pipeline_id {:?}", pipeline_id);
+
+    let connector_name = match parse_connector_name_param(&req) {
+        Err(e) => return e,
+        Ok(connector_name) => connector_name,
+    };
+    debug!("Connector name {:?}", connector_name);
+
+    state
+        .runner
+        .forward_to_pipeline_as_stream(pipeline_id, connector_name.as_str(), req, body)
+        .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

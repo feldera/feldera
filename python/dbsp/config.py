@@ -77,7 +77,7 @@ class DBSPPipelineConfig:
                 name="kafka",
                 config=config), format=format))
     
-    def add_http_input(self, stream: str, format_: FormatConfig):
+    def add_http_input(self, stream: str, name: str, format: FormatConfig):
         """Add an HTTP input endpoint
 
         Args:
@@ -85,12 +85,9 @@ class DBSPPipelineConfig:
             format_ (FormatConfig): Data format specification, e.g., CsvInputFormatConfig().
         """
         self.add_input(
-                stream,
-                InputEndpointConfig(
-                    stream = stream,
-                    transport = TransportConfig(
-                        name = "http"),
-                    format_ = format_))
+            stream,
+            DBSPConnector(self.api_client, name, ConnectorType.HTTPIN, TransportConfig(
+                name="http"), format=format))
 
     def add_kafka_output(self, name: str, stream: str, config: KafkaOutputConfig, format: FormatConfig):
         """Add a Kafka output connector to the pipeline configuration.
@@ -151,7 +148,7 @@ class DBSPPipelineConfig:
                 name="file",
                 config=FileOutputConfig.from_dict(dict({'path': filepath}))), format=format))
 
-    def add_http_output(self, stream: str, format_: FormatConfig): 
+    def add_http_output(self, stream: str, name: str, format: FormatConfig): 
         """Add an HTTP output endpoint
 
         Args:
@@ -159,12 +156,9 @@ class DBSPPipelineConfig:
             format_ (FormatConfig): Data format specification, e.g., CsvOutputFormatConfig().
         """
         self.add_output(
-                stream,
-                OutputEndpointConfig(
-                    stream = stream,
-                    transport = TransportConfig(
-                        name = "http"),
-                    format_ = format_))
+            stream,
+            DBSPConnector(self.api_client, name, ConnectorType.HTTPOUT, TransportConfig(
+                name="http"), format=format))
 
 
 

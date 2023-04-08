@@ -267,6 +267,8 @@ pub enum ConnectorType {
     KafkaIn = 0,
     KafkaOut = 1,
     File = 2,
+    HttpIn = 3,
+    HttpOut = 4,
 }
 
 impl From<i64> for ConnectorType {
@@ -275,6 +277,8 @@ impl From<i64> for ConnectorType {
             0 => ConnectorType::KafkaIn,
             1 => ConnectorType::KafkaOut,
             2 => ConnectorType::File,
+            3 => ConnectorType::HttpIn,
+            4 => ConnectorType::HttpOut,
             _ => panic!("invalid connector type"),
         }
     }
@@ -284,8 +288,8 @@ impl From<i64> for ConnectorType {
 impl Into<Direction> for ConnectorType {
     fn into(self) -> Direction {
         match self {
-            ConnectorType::KafkaIn => Direction::Input,
-            ConnectorType::KafkaOut => Direction::Output,
+            ConnectorType::KafkaIn | ConnectorType::HttpIn => Direction::Input,
+            ConnectorType::KafkaOut | ConnectorType::HttpOut => Direction::Output,
             ConnectorType::File => Direction::InputOutput,
         }
     }
@@ -425,7 +429,7 @@ impl ProjectDB {
             config_id integer NOT NULL,
             connector_id integer NOT NULL,
             config varchar,
-            is_input boolean NOT NULL,
+            is_input integer NOT NULL,
             FOREIGN KEY (config_id) REFERENCES project_config(id) ON DELETE CASCADE,
             FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE)",
                 Self::auto_increment(&db_type)
@@ -1119,7 +1123,7 @@ impl ProjectDB {
     ) -> AnyResult<AttachedConnectorId> {
         let _descr = self.get_config(config_id).await?;
         let _descr = self.get_connector(ac.connector_id).await?;
-        let is_input = ac.direction == Direction::Input;
+        let is_input = (ac.direction == Direction::Input) as i32;
 
         let row = sqlx::query(
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
@@ -1133,6 +1137,24 @@ impl ProjectDB {
             .await?;
 
         Ok(AttachedConnectorId(row.get(0)))
+    }
+
+    /// Get an attached connector.
+    pub(crate) async fn get_attached_connector_direction(
+        &self,
+        uuid: &str,
+    ) -> AnyResult<Direction> {
+        let row = sqlx::query("SELECT is_input FROM attached_connector WHERE uuid = $1")
+            .bind(uuid)
+            .fetch_one(&self.conn)
+            .await
+            .unwrap();
+
+        if row.get::<i32, _>(0) == 0 {
+            Ok(Direction::Output)
+        } else {
+            Ok(Direction::Input)
+        }
     }
 
     /// Insert a new record to the `pipeline` table.
