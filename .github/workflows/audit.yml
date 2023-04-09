@@ -41,3 +41,9 @@ jobs:
         uses: actions-rs/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v3
+        with:
+          base-ref: ${{ 'main' }}
+          head-ref: ${{ github.sha }}
