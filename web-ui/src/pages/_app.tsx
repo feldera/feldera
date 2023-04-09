@@ -15,15 +15,14 @@ import { LicenseInfo } from '@mui/x-license-pro'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
+import StatusSnackBar from 'src/components/errors/StatusSnackBar'
 
 type ExtendedAppProps = AppProps & {
   Component: NextPage
   emotionCache: EmotionCache
 }
 
-LicenseInfo.setLicenseKey(
-  process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset'
-)
+LicenseInfo.setLicenseKey(process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset')
 
 const clientSideEmotionCache = createEmotionCache()
 
@@ -52,10 +51,7 @@ const App = (props: ExtendedAppProps) => {
     <CacheProvider value={emotionCache}>
       <Head>
         <title>{`${themeConfig.templateName} - WebUI`}</title>
-        <meta
-          name='description'
-          content={`${themeConfig.templateName} – WebUI.`}
-        />
+        <meta name='description' content={`${themeConfig.templateName} – WebUI.`} />
         <meta name='keywords' content='Database Stream Processor Configuration UI' />
         <meta name='viewport' content='initial-scale=1, width=device-width' />
       </Head>
@@ -63,7 +59,18 @@ const App = (props: ExtendedAppProps) => {
       <SettingsProvider>
         <SettingsConsumer>
           {({ settings }) => {
-            return <ThemeComponent settings={settings}>{getLayout(<QueryClientProvider client={queryClient}><Component {...pageProps} /></QueryClientProvider>)}</ThemeComponent>
+            return (
+              <ThemeComponent settings={settings}>
+                <QueryClientProvider client={queryClient}>
+                  {getLayout(
+                    <>
+                      <Component {...pageProps} />
+                      <StatusSnackBar />
+                    </>
+                  )}
+                </QueryClientProvider>
+              </ThemeComponent>
+            )
           }}
         </SettingsConsumer>
       </SettingsProvider>

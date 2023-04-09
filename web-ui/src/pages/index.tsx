@@ -1,6 +1,14 @@
+import { useEffect } from 'react'
+import { useRouter } from 'next/router'
+import LoadingScreen from 'src/components/spinner'
 
-const Dashboard = () => {
-  return (<></>)
+const Home = () => {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/home')
+  }, [router])
+
+  return <LoadingScreen sx={{ height: '100%' }} />
 }
 
-export default Dashboard
+export default Home
