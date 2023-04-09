@@ -10,6 +10,7 @@ import StandardVerticalLayout from 'src/layouts/StandardVerticalLayout'
 import ThemeComponent from 'src/@core/theme/ThemeComponent'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import { createEmotionCache } from 'src/@core/utils/create-emotion-cache'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
@@ -34,7 +35,8 @@ if (themeConfig.routingLoader) {
   })
 }
 
-// ** Configure JSS & ClassName
+const queryClient = new QueryClient()
+
 const App = (props: ExtendedAppProps) => {
   const { Component, emotionCache = clientSideEmotionCache, pageProps } = props
 
@@ -56,7 +58,7 @@ const App = (props: ExtendedAppProps) => {
       <SettingsProvider>
         <SettingsConsumer>
           {({ settings }) => {
-            return <ThemeComponent settings={settings}>{getLayout(<Component {...pageProps} />)}</ThemeComponent>
+            return <ThemeComponent settings={settings}>{getLayout(<QueryClientProvider client={queryClient}><Component {...pageProps} /></QueryClientProvider>)}</ThemeComponent>
           }}
         </SettingsConsumer>
       </SettingsProvider>
