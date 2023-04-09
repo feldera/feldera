@@ -11,6 +11,7 @@ import ThemeComponent from 'src/@core/theme/ThemeComponent'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import { createEmotionCache } from 'src/@core/utils/create-emotion-cache'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { LicenseInfo } from '@mui/x-license-pro'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
@@ -19,6 +20,10 @@ type ExtendedAppProps = AppProps & {
   Component: NextPage
   emotionCache: EmotionCache
 }
+
+LicenseInfo.setLicenseKey(
+  process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset'
+)
 
 const clientSideEmotionCache = createEmotionCache()
 

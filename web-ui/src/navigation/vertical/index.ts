@@ -33,11 +33,11 @@ const navigation = (): VerticalNavItemsType => {
       path: '/streaming/management',
       icon: 'bx:git-repo-forked'
     },
-    {
-      title: 'Introspection',
-      path: '/streaming/introspection',
-      icon: 'bx:chart'
-    },
+    //{
+    //title: 'Introspection',
+    //path: '/streaming/introspection',
+    //icon: 'bx:chart'
+    //},
     {
       sectionTitle: 'Input & Output'
     },
@@ -50,12 +50,12 @@ const navigation = (): VerticalNavItemsType => {
       title: 'Existing Connectors',
       path: '/data/list',
       icon: 'bx:download'
-    },
-    {
-      title: 'Data Browser',
-      path: '/data/browser',
-      icon: 'bx:table'
     }
+    //{
+    //title: 'Data Browser',
+    //path: '/data/browser',
+    //icon: 'bx:table'
+    //}
   ]
 }
 

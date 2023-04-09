@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 
-import Editors from 'src/views/analytics/editor'
+import Editors from 'src/analytics/editor'
 
 const Editor = () => {
   // Get the project id from the URL
