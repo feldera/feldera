@@ -16,7 +16,7 @@ import { match, P } from 'ts-pattern'
 import { ProjectStatus } from 'src/types/manager/models/ProjectStatus'
 import { CancelError, UpdateProjectRequest, UpdateProjectResponse } from 'src/types/manager'
 
-import EntityTable from 'src/components/table/data-grid/EntityTable'
+import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
 const getStatusObj = (status: ProjectStatus) =>

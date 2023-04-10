@@ -20,7 +20,7 @@ import ListSubheader from '@mui/material/ListSubheader'
 import Tooltip from '@mui/material/Tooltip'
 
 import AnalyticsPipelineTput from 'src/streaming/AnalyticsPipelineTput'
-import QuickSearchToolbar from 'src/components/table/data-grid/QuickSearchToolbar'
+import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
 import {
   AttachedConnector,
   CancelError,
@@ -36,7 +36,7 @@ import {
   ShutdownPipelineRequest
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ErrorOverlay } from 'src/components/table/data-grid/ErrorOverlay'
+import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
 import { escapeRegExp } from 'src/utils/escapeRegExp'
 import { match } from 'ts-pattern'
 import router from 'next/router'

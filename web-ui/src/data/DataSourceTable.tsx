@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ConnectorService } from 'src/types/manager/services/ConnectorService'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { CancelError, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
-import EntityTable from 'src/components/table/data-grid/EntityTable'
+import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { getStatusObj } from 'src/types/data'
 

@@ -133,15 +133,22 @@ const editStateToSaveState = (state: ProgramEditState, isNew: boolean): SaveIndi
 
 const stateToEditorLabel = (state: SaveIndicatorState): string =>
   match(state)
+    .with('isNew' as const, () => {
+      return 'New Project'
+    })
+    .with('isDebouncing' as const, () => {
+      return 'Saving ...'
+    })
+    .with('isModified' as const, () => {
+      return 'Saving ...'
+    })
     .with('isSaving' as const, () => {
       return 'Saving ...'
     })
     .with('isUpToDate' as const, () => {
       return 'Saved'
     })
-    .with('isNew' as const, () => {
-      return 'New Project'
-    })
+
     .exhaustive()
 
 const Editors = (props: { program: ProgramState }) => {
@@ -164,7 +171,7 @@ const Editors = (props: { program: ProgramState }) => {
           newProjectData = {
             name: project.name,
             description: project.description,
-            code: ''
+            code: project.code
           }
         } else if (state === ProgramEditState.CodeEdited) {
           console.log('newProject code changed')
