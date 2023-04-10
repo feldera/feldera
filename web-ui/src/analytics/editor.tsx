@@ -1,7 +1,7 @@
 // Editor for SQL programs. This is the main component for the editor page.
 // It is responsible for loading the program, compiling it, and saving it.
 
-import { useState, useEffect, useRef, Dispatch, SetStateAction } from 'react'
+import { useState, useEffect, useRef, Dispatch, SetStateAction, MutableRefObject } from 'react'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
@@ -30,6 +30,9 @@ import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 
+// How many ms to wait until we save the project.
+const SAVE_DELAY = 2000
+
 // The errors we can have on the form. We only have a problem if the name is not
 // unique.
 interface FormError {
@@ -38,13 +41,9 @@ interface FormError {
 
 // Top level form with Name and Description TextInput elements
 const MetadataForm = (props: { errors: FormError; project: ProgramState; setProject: any; setState: any }) => {
-  const debouncedSaveStateUpdate = useDebouncedCallback(
-    () => {
-      props.setState('isModified')
-    },
-    // delay in ms
-    2000
-  )
+  const debouncedSaveStateUpdate = useDebouncedCallback(() => {
+    props.setState('isModified')
+  }, SAVE_DELAY)
 
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.setProject((prevState: ProjectDescr) => ({ ...prevState, name: event.target.value }))
@@ -130,9 +129,10 @@ const useCreateProjectIfNew = (
   project: ProgramState,
   setProject: Dispatch<SetStateAction<ProgramState>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
-  setFormError: Dispatch<SetStateAction<FormError>>,
-  pushMessage: Dispatch<StatusSnackBarMessage>
+  setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
+  const { pushMessage } = useStatusNotification()
+
   const { mutate } = useMutation<NewProjectResponse, CancelError, NewProjectRequest>(
     ['project', 'compilationStatus'],
     ProjectService.newProject
@@ -153,7 +153,6 @@ const useCreateProjectIfNew = (
                 version: data.version,
                 project_id: data.project_id
               }))
-              console.log('newProject name/desc or code successful')
               if (project.name === '') {
                 setFormError({ name: { message: 'Enter a name for the project.' } })
               }
@@ -206,7 +205,6 @@ const useFetchExistingProject = (
   )
   useEffect(() => {
     if (codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
-      console.log('set code to ', codeQuery.data.code)
       setProject({
         project_id: codeQuery.data.project.project_id,
         name: codeQuery.data.project.name,
@@ -237,10 +235,11 @@ const useUpdateProjectIfChanged = (
   project: ProgramState,
   setProject: Dispatch<SetStateAction<ProgramState>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
-  setFormError: Dispatch<SetStateAction<FormError>>,
-  pushMessage: Dispatch<StatusSnackBarMessage>
+  setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
   const queryClient = useQueryClient()
+  const { pushMessage } = useStatusNotification()
+
   const { mutate, isLoading } = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(
     ProjectService.updateProject
   )
@@ -298,10 +297,10 @@ const useCompileProjectIfChanged = (
   state: SaveIndicatorState,
   project: ProgramState,
   setProject: Dispatch<SetStateAction<ProgramState>>,
-  lastCompiledVersion: number,
-  pushMessage: Dispatch<StatusSnackBarMessage>
+  lastCompiledVersion: number
 ) => {
   const queryClient = useQueryClient()
+  const { pushMessage } = useStatusNotification()
 
   const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(
     [
@@ -322,13 +321,12 @@ const useCompileProjectIfChanged = (
       project.status !== 'Pending' &&
       project.status !== 'CompilingSql'
     ) {
-      console.log('compileProject ' + project.version)
+      //console.log('compileProject ' + project.version)
       setProject((prevState: ProgramState) => ({ ...prevState, status: 'Pending' }))
       mutate(
         { project_id: project.project_id, version: project.version },
         {
           onSuccess: () => {
-            console.log('compileProject is now compiling...')
             //queryClient.invalidateQueries(['compilationStatus', { project_id: project.project_id }])
           },
           onError: (error: CancelError) => {
@@ -420,48 +418,12 @@ const usePollCompilationStatus = (
   ])
 }
 
-const Editors = (props: { program: ProgramState }) => {
-  const { pushMessage } = useStatusNotification()
-
-  // Editor page state
-  const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
-  const [state, setState] = useState<SaveIndicatorState>(props.program.project_id ? 'isNew' : 'isUpToDate')
-  const [project, setProject] = useState<ProgramState>(props.program)
-  const [formError, setFormError] = useState<FormError>({})
-
-  useCreateProjectIfNew(state, project, setProject, setState, setFormError, pushMessage)
-  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion)
-  useUpdateProjectIfChanged(state, project, setProject, setState, setFormError, pushMessage)
-  useCompileProjectIfChanged(state, project, setProject, lastCompiledVersion, pushMessage)
-  usePollCompilationStatus(project, setProject, setLastCompiledVersion)
-
-  // Check the status periodically if the project is compiling
-  // Display errors in the editor if there are any
+const useDisplayCompilerErrosInEditor = (project: ProgramState, editorRef: MutableRefObject<any>) => {
   const monaco = useMonaco()
-  const editorRef = useRef<any /* IStandaloneCodeEditor */>(null)
-  function handleEditorDidMount(editor: any) {
-    editorRef.current = editor
-    console.log('handleEditorDidMount', project.code)
-  }
-
-  const debouncedCodeEditStateUpdate = useDebouncedCallback(
-    () => {
-      setState('isModified')
-    },
-
-    // delay in ms
-    2000
-  )
-  const updateCode = (value: string | undefined) => {
-    setProject(prevState => ({ ...prevState, code: value || '' }))
-    setState('isDebouncing')
-    debouncedCodeEditStateUpdate()
-  }
   useEffect(() => {
     if (monaco !== null && editorRef.current !== null) {
       match(project.status)
         .with({ SqlError: P.select() }, (err: SqlCompilerMessage[]) => {
-          console.log(err)
           const monaco_markers = err.map(item => {
             return {
               startLineNumber: item.startLineNumber,
@@ -479,6 +441,36 @@ const Editors = (props: { program: ProgramState }) => {
         })
     }
   }, [monaco, project.status, editorRef])
+}
+
+const Editors = (props: { program: ProgramState }) => {
+  const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
+  const [state, setState] = useState<SaveIndicatorState>(props.program.project_id ? 'isNew' : 'isUpToDate')
+  const [project, setProject] = useState<ProgramState>(props.program)
+  const [formError, setFormError] = useState<FormError>({})
+
+  useCreateProjectIfNew(state, project, setProject, setState, setFormError)
+  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion)
+  useUpdateProjectIfChanged(state, project, setProject, setState, setFormError)
+  useCompileProjectIfChanged(state, project, setProject, lastCompiledVersion)
+  usePollCompilationStatus(project, setProject, setLastCompiledVersion)
+
+  // Mounting and callback for when code is edited
+  // TODO: The IStandaloneCodeEditor type is not exposed in the react monaco
+  // editor package?
+  const editorRef = useRef<any /* IStandaloneCodeEditor */>(null)
+  function handleEditorDidMount(editor: any) {
+    editorRef.current = editor
+  }
+  const debouncedCodeEditStateUpdate = useDebouncedCallback(() => {
+    setState('isModified')
+  }, SAVE_DELAY)
+  const updateCode = (value: string | undefined) => {
+    setProject(prevState => ({ ...prevState, code: value || '' }))
+    setState('isDebouncing')
+    debouncedCodeEditStateUpdate()
+  }
+  useDisplayCompilerErrosInEditor(project, editorRef)
 
   return (
     <Grid container spacing={6}>
