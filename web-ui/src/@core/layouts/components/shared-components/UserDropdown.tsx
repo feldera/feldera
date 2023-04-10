@@ -1,10 +1,5 @@
-// ** React Imports
 import { useState, SyntheticEvent, Fragment } from 'react'
-
-// ** Next Import
 import { useRouter } from 'next/router'
-
-// ** MUI Imports
 import Box from '@mui/material/Box'
 import Menu from '@mui/material/Menu'
 import Badge from '@mui/material/Badge'
@@ -14,16 +9,10 @@ import MenuItem from '@mui/material/MenuItem'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 
-// ** Icons Imports
 import CogOutline from 'mdi-material-ui/CogOutline'
-import CurrencyUsd from 'mdi-material-ui/CurrencyUsd'
-import EmailOutline from 'mdi-material-ui/EmailOutline'
 import LogoutVariant from 'mdi-material-ui/LogoutVariant'
 import AccountOutline from 'mdi-material-ui/AccountOutline'
-import MessageOutline from 'mdi-material-ui/MessageOutline'
-import HelpCircleOutline from 'mdi-material-ui/HelpCircleOutline'
 
-// ** Styled Components
 const BadgeContentSpan = styled('span')(({ theme }) => ({
   width: 8,
   height: 8,

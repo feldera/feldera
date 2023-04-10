@@ -43,17 +43,17 @@ const navigation = (): VerticalNavItemsType => {
     },
     {
       title: 'Connector Creator',
-      path: '/data/create',
+      path: '/connectors/create',
       icon: 'bx:coin-stack'
     },
     {
       title: 'Existing Connectors',
-      path: '/data/list',
+      path: '/connectors/list',
       icon: 'bx:download'
     }
     //{
     //title: 'Data Browser',
-    //path: '/data/browser',
+    //path: '/connectors/browser',
     //icon: 'bx:table'
     //}
   ]

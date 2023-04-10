@@ -11,8 +11,8 @@ import SqlNode from './SqlNode'
 import Box from '@mui/material/Box'
 
 export const Handle = styled(RawHandle)`
-  background-color: ${props => props.theme.palette.primary.main};
-  border: 8px solid ${props => props.theme.palette.background.default};
+  background-color: ${({ theme }) => theme.palette.primary.main};
+  border: 8px solid ${({ theme }) => theme.palette.background.default};
   width: 35px;
   height: 35px;
   border-radius: 25px;

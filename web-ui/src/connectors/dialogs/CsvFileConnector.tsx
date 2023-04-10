@@ -1,25 +1,12 @@
-// ** React Imports
-import { Dispatch, SetStateAction, useState } from 'react'
+// Form to create or update a CSV file connector.
 
-// ** MUI Imports
+import { Dispatch, SetStateAction } from 'react'
 import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
 import Dialog from '@mui/material/Dialog'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
-import CardContent from '@mui/material/CardContent'
 import DialogContent from '@mui/material/DialogContent'
-
-import { Icon } from '@iconify/react'
-import YAML from 'yaml'
-import * as yup from 'yup'
-import { yupResolver } from '@hookform/resolvers/yup'
-import { Controller, useForm } from 'react-hook-form'
-
-import Transition from './create-app-tabs/Transition'
-import { ConnectorType, ConnectorDescr } from 'src/types/manager'
-import { SourceFormCreateHandle } from './SubmitHandler'
 import Grid from '@mui/material/Grid'
 import FormControl from '@mui/material/FormControl'
 import TextField from '@mui/material/TextField'
@@ -27,7 +14,17 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import DialogActions from '@mui/material/DialogActions'
 import FormHelperText from '@mui/material/FormHelperText'
+import { Icon } from '@iconify/react'
+import YAML from 'yaml'
+import * as yup from 'yup'
+import { yupResolver } from '@hookform/resolvers/yup'
+import { Controller, useForm } from 'react-hook-form'
+
+import Transition from './tabs/Transition'
+import { ConnectorType, ConnectorDescr } from 'src/types/manager'
+import { SourceFormCreateHandle } from './SubmitHandler'
 import { connectorTypeToConfig } from 'src/types/data'
+import { AddConnectorCard } from './AddConnectorCard'
 
 const schema = yup
   .object({
@@ -40,7 +37,7 @@ const schema = yup
 
 type CsvFileSource = yup.InferType<typeof schema>
 
-export const DialogCreateCsv = (props: {
+export const CsvFileConnectorDialog = (props: {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   onSuccess?: Dispatch<ConnectorDescr>
@@ -221,21 +218,12 @@ export const DialogCreateCsv = (props: {
   )
 }
 
-const DialogCreateCsvBox = () => {
-  const [show, setShow] = useState<boolean>(false)
-
+export const AddCsvFileConnectorCard = () => {
   return (
-    <Card>
-      <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        <Icon icon='ph:file-csv' fontSize='4rem' />
-        <Typography sx={{ mb: 3 }}>Provide data in the form of CSV files</Typography>
-        <Button variant='contained' onClick={() => setShow(true)}>
-          Add
-        </Button>
-      </CardContent>
-      <DialogCreateCsv show={show} setShow={setShow} />
-    </Card>
+    <AddConnectorCard
+      icon='ph:file-csv'
+      title='Provide data in the form of CSV files'
+      dialog={CsvFileConnectorDialog}
+    />
   )
 }
-
-export default DialogCreateCsvBox

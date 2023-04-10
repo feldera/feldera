@@ -6,7 +6,7 @@
  * Type of new data connector.
  */
 export enum ConnectorType {
-    KAFKA_IN = 'KafkaIn',
-    KAFKA_OUT = 'KafkaOut',
-    FILE = 'File',
+  KAFKA_IN = 'KafkaIn',
+  KAFKA_OUT = 'KafkaOut',
+  FILE = 'File'
 }

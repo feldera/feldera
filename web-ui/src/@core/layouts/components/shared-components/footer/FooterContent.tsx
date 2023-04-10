@@ -11,23 +11,13 @@ const FooterContent = () => {
 
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Typography sx={{ mr: 2 }}>
-      {`© ${new Date().getFullYear()} by dbsp`}
-      </Typography>
+      <Typography sx={{ mr: 2 }}>{`© ${new Date().getFullYear()} by dbsp`}</Typography>
       {hidden ? null : (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', '& :not(:last-child)': { mr: 4 } }}>
-          <Link href='/about/'>
-            About
-          </Link>
-          <Link href='/contact'>
-            Contact
-          </Link>
-          <Link href='/documentation/'>
-            Documentation
-          </Link>
-          <Link href='/support/'>
-            Support
-          </Link>
+          <Link href='/about/'>About</Link>
+          <Link href='/contact'>Contact</Link>
+          <Link href='/documentation/'>Documentation</Link>
+          <Link href='/support/'>Support</Link>
         </Box>
       )}
     </Box>

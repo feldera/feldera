@@ -1,31 +1,30 @@
+// Form to create/update a Kafka output connector.
+
 import { useState, useEffect, SetStateAction, Dispatch } from 'react'
+import Box from '@mui/material/Box'
+import Tab from '@mui/material/Tab'
+import TabList from '@mui/lab/TabList'
+import TabPanel from '@mui/lab/TabPanel'
+import Dialog from '@mui/material/Dialog'
+import TabContext from '@mui/lab/TabContext'
+import IconButton from '@mui/material/IconButton'
+import Typography from '@mui/material/Typography'
+import DialogContent from '@mui/material/DialogContent'
 import YAML from 'yaml'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
-
-import Box from '@mui/material/Box'
-import Tab from '@mui/material/Tab'
-import Card from '@mui/material/Card'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import Dialog from '@mui/material/Dialog'
-import Button from '@mui/material/Button'
-import TabContext from '@mui/lab/TabContext'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import CardContent from '@mui/material/CardContent'
-import DialogContent from '@mui/material/DialogContent'
-
 import { Icon } from '@iconify/react'
-import DialogTabDetails from 'src/data/create-app-tabs/DialogTabDetails'
-import TabFooter from 'src/data/create-app-tabs/TabFooter'
-import TabLabel from 'src/data/create-app-tabs/TabLabel'
+
+import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
+import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
+import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorType, ConnectorDescr } from 'src/types/manager'
-import Transition from './create-app-tabs/Transition'
+import Transition from './tabs/Transition'
 import { SourceFormCreateHandle } from './SubmitHandler'
 import { connectorTypeToConfig } from 'src/types/data'
-import TabKafkaOutDetails from './create-app-tabs/TabKafkaOutDetails'
+import TabKafkaOutDetails from './tabs/TabKafkaOutDetails'
+import { AddConnectorCard } from './AddConnectorCard'
 
 const schema = yup
   .object({
@@ -37,9 +36,9 @@ const schema = yup
   })
   .required()
 
-export type KafkaOutConnector = yup.InferType<typeof schema>
+export type KafkaOutputSchema = yup.InferType<typeof schema>
 
-export const DialogCreateKafkaOut = (props: {
+export const KafkaOutputConnectorDialog = (props: {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   onSuccess?: Dispatch<ConnectorDescr>
@@ -78,7 +77,7 @@ export const DialogCreateKafkaOut = (props: {
   }, [props.show, errors])
 
   // Add a new kafka source
-  const onSubmit = SourceFormCreateHandle<KafkaOutConnector>(onFormSubmitted, data => {
+  const onSubmit = SourceFormCreateHandle<KafkaOutputSchema>(onFormSubmitted, data => {
     return {
       name: data.name,
       description: data.description,
@@ -172,6 +171,7 @@ export const DialogCreateKafkaOut = (props: {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
+                {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
                 <DialogTabDetails control={control} errors={errors} />
                 <TabFooter
                   activeTab={activeTab}
@@ -200,21 +200,6 @@ export const DialogCreateKafkaOut = (props: {
   )
 }
 
-const DialogCreateKafkaOutBox = () => {
-  const [show, setShow] = useState<boolean>(false)
-
-  return (
-    <Card>
-      <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        <Icon icon='logos:kafka' fontSize='4rem' />
-        <Typography sx={{ mb: 3 }}>Add a Kafka Output.</Typography>
-        <Button variant='contained' onClick={() => setShow(true)}>
-          Add
-        </Button>
-      </CardContent>
-      <DialogCreateKafkaOut show={show} setShow={setShow} />
-    </Card>
-  )
+export const AddKafkaOutputConnectorCard = () => {
+  return <AddConnectorCard icon='logos:kafka' title='Add a Kafka Output.' dialog={KafkaOutputConnectorDialog} />
 }
-
-export default DialogCreateKafkaOutBox

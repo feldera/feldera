@@ -5,4 +5,4 @@
 /**
  * Version number.
  */
-export type Version = number;
+export type Version = number

@@ -1,45 +1,42 @@
+// Form to create/update a Kafka input connector.
+
 import { useState, useEffect, SetStateAction, Dispatch } from 'react'
+import Box from '@mui/material/Box'
+import Tab from '@mui/material/Tab'
+import TabList from '@mui/lab/TabList'
+import TabPanel from '@mui/lab/TabPanel'
+import Dialog from '@mui/material/Dialog'
+import TabContext from '@mui/lab/TabContext'
+import IconButton from '@mui/material/IconButton'
+import Typography from '@mui/material/Typography'
+import DialogContent from '@mui/material/DialogContent'
 import YAML from 'yaml'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
-
-import Box from '@mui/material/Box'
-import Tab from '@mui/material/Tab'
-import Card from '@mui/material/Card'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import Dialog from '@mui/material/Dialog'
-import Button from '@mui/material/Button'
-import TabContext from '@mui/lab/TabContext'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import CardContent from '@mui/material/CardContent'
-import DialogContent from '@mui/material/DialogContent'
-
 import { Icon } from '@iconify/react'
-import DialogTabDetails from 'src/data/create-app-tabs/DialogTabDetails'
-import DialogTabSource from 'src/data/create-app-tabs/DialogTabSource'
-import TabFooter from 'src/data/create-app-tabs/TabFooter'
-import TabLabel from 'src/data/create-app-tabs/TabLabel'
+
+import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
+import DialogTabSource from 'src/connectors/dialogs/tabs/DialogTabSource'
+import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
+import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorType, ConnectorDescr } from 'src/types/manager'
-import Transition from './create-app-tabs/Transition'
+import Transition from './tabs/Transition'
 import { SourceFormCreateHandle } from './SubmitHandler'
 import { connectorTypeToConfig } from 'src/types/data'
+import { AddConnectorCard } from './AddConnectorCard'
 
-const schema = yup
-  .object({
-    name: yup.string().required(),
-    description: yup.string().default(''),
-    host: yup.string().required(),
-    auto_offset: yup.string().default('none'),
-    topics: yup.array().required().of(yup.string().required())
-  })
-  .required()
+const schema = yup.object().shape({
+  name: yup.string().required(),
+  description: yup.string().default(''),
+  host: yup.string().required(),
+  auto_offset: yup.string().default('none'),
+  topics: yup.array().of(yup.string().required()).required()
+})
 
-export type RedpandaSource = yup.InferType<typeof schema>
+export type KafkaInputSchema = yup.InferType<typeof schema>
 
-export const DialogCreatePanda = (props: {
+export const KafkaInputConnectorDialog = (props: {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   onSuccess?: Dispatch<ConnectorDescr>
@@ -79,7 +76,7 @@ export const DialogCreatePanda = (props: {
   }, [props.show, errors])
 
   // Add a new redpanda source
-  const onSubmit = SourceFormCreateHandle<RedpandaSource>(onFormSubmitted, data => {
+  const onSubmit = SourceFormCreateHandle<KafkaInputSchema>(onFormSubmitted, data => {
     console.log(data)
 
     return {
@@ -175,6 +172,7 @@ export const DialogCreatePanda = (props: {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
+                {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
                 <DialogTabDetails control={control} errors={errors} />
                 <TabFooter
                   activeTab={activeTab}
@@ -203,21 +201,6 @@ export const DialogCreatePanda = (props: {
   )
 }
 
-const DialogCreatePandaBox = () => {
-  const [show, setShow] = useState<boolean>(false)
-
-  return (
-    <Card>
-      <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        <Icon icon='logos:kafka' fontSize='4rem' />
-        <Typography sx={{ mb: 3 }}>Add a Kafka Input.</Typography>
-        <Button variant='contained' onClick={() => setShow(true)}>
-          Add
-        </Button>
-      </CardContent>
-      <DialogCreatePanda show={show} setShow={setShow} />
-    </Card>
-  )
+export const AddKafkaInputConnectorCard = () => {
+  return <AddConnectorCard icon='logos:kafka' title='Add a Kafka Input.' dialog={KafkaInputConnectorDialog} />
 }
-
-export default DialogCreatePandaBox

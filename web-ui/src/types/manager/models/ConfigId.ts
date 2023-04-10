@@ -5,4 +5,4 @@
 /**
  * Unique configuration id.
  */
-export type ConfigId = number;
+export type ConfigId = number

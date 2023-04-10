@@ -57,7 +57,6 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
   const savePipeline = useDebouncedSave()
   const replacePlaceholder = useReplacePlaceholder()
   const setProject = useBuilderState(state => state.setProject)
-  const configId = useBuilderState(state => state.config_id)
   const queryClient = useQueryClient()
 
   const onClick = useCallback(
@@ -68,7 +67,9 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       }
 
       setProject(project)
+      const configId = null
       if (configId) {
+        // TODO: figure out if it's better to optimistically update query here?
         queryClient.setQueryData(['configs', configId], (oldData: ConfigDescr | undefined) => {
           return oldData ? { ...oldData, project_id: project.project_id } : oldData
         })
@@ -76,7 +77,7 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       replacePlaceholder(project)
       savePipeline()
     },
-    [configId, getNode, id, queryClient, replacePlaceholder, savePipeline, setProject]
+    [getNode, id, queryClient, replacePlaceholder, savePipeline, setProject]
   )
 
   return onClick

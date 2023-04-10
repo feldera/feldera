@@ -1,5 +1,5 @@
 import { ProjectWithSchema } from 'src/types/program'
-import { SaveIndicatorState } from 'src/views/utils/SaveIndicator'
+import { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { create } from 'zustand'
 
 interface BuilderState {
@@ -20,7 +20,7 @@ export const useBuilderState = create<BuilderState>(set => ({
   project: undefined,
   name: '',
   description: '',
-  config: 'inputs:\n    ${inputs}\noutputs:\n    ${outputs}',
+  config: '',
   setName: (name: string) => set({ name }),
   setDescription: (description: string) => set({ description }),
   setSaveState: (saveState: SaveIndicatorState) => set({ saveState }),

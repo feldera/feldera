@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
-import { Box, CardContent, CardHeader, Stack, Typography } from '@mui/material'
+import { Box, CardContent, CardHeader, Stack } from '@mui/material'
 import { Handle, Node } from '../NodeTypes'
 import IconButton from '@mui/material/IconButton'
 import useNodeDelete from '../hooks/useNodeDelete'

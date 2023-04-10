@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
-import {Icon} from '@iconify/react'
+import { Icon } from '@iconify/react'
 import Avatar from '@mui/material/Avatar'
 import CardActions from '@mui/material/CardActions'
 

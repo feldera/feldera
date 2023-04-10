@@ -1,10 +1,12 @@
-// ** MUI Imports
 import TextField from '@mui/material/TextField'
-import { RedpandaSource } from 'src/data/DialogCreateRedpanda'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
 import { FormControl, FormHelperText, Grid } from '@mui/material'
+import { KafkaInputConfig, KafkaOutputConfig } from 'src/types/manager'
 
-const TabDetails = (props: { control: Control<RedpandaSource>; errors: Partial<FieldErrors<RedpandaSource>> }) => {
+const TabDetails = (props: {
+  control: Control<KafkaInputConfig | KafkaOutputConfig>
+  errors: Partial<FieldErrors<KafkaInputConfig | KafkaOutputConfig>>
+}) => {
   return (
     <Grid container spacing={6}>
       <Grid item xs={12}>

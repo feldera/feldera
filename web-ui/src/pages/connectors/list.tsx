@@ -2,7 +2,7 @@ import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 
 import PageHeader from 'src/layouts/components/page-header'
-import DataSourceTable from 'src/data/DataSourceTable'
+import DataSourceTable from 'src/connectors/DataSourceTable'
 
 const SqlPrograms = () => {
   return (

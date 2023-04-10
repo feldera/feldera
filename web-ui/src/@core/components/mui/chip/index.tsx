@@ -1,11 +1,10 @@
-import React from 'react'
+import React, { ForwardedRef } from 'react'
 import MuiChip from '@mui/material/Chip'
 import { CustomChipProps } from './types'
 import { useTheme } from '@mui/material/styles'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 
-const Chip = React.forwardRef((props: CustomChipProps, ref) => {
-  // ** Props
+const Chip = React.forwardRef((props: CustomChipProps, ref: ForwardedRef<any>) => {
   const { sx, skin, color } = props
   const theme = useTheme()
   const colors = {

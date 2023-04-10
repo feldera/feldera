@@ -3,9 +3,8 @@
 /* eslint-disable */
 
 export type FileOutputConfig = {
-    /**
-     * File path.
-     */
-    path: string;
-};
-
+  /**
+   * File path.
+   */
+  path: string
+}
