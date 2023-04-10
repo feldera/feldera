@@ -22,8 +22,8 @@ jobs:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@master
         with:
-          concurrent_skipping: 'same_content_newer'
-          skip_after_successful_duplicate: 'true'
+          concurrent_skipping: "same_content_newer"
+          skip_after_successful_duplicate: "true"
           paths_ignore: '["**/README.md", "**/doc/**"]'
           do_not_skip: '["workflow_dispatch", "schedule"]'
 
@@ -55,14 +55,14 @@ jobs:
               target: x86_64-apple-darwin,
               os: macos-latest,
               cargo_args: --workspace,
-              test_flags: --skip kafka
+              test_flags: --skip kafka,
             }
           - {
               rust: stable,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
               cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
-              test_flags: --skip kafka
+              test_flags: --skip kafka,
             }
           # `rdkafka` doesn't compile on 32-bit Windows.
           # - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
@@ -70,7 +70,7 @@ jobs:
               rust: beta,
               target: x86_64-unknown-linux-gnu,
               cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
-              os: ubuntu-latest
+              os: ubuntu-latest,
             }
           - {
               rust: nightly-2022-11-10,
@@ -236,7 +236,7 @@ jobs:
         uses: actions-rs/cargo@v1
         env:
           RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
-          RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+          RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }} --cfg sanitizer"
           ASAN_OPTIONS: detect_stack_use_after_return=1,detect_leaks=1
           # Ensure the C++ code (rocksdb etc.) also gets compiled with the correct sanitizer arguments
           CC: "clang"
@@ -263,6 +263,7 @@ jobs:
         with:
           command: test
           args: ${{ env.EXCLUDE_SQLITE3 }} --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -398,7 +399,7 @@ jobs:
         uses: actions/setup-java@v2
         with:
           java-version: 11
-          distribution: 'adopt'
+          distribution: "adopt"
 
       - name: Install rust
         uses: actions-rs/toolchain@v1

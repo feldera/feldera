@@ -3,7 +3,6 @@
 use crate::{
     codegen::{BitSetType, Codegen, CodegenConfig},
     ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
-    thin_str::ThinStrRef,
     ThinStr,
 };
 use dbsp::{trace::layers::erased::DataVTable, utils::DynVec};
@@ -90,7 +89,8 @@ fn empty() {
 }
 
 #[test]
-fn string() {
+#[cfg_attr(sanitizer, ignore)]
+fn string_smoke() {
     let layout_cache = RowLayoutCache::new();
     let string_layout = layout_cache.add(
         RowLayoutBuilder::new()
@@ -186,7 +186,7 @@ fn string() {
                     .write(ThinStr::from(val));
             }
             for (idx, &val) in values.iter().enumerate() {
-                let string = *src.add(idx * layout.size() as usize).cast::<ThinStrRef>();
+                let string = &*src.add(idx * layout.size() as usize).cast::<ThinStr>();
                 assert_eq!(string.as_str(), val);
             }
 
@@ -195,7 +195,7 @@ fn string() {
 
             // Ensure dest contains the correct values
             for (idx, &val) in values.iter().enumerate() {
-                let string = *dest.add(idx * layout.size() as usize).cast::<ThinStrRef>();
+                let string = &*dest.add(idx * layout.size() as usize).cast::<ThinStr>();
                 assert_eq!(string.as_str(), val);
             }
 

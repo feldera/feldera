@@ -14,6 +14,7 @@ required-features = ["binary"]
 [dependencies]
 libm = "0.2.6"
 paste = "1.0.9"
+cfg-if = "1.0.0"
 # pretty = "0.11.3"
 size-of = "0.1.4"
 tracing = "0.1.37"
@@ -27,6 +28,7 @@ dbsp = { path = "../dbsp", features = ["serde"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 bitflags = { version = "2.0.1", features = ["serde"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+cranelift-codegen = { version = "0.94.0", features = ["unwind"] }
 petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 
@@ -56,6 +58,10 @@ clap = { version = "4.1.8", features = ["derive"], optional = true }
     [dependencies.tinyvec]
     version = "1.6.0"
     features = ["std", "rustc_1_57"]
+
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3.9"
+features = ["winnt"]
 
 [dev-dependencies]
 proptest = "1.0.0"
