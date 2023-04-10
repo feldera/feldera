@@ -501,8 +501,10 @@ impl Codegen {
 
         self.module
             .define_function(func_id, &mut self.module_ctx)
-            .unwrap();
-        self.module_ctx.optimize(self.module.isa()).unwrap();
+            .expect("failed to define function");
+        self.module_ctx
+            .optimize(self.module.isa())
+            .expect("failed to optimize function");
 
         tracing::debug!(
             "finalizing {func_id} after optimization: \n{}",

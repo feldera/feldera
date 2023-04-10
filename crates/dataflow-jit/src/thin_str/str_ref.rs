@@ -22,7 +22,7 @@ pub struct ThinStrRef<'a> {
 impl<'a> ThinStrRef<'a> {
     #[inline]
     pub fn len(&self) -> usize {
-        unsafe { (*self.buf.as_ptr()).length }
+        unsafe { addr_of!((*self.buf.as_ptr()).length).read() }
     }
 
     #[inline]
@@ -32,7 +32,7 @@ impl<'a> ThinStrRef<'a> {
 
     #[inline]
     pub fn capacity(&self) -> usize {
-        unsafe { (*self.buf.as_ptr()).capacity }
+        unsafe { addr_of!((*self.buf.as_ptr()).capacity).read() }
     }
 
     #[inline]

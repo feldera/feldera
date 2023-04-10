@@ -1615,9 +1615,11 @@ dependencies = [
  "bincode",
  "bitflags 2.1.0",
  "bitvec",
+ "cfg-if",
  "chrono",
  "clap 4.2.1",
  "cranelift",
+ "cranelift-codegen",
  "cranelift-jit",
  "cranelift-module",
  "cranelift-native",
@@ -1638,6 +1640,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "tracing-subscriber",
+ "winapi",
  "xxhash-rust",
 ]
 
