@@ -1,22 +1,16 @@
 import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject } from 'react'
 
 import Card from '@mui/material/Card'
-import {
-  DataGridPro,
-  GridActionsCellItem,
-  GridRowParams,
-  GridValidRowModel,
-  DataGridProProps
-} from '@mui/x-data-grid-pro'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
-import FileCopyIcon from '@mui/icons-material/FileCopy'
-
-import QuickSearchToolbar from 'src/components/table/data-grid/QuickSearchToolbar'
+import { DataGridPro, GridValidRowModel, DataGridProProps, GridRenderCellParams } from '@mui/x-data-grid-pro'
 import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { ErrorOverlay } from './ErrorOverlay'
 import { escapeRegExp } from 'src/utils/escapeRegExp'
+import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
+import { Icon } from '@iconify/react'
+
+import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239
@@ -47,8 +41,7 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
 }
 
 const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TData>) => {
-  const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, onDuplicateClicked, addActions } =
-    props
+  const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, addActions } = props
 
   const [pageSize, setPageSize] = useState<number>(7)
   const [searchText, setSearchText] = useState<string>('')
@@ -62,37 +55,27 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
       minWidth: 90,
       sortable: false,
       field: 'actions',
-      type: 'actions',
       headerName: 'Actions',
-      getActions: (params: GridRowParams<TData>) => [
-        onDeleteRow !== undefined ? (
-          <GridActionsCellItem
-            key='delete'
-            icon={<DeleteIcon />}
-            label='Delete'
-            onClick={() => onDeleteRow(params.row)}
-            showInMenu
-          />
-        ) : (
-          <></>
-        ),
-        onEditClicked !== undefined ? (
-          <GridActionsCellItem
-            key='edit'
-            icon={<EditIcon />}
-            label='Edit'
-            onClick={() => onEditClicked(params.row)}
-            showInMenu
-          />
-        ) : (
-          <></>
-        ),
-        onDuplicateClicked !== undefined ? (
-          <GridActionsCellItem key='duplicate' icon={<FileCopyIcon />} label='Duplicate' showInMenu />
-        ) : (
-          <></>
+      renderCell: (params: GridRenderCellParams) => {
+        return (
+          <>
+            {onEditClicked && (
+              <Tooltip title='Edit'>
+                <IconButton size='small' href='#' onClick={() => onEditClicked(params.row)}>
+                  <Icon icon='bx:pencil' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {onDeleteRow && (
+              <Tooltip title='Delete'>
+                <IconButton size='small' onClick={() => onDeleteRow(params.row)}>
+                  <Icon icon='bx:trash-alt' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </>
         )
-      ]
+      }
     })
   }
 

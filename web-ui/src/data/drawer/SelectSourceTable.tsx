@@ -6,7 +6,7 @@ import { GridColumns, GridRenderCellParams } from '@mui/x-data-grid-pro'
 
 import { ConnectorService } from 'src/types/manager/services/ConnectorService'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-import EntityTable from 'src/components/table/data-grid/EntityTable'
+import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
 import { ConnectorType, Direction } from 'src/types/manager'
 
