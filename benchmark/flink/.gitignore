@@ -1,2 +1,3 @@
-nexmark
-nexmark-flink
+/nexmark
+/nexmark-flink
+/docker-compose-*core.yml
