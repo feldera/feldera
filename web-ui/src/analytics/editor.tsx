@@ -1,7 +1,7 @@
-/* eslint-disable lines-around-comment */
-// ** React Imports
-import { useState, useEffect, useRef } from 'react'
+// Editor for SQL programs. This is the main component for the editor page.
+// It is responsible for loading the program, compiling it, and saving it.
 
+import { useState, useEffect, useRef, Dispatch, SetStateAction } from 'react'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
@@ -14,41 +14,47 @@ import Editor, { useMonaco } from '@monaco-editor/react'
 import { match, P } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
-import { ProjectService } from 'src/types/manager/services/ProjectService'
-import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import {
+  CancelError,
   CompileProjectRequest,
+  NewProjectRequest,
   NewProjectResponse,
   ProjectStatus,
   SqlCompilerMessage,
+  UpdateProjectRequest,
   UpdateProjectResponse
 } from 'src/types/manager'
+import useStatusNotification, { StatusSnackBarMessage } from 'src/components/errors/useStatusNotification'
+import { ProjectService } from 'src/types/manager/services/ProjectService'
+import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 
+// The errors we can have on the form. We only have a problem if the name is not
+// unique.
 interface FormError {
   name?: { message?: string }
 }
 
-const MetadataForm = (props: { errors: FormError; project: ProjectDescr; setProject: any; setState: any }) => {
+// Top level form with Name and Description TextInput elements
+const MetadataForm = (props: { errors: FormError; project: ProgramState; setProject: any; setState: any }) => {
   const debouncedSaveStateUpdate = useDebouncedCallback(
     () => {
-      props.setState(ProgramEditState.NameOrDescEdited)
+      props.setState('isModified')
     },
-
     // delay in ms
     2000
   )
 
-  const updateName = event => {
+  const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.setProject((prevState: ProjectDescr) => ({ ...prevState, name: event.target.value }))
-    props.setState(ProgramEditState.Debouncing)
+    props.setState('isDebouncing')
     debouncedSaveStateUpdate()
   }
 
-  const updateDescription = event => {
+  const updateDescription = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.setProject((prevState: ProjectDescr) => ({ ...prevState, description: event.target.value }))
-    props.setState(ProgramEditState.Debouncing)
+    props.setState('isDebouncing')
     debouncedSaveStateUpdate()
   }
 
@@ -86,6 +92,8 @@ const MetadataForm = (props: { errors: FormError; project: ProjectDescr; setProj
   )
 }
 
+// This is a representation of the state of the program. It's basically
+// ProjectDesc, except that project_id can be null.
 interface ProgramState {
   project_id: number | null
   name: string
@@ -93,42 +101,6 @@ interface ProgramState {
   status: ProjectStatus
   version: number
   code: string
-}
-
-// State machine of this website
-enum ProgramEditState {
-  // We loaded the existing program from the data-base (we have a valid project id)
-  UpToDate,
-
-  // We edited the code, name or description but are not updating the server yet.
-  //
-  // That is because we are waiting for the user to stop typing a few seconds first.
-  Debouncing,
-
-  // We edited the Name or Description.
-  NameOrDescEdited,
-
-  // We edited the code in the UI.
-  CodeEdited,
-
-  // We are recompiling the program.
-  Compiling
-}
-
-const editStateToSaveState = (state: ProgramEditState, isNew: boolean): SaveIndicatorState => {
-  if (isNew) {
-    return 'isNew' as const
-  }
-  if (
-    state === ProgramEditState.Debouncing ||
-    state === ProgramEditState.NameOrDescEdited ||
-    state === ProgramEditState.CodeEdited
-  ) {
-    return 'isSaving' as const
-  }
-  if (state === ProgramEditState.UpToDate) {
-    return 'isUpToDate' as const
-  }
 }
 
 const stateToEditorLabel = (state: SaveIndicatorState): string =>
@@ -151,42 +123,30 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
 
     .exhaustive()
 
-const Editors = (props: { program: ProgramState }) => {
-  const queryClient = useQueryClient()
-
-  // Editor page state
-  const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
-  const [state, setState] = useState<ProgramEditState>(ProgramEditState.UpToDate)
-  const [project, setProject] = useState<ProgramState>(props.program)
-  const [formError, setFormError] = useState<FormError>({})
-
-  // Create a project if we just happened to open a new one
-  {
-    const { mutate } = useMutation(['project', 'compilationStatus'], ProjectService.newProject)
-    useEffect(() => {
-      if (project.project_id == null) {
-        let newProjectData = null
-        if (state === ProgramEditState.NameOrDescEdited) {
-          console.log('newProject name or desc changed')
-          newProjectData = {
+// Watches for changes to the form and saves them as a new project (if we don't
+// have a project_id yet).
+const useCreateProjectIfNew = (
+  state: SaveIndicatorState,
+  project: ProgramState,
+  setProject: Dispatch<SetStateAction<ProgramState>>,
+  setState: Dispatch<SetStateAction<SaveIndicatorState>>,
+  setFormError: Dispatch<SetStateAction<FormError>>,
+  pushMessage: Dispatch<StatusSnackBarMessage>
+) => {
+  const { mutate } = useMutation<NewProjectResponse, CancelError, NewProjectRequest>(
+    ['project', 'compilationStatus'],
+    ProjectService.newProject
+  )
+  useEffect(() => {
+    if (project.project_id == null) {
+      if (state === 'isModified') {
+        mutate(
+          {
             name: project.name,
             description: project.description,
             code: project.code
-          }
-        } else if (state === ProgramEditState.CodeEdited) {
-          console.log('newProject code changed')
-          newProjectData = {
-            name: project.name,
-            description: project.description,
-            code: project.code
-          }
-        } else {
-          // We don't to anything if we are not in the right state.
-        }
-
-        // Send create request if we either edited the code, the name or the description
-        if (newProjectData != null) {
-          mutate(newProjectData, {
+          },
+          {
             onSuccess: (data: NewProjectResponse) => {
               setProject((prevState: ProgramState) => ({
                 ...prevState,
@@ -197,27 +157,55 @@ const Editors = (props: { program: ProgramState }) => {
               if (project.name === '') {
                 setFormError({ name: { message: 'Enter a name for the project.' } })
               }
-              setState(ProgramEditState.UpToDate)
+              setState('isUpToDate')
               setFormError({})
             },
-            onError: (error: unknown, _vars: unknown) => {
-              //console.log(error)
-              setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+            onError: (error: CancelError) => {
+              // TODO: would be good to have error codes from the API
+              if (error.message.includes('name already exists')) {
+                setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+                // This won't try to save again, but set the save indicator to
+                // Saving... until the user changes something:
+                setState('isDebouncing')
+              } else {
+                pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              }
             }
-          })
-        }
+          }
+        )
       }
-    }, [project.project_id, mutate, project.code, project.description, project.name, state])
-  }
+    }
+  }, [
+    project.project_id,
+    mutate,
+    project.code,
+    project.description,
+    project.name,
+    state,
+    pushMessage,
+    setFormError,
+    setProject,
+    setState
+  ])
+}
 
-  // Fetch project meta-data and code
+// Fetches the data for an existing project (if we have a project_id).
+const useFetchExistingProject = (
+  project: ProgramState,
+  setProject: Dispatch<SetStateAction<ProgramState>>,
+  setState: Dispatch<SetStateAction<SaveIndicatorState>>,
+  lastCompiledVersion: number,
+  setLastCompiledVersion: Dispatch<SetStateAction<number>>
+) => {
   const codeQuery = useQuery(
     ['project', 'compilationStatus', { project_id: project.project_id }],
-    () => ProjectService.projectCode(project.project_id),
-    { enabled: project.project_id !== null }
+    () => {
+      if (project.project_id) return ProjectService.projectCode(project.project_id)
+    },
+    { enabled: project.project_id != null }
   )
   useEffect(() => {
-    if (!codeQuery.isLoading && !codeQuery.isError) {
+    if (codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
       console.log('set code to ', codeQuery.data.code)
       setProject({
         project_id: codeQuery.data.project.project_id,
@@ -230,120 +218,147 @@ const Editors = (props: { program: ProgramState }) => {
       if (codeQuery.data.project.version > lastCompiledVersion && codeQuery.data.project.status !== 'None') {
         setLastCompiledVersion(codeQuery.data.project.version)
       }
-      setState(ProgramEditState.UpToDate)
-      console.log('codeQuery done')
+      setState('isUpToDate')
     }
-  }, [codeQuery.isLoading, codeQuery.isError, codeQuery.data, lastCompiledVersion])
+  }, [
+    codeQuery.isLoading,
+    codeQuery.isError,
+    codeQuery.data,
+    lastCompiledVersion,
+    setProject,
+    setState,
+    setLastCompiledVersion
+  ])
+}
 
-  // Update project if name, description or code has changed
-  {
-    const { mutate, isLoading } = useMutation(ProjectService.updateProject)
-    useEffect(() => {
-      if (project.project_id !== null) {
-        let updatedProjectData = null
-        if (state === ProgramEditState.NameOrDescEdited) {
-          console.log('updateProject name or desc')
-          updatedProjectData = {
-            project_id: project.project_id,
-            name: project.name,
-            description: project.description
-          }
-        } else if (state === ProgramEditState.CodeEdited) {
-          console.log('updateProject code')
-          updatedProjectData = {
+// Updates the project if it has changed and we have a project_id.
+const useUpdateProjectIfChanged = (
+  state: SaveIndicatorState,
+  project: ProgramState,
+  setProject: Dispatch<SetStateAction<ProgramState>>,
+  setState: Dispatch<SetStateAction<SaveIndicatorState>>,
+  setFormError: Dispatch<SetStateAction<FormError>>,
+  pushMessage: Dispatch<StatusSnackBarMessage>
+) => {
+  const queryClient = useQueryClient()
+  const { mutate, isLoading } = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(
+    ProjectService.updateProject
+  )
+  useEffect(() => {
+    if (project.project_id !== null) {
+      if (state === 'isModified' && !isLoading) {
+        mutate(
+          {
             project_id: project.project_id,
             name: project.name,
             description: project.description,
             code: project.code
-          }
-        } else {
-          // We don't to anything if we are not in the right state.
-        }
-
-        // Send update if we either edited the code, the name or the description
-        if (updatedProjectData != null && !isLoading) {
-          mutate(updatedProjectData, {
+          },
+          {
             onSuccess: (data: UpdateProjectResponse) => {
               setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
-              console.log('updateProject name/desc or code successful')
-              setState(ProgramEditState.UpToDate)
+              setState('isUpToDate')
               queryClient.invalidateQueries(['project', 'compilationStatus', { project_id: project.project_id }])
               setFormError({})
             },
-            onError: (error: unknown, _vars: unknown) => {
-              //console.log(error)
-              setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
-            }
-          })
-        }
-      }
-    }, [
-      mutate,
-      state,
-      project.project_id,
-      project.description,
-      project.name,
-      project.code,
-      setState,
-      isLoading,
-      queryClient
-    ])
-  }
-
-  // Compile code if version has changed
-  {
-    const { mutate, isLoading, isError } = useMutation(
-      [
-        'project',
-        () => {
-          project_id: project.project_id
-        }
-      ],
-      ProjectService.compileProject
-    )
-    useEffect(() => {
-      console.log('should compileProject? ' + project.version, lastCompiledVersion, project.status)
-      if (
-        !isLoading &&
-        !isError &&
-        state === ProgramEditState.UpToDate &&
-        project.version > lastCompiledVersion &&
-        project.status !== 'Pending' &&
-        project.status !== 'CompilingSql'
-      ) {
-        console.log('compileProject ' + project.version)
-        setProject((prevState: ProgramState) => ({ ...prevState, status: 'Pending' }))
-        mutate(
-          { project_id: project.project_id, version: project.version },
-          {
-            onSuccess: () => {
-              console.log('compileProject is now compiling...')
-
-              //queryClient.invalidateQueries(['compilationStatus', { project_id: project.project_id }])
-            },
-            onError: (error: unknown, vars: CompileProjectRequest) => {
-              setProject((prevState: ProgramState) => ({ ...prevState, status: 'None' }))
-              console.log('updateProjectData failed with error:' + error)
-              console.log('version in UI is ' + project.version)
-              console.log('version returned is ' + vars.version)
+            onError: (error: CancelError) => {
+              // TODO: would be good to have error codes from the API
+              if (error.message.includes('name already exists')) {
+                setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+                // This won't try to save again, but set the save indicator to
+                // Saving... until the user changes something:
+                setState('isDebouncing')
+              } else {
+                pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              }
             }
           }
         )
       }
-    }, [
-      mutate,
-      isLoading,
-      isError,
-      state,
-      project.project_id,
-      project.version,
-      project.status,
-      lastCompiledVersion,
-      queryClient
-    ])
-  }
+    }
+  }, [
+    mutate,
+    state,
+    project.project_id,
+    project.description,
+    project.name,
+    project.code,
+    setState,
+    isLoading,
+    queryClient,
+    pushMessage,
+    setFormError,
+    setProject
+  ])
+}
 
-  // Check the status periodically if the project is compiling
+// Send a compile request if the project changes (e.g., we got a new version and
+// we're not already compiling)
+const useCompileProjectIfChanged = (
+  state: SaveIndicatorState,
+  project: ProgramState,
+  setProject: Dispatch<SetStateAction<ProgramState>>,
+  lastCompiledVersion: number,
+  pushMessage: Dispatch<StatusSnackBarMessage>
+) => {
+  const queryClient = useQueryClient()
+
+  const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(
+    [
+      'project',
+      () => {
+        project_id: project.project_id
+      }
+    ],
+    ProjectService.compileProject
+  )
+  useEffect(() => {
+    if (
+      !isLoading &&
+      !isError &&
+      state == 'isUpToDate' &&
+      project.project_id !== null &&
+      project.version > lastCompiledVersion &&
+      project.status !== 'Pending' &&
+      project.status !== 'CompilingSql'
+    ) {
+      console.log('compileProject ' + project.version)
+      setProject((prevState: ProgramState) => ({ ...prevState, status: 'Pending' }))
+      mutate(
+        { project_id: project.project_id, version: project.version },
+        {
+          onSuccess: () => {
+            console.log('compileProject is now compiling...')
+            //queryClient.invalidateQueries(['compilationStatus', { project_id: project.project_id }])
+          },
+          onError: (error: CancelError) => {
+            setProject((prevState: ProgramState) => ({ ...prevState, status: 'None' }))
+            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+          }
+        }
+      )
+    }
+  }, [
+    mutate,
+    isLoading,
+    isError,
+    state,
+    project.project_id,
+    project.version,
+    project.status,
+    lastCompiledVersion,
+    queryClient,
+    pushMessage,
+    setProject
+  ])
+}
+
+// Polls the server during compilation and checks for the status.
+const usePollCompilationStatus = (
+  project: ProgramState,
+  setProject: Dispatch<SetStateAction<ProgramState>>,
+  setLastCompiledVersion: Dispatch<SetStateAction<number>>
+) => {
   const compilationStatus = useQuery({
     queryKey: [
       'compilationStatus',
@@ -351,49 +366,46 @@ const Editors = (props: { program: ProgramState }) => {
         project_id: project.project_id
       }
     ],
-    queryFn: () => ProjectService.projectStatus(project.project_id),
-    refetchInterval: (data, _query) =>
+    queryFn: () => {
+      if (project.project_id) return ProjectService.projectStatus(project.project_id)
+    },
+    refetchInterval: data =>
       data === undefined || data.status === 'Pending' || data.status === 'CompilingSql' ? 1000 : false,
-    enabled: project.status === 'Pending' || project.status === 'CompilingSql'
+    enabled: project.project_id !== null && (project.status === 'Pending' || project.status === 'CompilingSql')
   })
 
   useEffect(() => {
-    if (!compilationStatus.isLoading && !compilationStatus.isError && project.project_id != null) {
+    if (compilationStatus.data && !compilationStatus.isLoading && !compilationStatus.isError) {
       match(compilationStatus.data.status)
-        .with({ SqlError: P.select() }, err => {
-          //console.log('Status Query: returned sql error', err)
+        .with({ SqlError: P.select() }, () => {
           setLastCompiledVersion(project.version)
         })
-        .with({ RustError: P.select() }, err => {
-          //console.log('Status Query: returned rust error', err)
+        .with({ RustError: P.select() }, () => {
           setLastCompiledVersion(project.version)
         })
-        .with({ SystemError: P.select() }, err => {
-          //console.log('Status Query: returned system error', err)
+        .with({ SystemError: P.select() }, () => {
           setLastCompiledVersion(project.version)
         })
         .with('Pending', () => {
-          //console.log('Status Query: Currently pending')
+          // Wait
         })
         .with('CompilingSql', () => {
-          //console.log('Status Query: Currently compiling sql')
+          // Wait
         })
         .with('CompilingRust', () => {
-          //console.log('Status Query: Currently compiling rust code')
           setLastCompiledVersion(project.version)
         })
         .with('Success', () => {
-          //console.log('Status Query: we have a success')
           setLastCompiledVersion(project.version)
         })
         .with('None', () => {
-          //console.log('Status Query: None, should be pending?')
+          // Wait -- shouldn't it be pending?
         })
         .exhaustive()
 
       if (project.status !== compilationStatus.data.status) {
+        // @ts-ignore: Typescript thinks compilationStatus.data can be undefined but we check it above?
         setProject((prevState: ProgramState) => ({ ...prevState, status: compilationStatus.data.status }))
-        console.log('compilationStatus status update ' + compilationStatus.data.status.toString())
       }
     }
   }, [
@@ -403,40 +415,54 @@ const Editors = (props: { program: ProgramState }) => {
     project.status,
     project.version,
     project.project_id,
-    setLastCompiledVersion
+    setLastCompiledVersion,
+    setProject
   ])
+}
 
+const Editors = (props: { program: ProgramState }) => {
+  const { pushMessage } = useStatusNotification()
+
+  // Editor page state
+  const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
+  const [state, setState] = useState<SaveIndicatorState>(props.program.project_id ? 'isNew' : 'isUpToDate')
+  const [project, setProject] = useState<ProgramState>(props.program)
+  const [formError, setFormError] = useState<FormError>({})
+
+  useCreateProjectIfNew(state, project, setProject, setState, setFormError, pushMessage)
+  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion)
+  useUpdateProjectIfChanged(state, project, setProject, setState, setFormError, pushMessage)
+  useCompileProjectIfChanged(state, project, setProject, lastCompiledVersion, pushMessage)
+  usePollCompilationStatus(project, setProject, setLastCompiledVersion)
+
+  // Check the status periodically if the project is compiling
   // Display errors in the editor if there are any
   const monaco = useMonaco()
-  const editorRef = useRef(null)
-  function handleEditorDidMount(editor: any, _monaco: any) {
+  const editorRef = useRef<any /* IStandaloneCodeEditor */>(null)
+  function handleEditorDidMount(editor: any) {
     editorRef.current = editor
     console.log('handleEditorDidMount', project.code)
   }
 
   const debouncedCodeEditStateUpdate = useDebouncedCallback(
     () => {
-      setState(ProgramEditState.CodeEdited)
+      setState('isModified')
     },
 
     // delay in ms
     2000
   )
-  const updateCode = (value: string | undefined, _event: any) => {
+  const updateCode = (value: string | undefined) => {
     setProject(prevState => ({ ...prevState, code: value || '' }))
-    setState(ProgramEditState.Debouncing)
+    setState('isDebouncing')
     debouncedCodeEditStateUpdate()
   }
-
-  // TODO: this doesn't yet update the status when the page is first loaded/we fetch project status from API
   useEffect(() => {
-    console.log('editor status update: ' + project.status)
     if (monaco !== null && editorRef.current !== null) {
-      console.log('editor status made it in the if: ' + project.status)
       match(project.status)
         .with({ SqlError: P.select() }, (err: SqlCompilerMessage[]) => {
           console.log(err)
-          const monaco_markers = err.map((item, _idx, _arr) => {
+          const monaco_markers = err.map(item => {
             return {
               startLineNumber: item.startLineNumber,
               endLineNumber: item.endLineNumber,
@@ -471,10 +497,7 @@ const Editors = (props: { program: ProgramState }) => {
           </CardContent>
           <CardContent>
             <Grid item xs={12}>
-              <SaveIndicator
-                stateToLabel={stateToEditorLabel}
-                state={editStateToSaveState(state, project.project_id == null)}
-              />
+              <SaveIndicator stateToLabel={stateToEditorLabel} state={state} />
               <CompileIndicator state={project.status} />
             </Grid>
           </CardContent>
@@ -485,7 +508,7 @@ const Editors = (props: { program: ProgramState }) => {
               defaultLanguage='sql'
               value={project.code}
               onChange={updateCode}
-              onMount={(editor, monaco) => handleEditorDidMount(editor, monaco)}
+              onMount={editor => handleEditorDidMount(editor)}
             />
           </CardContent>
           <Divider sx={{ m: '0 !important' }} />
