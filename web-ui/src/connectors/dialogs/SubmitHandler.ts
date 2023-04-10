@@ -8,6 +8,7 @@ import {
   ConnectorDescr
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
+import { connectorTypeToDirection } from 'src/types/data'
 
 export const SourceFormCreateHandle = <TData extends FieldValues>(
   onFormSubmitted: (c: ConnectorDescr | undefined) => void,
@@ -31,6 +32,7 @@ export const SourceFormCreateHandle = <TData extends FieldValues>(
             connector_id: resp.connector_id,
             name: source_desc.name,
             description: source_desc.description,
+            direction: connectorTypeToDirection(source_desc.typ),
             typ: source_desc.typ,
             config: source_desc.config
           })

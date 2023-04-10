@@ -50,7 +50,7 @@ interface ConnectorData {
   c: ConnectorDescr | undefined
 }
 
-function DetailPanelContent(props: { row: ConfigDescr }) {
+const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
 
@@ -98,8 +98,8 @@ function DetailPanelContent(props: { row: ConfigDescr }) {
   ])
 
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
-  const [inputMetrics, setInputMetrics] = useState<Map<string, ConnectorMetrics>>(new Map())
-  const [outputMetrics, setOutputMetrics] = useState<Map<string, ConnectorMetrics>>(new Map())
+  const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
+  const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
   const pipelineStatusQuery = useQuery({
     queryFn: () => {
       if (props.row.pipeline) {
@@ -135,199 +135,192 @@ function DetailPanelContent(props: { row: ConfigDescr }) {
     }
   }, [pipelineStatusQuery.isLoading, pipelineStatusQuery.isError, pipelineStatusQuery.data, props.row.pipeline])
 
-  return (
-    !connectorQuery.isLoading &&
-    !connectorQuery.isError &&
-    !projectQuery.isLoading &&
-    !projectQuery.isError && (
-      <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
-        <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
-          <Grid item xs={4}>
-            <Card>
-              <List subheader={<ListSubheader>Configuration</ListSubheader>}>
-                <ListItem>
-                  <ListItemIcon>
-                    <Icon icon='bi:filetype-sql' fontSize={20} />
-                  </ListItemIcon>
-                  <ListItemText primary={projectQuery.data?.name || 'not set'} />
-                </ListItem>
-                {props.row.pipeline && (
-                  <>
-                    <ListItem>
-                      <Tooltip title='Pipeline Running Since'>
-                        <ListItemIcon>
-                          <Icon icon='clarity:date-line' fontSize={20} />
-                        </ListItemIcon>
-                      </Tooltip>
-                      <ListItemText primary={props.row.pipeline.created || 'Not running'} />
-                    </ListItem>
-                    <ListItem>
-                      <Tooltip title='Pipeline Port'>
-                        <ListItemIcon>
-                          <Icon icon='carbon:port-input' fontSize={20} />
-                        </ListItemIcon>
-                      </Tooltip>
-                      <ListItemText primary={props.row.pipeline.port || '0000'} />
-                    </ListItem>
-                  </>
-                )}
-              </List>
-            </Card>
-          </Grid>
-
-          <Grid item xs={8}>
-            <Paper>
-              <AnalyticsPipelineTput metrics={globalMetrics} />
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12}>
-            <Paper>
-              <DataGridPro
-                autoHeight
-                getRowId={(row: ConnectorData) => row.ac.uuid}
-                columns={[
-                  {
-                    field: 'name',
-                    headerName: 'Input',
-                    flex: 0.5,
-                    valueGetter: params => params.row.c?.name || 'unknown'
-                  },
-                  {
-                    field: 'config',
-                    valueGetter: params => params.row.ac.config,
-                    headerName: 'Feeds Table',
-                    flex: 0.8
-                  },
-                  {
-                    field: 'records',
-                    headerName: 'Records',
-                    flex: 0.15,
-                    renderCell: params =>
-                      format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
-                  },
-                  {
-                    field: 'traffic',
-                    headerName: 'Traffic',
-                    flex: 0.15,
-                    renderCell: params => humanSize(inputMetrics?.get(params.row.ac.config.trim())?.total_bytes || 0)
-                  },
-
-                  //{
-                  //field: 'enabled',
-                  //headerName: 'Active',
-                  //flex: 0.15,
-                  //renderCell: () => <Switch defaultChecked disabled />
-                  //},
-                  {
-                    field: 'action',
-                    headerName: 'Action',
-                    flex: 0.15,
-                    renderCell: params => (
-                      <>
-                        <Tooltip title='Inspect Connector'>
-                          <IconButton
-                            size='small'
-                            onClick={() =>
-                              router.push(
-                                '/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config
-                              )
-                            }
-                          >
-                            <Icon icon='bx:show' fontSize={20} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title='Remove Connector from the Pipeline'>
-                          <IconButton size='small' href='#'>
-                            <Icon icon='bx:trash-alt' fontSize={20} />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )
-                  }
-                ]}
-                rows={inputs}
-                sx={{ flex: 1 }}
-                hideFooter
-              />
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12}>
-            <Paper>
-              <DataGridPro
-                autoHeight
-                getRowId={(row: ConnectorData) => row.ac.uuid}
-                columns={[
-                  {
-                    field: 'name',
-                    headerName: 'Output',
-                    flex: 0.5,
-                    valueGetter: params => params.row.c?.name || 'unknown'
-                  },
-                  {
-                    field: 'config',
-                    valueGetter: params => params.row.ac.config,
-                    headerName: 'From View',
-                    flex: 0.8
-                  },
-                  {
-                    field: 'records',
-                    headerName: 'Records',
-                    flex: 0.15,
-                    renderCell: params =>
-                      format('.1s')(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_records || 0)
-                  },
-                  {
-                    field: 'traffic',
-                    headerName: 'Traffic',
-                    flex: 0.15,
-                    renderCell: params =>
-                      humanSize(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_bytes || 0)
-                  },
-
-                  //{
-                  //  field: 'enabled',
-                  //  headerName: 'Active',
-                  //  flex: 0.15,
-                  //  renderCell: () => <Switch defaultChecked disabled />
-                  //},
-                  {
-                    field: 'action',
-                    headerName: 'Action',
-                    flex: 0.15,
-                    renderCell: params => (
-                      <>
-                        <Tooltip title='Inspect Connector'>
-                          <IconButton
-                            size='small'
-                            onClick={() =>
-                              router.push(
-                                '/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config
-                              )
-                            }
-                          >
-                            <Icon icon='bx:show' fontSize={20} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title='Remove Connector from the Pipeline'>
-                          <IconButton size='small' href='#'>
-                            <Icon icon='bx:trash-alt' fontSize={20} />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )
-                  }
-                ]}
-                rows={outputs}
-                sx={{ flex: 1 }}
-                hideFooter
-              />
-            </Paper>
-          </Grid>
+  return !connectorQuery.isLoading && !connectorQuery.isError && !projectQuery.isLoading && !projectQuery.isError ? (
+    <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
+      <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
+        <Grid item xs={4}>
+          <Card>
+            <List subheader={<ListSubheader>Configuration</ListSubheader>}>
+              <ListItem>
+                <ListItemIcon>
+                  <Icon icon='bi:filetype-sql' fontSize={20} />
+                </ListItemIcon>
+                <ListItemText primary={projectQuery.data?.name || 'not set'} />
+              </ListItem>
+              {props.row.pipeline && (
+                <>
+                  <ListItem>
+                    <Tooltip title='Pipeline Running Since'>
+                      <ListItemIcon>
+                        <Icon icon='clarity:date-line' fontSize={20} />
+                      </ListItemIcon>
+                    </Tooltip>
+                    <ListItemText primary={props.row.pipeline.created || 'Not running'} />
+                  </ListItem>
+                  <ListItem>
+                    <Tooltip title='Pipeline Port'>
+                      <ListItemIcon>
+                        <Icon icon='carbon:port-input' fontSize={20} />
+                      </ListItemIcon>
+                    </Tooltip>
+                    <ListItemText primary={props.row.pipeline.port || '0000'} />
+                  </ListItem>
+                </>
+              )}
+            </List>
+          </Card>
         </Grid>
-      </Box>
-    )
+
+        <Grid item xs={8}>
+          <Paper>
+            <AnalyticsPipelineTput metrics={globalMetrics} />
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Paper>
+            <DataGridPro
+              autoHeight
+              getRowId={(row: ConnectorData) => row.ac.uuid}
+              columns={[
+                {
+                  field: 'name',
+                  headerName: 'Input',
+                  flex: 0.5,
+                  valueGetter: params => params.row.c?.name || 'unknown'
+                },
+                {
+                  field: 'config',
+                  valueGetter: params => params.row.ac.config,
+                  headerName: 'Feeds Table',
+                  flex: 0.8
+                },
+                {
+                  field: 'records',
+                  headerName: 'Records',
+                  flex: 0.15,
+                  renderCell: params =>
+                    format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
+                },
+                {
+                  field: 'traffic',
+                  headerName: 'Traffic',
+                  flex: 0.15,
+                  renderCell: params => humanSize(inputMetrics?.get(params.row.ac.config.trim())?.total_bytes || 0)
+                },
+
+                //{
+                //field: 'enabled',
+                //headerName: 'Active',
+                //flex: 0.15,
+                //renderCell: () => <Switch defaultChecked disabled />
+                //},
+                {
+                  field: 'action',
+                  headerName: 'Action',
+                  flex: 0.15,
+                  renderCell: params => (
+                    <>
+                      <Tooltip title='Inspect Connector'>
+                        <IconButton
+                          size='small'
+                          onClick={() =>
+                            router.push('/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config)
+                          }
+                        >
+                          <Icon icon='bx:show' fontSize={20} />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title='Remove Connector from the Pipeline'>
+                        <IconButton size='small' href='#'>
+                          <Icon icon='bx:trash-alt' fontSize={20} />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  )
+                }
+              ]}
+              rows={inputs}
+              sx={{ flex: 1 }}
+              hideFooter
+            />
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Paper>
+            <DataGridPro
+              autoHeight
+              getRowId={(row: ConnectorData) => row.ac.uuid}
+              columns={[
+                {
+                  field: 'name',
+                  headerName: 'Output',
+                  flex: 0.5,
+                  valueGetter: params => params.row.c?.name || 'unknown'
+                },
+                {
+                  field: 'config',
+                  valueGetter: params => params.row.ac.config,
+                  headerName: 'From View',
+                  flex: 0.8
+                },
+                {
+                  field: 'records',
+                  headerName: 'Records',
+                  flex: 0.15,
+                  renderCell: params =>
+                    format('.1s')(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_records || 0)
+                },
+                {
+                  field: 'traffic',
+                  headerName: 'Traffic',
+                  flex: 0.15,
+                  renderCell: params =>
+                    humanSize(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_bytes || 0)
+                },
+
+                //{
+                //  field: 'enabled',
+                //  headerName: 'Active',
+                //  flex: 0.15,
+                //  renderCell: () => <Switch defaultChecked disabled />
+                //},
+                {
+                  field: 'action',
+                  headerName: 'Action',
+                  flex: 0.15,
+                  renderCell: params => (
+                    <>
+                      <Tooltip title='Inspect Connector'>
+                        <IconButton
+                          size='small'
+                          onClick={() =>
+                            router.push('/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config)
+                          }
+                        >
+                          <Icon icon='bx:show' fontSize={20} />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title='Remove Connector from the Pipeline'>
+                        <IconButton size='small' href='#'>
+                          <Icon icon='bx:trash-alt' fontSize={20} />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  )
+                }
+              ]}
+              rows={outputs}
+              sx={{ flex: 1 }}
+              hideFooter
+            />
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  ) : (
+    <Box>Loading...</Box>
   )
 }
 

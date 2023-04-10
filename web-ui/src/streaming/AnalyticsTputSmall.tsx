@@ -1,10 +1,5 @@
-// ** MUI Imports
 import Card from '@mui/material/Card'
-
-// ** Third Party Imports
 import { ApexOptions } from 'apexcharts'
-
-// ** Custom Components Imports
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 
 const series = [{ data: [30, 70, 35, 55, 45, 70] }]

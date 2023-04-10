@@ -1,5 +1,4 @@
 import { forwardRef, ReactElement, Ref } from 'react'
-
 import Fade, { FadeProps } from '@mui/material/Fade'
 
 const Transition = forwardRef(function Transition(

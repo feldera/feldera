@@ -26,3 +26,18 @@ Start the development server:
 ```bash
 yarn dev
 ```
+
+## File Organization
+
+- `@core`: Settings, style and overrides.
+- `analytics`: Logic to handle projects (SQL editor, programs).
+- `components`: contains reusable React components.
+- `configs`: Theme configuration (see also Material UI themes).
+- `data`: Logic for handling connectors (Add, Update, Delete).
+- `home`: Home page.
+- `layouts`: General layout components.
+- `navigation`: Side-bar Menu.
+- `pages`: accessible website pages (e.g. `pages/index.tsx` is the homepage)
+- `streaming`: Logic for building, managing Pipelines.
+- `types`: Types used throughout the app, OpenAPI generated types.
+- `utils`: contains utility functions.

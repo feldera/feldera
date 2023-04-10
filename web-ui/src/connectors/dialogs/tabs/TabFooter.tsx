@@ -1,17 +1,12 @@
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-
-import { useSettings } from 'src/@core/hooks/useSettings'
 import { Icon } from '@iconify/react'
 
 const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; formId: string }) => {
   const { activeTab, setActiveTab, tabsArr, formId } = props
 
-  const { settings } = useSettings()
-  const { direction } = settings
-
-  const nextArrow = direction === 'ltr' ? 'bx:right-arrow-alt' : 'bx:left-arrow-alt'
-  const previousArrow = direction === 'ltr' ? 'bx:left-arrow-alt' : 'bx:right-arrow-alt'
+  const nextArrow = 'bx:right-arrow-alt'
+  const previousArrow = 'bx:left-arrow-alt'
   const prevTab = tabsArr[tabsArr.indexOf(activeTab) - 1]
   const nextTab = tabsArr[tabsArr.indexOf(activeTab) + 1]
   const onLastTab = activeTab === tabsArr[tabsArr.length - 1]

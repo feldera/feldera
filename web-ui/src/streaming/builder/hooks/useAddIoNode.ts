@@ -2,8 +2,7 @@ import { useCallback } from 'react'
 import { NodeProps, useReactFlow, getConnectedEdges } from 'reactflow'
 import { AttachedConnector, Direction } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-
-import { uuid } from '../utils'
+import { randomString } from 'src/utils/randomString'
 
 const HEIGHT_OFFSET = 120
 
@@ -69,7 +68,7 @@ export function useAddConnector() {
           const targetHandle = ac.direction === Direction.INPUT ? connectorHandle : null
 
           addEdges({
-            id: uuid(),
+            id: randomString(),
             source: sourceId,
             target: targetId,
             sourceHandle: sourceHandle,

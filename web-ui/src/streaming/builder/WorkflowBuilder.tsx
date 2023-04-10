@@ -13,7 +13,7 @@ import ReactFlow, {
 import useAutoLayout, { useRedoLayout } from './hooks/useAutoLayout'
 import nodeTypes from './NodeTypes'
 import edgeTypes from './EdgeTypes'
-import AddSourceDrawer from 'src/data/drawer/AddSourceDrawer'
+import AddSourceDrawer from 'src/connectors/drawer/AddSourceDrawer'
 import useDebouncedSave from './hooks/useDebouncedSave'
 
 import 'reactflow/dist/style.css'

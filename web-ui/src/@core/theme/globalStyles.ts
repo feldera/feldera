@@ -7,17 +7,22 @@ const GlobalStyles = (theme: Theme) => {
       right: '0 !important',
       left: 'auto !important',
       '&:hover, &:focus, &.ps--clicking': {
-        backgroundColor: theme.palette.mode === 'light' ? 'rgba(86, 106, 127, 0.1) !important' : 'rgba(203, 203, 226, 0.15) !important'
+        backgroundColor:
+          theme.palette.mode === 'light' ? 'rgba(86, 106, 127, 0.1) !important' : 'rgba(203, 203, 226, 0.15) !important'
       },
       '& .ps__thumb-y': {
         right: '3px !important',
         left: 'auto !important',
-        backgroundColor: theme.palette.mode === 'light' ? 'rgba(86, 106, 127, 0.25) !important' : 'rgba(203, 203, 226, 0.4) !important'
+        backgroundColor:
+          theme.palette.mode === 'light' ? 'rgba(86, 106, 127, 0.25) !important' : 'rgba(203, 203, 226, 0.4) !important'
       },
       '.layout-vertical-nav &': {
         '& .ps__thumb-y': {
           width: 4,
-          backgroundColor: theme.palette.mode === 'light' ? 'rgba(86, 106, 127, 0.25) !important' : 'rgba(203, 203, 226, 0.4) !important'
+          backgroundColor:
+            theme.palette.mode === 'light'
+              ? 'rgba(86, 106, 127, 0.25) !important'
+              : 'rgba(203, 203, 226, 0.4) !important'
         },
         '&:hover, &:focus, &.ps--clicking': {
           backgroundColor: 'transparent !important',

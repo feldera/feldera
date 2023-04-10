@@ -1,14 +1,10 @@
-// ** MUI Imports
 import Card from '@mui/material/Card'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import CardContent from '@mui/material/CardContent'
-
-// ** Third Party Imports
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
 
-// ** Custom Components Imports
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 import { GlobalMetrics } from 'src/types/pipeline'
 

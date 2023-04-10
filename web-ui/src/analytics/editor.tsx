@@ -24,7 +24,7 @@ import {
   UpdateProjectRequest,
   UpdateProjectResponse
 } from 'src/types/manager'
-import useStatusNotification, { StatusSnackBarMessage } from 'src/components/errors/useStatusNotification'
+import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ProjectService } from 'src/types/manager/services/ProjectService'
 import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import CompileIndicator from './CompileIndicator'

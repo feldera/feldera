@@ -1,12 +1,13 @@
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
-import useSqlPlaceholderClick from '../hooks/useSqlPlaceholderClick'
 import { Icon } from '@iconify/react'
 import { Autocomplete, CardContent, TextField, Typography } from '@mui/material'
-import { PlaceholderNode } from '../NodeTypes'
 import { useQuery } from '@tanstack/react-query'
+
+import { PlaceholderNode } from '../NodeTypes'
 import { ProjectService } from 'src/types/manager/services/ProjectService'
 import { projectToProjectWithSchema, ProjectWithSchema } from 'src/types/program'
+import useSqlPlaceholderClick from '../hooks/useSqlPlaceholderClick'
 
 const SqlPlaceHolderNode = (props: NodeProps) => {
   const [programs, setPrograms] = useState<ProjectWithSchema[]>([])

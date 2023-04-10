@@ -13,7 +13,6 @@ import { projectToProjectWithSchema } from 'src/types/program'
 
 const IntrospectInputOutput = () => {
   const apiRef = useGridApiRef()
-  const [rows, setRows] = useState<any[]>([])
   const [configDescr, setConfig] = useState<ConfigDescr | undefined>(undefined)
   const [headers, setHeaders] = useState<GridColumns | undefined>(undefined)
   const [configId, setConfigId] = useState<ConfigId | undefined>(undefined)
@@ -100,8 +99,6 @@ const IntrospectInputOutput = () => {
                 console.error(error)
               }
 
-              // console.log('Result', result)
-
               const newRows: any[] = result.map(row => {
                 const genId = row[0] //row.slice(0, row.length - 1).join('-')
                 const weight = row[row.length - 1]
@@ -167,8 +164,7 @@ const IntrospectInputOutput = () => {
               autoHeight
               columns={headers}
               rowThreshold={0}
-              rows={rows}
-              setRows={setRows}
+              rows={[]}
             />
           </Card>
         </Grid>

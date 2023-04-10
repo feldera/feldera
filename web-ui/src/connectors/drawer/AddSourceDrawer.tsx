@@ -8,16 +8,17 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { Icon } from '@iconify/react'
 import useDrawerState from 'src/streaming/builder/hooks/useDrawerState'
 import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
-import { DialogCreatePanda } from '../DialogCreateRedpanda'
 import { SetStateAction, useState, Dispatch, useEffect } from 'react'
-import { DialogCreateCsv } from '../DialogCreateCsv'
 import { AttachedConnector, ConnectorDescr, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/data'
-import { uuid } from 'src/streaming/builder/utils'
-import { DialogCreateKafkaOut } from '../DialogCreateKafkaOut'
+import { randomString } from 'src/utils/randomString'
 import useAddIoNode from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
+
+import { CsvFileConnectorDialog } from '../dialogs/CsvFileConnector'
+import { KafkaInputConnectorDialog } from '../dialogs/KafkaInputConnector'
+import { KafkaOutputConnectorDialog } from '../dialogs/KafkaOutputConnector'
 
 const Header = styled(Box)<BoxProps>(({ theme }) => ({
   display: 'flex',
@@ -135,7 +136,7 @@ const SideBarAddIo = () => {
   const onAddClick = (connector: ConnectorDescr) => {
     closeDrawer()
     const ac: AttachedConnector = {
-      uuid: uuid(),
+      uuid: randomString(),
       connector_id: connector.connector_id,
       config: '',
       direction: forNodes === 'inputNode' ? Direction.INPUT : Direction.OUTPUT
@@ -170,7 +171,7 @@ const SideBarAddIo = () => {
         <Grid container spacing={3}>
           {shouldDisplayConnector(direction, ConnectorType.KAFKA_IN) && (
             <IoSelectBox
-              dialog={DialogCreatePanda}
+              dialog={KafkaInputConnectorDialog}
               closeDrawer={close}
               openSelectTable={() => openSelectTable(ConnectorType.KAFKA_IN)}
               howMany={sourceCounts[ConnectorType.KAFKA_IN]}
@@ -180,7 +181,7 @@ const SideBarAddIo = () => {
           )}
           {shouldDisplayConnector(direction, ConnectorType.KAFKA_OUT) && (
             <IoSelectBox
-              dialog={DialogCreateKafkaOut}
+              dialog={KafkaOutputConnectorDialog}
               closeDrawer={close}
               openSelectTable={() => openSelectTable(ConnectorType.KAFKA_OUT)}
               howMany={sourceCounts[ConnectorType.KAFKA_OUT]}
@@ -190,7 +191,7 @@ const SideBarAddIo = () => {
           )}
           {shouldDisplayConnector(direction, ConnectorType.FILE) && (
             <IoSelectBox
-              dialog={DialogCreateCsv}
+              dialog={CsvFileConnectorDialog}
               closeDrawer={close}
               openSelectTable={() => openSelectTable(ConnectorType.FILE)}
               howMany={sourceCounts[ConnectorType.FILE]}

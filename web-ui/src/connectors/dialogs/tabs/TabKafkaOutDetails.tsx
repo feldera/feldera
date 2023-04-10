@@ -6,11 +6,11 @@ import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
-import { KafkaOutConnector } from '../DialogCreateKafkaOut'
+import { KafkaOutputSchema } from '../KafkaOutputConnector'
 
 const TabKafkaOutDetails = (props: {
-  control: Control<KafkaOutConnector>
-  errors: Partial<FieldErrors<KafkaOutConnector>>
+  control: Control<KafkaOutputSchema>
+  errors: Partial<FieldErrors<KafkaOutputSchema>>
 }) => {
   return (
     <Grid container spacing={6}>

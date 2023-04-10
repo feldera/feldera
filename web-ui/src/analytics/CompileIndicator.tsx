@@ -1,3 +1,8 @@
+// The Compile indicator for the editor page.
+//
+// Changes color depending on compilation status and displays a tooltip with
+// more information.
+
 import { CircularProgress, Tooltip } from '@mui/material'
 import { ProjectStatus } from 'src/types/manager'
 import DoneIcon from '@mui/icons-material/Done'

@@ -5,4 +5,4 @@
 /**
  * Unique project id.
  */
-export type ProjectId = number;
+export type ProjectId = number

@@ -3,6 +3,5 @@
 /* eslint-disable */
 
 export type CsvEncoderConfig = {
-    buffer_size_records?: number;
-};
-
+  buffer_size_records?: number
+}

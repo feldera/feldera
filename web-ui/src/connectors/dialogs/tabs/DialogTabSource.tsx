@@ -6,10 +6,10 @@ import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
-import { RedpandaSource } from 'src/data/DialogCreateRedpanda'
+import { KafkaInputSchema } from 'src/connectors/dialogs/KafkaInputConnector'
 import Autocomplete from '@mui/material/Autocomplete'
 
-const TabSource = (props: { control: Control<RedpandaSource>; errors: Partial<FieldErrors<RedpandaSource>> }) => {
+const TabSource = (props: { control: Control<KafkaInputSchema>; errors: Partial<FieldErrors<KafkaInputSchema>> }) => {
   return (
     <Grid container spacing={6}>
       <Grid item xs={12}>

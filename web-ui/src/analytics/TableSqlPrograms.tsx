@@ -1,21 +1,22 @@
+// Display a table with all SQL programs.
+//
+// Can edit name and description directly in the table.
+// Also display status of the program.
+
 import { useRouter } from 'next/router'
 import { useState, useCallback } from 'react'
-
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { GridColumns, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { match, P } from 'ts-pattern'
 
 import CustomChip from 'src/@core/components/mui/chip'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-
 import { ProjectService } from 'src/types/manager/services/ProjectService'
 import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
-
-import { match, P } from 'ts-pattern'
 import { ProjectStatus } from 'src/types/manager/models/ProjectStatus'
 import { CancelError, UpdateProjectRequest, UpdateProjectResponse } from 'src/types/manager'
-
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -48,10 +49,13 @@ const getStatusObj = (status: ProjectStatus) =>
     .exhaustive()
 
 const TableSqlPrograms = () => {
+  const router = useRouter()
+
   const [rows, setRows] = useState<ProjectDescr[]>([])
   const fetchQuery = useQuery({ queryKey: ['project'], queryFn: ProjectService.listProjects })
   const { pushMessage } = useStatusNotification()
 
+  // Editing a row
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
   const mutation = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(ProjectService.updateProject)
@@ -74,7 +78,7 @@ const TableSqlPrograms = () => {
     return newRow
   }
 
-  // columns
+  // Deleting a row
   const deleteMutation = useMutation<void, CancelError, number>(ProjectService.deleteProject)
   const deleteProject = useCallback(
     (curRow: ProjectDescr) => {
@@ -148,14 +152,13 @@ const TableSqlPrograms = () => {
     }
   ]
 
+  // Table properties, passed to the underlying grid-table
   const tableProps = {
     getRowId: (row: ProjectDescr) => row.project_id,
     columnVisibilityModel: { project_id: false },
     columns: columns,
     rows: rows
   }
-
-  const router = useRouter()
 
   return (
     <Card>
