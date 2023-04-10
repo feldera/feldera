@@ -5,7 +5,7 @@ COPY config.sh entrypoint.sh bin
 COPY nexmark.yaml conf
 
 WORKDIR /opt/flink
-COPY run-nexmark.sh bin
+COPY run.sh bin
 COPY nexmark-flink/lib lib
 COPY flink-conf.yaml nexmark-flink/conf/sql-client-defaults.yaml conf
 

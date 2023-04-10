@@ -1,0 +1,21 @@
+From: Ben Pfaff <bpfaff@vmware.com>
+Subject: Make sparkMaster configurable
+
+Without this patch, the sparkMaster always runs with 4 cores.  If you
+try to specify --sparkMaster explicitly, it causes a failure because
+then the test sees '--sparkMaster=local[4] --sparkMaster=local[16]',
+which it doesn't understand.
+
+diff --git a/sdks/java/testing/nexmark/build.gradle b/sdks/java/testing/nexmark/build.gradle
+index 8b989c258e..f8f097ae2c 100644
+--- a/sdks/java/testing/nexmark/build.gradle
++++ b/sdks/java/testing/nexmark/build.gradle
+@@ -134,7 +134,7 @@ def getNexmarkArgs = {
+ 
+   if(isSparkRunner) {
+     // For transparency, be explicit about configuration of local Spark
+-    nexmarkArgsList.add("--sparkMaster=local[4]")
++    //nexmarkArgsList.add("--sparkMaster=local[4]")
+   }
+ 
+   return nexmarkArgsList
