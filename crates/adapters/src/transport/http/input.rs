@@ -263,7 +263,7 @@ impl StreamHandler<Result<WsMessage, WsProtocolError>> for HttpInputWs {
             // Normally we send status notifications to the client whenever endpoint
             // state changes; however the client may request a state notification, e.g.,
             // right after connection has been established.
-            Ok(WsMessage::Text(cmd)) if cmd == "state" => {
+            Ok(WsMessage::Text(cmd)) if cmd.trim() == "state" => {
                 self.send_state(ctx, self.endpoint.state())
             }
             // Data buffer received in running state.  The first 8 bytes of the buffer
