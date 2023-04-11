@@ -10,7 +10,7 @@ use crate::circuit::{
     Circuit, GlobalNodeId, NodeId,
 };
 use petgraph::algo::toposort;
-use std::thread::yield_now;
+use std::{ops::Deref, thread::yield_now};
 
 /// Static scheduler evaluates nodes in the circuit in a fixed order computed
 /// based on its dependency graph.
@@ -53,7 +53,7 @@ impl Scheduler for StaticScheduler {
     where
         C: Circuit,
     {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start());
+        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id().deref()));
 
         for (node_id, is_async) in self.schedule.iter() {
             if !is_async {
@@ -70,13 +70,19 @@ impl Scheduler for StaticScheduler {
                         circuit.eval_node(*node_id)?;
                         break;
                     }
+                    circuit.log_scheduler_event(&SchedulerEvent::wait_start(
+                        circuit.global_id().deref(),
+                    ));
                     yield_now();
+                    circuit.log_scheduler_event(&SchedulerEvent::wait_end(
+                        circuit.global_id().deref(),
+                    ));
                 }
             }
         }
         circuit.tick();
 
-        circuit.log_scheduler_event(&SchedulerEvent::step_end());
+        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id().deref()));
         Ok(())
     }
 }

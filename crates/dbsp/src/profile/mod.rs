@@ -50,6 +50,9 @@ impl Profiler {
     pub fn dump_profile(&self) -> String {
         let mut metadata = HashMap::<GlobalNodeId, OperatorMeta>::new();
 
+        // Make sure we add metadata for the root node.
+        metadata.insert(GlobalNodeId::root(), OperatorMeta::new());
+
         // Collect node metadata.
         self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             let mut meta = OperatorMeta::new();
@@ -68,6 +71,25 @@ impl Profiler {
                     (
                         Cow::Borrowed("time"),
                         MetaItem::Duration(profile.total_time()),
+                    ),
+                ];
+
+                for item in default_meta {
+                    meta.insert(0, item);
+                }
+            }
+
+            // Additional metadata for circuit nodes.
+            if let Some(profile) = self.cpu_profiler.circuit_profile(node_id) {
+                let default_meta = [
+                    (
+                        Cow::Borrowed("wait_time"),
+                        MetaItem::Duration(profile.wait_profile.total_time()),
+                    ),
+                    (Cow::Borrowed("steps"), MetaItem::Int(profile.step_profile.invocations())),
+                    (
+                        Cow::Borrowed("total_runtime"),
+                        MetaItem::Duration(profile.step_profile.total_time()),
                     ),
                 ];
 

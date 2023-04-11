@@ -78,7 +78,18 @@ impl Region {
     }
 
     /// Output region as a cluster in a visual graph.
-    fn visualize(&self, scope: &Node, annotate: &dyn Fn(&GlobalNodeId) -> String) -> ClusterNode {
+    ///
+    /// # Arguments
+    ///
+    /// * `annotation` - annotation to attach to the region.
+    /// * `annotate` - function used to annotate nodes inside
+    ///   the region.
+    fn visualize(
+        &self,
+        scope: &Node,
+        annotation: &str,
+        annotate: &dyn Fn(&GlobalNodeId) -> String,
+    ) -> ClusterNode {
         let mut nodes = Vec::new();
         for nodeid in self.nodes.iter() {
             if let Some(vnode) = scope
@@ -93,12 +104,17 @@ impl Region {
         }
 
         for child in self.children.iter() {
-            nodes.push(VisNode::Cluster(child.visualize(scope, annotate)));
+            nodes.push(VisNode::Cluster(child.visualize(scope, "", annotate)));
         }
 
         ClusterNode::new(
             Self::region_identifier(&scope.id, &self.id),
-            label(&self.name, self.location),
+            format!(
+                "{}{}{}",
+                label(&self.name, self.location),
+                if annotation.is_empty() { "" } else { "\\l" },
+                annotation
+            ),
             nodes,
         )
     }
@@ -253,16 +269,6 @@ impl Node {
         }
     }
 
-    /// Returns a reference to the root region of `self` if
-    /// `self` is a circuit node.
-    pub(super) fn region(&self) -> Option<&Region> {
-        if let NodeKind::Circuit { region, .. } = &self.kind {
-            Some(region)
-        } else {
-            None
-        }
-    }
-
     /// `true` if `self` is the input half of a strict operator.
     pub(super) fn is_strict_input(&self) -> bool {
         matches!(self.kind, NodeKind::StrictInput { .. })
@@ -293,36 +299,34 @@ impl Node {
 
     /// Output circuit node as a node in a visual graph.
     fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> Option<VisNode> {
+        let annotation = annotate(&self.id);
+
         match &self.kind {
-            NodeKind::Operator => {
-                let annotation = annotate(&self.id);
-                Some(VisNode::Simple(SimpleNode::new(
-                    Self::node_identifier(&self.id),
-                    format!(
-                        "{}{}{}",
-                        label(&self.name, self.location),
-                        if annotation.is_empty() { "" } else { "\\l" },
-                        annotation
-                    ),
-                )))
-            }
+            NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
+                Self::node_identifier(&self.id),
+                format!(
+                    "{}{}{}",
+                    label(&self.name, self.location),
+                    if annotation.is_empty() { "" } else { "\\l" },
+                    annotation
+                ),
+            ))),
 
-            NodeKind::Circuit { region, .. } => {
-                Some(VisNode::Cluster(region.visualize(self, annotate)))
-            }
+            NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.visualize(
+                self,
+                &annotation,
+                annotate,
+            ))),
 
-            NodeKind::StrictInput { output } => {
-                let annotation = annotate(&self.id);
-                Some(VisNode::Simple(SimpleNode::new(
-                    Self::node_identifier(&self.id.parent_id().unwrap().child(*output)),
-                    format!(
-                        "{}{}{}",
-                        label(&self.name, self.location),
-                        if annotation.is_empty() { "" } else { "\\l" },
-                        annotation
-                    ),
-                )))
-            }
+            NodeKind::StrictInput { output } => Some(VisNode::Simple(SimpleNode::new(
+                Self::node_identifier(&self.id.parent_id().unwrap().child(*output)),
+                format!(
+                    "{}{}{}",
+                    label(&self.name, self.location),
+                    if annotation.is_empty() { "" } else { "\\l" },
+                    annotation
+                ),
+            ))),
             NodeKind::StrictOutput => None,
         }
     }
@@ -378,11 +382,8 @@ impl CircuitGraph {
 
     /// Output circuit graph as visual graph.
     pub(super) fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> VisGraph {
-        let cluster = self
-            .nodes
-            .region()
-            .unwrap()
-            .visualize(&self.nodes, annotate);
+        let cluster = self.nodes.visualize(annotate).unwrap().cluster().unwrap();
+
         let mut edges = Vec::new();
 
         for (from_id, to) in self.edges.iter() {

@@ -92,6 +92,13 @@ pub(super) enum Node {
 }
 
 impl Node {
+    pub(super) fn cluster(self) -> Option<ClusterNode> {
+        match self {
+            Self::Simple(_) => None,
+            Self::Cluster(cluster_node) => Some(cluster_node),
+        }
+    }
+
     fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
         match self {
             Self::Simple(simple_node) => simple_node.to_dot(output),

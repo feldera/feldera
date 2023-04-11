@@ -445,13 +445,13 @@ impl Display for CircuitEvent {
 /// domain:
 ///
 /// ```text
-///                ClockStart             StepStart     EvalStart(id)
-/// ──────►idle─────────────────────┐ ┌──────────────┐ ┌───────────┐
-///                                 ▼ │              ▼ │           ▼
-///                              running            step          eval
-///                                 │ ▲              │ ▲           │
-///            ◄────────────────────┘ └──────────────┘ └───────────┘
-///                ClockEnd               StepEnd       EvalEnd(id)
+///             ClockStart             StepStart     EvalStart(id) WaitStart
+/// ───►idle─────────────────────┐ ┌──────────────┐ ┌───────────┐ ┌─────────┐
+///                              ▼ │              ▼ │           ▼ │         ▼
+///                           running            step          eval        wait
+///                              │ ▲              │ ▲           │ ▲         │
+///         ◄────────────────────┘ └──────────────┘ └───────────┘ └─────────┘
+///             ClockEnd               StepEnd       EvalEnd(id)   WaitEnd
 /// ```
 ///
 /// The root circuit automaton is instantiated by the
@@ -470,6 +470,10 @@ impl Display for CircuitEvent {
 /// [`EvalStart`](`SchedulerEvent::EvalStart`)/
 /// [`EvalEnd`](`SchedulerEvent::EvalEnd`) event pair for each of its child
 /// nodes before emitting the [`StepEnd`](`SchedulerEvent::StepEnd`) event.
+/// The scheduler may have to wait for one of async operators to become ready.
+/// It brackets the wait period with
+/// [`WaitStart`](`SchedulerEvent::WaitStart`)/[`WaitEnd`](`SchedulerEvent::WaitEnd`)
+/// events.
 ///
 /// Evaluating a child that contains another circuit pushes the entire automaton
 /// on the stack, instantiates a fresh circuit automaton, and runs it to
@@ -481,19 +485,21 @@ impl Display for CircuitEvent {
 /// step on each activation:
 ///
 /// ```text
-///              StepStart    EvalStart(id)
-/// ──────►idle─────────────┐ ┌───────────┐
-///                         ▼ │           ▼
-///                         step         eval
-///                         │ ▲           │
-///         ◄───────────────┘ └───────────┘
-///               StepEnd      EvalEnd(id)
+///              StepStart    EvalStart(id)   WaitStart
+/// ──────►idle─────────────┐ ┌───────────┐ ┌───────────┐
+///                         ▼ │           ▼ │           ▼
+///                         step         eval         wait
+///                         │ ▲           │ ▲           │
+///         ◄───────────────┘ └───────────┘ └───────────┘
+///              StepEnd      EvalEnd(id)    WaitEnd
 /// ```
 pub enum SchedulerEvent<'a> {
     EvalStart { node: &'a dyn Node },
     EvalEnd { node: &'a dyn Node },
-    StepStart,
-    StepEnd,
+    WaitStart { circuit_id: &'a GlobalNodeId },
+    WaitEnd { circuit_id: &'a GlobalNodeId },
+    StepStart { circuit_id: &'a GlobalNodeId },
+    StepEnd { circuit_id: &'a GlobalNodeId },
     ClockStart,
     ClockEnd,
 }
@@ -509,14 +515,24 @@ impl<'a> SchedulerEvent<'a> {
         Self::EvalEnd { node }
     }
 
+    /// Create a [`SchedulerEvent::WaitStart`] event instance.
+    pub fn wait_start(circuit_id: &'a GlobalNodeId) -> Self {
+        Self::WaitStart { circuit_id }
+    }
+
+    /// Create a [`SchedulerEvent::WaitEnd`] event instance.
+    pub fn wait_end(circuit_id: &'a GlobalNodeId) -> Self {
+        Self::WaitEnd { circuit_id }
+    }
+
     /// Create a [`SchedulerEvent::StepStart`] event instance.
-    pub fn step_start() -> Self {
-        Self::StepStart
+    pub fn step_start(circuit_id: &'a GlobalNodeId) -> Self {
+        Self::StepStart { circuit_id }
     }
 
     /// Create a [`SchedulerEvent::StepEnd`] event instance.
-    pub fn step_end() -> Self {
-        Self::StepEnd
+    pub fn step_end(circuit_id: &'a GlobalNodeId) -> Self {
+        Self::StepEnd { circuit_id }
     }
 
     /// Create a [`SchedulerEvent::ClockStart`] event instance.
@@ -539,8 +555,18 @@ impl<'a> Display for SchedulerEvent<'a> {
             Self::EvalEnd { node } => {
                 write!(f, "EvalEnd({})", node.global_id())
             }
-            Self::StepStart => f.write_str("StepStart"),
-            Self::StepEnd => f.write_str("StepEnd"),
+            Self::WaitStart { circuit_id } => {
+                write!(f, "WaitStart({circuit_id})")
+            }
+            Self::WaitEnd { circuit_id } => {
+                write!(f, "WaitEnd({circuit_id})")
+            }
+            Self::StepStart { circuit_id } => {
+                write!(f, "StepStart({circuit_id})")
+            }
+            Self::StepEnd { circuit_id } => {
+                write!(f, "StepEnd({circuit_id})")
+            }
             Self::ClockStart => f.write_str("ClockStart"),
             Self::ClockEnd => f.write_str("ClockEnd"),
         }
