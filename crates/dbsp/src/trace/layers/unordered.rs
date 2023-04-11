@@ -207,6 +207,10 @@ where
         unsafe { self.leaf.assume_invariants() }
     }
 
+    fn keys(&self) -> usize {
+        self.leaf.layer.keys.len()
+    }
+
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         unsafe {
             self.leaf.assume_invariants();

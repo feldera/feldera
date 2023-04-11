@@ -59,6 +59,10 @@ where
         self.layer.reserve(additional);
     }
 
+    fn keys(&self) -> usize {
+        self.layer.keys.len()
+    }
+
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         // Safety: The current builder's layer and the trie layer types are the same
         unsafe { self.layer.extend_from_range(&other.layer, lower, upper) };

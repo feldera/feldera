@@ -129,6 +129,9 @@ pub trait MergeBuilder: Builder {
 
     fn reserve(&mut self, additional: usize);
 
+    /// The number of keys pushed to the builder so far.
+    fn keys(&self) -> usize;
+
     /// Copies sub-collections of `other` into this collection.
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize);
 
@@ -301,6 +304,10 @@ impl MergeBuilder for () {
     fn with_key_capacity(_capacity: usize) -> Self {}
 
     fn reserve(&mut self, _additional: usize) {}
+
+    fn keys(&self) -> usize {
+        0
+    }
 
     fn copy_range(&mut self, _other: &Self::Trie, _lower: usize, _upper: usize) {}
 

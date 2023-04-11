@@ -683,6 +683,10 @@ where
         //          fuel to in-progress merges, as this fuel is what ensures
         //          that the merges will be complete by the time we insert
         //          the updates.
+        //
+        // `fuel` should be sufficient to fully merge all batches up to
+        // `batch_index`.  This is required to maintain the invariant that
+        // there should be no consecutive in-progress batches in the trace.
         self.apply_fuel(&mut fuel);
 
         // Step 2.  We must ensure the invariant that adjacent layers do not

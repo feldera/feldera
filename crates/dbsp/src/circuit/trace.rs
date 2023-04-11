@@ -472,8 +472,8 @@ impl Display for CircuitEvent {
 /// nodes before emitting the [`StepEnd`](`SchedulerEvent::StepEnd`) event.
 /// The scheduler may have to wait for one of async operators to become ready.
 /// It brackets the wait period with
-/// [`WaitStart`](`SchedulerEvent::WaitStart`)/[`WaitEnd`](`SchedulerEvent::WaitEnd`)
-/// events.
+/// [`WaitStart`](`SchedulerEvent::WaitStart`)/
+/// [`WaitEnd`](`SchedulerEvent::WaitEnd`) events.
 ///
 /// Evaluating a child that contains another circuit pushes the entire automaton
 /// on the stack, instantiates a fresh circuit automaton, and runs it to

@@ -311,7 +311,7 @@ where
 }
 
 /// Assembles a layer of this
-#[derive(SizeOf, Debug)]
+#[derive(SizeOf, Debug, Clone)]
 pub struct OrderedBuilder<K, L, O = usize> {
     /// Keys
     pub keys: Vec<K>,
@@ -453,6 +453,104 @@ where
     }
 }
 
+impl<K, L, O> OrderedBuilder<K, L, O>
+where
+    K: Ord + Clone,
+    L: MergeBuilder,
+    O: OrdOffset,
+{
+    /// Like `copy_range`, but uses `fuel` to bound the amount of work.
+    ///
+    /// Builds at most `fuel` values plus values for one extra key.
+    /// If `fuel > 0` when the method returns, this means that the merge is
+    /// complete.
+    pub fn push_merge_fueled(
+        &mut self,
+        input1: (&<Self as Builder>::Trie, &mut usize, usize),
+        input2: (&<Self as Builder>::Trie, &mut usize, usize),
+        fuel: &mut isize,
+    ) {
+        let (source1, lower1, upper1) = input1;
+        let (source2, lower2, upper2) = input2;
+
+        let starting_updates = self.vals.keys();
+        let mut effort = 0isize;
+
+        // while both mergees are still active
+        while *lower1 < upper1 && *lower2 < upper2 && effort < *fuel {
+            self.merge_step((source1, lower1, upper1), (source2, lower2, upper2));
+            effort = (self.vals.keys() - starting_updates) as isize;
+        }
+
+        // Merging is complete; only copying remains.
+        if *lower1 == upper1 || *lower2 == upper2 {
+            // Limit merging by remaining fuel.
+            let mut remaining_fuel = *fuel - effort;
+            if remaining_fuel > 0 {
+                if *lower1 < upper1 {
+                    if remaining_fuel < 1_000 {
+                        remaining_fuel = 1_000;
+                    }
+                    *lower1 =
+                        self.copy_range_fueled(source1, *lower1, upper1, remaining_fuel as usize);
+                }
+                if *lower2 < upper2 {
+                    if remaining_fuel < 1_000 {
+                        remaining_fuel = 1_000;
+                    }
+                    *lower2 =
+                        self.copy_range_fueled(source2, *lower2, upper2, remaining_fuel as usize);
+                }
+            }
+        }
+
+        effort = (self.vals.keys() - starting_updates) as isize;
+
+        *fuel -= effort;
+    }
+
+    /// Like `copy_range`, but uses `fuel` to bound the amount of work.
+    ///
+    /// Invariants:
+    /// - Copies at most `fuel` values plus values for one extra key.
+    /// - If `fuel` is greater than or equal to the number of values, in the
+    ///   `lower..upper` key range, copies the entire range.
+    pub fn copy_range_fueled(
+        &mut self,
+        other: &<Self as Builder>::Trie,
+        lower: usize,
+        mut upper: usize,
+        fuel: usize,
+    ) -> usize {
+        assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
+
+        let other_basis = other.offs[lower];
+        let self_basis = self.offs.last().copied().unwrap_or_else(|| O::zero());
+
+        // Number of keys in the `[lower..upper]` range that can be copied without
+        // exceeding `fuel`.
+        let keys = advance(&other.offs[lower..upper], |offset| {
+            offset.into_usize() - other_basis.into_usize() <= fuel
+        });
+
+        upper = lower + keys;
+
+        self.keys.extend_from_slice(&other.keys[lower..upper]);
+        for index in lower..upper {
+            self.offs
+                .push((other.offs[index + 1] + self_basis) - other_basis);
+        }
+
+        self.vals.copy_range(
+            &other.vals,
+            other_basis.into_usize(),
+            other.offs[upper].into_usize(),
+        );
+
+        upper
+    }
+}
+
 impl<K, L, O> MergeBuilder for OrderedBuilder<K, L, O>
 where
     K: Ord + Clone,
@@ -485,6 +583,10 @@ where
         self.keys.reserve(additional);
         self.offs.reserve(additional);
         self.vals.reserve(additional);
+    }
+
+    fn keys(&self) -> usize {
+        self.keys.len()
     }
 
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {

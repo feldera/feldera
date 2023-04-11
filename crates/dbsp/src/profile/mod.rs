@@ -86,7 +86,10 @@ impl Profiler {
                         Cow::Borrowed("wait_time"),
                         MetaItem::Duration(profile.wait_profile.total_time()),
                     ),
-                    (Cow::Borrowed("steps"), MetaItem::Int(profile.step_profile.invocations())),
+                    (
+                        Cow::Borrowed("steps"),
+                        MetaItem::Int(profile.step_profile.invocations()),
+                    ),
                     (
                         Cow::Borrowed("total_runtime"),
                         MetaItem::Duration(profile.step_profile.total_time()),
