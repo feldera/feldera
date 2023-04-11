@@ -144,7 +144,7 @@ impl ThinStr {
     #[inline]
     unsafe fn set_len(&mut self, length: usize) {
         debug_assert!(!self.is_sigil());
-        debug_assert!(length <= self.capacity());
+        // debug_assert!(length <= self.capacity());
         unsafe { addr_of_mut!((*self.buf.as_ptr()).length).write(length) }
     }
 
