@@ -221,6 +221,10 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
         self.vals.reserve(additional);
     }
 
+    fn keys(&self) -> usize {
+        self.vals.len()
+    }
+
     #[inline]
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         self.vals.extend_from_slice(&other.vals[lower..upper]);

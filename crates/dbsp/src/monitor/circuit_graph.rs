@@ -82,8 +82,7 @@ impl Region {
     /// # Arguments
     ///
     /// * `annotation` - annotation to attach to the region.
-    /// * `annotate` - function used to annotate nodes inside
-    ///   the region.
+    /// * `annotate` - function used to annotate nodes inside the region.
     fn visualize(
         &self,
         scope: &Node,

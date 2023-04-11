@@ -18,7 +18,6 @@ use crate::{
 };
 use size_of::SizeOf;
 use std::{
-    cmp::max,
     fmt::{self, Debug, Display},
     marker::PhantomData,
     ops::{Add, AddAssign, Neg},
@@ -309,6 +308,12 @@ where
     R: DBWeight,
     O: OrdOffset,
 {
+    // first batch, and position therein.
+    lower1: usize,
+    upper1: usize,
+    // second batch, and position therein.
+    lower2: usize,
+    upper2: usize,
     // result that we are currently assembling.
     result: <Layers<K, V, R, O> as Trie>::MergeBuilder,
 }
@@ -328,6 +333,10 @@ where
         batch2: &OrdIndexedZSet<K, V, R, O>,
     ) -> Self {
         Self {
+            lower1: 0,
+            upper1: batch1.layer.keys(),
+            lower2: 0,
+            upper2: batch2.layer.keys(),
             result: <<Layers<K, V, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,
                 &batch2.layer,
@@ -342,17 +351,17 @@ where
         }
     }
 
-    #[inline]
     fn work(
         &mut self,
         source1: &OrdIndexedZSet<K, V, R, O>,
         source2: &OrdIndexedZSet<K, V, R, O>,
         fuel: &mut isize,
     ) {
-        *fuel -= self
-            .result
-            .push_merge(source1.layer.cursor(), source2.layer.cursor()) as isize;
-        *fuel = max(*fuel, 1);
+        self.result.push_merge_fueled(
+            (&source1.layer, &mut self.lower1, self.upper1),
+            (&source2.layer, &mut self.lower2, self.upper2),
+            fuel,
+        );
     }
 }
 

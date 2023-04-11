@@ -12,7 +12,7 @@ use std::{
 };
 
 /// A builder for ordered values
-#[derive(SizeOf, Debug)]
+#[derive(SizeOf, Debug, Clone)]
 pub struct ColumnLayerBuilder<K, R> {
     // Invariant: `keys.len() == diffs.len()`
     keys: Vec<K>,
@@ -20,12 +20,6 @@ pub struct ColumnLayerBuilder<K, R> {
 }
 
 impl<K, R> ColumnLayerBuilder<K, R> {
-    /// Get the length of the current builder
-    pub(crate) fn len(&self) -> usize {
-        unsafe { self.assume_invariants() }
-        self.keys.len()
-    }
-
     /// Assume the invariants of the current builder
     ///
     /// # Safety
@@ -82,6 +76,10 @@ where
         self.keys.reserve(additional);
         self.diffs.reserve(additional);
         unsafe { self.assume_invariants() }
+    }
+
+    fn keys(&self) -> usize {
+        self.keys.len()
     }
 
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {

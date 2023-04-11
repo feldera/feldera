@@ -580,7 +580,7 @@ impl TraceMonitorInternal {
                     ))));
                 }
                 Ok(())
-            },
+            }
             SchedulerEvent::WaitEnd { circuit_id } => {
                 if **circuit_id != current_node_id {
                     return Err(TraceError::InvalidEvent(Cow::from(format!(
@@ -588,7 +588,7 @@ impl TraceMonitorInternal {
                     ))));
                 }
                 Ok(())
-            },
+            }
         }
     }
 

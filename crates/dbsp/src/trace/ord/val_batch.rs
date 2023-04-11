@@ -322,64 +322,18 @@ where
             upper: self.upper,
         }
     }
+
     fn work(
         &mut self,
         source1: &OrdValBatch<K, V, T, R, O>,
         source2: &OrdValBatch<K, V, T, R, O>,
         fuel: &mut isize,
     ) {
-        let starting_updates = self.result.vals.vals.len();
-        let mut effort = 0isize;
-
-        // while both mergees are still active
-        while self.lower1 < self.upper1 && self.lower2 < self.upper2 && effort < *fuel {
-            self.result.merge_step(
-                (&source1.layer, &mut self.lower1, self.upper1),
-                (&source2.layer, &mut self.lower2, self.upper2),
-            );
-            effort = (self.result.vals.vals.len() - starting_updates) as isize;
-        }
-
-        // Merging is complete; only copying remains. Copying is probably faster than
-        // merging, so could take some liberties here.
-        if self.lower1 == self.upper1 || self.lower2 == self.upper2 {
-            // Limit merging by remaining fuel.
-            let remaining_fuel = *fuel - effort;
-            if remaining_fuel > 0 {
-                if self.lower1 < self.upper1 {
-                    let mut to_copy = remaining_fuel as usize;
-                    if to_copy < 1_000 {
-                        to_copy = 1_000;
-                    }
-                    if to_copy > (self.upper1 - self.lower1) {
-                        to_copy = self.upper1 - self.lower1;
-                    }
-                    self.result
-                        .copy_range(&source1.layer, self.lower1, self.lower1 + to_copy);
-                    self.lower1 += to_copy;
-                }
-                if self.lower2 < self.upper2 {
-                    let mut to_copy = remaining_fuel as usize;
-                    if to_copy < 1_000 {
-                        to_copy = 1_000;
-                    }
-                    if to_copy > (self.upper2 - self.lower2) {
-                        to_copy = self.upper2 - self.lower2;
-                    }
-                    self.result
-                        .copy_range(&source2.layer, self.lower2, self.lower2 + to_copy);
-                    self.lower2 += to_copy;
-                }
-            }
-        }
-
-        effort = (self.result.vals.vals.len() - starting_updates) as isize;
-
-        *fuel -= effort;
-
-        // if *fuel < -1_000_000 {
-        //     eprintln!("Massive deficit OrdVal::work: {}", fuel);
-        // }
+        self.result.push_merge_fueled(
+            (&source1.layer, &mut self.lower1, self.upper1),
+            (&source2.layer, &mut self.lower2, self.upper2),
+            fuel,
+        );
     }
 }
 
