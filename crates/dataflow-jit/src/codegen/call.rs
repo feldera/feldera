@@ -353,17 +353,20 @@ impl CodegenCtx<'_> {
 
         // If `string` is the sigil string, skip setting the string's length
         // since we can't mutate the sigil string and its length is already zero
-        // TODO: Should we branch on `length == 0` instead of `string == sigil`?
-        let is_sigil_string =
-            builder
-                .ins()
-                .icmp_imm(IntCC::Equal, string, ThinStr::sigil_addr() as i64);
+        let string_capacity = builder.ins().load(
+            self.pointer_type(),
+            MemFlags::trusted(),
+            string,
+            ThinStr::capacity_offset() as i32,
+        );
+        let is_capacity_zero = builder.ins().icmp_imm(IntCC::Equal, string_capacity, 0);
+
         builder
             .ins()
-            .brif(is_sigil_string, after_block, &[], set_string_length, &[]);
+            .brif(is_capacity_zero, after_block, &[], set_string_length, &[]);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(is_sigil_string).unwrap_inst();
+            let inst = builder.func.dfg.value_def(string_capacity).unwrap_inst();
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.str.clear({string})"));
@@ -414,14 +417,14 @@ impl CodegenCtx<'_> {
 
         // Add both string's lengths so that we can allocate a string to hold
         // both of them, trapping if it overflows
-        let capacity =
+        let total_length =
             builder
                 .ins()
                 .uadd_overflow_trap(first_length, second_length, TRAP_CAPACITY_OVERFLOW);
 
         // Allocate a string of the requested capacity
         let concat_clone = self.imports.string_with_capacity(self.module, builder.func);
-        let allocated = builder.call_fn(concat_clone, &[capacity]);
+        let allocated = builder.call_fn(concat_clone, &[total_length]);
         let allocated_ptr = self.string_ptr(allocated, builder);
 
         // Copy the first string into the allocation
@@ -449,7 +452,7 @@ impl CodegenCtx<'_> {
         let length_offset = ThinStr::length_offset();
         builder.ins().store(
             MemFlags::trusted(),
-            capacity,
+            total_length,
             allocated,
             length_offset as i32,
         );

@@ -89,7 +89,6 @@ fn empty() {
 }
 
 #[test]
-#[cfg_attr(sanitizer, ignore)]
 fn string_smoke() {
     let layout_cache = RowLayoutCache::new();
     let string_layout = layout_cache.add(
