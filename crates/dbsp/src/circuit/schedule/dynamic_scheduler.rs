@@ -42,6 +42,7 @@
 use std::{
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
+    ops::Deref,
     sync::{Arc, Mutex},
 };
 
@@ -329,7 +330,7 @@ impl Inner {
     where
         C: Circuit,
     {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start());
+        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id().deref()));
 
         let mut completed_tasks = 0;
 
@@ -357,7 +358,13 @@ impl Inner {
                     // Still nothing to do -- sleep waiting for a notification to
                     // unpark us.
                     if self.runnable.is_empty() {
+                        circuit.log_scheduler_event(&SchedulerEvent::wait_start(
+                            circuit.global_id().deref(),
+                        ));
                         Runtime::parker().with(|parker| parker.park());
+                        circuit.log_scheduler_event(&SchedulerEvent::wait_end(
+                            circuit.global_id().deref(),
+                        ));
                     }
                 }
 
@@ -373,7 +380,7 @@ impl Inner {
         }
         circuit.tick();
 
-        circuit.log_scheduler_event(&SchedulerEvent::step_end());
+        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id().deref()));
         Ok(())
     }
 }

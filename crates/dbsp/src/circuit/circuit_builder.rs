@@ -632,6 +632,11 @@ pub trait Circuit: WithClock + Clone + 'static {
 
     fn edges(&self) -> Ref<'_, [Edge]>;
 
+    /// Global id of the circuit node.
+    ///
+    /// Returns [`GlobalNodeId::root()`] for the root circuit.
+    fn global_id(&self) -> Ref<'_, GlobalNodeId>;
+
     /// Number of nodes in the circuit.
     fn num_nodes(&self) -> usize;
 
@@ -1645,6 +1650,10 @@ where
 
     fn num_nodes(&self) -> usize {
         self.inner().nodes.len()
+    }
+
+    fn global_id(&self) -> Ref<'_, GlobalNodeId> {
+        Ref::map(self.inner(), |c| &c.global_node_id)
     }
 
     /// Returns vector of local node ids in the circuit.

@@ -436,7 +436,7 @@ fn attach_profiling(dataset: DataSet, circuit: &mut RootCircuit) {
             node.metadata(meta);
         }
 
-        SchedulerEvent::StepEnd => {
+        SchedulerEvent::StepEnd { .. } => {
             let graph = monitor.visualize_circuit_annotate(|node_id| {
                 let mut output = String::with_capacity(1024);
                 let mut meta = metadata.get(node_id).cloned().unwrap_or_default();

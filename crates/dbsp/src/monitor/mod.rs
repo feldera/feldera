@@ -436,7 +436,12 @@ impl TraceMonitorInternal {
                 self.pop_state();
                 Ok(())
             }
-            SchedulerEvent::StepStart => {
+            SchedulerEvent::StepStart { circuit_id } => {
+                if **circuit_id != current_node_id {
+                    return Err(TraceError::InvalidEvent(Cow::from(format!(
+                        "received 'StepStart' event for node {circuit_id} while evaluating node {current_node_id}",
+                    ))));
+                }
                 if self
                     .circuit
                     .node_ref(&current_node_id)
@@ -465,7 +470,12 @@ impl TraceMonitorInternal {
                 self.set_current_state(CircuitState::Step(HashSet::new()));
                 Ok(())
             }
-            SchedulerEvent::StepEnd => {
+            SchedulerEvent::StepEnd { circuit_id } => {
+                if **circuit_id != current_node_id {
+                    return Err(TraceError::InvalidEvent(Cow::from(format!(
+                        "received 'StepEnd' event for node {circuit_id} while evaluating node {current_node_id}",
+                    ))));
+                }
                 match self.current_state() {
                     CircuitState::Step(visited_nodes) => {
                         let expected_len = self
@@ -562,6 +572,22 @@ impl TraceMonitorInternal {
                     "received 'EvalEnd' event in state {}",
                     state.name()
                 )))),
+            },
+            SchedulerEvent::WaitStart { circuit_id } => {
+                if **circuit_id != current_node_id {
+                    return Err(TraceError::InvalidEvent(Cow::from(format!(
+                        "received 'WaitStart' event for node {circuit_id} while evaluating node {current_node_id}",
+                    ))));
+                }
+                Ok(())
+            },
+            SchedulerEvent::WaitEnd { circuit_id } => {
+                if **circuit_id != current_node_id {
+                    return Err(TraceError::InvalidEvent(Cow::from(format!(
+                        "received 'WaitEnd' event for node {circuit_id} while evaluating node {current_node_id}",
+                    ))));
+                }
+                Ok(())
             },
         }
     }

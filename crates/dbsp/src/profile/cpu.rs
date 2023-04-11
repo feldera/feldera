@@ -15,13 +15,18 @@ use std::{
 };
 
 /// Per-operator CPU profile.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct OperatorCPUProfile {
     invocations: usize,
     total_time: Duration,
 }
 
 impl OperatorCPUProfile {
+    pub fn add_event(&mut self, duration: Duration) {
+        self.invocations += 1;
+        self.total_time += duration;
+    }
+
     /// Returns the number of times the operator has been invoked.
     /// This number is the same for all operators in a synchronous
     /// circuit.
@@ -35,15 +40,44 @@ impl OperatorCPUProfile {
     }
 }
 
-#[derive(Default)]
+/// Circuit CPU profile.
+#[derive(Clone, Default, Debug)]
+pub struct CircuitCPUProfile {
+    /// The number of times the circuit was blocked waiting for an async
+    /// operator to become ready and the total amount of wait time.
+    pub wait_profile: OperatorCPUProfile,
+
+    /// The total number of steps performed by the circuit and the total
+    /// time spent between `StepStart` and `StepEnd`.
+    pub step_profile: OperatorCPUProfile,
+}
+
+#[derive(Default, Debug)]
 struct CPUProfilerInner {
     start_times: HashMap<GlobalNodeId, Instant>,
     operators: HashMap<GlobalNodeId, OperatorCPUProfile>,
+    wait_start_times: HashMap<GlobalNodeId, Instant>,
+    step_start_times: HashMap<GlobalNodeId, Instant>,
+    circuit_profiles: HashMap<GlobalNodeId, CircuitCPUProfile>,
 }
 
 impl CPUProfilerInner {
     fn scheduler_event(&mut self, event: &SchedulerEvent) {
         match event {
+            SchedulerEvent::StepStart { circuit_id } => {
+                self.step_start_times
+                    .insert((*circuit_id).clone(), Instant::now());
+            }
+            SchedulerEvent::StepEnd { circuit_id } => {
+                if let Some(start_time) = self.step_start_times.remove(*circuit_id) {
+                    let duration = Instant::now().duration_since(start_time);
+                    let circuit_profile = self
+                        .circuit_profiles
+                        .entry((*circuit_id).clone())
+                        .or_insert_with(Default::default);
+                    circuit_profile.step_profile.add_event(duration);
+                };
+            }
             SchedulerEvent::EvalStart { node } => {
                 self.start_times
                     .insert(node.global_id().clone(), Instant::now());
@@ -55,8 +89,23 @@ impl CPUProfilerInner {
                         .operators
                         .entry(node.global_id().clone())
                         .or_insert_with(Default::default);
-                    op_profile.invocations += 1;
-                    op_profile.total_time += duration;
+                    op_profile.add_event(duration);
+                    // println!("{}:{}:{:?}", crate::Runtime::worker_index(),
+                    // node.global_id(), duration);
+                };
+            }
+            SchedulerEvent::WaitStart { circuit_id } => {
+                self.wait_start_times
+                    .insert((*circuit_id).clone(), Instant::now());
+            }
+            SchedulerEvent::WaitEnd { circuit_id } => {
+                if let Some(start_time) = self.wait_start_times.remove(*circuit_id) {
+                    let duration = Instant::now().duration_since(start_time);
+                    let circuit_profile = self
+                        .circuit_profiles
+                        .entry((*circuit_id).clone())
+                        .or_insert_with(Default::default);
+                    circuit_profile.wait_profile.add_event(duration);
                 };
             }
             _ => (),
@@ -67,7 +116,7 @@ impl CPUProfilerInner {
 /// CPU profiler that attaches to a circuit and collects information about its
 /// CPU utilization.
 #[repr(transparent)]
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct CPUProfiler(Rc<RefCell<CPUProfilerInner>>);
 
 impl CPUProfiler {
@@ -94,6 +143,15 @@ impl CPUProfiler {
     pub fn operator_profile(&self, node: &GlobalNodeId) -> Option<OperatorCPUProfile> {
         if let Ok(this) = self.0.try_borrow() {
             this.operators.get(node).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// Returns the CPU profile of the circuit given its global node id.
+    pub fn circuit_profile(&self, node: &GlobalNodeId) -> Option<CircuitCPUProfile> {
+        if let Ok(this) = self.0.try_borrow() {
+            this.circuit_profiles.get(node).cloned()
         } else {
             None
         }
