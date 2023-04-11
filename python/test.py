@@ -1,6 +1,8 @@
 import tempfile
 import os
 import sys
+import asyncio
+import websockets
 
 from dbsp import DBSPConnection
 from dbsp import DBSPPipelineConfig
@@ -101,24 +103,26 @@ CREATE VIEW transactions_with_demographics as
         transactions JOIN demographics
         ON transactions.cc_num = demographics.cc_num;"""
 
+async def send(uri, data):
+    async with websockets.connect(uri) as websocket:
+        await websocket.send(data)
+
+async def recv(uri):
+    async with websockets.connect(uri) as websocket:
+        message = await websocket.recv()
+
+async def do(connector_endpoints):
+    output = asyncio.create_task(recv(connector_endpoints["TRANSACTIONS_WITH_DEMOGRAPHICS"]))
+    input1 = asyncio.create_task(send(connector_endpoints["DEMOGRAPHICS"], ("01234567" + demographics).encode()))
+    input2 = asyncio.create_task(send(connector_endpoints["TRANSACTIONS"], ("01234567" + transactions).encode()))
+    await input1
+    await input2
+    await output
 
 def main():
-    demfd, dempath = tempfile.mkstemp(
-        suffix='.csv', prefix='demographics', text=True)
-    with os.fdopen(demfd, 'w') as f:
-        f.write(demographics)
-    print("Demographics data written to '" + dempath + "'")
-
-    transfd, transpath = tempfile.mkstemp(
-        suffix='.csv', prefix='transactions', text=True)
-    with os.fdopen(transfd, 'w') as f:
-        f.write(transactions)
-
-    outfd, outpath = tempfile.mkstemp(
-        suffix='.csv', prefix='output', text=True)
-    os.close(outfd)
-
-    dbsp = DBSPConnection() if len(sys.argv) == 1 else DBSPConnection(sys.argv[1])
+    url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
+    dbsp = DBSPConnection(url) 
+    connector_type = "file" if len(sys.argv) <= 2 else "http"
     print("Connection established")
 
     project = dbsp.create_or_replace_project(name="foo", sql_code=sql_code)
@@ -129,21 +133,32 @@ def main():
 
     config = DBSPPipelineConfig(project, 6)
 
-    # config.add_file_input(stream='DEMOGRAPHICS',
-    #                       filepath=dempath, format=CsvInputFormatConfig())
-    # config.add_file_input(stream='TRANSACTIONS',
-    #                       filepath=transpath, format=CsvInputFormatConfig())
-    # config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
-    #                        filepath=outpath, format=CsvOutputFormatConfig())
+    if (connector_type == "file"):
+        demfd, dempath = tempfile.mkstemp(
+            suffix='.csv', prefix='demographics', text=True)
+        with os.fdopen(demfd, 'w') as f:
+            f.write(demographics)
+        print("Demographics data written to '" + dempath + "'")
 
-    config.add_http_input(stream = 'DEMOGRAPHICS', format_ = CsvInputFormatConfig())
-    config.add_http_input(stream = 'TRANSACTIONS', format_ = CsvInputFormatConfig())
-    config.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', format_ = CsvOutputFormatConfig())
+        transfd, transpath = tempfile.mkstemp(
+            suffix='.csv', prefix='transactions', text=True)
+        with os.fdopen(transfd, 'w') as f:
+            f.write(transactions)
 
-    # config.add_file_input(stream = 'DEMOGRAPHICS', filepath = dempath, format_ = CsvInputFormatConfig())
-    # config.add_file_input(stream = 'TRANSACTIONS', filepath = transpath, format_ = CsvInputFormatConfig())
-    # config.add_file_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', filepath = outpath, format_ = CsvOutputFormatConfig())
-
+        outfd, outpath = tempfile.mkstemp(
+            suffix='.csv', prefix='output', text=True)
+        os.close(outfd)
+        config.add_file_input(stream='DEMOGRAPHICS',
+                            filepath=dempath, format=CsvInputFormatConfig())
+        config.add_file_input(stream='TRANSACTIONS',
+                            filepath=transpath, format=CsvInputFormatConfig())
+        config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
+                            filepath=outpath, format=CsvOutputFormatConfig())
+    else:
+        config.add_http_input(stream = 'DEMOGRAPHICS', name = "DEMOGRAPHICS", format = CsvInputFormatConfig())
+        config.add_http_input(stream = 'TRANSACTIONS', name = "TRANSACTIONS", format = CsvInputFormatConfig())
+        config.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', name = "TRANSACTIONS_WITH_DEMOGRAPHICS", format = CsvOutputFormatConfig())
+        
     project.compile()
     print("Project compiled")
 
@@ -153,30 +168,38 @@ def main():
     pipeline = config.run()
     print("Pipeline is running")
 
+    if (connector_type == "http"):
+        connector_endpoint = (url + "/pipelines/" + str(pipeline.pipeline_id) + "/connector/").replace("http://", "ws://") 
+        connector_endpoints = {i.config : connector_endpoint + i.uuid for i in config.attached_connectors}
+        asyncio.run(do(connector_endpoints))
+
+    print(pipeline.metadata)
+
     print("Pipeline status: " + str(pipeline.status()))
     print("Pipeline metadata: " + str(pipeline.metadata()))
 
-    # pipeline.pause()
-    # print("Pipeline paused")
+    pipeline.pause()
+    print("Pipeline paused")
 
-    # pipeline.start()
-    # print("Pipeline restarted")
+    pipeline.start()
+    print("Pipeline restarted")
 
-    # pipeline.wait()
-    # print("Pipeline finished")
+    if (connector_type == "file"):
+        pipeline.wait()
+        print("Pipeline finished")
+        # pipeline.shutdown()
+        # print("Pipeline terminated")
 
-    # # pipeline.shutdown()
-    # # print("Pipeline terminated")
+        pipeline.delete()
+        print("Pipeline deleted")
 
-    # pipeline.delete()
-    # print("Pipeline deleted")
-
-    # with open(outpath, 'r') as outfile:
-    #     output = outfile.read()
-
-    # print("Output read from '" + outpath + "':")
-    # print(output)
-
-
+        with open(outpath, 'r') as outfile:
+            output = outfile.read()
+        print("Output read from '" + outpath + "':")
+        print(output)
+    else:
+        pipeline.delete()
+        print("Pipeline deleted")
+    
 if __name__ == "__main__":
     main()
