@@ -43,7 +43,7 @@ options are:
 
   * The Apache Beam runners support multiple forms of some queries.
     By default, they are implemented in Beam's native Java-based form.
-    Add `--language=sql` to buse Calcite-based SQL or
+    Add `--language=sql` to use Calcite-based SQL or
     `--language=zetasql` to use ZetaSQL instead.  The two SQL options
     will run fewer queries because not all the queries have been
     formulated that way.
