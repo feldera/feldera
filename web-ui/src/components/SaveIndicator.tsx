@@ -1,3 +1,6 @@
+// The save indicator that is shown while editing programs or pipelines and
+// indicates if the modified version has been saved or is currently being saved.
+
 import CustomChip from 'src/@core/components/mui/chip'
 import { Tooltip } from '@mui/material'
 import SyncIcon from '@mui/icons-material/Sync'

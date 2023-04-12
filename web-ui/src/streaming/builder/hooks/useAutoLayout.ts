@@ -1,7 +1,7 @@
 import assert from 'assert'
 import { useCallback, useEffect } from 'react'
 import { Node, ReactFlowState, useStore, useReactFlow, Edge, Instance, getConnectedEdges } from 'reactflow'
-import { removePrefix } from 'src/utils/RemovePrefix'
+import { removePrefix } from 'src/utils'
 
 // How much spacing we put after every input/output node
 const VERTICAL_SPACING = 20

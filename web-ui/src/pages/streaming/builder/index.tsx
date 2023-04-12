@@ -21,7 +21,7 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { useDebouncedCallback } from 'use-debounce'
-import { removePrefix } from 'src/utils/RemovePrefix'
+import { removePrefix } from 'src/utils'
 import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
 import { projectToProjectWithSchema } from 'src/types/program'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'

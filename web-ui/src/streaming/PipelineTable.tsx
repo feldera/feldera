@@ -37,12 +37,12 @@ import {
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
-import { escapeRegExp } from 'src/utils/escapeRegExp'
+import { escapeRegExp } from 'src/utils'
 import { match } from 'ts-pattern'
 import router from 'next/router'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from 'src/types/pipeline'
-import { humanSize } from 'src/utils/humanSize'
+import { humanSize } from 'src/utils'
 import { format } from 'd3-format'
 
 interface ConnectorData {
