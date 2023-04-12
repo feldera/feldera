@@ -1,4 +1,4 @@
-use crate::ir::{BlockId, Expr, ExprId, Terminator};
+use crate::ir::{BlockId, ColumnType, Expr, ExprId, Terminator};
 use serde::{Deserialize, Serialize};
 
 /// A single basic block within a function
@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct Block {
     /// The id of the block
     id: BlockId,
+    /// The parameters passed to this basic block
+    params: Vec<(ExprId, ColumnType)>,
     /// The ids of all expressions within the block
     body: Vec<(ExprId, Expr)>,
     /// The block's terminator
@@ -19,6 +21,16 @@ impl Block {
     /// Returns the block's id
     pub const fn id(&self) -> BlockId {
         self.id
+    }
+
+    /// Returns the block's parameters
+    pub fn params(&self) -> &[(ExprId, ColumnType)] {
+        &self.params
+    }
+
+    /// Returns a mutable reference to the block's parameters
+    pub fn params_mut(&mut self) -> &mut Vec<(ExprId, ColumnType)> {
+        &mut self.params
     }
 
     /// Returns the ids of all expressions within the block
@@ -55,6 +67,7 @@ impl Block {
 /// An unfinished basic block
 pub(crate) struct UnsealedBlock {
     pub(crate) id: BlockId,
+    pub(crate) params: Vec<(ExprId, ColumnType)>,
     pub(crate) body: Vec<(ExprId, Expr)>,
     pub(crate) terminator: Option<Terminator>,
 }
@@ -63,6 +76,7 @@ impl UnsealedBlock {
     pub(crate) fn new(id: BlockId) -> Self {
         Self {
             id,
+            params: Vec::new(),
             body: Vec::new(),
             terminator: None,
         }
@@ -79,6 +93,7 @@ impl UnsealedBlock {
 
         Block {
             id: self.id,
+            params: self.params,
             body: self.body,
             terminator,
         }
