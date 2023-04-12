@@ -100,7 +100,7 @@ pub(crate) struct ManagerConfig {
     pub unix_daemon: bool,
 
     /// Point to a relational database to use for state management.
-    /// Accepted values are "sqlite" or "postgres://<host>:<port>".
+    /// Accepted values are `sqlite` or `postgres://<host>:<port>`.
     /// For sqlite, we simply create a DB in the current working directory.
     /// For postgres, we use the connection string as provided.
     #[serde(default = "default_db_connection_string")]
