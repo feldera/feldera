@@ -1,8 +1,11 @@
 use crate::ir::{
-    block::UnsealedBlock, function::FuncArg, layout_cache::RowLayoutCache, BinaryOp, BinaryOpKind,
-    Block, BlockId, BlockIdGen, Branch, Cast, ColumnType, Constant, Copy, CopyRowTo, Expr, ExprId,
-    ExprIdGen, Function, InputFlags, IsNull, LayoutId, Load, RValue, Return, Select, SetNull,
-    Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
+    block::Block,
+    block::{ParamType, UnsealedBlock},
+    function::FuncArg,
+    layout_cache::RowLayoutCache,
+    BinaryOp, BinaryOpKind, BlockId, BlockIdGen, Branch, Cast, ColumnType, Constant, Copy,
+    CopyRowTo, Expr, ExprId, ExprIdGen, Function, InputFlags, IsNull, Jump, LayoutId, Load, RValue,
+    Return, Select, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
 };
 use petgraph::prelude::DiGraphMap;
 use std::{collections::BTreeMap, mem::swap};
@@ -24,7 +27,7 @@ pub struct FunctionBuilder {
     block_id: BlockIdGen,
 
     layout_cache: RowLayoutCache,
-    expr_types: BTreeMap<ExprId, Result<ColumnType, LayoutId>>,
+    expr_types: BTreeMap<ExprId, ParamType>,
 }
 
 impl FunctionBuilder {
@@ -68,12 +71,45 @@ impl FunctionBuilder {
     pub fn add_input_with_flags(&mut self, input_row: LayoutId, flags: InputFlags) -> ExprId {
         let arg_id = self.expr_id.next();
         self.args.push(FuncArg::new(arg_id, input_row, flags));
-        self.set_expr_type(arg_id, Err(input_row));
+        self.set_expr_type(arg_id, input_row);
         arg_id
     }
 
-    fn set_expr_type(&mut self, expr_id: ExprId, ty: Result<ColumnType, LayoutId>) {
-        let prev = self.expr_types.insert(expr_id, ty);
+    pub fn add_block_param<P>(&mut self, block_id: BlockId, param_ty: P) -> ExprId
+    where
+        P: Into<ParamType>,
+    {
+        let param_ty = param_ty.into();
+        let param_id = self.expr_id.next();
+
+        self.current
+            .as_mut()
+            .filter(|block| block.id == block_id)
+            .or_else(|| self.unsealed_blocks.get_mut(&block_id))
+            .expect("called `FunctionBuilder::add_block_param()` without a current block")
+            .params
+            .push((param_id, param_ty));
+        self.set_expr_type(param_id, param_ty);
+
+        param_id
+    }
+
+    /// Returns the parameters of the given block
+    pub fn block_params(&self, block: BlockId) -> &[(ExprId, ParamType)] {
+        self.current
+            .as_ref()
+            .or_else(|| self.unsealed_blocks.get(&block))
+            .and_then(|current| (current.id == block).then_some(&*current.params))
+            .unwrap_or_else(|| {
+                self.blocks
+                    .get(&block)
+                    .unwrap_or_else(|| panic!("called `FunctionBuilder::block_params()` on {block}, which doesn't exist"))
+                    .params()
+            })
+    }
+
+    fn set_expr_type(&mut self, expr_id: ExprId, ty: impl Into<ParamType>) {
+        let prev = self.expr_types.insert(expr_id, ty.into());
         debug_assert!(prev.is_none());
     }
 
@@ -104,9 +140,9 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect_err("attempted to call `IsNull` on a scalar value");
+            .expect_row("attempted to call `IsNull` on a scalar value");
         let expr = self.add_expr(IsNull::new(value, value_layout, column));
-        self.set_expr_type(expr, Ok(ColumnType::Bool));
+        self.set_expr_type(expr, ColumnType::Bool);
         expr
     }
 
@@ -118,7 +154,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&target)
             .unwrap_or_else(|| panic!("failed to get type of {target}"))
-            .expect_err("attempted to call `SetNull` on a scalar value");
+            .expect_row("attempted to call `SetNull` on a scalar value");
         self.add_expr(SetNull::new(target, target_layout, column, is_null.into()));
     }
 
@@ -127,9 +163,9 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect("attempted to call `Cast` on a row value");
+            .expect_column("attempted to call `Cast` on a row value");
         let expr = self.add_expr(Cast::new(value, value_ty, dest_ty));
-        self.set_expr_type(expr, Ok(dest_ty));
+        self.set_expr_type(expr, dest_ty);
         expr
     }
 
@@ -138,9 +174,9 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect("attempted to call `CopyVal` on a row value");
+            .expect_column("attempted to call `CopyVal` on a row value");
         let expr = self.add_expr(Copy::new(value, value_ty));
-        self.set_expr_type(expr, Ok(value_ty));
+        self.set_expr_type(expr, value_ty);
         expr
     }
 
@@ -149,11 +185,11 @@ impl FunctionBuilder {
             .expr_types
             .get(&target)
             .unwrap_or_else(|| panic!("failed to get type of {target}"))
-            .expect_err("attempted to call `Load` on a scalar value");
+            .expect_row("attempted to call `Load` on a scalar value");
         let column_type = self.layout_cache.get(target_layout).column_type(column);
 
         let expr = self.add_expr(Load::new(target, target_layout, column, column_type));
-        self.set_expr_type(expr, Ok(column_type));
+        self.set_expr_type(expr, column_type);
 
         expr
     }
@@ -166,7 +202,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&target)
             .unwrap_or_else(|| panic!("failed to get type of {target}"))
-            .expect_err("attempted to call `Store` on a scalar value");
+            .expect_row("attempted to call `Store` on a scalar value");
         let value_type = self.layout_cache.get(target_layout).column_type(column);
 
         self.add_expr(Store::new(
@@ -231,13 +267,13 @@ impl FunctionBuilder {
             .expr_types
             .get(&lhs)
             .unwrap_or_else(|| panic!("failed to get type of {lhs}"))
-            .expect("attempted to call a binary op on a row value");
+            .expect_column("attempted to call a binary op on a row value");
         if cfg!(debug_assertions) {
             let rhs_ty = self
                 .expr_types
                 .get(&rhs)
                 .unwrap_or_else(|| panic!("failed to get type of {rhs}"))
-                .expect("attempted to call a binary op on a row value");
+                .expect_column("attempted to call a binary op on a row value");
             assert_eq!(lhs_ty, rhs_ty);
         }
 
@@ -267,7 +303,7 @@ impl FunctionBuilder {
             | BinaryOpKind::LessThanOrEqual
             | BinaryOpKind::GreaterThanOrEqual => ColumnType::Bool,
         };
-        self.set_expr_type(expr, Ok(output_ty));
+        self.set_expr_type(expr, output_ty);
 
         expr
     }
@@ -281,7 +317,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect("attempted to call a unary op on a row value");
+            .expect_column("attempted to call a unary op on a row value");
 
         let expr = self.add_expr(UnaryOp::new(value, value_ty, kind));
 
@@ -293,7 +329,7 @@ impl FunctionBuilder {
 
             _ => todo!(),
         };
-        self.set_expr_type(expr, Ok(output_ty));
+        self.set_expr_type(expr, output_ty);
 
         expr
     }
@@ -307,13 +343,13 @@ impl FunctionBuilder {
     pub fn constant(&mut self, constant: Constant) -> ExprId {
         let constant_type = constant.column_type();
         let expr = self.add_expr(constant);
-        self.set_expr_type(expr, Ok(constant_type));
+        self.set_expr_type(expr, constant_type);
         expr
     }
 
     pub fn uninit_row(&mut self, layout: LayoutId) -> ExprId {
         let expr = self.add_expr(UninitRow::new(layout));
-        self.set_expr_type(expr, Err(layout));
+        self.set_expr_type(expr, layout);
         expr
     }
 
@@ -322,18 +358,27 @@ impl FunctionBuilder {
             .expr_types
             .get(&src)
             .unwrap_or_else(|| panic!("failed to get type of {src}"))
-            .expect_err("attempted to call `CopyRowTo` on a scalar value");
+            .expect_row("attempted to call `CopyRowTo` on a scalar value");
         if cfg!(debug_assertions) {
             let dest_layout = self
                 .expr_types
                 .get(&dest)
                 .unwrap_or_else(|| panic!("failed to get type of {dest}"))
-                .expect_err("attempted to call `CopyRowTo` on a scalar value");
+                .expect_row("attempted to call `CopyRowTo` on a scalar value");
             assert_eq!(src_layout, dest_layout);
         }
 
         self.add_expr(CopyRowTo::new(src, dest, src_layout));
     }
+
+    // pub fn call<F>(&mut self, func: F) -> ExprId  where F: Into<String>{
+    //     self.add_expr(Call::new(
+    //         func.into(),
+    //         vec![first, second],
+    //         vec![ArgType::Scalar(ColumnType::String); 2],
+    //         ColumnType::String,
+    //     ));
+    // }
 
     pub fn set_terminator<T>(&mut self, terminator: T)
     where
@@ -357,12 +402,34 @@ impl FunctionBuilder {
         self.set_terminator(Return::new(RValue::Imm(Constant::Unit)));
     }
 
-    /// Terminate the current block with a return
-    pub fn branch<C>(&mut self, cond: C, truthy: BlockId, falsy: BlockId)
+    /// Terminate the current block with a jump
+    pub fn jump<P>(&mut self, target: BlockId, params: P)
     where
-        C: Into<RValue>,
+        P: Into<Vec<ExprId>>,
     {
-        self.set_terminator(Branch::new(cond.into(), truthy, falsy));
+        self.set_terminator(Jump::new(target, params.into()));
+    }
+
+    /// Terminate the current block with a branch
+    pub fn branch<C, T, F>(
+        &mut self,
+        cond: C,
+        truthy: BlockId,
+        true_params: T,
+        falsy: BlockId,
+        false_params: F,
+    ) where
+        C: Into<RValue>,
+        T: Into<Vec<ExprId>>,
+        F: Into<Vec<ExprId>>,
+    {
+        self.set_terminator(Branch::new(
+            cond.into(),
+            truthy,
+            true_params.into(),
+            falsy,
+            false_params.into(),
+        ));
     }
 
     #[track_caller]

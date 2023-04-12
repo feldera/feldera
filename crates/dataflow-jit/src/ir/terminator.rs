@@ -1,4 +1,4 @@
-use crate::ir::{BlockId, RValue};
+use crate::ir::{BlockId, ExprId, RValue};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
@@ -94,18 +94,31 @@ impl Terminator {
 /// An unconditional branch instruction
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Jump {
+    /// The block being jumped to
     target: BlockId,
+    /// The parameters being passed to the target block by the jump
+    params: Vec<ExprId>,
 }
 
 impl Jump {
     /// Creates a new jump terminator
-    pub fn new(target: BlockId) -> Self {
-        Self { target }
+    pub fn new(target: BlockId, params: Vec<ExprId>) -> Self {
+        Self { target, params }
     }
 
     /// Returns the target of the jump
     pub const fn target(&self) -> BlockId {
         self.target
+    }
+
+    /// Returns the parameters passed by the jump
+    pub fn params(&self) -> &[ExprId] {
+        &self.params
+    }
+
+    /// Returns a mutable reference to the parameters passed by the jump
+    pub fn params_mut(&mut self) -> &mut [ExprId] {
+        &mut self.params
     }
 }
 
@@ -120,17 +133,29 @@ pub struct Branch {
     cond: RValue,
     /// The block jumped to if `cond` is true
     truthy: BlockId,
+    /// Parameters for the true block
+    true_params: Vec<ExprId>,
     /// The block jumped to if `cond` is false
     falsy: BlockId,
+    /// Parameters for the false block
+    false_params: Vec<ExprId>,
 }
 
 impl Branch {
     /// Create a new branch terminator
-    pub fn new(cond: RValue, truthy: BlockId, falsy: BlockId) -> Self {
+    pub fn new(
+        cond: RValue,
+        truthy: BlockId,
+        true_params: Vec<ExprId>,
+        falsy: BlockId,
+        false_params: Vec<ExprId>,
+    ) -> Self {
         Self {
             cond,
             truthy,
+            true_params,
             falsy,
+            false_params,
         }
     }
 
@@ -157,6 +182,22 @@ impl Branch {
     /// Returns true if both branches lead to the same block
     pub fn targets_are_identical(&self) -> bool {
         self.truthy == self.falsy
+    }
+
+    pub fn true_params(&self) -> &[ExprId] {
+        &self.true_params
+    }
+
+    pub fn false_params(&self) -> &[ExprId] {
+        &self.false_params
+    }
+
+    pub fn true_params_mut(&mut self) -> &mut Vec<ExprId> {
+        &mut self.true_params
+    }
+
+    pub fn false_params_mut(&mut self) -> &mut Vec<ExprId> {
+        &mut self.false_params
     }
 }
 
