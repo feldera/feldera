@@ -5,7 +5,7 @@ mod passes;
 pub use builder::FunctionBuilder;
 pub use flags::{InputFlags, InvalidInputFlag};
 
-use crate::ir::{Block, BlockId, ColumnType, ExprId, LayoutId, Signature};
+use crate::ir::{block::Block, BlockId, ColumnType, ExprId, LayoutId, Signature};
 use petgraph::{
     algo::dominators::{self, Dominators},
     prelude::DiGraphMap,

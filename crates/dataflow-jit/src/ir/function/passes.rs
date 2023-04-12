@@ -1,10 +1,14 @@
 use crate::ir::{
+    block::ParamType,
     exprs::{ArgType, Call},
     function::FuncArg,
     layout_cache::RowLayoutCache,
     ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Return, Terminator,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    mem::take,
+};
 
 impl Function {
     #[tracing::instrument(skip_all)]
@@ -18,6 +22,8 @@ impl Function {
         self.dce();
         // self.remove_noop_copies(layout_cache)
         // TODO: Tree shaking to remove unreachable nodes
+        // TODO: Eliminate unused block parameters
+        // TODO: Promote conditional writes to rows to block params
     }
 
     fn concat_empty_strings(&mut self) {
@@ -366,12 +372,14 @@ impl Function {
         // Replace any branches that have identical true/false targets with an
         // unconditional jump
         for block in self.blocks.values_mut() {
-            if let Some(target) = block
-                .terminator()
-                .as_branch()
-                .and_then(|branch| branch.targets_are_identical().then(|| branch.truthy()))
+            if let Some((target, params)) =
+                block.terminator_mut().as_branch_mut().and_then(|branch| {
+                    branch
+                        .targets_are_identical()
+                        .then(|| (branch.truthy(), take(branch.true_params_mut())))
+                })
             {
-                *block.terminator_mut() = Terminator::Jump(Jump::new(target));
+                *block.terminator_mut() = Terminator::Jump(Jump::new(target, params));
             }
         }
     }
@@ -500,6 +508,19 @@ impl Function {
         let mut stack = vec![self.entry_block];
         while let Some(block_id) = stack.pop() {
             let block = self.blocks.get_mut(&block_id).unwrap();
+
+            // Add all of the block's parameters
+            for &(param_id, ty) in block.params() {
+                match ty {
+                    ParamType::Row(layout) => {
+                        row_exprs.insert(param_id, layout);
+                    }
+                    ParamType::Column(ColumnType::Unit) => {
+                        unit_exprs.insert(param_id);
+                    }
+                    ParamType::Column(_) => {}
+                }
+            }
 
             block.retain(|expr_id, expr| match expr {
                 Expr::UninitRow(uninit) => {

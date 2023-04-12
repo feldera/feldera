@@ -23,9 +23,9 @@ use crate::{
         utils::FunctionBuilderExt,
     },
     ir::{
-        BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant, Expr, ExprId,
-        Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue, RowLayoutCache, Select,
-        SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
+        block::ParamType, BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant,
+        Expr, ExprId, Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue,
+        RowLayoutCache, Select, SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
     },
     ThinStr,
 };
@@ -290,6 +290,35 @@ impl Codegen {
 
                 ctx.switch_to_block(block_id, &mut builder);
 
+                let block_contents = &function.blocks()[&block_id];
+
+                // Add the block's parameters
+                {
+                    let current_block = builder.current_block().unwrap();
+                    for &(param_id, ty) in block_contents.params() {
+                        match ty {
+                            ParamType::Row(layout_id) => {
+                                let value =
+                                    builder.append_block_param(current_block, ctx.pointer_type());
+                                ctx.add_expr(param_id, value, None, layout_id);
+                            }
+
+                            ParamType::Column(ColumnType::Unit) => {}
+
+                            ParamType::Column(column_ty) => {
+                                let value = builder.append_block_param(
+                                    current_block,
+                                    column_ty
+                                        .native_type()
+                                        .unwrap()
+                                        .native_type(&ctx.frontend_config()),
+                                );
+                                ctx.add_expr(param_id, value, column_ty, None);
+                            }
+                        }
+                    }
+                }
+
                 // Ensure that all input pointers are valid
                 // TODO: This may need changes if we ever have scalar function inputs
                 if ctx.debug_assertions() && block_id == function.entry_block() {
@@ -300,8 +329,6 @@ impl Codegen {
                         ctx.assert_ptr_valid(arg, layout.align(), &mut builder);
                     }
                 }
-
-                let block_contents = &function.blocks()[&block_id];
 
                 for &(expr_id, ref expr) in block_contents.body() {
                     match expr {
@@ -853,8 +880,14 @@ impl<'a> CodegenCtx<'a> {
             Terminator::Jump(jump) => {
                 let target = self.block(jump.target(), builder);
 
-                // FIXME: bb args
-                builder.ins().jump(target, &[]);
+                // Basic block args
+                let params: Vec<_> = jump
+                    .params()
+                    .iter()
+                    .map(|&param_id| self.value(param_id))
+                    .collect();
+
+                builder.ins().jump(target, &params);
 
                 stack.push(jump.target());
             }
@@ -870,7 +903,18 @@ impl<'a> CodegenCtx<'a> {
         builder: &mut FunctionBuilder<'_>,
     ) {
         let truthy = self.block(branch.truthy(), builder);
+        let truthy_params: Vec<_> = branch
+            .true_params()
+            .iter()
+            .map(|&param_id| self.value(param_id))
+            .collect();
+
         let falsy = self.block(branch.falsy(), builder);
+        let falsy_params: Vec<_> = branch
+            .false_params()
+            .iter()
+            .map(|&param_id| self.value(param_id))
+            .collect();
 
         let cond = match branch.cond() {
             RValue::Expr(expr) => self.exprs[expr],
@@ -881,7 +925,9 @@ impl<'a> CodegenCtx<'a> {
         self.debug_assert_bool_is_valid(cond, builder);
 
         // FIXME: bb args
-        builder.ins().brif(cond, truthy, &[], falsy, &[]);
+        builder
+            .ins()
+            .brif(cond, truthy, &truthy_params, falsy, &falsy_params);
 
         stack.extend([branch.truthy(), branch.falsy()]);
     }

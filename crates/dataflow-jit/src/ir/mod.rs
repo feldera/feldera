@@ -1,10 +1,10 @@
+pub mod block;
 pub mod exprs;
 pub mod graph;
 pub mod literal;
 pub mod nodes;
 pub mod visit;
 
-mod block;
 mod function;
 mod ids;
 mod layout_cache;
@@ -13,7 +13,6 @@ mod terminator;
 mod types;
 mod validate;
 
-pub use block::Block;
 // TODO: Remove `exprs` re-export
 pub use exprs::{
     BinaryOp, BinaryOpKind, Cast, Constant, Copy, CopyRowTo, Expr, IsNull, Load, NullRow, RValue,

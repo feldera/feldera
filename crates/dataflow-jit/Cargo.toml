@@ -68,3 +68,8 @@ proptest = "1.0.0"
 num-integer = "0.1.45"
 proptest-derive = "0.3.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+
+    [dev-dependencies.chrono]
+    version = "0.4.23"
+    default-features = false
+    features = ["std", "clock"]

@@ -10,7 +10,132 @@ use crate::{
     thin_str::ThinStrRef,
     utils, ThinStr,
 };
+use chrono::{Datelike, Utc};
 use std::mem::transmute;
+
+#[test]
+fn block_param_phi() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let timestamp = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::Timestamp, true)
+            .build(),
+    );
+    let i64 = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::I64, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder = FunctionBuilder::new(layout_cache.clone());
+        let input = builder.add_input(timestamp);
+        let output = builder.add_output(i64);
+
+        let return_block = builder.create_block();
+        builder.add_block_param(return_block, ColumnType::I64);
+        let timestamp_non_null = builder.create_block();
+
+        let timestamp_is_null = builder.is_null(input, 0);
+        let i64_min = builder.constant(Constant::I64(i64::MIN));
+        builder.branch(
+            timestamp_is_null,
+            return_block,
+            [i64_min],
+            timestamp_non_null,
+            [],
+        );
+
+        builder.move_to(timestamp_non_null);
+        let timestamp = builder.load(input, 0);
+        let year = builder.add_expr(Call::new(
+            "dbsp.timestamp.year".into(),
+            vec![timestamp],
+            vec![ArgType::Scalar(ColumnType::Timestamp)],
+            ColumnType::I64,
+        ));
+        builder.jump(return_block, [year]);
+
+        builder.move_to(return_block);
+        let year = builder.block_params(return_block)[0].0;
+        builder.store(output, 0, year);
+        builder.ret_unit();
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("timestamp_year", &function);
+    let timestamp_vtable = codegen.vtable_for(timestamp);
+    let i64_vtable = codegen.vtable_for(i64);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let timestamp_layout = layout_cache.layout_of(timestamp);
+        let i64_layout = layout_cache.layout_of(i64);
+
+        let timestamp_vtable = Box::into_raw(Box::new(timestamp_vtable.marshalled(&jit)));
+        let i64_vtable = Box::into_raw(Box::new(i64_vtable.marshalled(&jit)));
+
+        let timestamp_year = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let current_timestamp = Utc::now();
+
+        // Call with non-null input
+        let mut input = UninitRow::new(unsafe { &*timestamp_vtable });
+        unsafe {
+            input
+                .as_mut_ptr()
+                .add(timestamp_layout.offset_of(0) as usize)
+                .cast::<i64>()
+                .write(current_timestamp.timestamp_millis());
+            input.set_column_null(0, &timestamp_layout, false);
+        }
+        let mut input = unsafe { input.assume_init() };
+
+        let mut output = UninitRow::new(unsafe { &*i64_vtable });
+        timestamp_year(input.as_ptr(), output.as_mut_ptr());
+
+        let mut output = unsafe { output.assume_init() };
+        let year = unsafe {
+            output
+                .as_ptr()
+                .add(i64_layout.offset_of(0) as usize)
+                .cast::<i64>()
+                .read()
+        };
+        assert_eq!(year, current_timestamp.year() as i64);
+
+        // Call with null input
+        input.set_column_null(0, &timestamp_layout, true);
+        timestamp_year(input.as_ptr(), output.as_mut_ptr());
+
+        let year = unsafe {
+            output
+                .as_ptr()
+                .add(i64_layout.offset_of(0) as usize)
+                .cast::<i64>()
+                .read()
+        };
+        assert_eq!(year, i64::MIN);
+
+        drop(input);
+        drop(output);
+
+        unsafe {
+            drop(Box::from_raw(timestamp_vtable));
+            drop(Box::from_raw(i64_vtable));
+        }
+    }
+
+    unsafe { jit.free_memory() };
+}
 
 #[test]
 fn string_length() {

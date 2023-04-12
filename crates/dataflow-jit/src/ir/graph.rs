@@ -564,7 +564,7 @@ mod tests {
 
                 let current_null = func.create_block();
                 let current_non_null = func.create_block();
-                func.branch(current_is_null, current_null, current_non_null);
+                func.branch(current_is_null, current_null, [], current_non_null, []);
 
                 func.move_to(current_null);
                 func.ret_unit();
@@ -577,7 +577,7 @@ mod tests {
                 let current = func.load(current, 0);
                 let weight = func.load(weight, 0);
                 let diff = func.mul(current, weight);
-                func.branch(acc_is_null, acc_null, acc_non_null);
+                func.branch(acc_is_null, acc_null, [], acc_non_null, []);
                 func.seal_current();
 
                 func.move_to(acc_null);

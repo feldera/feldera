@@ -1,10 +1,11 @@
 use crate::ir::{
     exprs::ArgType,
+    exprs::{Call, Select},
     graph::GraphExt,
     nodes::{Node, StreamKind, StreamLayout},
-    BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph, InputFlags,
-    IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull, Store, UnaryOpKind,
-    UninitRow,
+    BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
+    InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull, Store,
+    UnaryOpKind, UninitRow,
 };
 use derive_more::Display;
 use std::{
@@ -12,10 +13,7 @@ use std::{
     error::Error,
 };
 
-use super::{
-    exprs::{Call, Select},
-    BinaryOp,
-};
+// TODO: Validate block parameters
 
 type ValidationResult<T = ()> = Result<T, ValidationError>;
 
