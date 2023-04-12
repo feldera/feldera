@@ -1,6 +1,6 @@
-// Form to create/update a Kafka input connector.
+// A create/update dialog for a Kafka input connector.
 
-import { useState, useEffect, SetStateAction, Dispatch } from 'react'
+import { useState, useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Tab from '@mui/material/Tab'
 import TabList from '@mui/lab/TabList'
@@ -20,11 +20,12 @@ import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
 import DialogTabSource from 'src/connectors/dialogs/tabs/DialogTabSource'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorType, ConnectorDescr } from 'src/types/manager'
+import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
-import { SourceFormCreateHandle } from './SubmitHandler'
-import { connectorTypeToConfig } from 'src/types/data'
+import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
+import { connectorTypeToConfig, connectorToFormSchema } from 'src/types/data'
 import { AddConnectorCard } from './AddConnectorCard'
+import ConnectorDialogProps from './ConnectorDialogProps'
 
 const schema = yup.object().shape({
   name: yup.string().required(),
@@ -36,49 +37,42 @@ const schema = yup.object().shape({
 
 export type KafkaInputSchema = yup.InferType<typeof schema>
 
-export const KafkaInputConnectorDialog = (props: {
-  show: boolean
-  setShow: Dispatch<SetStateAction<boolean>>
-  onSuccess?: Dispatch<ConnectorDescr>
-}) => {
+export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
   const handleClose = () => {
     props.setShow(false)
   }
-
-  const onFormSubmitted = (descr: ConnectorDescr | undefined) => {
+  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
     handleClose()
-    if (descr !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(descr)
+    if (connector_id !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector_id)
     }
   }
 
+  // Initialize the form either with default or values from the passed in connector
+  const defaultValues = props.connector
+    ? connectorToFormSchema(props.connector)
+    : {
+        name: '',
+        description: '',
+        host: '',
+        auto_offset: 'earliest',
+        topics: []
+      }
   const {
     control,
     handleSubmit,
     formState: { errors }
-  } = useForm({
+  } = useForm<KafkaInputSchema>({
     resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      host: '',
-      auto_offset: 'earliest',
-      topics: ['test']
-    }
+    defaultValues
   })
 
-  useEffect(() => {
-    // If we have an error in the details tab, switch to the details tab
-    if ((errors?.name || errors?.description) && props.show) {
-      setActiveTab('detailsTab')
-    }
-  }, [props.show, errors])
-
-  // Add a new redpanda source
-  const onSubmit = SourceFormCreateHandle<KafkaInputSchema>(onFormSubmitted, data => {
-    console.log(data)
-
+  // Define what should happen when the form is submitted
+  const genericRequest = (
+    data: KafkaInputSchema,
+    connector_id?: number
+  ): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
@@ -93,9 +87,27 @@ export const KafkaInputConnectorDialog = (props: {
           }
         },
         format: { name: 'csv' }
-      })
+      }),
+      ...(connector_id && { connector_id: connector_id })
     }
-  })
+  }
+  const newRequest = (data: KafkaInputSchema): NewConnectorRequest => {
+    return genericRequest(data) as NewConnectorRequest
+  }
+  const updateRequest = (data: KafkaInputSchema): UpdateConnectorRequest => {
+    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  }
+  const onSubmit =
+    props.connector === undefined
+      ? ConnectorFormNewRequest<KafkaInputSchema>(onFormSubmitted, newRequest)
+      : ConnectorFormUpdateRequest<KafkaInputSchema>(onFormSubmitted, updateRequest)
+
+  // If there is an error, switch to the earliest tab with an error
+  useEffect(() => {
+    if ((errors?.name || errors?.description) && props.show) {
+      setActiveTab('detailsTab')
+    }
+  }, [props.show, errors])
 
   return (
     <Dialog
@@ -106,7 +118,7 @@ export const KafkaInputConnectorDialog = (props: {
       onClose={handleClose}
       TransitionComponent={Transition}
     >
-      <form id='create-redpanda' onSubmit={handleSubmit(onSubmit)}>
+      <form id='create-kafka-input' onSubmit={handleSubmit(onSubmit)}>
         <DialogContent
           sx={{
             pt: { xs: 8, sm: 12.5 },
@@ -121,9 +133,9 @@ export const KafkaInputConnectorDialog = (props: {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              New Kafka Datasource
+              {props.connector === undefined ? 'New Kafka Datasource' : 'Update ' + props.connector.name}
             </Typography>
-            <Typography variant='body2'>Add a Kafka or Redpanda server.</Typography>
+            {props.connector === undefined && <Typography variant='body2'>Add a Kafka Input.</Typography>}
           </Box>
           <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
             <TabContext value={activeTab}>
@@ -175,9 +187,10 @@ export const KafkaInputConnectorDialog = (props: {
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
                 <DialogTabDetails control={control} errors={errors} />
                 <TabFooter
+                  isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
-                  formId='create-redpanda'
+                  formId='create-kafka-input'
                   tabsArr={['detailsTab', 'sourceTab']}
                 />
               </TabPanel>
@@ -187,9 +200,10 @@ export const KafkaInputConnectorDialog = (props: {
               >
                 <DialogTabSource control={control} errors={errors} />
                 <TabFooter
+                  isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
-                  formId='create-redpanda'
+                  formId='create-kafka-input'
                   tabsArr={['detailsTab', 'sourceTab']}
                 />
               </TabPanel>

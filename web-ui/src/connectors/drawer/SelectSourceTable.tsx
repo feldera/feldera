@@ -1,3 +1,6 @@
+// The table that pops up when the user clicks on a connector type in the drawer
+// to select from an existing list of connectors.
+
 import { Dispatch, useState } from 'react'
 
 import Card from '@mui/material/Card'
@@ -8,13 +11,9 @@ import { ConnectorService } from 'src/types/manager/services/ConnectorService'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
-import { ConnectorType, Direction } from 'src/types/manager'
+import { ConnectorId, ConnectorType, Direction } from 'src/types/manager'
 
-const SelectSourceTable = (props: {
-  direction: Direction
-  typ: ConnectorType
-  onAddClick: Dispatch<ConnectorDescr>
-}) => {
+const SelectSourceTable = (props: { direction: Direction; typ: ConnectorType; onAddClick: Dispatch<ConnectorId> }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
   const fetchQuery = useQuery({ queryKey: ['connector'], queryFn: ConnectorService.listConnectors })
 
@@ -45,7 +44,12 @@ const SelectSourceTable = (props: {
       headerName: '',
       renderCell: (params: GridRenderCellParams) => {
         return (
-          <Button size='small' variant='outlined' color='secondary' onClick={() => props.onAddClick(params.row)}>
+          <Button
+            size='small'
+            variant='outlined'
+            color='secondary'
+            onClick={() => props.onAddClick(params.row.connector_id)}
+          >
             Add
           </Button>
         )

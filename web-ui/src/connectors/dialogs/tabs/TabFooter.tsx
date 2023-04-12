@@ -2,7 +2,13 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import { Icon } from '@iconify/react'
 
-const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; formId: string }) => {
+const TabFooter = (props: {
+  activeTab: string
+  setActiveTab: any
+  tabsArr: string[]
+  formId: string
+  isUpdate: boolean
+}) => {
   const { activeTab, setActiveTab, tabsArr, formId } = props
 
   const nextArrow = 'bx:right-arrow-alt'
@@ -29,7 +35,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
   } else {
     nextOrSaveButton = (
       <Button variant='contained' color='success' endIcon={<Icon icon='bx:check' />} form={formId} type='submit'>
-        Create
+        {props.isUpdate ? 'Update' : 'Create'}
       </Button>
     )
   }

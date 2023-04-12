@@ -6,8 +6,9 @@ import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
-import { KafkaInputSchema } from 'src/connectors/dialogs/KafkaInputConnector'
 import Autocomplete from '@mui/material/Autocomplete'
+
+import { KafkaInputSchema } from 'src/connectors/dialogs'
 
 const TabSource = (props: { control: Control<KafkaInputSchema>; errors: Partial<FieldErrors<KafkaInputSchema>> }) => {
   return (
@@ -58,8 +59,9 @@ const TabSource = (props: { control: Control<KafkaInputSchema>; errors: Partial<
           <Controller
             name='topics'
             control={props.control}
-            render={({ field: { onChange } }) => (
+            render={({ field: { ref, onChange, ...field } }) => (
               <Autocomplete
+                {...field}
                 fullWidth
                 multiple
                 freeSolo
@@ -68,7 +70,7 @@ const TabSource = (props: { control: Control<KafkaInputSchema>; errors: Partial<
                   onChange(item)
                 }}
                 renderInput={params => (
-                  <TextField {...params} label='Topics' placeholder='Add topic, press Enter to add...' />
+                  <TextField {...params} inputRef={ref} label='Topics' placeholder='Add topic, press Enter to add...' />
                 )}
               />
             )}

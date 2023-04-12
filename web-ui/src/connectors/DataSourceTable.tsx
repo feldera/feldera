@@ -16,7 +16,7 @@ import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { CancelError, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { getStatusObj } from 'src/types/data'
+import { ConnectorDialog, getStatusObj } from 'src/types/data'
 
 const DataSourceTable = () => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
@@ -135,19 +135,31 @@ const DataSourceTable = () => {
     rows: rows
   }
 
+  const [showDialog, setShowDialog] = useState<boolean>(false)
+  const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
+  const editConnector = useCallback((cur_row: ConnectorDescr) => {
+    setConnector(cur_row)
+    setShowDialog(true)
+  }, [])
+
   return (
-    <Card>
-      <EntityTable
-        tableProps={tableProps}
-        setRows={setRows}
-        fetchRows={fetchQuery}
-        onUpdateRow={processRowUpdate}
-        onDeleteRow={deleteSource}
-        hasSearch
-        hasFilter
-        addActions
-      />
-    </Card>
+    <>
+      <Card>
+        <EntityTable
+          tableProps={tableProps}
+          setRows={setRows}
+          fetchRows={fetchQuery}
+          onUpdateRow={processRowUpdate}
+          onDeleteRow={deleteSource}
+          onEditClicked={editConnector}
+          hasSearch
+          hasFilter
+          addActions
+        />
+      </Card>
+
+      {connector && <ConnectorDialog show={showDialog} setShow={setShowDialog} connector={connector} />}
+    </>
   )
 }
 

@@ -1,6 +1,6 @@
-// Form to create/update a Kafka output connector.
+// A create/update dialog for a Kafka output connector.
 
-import { useState, useEffect, SetStateAction, Dispatch } from 'react'
+import { useState, useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Tab from '@mui/material/Tab'
 import TabList from '@mui/lab/TabList'
@@ -19,12 +19,13 @@ import { Icon } from '@iconify/react'
 import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorType, ConnectorDescr } from 'src/types/manager'
+import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
-import { SourceFormCreateHandle } from './SubmitHandler'
-import { connectorTypeToConfig } from 'src/types/data'
+import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
+import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/data'
 import TabKafkaOutDetails from './tabs/TabKafkaOutDetails'
 import { AddConnectorCard } from './AddConnectorCard'
+import ConnectorDialogProps from './ConnectorDialogProps'
 
 const schema = yup
   .object({
@@ -38,53 +39,49 @@ const schema = yup
 
 export type KafkaOutputSchema = yup.InferType<typeof schema>
 
-export const KafkaOutputConnectorDialog = (props: {
-  show: boolean
-  setShow: Dispatch<SetStateAction<boolean>>
-  onSuccess?: Dispatch<ConnectorDescr>
-}) => {
+export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
   const handleClose = () => {
     props.setShow(false)
   }
-
-  const onFormSubmitted = (descr: ConnectorDescr | undefined) => {
+  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
     handleClose()
-    if (descr !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(descr)
+    if (connector_id !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector_id)
     }
   }
 
+  // Initialize the form either with default or values from the passed in connector
+  const defaultValues = props.connector
+    ? connectorToFormSchema(props.connector)
+    : {
+        name: '',
+        description: '',
+        host: '',
+        auto_offset: 'earliest',
+        topic: ''
+      }
   const {
     control,
     handleSubmit,
     formState: { errors }
-  } = useForm({
+  } = useForm<KafkaOutputSchema>({
     resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      host: '',
-      auto_offset: 'earliest'
-    }
+    defaultValues
   })
 
-  useEffect(() => {
-    // If we have an error in the details tab, switch to the details tab
-    if ((errors?.name || errors?.description) && props.show) {
-      setActiveTab('detailsTab')
-    }
-  }, [props.show, errors])
-
-  // Add a new kafka source
-  const onSubmit = SourceFormCreateHandle<KafkaOutputSchema>(onFormSubmitted, data => {
+  // Define what should happen when the form is submitted
+  const genericRequest = (
+    data: KafkaOutputSchema,
+    connector_id?: number
+  ): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.KAFKA_OUT,
+      typ: ConnectorType.KAFKA_IN,
       config: YAML.stringify({
         transport: {
-          name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
+          name: connectorTypeToConfig(ConnectorType.KAFKA_IN),
           config: {
             'bootstrap.servers': data.host,
             'auto.offset.reset': data.auto_offset,
@@ -92,9 +89,29 @@ export const KafkaOutputConnectorDialog = (props: {
           }
         },
         format: { name: 'csv' }
-      })
+      }),
+      ...(connector_id && { connector_id: connector_id })
     }
-  })
+  }
+
+  const newRequest = (data: KafkaOutputSchema): NewConnectorRequest => {
+    return genericRequest(data) as NewConnectorRequest
+  }
+  const updateRequest = (data: KafkaOutputSchema): UpdateConnectorRequest => {
+    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  }
+
+  const onSubmit =
+    props.connector === undefined
+      ? ConnectorFormNewRequest<KafkaOutputSchema>(onFormSubmitted, newRequest)
+      : ConnectorFormUpdateRequest<KafkaOutputSchema>(onFormSubmitted, updateRequest)
+
+  // If there is an error, switch to the earliest tab with an error
+  useEffect(() => {
+    if ((errors?.name || errors?.description) && props.show) {
+      setActiveTab('detailsTab')
+    }
+  }, [props.show, errors])
 
   return (
     <Dialog
@@ -120,9 +137,9 @@ export const KafkaOutputConnectorDialog = (props: {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              New Kafka Output
+              {props.connector === undefined ? 'New Kafka Output' : 'Update ' + props.connector.name}
             </Typography>
-            <Typography variant='body2'>Add a Kafka or Repanda output.</Typography>
+            {props.connector === undefined && <Typography variant='body2'>Add a Kafka Output.</Typography>}
           </Box>
           <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
             <TabContext value={activeTab}>
@@ -174,6 +191,7 @@ export const KafkaOutputConnectorDialog = (props: {
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
                 <DialogTabDetails control={control} errors={errors} />
                 <TabFooter
+                  isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka'
@@ -186,6 +204,7 @@ export const KafkaOutputConnectorDialog = (props: {
               >
                 <TabKafkaOutDetails control={control} errors={errors} />
                 <TabFooter
+                  isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka'
