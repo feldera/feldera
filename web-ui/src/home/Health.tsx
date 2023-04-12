@@ -1,3 +1,6 @@
+// Should display aggregate health of all pipelines, just a placeholder right
+// now.
+
 import List from '@mui/material/List'
 import Divider from '@mui/material/Divider'
 import ListItem from '@mui/material/ListItem'
@@ -9,7 +12,6 @@ import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CardHeader from '@mui/material/CardHeader'
-
 import { Icon } from '@iconify/react'
 
 const Health = () => {

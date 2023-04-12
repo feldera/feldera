@@ -1,3 +1,7 @@
+// Website theme config.
+//
+// You can use the `useTheme()` hook to access this data.
+
 import { PaletteMode } from '@mui/material'
 import { ContentWidth } from 'src/@core/layouts/types'
 
@@ -13,14 +17,14 @@ type ThemeConfig = {
 }
 
 const themeConfig: ThemeConfig = {
-  templateName: 'dbsp' /* App Name */,
+  templateName: 'dbsp',
   mode: 'light' /* light | dark */,
   contentWidth: 'boxed' /* full | boxed */,
-  routingLoader: true /* true | false */,
-  menuTextTruncate: true /* true | false */,
+  routingLoader: true,
+  menuTextTruncate: true,
   navigationSize: 260 /* Number in PX(Pixels) (Note: This is for the Vertical navigation menu only) */,
-  responsiveFontSizes: true /* true | false */,
-  disableRipple: false /* true | false */
+  responsiveFontSizes: true,
+  disableRipple: false
 }
 
 export default themeConfig

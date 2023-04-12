@@ -12,7 +12,7 @@ import { SetStateAction, useState, Dispatch, useEffect } from 'react'
 import { AttachedConnector, ConnectorDescr, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/data'
-import { randomString } from 'src/utils/randomString'
+import { randomString } from 'src/utils'
 import useAddIoNode from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
 

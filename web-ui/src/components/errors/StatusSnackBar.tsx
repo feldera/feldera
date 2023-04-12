@@ -1,7 +1,11 @@
-import { useEffect, SyntheticEvent } from 'react'
+// Layout of the status snackbar component.
+//
+// The message can be clicked away or it will disappear after some seconds.
 
+import { useEffect, SyntheticEvent } from 'react'
 import Snackbar from '@mui/material/Snackbar'
 import Alert, { AlertColor } from '@mui/material/Alert'
+
 import useStatusNotification from './useStatusNotification'
 
 export interface StatusSnackBarMessage {

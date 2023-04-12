@@ -1,11 +1,15 @@
-import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject } from 'react'
+// The entity table is a wrapper around the DataGridPro component.
+//
+// It is used to display a list of entities in a table. It's the generic version
+// of a table we use to display programs, pipelines, etc.
 
+import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject } from 'react'
 import Card from '@mui/material/Card'
 import { DataGridPro, GridValidRowModel, DataGridProProps, GridRenderCellParams } from '@mui/x-data-grid-pro'
 import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { ErrorOverlay } from './ErrorOverlay'
-import { escapeRegExp } from 'src/utils/escapeRegExp'
+import { escapeRegExp } from 'src/utils'
 import Tooltip from '@mui/material/Tooltip'
 import IconButton from '@mui/material/IconButton'
 import { Icon } from '@iconify/react'

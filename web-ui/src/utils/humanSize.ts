@@ -1,3 +1,4 @@
+// Convert bytes to a human readable string
 export function humanSize(bytes: number): string {
   const thresh = 1024
   if (Math.abs(bytes) < thresh) {

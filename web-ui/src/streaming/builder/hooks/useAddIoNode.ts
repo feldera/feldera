@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { NodeProps, useReactFlow, getConnectedEdges } from 'reactflow'
 import { AttachedConnector, Direction } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-import { randomString } from 'src/utils/randomString'
+import { randomString } from 'src/utils'
 
 const HEIGHT_OFFSET = 120
 

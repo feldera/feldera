@@ -1,3 +1,5 @@
+// A input field that can be used to search the table (on the client-side).
+
 import { ChangeEvent } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'

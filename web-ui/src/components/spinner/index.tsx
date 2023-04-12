@@ -1,3 +1,6 @@
+// A loading screen that can be used to show a loading spinner and the logo
+// while data is being fetched on initial page loads.
+
 import Box, { BoxProps } from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 
