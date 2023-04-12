@@ -88,7 +88,7 @@ export function useAddConnector() {
 // below its former position.
 export function useAddIoNode(id: NodeProps['id']) {
   const { getNode, setNodes, addNodes } = useReactFlow()
-  const onClick = (connector: ConnectorDescr, ac: AttachedConnector) => {
+  const onClick = (ac: AttachedConnector) => {
     // The parent is the placeholder we just clicked
     const parentNode = getNode(id)
     if (!parentNode) {
@@ -117,7 +117,7 @@ export function useAddIoNode(id: NodeProps['id']) {
       id: ac.uuid,
       type: newNodeType,
       deletable: true,
-      data: { connector, ac: ac }
+      data: { ac: ac }
     })
   }
 

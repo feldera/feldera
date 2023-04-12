@@ -1,3 +1,6 @@
+// The drawer component that opens when the user wants to add a connector in the
+// pipeline builder.
+
 import Drawer from '@mui/material/Drawer'
 import { styled } from '@mui/material/styles'
 import IconButton from '@mui/material/IconButton'
@@ -8,8 +11,8 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { Icon } from '@iconify/react'
 import useDrawerState from 'src/streaming/builder/hooks/useDrawerState'
 import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
-import { SetStateAction, useState, Dispatch, useEffect } from 'react'
-import { AttachedConnector, ConnectorDescr, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
+import { useState, Dispatch, useEffect } from 'react'
+import { AttachedConnector, ConnectorId, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/data'
 import { randomString } from 'src/utils'
@@ -19,6 +22,7 @@ import SelectSourceTable from './SelectSourceTable'
 import { CsvFileConnectorDialog } from '../dialogs/CsvFileConnector'
 import { KafkaInputConnectorDialog } from '../dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '../dialogs/KafkaOutputConnector'
+import ConnectorDialogProps from '../dialogs/ConnectorDialogProps'
 
 const Header = styled(Box)<BoxProps>(({ theme }) => ({
   display: 'flex',
@@ -31,14 +35,10 @@ const Header = styled(Box)<BoxProps>(({ theme }) => ({
 interface IoSelectBoxProps {
   icon: string
   howMany: number
-  onSuccess: Dispatch<ConnectorDescr>
+  onSuccess: Dispatch<ConnectorId>
   openSelectTable: () => void
   closeDrawer: () => void
-  dialog: (props: {
-    show: boolean
-    setShow: Dispatch<SetStateAction<boolean>>
-    onSuccess: Dispatch<ConnectorDescr>
-  }) => React.ReactNode
+  dialog: (props: ConnectorDialogProps) => React.ReactNode
 }
 
 const IoSelectBox = (props: IoSelectBoxProps) => {
@@ -120,7 +120,6 @@ const SideBarAddIo = () => {
         )
 
       setSourceCounts(counts)
-      console.log(data)
     }
   }, [data, isLoading, isError])
 
@@ -133,15 +132,15 @@ const SideBarAddIo = () => {
   }
 
   const addIoNode = useAddIoNode(forNodes === 'inputNode' ? 'inputPlaceholder' : 'outputPlaceholder')
-  const onAddClick = (connector: ConnectorDescr) => {
+  const onAddClick = (connector_id: ConnectorId) => {
     closeDrawer()
     const ac: AttachedConnector = {
       uuid: randomString(),
-      connector_id: connector.connector_id,
+      connector_id,
       config: '',
       direction: forNodes === 'inputNode' ? Direction.INPUT : Direction.OUTPUT
     }
-    addIoNode(connector, ac)
+    addIoNode(ac)
   }
 
   return (

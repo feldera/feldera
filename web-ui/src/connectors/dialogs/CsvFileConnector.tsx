@@ -1,6 +1,5 @@
-// Form to create or update a CSV file connector.
+// A create/update dialog window for the CSV file connector.
 
-import { Dispatch, SetStateAction } from 'react'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import Button from '@mui/material/Button'
@@ -21,10 +20,11 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { Controller, useForm } from 'react-hook-form'
 
 import Transition from './tabs/Transition'
-import { ConnectorType, ConnectorDescr } from 'src/types/manager'
-import { SourceFormCreateHandle } from './SubmitHandler'
-import { connectorTypeToConfig } from 'src/types/data'
+import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
+import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/data'
 import { AddConnectorCard } from './AddConnectorCard'
+import ConnectorDialogProps from './ConnectorDialogProps'
 
 const schema = yup
   .object({
@@ -35,40 +35,39 @@ const schema = yup
   })
   .required()
 
-type CsvFileSource = yup.InferType<typeof schema>
+export type CsvFileSchema = yup.InferType<typeof schema>
 
-export const CsvFileConnectorDialog = (props: {
-  show: boolean
-  setShow: Dispatch<SetStateAction<boolean>>
-  onSuccess?: Dispatch<ConnectorDescr>
-}) => {
+export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
   const handleClose = () => {
     props.setShow(false)
   }
-
-  const onFormSubmitted = (descr: ConnectorDescr | undefined) => {
+  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
     handleClose()
-    if (descr !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(descr)
+    if (connector_id !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector_id)
     }
   }
 
+  // Initialize the form either with default or values from the passed in connector
+  const defaultValues = props.connector
+    ? connectorToFormSchema(props.connector)
+    : {
+        name: '',
+        description: '',
+        url: '',
+        has_headers: true
+      }
   const {
     control,
     handleSubmit,
     formState: { errors }
-  } = useForm<CsvFileSource>({
+  } = useForm<CsvFileSchema>({
     resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      url: '',
-      has_headers: true
-    }
+    defaultValues
   })
 
-  // Add a new URL source
-  const onSubmit = SourceFormCreateHandle<CsvFileSource>(onFormSubmitted, data => {
+  // Define what should happen when the form is submitted
+  const genericRequest = (data: CsvFileSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
@@ -83,9 +82,20 @@ export const CsvFileConnectorDialog = (props: {
         format: {
           name: 'csv'
         }
-      })
+      }),
+      ...(connector_id && { connector_id: connector_id })
     }
-  })
+  }
+  const newRequest = (data: CsvFileSchema): NewConnectorRequest => {
+    return genericRequest(data) as NewConnectorRequest
+  }
+  const updateRequest = (data: CsvFileSchema): UpdateConnectorRequest => {
+    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  }
+  const onSubmit =
+    props.connector === undefined
+      ? ConnectorFormNewRequest<CsvFileSchema>(onFormSubmitted, newRequest)
+      : ConnectorFormUpdateRequest<CsvFileSchema>(onFormSubmitted, updateRequest)
 
   return (
     <Dialog
@@ -107,9 +117,9 @@ export const CsvFileConnectorDialog = (props: {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              CSV File
+              {props.connector === undefined ? 'New CSV File' : 'Update ' + props.connector.name}
             </Typography>
-            <Typography variant='body2'>Provide the URL to a CSV file</Typography>
+            {props.connector === undefined && <Typography variant='body2'>Provide the URL to a CSV file</Typography>}
           </Box>
           <Grid container spacing={6}>
             <Grid item sm={4} xs={12}>
@@ -207,7 +217,7 @@ export const CsvFileConnectorDialog = (props: {
             form='create-csv-file'
             type='submit'
           >
-            Create
+            {props.connector !== undefined ? 'Update' : 'Create'}
           </Button>
           <Button variant='outlined' color='secondary' onClick={() => props.setShow(false)}>
             Cancel
