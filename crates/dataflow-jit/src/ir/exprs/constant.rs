@@ -1,9 +1,10 @@
 use crate::ir::ColumnType;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, mem};
 
 /// A constant value
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub enum Constant {
     Unit,
     U8(u8),

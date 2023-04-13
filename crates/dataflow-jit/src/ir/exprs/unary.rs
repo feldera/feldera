@@ -1,9 +1,10 @@
 use crate::ir::{ColumnType, ExprId};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A unary operation, see [`UnaryOpKind`] for the possible kinds of
 /// operations being performed
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct UnaryOp {
     /// The input value
     value: ExprId,
@@ -40,7 +41,7 @@ impl UnaryOp {
 }
 
 /// The kind of unary operation being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum UnaryOpKind {
     Abs,
     Neg,

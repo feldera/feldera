@@ -3,10 +3,11 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Differentiate {
     input: NodeId,
 }
@@ -60,7 +61,7 @@ impl DataflowNode for Differentiate {
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Integrate {
     input: NodeId,
 }

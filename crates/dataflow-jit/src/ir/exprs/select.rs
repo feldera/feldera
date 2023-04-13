@@ -1,4 +1,5 @@
 use crate::ir::ExprId;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Selects between the two given values based on `cond`, roughly
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 ///   initialized regardless of the initialized-ness of the unselected value. In
 ///   other words, if `cond` is true and `if_true` is init, the initialized-ness
 ///   of `if_false` doesn't matter
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Select {
     cond: ExprId,
     if_true: ExprId,

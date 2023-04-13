@@ -1,5 +1,6 @@
 use crate::ir::{BlockId, ExprId, RValue};
 use derive_more::From;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A block terminator
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// control flow somehow, either through branching to another block
 /// (conditionally or otherwise), by returning from the function or otherwise
 /// changing control flow
-#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub enum Terminator {
     Jump(Jump),
     Branch(Branch),
@@ -92,7 +93,7 @@ impl Terminator {
 }
 
 /// An unconditional branch instruction
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Jump {
     /// The block being jumped to
     target: BlockId,
@@ -127,7 +128,7 @@ impl Jump {
 ///
 /// If `cond` is true, this instruction will jump to the `truthy` block
 /// If `cond` is false, this instruction will jump to the `falsy` block
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Branch {
     /// The condition this branch decides upon
     cond: RValue,
@@ -202,7 +203,7 @@ impl Branch {
 }
 
 /// Returns a value from the current function
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Return {
     value: RValue,
 }

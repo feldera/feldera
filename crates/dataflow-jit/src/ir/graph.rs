@@ -15,6 +15,7 @@ use crate::ir::{
     Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
 };
 use petgraph::prelude::DiGraphMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, rc::Rc};
 
@@ -194,7 +195,7 @@ pub trait GraphExt {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(transparent)]
 pub struct Graph {
     graph: Subgraph,
@@ -275,6 +276,28 @@ pub struct Subgraph {
     nodes: BTreeMap<NodeId, Node>,
     #[serde(skip)]
     ctx: GraphContext,
+}
+
+impl JsonSchema for Subgraph {
+    fn schema_name() -> String {
+        "Subgraph".to_owned()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema_object = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Object.into()),
+            ..Default::default()
+        };
+
+        let object_validation = schema_object.object();
+        object_validation.properties.insert(
+            "nodes".to_owned(),
+            gen.subschema_for::<BTreeMap<NodeId, Node>>(),
+        );
+        object_validation.required.insert("nodes".to_owned());
+
+        schemars::schema::Schema::Object(schema_object)
+    }
 }
 
 impl Subgraph {

@@ -1,7 +1,8 @@
 use crate::ir::Constant;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub enum StreamLiteral {
     Set(Vec<(RowLiteral, i32)>),
     Map(Vec<(RowLiteral, RowLiteral, i32)>),
@@ -20,7 +21,7 @@ impl StreamLiteral {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub enum NullableConstant {
     NonNull(Constant),
     Nullable(Option<Constant>),
@@ -32,7 +33,7 @@ impl NullableConstant {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct RowLiteral {
     rows: Vec<NullableConstant>,
 }

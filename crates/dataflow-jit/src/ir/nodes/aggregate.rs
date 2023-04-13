@@ -6,10 +6,11 @@ use crate::ir::{
     ColumnType, InputFlags, LayoutId, NodeId, RowLayoutBuilder,
 };
 use dbsp::operator::time_series::RelRange;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Min {
     input: NodeId,
 }
@@ -62,7 +63,70 @@ impl DataflowNode for Min {
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct Max {
+    input: NodeId,
+    layout: StreamLayout,
+    // TODO: Should we allow the output layout to be different?
+}
+
+impl Max {
+    pub const fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
+    }
+}
+
+impl DataflowNode for Max {
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
+    }
+
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
+        Some(self.layout.kind())
+    }
+
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
+    }
+
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
+    }
+
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        self.layout.map_layouts(map);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Fold {
     input: NodeId,
     /// The initial value of the fold, should be the same layout as `acc_layout`
@@ -409,5 +473,134 @@ impl DataflowNode for PartitionedRollingFold {
         self.output_layout = mappings[&self.output_layout];
         self.step_fn.remap_layouts(mappings);
         self.finish_fn.remap_layouts(mappings);
+    }
+}
+
+impl JsonSchema for PartitionedRollingFold {
+    fn schema_name() -> String {
+        "PartitionedRollingFold".to_owned()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema_object = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Object.into()),
+            ..Default::default()
+        };
+
+        let object_validation = schema_object.object();
+
+        object_validation
+            .properties
+            .insert("input".to_owned(), gen.subschema_for::<NodeId>());
+        object_validation.required.insert("input".to_owned());
+
+        #[derive(JsonSchema)]
+        #[allow(dead_code)]
+        enum RelOffset<TS> {
+            Before(TS),
+            After(TS),
+        }
+
+        #[derive(JsonSchema)]
+        #[allow(dead_code)]
+        struct RelRange<TS> {
+            from: RelOffset<TS>,
+            to: RelOffset<TS>,
+        }
+
+        object_validation.properties.insert(
+            "range".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for::<RelRange<i64>>(),
+                schemars::schema::Metadata {
+                    description: Some("The time range to fold over".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("range".to_owned());
+
+        object_validation.properties.insert(
+            "init".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for::<RowLiteral>(),
+                schemars::schema::Metadata {
+                    description: Some(
+                        "The initial value of the fold, should be the same layout as `acc_layout`"
+                            .to_owned(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("init".to_owned());
+
+        object_validation.properties.insert(
+            "step_fn".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for:: <Function>(),
+                schemars::schema::Metadata {
+                    description: Some(
+                        "The step function, should have a signature of `fn(acc_layout, step_layout, weight_layout) -> acc_layout`".to_owned(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("step_fn".to_owned());
+
+        object_validation.properties.insert(
+            "finish_fn".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for:: <Function>(),
+                schemars::schema::Metadata {
+                    description: Some(
+                        "The finish function, should have a signature of `fn(acc_layout) -> output_layout`".to_owned(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("finish_fn".to_owned());
+
+        object_validation.properties.insert(
+            "acc_layout".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for::<LayoutId>(),
+                schemars::schema::Metadata {
+                    description: Some("The layout of the accumulator value".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("acc_layout".to_owned());
+
+        object_validation.properties.insert(
+            "step_layout".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for::<LayoutId>(),
+                schemars::schema::Metadata {
+                    description: Some("The layout of the step value".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation.required.insert("step_layout".to_owned());
+
+        object_validation.properties.insert(
+            "output_layout".to_owned(),
+            schemars::_private::apply_metadata(
+                gen.subschema_for::<LayoutId>(),
+                schemars::schema::Metadata {
+                    description: Some("The layout of the output stream".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        );
+        object_validation
+            .required
+            .insert("output_layout".to_owned());
+
+        schemars::schema::Schema::Object(schema_object)
     }
 }

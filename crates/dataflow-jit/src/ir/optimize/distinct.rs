@@ -102,7 +102,7 @@ impl Subgraph {
                     }
                 }
 
-                // Min preserves the distinct-ness of its input stream
+                // Min and Max preserve the distinct-ness of their input streams
                 Node::Min(min) => {
                     if is_distinct.contains(&min.input()) && is_distinct.insert(node_id) {
                         tracing::trace!(
@@ -112,7 +112,15 @@ impl Subgraph {
                         changed = true;
                     }
                 }
-                // TODO: Max also preserves distinct whenever it exists
+                Node::Max(max) => {
+                    if is_distinct.contains(&max.input()) && is_distinct.insert(node_id) {
+                        tracing::trace!(
+                            "marking max node {node_id} as distinct, its input stream {} is distinct",
+                            max.input(),
+                        );
+                        changed = true;
+                    }
+                }
 
                 // Filter preserves the distinct-ness of its input stream
                 Node::Filter(filter) => {

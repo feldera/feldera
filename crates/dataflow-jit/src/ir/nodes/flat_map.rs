@@ -14,6 +14,7 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     Function, LayoutId, NodeId, RowLayoutCache,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -48,7 +49,7 @@ use std::collections::BTreeMap;
 ///
 /// `{ ... }` denotes an arbitrary layout, the `output_keys` and `output_values`
 /// vectors are typed in association with `output_layout`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct FlatMap {
     input: NodeId,
     flat_map: Function,

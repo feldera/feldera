@@ -1,11 +1,12 @@
 use crate::ir::{BlockId, ColumnType, Expr, ExprId, LayoutId, Terminator};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A single basic block within a function
 ///
 /// Each basic block has a unique id, zero or more expressions within its body
 /// and a single terminator
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Block {
     /// The id of the block
     id: BlockId,
@@ -111,7 +112,9 @@ impl UnsealedBlock {
 }
 
 /// The type of a parameter, either a layout or a single column's type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
+)]
 pub enum ParamType {
     /// A row type consisting of a [`LayoutId`]
     Row(LayoutId),

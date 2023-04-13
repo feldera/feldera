@@ -4,6 +4,7 @@ use crate::ir::{
     Function, Graph, GraphExt, LayoutId, NodeId, NodeIdGen, RowLayout, RowLayoutCache, Terminator,
 };
 use petgraph::prelude::DiGraphMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::max,
@@ -15,7 +16,7 @@ use std::{
 // TODO: Collect the highest block id and expression id for each function to
 // allow modifying (read: optimizing) functions
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SqlGraph {
     #[serde(flatten)]
     graph: Graph,

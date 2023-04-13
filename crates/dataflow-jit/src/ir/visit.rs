@@ -1,16 +1,19 @@
 use crate::ir::{
     nodes::{
         Antijoin, ConstantStream, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexWith, Integrate, JoinCore, Map, Min,
-        Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink, Source, SourceMap, Subgraph,
-        Sum,
+        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexWith, Integrate, JoinCore, Map, Max,
+        Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink, Source, SourceMap,
+        Subgraph, Sum,
     },
     GraphExt, NodeId,
 };
 
+// TODO: Derive macro to generate this
+
 pub trait NodeVisitor {
     fn visit_map(&mut self, _node_id: NodeId, _map: &Map) {}
     fn visit_min(&mut self, _node_id: NodeId, _min: &Min) {}
+    fn visit_max(&mut self, _node_id: NodeId, _max: &Max) {}
     fn visit_neg(&mut self, _node_id: NodeId, _neg: &Neg) {}
     fn visit_sum(&mut self, _node_id: NodeId, _sum: &Sum) {}
     fn visit_fold(&mut self, _node_id: NodeId, _fold: &Fold) {}
@@ -54,6 +57,7 @@ pub trait NodeVisitor {
 pub trait MutNodeVisitor {
     fn visit_map(&mut self, _node_id: NodeId, _map: &mut Map) {}
     fn visit_min(&mut self, _node_id: NodeId, _min: &mut Min) {}
+    fn visit_max(&mut self, _node_id: NodeId, _max: &mut Max) {}
     fn visit_neg(&mut self, _node_id: NodeId, _neg: &mut Neg) {}
     fn visit_sum(&mut self, _node_id: NodeId, _sum: &mut Sum) {}
     fn visit_fold(&mut self, _node_id: NodeId, _fold: &mut Fold) {}
@@ -107,6 +111,7 @@ impl Node {
         match self {
             Self::Map(map) => visitor.visit_map(node_id, map),
             Self::Min(min) => visitor.visit_min(node_id, min),
+            Self::Max(max) => visitor.visit_max(node_id, max),
             Self::Neg(neg) => visitor.visit_neg(node_id, neg),
             Self::Sum(sum) => visitor.visit_sum(node_id, sum),
             Self::Fold(fold) => visitor.visit_fold(node_id, fold),
@@ -151,6 +156,7 @@ impl Node {
         match self {
             Self::Map(map) => visitor.visit_map(node_id, map),
             Self::Min(min) => visitor.visit_min(node_id, min),
+            Self::Max(max) => visitor.visit_max(node_id, max),
             Self::Neg(neg) => visitor.visit_neg(node_id, neg),
             Self::Sum(sum) => visitor.visit_sum(node_id, sum),
             Self::Fold(fold) => visitor.visit_fold(node_id, fold),

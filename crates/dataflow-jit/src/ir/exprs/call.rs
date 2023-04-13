@@ -1,8 +1,9 @@
 use crate::ir::{ColumnType, ExprId, LayoutId};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The type of a function argument
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum ArgType {
     /// A row type
     Row(LayoutId),
@@ -64,7 +65,7 @@ impl ArgType {
 /// - `@dbsp.date.millisecond(date) -> i32`
 /// - `@dbsp.date.microsecond(date) -> i32`
 /// - `@dbsp.date.year(date) -> i32`
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub struct Call {
     /// The name of the function being called
     function: String,
