@@ -9,7 +9,7 @@ mod join;
 mod subgraph;
 mod sum;
 
-pub use aggregate::{Fold, Min, PartitionedRollingFold};
+pub use aggregate::{Fold, Max, Min, PartitionedRollingFold};
 pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
@@ -23,14 +23,16 @@ pub use sum::{Minus, Sum};
 use crate::ir::{function::Function, layout_cache::RowLayoutCache, LayoutId, NodeId};
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[enum_dispatch(DataflowNode)]
-#[derive(Debug, Clone, Deserialize, Serialize, IsVariant, Unwrap)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, IsVariant, Unwrap)]
 pub enum Node {
     Map(Map),
     Min(Min),
+    Max(Max),
     Neg(Neg),
     Sum(Sum),
     Fold(Fold),
@@ -121,6 +123,7 @@ pub trait DataflowNode {
     Hash,
     Deserialize,
     Serialize,
+    JsonSchema,
     IsVariant,
     Unwrap,
 )]
@@ -175,14 +178,25 @@ impl StreamLayout {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, IsVariant,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    IsVariant,
 )]
 pub enum StreamKind {
     Set,
     Map,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct Distinct {
     input: NodeId,
 }
@@ -236,7 +250,7 @@ impl DataflowNode for Distinct {
 }
 
 // FIXME: DelayedFeedback with maps
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct DelayedFeedback {
     layout: LayoutId,
 }
@@ -288,7 +302,7 @@ impl DataflowNode for DelayedFeedback {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Delta0 {
     input: NodeId,
 }
@@ -339,7 +353,7 @@ impl DataflowNode for Delta0 {
     fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Neg {
     input: NodeId,
     // FIXME: Neg should be able to operate over maps as well

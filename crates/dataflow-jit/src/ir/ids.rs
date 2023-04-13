@@ -1,5 +1,9 @@
 //! Defines id types used within the jit
 
+use schemars::{
+    schema::{InstanceType, Metadata, NumberValidation, Schema, SchemaObject},
+    JsonSchema,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::Cell,
@@ -10,7 +14,7 @@ use std::{
 
 /// Creates an id type and a corresponding id generator
 macro_rules! create_ids {
-    ($($name:ident = $prefix:literal),* $(,)?) => {
+    ($(#[doc = $doc:literal] $name:ident = $prefix:literal),* $(,)?) => {
         ::paste::paste! {
             $(
                 #[derive(
@@ -26,6 +30,7 @@ macro_rules! create_ids {
                 )]
                 #[serde(transparent)]
                 #[repr(transparent)]
+                #[doc = $doc]
                 pub struct $name(NonZeroU32);
 
                 #[automatically_derived]
@@ -70,6 +75,38 @@ macro_rules! create_ids {
                 impl Display for $name {
                     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                         write!(f, concat!($prefix, "{}"), self.0.get())
+                    }
+                }
+
+                impl JsonSchema for $name {
+                    fn schema_name() -> String {
+                        stringify!($name).to_owned()
+                    }
+
+                    fn json_schema(_gen: &mut schemars::gen::SchemaGenerator) -> Schema {
+                        let schema = SchemaObject {
+                            instance_type: Some(InstanceType::Integer.into()),
+                            format: Some("uint32".to_owned()),
+                            number: Some(Box::new(NumberValidation {
+                                // TODO: Does this correctly constrain the numbers to be integers?
+                                // From the standard: "The value of "multipleOf" MUST be a number,
+                                // strictly greater than 0. A numeric instance is valid only if
+                                // division by this keyword's value results in an integer."
+                                multiple_of: Some(1.0),
+                                minimum: Some(1.0),
+                                maximum: Some(u32::MAX as f64),
+                                ..Default::default()
+                            })),
+                            ..Default::default()
+                        };
+
+                        schemars::_private::apply_metadata(
+                            schema.into(),
+                            Metadata {
+                                description: Some($doc.to_owned()),
+                                ..Default::default()
+                            }
+                        )
                     }
                 }
 
@@ -133,9 +170,13 @@ macro_rules! create_ids {
 }
 
 create_ids! {
+    /// The id of a dataflow node
     NodeId   = "n",
+    /// The id of an expression
     ExprId   = "v",
     // FuncId   = "fn",
+    /// The id of a basic block
     BlockId  = "bb",
+    /// The id of a layout
     LayoutId = "layout",
 }

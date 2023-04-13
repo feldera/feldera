@@ -30,6 +30,7 @@ pub enum DataflowNode {
     Delta0(Delta0),
     DelayedFeedback(DelayedFeedback),
     Min(Min),
+    Max(Max),
     Distinct(Distinct),
     JoinCore(JoinCore),
     Subgraph(DataflowSubgraph),
@@ -186,6 +187,11 @@ pub struct MonotonicJoin {
 
 #[derive(Debug, Clone)]
 pub struct Min {
+    pub input: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct Max {
     pub input: NodeId,
 }
 

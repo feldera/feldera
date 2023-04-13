@@ -59,10 +59,12 @@
   - [x] Flat Map
   - [x] Fold
   - [ ] Linear aggregations
-  - [ ] Max aggregate
+  - [x] Max aggregate
   - [ ] Windows
 - [ ] Intrinsic functions
   - [ ] Proc macro for registering intrinsics
+  - [ ] `@dbsp.min()`
+  - [ ] `@dbsp.max()`
   - [x] `@dbsp.row.vec.push`
   - [ ] `@dbsp.row.vec.reserve`
   - [ ] String manipulation

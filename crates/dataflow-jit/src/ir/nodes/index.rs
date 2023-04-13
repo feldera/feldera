@@ -4,10 +4,11 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct IndexWith {
     input: NodeId,
     /// Expects a function with a signature of `fn(input_layout, mut key_layout,

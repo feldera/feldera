@@ -3,13 +3,14 @@ use crate::{
     ir::{function::InputFlags, LayoutId, RowLayoutCache},
 };
 use bitvec::vec::BitVec;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Write};
 
 macro_rules! column_type {
     ($($(#[$meta:meta])* $column_ty:ident = ($display:literal, $native_ty:expr)),+ $(,)?) => {
         /// The type of a single column within a row
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, JsonSchema)]
         pub enum ColumnType {
             $(
                 $(#[$meta])*
@@ -359,7 +360,17 @@ impl Display for RowLayout {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+impl JsonSchema for RowLayout {
+    fn schema_name() -> String {
+        "RowLayout".to_owned()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        SerRowLayout::json_schema(gen)
+    }
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
 struct SerRowLayout {
     columns: Vec<SerColumnLayout>,
 }
@@ -392,7 +403,7 @@ impl From<SerRowLayout> for RowLayout {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 struct SerColumnLayout {
     ty: ColumnType,
     nullable: bool,

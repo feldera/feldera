@@ -1,9 +1,10 @@
 use crate::ir::{ColumnType, ExprId};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A binary operation, see [`BinaryOpKind`] for the possible kinds of
 /// operations being performed
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct BinaryOp {
     /// The left hand value
     lhs: ExprId,
@@ -52,7 +53,7 @@ impl BinaryOp {
 }
 
 /// The kind of binary operation being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum BinaryOpKind {
     /// Addition
     Add,

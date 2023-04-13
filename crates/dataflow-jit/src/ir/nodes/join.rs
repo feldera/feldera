@@ -4,10 +4,11 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct JoinCore {
     lhs: NodeId,
     rhs: NodeId,
@@ -124,7 +125,7 @@ impl DataflowNode for JoinCore {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct MonotonicJoin {
     lhs: NodeId,
     rhs: NodeId,
@@ -213,7 +214,7 @@ impl DataflowNode for MonotonicJoin {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Antijoin {
     lhs: NodeId,
     rhs: NodeId,

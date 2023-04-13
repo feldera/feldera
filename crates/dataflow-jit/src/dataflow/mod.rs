@@ -6,7 +6,7 @@ use crate::{
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
         FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn,
-        Min, Minus, Noop, PartitionedRollingFold,
+        Max, Min, Minus, Noop, PartitionedRollingFold,
     },
     ir::{
         graph,
@@ -398,6 +398,7 @@ impl CompiledDataflow {
                     },
 
                     Node::Min(_)
+                    | Node::Max(_)
                     | Node::Distinct(_)
                     | Node::Delta0(_)
                     | Node::DelayedFeedback(_)
@@ -726,6 +727,10 @@ impl CompiledDataflow {
 
                     Node::Min(min) => {
                         nodes.insert(*node_id, DataflowNode::Min(Min { input: min.input() }));
+                    }
+
+                    Node::Max(max) => {
+                        nodes.insert(*node_id, DataflowNode::Max(Max { input: max.input() }));
                     }
 
                     Node::Distinct(distinct) => {
@@ -1183,6 +1188,16 @@ impl CompiledDataflow {
                     streams.insert(node_id, min);
                 }
 
+                DataflowNode::Max(max) => {
+                    let max = match &streams[&max.input] {
+                        RowStream::Set(_) => todo!(),
+                        RowStream::Map(input) => {
+                            RowStream::Map(input.aggregate_generic(dbsp::operator::Max))
+                        }
+                    };
+                    streams.insert(node_id, max);
+                }
+
                 DataflowNode::Fold(fold) => {
                     let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
                     let (acc_vtable, step_vtable, output_vtable) =
@@ -1638,6 +1653,16 @@ impl CompiledDataflow {
                                 }
                             };
                             substreams.insert(node_id, min);
+                        }
+
+                        DataflowNode::Max(max) => {
+                            let max = match &substreams[&max.input] {
+                                RowStream::Set(_) => todo!(),
+                                RowStream::Map(input) => {
+                                    RowStream::Map(input.aggregate_generic(dbsp::operator::Max))
+                                }
+                            };
+                            substreams.insert(node_id, max);
                         }
 
                         DataflowNode::Fold(fold) => {

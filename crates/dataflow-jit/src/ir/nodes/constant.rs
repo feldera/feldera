@@ -4,10 +4,11 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct ConstantStream {
     value: StreamLiteral,
     layout: StreamLayout,

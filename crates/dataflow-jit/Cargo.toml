@@ -32,7 +32,13 @@ cranelift-codegen = { version = "0.94.0", features = ["unwind"] }
 petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 
+# JSON schema validation
+# TODO: Feature-gate schema support
+schemars = "0.8.12"
+jsonschema = "0.17.0"
+
 # FIXME: Better serialization protocol
+# TODO: Feature gate serde/json support
 serde_with = "2.2.0"
 serde_json = "1.0.92"
 serde = { version = "1.0.152", features = ["derive"] }

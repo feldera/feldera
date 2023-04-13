@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 
@@ -84,5 +85,27 @@ impl From<InputFlags> for &'static str {
 impl From<InputFlags> for String {
     fn from(flags: InputFlags) -> Self {
         <&'static str>::from(flags).to_owned()
+    }
+}
+
+impl JsonSchema for InputFlags {
+    fn schema_name() -> String {
+        "InputFlags".to_owned()
+    }
+
+    fn json_schema(_gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            enum_values: Some(vec![
+                serde_json::Value::String("input".to_owned()),
+                serde_json::Value::String("output".to_owned()),
+                serde_json::Value::String("inout".to_owned()),
+            ]),
+            metadata: Some(Box::new(schemars::schema::Metadata {
+                description: Some("A flag associated with a function parameter".to_owned()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        })
     }
 }

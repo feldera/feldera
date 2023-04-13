@@ -6,10 +6,11 @@ use crate::ir::{
     LayoutId, NodeId,
 };
 use petgraph::prelude::DiGraphMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Subgraph {
     // A map of external nodes to their subgraph import nodes
     inputs: BTreeMap<NodeId, NodeId>,

@@ -3,10 +3,11 @@ use crate::ir::{
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Export {
     input: NodeId,
     layout: StreamLayout,
@@ -65,7 +66,7 @@ impl DataflowNode for Export {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ExportedNode {
     subgraph: NodeId,
     input: NodeId,
@@ -135,7 +136,7 @@ impl DataflowNode for ExportedNode {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Source {
     /// The type of the source's produced stream
     layout: LayoutId,
@@ -189,7 +190,7 @@ impl DataflowNode for Source {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SourceMap {
     key_layout: LayoutId,
     value_layout: LayoutId,
@@ -253,7 +254,7 @@ impl DataflowNode for SourceMap {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sink {
     input: NodeId,
 }
