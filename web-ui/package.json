@@ -21,7 +21,8 @@
     "start": "next start",
     "export": "next export",
     "lint": "eslint --fix \"src/**/*.{js,jsx,ts,tsx}\"",
-    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\""
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
+    "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/types/manager && rm ./openapi.json"
   },
   "dependencies": {
     "@emotion/cache": "^11.10.7",
@@ -42,7 +43,7 @@
     "csv-parse": "^5.3.6",
     "d3-format": "^3.1.0",
     "mdi-material-ui": "^7.1.0",
-    "next": "13",
+    "next": "13.2.4",
     "nprogress": "^0.2.0",
     "react": "18.2.0",
     "react-apexcharts": "^1.4.0",
@@ -67,7 +68,7 @@
     "@typescript-eslint/eslint-plugin": "^5.47.1",
     "@typescript-eslint/parser": "^5.47.1",
     "eslint": "^8.30.0",
-    "eslint-config-next": "13.1.1",
+    "eslint-config-next": "13.2.4",
     "eslint-config-prettier": "^8.5.0",
     "eslint-import-resolver-alias": "^1.1.2",
     "eslint-import-resolver-typescript": "^3.5.2",

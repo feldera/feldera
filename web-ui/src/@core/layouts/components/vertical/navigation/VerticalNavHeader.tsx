@@ -1,10 +1,13 @@
 import { ReactNode } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import Box, { BoxProps } from '@mui/material/Box'
 import { styled } from '@mui/material/styles'
 import Typography, { TypographyProps } from '@mui/material/Typography'
 import { Settings } from 'src/@core/context/settingsContext'
 import themeConfig from 'src/configs/themeConfig'
+import darkLogo from 'public/images/dbsp-primary-dark.svg'
+import lightLogo from 'public/images/dbsp-primary-main.svg'
 
 interface Props {
   hidden: boolean
@@ -39,7 +42,7 @@ const StyledLink = styled(Link)({
 
 const VerticalNavHeader = (props: Props) => {
   const { verticalNavMenuBranding: userVerticalNavMenuBranding } = props
-  const logo = props.settings.mode === 'dark' ? '/images/dbsp-primary-dark.svg' : '/images/dbsp-primary-main.svg'
+  const logo = props.settings.mode === 'dark' ? darkLogo : lightLogo
 
   return (
     <MenuHeaderWrapper className='nav-header' sx={{ pl: 6 }}>
@@ -47,7 +50,7 @@ const VerticalNavHeader = (props: Props) => {
         userVerticalNavMenuBranding(props)
       ) : (
         <StyledLink href='/' passHref>
-          <img src={logo} alt='Logo' width={30} height={25} />
+          <Image src={logo} alt='Logo' width={30} height={25} />
           <HeaderTitle variant='h6' sx={{ ml: 3 }}>
             {themeConfig.templateName}
           </HeaderTitle>

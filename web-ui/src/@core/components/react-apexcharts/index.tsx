@@ -1,7 +1,7 @@
-// ** Next Import
-import dynamic from 'next/dynamic'
+"use client";
+import dynamic from "next/dynamic";
+const Chart = dynamic(() => import("react-apexcharts"), { ssr: false });
 
-// ! To avoid 'Window is not defined' error
-const ReactApexcharts = dynamic(() => import('react-apexcharts'), { ssr: false })
-
-export default ReactApexcharts
+export default function ReactApexCharts(props: any) {
+  return <Chart {...props} />;
+}

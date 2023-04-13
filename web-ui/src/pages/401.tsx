@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import Button from '@mui/material/Button'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
@@ -7,13 +8,16 @@ import Box, { BoxProps } from '@mui/material/Box'
 import BlankLayout from 'src/@core/layouts/BlankLayout'
 import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
+import Img401 from 'public/images/pages/401.png'
+
+
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '90vw'
   }
 }))
 
-const Img = styled('img')(({ theme }) => ({
+const Img = styled(Image)(({ theme }) => ({
   marginBottom: theme.spacing(10),
   [theme.breakpoints.down('lg')]: {
     height: 450,
@@ -38,7 +42,7 @@ const Error401 = () => {
           </Typography>
           <Typography variant='body2'>You don&prime;t have permission to access this page.</Typography>
         </BoxWrapper>
-        <Img height='487' alt='error-illustration' src='/images/pages/401.png' />
+        <Img height='487' alt='error-illustration' src={Img401} />
         <Button component={Link} href='/' variant='contained' sx={{ px: 5.5 }}>
           Back to Home
         </Button>

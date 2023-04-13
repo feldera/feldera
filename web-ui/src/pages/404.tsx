@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import Button from '@mui/material/Button'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
@@ -7,13 +8,16 @@ import Box, { BoxProps } from '@mui/material/Box'
 import BlankLayout from 'src/@core/layouts/BlankLayout'
 import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
+import Img404 from 'public/images/pages/404.png'
+import Tree from 'public/images/pages/tree.png'
+
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '90vw'
   }
 }))
 
-const Img = styled('img')(({ theme }) => ({
+const Img = styled(Image)(({ theme }) => ({
   marginBottom: theme.spacing(10),
   [theme.breakpoints.down('lg')]: {
     height: 450,
@@ -27,7 +31,7 @@ const Img = styled('img')(({ theme }) => ({
   }
 }))
 
-const TreeIllustration = styled('img')(({ theme }) => ({
+const TreeIllustration = styled(Image)(({ theme }) => ({
   left: 0,
   bottom: '5rem',
   position: 'absolute',
@@ -47,12 +51,12 @@ const Error404 = () => {
           </Typography>
           <Typography variant='body2'>We couldn&prime;t find the page you are looking for.</Typography>
         </BoxWrapper>
-        <Img height='487' alt='error-illustration' src='/images/pages/404.png' />
+        <Img height='487' alt='error-illustration' src={Img404} />
         <Button component={Link} href='/' variant='contained' sx={{ px: 5.5 }}>
           Back to Home
         </Button>
       </Box>
-      <FooterIllustrations image={<TreeIllustration alt='tree' src='/images/pages/tree.png' />} />
+      <FooterIllustrations image={<TreeIllustration alt='tree' src={Tree} />} />
     </Box>
   )
 }
