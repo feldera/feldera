@@ -65,6 +65,7 @@
   - [ ] Proc macro for registering intrinsics
   - [ ] `@dbsp.min()`
   - [ ] `@dbsp.max()`
+  - [x] `@dbsp.error.abort()`
   - [x] `@dbsp.row.vec.push`
   - [ ] `@dbsp.row.vec.reserve`
   - [ ] String manipulation

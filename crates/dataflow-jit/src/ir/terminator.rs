@@ -14,8 +14,8 @@ pub enum Terminator {
     Jump(Jump),
     Branch(Branch),
     Return(Return),
+    Unreachable,
     // TODO: Switch
-    // TODO: Unreachable could be useful in the future
 }
 
 impl Terminator {
@@ -35,6 +35,14 @@ impl Terminator {
     #[must_use]
     pub const fn is_return(&self) -> bool {
         matches!(self, Self::Return(_))
+    }
+
+    /// Returns `true` if the terminator is [`Unreachable`].
+    ///
+    /// [`Unreachable`]: Terminator::Unreachable
+    #[must_use]
+    pub const fn is_unreachable(&self) -> bool {
+        matches!(self, Self::Unreachable)
     }
 
     #[must_use]

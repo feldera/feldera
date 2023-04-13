@@ -498,6 +498,7 @@ impl FunctionBuilder {
         }
     }
 
+    // TODO: Make sure all params are of correct type and that they exist
     #[track_caller]
     fn validate_terminator(&self, block: BlockId, terminator: &Terminator) {
         match &terminator {
@@ -525,7 +526,7 @@ impl FunctionBuilder {
                 );
             }
 
-            Terminator::Return(_) => {}
+            Terminator::Return(_) | Terminator::Unreachable => {}
         }
     }
 
@@ -571,6 +572,8 @@ impl FunctionBuilder {
                 Terminator::Return(_) => {
                     cfg.add_node(block_id);
                 }
+
+                Terminator::Unreachable => {}
             }
         }
 

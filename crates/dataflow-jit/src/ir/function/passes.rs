@@ -125,7 +125,7 @@ impl Function {
                         Terminator::Branch(branch) => {
                             stack.extend([branch.truthy(), branch.falsy()]);
                         }
-                        Terminator::Return(_) => {}
+                        Terminator::Return(_) | Terminator::Unreachable => {}
                     }
                 }
             }
@@ -217,17 +217,24 @@ impl Function {
                 }
 
                 match block.terminator() {
-                    Terminator::Jump(_) => {}
+                    Terminator::Jump(jump) => used.extend(jump.params().iter().copied()),
+
                     Terminator::Branch(branch) => {
+                        used.extend(branch.true_params().iter().copied());
+                        used.extend(branch.false_params().iter().copied());
+
                         if let &RValue::Expr(cond) = branch.cond() {
                             used.insert(cond);
                         }
                     }
+
                     Terminator::Return(ret) => {
                         if let &RValue::Expr(ret) = ret.value() {
                             used.insert(ret);
                         }
                     }
+
+                    Terminator::Unreachable => {}
                 }
             }
 
@@ -447,7 +454,7 @@ impl Function {
             });
 
             match block.terminator_mut() {
-                Terminator::Return(_) => {}
+                Terminator::Return(_) | Terminator::Unreachable => {}
                 Terminator::Jump(jump) => stack.push(jump.target()),
                 Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
             }
@@ -489,14 +496,35 @@ impl Function {
                                 *branch.cond_mut() = RValue::Expr(subst);
                             }
                         }
+
+                        for param in branch.true_params_mut() {
+                            if let Some(&subst) = substitutions.get(param) {
+                                *param = subst;
+                            }
+                        }
+
+                        for param in branch.false_params_mut() {
+                            if let Some(&subst) = substitutions.get(param) {
+                                *param = subst;
+                            }
+                        }
                     }
 
-                    Terminator::Jump(_) => {}
+                    Terminator::Jump(jump) => {
+                        for param in jump.params_mut() {
+                            if let Some(&subst) = substitutions.get(param) {
+                                *param = subst;
+                            }
+                        }
+                    }
+
+                    Terminator::Unreachable => {}
                 }
             }
         }
     }
 
+    // TODO: Eliminate unit basic block args
     fn remove_unit_memory_operations(&mut self, layout_cache: &RowLayoutCache) {
         let mut unit_exprs = BTreeSet::new();
         let mut row_exprs = BTreeMap::new();
@@ -580,6 +608,7 @@ impl Function {
 
                 Terminator::Jump(jump) => stack.push(jump.target()),
                 Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
+                Terminator::Unreachable => {}
             }
         }
     }

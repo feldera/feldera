@@ -153,6 +153,8 @@ impl SqlGraph {
                         Terminator::Return(_) => {
                             cfg.add_node(block_id);
                         }
+
+                        Terminator::Unreachable => {}
                     }
                 }
 

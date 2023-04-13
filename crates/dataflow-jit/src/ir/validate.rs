@@ -650,6 +650,17 @@ impl FunctionValidator {
         assert_eq!(actual_arg_types, call.arg_types());
 
         match call.function() {
+            "dbsp.error.abort" => {
+                if !call.args().is_empty() {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 0,
+                        args: call.args().len(),
+                    });
+                }
+            }
+
             "dbsp.row.vec.push" => {
                 if call.args().len() != 2 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
