@@ -1,6 +1,7 @@
 use crate::{
     codegen::{
-        utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ASSERT_EQ, TRAP_CAPACITY_OVERFLOW,
+        utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT, TRAP_ASSERT_EQ,
+        TRAP_CAPACITY_OVERFLOW,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
@@ -11,6 +12,8 @@ use std::mem::align_of;
 impl CodegenCtx<'_> {
     pub(super) fn call(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
         match call.function() {
+            "dbsp.error.abort" => self.error_abort(builder),
+
             // fn(*mut {vec_ptr, row_vtable}, row_value)
             "dbsp.row.vec.push" => self.row_vec_push(call, builder),
 
@@ -97,6 +100,16 @@ impl CodegenCtx<'_> {
             }
 
             unknown => todo!("unknown function call: @{unknown}"),
+        }
+    }
+
+    fn error_abort(&self, builder: &mut FunctionBuilder<'_>) {
+        let trap = builder.ins().trap(TRAP_ABORT);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer
+                .borrow_mut()
+                .add_comment(trap, "call @dbsp.error.abort()");
         }
     }
 

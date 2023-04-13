@@ -58,6 +58,7 @@ const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
 const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
+const TRAP_ABORT: TrapCode = TrapCode::User(6);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -893,6 +894,14 @@ impl<'a> CodegenCtx<'a> {
             }
 
             Terminator::Branch(branch) => self.branch(branch, stack, builder),
+
+            Terminator::Unreachable => {
+                let unreachable = builder.ins().trap(TrapCode::UnreachableCodeReached);
+
+                if let Some(writer) = self.comment_writer.as_deref() {
+                    writer.borrow_mut().add_comment(unreachable, "unreachable");
+                }
+            }
         }
     }
 
