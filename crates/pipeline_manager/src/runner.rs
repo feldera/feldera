@@ -12,7 +12,6 @@ use actix_web_actors::ws::handshake;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use awc::Client;
 use futures_util::StreamExt;
-use log::error;
 use regex::Regex;
 use serde::Serialize;
 use std::{
@@ -20,7 +19,7 @@ use std::{
 };
 use tokio::{
     fs,
-    fs::{create_dir_all, remove_dir_all, remove_file, File},
+    fs::{create_dir_all, remove_dir_all, File},
     io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncWriteExt, BufReader, SeekFrom},
     process::{Child, Command},
     sync::Mutex,
@@ -64,18 +63,9 @@ impl StdError for RunnerError {}
 /// To stop the pipeline, the runner sends a `/kill` HTTP request to the
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
-///
-/// # Prometheus
-///
-/// The runner registers pipelines with Prometheus using the
-/// `file_sd_config` mechanism.  When creating a pipeline, the runner
-/// creates a Prometheus target config file in a directory, which Prometheus
-/// monitors.
 pub struct Runner {
     db: Arc<Mutex<ProjectDB>>,
     config: ManagerConfig,
-    // TODO: The Prometheus server should be isntantiated and managed by k8s.
-    prometheus_server: Option<Child>,
 }
 
 /// Pipeline metadata.
@@ -95,75 +85,12 @@ struct PipelineMetadata {
     code: String,
 }
 
-impl Drop for Runner {
-    fn drop(&mut self) {
-        if let Some(mut prometheus) = self.prometheus_server.take() {
-            let _ = prometheus.start_kill();
-        }
-    }
-}
-
 impl Runner {
     pub(crate) async fn new(db: Arc<Mutex<ProjectDB>>, config: &ManagerConfig) -> AnyResult<Self> {
-        // Initialize Prometheus.
-        let prometheus_server = Self::start_prometheus(config).await?;
         Ok(Self {
             db,
             config: config.clone(),
-            prometheus_server,
         })
-    }
-
-    async fn start_prometheus(config: &ManagerConfig) -> AnyResult<Option<Child>> {
-        // Create `prometheus` dir before starting any pipelines so that the
-        // Prometheus server can locate the directory to scan.
-        let prometheus_dir = config.prometheus_dir();
-        create_dir_all(&prometheus_dir).await.map_err(|e| {
-            AnyError::msg(format!(
-                "error creating Prometheus configs directory '{}': {e}",
-                prometheus_dir.display()
-            ))
-        })?;
-
-        // FIXME: This should be handled by the deployment infrastructure.
-        if config.with_prometheus {
-            // Prometheus server configuration.
-            let prometheus_config = format!(
-                r#"
-global:
-  scrape_interval: 5s
-
-scrape_configs:
-  - job_name: dbsp
-    file_sd_configs:
-    - files:
-      - '{}/pipeline*.yaml'
-"#,
-                prometheus_dir.display()
-            );
-            let prometheus_config_file = config.prometheus_server_config_file();
-            fs::write(&prometheus_config_file, prometheus_config)
-                .await
-                .map_err(|e| {
-                    AnyError::msg(format!(
-                        "error writing Prometheus config file '{}': {e}",
-                        prometheus_config_file.display()
-                    ))
-                })?;
-
-            // Start the Prometheus server, which will
-            // inherit stdout, stderr from us.
-            let prometheus_process = Command::new("prometheus")
-                .arg("--config.file")
-                .arg(&prometheus_config_file)
-                .stdin(Stdio::null())
-                .spawn()
-                .map_err(|e| AnyError::msg(format!("failed to start Prometheus server, {e}")))?;
-
-            Ok(Some(prometheus_process))
-        } else {
-            Ok(None)
-        }
     }
 
     /// Start a new pipeline.
@@ -219,22 +146,6 @@ scrape_configs:
                 };
                 let json_string =
                     serde_json::to_string(&NewPipelineResponse { pipeline_id, port }).unwrap();
-
-                // Create Prometheus config file for the pipeline.
-                // The Prometheus server should pick up this file automatically.
-                self.create_prometheus_config(
-                    &project_descr.name,
-                    config_descr.project_id.unwrap(),
-                    pipeline_id,
-                    port,
-                )
-                .await
-                .unwrap_or_else(|e| {
-                    // Don't abandon pipeline, just log the error.
-                    error!(
-                        "Failed to create Prometheus config file for pipeline '{pipeline_id}': {e}"
-                    );
-                });
 
                 Ok(HttpResponse::Ok()
                     .content_type(mime::APPLICATION_JSON)
@@ -393,68 +304,6 @@ scrape_configs:
         }
     }
 
-    /// Create Prometheus config file for a pipeline.
-    async fn create_prometheus_config(
-        &self,
-        project_name: &str,
-        project_id: ProjectId,
-        pipeline_id: PipelineId,
-        port: u16,
-    ) -> AnyResult<()> {
-        let config = format!(
-            r#"- targets: [ "localhost:{port}" ]
-  labels:
-    project_name: "{project_name}"
-    pipeline_id: {pipeline_id}
-    project_id: {project_id}"#
-        );
-        fs::write(
-            self.config.prometheus_pipeline_config_file(pipeline_id),
-            config,
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    /*
-    async fn create_topics(&self, config_yaml: &str) -> AnyResult<(KafkaResources, String)> {
-        let mut config: ControllerConfig = serde_yaml::from_str(config_yaml)
-            .map_err(|e| AnyError::msg(format!("error parsing pipeline configuration: {e}")))?;
-
-        for (_, input_config) in config.inputs.iter_mut() {
-            if input_config.transport.name == "kafka" {
-                if let Some(topics) = input_config.transport.config.get("topics") {
-                    let topics_string = serde_yaml::to_string(topics);
-                    let topics: Vec<String> = serde_yaml::from_value(topics)
-                        .map_err(|e| AnyError::msg(format!("error parsing Kafka topic list '{topics_string}': {e}")))?;
-                    for topic in topics.iter_mut() {
-                        if topic == "?" {
-                            *topic = self.generate_topic_name("input_");
-                        }
-                    }
-                    input_config.transport.config.set("topics", serde_yaml::to_value(topics))
-                }
-            }
-        }
-
-        for (_, output_config) in config.outputs.iter_mut() {
-            if input_config.transport.name == "kafka" {
-                if let Some(YamlValue::String(topic) = input_config.transport.config.get_mut("topic") {
-                    if topic == "?" {
-                        topic = Self::generate_topic_name("output_");
-                    }
-                }
-            }
-        }
-
-        let new_config = serde_yaml::to_string(config);
-
-        Ok((kafka_resources, new_config))
-
-    }
-    */
-
     async fn log_suffix_inner(log_file_path: &Path) -> AnyResult<String> {
         let mut buf = Vec::with_capacity(LOG_SUFFIX_LEN as usize);
 
@@ -479,8 +328,7 @@ scrape_configs:
     /// state in the database and file system.
     ///
     /// After calling this method, the user can still do post-mortem analysis
-    /// of the pipeline, e.g., access its logs or study its performance
-    /// metrics in Prometheus.
+    /// of the pipeline, e.g., access its logs.
     ///
     /// Use the [`delete_pipeline`](`Self::delete_pipeline`) method to remove
     /// all traces of the pipeline from the manager.
@@ -547,11 +395,6 @@ scrape_configs:
         if !response.status().is_success() {
             return Ok(response);
         }
-
-        // TODO: Delete temporary topics.
-
-        // Delete Prometheus config.
-        let _ = remove_file(self.config.prometheus_pipeline_config_file(pipeline_id)).await;
 
         // Delete pipeline directory.
         remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
