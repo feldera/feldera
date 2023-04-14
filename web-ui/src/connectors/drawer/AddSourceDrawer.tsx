@@ -14,7 +14,7 @@ import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } 
 import { useState, Dispatch, useEffect } from 'react'
 import { AttachedConnector, ConnectorId, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
-import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/data'
+import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/connectors'
 import { randomString } from 'src/utils'
 import useAddIoNode from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'

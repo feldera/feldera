@@ -23,7 +23,7 @@ import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
-import { connectorTypeToConfig, connectorToFormSchema } from 'src/types/data'
+import { connectorTypeToConfig, connectorToFormSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 

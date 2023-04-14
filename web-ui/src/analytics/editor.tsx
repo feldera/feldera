@@ -6,7 +6,7 @@ import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
 import Divider from '@mui/material/Divider'
-import { Card, CardHeader, CardContent, FormHelperText } from '@mui/material'
+import { Card, CardHeader, CardContent, FormHelperText, useTheme } from '@mui/material'
 import FormControl from '@mui/material/FormControl'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import PageHeader from 'src/layouts/components/page-header'
@@ -444,10 +444,13 @@ const useDisplayCompilerErrosInEditor = (project: ProgramState, editorRef: Mutab
 }
 
 const Editors = (props: { program: ProgramState }) => {
+  const theme = useTheme()
   const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
   const [state, setState] = useState<SaveIndicatorState>(props.program.project_id ? 'isNew' : 'isUpToDate')
   const [project, setProject] = useState<ProgramState>(props.program)
   const [formError, setFormError] = useState<FormError>({})
+
+  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
 
   useCreateProjectIfNew(state, project, setProject, setState, setFormError)
   useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion)
@@ -496,7 +499,7 @@ const Editors = (props: { program: ProgramState }) => {
           <CardContent>
             <Editor
               height='60vh'
-              theme='vs-dark'
+              theme={vscodeTheme}
               defaultLanguage='sql'
               value={project.code}
               onChange={updateCode}
