@@ -32,6 +32,17 @@ jobs:
           sleep 10 && \
           docker run --name test --network test --rm dbspmanager bash -c "/database-stream-processor/deploy/integration-tests.sh dbsp:8080"
 
+      - uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: "v0.11.1"
+          skipClusterCreation: "true"
+
+      - name: Set up kind
+        run: cd deploy/kind && ./setup.sh && ./setup.sh 
+        
+      - name: Deploy DBSP
+        run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
+      
       - name: Log in to the Container registry
         if: github.event_name == 'release'
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9

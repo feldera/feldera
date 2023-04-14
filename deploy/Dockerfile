@@ -30,11 +30,9 @@ RUN cd /database-stream-processor && \
     then git submodule update --init; fi
 
 RUN cd /database-stream-processor/crates/pipeline_manager \
+    && ~/.cargo/bin/cargo make openapi_python \
     && ~/.cargo/bin/cargo install --path . \
     && rm -rf /database-stream-processor/target .git
-
-RUN cd /database-stream-processor/crates/pipeline_manager \
-    && ~/.cargo/bin/cargo make openapi_python
 
 RUN cd /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
