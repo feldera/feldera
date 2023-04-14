@@ -1,4 +1,6 @@
-// A create/update dialog window for the CSV file connector.
+// A create/update dialog window for a untyped/unknown connector.
+//
+// It just has an editor for the YAML config.
 
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'

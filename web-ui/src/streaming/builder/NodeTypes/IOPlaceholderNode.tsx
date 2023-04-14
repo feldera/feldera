@@ -1,3 +1,6 @@
+// The placeholder for inputs, opens the drawer to add input connectors on a
+// click.
+
 import React, { memo } from 'react'
 import { NodeProps } from 'reactflow'
 import useIOPlaceholderClick from '../hooks/useIOPlaceholderClick'

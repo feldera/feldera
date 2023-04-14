@@ -1,3 +1,6 @@
+// OutputNodes are displayed on the right and connected with views of the
+// program.
+
 import CardHeader from '@mui/material/CardHeader'
 import Avatar from '@mui/material/Avatar'
 import { Position, NodeProps, Connection, useReactFlow } from 'reactflow'

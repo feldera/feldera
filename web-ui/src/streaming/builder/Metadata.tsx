@@ -1,3 +1,5 @@
+// Form to edit the name and description of a config.
+
 import { FormControl, FormHelperText, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import useDebouncedSave from './hooks/useDebouncedSave'

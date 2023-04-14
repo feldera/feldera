@@ -1,3 +1,5 @@
+// The placeholder node to select a program.
+
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
 import { Icon } from '@iconify/react'

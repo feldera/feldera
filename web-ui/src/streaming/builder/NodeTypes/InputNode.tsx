@@ -1,3 +1,5 @@
+// InputNodes are on the left and connect to tables of the program.
+
 import { useEffect, useState } from 'react'
 import CardHeader from '@mui/material/CardHeader'
 import Avatar from '@mui/material/Avatar'

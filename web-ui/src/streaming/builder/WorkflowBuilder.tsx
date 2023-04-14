@@ -1,3 +1,6 @@
+// The pipeline builder lets you configure a pipeline by adding connectors to
+// tables and views of a program.
+
 import React, { useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,

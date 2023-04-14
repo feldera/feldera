@@ -1,3 +1,6 @@
+// State for the pipeline builder, contains everything we'll eventually send to
+// the server for creating a pipeline.
+
 import { ProjectWithSchema } from 'src/types/program'
 import { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { create } from 'zustand'
