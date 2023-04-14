@@ -64,6 +64,20 @@ transactions = """
 2008-01-04 04:23:04,4082400842710944,381,2,89.9,c0c039baa4d0e62e4b16e0690ac54313,1199449384,42.331448,-70.495846,0
 """
 
+expected = b"""
+2008-01-03 05:38:14,4082400842710944.0,169,418,1
+2008-01-04 00:58:43,4082400842710944.0,169,418,1
+2008-01-04 04:23:04,4082400842710944.0,169,418,1
+2008-01-01 01:11:21,4251354278496.0,351,599,1
+2008-01-01 05:27:47,4251354278496.0,351,599,1
+2008-01-01 07:34:11,4251354278496.0,351,599,1
+2008-01-01 05:01:11,2222913619399092.0,24,711,1
+2008-01-01 05:07:11,2222913619399092.0,24,711,1
+2008-01-02 09:43:16,4824771093241.0,199,297,1
+2008-01-02 11:08:47,4824771093241.0,199,297,1
+2008-01-02 11:10:37,4824771093241.0,199,297,1
+"""
+
 sql_code = """
 CREATE TABLE demographics (
     cc_num FLOAT64 NOT NULL,
@@ -107,17 +121,17 @@ async def send(uri, data):
     async with websockets.connect(uri) as websocket:
         await websocket.send(data)
 
-async def recv(uri):
-    async with websockets.connect(uri) as websocket:
-        message = await websocket.recv()
-
 async def do(connector_endpoints):
-    output = asyncio.create_task(recv(connector_endpoints["TRANSACTIONS_WITH_DEMOGRAPHICS"]))
-    input1 = asyncio.create_task(send(connector_endpoints["DEMOGRAPHICS"], ("01234567" + demographics).encode()))
-    input2 = asyncio.create_task(send(connector_endpoints["TRANSACTIONS"], ("01234567" + transactions).encode()))
-    await input1
-    await input2
-    await output
+    output_uri = connector_endpoints["TRANSACTIONS_WITH_DEMOGRAPHICS"]
+    input_d = connector_endpoints["DEMOGRAPHICS"]
+    input_t = connector_endpoints["TRANSACTIONS"]
+    async with websockets.connect(output_uri) as websocket:
+        input1 = asyncio.create_task(send(input_d, ("01234567" + demographics).encode()))
+        input2 = asyncio.create_task(send(input_t, ("01234567" + transactions).encode()))
+        await input1
+        await input2
+        message = await websocket.recv()
+        assert message.strip() == expected.strip()
 
 def main():
     url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
