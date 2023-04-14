@@ -1,4 +1,5 @@
 //! The implementation of the persistent trace.
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -38,6 +39,9 @@ where
     upper: Antichain<B::Time>,
     dirty: bool,
     approximate_len: usize,
+
+    lower_key_bound: Option<B::Key>,
+    lower_val_bound: Option<B::Val>,
 
     /// Where all the dataz is.
     #[size_of(skip)]
@@ -226,7 +230,20 @@ where
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        PersistentTraceCursor::new(&self.cf)
+        let mut cursor = PersistentTraceCursor::new(&self.cf);
+        if let Some(bound) = &self.lower_key_bound {
+            cursor.seek_key(bound);
+        }
+        cursor
+    }
+
+    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
+        let bound = if let Some(bound) = &self.lower_key_bound {
+            max(bound, lower_bound).clone()
+        } else {
+            lower_bound.clone()
+        };
+        self.lower_key_bound = Some(bound);
     }
 }
 
@@ -566,6 +583,8 @@ where
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
             approximate_len: 0,
+            lower_key_bound: None,
+            lower_val_bound: None,
             dirty: false,
             cf,
             cf_name,
@@ -651,6 +670,18 @@ where
 
     fn dirty(&self) -> bool {
         self.dirty
+    }
+
+    fn truncate_values_below(&mut self, lower_bound: &Self::Val) {
+        self.lower_val_bound = Some(if let Some(bound) = &self.lower_val_bound {
+            max(bound, lower_bound).clone()
+        } else {
+            lower_bound.clone()
+        });
+    }
+
+    fn lower_value_bound(&self) -> &Option<Self::Val> {
+        &self.lower_val_bound
     }
 }
 

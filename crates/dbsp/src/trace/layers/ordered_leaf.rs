@@ -248,9 +248,9 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
     ) -> usize {
         let trie1 = cursor1.storage;
         let trie2 = cursor2.storage;
-        let mut lower1 = cursor1.bounds.0;
+        let mut lower1 = cursor1.pos;
         let upper1 = cursor1.bounds.1;
-        let mut lower2 = cursor2.bounds.0;
+        let mut lower2 = cursor2.pos;
         let upper2 = cursor2.bounds.1;
 
         self.vals.reserve((upper1 - lower1) + (upper2 - lower2));
@@ -369,7 +369,7 @@ where
         let mut cursor: OrderedLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
-            let (key, val) = cursor.key();
+            let (key, val) = cursor.item();
             writeln!(f, "{key:?} -> {val:?}")?;
             cursor.step();
         }
@@ -378,33 +378,24 @@ where
     }
 }
 
-impl<'s, K, R> OrderedLeafCursor<'s, K, R>
-where
-    K: Eq + Ord + Clone,
-    R: Clone,
-{
-    pub fn seek_key(&mut self, key: &K) {
-        self.pos += advance(&self.storage.vals[self.pos..self.bounds.1], |(k, _)| {
-            k.lt(key)
-        });
-    }
-}
-
 impl<'s, K, R> Cursor<'s> for OrderedLeafCursor<'s, K, R>
 where
     K: Eq + Ord + Clone,
     R: Clone,
 {
-    type Key<'k> = &'k (K, R)
+    type Key = K;
+
+    type Item<'k> = &'k (K, R)
     where
         Self: 'k;
+
     type ValueStorage = ();
 
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
     }
 
-    fn key(&self) -> Self::Key<'s> {
+    fn item(&self) -> Self::Item<'s> {
         &self.storage.vals[self.pos]
     }
 
@@ -417,14 +408,13 @@ where
         }
     }
 
-    fn seek<'a>(&mut self, key: Self::Key<'a>)
-    where
-        's: 'a,
-    {
-        self.seek_key(&key.0);
+    fn seek(&mut self, key: &Self::Key) {
+        self.pos += advance(&self.storage.vals[self.pos..self.bounds.1], |(k, _)| {
+            k.lt(key)
+        });
     }
 
-    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+    fn last_item(&mut self) -> Option<Self::Item<'s>> {
         if self.bounds.1 > self.bounds.0 {
             Some(&self.storage.vals[self.bounds.1 - 1])
         } else {

@@ -9,9 +9,11 @@ use crate::{
             radix_tree::{PartitionedRadixTreeReader, RadixTreeCursor},
             range::{Range, RangeCursor, Ranges, RelRange},
             OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
-            PartitionedIndexedZSet,
+            PartitionedIndexedZSet, RelOffset,
         },
-        trace::{DelayedTraceId, IntegrateTraceId, TraceBounds, UntimedTraceAppend, Z1Trace},
+        trace::{
+            DelayedTraceId, IntegrateTraceId, TraceBound, TraceBounds, UntimedTraceAppend, Z1Trace,
+        },
         Aggregator, FilterMap,
     },
     trace::{Builder, Cursor, Spine},
@@ -104,6 +106,52 @@ impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet,
 {
+    /// Similar to
+    /// [`partitioned_rolling_aggregate`](`Stream::partitioned_rolling_aggregate`),
+    /// but uses `watermark` to bound its memory footprint.
+    ///
+    /// Splits the input stream into non-overlapping
+    /// partitions using `partition_func` and for each input record
+    /// computes an aggregate over a relative time range (e.g., the
+    /// last three months) within its partition.  Outputs the contents
+    /// of the input stream extended with the value of the aggregate.
+    ///
+    /// This operator is incremental and will update previously
+    /// computed outputs affected by new data.  For example,
+    /// a data point arriving out-of-order may affect previously
+    /// computed rolling aggregate values at future times.
+    ///
+    /// The `watermark` stream bounds the out-of-ordedness of the input
+    /// data by providing a monotonically growing lower bound on
+    /// timestamps that can appear in the input stream.  The operator
+    /// does not expect inputs with timestamps smaller than the current
+    /// watermark.  The `watermark` value is used to bound the amount of
+    /// state maintained by the operator.
+    ///
+    /// # Background
+    ///
+    /// The rolling aggregate operator is typically applied to time series data
+    /// with bounded out-of-ordedness, i.e, having seen a timestamp `ts` in the
+    /// input stream, the operator will never observe a timestamp smaller than
+    /// `ts - b` for some bound `b`.  This in turn means that the value of the
+    /// aggregate will remain constant for timestamps that only depend on times
+    /// `< ts - b`.  Hence, we do not need to maintain the state needed to
+    /// recompute these aggregates, which allows us to bound the amount of state
+    /// maintained by this operator.
+    ///
+    /// The bound `ts - b` is known as "watermark" and can be computed, e.g., by
+    /// the [`watermark_monotonic`](`Stream::watermark_monotonic`) operator.
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - time series data indexed by time.
+    /// * `watermark` - monotonically growing lower bound on timestamps in the
+    ///   input stream.
+    /// * `partition_func` - function used to split inputs into non-overlapping
+    ///   partitions indexed by partition key of type `PK`.
+    /// * `aggregator` - aggregator used to summarize values within the relative
+    ///   time range `range` of each input timestamp.
+    /// * `range` - relative time range to aggregate over.
     pub fn partitioned_rolling_aggregate_with_watermark<PK, TS, V, Agg, PF>(
         &self,
         watermark: &Stream<RootCircuit, TS>,
@@ -122,36 +170,53 @@ where
         TS: DBData + PrimInt,
         V: DBData,
     {
-        self.circuit().region("partitioned_rolling_aggregate_with_watermark", || {
-            let shifted_range = RelRange::new(
-                range.from.clone() - range.to.clone(),
-                range.to.clone() - range.to.clone(),
-                );
+        self.circuit()
+            .region("partitioned_rolling_aggregate_with_watermark", || {
+                // Shift the aggregation window so that its right end is at 0.
+                let shifted_range =
+                    RelRange::new(range.from - range.to, RelOffset::Before(TS::zero()));
 
-            let bounds = watermark.apply(move |wm| {
-                (
-                    shifted_range
-                    .range_of(wm)
-                    .map(|range| range.from)
-                    .unwrap_or_else(|| Bounded::min_value()),
-                    Bounded::max_value(),
+                // Trace bound used inside `partitioned_rolling_aggregate_inner` to
+                // bound its output trace.  This is the same bound we use to construct
+                // the input window here.
+                let bound: TraceBound<(TS, Option<Agg::Output>)> = TraceBound::new();
+                let bound_clone = bound.clone();
+
+                // Restrict the input stream to the `[lb -> ∞)` time window,
+                // where `lb = watermark - (range.to - range.from)` is the lower
+                // bound on input timestamps that may be used to compute
+                // changes to the rolling aggregate operator.
+                let bounds = watermark.apply(move |wm| {
+                    let lower = shifted_range
+                        .range_of(wm)
+                        .map(|range| range.from)
+                        .unwrap_or_else(|| Bounded::min_value());
+                    bound_clone.set((lower, None));
+                    (lower, Bounded::max_value())
+                });
+                let window = self.window(&bounds);
+
+                // Now that we've truncated old inputs, which required the
+                // input stream to be indexed by time, we can re-index it
+                // by partition id.
+                let partition_func_clone = partition_func.clone();
+
+                let partitioned_window = window.map_index(move |(ts, v)| {
+                    let (partition_key, val) = partition_func_clone(v);
+                    (partition_key, (*ts, val))
+                });
+                let partitioned_self = self.map_index(move |(ts, v)| {
+                    let (partition_key, val) = partition_func(v);
+                    (partition_key, (*ts, val))
+                });
+
+                partitioned_self.partitioned_rolling_aggregate_inner(
+                    &partitioned_window,
+                    aggregator,
+                    range,
+                    bound,
                 )
-            });
-            let window = self.window(&bounds);
-
-            let partition_func_clone = partition_func.clone();
-
-            let partitioned_window = window.map_index(move |(ts, v)| {
-                let (partition_key, val) = partition_func_clone(v);
-                (partition_key, (ts.clone(), val))
-            });
-            let partitioned_self = self.map_index(move |(ts, v)| {
-                let (partition_key, val) = partition_func(v);
-                (partition_key, (ts.clone(), val))
-            });
-
-            partitioned_self.partitioned_rolling_aggregate_inner(&partitioned_window, aggregator, range)
-        })
+            })
     }
 }
 
@@ -214,7 +279,7 @@ impl<B> Stream<RootCircuit, B> {
         //                                                            output_trace_delayed └────┘
         // ```
         self.circuit().region("partitioned_rolling_aggregate", || {
-            self.partitioned_rolling_aggregate_inner(self, aggregator, range)
+            self.partitioned_rolling_aggregate_inner(self, aggregator, range, TraceBound::new())
         })
     }
 
@@ -223,6 +288,7 @@ impl<B> Stream<RootCircuit, B> {
         self_window: &Self,
         aggregator: Agg,
         range: RelRange<TS>,
+        bound: TraceBound<(TS, Option<Agg::Output>)>,
     ) -> Stream<RootCircuit, O>
     where
         B: PartitionedIndexedZSet<TS, V>,
@@ -237,17 +303,22 @@ impl<B> Stream<RootCircuit, B> {
         let stream = self.shard();
         let stream_window = self_window.shard();
 
+        // Build the radix tree over the bounded window.
         let tree = stream_window
             .partitioned_tree_aggregate::<TS, V, Agg>(aggregator.clone())
             .integrate_trace();
         let input_trace = stream_window.integrate_trace();
 
-        let (output_trace_delayed, z1feedback) =
-            circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
-                false,
-                circuit.root_scope(),
-                TraceBounds::unbounded(),
-            ));
+        // Truncate timestamps `< bound` in the output trace.
+        let bounds = TraceBounds::new();
+        bounds.add_key_bound(TraceBound::new());
+        bounds.add_val_bound(bound);
+
+        let (output_trace_delayed, z1feedback) = circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
+            false,
+            circuit.root_scope(),
+            bounds,
+        ));
         output_trace_delayed.mark_sharded();
 
         let output = circuit
@@ -278,7 +349,7 @@ impl<B> Stream<RootCircuit, B> {
             DelayedTraceId::new(output_trace.origin_node_id().clone()),
             output_trace_delayed,
         );
-        let bounds = <TraceBounds<O::Key>>::unbounded();
+        let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
         circuit.cache_insert(
             IntegrateTraceId::new(output.origin_node_id().clone()),
             (output_trace, bounds),
@@ -542,11 +613,13 @@ mod test {
                 range::{Range, RelOffset, RelRange},
                 PartitionCursor,
             },
+            trace::TraceBound,
             FilterMap, Fold,
         },
         trace::{Batch, BatchReader, Cursor},
         CollectionHandle, DBSPHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
     };
+    use size_of::SizeOf;
 
     type DataBatch = OrdIndexedZSet<u64, (u64, i64), isize>;
     type DataStream = Stream<RootCircuit, DataBatch>;
@@ -618,13 +691,19 @@ mod test {
 
     type RangeHandle = CollectionHandle<u64, ((u64, i64), isize)>;
 
-    fn partition_rolling_aggregate_circuit(lateness: u64) -> (DBSPHandle, RangeHandle) {
+    fn partition_rolling_aggregate_circuit(
+        lateness: u64,
+        size_bound: Option<usize>,
+    ) -> (DBSPHandle, RangeHandle) {
         Runtime::init_circuit(4, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, (u64, i64), isize>();
 
-            let watermark = input_stream.watermark_monotonic(move |ts| ts.saturating_sub(lateness));
-            let input_by_time = input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
+            let input_by_time =
+                input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
+
+            let watermark =
+                input_by_time.watermark_monotonic(move |ts| ts.saturating_sub(lateness));
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0i64,
@@ -669,23 +748,33 @@ mod test {
 
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
             let expected_500_500 = partitioned_rolling_aggregate_slow(&input_stream, range_spec);
-            let output_500_500 = input_stream
-                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator.clone(), range_spec)
-                .gather(0)
-                .integrate();
+            let aggregate_500_500 = input_stream
+                .partitioned_rolling_aggregate::<u64, i64, _>(aggregator.clone(), range_spec);
+            let output_500_500 = aggregate_500_500.gather(0).integrate();
             expected_500_500.apply2(&output_500_500, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
-            let output_500_500_watermark = input_by_time
+            let aggregate_500_500_watermark = input_by_time
                 .partitioned_rolling_aggregate_with_watermark(
                     &watermark,
                     |(partition, val)| (*partition, *val),
                     aggregator.clone(),
                     range_spec.clone(),
-                )
-                .gather(0)
-                .integrate();
+                );
+            let output_500_500_watermark = aggregate_500_500_watermark.gather(0).integrate();
+
+            let bound = TraceBound::new();
+            bound.set((u64::max_value(), None));
+
+            aggregate_500_500_watermark
+                .integrate_trace_with_bound(TraceBound::new(), bound.clone())
+                .apply(move |trace| {
+                    if let Some(bound) = size_bound {
+                        assert!(trace.size_of().total_bytes() <= bound);
+                    }
+                    ()
+                });
 
             expected_500_500.apply2(&output_500_500_watermark, |expected, actual| {
                 assert_eq!(expected, actual)
@@ -720,7 +809,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range_2() {
-        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
         circuit.step().unwrap();
 
@@ -735,7 +824,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range() {
-        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
+        let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
         circuit.step().unwrap();
 
@@ -778,7 +867,10 @@ mod test {
     type InputBatch = Vec<InputTuple>;
 
     fn input_tuple(partitions: u64, window: (u64, u64)) -> impl Strategy<Value = InputTuple> {
-        ((0..partitions), ((window.0..window.1, 100..101i64), 1..2isize))
+        (
+            (0..partitions),
+            ((window.0..window.1, 100..101i64), 1..2isize),
+        )
     }
 
     fn input_batch(
@@ -808,14 +900,26 @@ mod test {
         max_batch_size: usize,
         batches: usize,
     ) -> impl Strategy<Value = Vec<InputBatch>> {
-        (0..batches).map(|i| input_batch(partitions, (i as u64 * window_step, i as u64 * window_step + window_size), max_batch_size).boxed()).collect::<Vec<_>>()
+        (0..batches)
+            .map(|i| {
+                input_batch(
+                    partitions,
+                    (i as u64 * window_step, i as u64 * window_step + window_size),
+                    max_batch_size,
+                )
+                .boxed()
+            })
+            .collect::<Vec<_>>()
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(5))]
+
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
-        fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
-            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
+            // 10_000 is an empirically established bound: without GC this test needs >10KB.
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(10000, Some(10_000));
 
             for mut batch in trace {
                 input.append(&mut batch);
@@ -824,11 +928,13 @@ mod test {
 
             circuit.kill().unwrap();
         }
+    }
 
+    proptest! {
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
-        fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 20)) {
-            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(10000);
+        fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
             for mut batch in trace {
                 input.append(&mut batch);
@@ -841,7 +947,7 @@ mod test {
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 1_000, 50, 20)) {
-            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value());
+            let (mut circuit, mut input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
             for mut batch in trace {
                 input.append(&mut batch);

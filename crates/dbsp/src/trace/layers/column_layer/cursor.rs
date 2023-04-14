@@ -38,11 +38,6 @@ where
         self.bounds
     }
 
-    pub fn seek_key(&mut self, key: &K) {
-        unsafe { self.storage.assume_invariants() }
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
-    }
-
     pub fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,
@@ -65,7 +60,9 @@ where
     K: Ord + Clone,
     R: Clone,
 {
-    type Key<'k> = (&'k K, &'k R)
+    type Key = K;
+
+    type Item<'k> = (&'k K, &'k R)
     where
         Self: 'k;
 
@@ -75,7 +72,7 @@ where
         self.bounds.1 - self.bounds.0
     }
 
-    fn key(&self) -> Self::Key<'s> {
+    fn item(&self) -> Self::Item<'s> {
         // Elide extra bounds checking
         unsafe { self.storage.assume_invariants() }
 
@@ -96,14 +93,12 @@ where
         }
     }
 
-    fn seek<'a>(&mut self, key: Self::Key<'a>)
-    where
-        's: 'a,
-    {
-        self.seek_key(key.0);
+    fn seek(&mut self, key: &Self::Key) {
+        unsafe { self.storage.assume_invariants() }
+        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
     }
 
-    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+    fn last_item(&mut self) -> Option<Self::Item<'s>> {
         unsafe { self.storage.assume_invariants() }
 
         if self.bounds.1 > self.bounds.0 {
@@ -143,7 +138,7 @@ where
         let mut cursor: ColumnLayerCursor<K, R> = self.clone();
 
         while cursor.valid() {
-            let (key, val) = cursor.key();
+            let (key, val) = cursor.item();
             writeln!(f, "{key:?} -> {val:?}")?;
             cursor.step();
         }

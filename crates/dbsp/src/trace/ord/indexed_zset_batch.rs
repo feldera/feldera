@@ -359,13 +359,25 @@ where
         &mut self,
         source1: &OrdIndexedZSet<K, V, R, O>,
         source2: &OrdIndexedZSet<K, V, R, O>,
+        lower_val_bound: &Option<V>,
         fuel: &mut isize,
     ) {
-        self.result.push_merge_fueled(
-            (&source1.layer, &mut self.lower1, self.upper1),
-            (&source2.layer, &mut self.lower2, self.upper2),
-            fuel,
-        );
+        // Use the more expensive `push_merge_truncate_values_fueled`
+        // method if we need to remove truncated values during merging.
+        if let Some(bound) = lower_val_bound {
+            self.result.push_merge_truncate_values_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                bound,
+                fuel,
+            );
+        } else {
+            self.result.push_merge_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                fuel,
+            );
+        }
     }
 }
 
@@ -389,7 +401,7 @@ where
     O: OrdOffset,
 {
     fn key(&self) -> &K {
-        self.cursor.key()
+        self.cursor.item()
     }
 
     fn val(&self) -> &V {
@@ -436,7 +448,7 @@ where
     }
 
     fn last_key(&mut self) -> Option<&K> {
-        self.cursor.last_key()
+        self.cursor.last_item()
     }
 
     fn step_val(&mut self) {
@@ -444,7 +456,7 @@ where
     }
 
     fn seek_val(&mut self, val: &V) {
-        self.cursor.child.seek_key(val);
+        self.cursor.child.seek(val);
     }
 
     fn seek_val_with<P>(&mut self, predicate: P)

@@ -10,21 +10,23 @@ use crate::{
     DBData, Timestamp,
 };
 use size_of::SizeOf;
-use std::{
-    borrow::Cow,
-    cell::RefCell,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::DerefMut, rc::Rc};
 
-circuit_cache_key!(TraceId<B, D, K>(GlobalNodeId => (Stream<B, D>, TraceBounds<K>)));
+circuit_cache_key!(TraceId<B, D, K, V>(GlobalNodeId => (Stream<B, D>, TraceBounds<K, V>)));
 circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
-circuit_cache_key!(IntegrateTraceId<B, D, K>(GlobalNodeId => (Stream<B, D>, TraceBounds<K>)));
+circuit_cache_key!(IntegrateTraceId<B, D, K, V>(GlobalNodeId => (Stream<B, D>, TraceBounds<K, V>)));
 
+/// Lower bound on keys or values in a trace.
+///
+/// Setting the bound to `None` is equivalent to setting it to
+/// `T::min_value()`, i.e., the contents of the trace will never
+/// get truncated.
+///
+/// The writer can update the value of the bound at each clock
+/// cycle.  The bound can only increase monotonically.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct TraceBound<K>(Rc<RefCell<Option<K>>>);
+pub struct TraceBound<T>(Rc<RefCell<Option<T>>>);
 
 impl<K> Default for TraceBound<K> {
     fn default() -> Self {
@@ -32,65 +34,91 @@ impl<K> Default for TraceBound<K> {
     }
 }
 
-impl<K> TraceBound<K> {
+impl<K> TraceBound<K>
+where
+    K: PartialOrd,
+{
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Set the new value of the bound.
     pub fn set(&self, bound: K) {
+        debug_assert!(self.0.borrow().as_ref() <= Some(&bound));
         *self.0.borrow_mut() = Some(bound);
     }
 
+    /// Get the current value of the bound.
     pub fn get(&self) -> Option<K>
     where
-        K: Clone
+        K: Clone,
     {
         self.0.borrow().clone()
     }
 }
 
+/// Data structure that tracks key and value bounds supplied by all
+/// downstream consumers of the trace.
 #[derive(Clone)]
-pub struct TraceBounds<K>(Rc<RefCell<TraceBoundsInner<K>>>);
+pub struct TraceBounds<K, V>(Rc<RefCell<TraceBoundsInner<K, V>>>);
 
-impl<K> TraceBounds<K>
+impl<K, V> TraceBounds<K, V>
 where
     K: DBData,
+    V: DBData,
 {
-    fn bounded() -> Self {
-        Self(Rc::new(RefCell::new(TraceBoundsInner::Bounded(Vec::new()))))
+    /// Instantiate `TraceBounds` with empty sets of key and value bounds.
+    ///
+    /// The caller must add at least one key and one value bound before
+    /// running the circuit.
+    pub(crate) fn new() -> Self {
+        Self(Rc::new(RefCell::new(TraceBoundsInner {
+            key_bounds: Vec::new(),
+            val_bounds: Vec::new(),
+        })))
     }
 
+    /// Returns `TraceBounds` that prevent any values in the trace from
+    /// ever being truncated.
     pub(crate) fn unbounded() -> Self {
-        Self(Rc::new(RefCell::new(TraceBoundsInner::Unbounded)))
+        Self(Rc::new(RefCell::new(TraceBoundsInner {
+            key_bounds: vec![TraceBound::new()],
+            val_bounds: vec![TraceBound::new()],
+        })))
     }
 
-    fn add_bound(&self, bound: TraceBound<K>) {
-        if let TraceBoundsInner::Bounded(bounds) = self.0.borrow_mut().deref_mut() {
-            bounds.push(bound);
-        }
+    pub(crate) fn add_key_bound(&self, bound: TraceBound<K>) {
+        self.0.borrow_mut().key_bounds.push(bound);
     }
 
-    fn make_unbounded(&self) {
-        *self.0.borrow_mut() = TraceBoundsInner::Unbounded;
+    pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
+        self.0.borrow_mut().val_bounds.push(bound);
     }
 
-    fn effective_bound(&self) -> Option<K> {
-        match self.0.borrow().deref() {
-            TraceBoundsInner::Unbounded => None,
-            TraceBoundsInner::Bounded(bounds) => {
-                bounds
-                    .iter()
-                    .min()
-                    .expect("At least one trace bound must be set")
-                    .get()
-            }
-        }
+    pub(crate) fn effective_key_bound(&self) -> Option<K> {
+        self.0
+            .borrow()
+            .key_bounds
+            .iter()
+            .min()
+            .expect("At least one trace bound must be set")
+            .get()
+    }
+
+    pub(crate) fn effective_val_bound(&self) -> Option<V> {
+        self.0
+            .borrow()
+            .val_bounds
+            .iter()
+            .min()
+            .expect("At least one trace bound must be set")
+            .get()
     }
 }
 
-enum TraceBoundsInner<K> {
-    Unbounded,
-    Bounded(Vec<TraceBound<K>>),
+struct TraceBoundsInner<K, V> {
+    key_bounds: Vec<TraceBound<K>>,
+    val_bounds: Vec<TraceBound<V>>,
 }
 
 // TODO: add infrastructure to compact the trace during slack time.
@@ -147,10 +175,14 @@ where
         B: BatchReader<Time = ()>,
         T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
     {
-        self.trace_with_bound(None)
+        self.trace_with_bound(TraceBound::new(), TraceBound::new())
     }
 
-    pub fn trace_with_bound<T>(&self, lower_bound: Option<TraceBound<B::Key>>) -> Stream<C, T>
+    pub fn trace_with_bound<T>(
+        &self,
+        lower_key_bound: TraceBound<B::Key>,
+        lower_val_bound: TraceBound<B::Val>,
+    ) -> Stream<C, T>
     where
         B: BatchReader<Time = ()>,
         T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
@@ -159,7 +191,7 @@ where
             TraceId::new(self.origin_node_id().clone()),
             || {
                 let circuit = self.circuit();
-                let bounds = TraceBounds::bounded();
+                let bounds = TraceBounds::new();
 
                 circuit.region("trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
@@ -195,10 +227,9 @@ where
 
         let (trace, bounds) = trace_bounds.deref_mut();
 
-        match lower_bound {
-            None => bounds.make_unbounded(),
-            Some(bound) => bounds.add_bound(bound),
-        }
+        bounds.add_key_bound(lower_key_bound);
+        bounds.add_val_bound(lower_val_bound);
+
         trace.clone()
     }
 
@@ -209,19 +240,24 @@ where
         B: Batch,
         Spine<B>: SizeOf,
     {
-        self.integrate_trace_with_bound(None)
+        self.integrate_trace_with_bound(TraceBound::new(), TraceBound::new())
     }
 
     #[track_caller]
-    pub fn integrate_trace_with_bound(&self, lower_bound: Option<TraceBound<B::Key>>) -> Stream<C, Spine<B>>
+    pub fn integrate_trace_with_bound(
+        &self,
+        lower_key_bound: TraceBound<B::Key>,
+        lower_val_bound: TraceBound<B::Val>,
+    ) -> Stream<C, Spine<B>>
     where
         B: Batch,
         Spine<B>: SizeOf,
     {
-        let mut trace_bounds = self.circuit()
-            .cache_get_or_insert_with(IntegrateTraceId::new(self.origin_node_id().clone()), || {
+        let mut trace_bounds = self.circuit().cache_get_or_insert_with(
+            IntegrateTraceId::new(self.origin_node_id().clone()),
+            || {
                 let circuit = self.circuit();
-                let bounds = TraceBounds::bounded();
+                let bounds = TraceBounds::new();
 
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
@@ -256,14 +292,14 @@ where
 
                     (trace, bounds)
                 })
-            });
+            },
+        );
 
         let (trace, bounds) = trace_bounds.deref_mut();
 
-        match lower_bound {
-            None => bounds.make_unbounded(),
-            Some(bound) => bounds.add_bound(bound),
-        }
+        bounds.add_key_bound(lower_key_bound);
+        bounds.add_val_bound(lower_val_bound);
+
         trace.clone()
     }
 }
@@ -432,15 +468,20 @@ pub struct Z1Trace<T: Trace> {
     dirty: Vec<bool>,
     root_scope: Scope,
     reset_on_clock_start: bool,
-    bounds: TraceBounds<T::Key>,
-    effective_bound: Option<T::Key>,
+    bounds: TraceBounds<T::Key, T::Val>,
+    effective_key_bound: Option<T::Key>,
+    effective_val_bound: Option<T::Val>,
 }
 
 impl<T> Z1Trace<T>
 where
     T: Trace,
 {
-    pub fn new(reset_on_clock_start: bool, root_scope: Scope, bounds: TraceBounds<T::Key>) -> Self {
+    pub fn new(
+        reset_on_clock_start: bool,
+        root_scope: Scope,
+        bounds: TraceBounds<T::Key, T::Val>,
+    ) -> Self {
         Self {
             time: T::Time::clock_start(),
             trace: None,
@@ -448,7 +489,8 @@ where
             root_scope,
             reset_on_clock_start,
             bounds,
-            effective_bound: None,
+            effective_key_bound: None,
+            effective_val_bound: None,
         }
     }
 }
@@ -538,13 +580,21 @@ where
 
         let dirty = i.dirty();
 
-        let effective_bound = self.bounds.effective_bound();
-        if effective_bound != self.effective_bound {
-            if let Some(bound) = &effective_bound {
+        let effective_key_bound = self.bounds.effective_key_bound();
+        if effective_key_bound != self.effective_key_bound {
+            if let Some(bound) = &effective_key_bound {
                 i.truncate_keys_below(bound);
             }
         }
-        self.effective_bound = effective_bound;
+        self.effective_key_bound = effective_key_bound;
+
+        let effective_val_bound = self.bounds.effective_val_bound();
+        if effective_val_bound != self.effective_val_bound {
+            if let Some(bound) = &effective_val_bound {
+                i.truncate_values_below(bound);
+            }
+        }
+        self.effective_val_bound = effective_val_bound;
 
         self.trace = Some(i);
 

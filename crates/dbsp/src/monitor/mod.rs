@@ -1,6 +1,6 @@
-///! Trace monitor that validates event traces from a circuit.  It is
-///! used to test both the tracing mechanism and the circuit engine
-///! itself.
+//! Trace monitor that validates event traces from a circuit.  It is
+//! used to test both the tracing mechanism and the circuit engine
+//! itself.
 mod circuit_graph;
 
 pub mod visual_graph;

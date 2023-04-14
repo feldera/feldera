@@ -1,7 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, HasZero},
     trace::layers::{
-        advance, column_layer::ColumnLayer, Builder, MergeBuilder, Trie, TupleBuilder,
+        advance, column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
     utils::assume,
 };
@@ -108,8 +108,10 @@ where
             trie2.assume_invariants();
         }
 
-        let (mut lower1, upper1) = cursor1.bounds();
-        let (mut lower2, upper2) = cursor2.bounds();
+        let (_, upper1) = cursor1.bounds();
+        let mut lower1 = cursor1.position();
+        let (_, upper2) = cursor2.bounds();
+        let mut lower2 = cursor2.position();
 
         let reserved = (upper1 - lower1) + (upper2 - lower2);
         self.reserve(reserved);
