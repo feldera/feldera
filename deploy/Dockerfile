@@ -19,21 +19,6 @@ RUN arch=`dpkg --print-architecture`; \
    && rpk version \
    && rm rpk-linux-$arch.zip
 
-
-# Install Prometheus
-RUN arch=`dpkg --print-architecture`; \
-   curl -LO https://github.com/prometheus/prometheus/releases/download/v2.41.0/prometheus-2.41.0.linux-$arch.tar.gz \
-   && tar xvfz prometheus-*.tar.gz \
-   && cd prometheus-* \
-   && mv prometheus /bin/ \
-   && rm /prometheus-*.tar.gz
-
-# Install grafana
-RUN arch=`dpkg --print-architecture`; \
-    curl -LO https://dl.grafana.com/enterprise/release/grafana-enterprise_9.3.6_$arch.deb \
-    && dpkg -i grafana-enterprise_9.3.6_$arch.deb \
-    && rm grafana-enterprise_9.3.6_$arch.deb
-
 COPY . /database-stream-processor
 
 # Update SQL compiler submodule to the version specified in the repo, unless
@@ -53,16 +38,9 @@ RUN cd /database-stream-processor/crates/pipeline_manager \
 
 RUN cd /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
-# Provision Prometheus data source + DBSP dashboard in Grafana.
-RUN cp /database-stream-processor/deploy/prometheus_datasource.yaml /etc/grafana/provisioning/datasources/ \
-   && cp /database-stream-processor/deploy/grafana_dashboard_provision.yaml /etc/grafana/provisioning/dashboards/ \
-   && cp /database-stream-processor/deploy/grafana_dashboard.json /etc/grafana/provisioning/dashboards/ \
-   && mkdir /working-dir
-
 ENV PATH="$PATH:/root/.cargo/bin"
 
 RUN /root/.cargo/bin/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --unix-daemon \
     && /database-stream-processor/demo/create_demo_projects.sh
 
-CMD /database-stream-processor/scripts/start_prometheus.sh /working-dir && \
-    /root/.cargo/bin/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
+CMD /root/.cargo/bin/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor

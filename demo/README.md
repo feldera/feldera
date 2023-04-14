@@ -30,12 +30,6 @@ A demo script that creates several DBSP projects and prepares test input data fo
   pip install gdown
   ```
 
-* [Install Prometheus](https://prometheus.io/download/)
-
-* [Install Grafana and add Prometheus server as a data source](https://prometheus.io/docs/tutorials/visualizing_metrics_using_grafana/)
-
-* Open Grafana (`localhost:3000`) and import Grafana dashboard in `pipeline_server/grafana_dashboard.json`.
-
 ## Running the demo
 
 ```

@@ -20,13 +20,11 @@
 //!   are reused across projects, thus speeding up compilation.
 //!
 //! * Runner.  The runner component is responsible for starting and killing
-//!   compiled pipelines and for interacting with them at runtime.  It also
-//!   registers each pipeline with Prometheus.
+//!   compiled pipelines and for interacting with them at runtime.
 
 // TODOs:
 // * Tests.
-// * Support multi-node DBSP deployments (the current architecture assumes that
-//   pipelines and the Prometheus server run on the same host as this server).
+// * Support multi-node DBSP deployments.
 // * Proper UI.
 
 use actix_files as fs;

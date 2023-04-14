@@ -52,8 +52,7 @@ pub(crate) struct ManagerConfig {
     pub logfile: Option<String>,
 
     /// Directory where the manager stores its filesystem state:
-    /// generated Rust crates, pipeline logs, Prometheus config file,
-    /// etc.
+    /// generated Rust crates, pipeline logs, etc.
     #[serde(default = "default_working_directory")]
     #[arg(short, long, default_value_t = default_working_directory())]
     pub working_directory: String,
@@ -72,15 +71,6 @@ pub(crate) struct ManagerConfig {
     /// local file system.
     #[arg(long)]
     pub dbsp_override_path: Option<String>,
-
-    /// When `true`, the pipeline manager will start Prometheus
-    /// and configure it to monitor the directory where the manager
-    /// writes Prometheus config files for all pipelines.
-    ///
-    /// The default is `false`.
-    #[serde(default)]
-    #[arg(long)]
-    pub with_prometheus: bool,
 
     /// Compile pipelines in debug mode.
     ///
@@ -351,22 +341,6 @@ impl ManagerConfig {
     /// Location to redirect the pipeline stdout stream.
     pub(crate) fn out_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
         self.pipeline_dir(pipeline_id).join("pipeline.out")
-    }
-
-    /// Directory to store all Prometheus-related files.
-    pub(crate) fn prometheus_dir(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("prometheus")
-    }
-
-    /// Prometheus server config file.
-    pub(crate) fn prometheus_server_config_file(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("prometheus.yaml")
-    }
-
-    /// Prometheus config file for a pipeline.
-    pub(crate) fn prometheus_pipeline_config_file(&self, pipeline_id: PipelineId) -> PathBuf {
-        self.prometheus_dir()
-            .join(format!("pipeline{pipeline_id}.yaml"))
     }
 
     /// The path to `schema.json` that contains a JSON description of input and
