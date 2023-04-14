@@ -5,19 +5,28 @@ metadata:
   labels:
     name: dbsp
 ---
-kind: Pod
-apiVersion: v1
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: dbsp-manager
+  name: dbsp-deployment
   namespace: dbsp
   labels:
     app: dbsp
 spec:
-  containers:
-  - image: localhost:5001/dbspmanager
-    name: dbsp-manager
-    ports:
-    - containerPort: 8080
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dbsp
+  template:
+    metadata:
+      labels:
+        app: dbsp
+    spec:
+      containers:
+      - image: localhost:5001/dbspmanager
+        name: dbsp-manager
+        ports:
+        - containerPort: 8080
 ---
 kind: Service
 apiVersion: v1
@@ -28,7 +37,6 @@ spec:
   selector:
     app: dbsp
   ports:
-  # Default port used by the image
   - port: 8080
 ---
 apiVersion: networking.k8s.io/v1
