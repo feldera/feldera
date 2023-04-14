@@ -16,7 +16,7 @@ import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { CancelError, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { ConnectorDialog, getStatusObj } from 'src/types/data'
+import { ConnectorDialog, getStatusObj } from 'src/types/connectors'
 
 const DataSourceTable = () => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])

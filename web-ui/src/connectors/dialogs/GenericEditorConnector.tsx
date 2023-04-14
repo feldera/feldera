@@ -9,8 +9,6 @@ import DialogContent from '@mui/material/DialogContent'
 import Grid from '@mui/material/Grid'
 import FormControl from '@mui/material/FormControl'
 import TextField from '@mui/material/TextField'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Switch from '@mui/material/Switch'
 import DialogActions from '@mui/material/DialogActions'
 import FormHelperText from '@mui/material/FormHelperText'
 import { Icon } from '@iconify/react'
@@ -18,11 +16,13 @@ import YAML from 'yaml'
 import * as yup from 'yup'
 import { yupResolver } from '@hookform/resolvers/yup'
 import { Controller, useForm } from 'react-hook-form'
+import { useTheme } from '@mui/material'
+import { Editor } from '@monaco-editor/react'
 
 import Transition from './tabs/Transition'
 import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
+import { connectorToFormSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 
@@ -30,14 +30,13 @@ const schema = yup
   .object({
     name: yup.string().required(),
     description: yup.string().default(''),
-    url: yup.string().required(),
-    has_headers: yup.boolean().default(true)
+    config: yup.string().required(),
   })
   .required()
 
-export type CsvFileSchema = yup.InferType<typeof schema>
+export type EditorSchema = yup.InferType<typeof schema>
 
-export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
+export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   const handleClose = () => {
     props.setShow(false)
   }
@@ -48,54 +47,56 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
     }
   }
 
+  const theme = useTheme()
+  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
+
   // Initialize the form either with default or values from the passed in connector
   const defaultValues = props.connector
     ? connectorToFormSchema(props.connector)
     : {
         name: '',
         description: '',
-        url: '',
-        has_headers: true
+        config: YAML.stringify({
+          transport: {
+            name: 'transport-name',
+            config: {
+              property: 'value'
+            }
+          },
+          format: {
+            name: 'csv'
+          }
+        })
       }
   const {
     control,
     handleSubmit,
     formState: { errors }
-  } = useForm<CsvFileSchema>({
+  } = useForm<EditorSchema>({
     resolver: yupResolver(schema),
     defaultValues
   })
 
   // Define what should happen when the form is submitted
-  const genericRequest = (data: CsvFileSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {
+  const genericRequest = (data: EditorSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.FILE,
-      config: YAML.stringify({
-        transport: {
-          name: connectorTypeToConfig(ConnectorType.FILE),
-          config: {
-            path: data.url
-          }
-        },
-        format: {
-          name: 'csv'
-        }
-      }),
+      typ: ConnectorType.FILE, // TODO this will go away
+      config: data.config,
       ...(connector_id && { connector_id: connector_id })
     }
   }
-  const newRequest = (data: CsvFileSchema): NewConnectorRequest => {
+  const newRequest = (data: EditorSchema): NewConnectorRequest => {
     return genericRequest(data) as NewConnectorRequest
   }
-  const updateRequest = (data: CsvFileSchema): UpdateConnectorRequest => {
+  const updateRequest = (data: EditorSchema): UpdateConnectorRequest => {
     return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
   }
   const onSubmit =
     props.connector === undefined
-      ? ConnectorFormNewRequest<CsvFileSchema>(onFormSubmitted, newRequest)
-      : ConnectorFormUpdateRequest<CsvFileSchema>(onFormSubmitted, updateRequest)
+      ? ConnectorFormNewRequest<EditorSchema>(onFormSubmitted, newRequest)
+      : ConnectorFormUpdateRequest<EditorSchema>(onFormSubmitted, updateRequest)
 
   return (
     <Dialog
@@ -117,9 +118,9 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined ? 'New CSV File' : 'Update ' + props.connector.name}
+              {props.connector === undefined ? 'Connector Editor' : 'Update ' + props.connector.name}
             </Typography>
-            {props.connector === undefined && <Typography variant='body2'>Provide the URL to a CSV file</Typography>}
+            {props.connector === undefined && <Typography variant='body2'>Write a custom connector config</Typography>}
           </Box>
           <Grid container spacing={6}>
             <Grid item sm={4} xs={12}>
@@ -170,40 +171,22 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
             <Grid item sm={12} xs={12}>
               <FormControl fullWidth>
                 <Controller
-                  name='url'
+                  name='config'
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      fullWidth
-                      label='File Path'
-                      placeholder='https://gist.githubusercontent.com/...'
-                      error={Boolean(errors.description)}
-                      aria-describedby='validation-description'
+                    <Editor
+                      height='20vh'
+                      theme={vscodeTheme}
+                      defaultLanguage='yaml'
                       {...field}
                     />
                   )}
                 />
-                {errors.url && (
-                  <FormHelperText sx={{ color: 'error.main' }} id='validation-description'>
-                    {errors.url.message}
+                {errors.config && (
+                  <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
+                    {errors.config.message}
                   </FormHelperText>
                 )}
-              </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <FormControl fullWidth>
-                <Controller
-                  name='has_headers'
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch checked={field.value} />}
-                      label='CSV file has headers'
-                      aria-describedby='header-description'
-                      {...field}
-                    />
-                  )}
-                />
               </FormControl>
             </Grid>
           </Grid>
@@ -228,12 +211,12 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
   )
 }
 
-export const AddCsvFileConnectorCard = () => {
+export const AddGenericConnectorCard = () => {
   return (
     <AddConnectorCard
-      icon='ph:file-csv'
-      title='Provide data in the form of CSV files'
-      dialog={CsvFileConnectorDialog}
+      icon='file-icons:test-generic'
+      title='A generic connector'
+      dialog={ConfigEditorDialog}
     />
   )
 }

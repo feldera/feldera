@@ -2,10 +2,16 @@ import { Dispatch, SetStateAction } from 'react'
 import { match, P } from 'ts-pattern'
 import YAML from 'yaml'
 
-import { Direction, ConnectorType, ConnectorDescr } from './manager'
-import { CsvFileSchema, KafkaInputConnectorDialog, KafkaInputSchema, KafkaOutputSchema } from 'src/connectors/dialogs'
-import { KafkaOutputConnectorDialog } from 'src/connectors/dialogs'
-import { CsvFileConnectorDialog } from 'src/connectors/dialogs'
+import { Direction, ConnectorDescr } from './manager'
+import { ConfigEditorDialog, CsvFileConnectorDialog, CsvFileSchema, EditorSchema, KafkaInputConnectorDialog, KafkaInputSchema, KafkaOutputSchema, KafkaOutputConnectorDialog } from 'src/connectors/dialogs'
+
+export enum ConnectorType {
+  KAFKA_IN = 'KafkaIn',
+  KAFKA_OUT = 'KafkaOut',
+  FILE = 'File',
+  UNKNOWN = 'Unknown'
+}
+
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -21,8 +27,7 @@ export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
       return ConnectorType.FILE
     })
     .otherwise(() => {
-      console.log('unknown generic connector')
-      return ConnectorType.FILE
+      return ConnectorType.UNKNOWN
     })
 }
 
@@ -42,6 +47,9 @@ export const ConnectorDialog = (props: {
     .with(ConnectorType.FILE, () => {
       return <CsvFileConnectorDialog {...props} />
     })
+    .with(ConnectorType.UNKNOWN, () => {
+      return <ConfigEditorDialog {...props} />
+    })
     .exhaustive()
 
 // Given an existing ConnectorDescr return an object with the right values for
@@ -51,7 +59,7 @@ export const ConnectorDialog = (props: {
 // schema defined in CsvFileConnector.tsx.
 export const connectorToFormSchema = (
   connector: ConnectorDescr
-): KafkaInputSchema | KafkaOutputSchema | CsvFileSchema => {
+): KafkaInputSchema | KafkaOutputSchema | CsvFileSchema | EditorSchema => {
   const config = YAML.parse(connector.config)
   return match(connectorDescrToType(connector))
     .with(ConnectorType.KAFKA_IN, () => {
@@ -80,6 +88,13 @@ export const connectorToFormSchema = (
         has_headers: true // TODO: this isn't represented by the connector
       } as CsvFileSchema
     })
+    .with(ConnectorType.UNKNOWN, () => {
+      return {
+        name: connector.name,
+        description: connector.description,
+        config: connector.config
+        } as EditorSchema
+    })
     .exhaustive()
 }
 
@@ -96,6 +111,9 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.FILE, () => {
       return Direction.INPUT_OUTPUT
     })
+    .with(ConnectorType.UNKNOWN, () => {
+      return Direction.INPUT_OUTPUT
+    })
     .exhaustive()
 
 /// Given a connector type return to which name in the config it corresponds to.
@@ -109,6 +127,9 @@ export const connectorTypeToConfig = (status: ConnectorType) =>
     })
     .with(ConnectorType.FILE, () => {
       return 'file'
+    })
+    .with(ConnectorType.UNKNOWN, () => {
+      return ''
     })
     .exhaustive()
 
@@ -124,6 +145,9 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .with(ConnectorType.FILE, () => {
       return 'CSV'
     })
+    .with(ConnectorType.UNKNOWN, () => {
+      return 'Connector'
+    })
     .exhaustive()
 
 // Return the icon of a connector (for display in components).
@@ -138,6 +162,9 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
     .with(ConnectorType.FILE, () => {
       return 'ph:file-csv'
     })
+    .with(ConnectorType.UNKNOWN, () => {
+      return 'file-icons:test-generic'
+    })
     .exhaustive()
 
 // Return name and color (for display of the table' chip) of a connector.
@@ -151,5 +178,8 @@ export const getStatusObj = (status: ConnectorType) =>
     })
     .with(ConnectorType.FILE, () => {
       return { title: 'CSV', color: 'secondary' as const }
+    })
+    .with(ConnectorType.UNKNOWN, () => {
+      return { title: 'Editor', color: 'secondary' as const }
     })
     .exhaustive()

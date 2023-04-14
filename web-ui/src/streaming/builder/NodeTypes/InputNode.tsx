@@ -9,7 +9,7 @@ import { Icon } from '@iconify/react'
 
 import useNodeDelete from '../hooks/useNodeDelete'
 import { Handle, Node } from '../NodeTypes'
-import { connectorTypeToIcon } from 'src/types/data'
+import { connectorTypeToIcon } from 'src/types/connectors'
 import { ConnectorDescr, ConnectorService, ConnectorType } from 'src/types/manager'
 
 const InputNode = ({ id, data }: NodeProps) => {
