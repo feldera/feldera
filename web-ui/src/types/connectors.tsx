@@ -3,7 +3,16 @@ import { match, P } from 'ts-pattern'
 import YAML from 'yaml'
 
 import { Direction, ConnectorDescr } from './manager'
-import { ConfigEditorDialog, CsvFileConnectorDialog, CsvFileSchema, EditorSchema, KafkaInputConnectorDialog, KafkaInputSchema, KafkaOutputSchema, KafkaOutputConnectorDialog } from 'src/connectors/dialogs'
+import {
+  ConfigEditorDialog,
+  CsvFileConnectorDialog,
+  CsvFileSchema,
+  EditorSchema,
+  KafkaInputConnectorDialog,
+  KafkaInputSchema,
+  KafkaOutputSchema,
+  KafkaOutputConnectorDialog
+} from 'src/connectors/dialogs'
 
 export enum ConnectorType {
   KAFKA_IN = 'KafkaIn',
@@ -11,7 +20,6 @@ export enum ConnectorType {
   FILE = 'File',
   UNKNOWN = 'Unknown'
 }
-
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -93,7 +101,7 @@ export const connectorToFormSchema = (
         name: connector.name,
         description: connector.description,
         config: connector.config
-        } as EditorSchema
+      } as EditorSchema
     })
     .exhaustive()
 }

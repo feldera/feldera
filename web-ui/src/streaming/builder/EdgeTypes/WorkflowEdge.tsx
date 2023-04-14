@@ -1,3 +1,5 @@
+// The style and path calculation of our edges.
+
 import React from 'react'
 import { EdgeProps, getBezierPath } from 'reactflow'
 import styled from '@emotion/styled'

@@ -32,7 +32,7 @@ const schema = yup
   .object({
     name: yup.string().required(),
     description: yup.string().default(''),
-    config: yup.string().required(),
+    config: yup.string().required()
   })
   .required()
 
@@ -175,14 +175,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
                 <Controller
                   name='config'
                   control={control}
-                  render={({ field }) => (
-                    <Editor
-                      height='20vh'
-                      theme={vscodeTheme}
-                      defaultLanguage='yaml'
-                      {...field}
-                    />
-                  )}
+                  render={({ field }) => <Editor height='20vh' theme={vscodeTheme} defaultLanguage='yaml' {...field} />}
                 />
                 {errors.config && (
                   <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
@@ -214,11 +207,5 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
 }
 
 export const AddGenericConnectorCard = () => {
-  return (
-    <AddConnectorCard
-      icon='file-icons:test-generic'
-      title='A generic connector'
-      dialog={ConfigEditorDialog}
-    />
-  )
+  return <AddConnectorCard icon='file-icons:test-generic' title='A generic connector' dialog={ConfigEditorDialog} />
 }

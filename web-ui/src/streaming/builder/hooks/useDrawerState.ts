@@ -1,3 +1,5 @@
+// State to remember if the drawer to select a connector is open or not.
+
 import { create } from 'zustand'
 
 interface DrawerState {

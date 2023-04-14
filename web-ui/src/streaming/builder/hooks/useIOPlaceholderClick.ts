@@ -1,9 +1,8 @@
+// What happens when we click either the input or output placeholder.
+
 import { NodeProps, useReactFlow } from 'reactflow'
 import useDrawerState from './useDrawerState'
 
-// When we click on input or output placeholder, we (a) add a new node at the
-// position where the placeholder was, and (b) re-add the placeholder node a bit
-// below its former position.
 export function useIOPlaceholderClick(id: NodeProps['id']) {
   const drawer = useDrawerState()
   const { getNode } = useReactFlow()

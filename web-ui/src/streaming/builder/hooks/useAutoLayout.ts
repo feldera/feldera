@@ -1,3 +1,5 @@
+// Computes the layout of the nodes in the graph.
+
 import assert from 'assert'
 import { useCallback, useEffect } from 'react'
 import { Node, ReactFlowState, useStore, useReactFlow, Edge, Instance, getConnectedEdges } from 'reactflow'
