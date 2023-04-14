@@ -1,7 +1,9 @@
+// Table showing the list of pipelines for a user.
+//
+// The rows of the table can be expanded for even more details.
+
 import { useCallback, useEffect, useState } from 'react'
-
 import Link from 'next/link'
-
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Paper from '@mui/material/Paper'
@@ -16,7 +18,6 @@ import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListSubheader from '@mui/material/ListSubheader'
-
 import Tooltip from '@mui/material/Tooltip'
 
 import AnalyticsPipelineTput from 'src/streaming/AnalyticsPipelineTput'
@@ -208,7 +209,6 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                   flex: 0.15,
                   renderCell: params => humanSize(inputMetrics?.get(params.row.ac.config.trim())?.total_bytes || 0)
                 },
-
                 //{
                 //field: 'enabled',
                 //headerName: 'Active',
@@ -279,7 +279,6 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                   renderCell: params =>
                     humanSize(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_bytes || 0)
                 },
-
                 //{
                 //  field: 'enabled',
                 //  headerName: 'Active',
@@ -324,6 +323,8 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
   )
 }
 
+// TODO: We currently can't get the pipeline status from the manager, so we're
+// just storing it on the client until we have a better way to do this.
 enum PipelineStatus {
   UNUSED = 'Unused',
   CREATING = 'Creating ...',

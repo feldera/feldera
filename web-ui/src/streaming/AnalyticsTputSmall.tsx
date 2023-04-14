@@ -1,3 +1,7 @@
+// Shows a small throughput chart for use in overviews.
+//
+// Currently this is just a placeholder.
+
 import Card from '@mui/material/Card'
 import { ApexOptions } from 'apexcharts'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'

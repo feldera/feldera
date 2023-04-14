@@ -1,3 +1,6 @@
+// SqlNode is a (compiled) program with tables and view as handles to connect
+// to.
+
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import { Box, CardContent, CardHeader, Stack } from '@mui/material'

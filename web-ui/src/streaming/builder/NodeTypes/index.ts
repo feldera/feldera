@@ -1,9 +1,10 @@
+// Different types of nodes we use in the graph and their styling.
+
 import { Handle as RawHandle, NodeTypes } from 'reactflow'
 import styled from '@emotion/styled'
 
 import IOPlaceholderNode from './IOPlaceholderNode'
 import SqlPlaceholderNode from './SqlPlaceholderNode'
-
 import InputNode from './InputNode'
 import OutputNode from './OutputNode'
 import Card from '@mui/material/Card'
