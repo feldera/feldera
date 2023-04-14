@@ -148,6 +148,24 @@ pub trait Trace: BatchReader {
 
     /// Returns the value of the dirty flag.
     fn dirty(&self) -> bool;
+
+    /// Informs the trace that values smaller than `lower_bound` are no longer
+    /// used and can be removed from the trace.
+    ///
+    /// The implementation is not required to remove truncated values instantly
+    /// or at all.  This method is just a hint that values below `lower_bound`
+    /// are no longer of interest to the consumer of the trace and can be
+    /// garbage collected.
+    // This API is similar to `BatchReader::truncate_keys_below`, however we make
+    // it a method of `trait Trace` rather than `trait BatchReader`.  The difference
+    // is that a batch can truncate its keys instanly by simply moving an internal
+    // pointer to the first remaining key.  However, there is no similar way to
+    // truncate values instantly, this can only be done as part of trace maintenance
+    // when either merging or compacting batches.
+    fn truncate_values_below(&mut self, lower_bound: &Self::Val);
+
+    /// Current lower value bound.
+    fn lower_value_bound(&self) -> &Option<Self::Val>;
 }
 
 /// A batch of updates whose contents may be read.
@@ -265,7 +283,7 @@ where
     fn merge(&self, other: &Self) -> Self {
         let mut fuel = isize::max_value();
         let mut merger = Self::Merger::new_merger(self, other);
-        merger.work(self, other, &mut fuel);
+        merger.work(self, other, &None, &mut fuel);
         merger.done()
     }
 
@@ -354,15 +372,20 @@ pub trait Merger<K, V, T, R, Output>: SizeOf
 where
     Output: Batch<Key = K, Val = V, Time = T, R = R>,
 {
-    /// Creates a new merger to merge the supplied batches, optionally
-    /// compacting up to the supplied frontier.
+    /// Creates a new merger to merge the supplied batches.
     fn new_merger(source1: &Output, source2: &Output) -> Self;
 
     /// Perform some amount of work, decrementing `fuel`.
     ///
-    /// If `fuel` is non-zero after the call, the merging is complete and
-    /// one should call `done` to extract the merged results.
-    fn work(&mut self, source1: &Output, source2: &Output, fuel: &mut isize);
+    /// If `fuel` is greater than zero after the call, the merging is complete
+    /// and one should call `done` to extract the merged results.
+    fn work(
+        &mut self,
+        source1: &Output,
+        source2: &Output,
+        lower_val_bound: &Option<V>,
+        fuel: &mut isize,
+    );
 
     /// Extracts merged results.
     ///

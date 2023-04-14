@@ -106,7 +106,9 @@ impl<'a, K, R> UnorderedCursor<'a, K, R> {
 }
 
 impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
-    type Key<'k> = &'k K
+    type Key = K;
+
+    type Item<'k> = &'k K
     where
         Self: 'k;
 
@@ -116,7 +118,7 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         self.end - self.start
     }
 
-    fn key(&self) -> Self::Key<'s> {
+    fn item(&self) -> Self::Item<'s> {
         todo!()
     }
 
@@ -126,14 +128,11 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
-    fn seek<'a>(&mut self, _key: Self::Key<'a>)
-    where
-        's: 'a,
-    {
+    fn seek(&mut self, _key: &Self::Key) {
         todo!()
     }
 
-    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+    fn last_item(&mut self) -> Option<Self::Item<'s>> {
         todo!()
     }
 

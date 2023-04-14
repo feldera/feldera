@@ -103,11 +103,14 @@ where
                         //                                                    └───────────────────────────┤Z1Trace│◄─────────┘
                         //                                                     output_trace_delayed       └───────┘
                         // ```
+
+                        let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
+
                         let (output_trace_delayed, z1feedback) =
                             circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
                                 false,
                                 self.circuit().root_scope(),
-                                TraceBounds::unbounded(),
+                                bounds.clone(),
                             ));
 
                         let output = circuit.add_ternary_operator(
@@ -135,7 +138,6 @@ where
                             output_trace_delayed,
                         );
 
-                        let bounds = <TraceBounds<O::Key>>::unbounded();
                         circuit.cache_insert(
                             IntegrateTraceId::new(output.origin_node_id().clone()),
                             (output_trace, bounds),

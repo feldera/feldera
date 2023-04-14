@@ -63,7 +63,7 @@ where
         //                    z1trace             └───────┘
         // ```
         circuit.region("upsert", || {
-            let bounds = <TraceBounds<K>>::unbounded();
+            let bounds = <TraceBounds<K, V>>::unbounded();
 
             let (ExportStream { local, export }, z1feedback) = circuit.add_feedback_with_export(
                 Z1Trace::new(false, circuit.root_scope(), bounds.clone()),

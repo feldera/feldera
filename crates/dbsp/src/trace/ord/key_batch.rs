@@ -277,6 +277,7 @@ where
         &mut self,
         source1: &OrdKeyBatch<K, T, R, O>,
         source2: &OrdKeyBatch<K, T, R, O>,
+        _lower_val_bound: &Option<()>,
         fuel: &mut isize,
     ) {
         self.result.push_merge_fueled(
@@ -308,7 +309,7 @@ where
     O: OrdOffset,
 {
     fn key(&self) -> &K {
-        self.cursor.key()
+        self.cursor.item()
     }
 
     fn val(&self) -> &() {
@@ -338,7 +339,7 @@ where
     {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {
-            if self.cursor.child.key().0.less_equal(upper) {
+            if self.cursor.child.item().0.less_equal(upper) {
                 init = fold(
                     init,
                     self.cursor.child.current_key(),
@@ -356,7 +357,7 @@ where
         T: PartialEq<()>,
     {
         debug_assert!(self.cursor.child.valid());
-        self.cursor.child.key().1.clone()
+        self.cursor.child.item().1.clone()
     }
 
     fn key_valid(&self) -> bool {
@@ -378,7 +379,7 @@ where
     }
 
     fn last_key(&mut self) -> Option<&K> {
-        self.cursor.last_key()
+        self.cursor.last_item()
     }
 
     fn step_val(&mut self) {

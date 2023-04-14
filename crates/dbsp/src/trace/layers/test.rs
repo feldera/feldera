@@ -187,7 +187,7 @@ where
     let mut cursor = trie.cursor();
 
     while cursor.valid() {
-        let (t, r) = Cursor::key(&cursor);
+        let (t, r) = Cursor::item(&cursor);
         result.insert(t.clone(), r.clone());
         cursor.step();
     }
@@ -205,7 +205,7 @@ where
     let mut cursor = trie.cursor();
 
     while cursor.valid() {
-        let (t, r) = Cursor::key(&cursor);
+        let (t, r) = Cursor::item(&cursor);
         result.insert(t.clone(), r.clone());
         cursor.step();
     }
@@ -226,14 +226,14 @@ where
     let mut cursor = trie.cursor();
 
     while cursor.valid() {
-        result.insert(cursor.key().clone(), BTreeMap::new());
+        result.insert(cursor.item().clone(), BTreeMap::new());
 
         let mut leaf_cursor = cursor.values();
 
         while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.key();
+            let (t, r) = leaf_cursor.item();
 
-            let entry = result.get_mut(cursor.key()).unwrap();
+            let entry = result.get_mut(cursor.item()).unwrap();
             entry.insert(t.clone(), r.clone());
 
             leaf_cursor.step();
@@ -257,14 +257,14 @@ where
     let mut cursor = trie.cursor();
 
     while cursor.valid() {
-        result.insert(cursor.key().clone(), BTreeMap::new());
+        result.insert(cursor.item().clone(), BTreeMap::new());
 
         let mut leaf_cursor = cursor.values();
 
         while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.key();
+            let (t, r) = leaf_cursor.item();
 
-            let entry = result.get_mut(cursor.key()).unwrap();
+            let entry = result.get_mut(cursor.item()).unwrap();
             entry.insert(t.clone(), r.clone());
 
             leaf_cursor.step();
@@ -289,14 +289,14 @@ where
     let mut cursor1 = trie.cursor();
 
     while cursor1.valid() {
-        let k = cursor1.key();
+        let k = cursor1.item();
 
         result.insert(k.clone(), BTreeMap::new());
 
         let mut cursor2 = cursor1.values();
 
         while cursor2.valid() {
-            let v = cursor2.key();
+            let v = cursor2.item();
 
             result
                 .get_mut(k)
@@ -305,7 +305,7 @@ where
 
             let mut cursor3 = cursor2.values();
             while cursor3.valid() {
-                let (t, r) = cursor3.key();
+                let (t, r) = cursor3.item();
                 result
                     .get_mut(k)
                     .unwrap()
@@ -336,14 +336,14 @@ where
     let mut cursor1 = trie.cursor();
 
     while cursor1.valid() {
-        let k = cursor1.key();
+        let k = cursor1.item();
 
         result.insert(k.clone(), BTreeMap::new());
 
         let mut cursor2 = cursor1.values();
 
         while cursor2.valid() {
-            let v = cursor2.key();
+            let v = cursor2.item();
 
             result
                 .get_mut(k)
@@ -352,7 +352,7 @@ where
 
             let mut cursor3 = cursor2.values();
             while cursor3.valid() {
-                let (t, r) = cursor3.key();
+                let (t, r) = cursor3.item();
                 result
                     .get_mut(k)
                     .unwrap()

@@ -525,6 +525,8 @@ where
     fn upper(&self) -> AntichainRef<'_, Self::Time> {
         AntichainRef::new(&[()])
     }
+
+    fn truncate_keys_below(&mut self, _lower_bound: &Self::Key) {}
 }
 
 impl<K, V, R, O> Batch for HashedKVBatch<K, V, R, O>
@@ -907,6 +909,7 @@ where
         &mut self,
         left: &HashedKVBatch<K, V, R, O>,
         right: &HashedKVBatch<K, V, R, O>,
+        _lower_val_bound: &Option<V>,
         fuel: &mut isize,
     ) {
         if *fuel <= 0 {

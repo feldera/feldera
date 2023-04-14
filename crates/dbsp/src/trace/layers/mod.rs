@@ -186,16 +186,19 @@ pub trait TupleBuilder: Builder {
 /// other way, but the `Cursor` trait does not explain how this is so.
 pub trait Cursor<'s> {
     /// The type revealed by the cursor.
-    type Key<'k>
+    type Item<'k>
     where
         Self: 'k;
+
+    /// Key used to search the contents of the cursor.
+    type Key;
 
     type ValueStorage: Trie;
 
     fn keys(&self) -> usize;
 
-    /// Reveals the current key.
-    fn key(&self) -> Self::Key<'s>;
+    /// Reveals the current item.
+    fn item(&self) -> Self::Item<'s>;
 
     fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s>;
 
@@ -203,14 +206,10 @@ pub trait Cursor<'s> {
     fn step(&mut self);
 
     /// Advances the cursor until the location where `key` would be expected.
-    // FIXME: Attempted to allow `key` to have an arbitrary lifetime but
-    //        ran into some rather weird lifetime errors and gave up
-    fn seek<'a>(&mut self, key: Self::Key<'a>)
-    where
-        's: 'a;
+    fn seek(&mut self, key: &Self::Key);
 
-    /// Returns the last key in the cursor or `None` if the cursor is empty.
-    fn last_key(&mut self) -> Option<Self::Key<'s>>;
+    /// Returns the last item in the cursor or `None` if the cursor is empty.
+    fn last_item(&mut self) -> Option<Self::Item<'s>>;
 
     /// Returns `true` if the cursor points at valid data. Returns `false` if
     /// the cursor is exhausted.
@@ -340,25 +339,23 @@ impl TupleBuilder for () {
 }
 
 impl<'s> Cursor<'s> for () {
-    type Key<'k> = &'k ();
+    type Key = ();
+    type Item<'k> = &'k ();
+
     type ValueStorage = ();
 
     fn keys(&self) -> usize {
         0
     }
-    fn key(&self) -> Self::Key<'s> {
+    fn item(&self) -> Self::Item<'s> {
         &()
     }
     fn values(&self) {}
     fn step(&mut self) {}
 
-    fn seek<'a>(&mut self, _key: Self::Key<'a>)
-    where
-        's: 'a,
-    {
-    }
+    fn seek(&mut self, _key: &Self::Key) {}
 
-    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+    fn last_item(&mut self) -> Option<Self::Item<'s>> {
         None
     }
 

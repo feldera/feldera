@@ -304,7 +304,13 @@ where
         }
     }
 
-    fn work(&mut self, source1: &OrdZSet<K, R>, source2: &OrdZSet<K, R>, fuel: &mut isize) {
+    fn work(
+        &mut self,
+        source1: &OrdZSet<K, R>,
+        source2: &OrdZSet<K, R>,
+        _lower_val_bound: &Option<()>,
+        fuel: &mut isize,
+    ) {
         *fuel -= self
             .result
             .push_merge(source1.layer.cursor(), source2.layer.cursor()) as isize;
@@ -373,12 +379,12 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.cursor.seek_key(key);
+        self.cursor.seek(key);
         self.valid = true;
     }
 
     fn last_key(&mut self) -> Option<&K> {
-        self.cursor.last_key().map(|(k, _)| k)
+        self.cursor.last_item().map(|(k, _)| k)
     }
 
     fn step_val(&mut self) {

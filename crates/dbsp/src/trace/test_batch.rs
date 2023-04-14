@@ -54,11 +54,32 @@ where
     assert_eq!(tuples1, tuples2);
 }
 
+pub fn assert_trace_eq<T1, T2>(trace1: &T1, trace2: &T2)
+where
+    T1: Trace,
+    T2: Trace<Key = T1::Key, Val = T1::Val, Time = T1::Time, R = T1::R>,
+{
+    let mut tuples1 = batch_to_tuples(trace1);
+
+    if let Some(bound) = trace1.lower_value_bound() {
+        tuples1.retain(|((_k, v, _t), _r)| v >= bound);
+    }
+
+    let mut tuples2 = batch_to_tuples(trace2);
+
+    if let Some(bound) = trace2.lower_value_bound() {
+        tuples2.retain(|((_k, v, _t), _r)| v >= bound);
+    }
+
+    assert_eq!(tuples1, tuples2);
+}
+
 /// Inefficient but simple batch implementation as a B-tree map.
 #[derive(Clone, Debug, PartialEq, Eq, SizeOf)]
 pub struct TestBatch<K, V, T, R> {
     data: BTreeMap<(K, V, T), R>,
     lower_key_bound: Option<K>,
+    lower_val_bound: Option<V>,
 }
 
 impl<K, V, T, R> NumEntries for TestBatch<K, V, T, R> {
@@ -80,7 +101,7 @@ where
     T: DBTimestamp,
     R: DBWeight,
 {
-    /// Create batch from sorted on unsorted tuples.
+    /// Create batch from sorted or unsorted tuples.
     fn from_data(records: &[((K, V, T), R)]) -> Self {
         let mut data: BTreeMap<(K, V, T), R> = BTreeMap::new();
 
@@ -95,6 +116,7 @@ where
         Self {
             data,
             lower_key_bound: None,
+            lower_val_bound: None,
         }
     }
 }
@@ -264,6 +286,7 @@ where
         &mut self,
         _source1: &TestBatch<K, V, T, R>,
         _source2: &TestBatch<K, V, T, R>,
+        _lower_val_bound: &Option<V>,
         _fuel: &mut isize,
     ) {
     }
@@ -528,6 +551,7 @@ where
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,
+            lower_val_bound: None,
         }
     }
 
@@ -549,6 +573,10 @@ where
         if let Some(bound) = &self.lower_key_bound {
             batch.truncate_keys_below(bound);
         }
+        if let Some(bound) = &self.lower_val_bound {
+            batch.truncate_values_below(bound);
+        }
+
         self.data = self.merge(&batch).data;
     }
 
@@ -556,5 +584,20 @@ where
 
     fn dirty(&self) -> bool {
         todo!()
+    }
+
+    fn truncate_values_below(&mut self, lower_bound: &Self::Val) {
+        let bound = if let Some(bound) = &self.lower_val_bound {
+            max(bound, lower_bound).clone()
+        } else {
+            lower_bound.clone()
+        };
+
+        self.data.retain(|(_k, v, _t), _r| v >= &bound);
+        self.lower_val_bound = Some(bound);
+    }
+
+    fn lower_value_bound(&self) -> &Option<Self::Val> {
+        &self.lower_val_bound
     }
 }

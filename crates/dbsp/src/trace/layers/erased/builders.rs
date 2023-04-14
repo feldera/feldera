@@ -2,7 +2,7 @@ use crate::trace::{
     consolidation::consolidate_from,
     layers::{
         erased::{ErasedLayer, IntoErasedData, IntoErasedDiff, TypedLayer},
-        Builder, MergeBuilder, Trie, TupleBuilder,
+        Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
 };
 use size_of::SizeOf;
@@ -74,7 +74,8 @@ where
         rhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
     ) -> usize {
         let (lhs, rhs) = (lhs_cursor.storage(), rhs_cursor.storage());
-        let (lhs_bounds, rhs_bounds) = (lhs_cursor.bounds(), rhs_cursor.bounds());
+        let lhs_bounds = (lhs_cursor.position(), lhs_cursor.bounds().1);
+        let rhs_bounds = (rhs_cursor.position(), rhs_cursor.bounds().1);
         self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds)
     }
 }

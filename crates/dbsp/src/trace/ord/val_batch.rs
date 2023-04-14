@@ -331,13 +331,25 @@ where
         &mut self,
         source1: &OrdValBatch<K, V, T, R, O>,
         source2: &OrdValBatch<K, V, T, R, O>,
+        lower_val_bound: &Option<V>,
         fuel: &mut isize,
     ) {
-        self.result.push_merge_fueled(
-            (&source1.layer, &mut self.lower1, self.upper1),
-            (&source2.layer, &mut self.lower2, self.upper2),
-            fuel,
-        );
+        // Use the more expensive `push_merge_truncate_values_fueled`
+        // method if we need to remove truncated values during merging.
+        if let Some(bound) = lower_val_bound {
+            self.result.push_merge_truncate_values_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                bound,
+                fuel,
+            );
+        } else {
+            self.result.push_merge_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                fuel,
+            );
+        }
     }
 }
 
@@ -363,11 +375,11 @@ where
     O: OrdOffset,
 {
     fn key(&self) -> &K {
-        self.cursor.key()
+        self.cursor.item()
     }
 
     fn val(&self) -> &V {
-        self.cursor.child.key()
+        self.cursor.child.item()
     }
 
     fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
@@ -393,7 +405,7 @@ where
     {
         self.cursor.child.child.rewind();
         while self.cursor.child.child.valid() {
-            if self.cursor.child.child.key().0.less_equal(upper) {
+            if self.cursor.child.child.item().0.less_equal(upper) {
                 init = fold(
                     init,
                     self.cursor.child.child.current_key(),
@@ -411,7 +423,7 @@ where
         T: PartialEq<()>,
     {
         debug_assert!(self.cursor.child.child.valid());
-        self.cursor.child.child.key().1.clone()
+        self.cursor.child.child.item().1.clone()
     }
 
     fn key_valid(&self) -> bool {
@@ -427,7 +439,7 @@ where
         self.cursor.seek(key);
     }
     fn last_key(&mut self) -> Option<&K> {
-        self.cursor.last_key()
+        self.cursor.last_item()
     }
     fn step_val(&mut self) {
         self.cursor.child.step();

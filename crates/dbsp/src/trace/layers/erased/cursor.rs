@@ -47,15 +47,6 @@ where
         self.bounds
     }
 
-    pub fn seek_key(&mut self, key: &K) {
-        let key = key as *const K as *const u8;
-        self.current += advance_erased(
-            self.storage.keys.range(self.current..self.bounds.1),
-            self.storage.key_size(),
-            |x| unsafe { (self.storage.keys.vtable().common.lt)(x, key) },
-        );
-    }
-
     pub fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,
@@ -87,9 +78,11 @@ where
     K: Ord + Clone + 'static,
     R: Clone + 'static,
 {
-    type Key<'k> = (&'k K, &'k R)
+    type Item<'k> = (&'k K, &'k R)
     where
         Self: 'k;
+
+    type Key = K;
 
     type ValueStorage = ();
 
@@ -97,7 +90,7 @@ where
         self.bounds.1 - self.bounds.0
     }
 
-    fn key(&self) -> Self::Key<'s> {
+    fn item(&self) -> Self::Item<'s> {
         if self.current >= self.storage.keys.len() {
             cursor_position_oob(self.current, self.storage.keys.len());
         }
@@ -115,14 +108,16 @@ where
         }
     }
 
-    fn seek<'a>(&mut self, (key, _): Self::Key<'a>)
-    where
-        's: 'a,
-    {
-        self.seek_key(key);
+    fn seek(&mut self, key: &Self::Key) {
+        let key = key as *const K as *const u8;
+        self.current += advance_erased(
+            self.storage.keys.range(self.current..self.bounds.1),
+            self.storage.key_size(),
+            |x| unsafe { (self.storage.keys.vtable().common.lt)(x, key) },
+        );
     }
 
-    fn last_key(&mut self) -> Option<Self::Key<'s>> {
+    fn last_item(&mut self) -> Option<Self::Item<'s>> {
         if self.bounds.1 > self.bounds.0 {
             let idx = self.bounds.1 - 1;
             Some((
@@ -161,7 +156,7 @@ where
         let mut cursor: TypedLayerCursor<K, R> = self.clone();
 
         while cursor.valid() {
-            let (key, val) = cursor.key();
+            let (key, val) = cursor.item();
             writeln!(f, "{key:?} -> {val:?}")?;
             cursor.step();
         }

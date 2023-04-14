@@ -170,11 +170,17 @@ where
                             //                                                    └────────────────────────────────┤Z1Trace│◄───────────┘
                             //                                                          output_trace_delayed       └───────┘
                             // ```
+
+                            // Note: In most use cases `partitioned_tree_aggregate` is applied to
+                            // the output of the `window` operator, in which case its input and
+                            // output traces are naturally bounded as we are maintaining the tree
+                            // over a bounded range of keys.
+                            let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
                             let (output_trace_delayed, z1feedback) =
                                 circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
                                     false,
                                     self.circuit().root_scope(),
-                                    TraceBounds::unbounded(),
+                                    bounds.clone(),
                                 ));
                             output_trace_delayed.mark_sharded();
 
@@ -208,7 +214,6 @@ where
                                 output_trace_delayed,
                             );
 
-                            let bounds = <TraceBounds<O::Key>>::unbounded();
                             circuit.cache_insert(
                                 IntegrateTraceId::new(output.origin_node_id().clone()),
                                 (output_trace, bounds),
