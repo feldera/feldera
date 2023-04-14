@@ -1,12 +1,12 @@
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
 import { useBuilderState } from '../useBuilderState'
-import { sqlPlaceholderNode } from '../WorkflowBuilder'
+import { sqlPlaceholderNode } from '../PipelineBuilder'
 import useDebouncedSave from './useDebouncedSave'
 
-// Logic that runs when we remove a node from the graph: (a) put back the
-// placeholder if we removed the program node, (b) drop all edges that were
-// attached to the node
+// Logic that runs when we remove a node from the graph. Also puts back the
+// sqlPlaceholder if we removed the program node, and drops all edges that were
+// attached to the node.
 export function useNodeDelete(id: NodeProps['id']) {
   const { addNodes, getNode, deleteElements, getEdges } = useReactFlow()
   const savePipeline = useDebouncedSave()

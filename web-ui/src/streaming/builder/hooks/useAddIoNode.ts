@@ -1,3 +1,5 @@
+// Logic to add either a input or output node to the graph.
+
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow, getConnectedEdges } from 'reactflow'
 import { AttachedConnector, Direction } from 'src/types/manager'
@@ -84,7 +86,7 @@ export function useAddConnector() {
 }
 
 // When we click on input or output placeholder, we (a) add a new node at the
-// position where the placeholder was, and (b) re-add the placeholder node a bit
+// position where the placeholder was, and (b) move the placeholder node a bit
 // below its former position.
 export function useAddIoNode(id: NodeProps['id']) {
   const { getNode, setNodes, addNodes } = useReactFlow()

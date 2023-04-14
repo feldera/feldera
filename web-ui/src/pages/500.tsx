@@ -8,7 +8,6 @@ import Box, { BoxProps } from '@mui/material/Box'
 import BlankLayout from 'src/@core/layouts/BlankLayout'
 import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
-
 import Img500 from 'public/images/pages/404.png'
 import Tree3 from 'public/images/pages/tree-3.png'
 

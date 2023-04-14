@@ -1,5 +1,10 @@
 import Grid from '@mui/material/Grid'
-import { AddGenericConnectorCard, AddCsvFileConnectorCard, AddKafkaOutputConnectorCard, AddKafkaInputConnectorCard } from 'src/connectors/dialogs'
+import {
+  AddGenericConnectorCard,
+  AddCsvFileConnectorCard,
+  AddKafkaOutputConnectorCard,
+  AddKafkaInputConnectorCard
+} from 'src/connectors/dialogs'
 
 const DialogExamples = () => {
   return (

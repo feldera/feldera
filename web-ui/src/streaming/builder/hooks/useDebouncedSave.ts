@@ -1,8 +1,9 @@
+// Save the pipeline config, but delay the saving so we don't save on every
+// change.
+
 import { useCallback } from 'react'
 import { useBuilderState } from '../useBuilderState'
 
-// this hook implements the logic for clicking a workflow node
-// on workflow node click: create a new child node of the clicked node
 function useDebouncedSave() {
   const setSaveState = useBuilderState(state => state.setSaveState)
 

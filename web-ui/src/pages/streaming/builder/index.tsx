@@ -3,7 +3,7 @@ import Typography from '@mui/material/Typography'
 import PageHeader from 'src/layouts/components/page-header'
 
 import { Card, CardContent } from '@mui/material'
-import PipelineGraph from 'src/streaming/builder/WorkflowBuilder'
+import PipelineGraph from 'src/streaming/builder/PipelineBuilder'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { match } from 'ts-pattern'
 import Metadata from 'src/streaming/builder/Metadata'
@@ -25,6 +25,7 @@ import { removePrefix } from 'src/utils'
 import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
 import { projectToProjectWithSchema } from 'src/types/program'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
+import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
@@ -49,6 +50,8 @@ export const PipelineWithProvider = (props: {
   configId: ConfigId | undefined
   setConfigId: Dispatch<SetStateAction<ConfigId | undefined>>
 }) => {
+  const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
+
   const { configId, setConfigId } = props
   const setSaveState = useBuilderState(state => state.setSaveState)
   const saveState = useBuilderState(state => state.saveState)
@@ -105,6 +108,10 @@ export const PipelineWithProvider = (props: {
       if (configQuery.data.project_id) {
         const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
         if (foundProject) {
+          console.log('we found it', foundProject)
+          if (!foundProject.schema) {
+            setMissingSchemaDialog(true)
+          }
           const programWithSchema = projectToProjectWithSchema(foundProject)
           setProject(programWithSchema)
           replacePlaceholder(programWithSchema)
@@ -127,6 +134,7 @@ export const PipelineWithProvider = (props: {
       setSaveState('isNew')
       setName('')
       setDescription('')
+      // TODO: Set to 8 for now, needs to be configurable eventually
       setConfig('workers: 8\n')
     }
   }, [
@@ -267,6 +275,7 @@ export const PipelineWithProvider = (props: {
           <PipelineGraph />
         </div>
       </Grid>
+      <MissingSchemaDialog open={missingSchemaDialog} project_id={project?.project_id} />
     </>
   )
 }

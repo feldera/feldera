@@ -10,7 +10,6 @@ import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
 
 import Img401 from 'public/images/pages/401.png'
 
-
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {
     width: '90vw'

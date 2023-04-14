@@ -1,3 +1,5 @@
+// What happens when we select a program in the sqlPlaceholder node.
+
 import { NodeProps, useReactFlow } from 'reactflow'
 import { ProjectWithSchema } from 'src/types/program'
 import { useBuilderState } from '../useBuilderState'
