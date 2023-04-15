@@ -135,6 +135,10 @@ impl Validator {
                     self.node_outputs.insert(node_id, constant.layout());
                 }
 
+                Node::Distinct(distinct) => {
+                    self.node_inputs.insert(node_id, vec![distinct.input()]);
+                }
+
                 _ => todo!(),
             }
         }
