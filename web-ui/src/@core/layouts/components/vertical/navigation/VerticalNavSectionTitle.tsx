@@ -1,17 +1,14 @@
-// ** MUI Imports
 import Divider from '@mui/material/Divider'
 import { styled, useTheme } from '@mui/material/styles'
 import Typography, { TypographyProps } from '@mui/material/Typography'
 import MuiListSubheader, { ListSubheaderProps } from '@mui/material/ListSubheader'
 
-// ** Types
 import { NavSectionTitle } from 'src/@core/layouts/types'
 
 interface Props {
   item: NavSectionTitle
 }
 
-// ** Styled Components
 const ListSubheader = styled((props: ListSubheaderProps) => <MuiListSubheader component='li' {...props} />)(
   ({ theme }) => ({
     lineHeight: 1,
@@ -34,10 +31,7 @@ const TypographyHeaderText = styled(Typography)<TypographyProps>(({ theme }) => 
 }))
 
 const VerticalNavSectionTitle = (props: Props) => {
-  // ** Props
   const { item } = props
-
-  // ** Hook
   const theme = useTheme()
 
   return (

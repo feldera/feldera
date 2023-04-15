@@ -22,10 +22,7 @@ const BadgeContentSpan = styled('span')(({ theme }) => ({
 }))
 
 const UserDropdown = () => {
-  // ** States
   const [anchorEl, setAnchorEl] = useState<Element | null>(null)
-
-  // ** Hooks
   const router = useRouter()
 
   const handleDropdownOpen = (event: SyntheticEvent) => {

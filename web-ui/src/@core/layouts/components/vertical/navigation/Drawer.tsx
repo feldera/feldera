@@ -1,11 +1,7 @@
-// ** React Imports
 import { ReactNode } from 'react'
-
-// ** MUI Imports
 import { styled, useTheme } from '@mui/material/styles'
 import MuiSwipeableDrawer, { SwipeableDrawerProps } from '@mui/material/SwipeableDrawer'
 
-// ** Type Import
 import { Settings } from 'src/@core/context/settingsContext'
 
 interface Props {
@@ -37,10 +33,7 @@ const SwipeableDrawer = styled(MuiSwipeableDrawer)<SwipeableDrawerProps>({
 })
 
 const Drawer = (props: Props) => {
-  // ** Props
   const { hidden, children, navWidth, navVisible, setNavVisible } = props
-
-  // ** Hook
   const theme = useTheme()
 
   // Drawer Props for Mobile & Tablet screens

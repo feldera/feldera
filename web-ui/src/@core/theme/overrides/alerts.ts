@@ -1,8 +1,6 @@
-// ** MUI Imports
 import { Theme } from '@mui/material/styles'
 import { lighten, darken } from '@mui/material/styles'
 
-// ** Util Import
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 
 const Alert = (theme: Theme) => {
