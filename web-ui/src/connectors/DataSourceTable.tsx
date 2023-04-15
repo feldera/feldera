@@ -42,7 +42,7 @@ const DataSourceTable = () => {
         {
           onSettled: () => {
             queryClient.invalidateQueries(['connector'])
-            queryClient.invalidateQueries(['connectorStatus', {connector_id: newRow.connector_id}])
+            queryClient.invalidateQueries(['connectorStatus', { connector_id: newRow.connector_id }])
           },
           onError: (error: CancelError) => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })

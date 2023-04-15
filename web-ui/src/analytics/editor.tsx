@@ -305,7 +305,9 @@ const useCompileProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(ProjectService.compileProject)
+  const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(
+    ProjectService.compileProject
+  )
   useEffect(() => {
     if (
       !isLoading &&
@@ -355,7 +357,7 @@ const usePollCompilationStatus = (
 ) => {
   const queryClient = useQueryClient()
   const compilationStatus = useQuery<ProjectDescr>({
-    queryKey: ['projectStatus', { project_id: project.project_id } ],
+    queryKey: ['projectStatus', { project_id: project.project_id }],
     refetchInterval: data =>
       data === undefined || data.status === 'Pending' || data.status === 'CompilingSql' ? 1000 : false,
     enabled: project.project_id !== null && (project.status === 'Pending' || project.status === 'CompilingSql')

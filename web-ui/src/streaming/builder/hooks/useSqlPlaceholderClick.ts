@@ -11,7 +11,7 @@ import { useCallback } from 'react'
 // Replaces the program placeholder node with a sqlProgram node
 export function useReplacePlaceholder() {
   const { getNode, deleteElements, addNodes } = useReactFlow()
-  const updateNodeInternals = useUpdateNodeInternals();
+  const updateNodeInternals = useUpdateNodeInternals()
 
   const replacePlaceholder = useCallback(
     (program: ProjectWithSchema) => {
@@ -19,7 +19,7 @@ export function useReplacePlaceholder() {
       if (!parentNode) {
         return
       }
-      deleteElements({nodes: [parentNode]})
+      deleteElements({ nodes: [parentNode] })
       addNodes({
         ...parentNode,
         type: 'sqlProgram',
@@ -53,7 +53,7 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       const configId = null
       if (configId) {
         // TODO: figure out if it's better to optimistically update query here?
-        queryClient.setQueryData(['configStatus', {config_id: configId}], (oldData: ConfigDescr | undefined) => {
+        queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
           return oldData ? { ...oldData, project_id: project.project_id } : oldData
         })
       }

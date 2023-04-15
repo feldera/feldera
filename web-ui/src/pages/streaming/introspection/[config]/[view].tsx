@@ -19,8 +19,8 @@ const IntrospectInputOutput = () => {
   const router = useRouter()
   const { config, view } = router.query
 
-  const projectQuery = useQuery<ProjectDescr>(['projectStatus', {project_id: configDescr?.project_id}],
-    { enabled: configDescr !== undefined && configDescr.project_id !== undefined
+  const projectQuery = useQuery<ProjectDescr>(['projectStatus', { project_id: configDescr?.project_id }], {
+    enabled: configDescr !== undefined && configDescr.project_id !== undefined
   })
   useEffect(() => {
     if (!projectQuery.isLoading && !projectQuery.isError && viewName) {
@@ -52,7 +52,7 @@ const IntrospectInputOutput = () => {
     }
   }, [configId, setConfigId, config, view, setViewName])
 
-  const configQuery = useQuery<ConfigDescr>(['configStatus', {config_id: configId}], {
+  const configQuery = useQuery<ConfigDescr>(['configStatus', { config_id: configId }], {
     enabled: configId !== undefined
   })
   useEffect(() => {
