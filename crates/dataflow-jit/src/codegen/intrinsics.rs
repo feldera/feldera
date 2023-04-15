@@ -16,8 +16,9 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
+    mem::ManuallyDrop,
     rc::Rc,
-    slice,
+    slice, str,
 };
 
 macro_rules! intrinsics {
@@ -163,7 +164,10 @@ intrinsics! {
     i64_hash = fn(ptr, i64),
     string_hash = fn(ptr, ptr),
     row_vec_push = fn(ptr, ptr, ptr),
+
+    // String functions
     string_with_capacity = fn(ptr) -> ptr,
+    string_push_str = fn(ptr, ptr, ptr),
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -199,6 +203,7 @@ intrinsics! {
     date_iso_day_of_week = fn(i32) -> i32,
     date_day_of_year = fn(i32) -> i32,
 
+    // Float functions
     fmod = fn(f64, f64) -> f64,
     fmodf = fn(f32, f32) -> f32,
 }
@@ -316,6 +321,19 @@ unsafe extern "C" fn row_vec_push(vec: &mut Vec<Row>, vtable: &'static VTable, r
 
 unsafe extern "C" fn string_with_capacity(capacity: usize) -> ThinStr {
     ThinStr::with_capacity(capacity)
+}
+
+// TODO: Make a `ThinStrMut` type instead of `ManuallyDrop<ThinStr>`
+unsafe extern "C" fn string_push_str(
+    mut target: ManuallyDrop<ThinStr>,
+    ptr: *const u8,
+    len: usize,
+) {
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    debug_assert!(str::from_utf8(bytes).is_ok());
+    let string = unsafe { str::from_utf8_unchecked(bytes) };
+
+    target.push_str(string);
 }
 
 unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {
