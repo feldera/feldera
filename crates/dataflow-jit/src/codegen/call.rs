@@ -24,7 +24,7 @@ impl CodegenCtx<'_> {
             "dbsp.str.truncate_clone" => self.string_truncate_clone(expr_id, call, builder),
 
             // `fn(first: str, second: str)` (mutates the first string)
-            "dbsp.str.concat" => todo!(),
+            "dbsp.str.concat" => self.string_concat(call, builder),
 
             // `fn(first: str, second: str) -> str`
             "dbsp.str.concat_clone" => self.string_concat_clone(expr_id, call, builder),
@@ -411,6 +411,27 @@ impl CodegenCtx<'_> {
         builder.seal_block(set_string_length);
     }
 
+    fn string_concat(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let (target, string) = (self.value(call.args()[0]), self.value(call.args()[1]));
+
+        // TODO: Apply readonly where applicable
+        let (string_ptr, string_len) = (
+            self.string_ptr(string, builder),
+            self.string_length(string, false, builder),
+        );
+
+        let push_str = self.imports.string_push_str(self.module, builder.func);
+        let concat = builder
+            .ins()
+            .call(push_str, &[target, string_ptr, string_len]);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer
+                .borrow_mut()
+                .add_comment(concat, format!("call @dbsp.str.concat({target}, {string})"));
+        }
+    }
+
     // FIXME: Handle the case where both strings are empty, we can't write to a
     // sigil string
     fn string_concat_clone(
@@ -436,8 +457,8 @@ impl CodegenCtx<'_> {
                 .uadd_overflow_trap(first_length, second_length, TRAP_CAPACITY_OVERFLOW);
 
         // Allocate a string of the requested capacity
-        let concat_clone = self.imports.string_with_capacity(self.module, builder.func);
-        let allocated = builder.call_fn(concat_clone, &[total_length]);
+        let with_capacity = self.imports.string_with_capacity(self.module, builder.func);
+        let allocated = builder.call_fn(with_capacity, &[total_length]);
         let allocated_ptr = self.string_ptr(allocated, builder);
 
         // Copy the first string into the allocation

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{
     codegen::{CodegenConfig, NativeLayoutCache},
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},

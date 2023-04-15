@@ -1808,8 +1808,20 @@ impl<'a> CodegenCtx<'a> {
                 src
             }
 
+            // f32 to f64
+            (a, b) if a.is_f32() && b.is_f64() => {
+                debug_assert_eq!(to_ty, types::F64);
+                builder.ins().fpromote(to_ty, src)
+            }
+
+            // f64 to f32
+            (a, b) if a.is_f64() && b.is_f32() => {
+                debug_assert_eq!(to_ty, types::F32);
+                builder.ins().fdemote(to_ty, src)
+            }
+
             // Float to int
-            (a, b) if a.is_float() => {
+            (a, b) if a.is_float() && b.is_int() => {
                 if b.is_unsigned_int() {
                     if self.config.saturating_float_to_int_casts {
                         builder.ins().fcvt_to_uint(to_ty, src)
@@ -1827,7 +1839,7 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Int to float
-            (a, b) if b.is_float() => {
+            (a, b) if a.is_int() && b.is_float() => {
                 if a.is_unsigned_int() {
                     builder.ins().fcvt_from_uint(to_ty, src)
                 } else {
