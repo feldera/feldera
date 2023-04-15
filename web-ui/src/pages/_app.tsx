@@ -16,6 +16,7 @@ import { LicenseInfo } from '@mui/x-license-pro'
 import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
 import StatusSnackBar from 'src/components/errors/StatusSnackBar'
+import { defaultQueryFn } from 'src/types/defaultQueryFn'
 
 type ExtendedAppProps = AppProps & {
   Component: NextPage
@@ -38,8 +39,14 @@ if (themeConfig.routingLoader) {
     NProgress.done()
   })
 }
-
-const queryClient = new QueryClient()
+// provide the default query function to your app with defaultOptions
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      queryFn: defaultQueryFn,
+    },
+  },
+})
 
 const App = (props: ExtendedAppProps) => {
   const { Component, emotionCache = clientSideEmotionCache, pageProps } = props

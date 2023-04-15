@@ -13,7 +13,7 @@ import useNodeDelete from '../hooks/useNodeDelete'
 import { connectorTypeToIcon } from 'src/types/connectors'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { ConnectorDescr, ConnectorService, ConnectorType } from 'src/types/manager'
+import { ConnectorDescr, ConnectorType } from 'src/types/manager'
 
 const OutputNode = ({ id, data }: NodeProps) => {
   const { getNode } = useReactFlow()
@@ -21,9 +21,7 @@ const OutputNode = ({ id, data }: NodeProps) => {
 
   // Fetch the connector data for the corresponding ac.connector_id
   const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
-  const connectorQuery = useQuery(['connector', data.ac.connector_id], () =>
-    ConnectorService.connectorStatus(data.ac.connector_id)
-  )
+  const connectorQuery = useQuery<ConnectorDescr>(['connectorStatus',  { connector_id: data.ac.connector_id }])
   useEffect(() => {
     if (!connectorQuery.isError && !connectorQuery.isLoading) {
       setConnector(connectorQuery.data)
@@ -49,8 +47,8 @@ const OutputNode = ({ id, data }: NodeProps) => {
   return (
     <Node>
       <CardHeader
-        title={connector?.name || '<Loading>'}
-        subheader={connector?.description || '<Loading>'}
+        title={connector?.name || '<unname>'}
+        subheader={connector?.description || ''}
         sx={{ py: 5, alignItems: 'flex-start' }}
         titleTypographyProps={{ variant: 'h5' }}
         subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}

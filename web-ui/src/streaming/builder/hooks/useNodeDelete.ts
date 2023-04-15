@@ -26,7 +26,7 @@ export function useNodeDelete(id: NodeProps['id']) {
       setProject(undefined)
 
       /*if (configId) {
-        queryClient.setQueryData(['configs', configId], (oldData: ConfigDescr | undefined) => {
+        queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
           return oldData ? { ...oldData, project_id: undefined } : oldData
         })
       }*/

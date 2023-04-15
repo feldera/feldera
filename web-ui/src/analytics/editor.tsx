@@ -19,6 +19,7 @@ import {
   CompileProjectRequest,
   NewProjectRequest,
   NewProjectResponse,
+  ProjectCodeResponse,
   ProjectStatus,
   SqlCompilerMessage,
   UpdateProjectRequest,
@@ -131,12 +132,10 @@ const useCreateProjectIfNew = (
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
+  const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate } = useMutation<NewProjectResponse, CancelError, NewProjectRequest>(
-    ['project', 'compilationStatus'],
-    ProjectService.newProject
-  )
+  const { mutate } = useMutation<NewProjectResponse, CancelError, NewProjectRequest>(ProjectService.newProject)
   useEffect(() => {
     if (project.project_id == null) {
       if (state === 'isModified') {
@@ -147,6 +146,10 @@ const useCreateProjectIfNew = (
             code: project.code
           },
           {
+            onSettled: () => {
+              queryClient.invalidateQueries(['project'])
+              queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
+            },
             onSuccess: (data: NewProjectResponse) => {
               setProject((prevState: ProgramState) => ({
                 ...prevState,
@@ -184,7 +187,8 @@ const useCreateProjectIfNew = (
     pushMessage,
     setFormError,
     setProject,
-    setState
+    setState,
+    queryClient
   ])
 }
 
@@ -196,11 +200,8 @@ const useFetchExistingProject = (
   lastCompiledVersion: number,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
-  const codeQuery = useQuery(
-    ['project', 'compilationStatus', { project_id: project.project_id }],
-    () => {
-      if (project.project_id) return ProjectService.projectCode(project.project_id)
-    },
+  const codeQuery = useQuery<number, CancelError, ProjectCodeResponse>(
+    ['projectCode', { project_id: project.project_id }],
     { enabled: project.project_id != null }
   )
   useEffect(() => {
@@ -257,7 +258,9 @@ const useUpdateProjectIfChanged = (
             onSuccess: (data: UpdateProjectResponse) => {
               setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
               setState('isUpToDate')
-              queryClient.invalidateQueries(['project', 'compilationStatus', { project_id: project.project_id }])
+              queryClient.invalidateQueries(['project'])
+              queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
+              queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
               setFormError({})
             },
             onError: (error: CancelError) => {
@@ -302,15 +305,7 @@ const useCompileProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(
-    [
-      'project',
-      () => {
-        project_id: project.project_id
-      }
-    ],
-    ProjectService.compileProject
-  )
+  const { mutate, isLoading, isError } = useMutation<CompileProjectRequest, CancelError, any>(ProjectService.compileProject)
   useEffect(() => {
     if (
       !isLoading &&
@@ -326,8 +321,9 @@ const useCompileProjectIfChanged = (
       mutate(
         { project_id: project.project_id, version: project.version },
         {
-          onSuccess: () => {
-            //queryClient.invalidateQueries(['compilationStatus', { project_id: project.project_id }])
+          onSettled: () => {
+            queryClient.invalidateQueries(['project'])
+            queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
           },
           onError: (error: CancelError) => {
             setProject((prevState: ProgramState) => ({ ...prevState, status: 'None' }))
@@ -357,16 +353,9 @@ const usePollCompilationStatus = (
   setProject: Dispatch<SetStateAction<ProgramState>>,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
-  const compilationStatus = useQuery({
-    queryKey: [
-      'compilationStatus',
-      {
-        project_id: project.project_id
-      }
-    ],
-    queryFn: () => {
-      if (project.project_id) return ProjectService.projectStatus(project.project_id)
-    },
+  const queryClient = useQueryClient()
+  const compilationStatus = useQuery<ProjectDescr>({
+    queryKey: ['projectStatus', { project_id: project.project_id } ],
     refetchInterval: data =>
       data === undefined || data.status === 'Pending' || data.status === 'CompilingSql' ? 1000 : false,
     enabled: project.project_id !== null && (project.status === 'Pending' || project.status === 'CompilingSql')
@@ -404,6 +393,16 @@ const usePollCompilationStatus = (
       if (project.status !== compilationStatus.data.status) {
         // @ts-ignore: Typescript thinks compilationStatus.data can be undefined but we check it above?
         setProject((prevState: ProgramState) => ({ ...prevState, status: compilationStatus.data.status }))
+        queryClient.setQueryData(['projectStatus', { project_id: project.project_id }], compilationStatus.data)
+        queryClient.setQueryData(['project'], (oldData: ProjectDescr[] | undefined) => {
+          return oldData?.map((item: ProjectDescr) => {
+            if (item.project_id === project.project_id) {
+              return compilationStatus.data
+            } else {
+              return item
+            }
+          })
+        })
       }
     }
   }, [
@@ -414,7 +413,8 @@ const usePollCompilationStatus = (
     project.version,
     project.project_id,
     setLastCompiledVersion,
-    setProject
+    setProject,
+    queryClient
   ])
 }
 

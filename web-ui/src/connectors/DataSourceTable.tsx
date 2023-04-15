@@ -25,7 +25,7 @@ const DataSourceTable = () => {
   const queryClient = useQueryClient()
 
   // Query to retrieve table content
-  const fetchQuery = useQuery({ queryKey: ['connector'], queryFn: ConnectorService.listConnectors })
+  const fetchQuery = useQuery<ConnectorDescr[]>(['connector'])
 
   // Update row name and description if edited in the cells:
   const mutation = useMutation<UpdateConnectorResponse, CancelError, UpdateConnectorRequest>(
@@ -40,9 +40,12 @@ const DataSourceTable = () => {
           name: newRow.name
         },
         {
+          onSettled: () => {
+            queryClient.invalidateQueries(['connector'])
+            queryClient.invalidateQueries(['connectorStatus', {connector_id: newRow.connector_id}])
+          },
           onError: (error: CancelError) => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-            queryClient.invalidateQueries({ queryKey: ['connector'] })
             apiRef.current.updateRows([oldRow])
           }
         }
@@ -61,12 +64,14 @@ const DataSourceTable = () => {
         const oldRow = rows.find(row => row.connector_id === cur_row.connector_id)
         if (oldRow !== undefined) {
           deleteMutation.mutate(cur_row.connector_id, {
+            onSettled: () => {
+              queryClient.invalidateQueries(['connector'])
+            },
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.connector_id !== cur_row.connector_id))
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries({ queryKey: ['connector'] })
             }
           })
         }

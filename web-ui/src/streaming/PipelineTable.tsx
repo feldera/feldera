@@ -26,14 +26,12 @@ import {
   AttachedConnector,
   CancelError,
   ConfigDescr,
-  ConfigService,
   ConnectorDescr,
-  ConnectorService,
   Direction,
   NewPipelineRequest,
   NewPipelineResponse,
   PipelineService,
-  ProjectService,
+  ProjectDescr,
   ShutdownPipelineRequest
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -54,23 +52,12 @@ interface ConnectorData {
 const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
+  const projectQuery = useQuery<ProjectDescr>(
+    ['projectStatus', {project_id: props.row.project_id}],
+    { enabled: props.row.project_id !== undefined }
+  )
 
-  //const [project, setProject] = useState<ProjectDescr | undefined>(undefined)
-
-  const projectQuery = useQuery({
-    queryKey: ['projectStatus'],
-    queryFn: () => {
-      if (props.row.project_id) {
-        return ProjectService.projectStatus(props.row.project_id)
-      }
-    },
-    enabled: props.row.project_id !== undefined
-  })
-
-  const connectorQuery = useQuery({
-    queryKey: ['connector'],
-    queryFn: ConnectorService.listConnectors
-  })
+  const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
   useEffect(() => {
     if (!connectorQuery.isLoading && !connectorQuery.isError) {
       setInputs(
@@ -101,16 +88,12 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
   const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
   const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
-  const pipelineStatusQuery = useQuery({
-    queryFn: () => {
-      if (props.row.pipeline) {
-        return PipelineService.pipelineStatus(props.row.pipeline.pipeline_id)
-      }
-    },
-    queryKey: ['pipelineStatus'],
+  const pipelineStatusQuery = useQuery<any>(['pipelineStatus', {pipeline_id: props.row.pipeline?.pipeline_id}],
+  {
     enabled: props.row.pipeline !== undefined && props.row.pipeline !== null,
     refetchInterval: 1000
   })
+
   useEffect(() => {
     if (!pipelineStatusQuery.isLoading && !pipelineStatusQuery.isError) {
       console.log(pipelineStatusQuery.data)
@@ -374,7 +357,7 @@ export default function PipelineTable() {
   const [filteredData, setFilteredData] = useState<ConfigDescr[]>([])
   const [isLaunching, setIsLaunching] = useState(new Map<number, PipelineStatus>())
 
-  const { isLoading, isError, data, error } = useQuery(['configs'], ConfigService.listConfigs)
+  const { isLoading, isError, data, error } = useQuery<ConfigDescr[]>(['configs'])
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
@@ -401,20 +384,25 @@ export default function PipelineTable() {
             onSuccess: resp => {
               setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.STARTING)))
               startPipelineMutate(resp.pipeline_id, {
+                onSettled: () => {
+                  queryClient.invalidateQueries(['configs'])
+                  queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+                },
                 onSuccess: () => {
-                  queryClient.invalidateQueries({ queryKey: ['configs'] })
                   setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
                 },
                 onError: error => {
                   pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-                  queryClient.invalidateQueries({ queryKey: ['configs'] })
                   setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.STARTUP_FAILURE)))
                 }
               })
             },
+            onSettled: () => {
+              queryClient.invalidateQueries(['configs'])
+              queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+            },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries({ queryKey: ['configs'] })
               setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.CREATE_FAILURE)))
             }
           }
@@ -423,13 +411,15 @@ export default function PipelineTable() {
         // Pipeline already exists, we just need to start it
         setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.STARTING)))
         startPipelineMutate(curRow.pipeline.pipeline_id, {
+          onSettled: () => {
+            queryClient.invalidateQueries(['configs'])
+            queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+          },
           onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['configs'] })
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
           },
           onError: error => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-            queryClient.invalidateQueries({ queryKey: ['configs'] })
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.STARTUP_FAILURE)))
           }
         })
@@ -454,13 +444,15 @@ export default function PipelineTable() {
       if (!pausePipelineLoading && curRow.pipeline !== undefined) {
         setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.PAUSING)))
         pausePipelineMutate(curRow.pipeline.pipeline_id, {
+          onSettled: () => {
+            queryClient.invalidateQueries(['configs'])
+            queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+          },
           onSuccess: () => {
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.PAUSED)))
-            queryClient.invalidateQueries({ queryKey: ['configs'] })
           },
           onError: error => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-            queryClient.invalidateQueries({ queryKey: ['configs'] })
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
           }
         })
@@ -481,9 +473,12 @@ export default function PipelineTable() {
         deletePipelineMutate(
           { pipeline_id: curRow.pipeline.pipeline_id },
           {
+            onSettled: () => {
+              queryClient.invalidateQueries(['configs'])
+              queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+            },
             onSuccess: () => {
               setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.UNUSED)))
-              queryClient.invalidateQueries({ queryKey: ['configs'] })
               queryClient.setQueryData(['configs'], (oldData: ConfigDescr[] | undefined) =>
                 oldData?.map((config: ConfigDescr) => {
                   if (config.config_id === curRow.config_id) {
@@ -496,7 +491,6 @@ export default function PipelineTable() {
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries({ queryKey: ['configs'] })
               setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
             }
           }

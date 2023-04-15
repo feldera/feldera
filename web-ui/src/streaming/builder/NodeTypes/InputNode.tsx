@@ -20,7 +20,7 @@ const InputNode = ({ id, data }: NodeProps) => {
 
   // Fetch the connector data for the corresponding ac.connector_id
   const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
-  const connectorQuery = useQuery(['connector', data.ac.connector_id], () =>
+  const connectorQuery = useQuery(['connector',  { connector_id: data.ac.connector_id }], () =>
     ConnectorService.connectorStatus(data.ac.connector_id)
   )
   useEffect(() => {
@@ -58,8 +58,8 @@ const InputNode = ({ id, data }: NodeProps) => {
   return (
     <Node>
       <CardHeader
-        title={connector?.name || '<Loading>'}
-        subheader={connector?.description || '<Loading>'}
+        title={connector?.name || '<unnamed>'}
+        subheader={connector?.description || ''}
         sx={{ py: 5, alignItems: 'flex-start' }}
         titleTypographyProps={{ variant: 'h5' }}
         subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}

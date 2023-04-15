@@ -7,7 +7,6 @@ import Card from '@mui/material/Card'
 import { useQuery } from '@tanstack/react-query'
 import { GridColumns, GridRenderCellParams } from '@mui/x-data-grid-pro'
 
-import { ConnectorService } from 'src/types/manager/services/ConnectorService'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
@@ -15,7 +14,7 @@ import { ConnectorId, ConnectorType, Direction } from 'src/types/manager'
 
 const SelectSourceTable = (props: { direction: Direction; typ: ConnectorType; onAddClick: Dispatch<ConnectorId> }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
-  const fetchQuery = useQuery({ queryKey: ['connector'], queryFn: ConnectorService.listConnectors })
+  const fetchQuery = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
 
   const columns: GridColumns = [
     {
