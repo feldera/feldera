@@ -1,7 +1,6 @@
-// ** MUI Imports
 import { Theme } from '@mui/material/styles'
 
-// ** Overrides Imports
+// Overrides Imports
 import MuiCard from './card'
 import MuiChip from './chip'
 import MuiLink from './link'

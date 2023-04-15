@@ -9,7 +9,6 @@ import ReactApexcharts from 'src/@core/components/react-apexcharts'
 const series = [{ data: [30, 70, 35, 55, 45, 70] }]
 
 const AnalyticsTputSmall = () => {
-  // ** Hook
   const options: ApexOptions = {
     chart: {
       toolbar: { show: false }

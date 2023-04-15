@@ -36,17 +36,13 @@ const ContentWrapper = styled('main')(({ theme }) => ({
 }))
 
 const VerticalLayout = (props: LayoutProps) => {
-  // ** Props
   const { settings, children, scrollToTop } = props
 
-  // ** Vars
   const { contentWidth } = settings
   const navWidth = themeConfig.navigationSize
 
-  // ** States
   const [navVisible, setNavVisible] = useState<boolean>(false)
 
-  // ** Toggle Functions
   const toggleNavVisibility = () => setNavVisible(!navVisible)
 
   return (

@@ -13,7 +13,6 @@ import ReactApexcharts from 'src/@core/components/react-apexcharts'
 import { GlobalMetrics } from 'src/types/pipeline'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
-  // ** Hook
   const theme = useTheme()
 
   const totalProcessed = props.metrics

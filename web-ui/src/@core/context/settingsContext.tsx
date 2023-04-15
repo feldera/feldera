@@ -20,14 +20,12 @@ const initialSettings: Settings = {
   contentWidth: themeConfig.contentWidth
 }
 
-// ** Create Context
 export const SettingsContext = createContext<SettingsContextValue>({
   saveSettings: () => null,
   settings: initialSettings
 })
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-  // ** State
   const [settings, setSettings] = useState<Settings>({ ...initialSettings })
 
   const saveSettings = (updatedSettings: Settings) => {

@@ -21,7 +21,6 @@ interface Props {
   toggleNavVisibility: () => void
 }
 
-// ** Styled Components
 const MenuNavLink = styled(ListItemButton)<
   ListItemButtonProps & { component?: ElementType; target?: '_blank' | undefined }
 >(({ theme }) => ({

@@ -1,4 +1,3 @@
-// ** MUI Imports
 import { Theme } from '@mui/material/styles'
 
 const Avatar = (theme: Theme) => {
