@@ -29,7 +29,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { removePrefix } from 'src/utils'
 import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
 import { projectToProjectWithSchema } from 'src/types/program'
-import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
+import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -107,7 +107,10 @@ export const PipelineWithProvider = (props: {
       setConfig(configQuery.data.config)
       setSaveState('isUpToDate')
 
-      console.log(configQuery.data.attached_connectors)
+      const attachedConnectors = configQuery.data.attached_connectors
+      let invalidConnections: AttachedConnector[] = []
+      let validConnections: AttachedConnector[] = attachedConnectors
+      console.log(attachedConnectors)
 
       // We don't set saveState here because we don't want to override the
       // saveState (when we get the query result back). Otherwise it will cancel
@@ -123,14 +126,32 @@ export const PipelineWithProvider = (props: {
           }
 
           const programWithSchema = projectToProjectWithSchema(foundProject)
+          if (attachedConnectors) {
+            invalidConnections = attachedConnectors.filter(attached_connector => {
+              return !connectorConnects(attached_connector, programWithSchema.schema)
+            })
+            validConnections = attachedConnectors.filter(attached_connector => {
+              return connectorConnects(attached_connector, programWithSchema.schema)
+            })
+          }
+
           setProject(programWithSchema)
           replacePlaceholder(programWithSchema)
         }
       }
 
-      if (configQuery.data.attached_connectors) {
-        const attachedConnectors = configQuery.data.attached_connectors
-        attachedConnectors.forEach(attached_connector => {
+      if (invalidConnections.length > 0) {
+        pushMessage({
+          key: new Date().getTime(),
+          color: 'warning',
+          message: `Could not attach ${
+            invalidConnections.length
+          } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
+        })
+      }
+
+      if (validConnections) {
+        validConnections.forEach(attached_connector => {
           const connector = connectorQuery.data.find(
             connector => connector.connector_id === attached_connector.connector_id
           )
@@ -165,7 +186,8 @@ export const PipelineWithProvider = (props: {
     setProject,
     replacePlaceholder,
     addConnector,
-    configId
+    configId,
+    pushMessage
   ])
 
   const debouncedSave = useDebouncedCallback(() => {
@@ -205,8 +227,6 @@ export const PipelineWithProvider = (props: {
           }
         )
       } else {
-        console.log('update existing config')
-
         // Update an existing config
         const connectors: Array<AttachedConnector> = getEdges().map(edge => {
           const source = getNode(edge.source)
