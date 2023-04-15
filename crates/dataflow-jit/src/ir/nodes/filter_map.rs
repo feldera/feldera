@@ -64,7 +64,7 @@ impl DataflowNode for Map {
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+        // TODO
     }
 
     fn optimize(&mut self, layout_cache: &RowLayoutCache) {
@@ -140,7 +140,7 @@ impl DataflowNode for Filter {
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+        // TODO
     }
 
     fn optimize(&mut self, layout_cache: &RowLayoutCache) {
@@ -223,7 +223,7 @@ impl DataflowNode for FilterMap {
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+        // TODO
     }
 
     fn optimize(&mut self, layout_cache: &RowLayoutCache) {
