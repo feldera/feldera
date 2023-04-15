@@ -52,7 +52,7 @@ const TableSqlPrograms = () => {
   const router = useRouter()
 
   const [rows, setRows] = useState<ProjectDescr[]>([])
-  const fetchQuery = useQuery({ queryKey: ['project'], queryFn: ProjectService.listProjects })
+  const fetchQuery = useQuery<ProjectDescr[]>({ queryKey: ['project'] })
   const { pushMessage } = useStatusNotification()
 
   // Editing a row
@@ -68,7 +68,8 @@ const TableSqlPrograms = () => {
       },
       {
         onError: (error: CancelError) => {
-          queryClient.invalidateQueries({ queryKey: ['project'] })
+          queryClient.invalidateQueries(['project'])
+          queryClient.invalidateQueries(['projectStatus', {project_id: newRow.project_id}])
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -91,7 +92,7 @@ const TableSqlPrograms = () => {
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries({ queryKey: ['project'] })
+              queryClient.invalidateQueries(['project'])
             }
           })
         }

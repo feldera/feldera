@@ -6,8 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { ConfigDescr, ConfigId, ProjectService } from 'src/types/manager'
-import { ConfigService } from 'src/types/manager/services/ConfigService'
+import { ConfigDescr, ConfigId, ProjectDescr } from 'src/types/manager'
 import { parse } from 'csv-parse'
 import { projectToProjectWithSchema } from 'src/types/program'
 
@@ -20,14 +19,8 @@ const IntrospectInputOutput = () => {
   const router = useRouter()
   const { config, view } = router.query
 
-  const projectQuery = useQuery({
-    queryKey: ['projectStatus'],
-    queryFn: () => {
-      if (configDescr !== undefined && configDescr.project_id !== undefined) {
-        return ProjectService.projectStatus(configDescr.project_id)
-      }
-    },
-    enabled: configDescr !== undefined && configDescr.project_id !== undefined
+  const projectQuery = useQuery<ProjectDescr>(['projectStatus', {project_id: configDescr?.project_id}],
+    { enabled: configDescr !== undefined && configDescr.project_id !== undefined
   })
   useEffect(() => {
     if (!projectQuery.isLoading && !projectQuery.isError && viewName) {
@@ -59,13 +52,7 @@ const IntrospectInputOutput = () => {
     }
   }, [configId, setConfigId, config, view, setViewName])
 
-  const configQuery = useQuery({
-    queryKey: ['configStatus'],
-    queryFn: () => {
-      if (configId) {
-        return ConfigService.configStatus(configId)
-      }
-    },
+  const configQuery = useQuery<ConfigDescr>(['configStatus', {config_id: configId}], {
     enabled: configId !== undefined
   })
   useEffect(() => {

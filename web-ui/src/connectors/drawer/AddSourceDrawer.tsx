@@ -12,7 +12,7 @@ import { Icon } from '@iconify/react'
 import useDrawerState from 'src/streaming/builder/hooks/useDrawerState'
 import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
 import { useState, Dispatch, useEffect } from 'react'
-import { AttachedConnector, ConnectorId, ConnectorService, ConnectorType, Direction } from 'src/types/manager'
+import { AttachedConnector, ConnectorDescr, ConnectorId, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/connectors'
 import { randomString } from 'src/utils'
@@ -105,7 +105,7 @@ const SideBarAddIo = () => {
     [ConnectorType.KAFKA_OUT]: 0,
     [ConnectorType.FILE]: 0
   })
-  const { data, isLoading, isError } = useQuery({ queryKey: ['connector'], queryFn: ConnectorService.listConnectors })
+  const { data, isLoading, isError } = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
   useEffect(() => {
     if (!isLoading && !isError) {
       const counts = data

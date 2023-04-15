@@ -11,12 +11,13 @@ import { useBuilderState } from 'src/streaming/builder/useBuilderState'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import {
   AttachedConnector,
+  ConfigDescr,
   ConfigId,
   ConfigService,
-  ConnectorService,
+  ConnectorDescr,
   Direction,
   NewConfigResponse,
-  ProjectService
+  ProjectDescr,
 } from 'src/types/manager'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
@@ -75,13 +76,11 @@ export const PipelineWithProvider = (props: {
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
 
-  const connectorQuery = useQuery({ queryKey: ['source'], queryFn: ConnectorService.listConnectors })
-
-  const projects = useQuery({ queryKey: ['project'], queryFn: ProjectService.listProjects })
-  const configQuery = useQuery({
-    queryKey: ['configs', configId],
-    queryFn: ({ queryKey }) => ConfigService.configStatus(queryKey[1] as number),
-    enabled:
+  const projects = useQuery<ProjectDescr[]>(['project'])
+  const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
+  const configQuery = useQuery<ConfigDescr>(['configStatus',  { config_id: configId }],
+  {
+      enabled:
       configId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
@@ -108,10 +107,13 @@ export const PipelineWithProvider = (props: {
       if (configQuery.data.project_id) {
         const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
         if (foundProject) {
-          console.log('we found it', foundProject)
-          if (!foundProject.schema) {
+          if (foundProject.schema == null) {
             setMissingSchemaDialog(true)
           }
+          else {
+            setMissingSchemaDialog(false)
+          }
+
           const programWithSchema = projectToProjectWithSchema(foundProject)
           setProject(programWithSchema)
           replacePlaceholder(programWithSchema)
@@ -275,7 +277,7 @@ export const PipelineWithProvider = (props: {
           <PipelineGraph />
         </div>
       </Grid>
-      <MissingSchemaDialog open={missingSchemaDialog} project_id={project?.project_id} />
+      <MissingSchemaDialog open={missingSchemaDialog} setOpen={setMissingSchemaDialog} project_id={project?.project_id} />
     </>
   )
 }

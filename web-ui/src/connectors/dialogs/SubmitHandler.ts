@@ -70,13 +70,15 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
 
     if (!updateIsLoading) {
       updateConnector(source_desc, {
-        onSuccess: () => {
+        onSettled: () => {
           queryClient.invalidateQueries(['connector'])
+          queryClient.invalidateQueries(['connectorStatus', {connector_id: source_desc.connector_id}])
+        },
+        onSuccess: () => {
           pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
           onFormSubmitted(source_desc.connector_id)
         },
         onError: error => {
-          queryClient.invalidateQueries(['connector'])
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
           onFormSubmitted(undefined)
         }
