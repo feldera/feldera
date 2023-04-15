@@ -1,6 +1,6 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    literal::StreamLiteral,
+    literal::{StreamCollection, StreamLiteral},
     nodes::{DataflowNode, StreamKind, StreamLayout},
     LayoutId, NodeId,
 };
@@ -27,13 +27,7 @@ impl ConstantStream {
 
     /// Create an empty stream
     pub const fn empty(layout: StreamLayout) -> Self {
-        Self::new(
-            match layout {
-                StreamLayout::Set(_) => StreamLiteral::Set(Vec::new()),
-                StreamLayout::Map(..) => StreamLiteral::Map(Vec::new()),
-            },
-            layout,
-        )
+        Self::new(StreamLiteral::empty(layout), layout)
     }
 
     pub const fn value(&self) -> &StreamLiteral {
@@ -55,8 +49,8 @@ impl ConstantStream {
     pub fn consolidate(&mut self) {
         if !self.consolidated {
             let start_len = self.value.len();
-            match &mut self.value {
-                StreamLiteral::Set(set) => {
+            match self.value.value_mut() {
+                StreamCollection::Set(set) => {
                     // FIXME: We really should be sorting by the criteria that the
                     // runtime rows will be sorted by so we have less work to do at
                     // runtime, but technically any sorting criteria works as long
@@ -80,7 +74,7 @@ impl ConstantStream {
                     set.retain(|&(_, weight)| weight != 0);
                 }
 
-                StreamLiteral::Map(map) => {
+                StreamCollection::Map(map) => {
                     // FIXME: We really should be sorting by the criteria that the
                     // runtime rows will be sorted by so we have less work to do at
                     // runtime, but technically any sorting criteria works as long
@@ -142,7 +136,7 @@ impl DataflowNode for ConstantStream {
         // TODO: Ensure that the data matches the node's layout
         // TODO: Ensure that the data's actually consolidated if `self.consolidated ==
         // true`
-        todo!()
+        assert_eq!(self.layout, self.value.layout());
     }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {
@@ -154,9 +148,11 @@ impl DataflowNode for ConstantStream {
         F: FnMut(LayoutId),
     {
         self.layout.map_layouts(map);
+        self.value.layout().map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
+        self.value.layout_mut().remap_layouts(mappings);
     }
 }

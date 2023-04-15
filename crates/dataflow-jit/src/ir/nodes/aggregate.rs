@@ -49,7 +49,7 @@ impl DataflowNode for Min {
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        todo!()
+        // TODO
     }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}

@@ -1,6 +1,6 @@
 //! Remove distinct over distinct streams
 
-use crate::ir::{graph::Subgraph, literal::StreamLiteral, nodes::Node, GraphExt, NodeId};
+use crate::ir::{graph::Subgraph, literal::StreamCollection, nodes::Node, GraphExt, NodeId};
 use petgraph::{
     algo::{toposort, DfsSpace},
     Direction,
@@ -202,9 +202,13 @@ impl Subgraph {
                     if constant.consolidated() && !is_distinct.contains(&node_id) {
                         // If all tuples/rows within the stream have a weight of 1, the stream is
                         // distinct
-                        let constant_is_distinct = match constant.value() {
-                            StreamLiteral::Set(set) => set.iter().all(|&(_, weight)| weight == 1),
-                            StreamLiteral::Map(map) => map.iter().all(|&(.., weight)| weight == 1),
+                        let constant_is_distinct = match constant.value().value() {
+                            StreamCollection::Set(set) => {
+                                set.iter().all(|&(_, weight)| weight == 1)
+                            }
+                            StreamCollection::Map(map) => {
+                                map.iter().all(|&(.., weight)| weight == 1)
+                            }
                         };
 
                         if constant_is_distinct {

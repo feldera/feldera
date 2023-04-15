@@ -10,7 +10,7 @@ use crate::{
     },
     ir::{
         graph,
-        literal::{NullableConstant, RowLiteral, StreamLiteral},
+        literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::{DataflowNode as _, Node, StreamKind, StreamLayout, Subgraph as SubgraphNode},
         Constant, Graph, GraphExt, LayoutId, NodeId,
     },
@@ -837,8 +837,8 @@ impl CompiledDataflow {
                     }
 
                     Node::Constant(constant) => {
-                        let value = match constant.value() {
-                            StreamLiteral::Set(set) => {
+                        let value = match constant.value().value() {
+                            StreamCollection::Set(set) => {
                                 let key_layout = constant.layout().unwrap_set();
                                 let key_vtable = unsafe { &*vtables[&key_layout] };
                                 let key_layout = layout_cache.layout_of(key_layout);
@@ -858,7 +858,7 @@ impl CompiledDataflow {
                                 RowZSet::Set(batcher.seal())
                             }
 
-                            StreamLiteral::Map(map) => {
+                            StreamCollection::Map(map) => {
                                 let (key_layout, value_layout) = constant.layout().unwrap_map();
                                 let (key_vtable, value_vtable) =
                                     unsafe { (&*vtables[&key_layout], &*vtables[&value_layout]) };

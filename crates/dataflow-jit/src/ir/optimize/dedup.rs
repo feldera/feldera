@@ -83,7 +83,7 @@ impl MutNodeVisitor for NodeCollector {
 mod tests {
     use crate::{
         ir::{
-            literal::{NullableConstant, RowLiteral},
+            literal::{NullableConstant, RowLiteral, StreamCollection, StreamLiteral},
             nodes::{ConstantStream, StreamLayout},
             ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
@@ -108,10 +108,13 @@ mod tests {
         let sink1 = graph.sink(distinct2);
         let sink2 = graph.sink(distinct3);
 
-        let constant = crate::ir::literal::StreamLiteral::Set(vec![(
-            RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(1))]),
-            1,
-        )]);
+        let constant = StreamLiteral::new(
+            StreamLayout::Set(u32),
+            StreamCollection::Set(vec![(
+                RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(1))]),
+                1,
+            )]),
+        );
         let empty1 = graph.add_node(ConstantStream::new(
             constant.clone(),
             StreamLayout::Set(u32),
