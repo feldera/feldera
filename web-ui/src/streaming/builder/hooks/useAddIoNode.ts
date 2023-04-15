@@ -4,9 +4,20 @@ import { useCallback } from 'react'
 import { NodeProps, useReactFlow, getConnectedEdges } from 'reactflow'
 import { AttachedConnector, Direction } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
+import { Schema } from 'src/types/program'
 import { randomString } from 'src/utils'
 
 const HEIGHT_OFFSET = 120
+
+// Checks if the connector can connect to a give schema
+export function connectorConnects(ac: AttachedConnector, schema: Schema): boolean {
+  console.log('connectorConnects', ac, schema)
+  if (ac.direction === Direction.INPUT) {
+    return schema.inputs.some(table => table.name === ac.config)
+  } else {
+    return schema.outputs.some(view => view.name === ac.config)
+  }
+}
 
 export function useAddConnector() {
   const { setNodes, getNodes, getNode, addNodes, addEdges } = useReactFlow()
