@@ -120,16 +120,17 @@ impl Subgraph {
 
         let mut sink_reachable = BTreeSet::new();
         for &node_id in order.iter().rev() {
-            let node = &self.nodes()[&node_id];
-            if node.is_sink()
-                || self
-                    .edges()
-                    .edges_directed(node_id, Direction::Outgoing)
-                    .any(|(_, dest, _)| sink_reachable.contains(&dest))
-            {
-                sink_reachable.insert(node_id);
-            } else {
-                unreachable.push(node_id);
+            if let Some(node) = self.nodes().get(&node_id) {
+                if node.is_sink()
+                    || self
+                        .edges()
+                        .edges_directed(node_id, Direction::Outgoing)
+                        .any(|(_, dest, _)| sink_reachable.contains(&dest))
+                {
+                    sink_reachable.insert(node_id);
+                } else {
+                    unreachable.push(node_id);
+                }
             }
         }
 
@@ -148,5 +149,34 @@ impl Subgraph {
             tracing::debug!("removing edges for node {node} (reason: unreachable from sink)");
             self.edges_mut().remove_node(node);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        ir::{ColumnType, Graph, GraphExt, RowLayoutBuilder},
+        utils,
+    };
+
+    #[test]
+    fn shake_unused_source() {
+        utils::test_logger();
+
+        let mut graph = Graph::new();
+        let value = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Bool, false)
+                .build(),
+        );
+
+        graph.source(value);
+
+        let empty = graph.empty_set(value);
+        graph.sink(empty);
+
+        graph.optimize();
+
+        println!("{graph:?}");
     }
 }
