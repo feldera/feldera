@@ -69,7 +69,7 @@ const TableSqlPrograms = () => {
       {
         onError: (error: CancelError) => {
           queryClient.invalidateQueries(['project'])
-          queryClient.invalidateQueries(['projectStatus', {project_id: newRow.project_id}])
+          queryClient.invalidateQueries(['projectStatus', { project_id: newRow.project_id }])
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }

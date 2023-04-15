@@ -20,7 +20,7 @@ const InputNode = ({ id, data }: NodeProps) => {
 
   // Fetch the connector data for the corresponding ac.connector_id
   const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
-  const connectorQuery = useQuery(['connector',  { connector_id: data.ac.connector_id }], () =>
+  const connectorQuery = useQuery(['connector', { connector_id: data.ac.connector_id }], () =>
     ConnectorService.connectorStatus(data.ac.connector_id)
   )
   useEffect(() => {

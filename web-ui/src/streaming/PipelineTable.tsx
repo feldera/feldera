@@ -52,10 +52,9 @@ interface ConnectorData {
 const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
-  const projectQuery = useQuery<ProjectDescr>(
-    ['projectStatus', {project_id: props.row.project_id}],
-    { enabled: props.row.project_id !== undefined }
-  )
+  const projectQuery = useQuery<ProjectDescr>(['projectStatus', { project_id: props.row.project_id }], {
+    enabled: props.row.project_id !== undefined
+  })
 
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
   useEffect(() => {
@@ -88,8 +87,7 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
   const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
   const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
-  const pipelineStatusQuery = useQuery<any>(['pipelineStatus', {pipeline_id: props.row.pipeline?.pipeline_id}],
-  {
+  const pipelineStatusQuery = useQuery<any>(['pipelineStatus', { pipeline_id: props.row.pipeline?.pipeline_id }], {
     enabled: props.row.pipeline !== undefined && props.row.pipeline !== null,
     refetchInterval: 1000
   })
@@ -386,7 +384,7 @@ export default function PipelineTable() {
               startPipelineMutate(resp.pipeline_id, {
                 onSettled: () => {
                   queryClient.invalidateQueries(['configs'])
-                  queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+                  queryClient.invalidateQueries(['configStatus', { config_id: curRow.config_id }])
                 },
                 onSuccess: () => {
                   setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
@@ -399,7 +397,7 @@ export default function PipelineTable() {
             },
             onSettled: () => {
               queryClient.invalidateQueries(['configs'])
-              queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+              queryClient.invalidateQueries(['configStatus', { config_id: curRow.config_id }])
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
@@ -413,7 +411,7 @@ export default function PipelineTable() {
         startPipelineMutate(curRow.pipeline.pipeline_id, {
           onSettled: () => {
             queryClient.invalidateQueries(['configs'])
-            queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+            queryClient.invalidateQueries(['configStatus', { config_id: curRow.config_id }])
           },
           onSuccess: () => {
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.RUNNING)))
@@ -446,7 +444,7 @@ export default function PipelineTable() {
         pausePipelineMutate(curRow.pipeline.pipeline_id, {
           onSettled: () => {
             queryClient.invalidateQueries(['configs'])
-            queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+            queryClient.invalidateQueries(['configStatus', { config_id: curRow.config_id }])
           },
           onSuccess: () => {
             setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.PAUSED)))
@@ -475,7 +473,7 @@ export default function PipelineTable() {
           {
             onSettled: () => {
               queryClient.invalidateQueries(['configs'])
-              queryClient.invalidateQueries(['configStatus', {config_id: curRow.config_id}])
+              queryClient.invalidateQueries(['configStatus', { config_id: curRow.config_id }])
             },
             onSuccess: () => {
               setIsLaunching(map => new Map(map.set(curRow.config_id, PipelineStatus.UNUSED)))

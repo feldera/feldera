@@ -43,9 +43,9 @@ if (themeConfig.routingLoader) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: defaultQueryFn,
-    },
-  },
+      queryFn: defaultQueryFn
+    }
+  }
 })
 
 const App = (props: ExtendedAppProps) => {

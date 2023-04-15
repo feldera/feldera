@@ -7,7 +7,11 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContentText from '@mui/material/DialogContentText'
 
-const MissingSchemaDialog = (props: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>>, project_id: number | undefined }) => {
+const MissingSchemaDialog = (props: {
+  open: boolean
+  setOpen: Dispatch<SetStateAction<boolean>>
+  project_id: number | undefined
+}) => {
   const router = useRouter()
   const handleClose = () => {
     props.setOpen(false)

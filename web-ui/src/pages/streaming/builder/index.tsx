@@ -11,13 +11,17 @@ import { useBuilderState } from 'src/streaming/builder/useBuilderState'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import {
   AttachedConnector,
+  CancelError,
   ConfigDescr,
   ConfigId,
   ConfigService,
   ConnectorDescr,
   Direction,
+  NewConfigRequest,
   NewConfigResponse,
   ProjectDescr,
+  UpdateConfigRequest,
+  UpdateConfigResponse
 } from 'src/types/manager'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
@@ -27,6 +31,7 @@ import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceho
 import { projectToProjectWithSchema } from 'src/types/program'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
+import useStatusNotification from 'src/components/errors/useStatusNotification'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
@@ -71,16 +76,20 @@ export const PipelineWithProvider = (props: {
 
   const { getNode, getEdges } = useReactFlow()
 
-  const { mutate: newConfigMutate } = useMutation(ConfigService.newConfig)
-  const { mutate: updateConfigMutate } = useMutation(ConfigService.updateConfig)
+  const { mutate: newConfigMutate } = useMutation<NewConfigResponse, CancelError, NewConfigRequest>(
+    ConfigService.newConfig
+  )
+  const { mutate: updateConfigMutate } = useMutation<UpdateConfigResponse, CancelError, UpdateConfigRequest>(
+    ConfigService.updateConfig
+  )
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
 
+  const { pushMessage } = useStatusNotification()
   const projects = useQuery<ProjectDescr[]>(['project'])
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
-  const configQuery = useQuery<ConfigDescr>(['configStatus',  { config_id: configId }],
-  {
-      enabled:
+  const configQuery = useQuery<ConfigDescr>(['configStatus', { config_id: configId }], {
+    enabled:
       configId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
@@ -109,8 +118,7 @@ export const PipelineWithProvider = (props: {
         if (foundProject) {
           if (foundProject.schema == null) {
             setMissingSchemaDialog(true)
-          }
-          else {
+          } else {
             setMissingSchemaDialog(false)
           }
 
@@ -185,7 +193,8 @@ export const PipelineWithProvider = (props: {
             config
           },
           {
-            onError: error => {
+            onError: (error: CancelError) => {
+              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
               setSaveState('isUpToDate')
               console.log('error', error)
             },
@@ -224,11 +233,9 @@ export const PipelineWithProvider = (props: {
           connectors
         }
 
-        console.log('updateRequest', updateRequest)
-
         updateConfigMutate(updateRequest, {
-          onError: error => {
-            console.log('error', error)
+          onError: (error: CancelError) => {
+            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
             setSaveState('isUpToDate')
           },
           onSuccess: () => {
@@ -250,7 +257,8 @@ export const PipelineWithProvider = (props: {
     description,
     config,
     getNode,
-    getEdges
+    getEdges,
+    pushMessage
   ])
 
   return (
@@ -277,7 +285,11 @@ export const PipelineWithProvider = (props: {
           <PipelineGraph />
         </div>
       </Grid>
-      <MissingSchemaDialog open={missingSchemaDialog} setOpen={setMissingSchemaDialog} project_id={project?.project_id} />
+      <MissingSchemaDialog
+        open={missingSchemaDialog}
+        setOpen={setMissingSchemaDialog}
+        project_id={project?.project_id}
+      />
     </>
   )
 }
