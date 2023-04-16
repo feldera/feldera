@@ -319,9 +319,12 @@ impl ProjectDB {
             connection_str,
             PoolOptions::new(),
             initial_sql,
+            // Remaining settings for postgres-embed only:
             database_dir,
             true,
-            None,
+            // Use a non-standard port for postgres-embed so we don't interfere
+            // with an existing postgres installation
+            Some(8082),
         )
         .await
     }
@@ -350,6 +353,7 @@ impl ProjectDB {
     ///   database.
     /// - `is_persistent`: Whether the embedded postgres database should be
     ///   persistent or removed on shutdown.
+    /// - `port`: The port to use for the embedded Postgres database to run on.
     async fn connect_inner(
         connection_str: &str,
         pool_options: PoolOptions<Any>,
