@@ -63,14 +63,13 @@ use utoipa_swagger_ui::SwaggerUi;
 mod compiler;
 mod config;
 mod db;
-mod pg_setup;
 mod runner;
 
 pub(crate) use compiler::{Compiler, ProjectStatus};
 pub(crate) use config::ManagerConfig;
 use db::{
-    AttachedConnectorId, ConfigId, ConnectorId, ConnectorType, DBError, PipelineId, ProjectDB,
-    ProjectDescr, ProjectId, Version,
+    storage::Storage, AttachedConnector, AttachedConnectorId, ConfigId, ConnectorId, ConnectorType,
+    DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, Version,
 };
 use runner::{Runner, RunnerError};
 
@@ -138,6 +137,7 @@ observed by the user is outdated, so the request is rejected."
     ),
     components(schemas(
         compiler::SqlCompilerMessage,
+        db::AttachedConnector,
         db::ProjectDescr,
         db::ConnectorDescr,
         db::ConnectorType,
@@ -156,7 +156,6 @@ observed by the user is outdated, so the request is rejected."
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::format::CsvEncoderConfig,
         dbsp_adapters::format::CsvParserConfig,
-        AttachedConnector,
         Direction,
         ProjectId,
         PipelineId,
@@ -930,23 +929,12 @@ async fn new_config(
 
 /// Is the attached connection an Input or an Output?
 #[derive(Deserialize, Eq, PartialEq, Serialize, ToSchema, Debug, Copy, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 enum Direction {
     Input,
     Output,
+    #[cfg_attr(test, proptest(skip))] // TODO: Direction will go away
     InputOutput,
-}
-
-/// Format to add attached connectors during a config update.
-#[derive(Deserialize, Serialize, ToSchema, Debug)]
-pub(crate) struct AttachedConnector {
-    /// A unique identifier for this attachement.
-    uuid: String,
-    /// Is this an input or an output?
-    direction: Direction,
-    /// The id of the connector to attach.
-    connector_id: ConnectorId,
-    /// The YAML config for this attached connector.
-    config: String,
 }
 
 /// Request to update an existing project configuration.

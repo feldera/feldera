@@ -1,3 +1,4 @@
+use crate::db::storage::Storage;
 use crate::{ManagerConfig, ProjectDB, ProjectId, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use fs_extra::{dir, dir::CopyOptions};
@@ -39,7 +40,8 @@ const COMPILER_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 /// "message" : "Encountered \"<EOF>\" at line 14, column 13."
 /// } ]
 /// ```
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SqlCompilerMessage {
     start_line_number: usize,
@@ -52,7 +54,8 @@ pub(crate) struct SqlCompilerMessage {
 }
 
 /// Project compilation status.
-#[derive(Debug, Serialize, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Serialize, Eq, PartialEq, ToSchema, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) enum ProjectStatus {
     /// Initial state: project has been created or modified, but the user
     /// hasn't yet started compiling the project.
