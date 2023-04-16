@@ -1,7 +1,7 @@
 use crate::{
-    db::ConfigDescr, AttachedConnector, Direction, ErrorResponse, ManagerConfig,
-    NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB, ProjectId, ProjectStatus,
-    Version,
+    db::storage::Storage, db::AttachedConnector, db::ConfigDescr, Direction, ErrorResponse,
+    ManagerConfig, NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB, ProjectId,
+    ProjectStatus, Version,
 };
 use actix_web::{
     http::{Error, Method},
@@ -356,8 +356,9 @@ impl Runner {
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
-                db.remove_pipeline_from_config(pipeline_descr.config_id)
-                    .await?;
+                if let Some(config_id) = pipeline_descr.config_id {
+                    db.remove_pipeline_from_config(config_id).await?;
+                }
                 db.set_pipeline_killed(pipeline_id).await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
@@ -368,8 +369,9 @@ impl Runner {
         };
 
         if response.status().is_success() {
-            db.remove_pipeline_from_config(pipeline_descr.config_id)
-                .await?;
+            if let Some(config_id) = pipeline_descr.config_id {
+                db.remove_pipeline_from_config(config_id).await?;
+            }
             db.set_pipeline_killed(pipeline_id).await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
