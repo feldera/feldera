@@ -252,9 +252,8 @@ impl ManagerConfig {
                     .unwrap(),
             );
             s
-        } else if self.db_connection_string.starts_with("postgres://") {
-            self.db_connection_string.clone()
-        } else if self.db_connection_string.starts_with("postgres-embed") {
+        } else if self.db_connection_string.starts_with("postgres") {
+            // this starts_with works for `postgres://` and `postgres-embed`
             self.db_connection_string.clone()
         } else {
             panic!("Invalid connection string {}", self.db_connection_string)
