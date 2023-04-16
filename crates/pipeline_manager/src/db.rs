@@ -4,12 +4,8 @@ use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    any::{AnyConnectOptions, AnyRow},
-    pool::PoolOptions,
-    Any, ConnectOptions, Pool, Row,
-};
-use std::{error::Error as StdError, fmt, fmt::Display, path::PathBuf, str::FromStr};
+use std::{error::Error as StdError, fmt, fmt::Display, path::PathBuf};
+use tokio_postgres::{Client, NoTls};
 use utoipa::ToSchema;
 
 /// Project database API.
@@ -26,7 +22,7 @@ use utoipa::ToSchema;
 /// [`ProjectStatus::Pending`].  The `status_since` column is set to the current
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
-    conn: Pool<Any>,
+    conn: Client,
     #[allow(dead_code)] // We don't have to interact with it, but dropping it stops the DB server.
     pub pg: Option<pg_embed::postgres::PgEmbed>,
 }
@@ -310,7 +306,6 @@ impl ProjectDB {
 
         Self::connect_inner(
             connection_str,
-            PoolOptions::new(),
             initial_sql,
             // Remaining settings for postgres-embed only:
             database_dir,
@@ -335,7 +330,6 @@ impl ProjectDB {
     /// - `port`: The port to use for the embedded Postgres database to run on.
     async fn connect_inner(
         connection_str: &str,
-        pool_options: PoolOptions<Any>,
         initial_sql: &Option<String>,
         database_dir: PathBuf,
         is_persistent: bool,
@@ -353,15 +347,23 @@ impl ProjectDB {
             (None, connection_str.to_string())
         };
 
-        //sqlx::any::install_default_drivers();
         debug!("Opening connection to {:?}", connection_str);
-        let mut options = AnyConnectOptions::from_str(&connection_str)?;
-        options.log_statements(log::LevelFilter::Trace);
-        let conn = pool_options.connect_with(options).await?;
-        sqlx::query(
-            "
+        let (client, conn) = tokio_postgres::connect(&connection_str, NoTls).await?;
+
+        // The `tokio_postgres` API requires allocating a thread to `connection`,
+        // which will handle datbase I/O and should automatically terminate once
+        // the `dbclient` is dropped.
+        tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+
+        client
+            .execute(
+                "
         CREATE TABLE IF NOT EXISTS project (
-            id SERIAL PRIMARY KEY,
+            id bigserial PRIMARY KEY,
             version integer NOT NULL,
             name varchar UNIQUE NOT NULL,
             description varchar NOT NULL,
@@ -370,28 +372,30 @@ impl ProjectDB {
             status varchar,
             error varchar,
             status_since integer NOT NULL)",
-        )
-        .execute(&conn)
-        .await?;
+                &[],
+            )
+            .await?;
 
-        sqlx::query(
-            "
+        client
+            .execute(
+                "
         CREATE TABLE IF NOT EXISTS pipeline (
-            id SERIAL PRIMARY KEY,
+            id bigserial PRIMARY KEY,
             config_id integer NOT NULL,
             config_version integer NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port integer,
-            killed boolean NOT NULL,
+            killed bool NOT NULL,
             created integer NOT NULL)",
-        )
-        .execute(&conn)
-        .await?;
+                &[],
+            )
+            .await?;
 
-        sqlx::query(
-            "
+        client
+            .execute(
+                "
         CREATE TABLE IF NOT EXISTS project_config (
-            id SERIAL PRIMARY KEY,
+            id bigserial PRIMARY KEY,
             pipeline_id integer,
             project_id integer,
             version integer NOT NULL,
@@ -400,46 +404,48 @@ impl ProjectDB {
             config varchar NOT NULL,
             FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE,
             FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE SET NULL);",
-        )
-        .execute(&conn)
-        .await?;
+                &[],
+            )
+            .await?;
 
-        sqlx::query(
-            "
+        client
+            .execute(
+                "
         CREATE TABLE IF NOT EXISTS connector (
-            id SERIAL PRIMARY KEY,
+            id bigserial PRIMARY KEY,
             name varchar NOT NULL,
             description varchar NOT NULL,
             typ integer NOT NULL,
             config varchar NOT NULL)",
-        )
-        .execute(&conn)
-        .await?;
+                &[],
+            )
+            .await?;
 
-        sqlx::query(
-            "
+        client
+            .execute(
+                "
         CREATE TABLE IF NOT EXISTS attached_connector (
-            id SERIAL PRIMARY KEY,
+            id bigserial PRIMARY KEY,
             uuid varchar UNIQUE NOT NULL,
-            config_id integer NOT NULL,
-            connector_id integer NOT NULL,
+            config_id bigint NOT NULL,
+            connector_id bigint NOT NULL,
             config varchar,
-            is_input integer NOT NULL,
+            is_input bool NOT NULL,
             FOREIGN KEY (config_id) REFERENCES project_config(id) ON DELETE CASCADE,
             FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE)",
-        )
-        .execute(&conn)
-        .await?;
+                &[],
+            )
+            .await?;
 
         if let Some(initial_sql_file) = &initial_sql {
             if let Ok(initial_sql) = std::fs::read_to_string(initial_sql_file) {
-                sqlx::query(&initial_sql).execute(&conn).await?;
+                client.execute(&initial_sql, &[]).await?;
             } else {
                 log::warn!("initial SQL file '{}' does not exist", initial_sql_file);
             }
         }
 
-        Ok(Self { conn, pg })
+        Ok(Self { conn: client, pg })
     }
 
     /// Reset everything that is set through compilation of the project.
@@ -447,25 +453,26 @@ impl ProjectDB {
     /// - Set status to `ProjectStatus::None` after server restart.
     /// - Reset `schema` to None.
     pub(crate) async fn reset_project_status(&self) -> AnyResult<()> {
-        sqlx::query("UPDATE project SET status = NULL, error = NULL, schema = NULL")
-            .execute(&self.conn)
+        self.conn
+            .execute(
+                "UPDATE project SET status = NULL, error = NULL, schema = NULL",
+                &[],
+            )
             .await?;
         Ok(())
     }
 
     /// Retrieve project list from the DB.
     pub(crate) async fn list_projects(&self) -> AnyResult<Vec<ProjectDescr>> {
-        let rows = sqlx::query(
-            r#"SELECT id, name, description, version,
-                         status,
-                         error,
-                         schema
-                         FROM project"#,
-        )
-        .fetch_all(&self.conn)
-        .await?;
+        let rows = self
+            .conn
+            .query(
+                r#"SELECT id, name, description, version, status, error, schema FROM project"#,
+                &[],
+            )
+            .await?;
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let status: Option<String> = row.get(4);
             let error: Option<String> = row.get(5);
@@ -473,10 +480,10 @@ impl ProjectDB {
             let schema: Option<String> = row.get(6);
 
             result.push(ProjectDescr {
-                project_id: ProjectId(row.get::<i32, _>(0) as i64),
+                project_id: ProjectId(row.get(0)),
                 name: row.get(1),
                 description: row.get(2),
-                version: Version(row.get::<i32, _>(3) as i64),
+                version: Version(row.get(3)),
                 schema,
                 status,
             });
@@ -491,55 +498,45 @@ impl ProjectDB {
         &self,
         project_id: ProjectId,
     ) -> AnyResult<(ProjectDescr, String)> {
-        let fetched = sqlx::query(
-            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1",
-        ).bind(project_id.0).fetch_one(&self.conn).await;
+        let row = self.conn.query_opt(
+            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1", &[&project_id.0]
+        )
+        .await?
+        .ok_or(DBError::UnknownProject(project_id))?;
 
-        if let Ok(row) = fetched {
-            let name: String = row.get(0);
-            let description: String = row.get(1);
-            let version: Version = Version(row.get::<i32, _>(2) as i64);
-            let status: Option<String> = row.get(3);
-            let error: Option<String> = row.get(4);
-            let code: String = row.get(5);
-            let schema: Option<String> = row.get(6);
+        let name: String = row.get(0);
+        let description: String = row.get(1);
+        let version: Version = Version(row.get(2));
+        let status: Option<String> = row.get(3);
+        let error: Option<String> = row.get(4);
+        let code: String = row.get(5);
+        let schema: Option<String> = row.get(6);
 
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+        let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
-            Ok((
-                ProjectDescr {
-                    project_id,
-                    name,
-                    description,
-                    version,
-                    status,
-                    schema,
-                },
-                code,
-            ))
-        } else {
-            Err(DBError::UnknownProject(project_id).into())
-        }
+        Ok((
+            ProjectDescr {
+                project_id,
+                name,
+                description,
+                version,
+                status,
+                schema,
+            },
+            code,
+        ))
     }
 
     /// Helper to convert sqlx error into a `DBError::DuplicateProjectName`
     /// if the underlying low-level error thrown by the database matches.
-    fn maybe_duplicate_project_name_err(e: sqlx::Error, _project_name: &str) -> AnyError {
-        match e {
-            sqlx::Error::Database(db_error) => {
-                // UPGRADE: sqlx 0.7 use is_unique_violation()
-                if db_error
-                    .message()
-                    .to_lowercase()
-                    .contains("unique constraint")
-                {
-                    anyhow!(DBError::DuplicateProjectName(_project_name.to_string()))
-                } else {
-                    anyhow!(db_error)
-                }
+    fn maybe_duplicate_project_name_err(e: tokio_postgres::Error, _project_name: &str) -> AnyError {
+        if let Some(code) = e.code() {
+            if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
+                return anyhow!(DBError::DuplicateProjectName(_project_name.to_string()));
             }
-            _ => anyhow!(e),
         }
+
+        anyhow!(e)
     }
 
     /// Create a new project.
@@ -550,25 +547,22 @@ impl ProjectDB {
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
         debug!("new_project {project_name} {project_description} {project_code}");
-        sqlx::query(
-                "INSERT INTO project (version, name, description, code, schema, status,
-                    error, status_since) VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now()));",
+        self.conn.execute(
+                "INSERT INTO project (version, name, description, code, schema, status, error, status_since)
+                    VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now()));",
+            &[&project_name, &project_description, &project_code]
         )
-        .bind(project_name)
-        .bind(project_description)
-        .bind(project_code)
-        .execute(&self.conn)
         .await
         .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
 
         // name has a UNIQUE constraint
-        let id: i32 = sqlx::query("SELECT id FROM project WHERE name = $1")
-            .bind(project_name)
-            .fetch_one(&self.conn)
+        let id = self
+            .conn
+            .query_one("SELECT id FROM project WHERE name = $1", &[&project_name])
             .await?
             .get(0);
 
-        Ok((ProjectId(id as i64), Version(1)))
+        Ok((ProjectId(id), Version(1)))
     }
 
     /// Update project name, description and, optionally, code.
@@ -580,36 +574,33 @@ impl ProjectDB {
         project_description: &str,
         project_code: &Option<String>,
     ) -> AnyResult<Version> {
-        let (mut version, old_code): (Version, String) =
-            sqlx::query("SELECT version, code FROM project where id = $1")
-                .bind(project_id.0)
-                .map(|row: AnyRow| (Version(row.get::<i32, _>(0) as i64), row.get(1)))
-                .fetch_one(&self.conn)
-                .await
-                .map_err(|_| DBError::UnknownProject(project_id))?;
+        let (mut version, old_code): (Version, String) = self
+            .conn
+            .query_one(
+                "SELECT version, code FROM project where id = $1",
+                &[&project_id.0],
+            )
+            .await
+            .map(|row| (Version(row.get(0)), row.get(1)))
+            .map_err(|_| DBError::UnknownProject(project_id))?;
 
         match project_code {
             Some(code) if &old_code != code => {
                 // Only increment `version` if new code actually differs from the
                 // current version.
                 version = version.increment();
-                sqlx::query(
-                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL, schema = NULL WHERE id = $5")
-                        .bind(version.0)
-                        .bind(project_name)
-                        .bind(project_description)
-                        .bind(code)
-                        .bind(project_id.0)
-                        .execute(&self.conn)
+                self.conn.execute(
+                        "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL, schema = NULL WHERE id = $5",
+                        &[&version.0, &project_name, &project_description, &code, &project_id.0])
                         .await
                         .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
             _ => {
-                sqlx::query("UPDATE project SET name = $1, description = $2 WHERE id = $3")
-                    .bind(project_name)
-                    .bind(project_description)
-                    .bind(project_id.0)
-                    .execute(&self.conn)
+                self.conn
+                    .execute(
+                        "UPDATE project SET name = $1, description = $2 WHERE id = $3",
+                        &[&project_name, &project_description, &project_id.0],
+                    )
                     .await
                     .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
             }
@@ -625,52 +616,47 @@ impl ProjectDB {
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
-        let row = sqlx::query(
+        let row = self.conn.query_one(
             "SELECT name, description, version, status, error, schema FROM project WHERE id = $1",
+            &[&project_id.0],
         )
-        .bind(project_id.0)
-        .fetch_one(&self.conn)
-        .await;
+        .await
+        .map_err(|_| DBError::UnknownProject(project_id))?;
 
-        if let Ok(row) = row {
-            let name: String = row.get(0);
-            let description: String = row.get(1);
-            let version: Version = Version(row.get::<i32, _>(2) as i64);
-            let status: Option<String> = row.get(3);
-            let error: Option<String> = row.get(4);
-            let schema: Option<String> = row.get(5);
+        let name: String = row.get(0);
+        let description: String = row.get(1);
+        let version: Version = Version(row.get(2));
+        let status: Option<String> = row.get(3);
+        let error: Option<String> = row.get(4);
+        let schema: Option<String> = row.get(5);
 
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+        let status = ProjectStatus::from_columns(status.as_deref(), error)?;
 
-            Ok(Some(ProjectDescr {
-                project_id,
-                name,
-                description,
-                version,
-                status,
-                schema,
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(Some(ProjectDescr {
+            project_id,
+            name,
+            description,
+            version,
+            status,
+            schema,
+        }))
     }
 
-    /// Lookup project by name
+    /// Lookup project by name.
     pub(crate) async fn lookup_project(
         &self,
         project_name: &str,
     ) -> AnyResult<Option<ProjectDescr>> {
-        let row = sqlx::query(
+        let row = self.conn.query_one(
             "SELECT id, description, version, status, error, schema FROM project WHERE name = $1",
+            &[&project_name],
         )
-        .bind(project_name)
-        .fetch_one(&self.conn)
         .await;
 
         if let Ok(row) = row {
-            let project_id: ProjectId = ProjectId(row.get::<i32, _>(0) as i64);
+            let project_id: ProjectId = ProjectId(row.get(0));
             let description: String = row.get(1);
-            let version: Version = Version(row.get::<i32, _>(2) as i64);
+            let version: Version = Version(row.get(2));
             let status: Option<String> = row.get(3);
             let error: Option<String> = row.get(4);
             let schema: Option<String> = row.get(5);
@@ -728,13 +714,9 @@ impl ProjectDB {
         status: ProjectStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
-        sqlx::query(
+        self.conn.execute(
                 "UPDATE project SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
-            )
-            .bind(status)
-            .bind(error)
-            .bind(project_id.0)
-            .execute(&self.conn)
+            &[&status, &error, &project_id.0])
             .await?;
 
         Ok(())
@@ -760,13 +742,9 @@ impl ProjectDB {
 
         let descr = self.get_project(project_id).await?;
         if descr.version == expected_version {
-            sqlx::query(
+            self.conn.execute(
                     "UPDATE project SET status = $1, error = $2, status_since = extract(epoch from now()) WHERE id = $3",
-            )
-            .bind(status)
-            .bind(error)
-            .bind(project_id.0)
-            .execute(&self.conn)
+            &[&status, &error, &project_id.0])
             .await?;
         }
 
@@ -783,10 +761,11 @@ impl ProjectDB {
         project_id: ProjectId,
         schema: String,
     ) -> AnyResult<()> {
-        sqlx::query("UPDATE project SET schema = $1 WHERE id = $2")
-            .bind(schema)
-            .bind(project_id.0)
-            .execute(&self.conn)
+        self.conn
+            .execute(
+                "UPDATE project SET schema = $1 WHERE id = $2",
+                &[&schema, &project_id.0],
+            )
             .await?;
 
         Ok(())
@@ -845,12 +824,12 @@ impl ProjectDB {
     ///
     /// This will delete all project configs and pipelines.
     pub(crate) async fn delete_project(&self, project_id: ProjectId) -> AnyResult<()> {
-        let res = sqlx::query("DELETE FROM project WHERE id = $1")
-            .bind(project_id.0)
-            .execute(&self.conn)
+        let res = self
+            .conn
+            .execute("DELETE FROM project WHERE id = $1", &[&project_id.0])
             .await?;
 
-        if res.rows_affected() > 0 {
+        if res > 0 {
             Ok(())
         } else {
             Err(anyhow!(DBError::UnknownProject(project_id)))
@@ -863,12 +842,12 @@ impl ProjectDB {
     /// if there are no pending projects in the DB.
     pub(crate) async fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
         // Find the oldest pending project.
-        let res = sqlx::query("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')")
-            .fetch_one(&self.conn).await;
+        let res = self.conn.query_one("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
+            .await;
 
         if let Ok(row) = res {
-            let project_id: ProjectId = ProjectId(row.get::<i32, _>(0) as i64);
-            let version: Version = Version(row.get::<i32, _>(1) as i64);
+            let project_id: ProjectId = ProjectId(row.get(0));
+            let version: Version = Version(row.get(1));
             Ok(Some((project_id, version)))
         } else {
             Ok(None)
@@ -876,24 +855,21 @@ impl ProjectDB {
     }
 
     pub(crate) async fn list_configs(&self) -> AnyResult<Vec<ConfigDescr>> {
-        let rows = sqlx::query(
-            "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config",
-            )
-            .fetch_all(&self.conn)
+        let rows = self.conn.query(
+            "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config", &[])
             .await?;
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let config_id = ConfigId(row.get(0));
-            let project_id = row.get::<Option<i32>, _>(6).map(|id| ProjectId(id as i64));
+            let project_id = row.get::<_, Option<i64>>(6).map(|id| ProjectId(id));
             let attached_connectors = self.get_attached_connectors(config_id).await?;
-            let pipeline = if let Some(pipeline_id) =
-                row.get::<Option<i32>, _>(5).map(|id| PipelineId(id as i64))
-            {
-                Some(self.get_pipeline(pipeline_id).await?)
-            } else {
-                None
-            };
+            let pipeline =
+                if let Some(pipeline_id) = row.get::<_, Option<i64>>(5).map(|id| PipelineId(id)) {
+                    Some(self.get_pipeline(pipeline_id).await?)
+                } else {
+                    None
+                };
 
             result.push(ConfigDescr {
                 config_id,
@@ -911,15 +887,13 @@ impl ProjectDB {
     }
 
     pub(crate) async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
-        let (mut descr, pipeline_id): (ConfigDescr, Option<PipelineId>) = sqlx::query(
+        let (mut descr, pipeline_id): (ConfigDescr, Option<PipelineId>) = self.conn.query_one(
             "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config WHERE id = ?",
-        )
-        .bind(config_id.0)
-        .fetch_one(&self.conn)
+        &[&config_id.0])
         .await
         .map(|row| {
-            let pipeline_id: Option<PipelineId> = row.get::<Option<i64>, _>(5).map(PipelineId);
-            let project_id = row.get::<Option<i64>, _>(6).map(ProjectId);
+            let pipeline_id: Option<PipelineId> = row.get::<_, Option<i64>>(5).map(PipelineId);
+            let project_id = row.get::<_, Option<i64>>(6).map(ProjectId);
 
             (ConfigDescr {
                 config_id,
@@ -951,15 +925,14 @@ impl ProjectDB {
         config: &str,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> AnyResult<(ConfigId, Version)> {
-        let row = sqlx::query(
-            "INSERT INTO project_config (project_id, version, name, description, config) VALUES($1, 1, $2, $3, $4) RETURNING id")
-            .bind(project_id.map(|id| id.0))
-            .bind(config_name)
-            .bind(config_description)
-            .bind(config)
-            .fetch_one(&self.conn)
+        let row = self.conn.query_one(
+            "INSERT INTO project_config (project_id, version, name, description, config) VALUES($1, 1, $2, $3, $4) RETURNING id",
+            &[&project_id.map(|id| id.0),
+            &config_name,
+            &config_description,
+            &config])
             .await?;
-        let config_id = ConfigId(row.get::<i32, _>(0) as i64);
+        let config_id = ConfigId(row.get(0));
 
         if let Some(connectors) = connectors {
             // Add the connectors.
@@ -979,19 +952,24 @@ impl ProjectDB {
         config_id: ConfigId,
         pipeline_id: PipelineId,
     ) -> AnyResult<()> {
-        let _row = sqlx::query("UPDATE project_config SET pipeline_id = ? WHERE id = ?")
-            .bind(pipeline_id.0)
-            .bind(config_id.0)
-            .execute(&self.conn)
+        let _row = self
+            .conn
+            .execute(
+                "UPDATE project_config SET pipeline_id = ? WHERE id = ?",
+                &[&pipeline_id.0, &config_id.0],
+            )
             .await?;
         Ok(())
     }
 
     /// Remove pipeline from the config.
     pub(crate) async fn remove_pipeline_from_config(&self, config_id: ConfigId) -> AnyResult<()> {
-        let _row = sqlx::query("UPDATE project_config SET pipeline_id = NULL WHERE id = ?")
-            .bind(config_id.0)
-            .execute(&self.conn)
+        let _row = self
+            .conn
+            .execute(
+                "UPDATE project_config SET pipeline_id = NULL WHERE id = ?",
+                &[&config_id.0],
+            )
             .await?;
         Ok(())
     }
@@ -1024,9 +1002,11 @@ impl ProjectDB {
 
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
-            sqlx::query("DELETE FROM attached_connector WHERE config_id = ?")
-                .bind(config_id.0)
-                .execute(&self.conn)
+            self.conn
+                .execute(
+                    "DELETE FROM attached_connector WHERE config_id = ?",
+                    &[&config_id.0],
+                )
                 .await?;
 
             // Rewrite the new set of connectors.
@@ -1038,14 +1018,8 @@ impl ProjectDB {
         }
 
         let version = descr.version.increment();
-        sqlx::query("UPDATE project_config SET version = $1, name = $2, description = $3, config = $4, project_id = $5 WHERE id = $6")
-            .bind(version.0)
-            .bind(config_name)
-            .bind(config_description)
-            .bind(config)
-            .bind(project_id.map(|id| id.0))
-            .bind(config_id.0)
-            .execute(&self.conn)
+        self.conn.execute("UPDATE project_config SET version = $1, name = $2, description = $3, config = $4, project_id = $5 WHERE id = $6",
+            &[&version.0, &config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
             .await?;
 
         Ok(version)
@@ -1053,11 +1027,11 @@ impl ProjectDB {
 
     /// Delete project config.
     pub(crate) async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
-        let res = sqlx::query("DELETE FROM project_config WHERE id = $1")
-            .bind(config_id.0)
-            .execute(&self.conn)
+        let res = self
+            .conn
+            .execute("DELETE FROM project_config WHERE id = $1", &[&config_id.0])
             .await?;
-        if res.rows_affected() > 0 {
+        if res > 0 {
             Ok(())
         } else {
             Err(anyhow!(DBError::UnknownConfig(config_id)))
@@ -1068,16 +1042,14 @@ impl ProjectDB {
         &self,
         config_id: ConfigId,
     ) -> AnyResult<Vec<AttachedConnector>> {
-        let rows = sqlx::query(
+        let rows = self.conn.query(
             "SELECT uuid, connector_id, config, is_input FROM attached_connector WHERE config_id = ?",
-            )
-            .bind(config_id.0)
-            .fetch_all(&self.conn)
+            &[&config_id.0])
             .await?;
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(rows.len());
 
         for row in rows {
-            let direction = if row.get::<bool, _>(3) {
+            let direction = if row.get(3) {
                 Direction::Input
             } else {
                 Direction::Output
@@ -1107,18 +1079,12 @@ impl ProjectDB {
         let _descr = self.get_connector(ac.connector_id).await?;
         let is_input = (ac.direction == Direction::Input) as i32;
 
-        let row = sqlx::query(
+        let row = self.conn.query_one(
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
-            )
-            .bind(&ac.uuid)
-            .bind(config_id.0)
-            .bind(ac.connector_id.0)
-            .bind(is_input)
-            .bind(&ac.config)
-            .fetch_one(&self.conn)
+            &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
             .await?;
 
-        Ok(AttachedConnectorId(row.get::<i32, _>(0) as i64))
+        Ok(AttachedConnectorId(row.get(0)))
     }
 
     /// Get an attached connector.
@@ -1126,13 +1092,15 @@ impl ProjectDB {
         &self,
         uuid: &str,
     ) -> AnyResult<Direction> {
-        let row = sqlx::query("SELECT is_input FROM attached_connector WHERE uuid = $1")
-            .bind(uuid)
-            .fetch_one(&self.conn)
-            .await
-            .unwrap();
+        let row = self
+            .conn
+            .query_one(
+                "SELECT is_input FROM attached_connector WHERE uuid = $1",
+                &[&uuid],
+            )
+            .await?;
 
-        if row.get::<i32, _>(0) == 0 {
+        if row.get(0) {
             Ok(Direction::Output)
         } else {
             Ok(Direction::Input)
@@ -1145,12 +1113,9 @@ impl ProjectDB {
         config_id: ConfigId,
         config_version: Version,
     ) -> AnyResult<PipelineId> {
-        let row = sqlx::query(
+        let row = self.conn.query_one(
                 "INSERT INTO pipeline (config_id, config_version, killed, created) VALUES($1, $2, 0, extract(epoch from now())) RETURNING id",
-            )
-            .bind(config_id.0)
-            .bind(config_version.0)
-            .fetch_one(&self.conn)
+            &[&config_id.0, &config_version.0])
             .await?;
 
         Ok(PipelineId(row.get(0)))
@@ -1161,40 +1126,48 @@ impl ProjectDB {
         pipeline_id: PipelineId,
         port: u16,
     ) -> AnyResult<()> {
-        let _ = sqlx::query("UPDATE pipeline SET port = $1 where id = $2")
-            .bind(port as i32) // bind(u64) forces the typechecker to expect Sqlite
-            .bind(pipeline_id.0)
-            .execute(&self.conn)
+        let _ = self
+            .conn
+            .execute(
+                "UPDATE pipeline SET port = $1 where id = $2",
+                &[&(port as i32), &pipeline_id.0],
+            )
             .await?;
         Ok(())
     }
 
     /// Set `killed` flag to `true`.
     pub(crate) async fn set_pipeline_killed(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
-        let res = sqlx::query("UPDATE pipeline SET killed=true WHERE id = $1")
-            .bind(pipeline_id.0)
-            .execute(&self.conn)
+        let res = self
+            .conn
+            .execute(
+                "UPDATE pipeline SET killed=true WHERE id = $1",
+                &[&pipeline_id.0],
+            )
             .await?;
-        Ok(res.rows_affected() > 0)
+        Ok(res > 0)
     }
 
     /// Delete `pipeline` from the DB.
     pub(crate) async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
-        let res = sqlx::query("DELETE FROM pipeline WHERE id = ?")
-            .bind(pipeline_id.0)
-            .execute(&self.conn)
+        let res = self
+            .conn
+            .execute("DELETE FROM pipeline WHERE id = ?", &[&pipeline_id.0])
             .await?;
-        Ok(res.rows_affected() > 0)
+        Ok(res > 0)
     }
 
     /// Retrieve project config.
     pub(crate) async fn get_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr> {
-        let row =
-            sqlx::query("SELECT id, config_id, port, killed, created FROM pipeline WHERE id = ?")
-                .bind(pipeline_id.0)
-                .fetch_one(&self.conn)
-                .await
-                .map_err(|_| DBError::UnknownPipeline(pipeline_id))?;
+        let row = self
+            .conn
+            .query_one(
+                "SELECT id, config_id, port, killed, created FROM pipeline WHERE id = ?",
+                &[&pipeline_id.0],
+            )
+            .await
+            .map_err(|_| DBError::UnknownPipeline(pipeline_id))?;
+
         let created_secs: i64 = row.get(4);
         let created_naive =
             NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
@@ -1206,7 +1179,7 @@ impl ProjectDB {
         Ok(PipelineDescr {
             pipeline_id: PipelineId(row.get(0)),
             config_id: ConfigId(row.get(1)),
-            port: row.get::<i32, _>(2) as u16,
+            port: row.get::<_, i32>(2) as u16,
             killed: row.get(3),
             created: DateTime::<Utc>::from_utc(created_naive, Utc),
         })
@@ -1214,12 +1187,15 @@ impl ProjectDB {
 
     /// List pipelines associated with `project_id`.
     pub(crate) async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>> {
-        let rows = sqlx::query("SELECT id, config_id, port, killed, created FROM pipeline")
-            .fetch_all(&self.conn)
+        let rows = self
+            .conn
+            .query(
+                "SELECT id, config_id, port, killed, created FROM pipeline",
+                &[],
+            )
             .await?;
 
-        let mut result = Vec::new();
-
+        let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let created_secs: i64 = row.get(4);
             let created_naive = NaiveDateTime::from_timestamp_millis(created_secs * 1000)
@@ -1232,8 +1208,8 @@ impl ProjectDB {
             result.push(PipelineDescr {
                 pipeline_id: PipelineId(row.get(0)),
                 config_id: ConfigId(row.get(1)),
-                port: row.get::<i32, _>(2) as u16,
-                killed: row.get::<i32, _>(3) != 0,
+                port: row.get::<_, i32>(2) as u16,
+                killed: row.get(3),
                 created: DateTime::<Utc>::from_utc(created_naive, Utc),
             });
         }
@@ -1250,26 +1226,26 @@ impl ProjectDB {
         config: &str,
     ) -> AnyResult<ConnectorId> {
         debug!("new_connector {name} {description} {config}");
-        let row = sqlx::query("INSERT INTO connector (name, description, typ, config) VALUES($1, $2, $3, $4) RETURNING id")
-            .bind(name)
-            .bind(description)
-            .bind(typ as i32)
-            .bind(config)
-            .fetch_one(&self.conn)
+        let row = self.conn.query_one("INSERT INTO connector (name, description, typ, config) VALUES($1, $2, $3, $4) RETURNING id",
+            &[&name, &description, &(typ as i32), &config])
             .await?;
-        Ok(ConnectorId(row.get::<i32, _>(0) as i64))
+        Ok(ConnectorId(row.get(0)))
     }
 
     /// Retrieve connectors list from the DB.
     pub(crate) async fn list_connectors(&self) -> AnyResult<Vec<ConnectorDescr>> {
-        let rows = sqlx::query("SELECT id, name, description, typ, config FROM connector")
-            .fetch_all(&self.conn)
+        let rows = self
+            .conn
+            .query(
+                "SELECT id, name, description, typ, config FROM connector",
+                &[],
+            )
             .await?;
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(rows.len());
 
         for row in rows {
-            let typ = row.get::<i64, _>(3).into();
+            let typ = row.get::<_, i64>(3).into();
             result.push(ConnectorDescr {
                 connector_id: ConnectorId(row.get(0)),
                 name: row.get(1),
@@ -1288,14 +1264,17 @@ impl ProjectDB {
         &self,
         connector_id: ConnectorId,
     ) -> AnyResult<ConnectorDescr> {
-        let row = sqlx::query("SELECT name, description, typ, config FROM connector WHERE id = $1")
-            .bind(connector_id.0)
-            .fetch_one(&self.conn)
+        let row = self
+            .conn
+            .query_one(
+                "SELECT name, description, typ, config FROM connector WHERE id = $1",
+                &[&connector_id.0],
+            )
             .await?;
 
         let name: String = row.get(0);
         let description: String = row.get(1);
-        let typ: ConnectorType = (row.get::<i32, _>(2) as i64).into();
+        let typ: ConnectorType = row.get::<_, i64>(2).into();
         let config: String = row.get(3);
 
         Ok(ConnectorDescr {
@@ -1321,12 +1300,16 @@ impl ProjectDB {
         let descr = self.get_connector(connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
 
-        sqlx::query("UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4")
-            .bind(connector_name)
-            .bind(description)
-            .bind(config.as_str())
-            .bind(connector_id.0)
-            .execute(&self.conn)
+        self.conn
+            .execute(
+                "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4",
+                &[
+                    &connector_name,
+                    &description,
+                    &config.as_str(),
+                    &connector_id.0,
+                ],
+            )
             .await?;
 
         Ok(())
@@ -1336,12 +1319,12 @@ impl ProjectDB {
     ///
     /// This will delete all connector configs and pipelines.
     pub(crate) async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()> {
-        let res = sqlx::query("DELETE FROM connector WHERE id = ?")
-            .bind(connector_id.0)
-            .execute(&self.conn)
+        let res = self
+            .conn
+            .execute("DELETE FROM connector WHERE id = ?", &[&connector_id.0])
             .await?;
 
-        if res.rows_affected() > 0 {
+        if res > 0 {
             Ok(())
         } else {
             Err(anyhow!(DBError::UnknownConnector(connector_id)))
@@ -1353,8 +1336,6 @@ impl ProjectDB {
 mod test {
     use super::{ProjectDB, ProjectDescr, ProjectStatus};
     use crate::db::DBError;
-    use sqlx::pool::PoolOptions;
-    use sqlx::Any;
     use std::sync::atomic::{AtomicU16, Ordering};
     use tempfile::TempDir;
 
@@ -1387,7 +1368,6 @@ mod test {
         let port = DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed);
         let conn = ProjectDB::connect_inner(
             "postgres-embed",
-            PoolOptions::<Any>::new(),
             &Some("".to_string()),
             temp_path.into(),
             false,
@@ -1459,10 +1439,14 @@ mod test {
             assert_eq!(ProjectStatus::None, p.status);
             assert_eq!(None, p.schema); //can't check for error fields directly
         }
-        let results =
-            sqlx::query("SELECT * FROM project WHERE status != '' OR error != '' OR schema != ''")
-                .fetch_all(&handle.db.conn)
-                .await;
+        let results = handle
+            .db
+            .conn
+            .query(
+                "SELECT * FROM project WHERE status != '' OR error != '' OR schema != ''",
+                &[],
+            )
+            .await;
         assert_eq!(0, results.unwrap().len());
     }
 

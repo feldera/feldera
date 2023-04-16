@@ -29,13 +29,13 @@ utoipa = { version = "=3.0.3", features = ["actix_extras", "chrono"] }
 utoipa-gen = { version = "=3.0.3" }
 utoipa-swagger-ui = { version = "3.0.2", features = ["actix-web"] }
 chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
-sqlx = { git = "https://github.com/gz/sqlx.git", branch = "v0.6.3-upgrade", features = [  "runtime-tokio-native-tls", "sqlite", "postgres", "any" ] }
 tempfile = { version = "3" }
 rstest = "0.15"
 actix = "0.13.0"
 actix-web-actors = "4.2.0"
 futures-util = "0.3.28"
 futures = "0.3"
+tokio-postgres = "0.7"
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "2073129" }
 
