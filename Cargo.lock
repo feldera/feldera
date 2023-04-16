@@ -295,7 +295,7 @@ dependencies = [
  "serde_urlencoded",
  "smallvec",
  "socket2",
- "time 0.3.20",
+ "time",
  "url",
 ]
 
@@ -509,15 +509,14 @@ checksum = "bddcadddf5e9015d310179a59bb28c4d4b9920ad0f11e8e14dbadf654890c9a6"
 [[package]]
 name = "archiver-rs"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c5e8fa1935cf85abe2e997ec8e96934a0a9e4d6dbe508f095760c9efa0e7cd0"
+source = "git+https://github.com/gz/archiver-rs.git?branch=patch-1#a73cef92c2a5b8f48c2a4a9e889952072e03b4b7"
 dependencies = [
  "bzip2",
  "flate2",
  "tar",
  "thiserror",
  "xz2",
- "zip 0.5.13",
+ "zip",
 ]
 
 [[package]]
@@ -1182,7 +1181,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e859cd57d0710d9e06c381b550c06e76992472a8c6d527aecd2fc673dcc231fb"
 dependencies = [
  "percent-encoding",
- "time 0.3.20",
+ "time",
  "version_check",
 ]
 
@@ -1702,11 +1701,11 @@ dependencies = [
  "size-of",
  "tar",
  "textwrap 0.15.2",
- "time 0.3.20",
+ "time",
  "typedmap",
  "uuid",
  "xxhash-rust",
- "zip 0.6.4",
+ "zip",
  "zstd 0.12.3+zstd.1.5.2",
 ]
 
@@ -1777,7 +1776,7 @@ dependencies = [
  "serde",
  "serde_with",
  "size-of",
- "time 0.3.20",
+ "time",
 ]
 
 [[package]]
@@ -1809,7 +1808,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "serial_test",
  "sqlx 0.6.2",
  "static-files",
  "tempfile",
@@ -2217,7 +2215,7 @@ dependencies = [
  "cfg-if",
  "js-sys",
  "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
  "wasm-bindgen",
 ]
 
@@ -2615,7 +2613,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "time 0.3.20",
+ "time",
  "url",
  "uuid",
 ]
@@ -2851,7 +2849,7 @@ checksum = "5b9d9a46eff5b4ff64b45a9e316a6d1e0bc719ef429cbec4dc630684212bfdf9"
 dependencies = [
  "libc",
  "log",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
  "windows-sys 0.45.0",
 ]
 
@@ -3245,9 +3243,8 @@ dependencies = [
 
 [[package]]
 name = "pg-embed"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6816c076d6ddf0a99543f5fe62d8b9667c16d70fbb3454dc3184b16337ae6f3f"
+version = "0.7.2"
+source = "git+https://github.com/gz/pg-embed.git?rev=2073129#2073129ad9306c61f1f015fb7395573d3d40427b"
 dependencies = [
  "archiver-rs",
  "async-trait",
@@ -3260,7 +3257,7 @@ dependencies = [
  "sqlx 0.6.3",
  "thiserror",
  "tokio",
- "zip 0.5.13",
+ "zip",
 ]
 
 [[package]]
@@ -4115,7 +4112,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with_macros",
- "time 0.3.20",
+ "time",
 ]
 
 [[package]]
@@ -4141,31 +4138,6 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
-]
-
-[[package]]
-name = "serial_test"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e56dd856803e253c8f298af3f4d7eb0ae5e23a737252cd90bb4f3b435033b2d"
-dependencies = [
- "dashmap",
- "futures",
- "lazy_static",
- "log",
- "parking_lot 0.12.1",
- "serial_test_derive",
-]
-
-[[package]]
-name = "serial_test_derive"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91d129178576168c589c9ec973feedf7d3126c01ac2bf08795109aa35b69fb8f"
-dependencies = [
- "proc-macro2 1.0.56",
- "quote 1.0.26",
- "syn 2.0.15",
 ]
 
 [[package]]
@@ -4239,7 +4211,7 @@ dependencies = [
  "hashbrown 0.13.2",
  "rust_decimal",
  "size-of-derive",
- "time 0.3.20",
+ "time",
  "xxhash-rust",
 ]
 
@@ -4666,17 +4638,6 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.1.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
-dependencies = [
- "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
- "winapi",
-]
-
-[[package]]
-name = "time"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0cbfecb4d19b5ea75bb31ad904eb5b9fa13f21079c3b92017ebdf4999a5890"
@@ -5057,7 +5018,7 @@ dependencies = [
  "serde",
  "serde_json",
  "utoipa",
- "zip 0.6.4",
+ "zip",
 ]
 
 [[package]]
@@ -5121,12 +5082,6 @@ dependencies = [
  "log",
  "try-lock",
 ]
-
-[[package]]
-name = "wasi"
-version = "0.10.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "wasi"
@@ -5490,20 +5445,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "0.5.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ab48844d61251bb3835145c521d88aa4031d7139e8485990f60ca911fa0815"
-dependencies = [
- "byteorder",
- "bzip2",
- "crc32fast",
- "flate2",
- "thiserror",
- "time 0.1.45",
-]
-
-[[package]]
-name = "zip"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0445d0fbc924bb93539b4316c11afb121ea39296f99a3c4c9edad09e3658cdef"
@@ -5518,7 +5459,7 @@ dependencies = [
  "hmac",
  "pbkdf2",
  "sha1",
- "time 0.3.20",
+ "time",
  "zstd 0.11.2+zstd.1.5.2",
 ]
 
