@@ -7,7 +7,8 @@ use std::path::PathBuf;
 /// Install and starts a Postgres Db instance.
 ///
 /// # Arguments
-/// - `database_dir` - Path to the directory where the database files will be stored.
+/// - `database_dir` - Path to the directory where the database files will be
+///   stored.
 /// - `persistent` - If true, the database will be persistent. If false, the
 ///   database will be deleted after the process exits.
 /// - `port` - The port on which the database will be available on.

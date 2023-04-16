@@ -321,6 +321,7 @@ impl ProjectDB {
             initial_sql,
             database_dir,
             true,
+            None,
         )
         .await
     }
@@ -355,6 +356,7 @@ impl ProjectDB {
         initial_sql: &Option<String>,
         database_dir: PathBuf,
         is_persistent: bool,
+        port: Option<u16>,
     ) -> AnyResult<Self> {
         let db_type = if connection_str.starts_with("sqlite") {
             DbType::Sqlite
@@ -365,7 +367,7 @@ impl ProjectDB {
         };
 
         let (pg, connection_str) = if connection_str.starts_with("postgres-embed") {
-            let pg = pg_setup::install(database_dir, is_persistent, None).await?;
+            let pg = pg_setup::install(database_dir, is_persistent, port).await?;
             let connection_string = pg.db_uri.to_string();
             (Some(pg), connection_string)
         } else {
@@ -1405,10 +1407,12 @@ mod test {
     use super::{DbType, ProjectDB, ProjectDescr, ProjectStatus};
     use crate::db::DBError;
     use rstest::rstest;
-    use serial_test::serial;
     use sqlx::pool::PoolOptions;
     use sqlx::{Any, Row};
+    use std::sync::atomic::{AtomicU16, Ordering};
     use tempfile::TempDir;
+
+    static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(8090);
 
     struct DbHandle {
         db: ProjectDB,
@@ -1446,19 +1450,24 @@ mod test {
                     &Some("".to_string()),
                     temp_path.into(),
                     false,
+                    None,
                 )
                 .await
                 .unwrap()
             }
-            DbType::Postgres => ProjectDB::connect_inner(
-                "postgres-embed",
-                PoolOptions::<Any>::new(),
-                &Some("".to_string()),
-                temp_path.into(),
-                false,
-            )
-            .await
-            .unwrap(),
+            DbType::Postgres => {
+                let port = DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed);
+                ProjectDB::connect_inner(
+                    "postgres-embed",
+                    PoolOptions::<Any>::new(),
+                    &Some("".to_string()),
+                    temp_path.into(),
+                    false,
+                    Some(port),
+                )
+                .await
+                .unwrap()
+            }
         };
 
         DbHandle {
@@ -1468,7 +1477,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[serial]
     async fn schema_creation() {
         let handle = test_setup(&DbType::Sqlite).await;
         let rows = sqlx::query("SELECT name FROM sqlite_schema WHERE type = 'table'")
@@ -1493,7 +1501,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn project_creation(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1522,7 +1529,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn duplicate_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1545,7 +1551,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn project_reset(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1578,7 +1583,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn project_code(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1599,7 +1603,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn update_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1625,7 +1628,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn project_queries(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
@@ -1653,7 +1655,6 @@ mod test {
     }
 
     #[rstest]
-    #[serial]
     #[trace]
     #[tokio::test]
     async fn update_status(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
