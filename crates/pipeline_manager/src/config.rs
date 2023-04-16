@@ -24,7 +24,7 @@ fn default_sql_compiler_home() -> String {
 }
 
 fn default_db_connection_string() -> String {
-    "sqlite".to_string()
+    "postgres-embed".to_string()
 }
 
 /// Pipeline manager configuration read from a YAML config file or from command
@@ -90,9 +90,9 @@ pub(crate) struct ManagerConfig {
     pub unix_daemon: bool,
 
     /// Point to a relational database to use for state management. Accepted
-    /// values are `sqlite`, `postgres://<host>:<port>` or `postgres-embed`. For
-    /// sqlite or postgres-embed we simply create a DB in the current working
-    /// directory. For postgres, we use the connection string as provided.
+    /// values are `postgres://<host>:<port>` or `postgres-embed`. For
+    /// postgres-embed we create a DB in the current working directory. For
+    /// postgres, we use the connection string as provided.
     #[serde(default = "default_db_connection_string")]
     #[arg(short, long, default_value_t = default_db_connection_string())]
     pub db_connection_string: String,
@@ -239,20 +239,8 @@ impl ManagerConfig {
     }
 
     /// Database connection string.
-    ///
-    /// For SQlite, the connection string is the path to the database file.
     pub(crate) fn database_connection_string(&self) -> String {
-        if "sqlite" == self.db_connection_string {
-            let mut s = "sqlite:".to_owned();
-            s.push_str(
-                Path::new(&self.working_directory)
-                    // create the DB if it does not already exist
-                    .join("manager.db?mode=rwc")
-                    .to_str()
-                    .unwrap(),
-            );
-            s
-        } else if self.db_connection_string.starts_with("postgres") {
+        if self.db_connection_string.starts_with("postgres") {
             // this starts_with works for `postgres://` and `postgres-embed`
             self.db_connection_string.clone()
         } else {

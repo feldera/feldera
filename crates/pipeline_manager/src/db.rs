@@ -27,15 +27,8 @@ use utoipa::ToSchema;
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
     conn: Pool<Any>,
-    db_type: DbType,
     #[allow(dead_code)] // We don't have to interact with it, but dropping it stops the DB server.
     pub pg: Option<pg_embed::postgres::PgEmbed>,
-}
-
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
-enum DbType {
-    Sqlite,
-    Postgres,
 }
 
 /// Unique project id.
@@ -329,20 +322,6 @@ impl ProjectDB {
         .await
     }
 
-    fn auto_increment(db_type: &DbType) -> &str {
-        match db_type {
-            DbType::Sqlite => "INTEGER PRIMARY KEY AUTOINCREMENT",
-            DbType::Postgres => "SERIAL PRIMARY KEY",
-        }
-    }
-
-    fn current_time(&self) -> &str {
-        match self.db_type {
-            DbType::Sqlite => "unixepoch('now')",
-            DbType::Postgres => "extract(epoch from now())",
-        }
-    }
-
     /// Connect to the project database.
     ///
     /// # Arguments
@@ -362,13 +341,9 @@ impl ProjectDB {
         is_persistent: bool,
         port: Option<u16>,
     ) -> AnyResult<Self> {
-        let db_type = if connection_str.starts_with("sqlite") {
-            DbType::Sqlite
-        } else if connection_str.starts_with("postgres") {
-            DbType::Postgres
-        } else {
+        if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
-        };
+        }
 
         let (pg, connection_str) = if connection_str.starts_with("postgres-embed") {
             let pg = pg_setup::install(database_dir, is_persistent, port).await?;
@@ -384,10 +359,9 @@ impl ProjectDB {
         options.log_statements(log::LevelFilter::Trace);
         let conn = pool_options.connect_with(options).await?;
         sqlx::query(
-            format!(
-                "
+            "
         CREATE TABLE IF NOT EXISTS project (
-            id {},
+            id SERIAL PRIMARY KEY,
             version integer NOT NULL,
             name varchar UNIQUE NOT NULL,
             description varchar NOT NULL,
@@ -396,36 +370,28 @@ impl ProjectDB {
             status varchar,
             error varchar,
             status_since integer NOT NULL)",
-                Self::auto_increment(&db_type),
-            )
-            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            format!(
-                "
+            "
         CREATE TABLE IF NOT EXISTS pipeline (
-            id {},
+            id SERIAL PRIMARY KEY,
             config_id integer NOT NULL,
             config_version integer NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port integer,
             killed boolean NOT NULL,
             created integer NOT NULL)",
-                Self::auto_increment(&db_type)
-            )
-            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            format!(
-                "
+            "
         CREATE TABLE IF NOT EXISTS project_config (
-            id {},
+            id SERIAL PRIMARY KEY,
             pipeline_id integer,
             project_id integer,
             version integer NOT NULL,
@@ -434,34 +400,26 @@ impl ProjectDB {
             config varchar NOT NULL,
             FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE,
             FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE SET NULL);",
-                Self::auto_increment(&db_type)
-            )
-            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            format!(
-                "
+            "
         CREATE TABLE IF NOT EXISTS connector (
-            id {},
+            id SERIAL PRIMARY KEY,
             name varchar NOT NULL,
             description varchar NOT NULL,
             typ integer NOT NULL,
             config varchar NOT NULL)",
-                Self::auto_increment(&db_type)
-            )
-            .as_str(),
         )
         .execute(&conn)
         .await?;
 
         sqlx::query(
-            format!(
-                "
+            "
         CREATE TABLE IF NOT EXISTS attached_connector (
-            id {},
+            id SERIAL PRIMARY KEY,
             uuid varchar UNIQUE NOT NULL,
             config_id integer NOT NULL,
             connector_id integer NOT NULL,
@@ -469,9 +427,6 @@ impl ProjectDB {
             is_input integer NOT NULL,
             FOREIGN KEY (config_id) REFERENCES project_config(id) ON DELETE CASCADE,
             FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE)",
-                Self::auto_increment(&db_type)
-            )
-            .as_str(),
         )
         .execute(&conn)
         .await?;
@@ -484,7 +439,7 @@ impl ProjectDB {
             }
         }
 
-        Ok(Self { conn, db_type, pg })
+        Ok(Self { conn, pg })
     }
 
     /// Reset everything that is set through compilation of the project.
@@ -596,12 +551,8 @@ impl ProjectDB {
     ) -> AnyResult<(ProjectId, Version)> {
         debug!("new_project {project_name} {project_description} {project_code}");
         sqlx::query(
-            format!(
                 "INSERT INTO project (version, name, description, code, schema, status,
-                    error, status_since) VALUES(1, $1, $2, $3, NULL, NULL, NULL, {});",
-                self.current_time()
-            )
-            .as_str(),
+                    error, status_since) VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now()));",
         )
         .bind(project_name)
         .bind(project_description)
@@ -778,9 +729,7 @@ impl ProjectDB {
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         sqlx::query(
-            format!(
-                "UPDATE project SET status = $1, error = $2, schema = '', status_since = {} WHERE id = $3",
-                self.current_time()).as_str()
+                "UPDATE project SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
             )
             .bind(status)
             .bind(error)
@@ -812,11 +761,7 @@ impl ProjectDB {
         let descr = self.get_project(project_id).await?;
         if descr.version == expected_version {
             sqlx::query(
-                format!(
-                    "UPDATE project SET status = $1, error = $2, status_since = {} WHERE id = $3",
-                    self.current_time()
-                )
-                .as_str(),
+                    "UPDATE project SET status = $1, error = $2, status_since = extract(epoch from now()) WHERE id = $3",
             )
             .bind(status)
             .bind(error)
@@ -1201,9 +1146,7 @@ impl ProjectDB {
         config_version: Version,
     ) -> AnyResult<PipelineId> {
         let row = sqlx::query(
-            format!(
-                "INSERT INTO pipeline (config_id, config_version, killed, created) VALUES($1, $2, 0, {}) RETURNING id",
-            self.current_time()).as_str()
+                "INSERT INTO pipeline (config_id, config_version, killed, created) VALUES($1, $2, 0, extract(epoch from now())) RETURNING id",
             )
             .bind(config_id.0)
             .bind(config_version.0)
@@ -1408,11 +1351,10 @@ impl ProjectDB {
 
 #[cfg(test)]
 mod test {
-    use super::{DbType, ProjectDB, ProjectDescr, ProjectStatus};
+    use super::{ProjectDB, ProjectDescr, ProjectStatus};
     use crate::db::DBError;
-    use rstest::rstest;
     use sqlx::pool::PoolOptions;
-    use sqlx::{Any, Row};
+    use sqlx::Any;
     use std::sync::atomic::{AtomicU16, Ordering};
     use tempfile::TempDir;
 
@@ -1437,42 +1379,22 @@ mod test {
         }
     }
 
-    async fn test_setup(db_type: &DbType) -> DbHandle {
+    async fn test_setup() -> DbHandle {
         let _r = env_logger::try_init();
         let _temp_dir = tempfile::tempdir().unwrap();
         let temp_path = _temp_dir.path();
 
-        let conn = match db_type {
-            DbType::Sqlite => {
-                let s = format!(
-                    "sqlite:{}",
-                    temp_path.join("db.sqlite?mode=rwc").to_str().unwrap()
-                );
-                ProjectDB::connect_inner(
-                    s.as_str(),
-                    PoolOptions::<Any>::new(),
-                    &Some("".to_string()),
-                    temp_path.into(),
-                    false,
-                    None,
-                )
-                .await
-                .unwrap()
-            }
-            DbType::Postgres => {
-                let port = DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed);
-                ProjectDB::connect_inner(
-                    "postgres-embed",
-                    PoolOptions::<Any>::new(),
-                    &Some("".to_string()),
-                    temp_path.into(),
-                    false,
-                    Some(port),
-                )
-                .await
-                .unwrap()
-            }
-        };
+        let port = DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let conn = ProjectDB::connect_inner(
+            "postgres-embed",
+            PoolOptions::<Any>::new(),
+            &Some("".to_string()),
+            temp_path.into(),
+            false,
+            Some(port),
+        )
+        .await
+        .unwrap();
 
         DbHandle {
             db: conn,
@@ -1481,38 +1403,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn schema_creation() {
-        let handle = test_setup(&DbType::Sqlite).await;
-        let rows = sqlx::query("SELECT name FROM sqlite_schema WHERE type = 'table'")
-            .fetch_all(&handle.db.conn)
-            .await
-            .unwrap();
-        let mut expected = std::collections::HashSet::new();
-        expected.insert("project");
-        expected.insert("project_config");
-        expected.insert("pipeline");
-        expected.insert("attached_connector");
-        expected.insert("connector");
-        for row in rows {
-            let table_name: String = row.get(0);
-            expected.contains(table_name.as_str());
-        }
-    }
-
-    fn ignore_postgres(db: DbType) -> bool {
-        let toggle = std::env::var("RUN_POSTGRES_TESTS");
-        db == DbType::Postgres && (toggle.is_err() || toggle.unwrap() == "0")
-    }
-
-    #[rstest]
-    #[trace]
-    #[tokio::test]
-    async fn project_creation(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn project_creation() {
+        let handle = test_setup().await;
         let res = handle
             .db
             .new_project("test1", "project desc", "ignored")
@@ -1532,15 +1424,9 @@ mod test {
         assert_eq!(&expected, actual);
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn duplicate_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn duplicate_project() {
+        let handle = test_setup().await;
         let _ = handle
             .db
             .new_project("test1", "project desc", "ignored")
@@ -1554,15 +1440,9 @@ mod test {
         assert_eq!(format!("{}", res), format!("{}", expected));
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn project_reset(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn project_reset() {
+        let handle = test_setup().await;
         handle
             .db
             .new_project("test1", "project desc", "ignored")
@@ -1586,15 +1466,9 @@ mod test {
         assert_eq!(0, results.unwrap().len());
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn project_code(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn project_code() {
+        let handle = test_setup().await;
         let (project_id, _) = handle
             .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
@@ -1606,15 +1480,9 @@ mod test {
         assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn update_project(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn update_project() {
+        let handle = test_setup().await;
         let (project_id, _) = handle
             .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
@@ -1631,15 +1499,9 @@ mod test {
         assert_eq!("some new description", row.description);
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn project_queries(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn project_queries() {
+        let handle = test_setup().await;
         let (project_id, _) = handle
             .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
@@ -1658,15 +1520,9 @@ mod test {
         assert!(desc.is_none());
     }
 
-    #[rstest]
-    #[trace]
     #[tokio::test]
-    async fn update_status(#[values(DbType::Sqlite, DbType::Postgres)] db_type: DbType) {
-        if ignore_postgres(db_type) {
-            println!("Ignoring postgres test");
-            return;
-        };
-        let handle = test_setup(&db_type).await;
+    async fn update_status() {
+        let handle = test_setup().await;
         let (project_id, _) = handle
             .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
