@@ -1,6 +1,8 @@
 # Ignore target and other large directories.
 target
+**/deploy
 **/Dockerfile
 **/pipeline_data
 **/ldbc-graphalytics-data
 **/fraud_data
+**/.vscode
