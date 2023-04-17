@@ -2,7 +2,7 @@ pub mod codegen;
 pub mod dataflow;
 pub mod ir;
 pub mod row;
-pub mod sqljson;
+pub mod sql_graph;
 
 mod facade;
 mod thin_str;
