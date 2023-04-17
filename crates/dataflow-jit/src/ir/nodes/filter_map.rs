@@ -2,7 +2,7 @@ use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamKind, StreamLayout},
-    LayoutId, NodeId,
+    InputFlags, LayoutId, NodeId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,15 +12,22 @@ use std::collections::BTreeMap;
 pub struct Map {
     input: NodeId,
     map_fn: Function,
-    layout: LayoutId,
+    input_layout: StreamLayout,
+    output_layout: StreamLayout,
 }
 
 impl Map {
-    pub const fn new(input: NodeId, map_fn: Function, layout: LayoutId) -> Self {
+    pub const fn new(
+        input: NodeId,
+        map_fn: Function,
+        input_layout: StreamLayout,
+        output_layout: StreamLayout,
+    ) -> Self {
         Self {
             input,
             map_fn,
-            layout,
+            input_layout,
+            output_layout,
         }
     }
 
@@ -32,8 +39,12 @@ impl Map {
         &self.map_fn
     }
 
-    pub const fn layout(&self) -> LayoutId {
-        self.layout
+    pub const fn input_layout(&self) -> StreamLayout {
+        self.input_layout
+    }
+
+    pub const fn output_layout(&self) -> StreamLayout {
+        self.output_layout
     }
 }
 
@@ -52,19 +63,80 @@ impl DataflowNode for Map {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
+    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
+        Some(self.output_layout.kind())
     }
 
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(match inputs[0] {
-            StreamLayout::Set(_) => StreamLayout::Set(self.layout),
-            StreamLayout::Map(key_layout, _) => StreamLayout::Map(key_layout, self.layout),
-        })
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.output_layout)
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        // TODO
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.input_layout);
+
+        let expected = match (self.input_layout, self.output_layout) {
+            (StreamLayout::Set(input), StreamLayout::Set(output)) => {
+                vec![(input, InputFlags::INPUT), (output, InputFlags::OUTPUT)]
+            }
+
+            (StreamLayout::Set(input), StreamLayout::Map(output_key, output_value)) => vec![
+                (input, InputFlags::INPUT),
+                (output_key, InputFlags::OUTPUT),
+                (output_value, InputFlags::OUTPUT),
+            ],
+
+            (StreamLayout::Map(input_key, input_value), StreamLayout::Set(output)) => vec![
+                (input_key, InputFlags::INPUT),
+                (input_value, InputFlags::INPUT),
+                (output, InputFlags::OUTPUT),
+            ],
+
+            (
+                StreamLayout::Map(input_key, input_value),
+                StreamLayout::Map(output_key, output_value),
+            ) => vec![
+                (input_key, InputFlags::INPUT),
+                (input_value, InputFlags::INPUT),
+                (output_key, InputFlags::OUTPUT),
+                (output_value, InputFlags::OUTPUT),
+            ],
+        };
+
+        assert_eq!(
+            self.map_fn.args().len(),
+            expected.len(),
+            "got {} map function arguments, expected {}",
+            self.map_fn.args().len(),
+            expected.len(),
+        );
+
+        for (idx, (arg, (expected_layout, expected_flags))) in
+            self.map_fn.args().iter().zip(expected).enumerate()
+        {
+            if arg.layout != expected_layout {
+                panic!(
+                    "expected map argument #{} to have layout {expected_layout} but it has the layout {}",
+                    idx + 1,
+                    arg.layout,
+                );
+            }
+
+            if arg.flags != expected_flags {
+                panic!(
+                    "expected map argument #{} to have flags {} but it has the flags {}",
+                    idx + 1,
+                    expected_flags.to_str(),
+                    arg.flags.to_str(),
+                );
+            }
+        }
+
+        assert!(
+            self.map_fn.return_type().is_unit(),
+            "map function is expected to have a unit return type but it returned {}",
+            self.map_fn.return_type(),
+        );
     }
 
     fn optimize(&mut self, layout_cache: &RowLayoutCache) {
@@ -72,7 +144,7 @@ impl DataflowNode for Map {
     }
 
     fn functions<'a>(&'a self, functions: &mut Vec<&'a Function>) {
-        functions.push(self.map_fn());
+        functions.push(&self.map_fn);
     }
 
     fn functions_mut<'a>(&'a mut self, functions: &mut Vec<&'a mut Function>) {
@@ -83,12 +155,14 @@ impl DataflowNode for Map {
     where
         F: FnMut(LayoutId),
     {
-        map(self.layout);
+        self.input_layout.map_layouts(map);
+        self.output_layout.map_layouts(map);
         self.map_fn.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.layout = mappings[&self.layout];
+        self.input_layout.remap_layouts(mappings);
+        self.output_layout.remap_layouts(mappings);
         self.map_fn.remap_layouts(mappings);
     }
 }

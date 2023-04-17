@@ -2,7 +2,7 @@ use crate::ir::{
     exprs::ArgType,
     exprs::{Call, Select},
     graph::GraphExt,
-    nodes::{Node, StreamKind, StreamLayout},
+    nodes::{DataflowNode, Node, StreamKind, StreamLayout},
     BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
     InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull, Store,
     UnaryOpKind, UninitRow,
@@ -61,8 +61,7 @@ impl Validator {
             match node {
                 Node::Map(map) => {
                     self.node_inputs.insert(node_id, vec![map.input()]);
-                    self.node_outputs
-                        .insert(node_id, StreamLayout::Set(map.layout()));
+                    self.node_outputs.insert(node_id, map.output_layout());
                 }
 
                 Node::Filter(filter) => {
@@ -149,32 +148,7 @@ impl Validator {
                     assert_eq!(map.map_fn().return_type(), ColumnType::Unit);
 
                     let input_layout = self.get_expected_input(node_id, map.input());
-                    let expected = &[
-                        (input_layout, false),
-                        (StreamLayout::Set(map.layout()), true),
-                    ];
-
-                    assert_eq!(expected.len(), map.map_fn().args().len());
-                    for (idx, (&(expected_layout, is_mutable), arg)) in
-                        expected.iter().zip(map.map_fn().args()).enumerate()
-                    {
-                        assert_eq!(
-                            expected_layout,
-                            StreamLayout::Set(arg.layout),
-                            "the {idx}th argument to a map function had an incorrect layout: expected {:?}, got {:?}",
-                            graph.layout_cache().get(expected_layout.unwrap_set()),
-                            graph.layout_cache().get(arg.layout),
-                        );
-
-                        assert_eq!(
-                            arg.flags.contains(InputFlags::OUTPUT),
-                            is_mutable,
-                            "the {idx}th argument to a map function was {}mutable when it should {}have been",
-                            if is_mutable { "not" } else { "" },
-                            if is_mutable { "" } else { "not" },
-                        );
-                    }
-
+                    map.validate(&[input_layout], &self.function_validator.layout_cache);
                     self.function_validator.validate_function(map.map_fn())?;
                 }
 

@@ -231,15 +231,28 @@ pub struct IndexWith {
 pub struct Map {
     pub input: NodeId,
     pub map_fn: MapFn,
-    // TODO: Debug checks against input layout
-    // pub input_layout: StreamLayout,
-    pub output_vtable: &'static VTable,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum MapFn {
-    Set(unsafe extern "C" fn(*const u8, *mut u8)),
-    Map(unsafe extern "C" fn(*const u8, *const u8, *mut u8)),
+    SetSet {
+        map: unsafe extern "C" fn(*const u8, *mut u8),
+        key_vtable: &'static VTable,
+    },
+    SetMap {
+        map: unsafe extern "C" fn(*const u8, *mut u8, *mut u8),
+        key_vtable: &'static VTable,
+        value_vtable: &'static VTable,
+    },
+    MapSet {
+        map: unsafe extern "C" fn(*const u8, *const u8, *mut u8),
+        key_vtable: &'static VTable,
+    },
+    MapMap {
+        map: unsafe extern "C" fn(*const u8, *const u8, *mut u8, *mut u8),
+        key_vtable: &'static VTable,
+        value_vtable: &'static VTable,
+    },
 }
 
 // TODO: Maybe just enum the filter function?

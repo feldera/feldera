@@ -32,6 +32,15 @@ impl InputFlags {
     pub const fn is_readonly(&self) -> bool {
         self.is_input() && !self.is_output()
     }
+
+    pub const fn to_str(self) -> &'static str {
+        match self {
+            Self::INPUT => "input",
+            Self::OUTPUT => "output",
+            Self::INOUT => "inout",
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -73,18 +82,13 @@ impl TryFrom<String> for InputFlags {
 
 impl From<InputFlags> for &'static str {
     fn from(flags: InputFlags) -> Self {
-        match flags {
-            InputFlags::INPUT => "input",
-            InputFlags::OUTPUT => "output",
-            InputFlags::INOUT => "inout",
-            _ => unreachable!(),
-        }
+        flags.to_str()
     }
 }
 
 impl From<InputFlags> for String {
     fn from(flags: InputFlags) -> Self {
-        <&'static str>::from(flags).to_owned()
+        flags.to_str().to_owned()
     }
 }
 
