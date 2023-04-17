@@ -259,9 +259,24 @@ impl CompiledDataflow {
                             codegen.codegen_func(&format!("map_fn_{node_id}"), map.map_fn());
                         functions.insert(node_id, vec![map_fn]);
 
-                        vtables
-                            .entry(map.layout())
-                            .or_insert_with(|| codegen.vtable_for(map.layout()));
+                        for layout in [map.input_layout(), map.output_layout()] {
+                            match layout {
+                                StreamLayout::Set(key) => {
+                                    vtables
+                                        .entry(key)
+                                        .or_insert_with(|| codegen.vtable_for(key));
+                                }
+
+                                StreamLayout::Map(key, value) => {
+                                    vtables
+                                        .entry(key)
+                                        .or_insert_with(|| codegen.vtable_for(key));
+                                    vtables
+                                        .entry(value)
+                                        .or_insert_with(|| codegen.vtable_for(value));
+                                }
+                            }
+                        }
                     }
 
                     Node::Filter(filter) => {
@@ -443,19 +458,43 @@ impl CompiledDataflow {
                     Node::Map(map) => {
                         let input = map.input();
                         let map_fn = jit.get_finalized_function(node_functions[node_id][0]);
-                        let output_vtable = unsafe { &*vtables[&map.layout()] };
 
                         let map_fn = unsafe {
-                            match output.unwrap() {
-                                StreamLayout::Set(_) => MapFn::Set(transmute(map_fn)),
-                                StreamLayout::Map(..) => MapFn::Map(transmute(map_fn)),
+                            match (map.input_layout(), map.output_layout()) {
+                                (StreamLayout::Set(_), StreamLayout::Set(key_layout)) => {
+                                    MapFn::SetSet {
+                                        map: transmute(map_fn),
+                                        key_vtable: &*vtables[&key_layout],
+                                    }
+                                }
+
+                                (
+                                    StreamLayout::Set(_),
+                                    StreamLayout::Map(key_layout, value_layout),
+                                ) => MapFn::SetMap {
+                                    map: transmute(map_fn),
+                                    key_vtable: &*vtables[&key_layout],
+                                    value_vtable: &*vtables[&value_layout],
+                                },
+
+                                (StreamLayout::Map(_, _), StreamLayout::Set(key_layout)) => {
+                                    MapFn::MapSet {
+                                        map: transmute(map_fn),
+                                        key_vtable: &*vtables[&key_layout],
+                                    }
+                                }
+
+                                (
+                                    StreamLayout::Map(_, _),
+                                    StreamLayout::Map(key_layout, value_layout),
+                                ) => MapFn::MapMap {
+                                    map: transmute(map_fn),
+                                    key_vtable: &*vtables[&key_layout],
+                                    value_vtable: &*vtables[&value_layout],
+                                },
                             }
                         };
-                        let map = DataflowNode::Map(Map {
-                            input,
-                            map_fn,
-                            output_vtable,
-                        });
+                        let map = DataflowNode::Map(Map { input, map_fn });
 
                         nodes.insert(*node_id, map);
                     }
@@ -933,36 +972,7 @@ impl CompiledDataflow {
             };
 
             match node {
-                DataflowNode::Map(map) => {
-                    let input = &streams[&map.input];
-                    let vtable = map.output_vtable;
-
-                    let mapped = match (input, map.map_fn) {
-                        (RowStream::Set(input), MapFn::Set(map_fn)) => {
-                            RowStream::Set(input.map(move |input| {
-                                let mut output = UninitRow::new(vtable);
-                                unsafe {
-                                    map_fn(input.as_ptr(), output.as_mut_ptr());
-                                    output.assume_init()
-                                }
-                            }))
-                        }
-
-                        (RowStream::Map(input), MapFn::Map(map_fn)) => {
-                            RowStream::Set(input.map(move |(key, value)| {
-                                let mut output = UninitRow::new(vtable);
-                                unsafe {
-                                    map_fn(key.as_ptr(), value.as_ptr(), output.as_mut_ptr());
-                                    output.assume_init()
-                                }
-                            }))
-                        }
-
-                        _ => unreachable!(),
-                    };
-
-                    streams.insert(node_id, mapped);
-                }
+                DataflowNode::Map(map) => self.map(node_id, map, &mut streams),
 
                 DataflowNode::Filter(filter) => {
                     let input = &streams[&filter.input()];
@@ -1424,40 +1434,7 @@ impl CompiledDataflow {
                             substreams.insert(node_id, constant_stream);
                         }
 
-                        DataflowNode::Map(map) => {
-                            let input = &substreams[&map.input];
-                            let vtable = map.output_vtable;
-
-                            let mapped = match (input, map.map_fn) {
-                                (RowStream::Set(input), MapFn::Set(map_fn)) => {
-                                    RowStream::Set(input.map(move |input| {
-                                        let mut output = UninitRow::new(vtable);
-                                        unsafe {
-                                            map_fn(input.as_ptr(), output.as_mut_ptr());
-                                            output.assume_init()
-                                        }
-                                    }))
-                                }
-
-                                (RowStream::Map(input), MapFn::Map(map_fn)) => {
-                                    RowStream::Set(input.map(move |(key, value)| {
-                                        let mut output = UninitRow::new(vtable);
-                                        unsafe {
-                                            map_fn(
-                                                key.as_ptr(),
-                                                value.as_ptr(),
-                                                output.as_mut_ptr(),
-                                            );
-                                            output.assume_init()
-                                        }
-                                    }))
-                                }
-
-                                _ => unreachable!(),
-                            };
-
-                            substreams.insert(node_id, mapped);
-                        }
+                        DataflowNode::Map(map) => self.map(node_id, map, &mut substreams),
 
                         DataflowNode::Filter(filter) => {
                             let input = &substreams[&filter.input()];
@@ -2044,6 +2021,72 @@ impl CompiledDataflow {
 
         streams.insert(node_id, antijoined);
     }
+
+    fn map<C>(&self, node_id: NodeId, map: Map, streams: &mut BTreeMap<NodeId, RowStream<C>>)
+    where
+        C: Circuit,
+    {
+        let input = streams[&map.input].clone();
+
+        let mapped = match map.map_fn {
+            MapFn::SetSet { map, key_vtable } => {
+                RowStream::Set(input.unwrap_set().map(move |input| {
+                    let mut output = UninitRow::new(key_vtable);
+                    unsafe {
+                        map(input.as_ptr(), output.as_mut_ptr());
+                        output.assume_init()
+                    }
+                }))
+            }
+
+            MapFn::SetMap {
+                map,
+                key_vtable,
+                value_vtable,
+            } => RowStream::Map(input.unwrap_set().map_index(move |input| {
+                let (mut key_output, mut value_output) =
+                    (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+                unsafe {
+                    map(
+                        input.as_ptr(),
+                        key_output.as_mut_ptr(),
+                        value_output.as_mut_ptr(),
+                    );
+                    (key_output.assume_init(), value_output.assume_init())
+                }
+            })),
+
+            MapFn::MapSet { map, key_vtable } => {
+                RowStream::Set(input.unwrap_map().map(move |(key, value)| {
+                    let mut key_output = UninitRow::new(key_vtable);
+                    unsafe {
+                        map(key.as_ptr(), value.as_ptr(), key_output.as_mut_ptr());
+                        key_output.assume_init()
+                    }
+                }))
+            }
+
+            MapFn::MapMap {
+                map,
+                key_vtable,
+                value_vtable,
+            } => RowStream::Map(input.unwrap_map().map_index(move |(key, value)| {
+                let (mut key_output, mut value_output) =
+                    (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+                unsafe {
+                    map(
+                        key.as_ptr(),
+                        value.as_ptr(),
+                        key_output.as_mut_ptr(),
+                        value_output.as_mut_ptr(),
+                    );
+                    (key_output.assume_init(), value_output.assume_init())
+                }
+            })),
+        };
+
+        streams.insert(node_id, mapped);
+    }
 }
 
 unsafe fn row_from_literal(
@@ -2146,19 +2189,24 @@ mod tests {
 
         let source = graph.source(xy_layout);
 
-        let mul = graph.map(source, x_layout, {
-            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-            let input = func.add_input(xy_layout);
-            let output = func.add_output(x_layout);
+        let mul = graph.map(
+            source,
+            StreamLayout::Set(xy_layout),
+            StreamLayout::Set(x_layout),
+            {
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let input = func.add_input(xy_layout);
+                let output = func.add_output(x_layout);
 
-            let x = func.load(input, 0);
-            let y = func.load(input, 1);
-            let xy = func.mul(x, y);
-            func.store(output, 0, xy);
+                let x = func.load(input, 0);
+                let y = func.load(input, 1);
+                let xy = func.mul(x, y);
+                func.store(output, 0, xy);
 
-            func.ret_unit();
-            func.build()
-        });
+                func.ret_unit();
+                func.build()
+            },
+        );
 
         let y_index = graph.index_with(source, unit_layout, x_layout, {
             let mut func = FunctionBuilder::new(graph.layout_cache().clone());
@@ -2174,19 +2222,24 @@ mod tests {
             func.ret_unit();
             func.build()
         });
-        let y_squared = graph.map(y_index, x_layout, {
-            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-            let _key = func.add_input(unit_layout);
-            let value = func.add_input(x_layout);
-            let output = func.add_output(x_layout);
+        let y_squared = graph.map(
+            y_index,
+            StreamLayout::Map(unit_layout, x_layout),
+            StreamLayout::Set(x_layout),
+            {
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let _key = func.add_input(unit_layout);
+                let value = func.add_input(x_layout);
+                let output = func.add_output(x_layout);
 
-            let y = func.load(value, 0);
-            let y_squared = func.mul(y, y);
-            func.store(output, 0, y_squared);
+                let y = func.load(value, 0);
+                let y_squared = func.mul(y, y);
+                func.store(output, 0, y_squared);
 
-            func.ret_unit();
-            func.build()
-        });
+                func.ret_unit();
+                func.build()
+            },
+        );
 
         let mul_sink = graph.sink(mul);
         let y_squared_sink = graph.sink(y_squared);
@@ -2358,36 +2411,46 @@ mod tests {
             });
 
             let min = subgraph.add_node(Min::new(joined_plus_roots));
-            let min_set = subgraph.map(min, u64x2, {
-                let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
-                let key = func.add_input(u64x1);
-                let value = func.add_input(u64x1);
-                let output = func.add_output(u64x2);
+            let min_set = subgraph.map(
+                min,
+                StreamLayout::Map(u64x1, u64x1),
+                StreamLayout::Set(u64x2),
+                {
+                    let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
+                    let key = func.add_input(u64x1);
+                    let value = func.add_input(u64x1);
+                    let output = func.add_output(u64x2);
 
-                let key = func.load(key, 0);
-                let value = func.load(value, 0);
-                func.store(output, 0, key);
-                func.store(output, 1, value);
+                    let key = func.load(key, 0);
+                    let value = func.load(value, 0);
+                    func.store(output, 0, key);
+                    func.store(output, 1, value);
 
-                func.ret_unit();
-                func.build()
-            });
+                    func.ret_unit();
+                    func.build()
+                },
+            );
             let min_set_distinct = subgraph.distinct(min_set);
             subgraph.connect_feedback(min_set_distinct, nodes);
             subgraph.export(min_set_distinct, StreamLayout::Set(u64x2))
         });
 
-        let reachable_nodes = graph.map(distances, u64x1, {
-            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-            let distance = func.add_input(u64x2);
-            let output = func.add_output(u64x1);
+        let reachable_nodes = graph.map(
+            distances,
+            StreamLayout::Set(u64x2),
+            StreamLayout::Set(u64x1),
+            {
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let distance = func.add_input(u64x2);
+                let output = func.add_output(u64x1);
 
-            let node = func.load(distance, 0);
-            func.store(output, 0, node);
+                let node = func.load(distance, 0);
+                func.store(output, 0, node);
 
-            func.ret_unit();
-            func.build()
-        });
+                func.ret_unit();
+                func.build()
+            },
+        );
 
         let reachable_nodes = graph.add_node(MonotonicJoin::new(
             vertices,
@@ -2408,20 +2471,25 @@ mod tests {
             u64x1,
         ));
         let unreachable_nodes = graph.add_node(Minus::new(vertices, reachable_nodes));
-        let unreachable_nodes = graph.map(unreachable_nodes, u64x2, {
-            let mut func = FunctionBuilder::new(graph.layout_cache().clone());
-            let node = func.add_input(u64x1);
-            let output = func.add_output(u64x2);
+        let unreachable_nodes = graph.map(
+            unreachable_nodes,
+            StreamLayout::Set(u64x1),
+            StreamLayout::Set(u64x2),
+            {
+                let mut func = FunctionBuilder::new(graph.layout_cache().clone());
+                let node = func.add_input(u64x1);
+                let output = func.add_output(u64x2);
 
-            let node = func.load(node, 0);
-            func.store(output, 0, node);
+                let node = func.load(node, 0);
+                func.store(output, 0, node);
 
-            let weight = func.constant(Constant::U64(i64::MAX as u64));
-            func.store(output, 1, weight);
+                let weight = func.constant(Constant::U64(i64::MAX as u64));
+                func.store(output, 1, weight);
 
-            func.ret_unit();
-            func.build()
-        });
+                func.ret_unit();
+                func.build()
+            },
+        );
 
         let distances = graph.add_node(Sum::new(vec![distances, unreachable_nodes]));
         let sink = graph.sink(distances);

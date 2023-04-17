@@ -136,8 +136,14 @@ pub trait GraphExt {
         self.add_node(Filter::new(input, filter_fn))
     }
 
-    fn map(&mut self, input: NodeId, key_layout: LayoutId, map_fn: Function) -> NodeId {
-        self.add_node(Map::new(input, map_fn, key_layout))
+    fn map(
+        &mut self,
+        input: NodeId,
+        input_layout: StreamLayout,
+        output_layout: StreamLayout,
+        map_fn: Function,
+    ) -> NodeId {
+        self.add_node(Map::new(input, map_fn, input_layout, output_layout))
     }
 
     fn distinct(&mut self, input: NodeId) -> NodeId {
@@ -430,7 +436,7 @@ mod tests {
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
             literal::{NullableConstant, RowLiteral},
-            nodes::{Differentiate, Fold, IndexWith, Map, Neg, Sink, Source, Sum},
+            nodes::{Differentiate, Fold, IndexWith, Neg, Sink, Source, StreamLayout, Sum},
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
@@ -479,8 +485,10 @@ mod tests {
         //     },
         // );
         // ```
-        let stream7850 = graph.add_node(Map::new(
+        let stream7850 = graph.map(
             source,
+            StreamLayout::Set(source_row),
+            StreamLayout::Set(nullable_i32),
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(source_row);
@@ -497,8 +505,7 @@ mod tests {
                 func.ret_unit();
                 func.build()
             },
-            nullable_i32,
-        ));
+        );
 
         // ```
         // let stream7856: Stream<_, OrdIndexedZSet<(), Tuple1<Option<i32>>, Weight>> = stream7850
@@ -652,8 +659,10 @@ mod tests {
                 .with_column(ColumnType::I32, true)
                 .build(),
         );
-        let stream7866 = graph.add_node(Map::new(
+        let stream7866 = graph.map(
             stream7861,
+            StreamLayout::Set(stream7866_layout),
+            StreamLayout::Set(nullable_i32),
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(stream7866_layout);
@@ -672,15 +681,16 @@ mod tests {
 
                 func.build()
             },
-            nullable_i32,
-        ));
+        );
 
         // ```
         // let stream7874: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
         //     stream7866.map(move |_t: _| -> Tuple1<Option<i32>> { Tuple1::new(None::<i32>) });
         // ```
-        let stream7874 = graph.add_node(Map::new(
+        let stream7874 = graph.map(
             stream7866,
+            StreamLayout::Set(nullable_i32),
+            StreamLayout::Set(nullable_i32),
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let _input = func.add_input(nullable_i32);
@@ -690,8 +700,7 @@ mod tests {
                 func.ret_unit();
                 func.build()
             },
-            nullable_i32,
-        ));
+        );
 
         // ```
         // let stream7879: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7874.neg();
@@ -797,8 +806,10 @@ mod tests {
                 .with_column(ColumnType::U32, false)
                 .build(),
         );
-        let map = graph.add_node(Map::new(
+        let map = graph.map(
             source,
+            StreamLayout::Set(xy_layout),
+            StreamLayout::Set(x_layout),
             {
                 let mut func = FunctionBuilder::new(graph.layout_cache().clone());
                 let input = func.add_input(xy_layout);
@@ -812,8 +823,7 @@ mod tests {
                 func.ret_unit();
                 func.build()
             },
-            x_layout,
-        ));
+        );
 
         let sink = graph.add_node(Sink::new(map));
 
