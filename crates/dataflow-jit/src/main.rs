@@ -3,7 +3,7 @@ use dataflow_jit::{
     codegen::CodegenConfig,
     dataflow::CompiledDataflow,
     ir::{GraphExt, Validator},
-    sqljson::SqlGraph,
+    sql_graph::SqlGraph,
 };
 use dbsp::Runtime;
 use jsonschema::paths::PathChunk;

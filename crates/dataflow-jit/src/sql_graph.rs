@@ -215,7 +215,7 @@ mod tests {
             ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
         row::{Row, UninitRow},
-        sqljson::SqlGraph,
+        sql_graph::SqlGraph,
     };
     use dbsp::{
         trace::{Batch, Batcher},
