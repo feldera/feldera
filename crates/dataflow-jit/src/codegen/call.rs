@@ -36,6 +36,11 @@ impl CodegenCtx<'_> {
             "dbsp.str.char_length" => self.string_char_length(expr_id, call, builder),
             "dbsp.str.byte_length" => self.string_byte_length(expr_id, call, builder),
 
+            "dbsp.str.is_nfc" => self.string_is_nfc(expr_id, call, builder),
+            "dbsp.str.is_nfd" => self.string_is_nfd(expr_id, call, builder),
+            "dbsp.str.is_nfkc" => self.string_is_nfkc(expr_id, call, builder),
+            "dbsp.str.is_nfkd" => self.string_is_nfkd(expr_id, call, builder),
+
             // `fn(timestamp) -> date
             "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
 
@@ -549,6 +554,58 @@ impl CodegenCtx<'_> {
         // TODO: Apply readonly when possible
         let length = self.string_length(string, false, builder);
         self.add_expr(expr_id, length, ColumnType::Usize, None);
+    }
+
+    fn string_is_nfc(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_nfc = self.imports.string_is_nfc(self.module, builder.func);
+        let is_nfc = builder.call_fn(is_nfc, &[ptr, length]);
+
+        self.add_expr(expr_id, is_nfc, ColumnType::Bool, None);
+    }
+
+    fn string_is_nfd(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_nfd = self.imports.string_is_nfd(self.module, builder.func);
+        let is_nfd = builder.call_fn(is_nfd, &[ptr, length]);
+
+        self.add_expr(expr_id, is_nfd, ColumnType::Bool, None);
+    }
+
+    fn string_is_nfkc(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_nfkc = self.imports.string_is_nfkc(self.module, builder.func);
+        let is_nfkc = builder.call_fn(is_nfkc, &[ptr, length]);
+
+        self.add_expr(expr_id, is_nfkc, ColumnType::Bool, None);
+    }
+
+    fn string_is_nfkd(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_nfkd = self.imports.string_is_nfkd(self.module, builder.func);
+        let is_nfkd = builder.call_fn(is_nfkd, &[ptr, length]);
+
+        self.add_expr(expr_id, is_nfkd, ColumnType::Bool, None);
     }
 
     fn timestamp_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
