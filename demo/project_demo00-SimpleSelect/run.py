@@ -30,7 +30,7 @@ def prepare():
     print('Pushing data to Kafka topic...')
     with open(data_csv, 'r') as f:
         for n_lines in iter(lambda: tuple(islice(f, 1000)), ()):
-            (rpk['topic', 'produce', 'fraud_demo_large_demographics',
+            (rpk['topic', 'produce', 'null_demo_input',
              '-f', '%v'] << '\n'.join(n_lines))()
 
 
