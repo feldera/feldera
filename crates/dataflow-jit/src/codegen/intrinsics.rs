@@ -168,6 +168,7 @@ intrinsics! {
     // String functions
     string_with_capacity = fn(ptr) -> ptr,
     string_push_str = fn(ptr, ptr, ptr),
+    string_count_chars = fn(ptr, ptr) -> ptr,
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -334,6 +335,13 @@ unsafe extern "C" fn string_push_str(
     let string = unsafe { str::from_utf8_unchecked(bytes) };
 
     target.push_str(string);
+}
+
+unsafe extern "C" fn string_count_chars(ptr: *const u8, len: usize) -> usize {
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    debug_assert!(str::from_utf8(bytes).is_ok());
+    let string = unsafe { str::from_utf8_unchecked(bytes) };
+    string.chars().count()
 }
 
 unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {

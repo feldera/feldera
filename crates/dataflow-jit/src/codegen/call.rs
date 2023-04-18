@@ -32,6 +32,10 @@ impl CodegenCtx<'_> {
             // `fn(string: str)` (mutates the given string)
             "dbsp.str.clear" => self.string_clear(call, builder),
 
+            "dbsp.str.bit_length" => self.string_bit_length(expr_id, call, builder),
+            "dbsp.str.char_length" => self.string_char_length(expr_id, call, builder),
+            "dbsp.str.byte_length" => self.string_byte_length(expr_id, call, builder),
+
             // `fn(timestamp) -> date
             "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
 
@@ -500,6 +504,51 @@ impl CodegenCtx<'_> {
                 format!("call @dbsp.str.concat_clone({first}, {second})"),
             );
         }
+    }
+
+    fn string_bit_length(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+        let bits = builder.ins().imul_imm(length, 8);
+        self.add_expr(expr_id, bits, ColumnType::Usize, None);
+    }
+
+    fn string_char_length(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let count_chars = self.imports.string_count_chars(self.module, builder.func);
+        let chars = builder.call_fn(count_chars, &[ptr, length]);
+
+        self.add_expr(expr_id, chars, ColumnType::Usize, None);
+    }
+
+    fn string_byte_length(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+        self.add_expr(expr_id, length, ColumnType::Usize, None);
     }
 
     fn timestamp_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
