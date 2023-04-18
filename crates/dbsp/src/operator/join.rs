@@ -225,10 +225,10 @@ where
         // TODO: I think this is correct, but we need a proper proof.
 
         // We use the following formula for nested incremental join with arbitrary
-        // of nesting depth:
+        // nesting depth:
         //
         // ```
-        // (↑(a <> b))∆))[t] =
+        // (↑(a <> b)∆)[t] =
         //      __         __            __
         //      ╲          ╲             ╲
         //      ╱          ╱             ╱  {f(k,v1,v2), w1*w2}
