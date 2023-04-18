@@ -784,6 +784,26 @@ impl FunctionValidator {
                 self.expr_types.insert(expr_id, Ok(ColumnType::String));
             }
 
+            "dbsp.str.bit_length" | "dbsp.str.char_length" | "dbsp.str.byte_length" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::Usize));
+            }
+
             "dbsp.timestamp.epoch"
             | "dbsp.timestamp.year"
             | "dbsp.timestamp.month"

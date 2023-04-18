@@ -70,14 +70,14 @@
   - [ ] `@dbsp.row.vec.reserve`
   - [ ] String manipulation
     - [x] `@dbsp.str.truncate`
-    - [ ] `@dbsp.str.truncate_clone`
+    - [x] `@dbsp.str.truncate_clone`
     - [x] `@dbsp.str.clear`
-    - [ ] `@dbsp.str.concat`
-    - [ ] `@dbsp.str.concat_clone`
+    - [x] `@dbsp.str.concat`
+    - [x] `@dbsp.str.concat_clone`
     - [ ] `@dbsp.str.is_normalized()` (check for NFC, NFD, NFKC or NFKD normalization)
-    - [ ] `@dbsp.str.bit_length()`
-    - [ ] `@dbsp.str.char_length()`
-    - [ ] `@dbsp.str.octet_length()`
+    - [x] `@dbsp.str.bit_length()`
+    - [x] `@dbsp.str.char_length()`
+    - [x] `@dbsp.str.byte_length()`
     - [ ] `@dbsp.str.to_lowercase()`
     - [ ] `@dbsp.str.make_lowercase()`
     - [ ] `@dbsp.str.to_uppercase()`
