@@ -169,6 +169,10 @@ intrinsics! {
     string_with_capacity = fn(ptr) -> ptr,
     string_push_str = fn(ptr, ptr, ptr),
     string_count_chars = fn(ptr, ptr) -> ptr,
+    string_is_nfc = fn(ptr, ptr) -> bool,
+    string_is_nfd = fn(ptr, ptr) -> bool,
+    string_is_nfkc = fn(ptr, ptr) -> bool,
+    string_is_nfkd = fn(ptr, ptr) -> bool,
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -324,24 +328,46 @@ unsafe extern "C" fn string_with_capacity(capacity: usize) -> ThinStr {
     ThinStr::with_capacity(capacity)
 }
 
+#[inline(always)]
+unsafe fn str_from_raw_parts<'a>(ptr: *const u8, len: usize) -> &'a str {
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    debug_assert!(str::from_utf8(bytes).is_ok());
+    unsafe { str::from_utf8_unchecked(bytes) }
+}
+
 // TODO: Make a `ThinStrMut` type instead of `ManuallyDrop<ThinStr>`
 unsafe extern "C" fn string_push_str(
     mut target: ManuallyDrop<ThinStr>,
     ptr: *const u8,
     len: usize,
 ) {
-    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    debug_assert!(str::from_utf8(bytes).is_ok());
-    let string = unsafe { str::from_utf8_unchecked(bytes) };
-
+    let string = unsafe { str_from_raw_parts(ptr, len) };
     target.push_str(string);
 }
 
 unsafe extern "C" fn string_count_chars(ptr: *const u8, len: usize) -> usize {
-    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    debug_assert!(str::from_utf8(bytes).is_ok());
-    let string = unsafe { str::from_utf8_unchecked(bytes) };
+    let string = unsafe { str_from_raw_parts(ptr, len) };
     string.chars().count()
+}
+
+unsafe extern "C" fn string_is_nfc(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    unicode_normalization::is_nfc(string)
+}
+
+unsafe extern "C" fn string_is_nfd(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    unicode_normalization::is_nfd(string)
+}
+
+unsafe extern "C" fn string_is_nfkc(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    unicode_normalization::is_nfkc(string)
+}
+
+unsafe extern "C" fn string_is_nfkd(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    unicode_normalization::is_nfkd(string)
 }
 
 unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {

@@ -75,6 +75,10 @@
     - [x] `@dbsp.str.concat`
     - [x] `@dbsp.str.concat_clone`
     - [ ] `@dbsp.str.is_normalized()` (check for NFC, NFD, NFKC or NFKD normalization)
+      - [x] `@dbsp.str.is_nfc()`
+      - [x] `@dbsp.str.is_nfd()`
+      - [x] `@dbsp.str.is_nfkc()`
+      - [x] `@dbsp.str.is_nfkd()`
     - [x] `@dbsp.str.bit_length()`
     - [x] `@dbsp.str.char_length()`
     - [x] `@dbsp.str.byte_length()`
