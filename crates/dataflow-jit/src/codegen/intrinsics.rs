@@ -173,6 +173,8 @@ intrinsics! {
     string_is_nfd = fn(ptr, ptr) -> bool,
     string_is_nfkc = fn(ptr, ptr) -> bool,
     string_is_nfkd = fn(ptr, ptr) -> bool,
+    string_is_lowercase = fn(ptr, ptr) -> bool,
+    string_is_uppercase = fn(ptr, ptr) -> bool,
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -368,6 +370,16 @@ unsafe extern "C" fn string_is_nfkc(ptr: *const u8, len: usize) -> bool {
 unsafe extern "C" fn string_is_nfkd(ptr: *const u8, len: usize) -> bool {
     let string = unsafe { str_from_raw_parts(ptr, len) };
     unicode_normalization::is_nfkd(string)
+}
+
+unsafe extern "C" fn string_is_lowercase(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    string.chars().all(char::is_lowercase)
+}
+
+unsafe extern "C" fn string_is_uppercase(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    string.chars().all(char::is_uppercase)
 }
 
 unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {
