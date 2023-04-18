@@ -1,14 +1,18 @@
-#! /bin/sh
+#! /bin/bash
+
+set -o pipefail
 
 runner=dbsp
-streaming=true
+mode=stream
 events=100k
 language=default
+output=nexmark.csv
 query=all
 if ! cores=$(nproc 2>/dev/null) || test $cores -gt 16; then
     cores=16
 fi
 run=:
+parse=false
 
 # Dataflow options.
 project=
@@ -32,10 +36,16 @@ do
 	    nextarg=runner
 	    ;;
 	--stream|--streaming|-s)
-	    streaming=true
+	    mode=stream
 	    ;;
 	--batch|-b)
-	    streaming=false
+	    mode=batch
+	    ;;
+	--mode=*)
+	    mode=${arg#--mode=}
+	    ;;
+	--mode|-e)
+	    nextarg=mode
 	    ;;
 	--events=*)
 	    events=${arg#--events=}
@@ -61,7 +71,17 @@ do
 	--cores=*)
 	    cores=${arg#--cores=}
 	    ;;
+	--output|-o)
+	    nextarg=output
+	    ;;
+	--output=*)
+	    output=${arg#--output=}
+	    ;;
 	--dry-run|-n)
+	    run=false
+	    ;;
+	--parse)
+	    parse=:
 	    run=false
 	    ;;
 	--project=*)
@@ -94,19 +114,24 @@ run-nexmark, for running the Nexmark benchmark with various backends
 Usage: $0 [OPTIONS]
 
 The following options are supported:
-  -r, --runner=RUNNER   Use back end RUNNER, one of: dbsp flink beam/direct
-                        beam/flink beam/spark beam/dataflow
+  -r, --runner=RUNNER   Use back end RUNNER, one of: dbsp flink beam.direct
+                        beam.flink beam.spark beam.dataflow
   -s, --stream          Run stream analytics (default)
   -b, --batch           Run batch analytics
   -e, --events=EVENTS   Run EVENTS events (default: 100k)
   -L, --language=LANG   Use given query LANG: default sql zetasql
   -c, --cores=CORES     Use CORES cores for computation (default: min(16,nproc))
   -q, --query=QUERY     Queries to run (default: all)
-  -n, --dry-run         Don't run anything, just print what would have run
+  -o, --output=OUTPUT   Append CSV-formatted output to OUTPUT (default: nexmark.csv).
 
-The beam/dataflow backend takes more configuration.  These settings are
+By default, run-nexmark runs the tests and appends parsed results to
+nexmark.txt.  These options select other modes of operation:
+  -n, --dry-run         Don't run anything, just print what would have run
+  --parse < LOG         Parse log output from stdin, print results to stdout.
+
+The beam.dataflow backend takes more configuration.  These settings are
 required:
-  --project=PROJECT     Project name 
+  --project=PROJECT     Project name
   --bucket=BUCKET       Bucket name
 These Dataflow settings are optional:
   --region=REGION       GCP region to use (default: us-west1)
@@ -128,30 +153,31 @@ if test -n "$nextarg"; then
 fi
 
 case $runner in
-    dbsp | flink | beam/direct | beam/flink | beam/spark) ;;
-    beam/dataflow)
-	if test -z "$project"; then
-	    echo >&2 "$0: beam/dataflow runner requires --project"
-	    exit 1
+    dbsp | flink | beam.direct | beam.flink | beam.spark) ;;
+    beam.dataflow)
+	if ! $parse; then
+	    if test -z "$project"; then
+		echo >&2 "$0: beam.dataflow runner requires --project"
+		exit 1
+	    fi
+	    case $bucket in
+		*[!-a-z0-9-_.]*)
+		    echo >&2 "$0: invalid bucket name '$bucket' (don't include gs:// prefix)"
+		    exit 1
+		    ;;
+		'')
+		    echo >&2 "$0: beam.dataflow runner requires --bucket"
+		    exit 1
+	    esac
 	fi
-	case $bucket in
-	    *[!-a-z0-9-_.]*)
-		echo >&2 "$0: invalid bucket name '$bucket' (don't include gs:// prefix)"
-		exit 1
-		;;
-	    '')
-		echo >&2 "$0: beam/dataflow runner requires --bucket"
-		exit 1
-	esac
 	;;
     *) echo >&2 "$0: unknown runner '$runner'"; exit 1 ;;
 esac
 case $runner:$language in
-    *:default | beam/*:sql | beam/*:zetasql) ;;
-    *:sql | *:zetasql) echo >&2 "$0: only beam/* support $language" ;;
+    *:default | beam.*:sql | beam.*:zetasql) ;;
+    *:sql | *:zetasql) echo >&2 "$0: only beam.* support $language" ;;
     *) echo >&2 "$0: unknown query language '$language'"; exit 1 ;;
 esac
-
 case $events in
     [1-9]*k) events=${events%k}000 ;;
     [1-9]*M) events=${events%M}000000 ;;
@@ -161,6 +187,12 @@ case $events in
 	exit 1
 	;;
 esac
+case $mode in
+    stream | streaming) mode=stream streaming=true ;;
+    batch) streaming=false ;;
+    *) echo >&2 "$0: --mode must be 'stream' or 'batch'"; exit 1 ;;
+esac
+
 find_program() {
     for program
     do
@@ -175,19 +207,6 @@ find_program() {
     esac
     exit 1
 }
-
-cat <<EOF
-Running Nexmark suite with configuration:
-  runner: $runner
-  streaming: $streaming
-  events: $events
-  query: $query
-  cores: $cores
-EOF
-case $runner in
-    beam/*) echo "  query language: ${language:-(beam)}" ;;
-esac
-
 run() {
     # Print the command in a cut-and-pastable form
     space=
@@ -203,6 +222,16 @@ run() {
 
     if $run; then
 	"$@"
+    else
+	return 0
+    fi
+}
+
+run_log() {
+    if $run; then
+	run "$@" 2>&1 | tee log.txt
+    else
+	run "$@"
     fi
 }
 
@@ -226,11 +255,142 @@ run_beam_nexmark() {
 	--enforceImmutability=true \
 	"$@"
 
-    run beam/beam/gradlew -p beam/beam :sdks:java:testing:nexmark:run \
-	-Pnexmark.runner=":runners:$runner" -Pnexmark.args="$*"
+    run_log beam/beam/gradlew -p beam/beam :sdks:java:testing:nexmark:run \
+	    -Pnexmark.runner=":runners:$runner" -Pnexmark.args="$*"
 }
+
+beam2csv() {
+    while read number desc eps results; do
+	case $number in
+	    00[0-9][0-9]) ;;
+	    *) continue ;;
+	esac
+
+	query=
+	case ${desc%;} in
+	    query:PASSTHROUGH) query=q0 ;;
+	    query:CURRENCY_CONVERSION) query=q1 ;;
+	    query:SELECTION) query=q2 ;;
+	    query:LOCAL_ITEM_SUGGESTION) query=q3 ;;
+	    query:AVERAGE_PRICE_FOR_CATEGORY) query=q4 ;;
+	    query:HOT_ITEMS) query=q5 ;;
+	    query:AVERAGE_SELLING_PRICE_BY_SELLER) query=q6 ;;
+	    query:HIGHEST_BID) query=q7 ;;
+	    query:MONITOR_NEW_USERS) query=q8 ;;
+	    query:WINNING_BIDS) query=q9 ;;
+	    query:LOG_TO_SHARDED_FILES) query=q10 ;;
+	    query:USER_SESSIONS) query=q11 ;;
+	    query:PROCESSING_TIME_WINDOWS) query=q12 ;;
+	    query:PORTABILITY_BATCH) query=q15 ;;
+	    query:RESHUFFLE) query=q16 ;;
+	    query:BOUNDED_SIDE_INPUT_JOIN) query=q13 ;;
+	    query:SESSION_SIDE_INPUT_JOIN) query=q14 ;;
+	    query:*) echo >&2 "unknown query: $desc"; continue ;;
+	    '*'*) continue ;;
+	esac
+	if test -n "$query"; then
+	    eval conf$number=$query
+	    continue
+	fi
+	eval query='$'conf$number
+	echo "$csv_common,$query,$cores,$events,$desc"
+    done | sort | uniq
+}
+
+dbsp2csv() {
+    sed 's/[ 	]//g' | while read line; do
+	case $line in
+	    *'│'*)
+		save_IFS=$IFS IFS=│; set $line; IFS=$save_IFS
+		shift
+		case $1:$2 in
+		    q*:*,*) ;;
+		    *) continue ;;
+		esac
+		query=$1 events=$(echo "$2" | sed 's/,//g') cores=$3
+		case $4 in
+		    *ms) elapsed=$(echo "${4%ms}/1000" | bc -l) ;;
+		    *s) elapsed=${4%s} ;;
+		    *) continue ;;
+		esac
+		echo "$csv_common,$query,$cores,$events,$elapsed"
+		;;
+	    q[0-9]*,[0-9]*,[0-9]*,[0-9]*)
+		save_IFS=$IFS IFS=,; set $line; IFS=$save_IFS
+		query=$1 cores=$2 events=$3 elapsed=$4
+		echo "$csv_common,$query,$cores,$events,$elapsed"
+		;;
+	esac
+    done
+}
+
+# Parses this format:
+#
+# +-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
+# | Nexmark Query     | Events Num        | Cores             | Time(s)           | Cores * Time(s)   | Throughput/Cores  |
+# +-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
+# |q0                 |100,000,000        |2.14               |144.910            |309.639            |322.96 K/s         |
+# |q1                 |100,000,000        |1.41               |202.768            |286.167            |349.45 K/s         |
+# ...
+# |Total              |2,100,000,000      |140.145            |4675.789           |36773.486          |2.96 M/s           |
+# +-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
+flink2csv() {
+    sed 's/[ 	]//g' | while read line; do
+	case $line in
+	    *'|'*)
+		save_IFS=$IFS IFS='|'; set $line; IFS=$save_IFS
+		shift
+		case $1:$2 in
+		    q*:*,*) ;;
+		    *) continue ;;
+		esac
+		query=$1 events=$(echo "$2" | sed 's/,//g') cores=$3 elapsed=$4
+		;;
+	    q[0-9]*' '[0-9]*' '[0-9]*' '[0-9]*)
+		set $line
+		query=$1 events=$2 cores=$3 elapsed=$4
+		;;
+	    *)
+		continue
+		;;
+	esac
+	echo "$csv_common,$query,$cores,$events,$elapsed"
+    done
+}
+
+if $parse; then
+    reference='-r /dev/stdin'
+else
+    reference=
+fi
+when=$(LC_ALL=C date -u '+%+4Y-%m-%d %H:%M:%S' $reference)
+csv_heading=when,runner,mode,language,name,num_cores,num_events,elapsed
+parse() {
+    csv_common=$when,$runner,$mode,$language
+    case $runner in
+	dbsp) dbsp2csv ;;
+	flink) flink2csv ;;
+	beam.*) beam2csv ;;
+	*) echo >&2 "unknown runner $runner"; exit 1 ;;
+    esac
+}
+if $parse; then
+    parse
+    exit $?
+fi
+
+cat <<EOF
+Running Nexmark suite with configuration:
+  runner: $runner
+  mode: $mode
+  language: $language
+  events: $events
+  query: $query
+  cores: $cores
+EOF
 case $runner in
     dbsp)
+	rm -f results.csv
 	set -- \
 	    --first-event-rate=10000000 \
 	    --max-events=$events \
@@ -242,8 +402,8 @@ case $runner in
 	if test "$query" != all; then
 	    set -- "$@" --query=q$query
 	fi
-	find_program cargo
-	run cargo bench --bench nexmark -- "$@"
+	CARGO=$(find_program cargo)
+	run_log $CARGO bench --bench nexmark -- "$@"
 	;;
 
     flink)
@@ -262,17 +422,17 @@ case $runner in
 	DOCKER_COMPOSE=$(find_program podman-compose docker-compose)
 	run $DOCKER_COMPOSE -p nexmark -f $yml down -t 0
 	run $DOCKER_COMPOSE -p nexmark -f $yml up -d || exit 1
-	run $DOCKER exec nexmark_jobmanager_1 run-nexmark.sh --queries "$query" --events $events || exit 1
+	run_log $DOCKER exec nexmark_jobmanager_1 run.sh --queries "$query" --events $events || exit 1
 	run $DOCKER_COMPOSE -p nexmark -f $yml down -t 0 || exit 1
 	;;
 
-    beam/direct)
+    beam.direct)
 	run_beam_nexmark direct-java \
 		    --runner=DirectRunner \
 		    --targetParallelism=$cores
 	;;
 
-    beam/flink)
+    beam.flink)
 	# Flink tends to peak at about 2*parallelism cores according to 'top'.
 	parallelism=$(expr \( $cores + 1 \) / 2)
 	run_beam_nexmark flink:1.13 \
@@ -282,7 +442,7 @@ case $runner in
 		    --maxParallelism=$parallelism
 	;;
 
-    beam/spark)
+    beam.spark)
 	if test $streaming = true; then
 	    echo >&2 "$0: warning: $runner hangs in streaming mode"
 	fi
@@ -291,7 +451,7 @@ case $runner in
 		    --sparkMaster="local[$cores]"
 	;;
 
-    beam/dataflow)
+    beam.dataflow)
 	region=us-west1
 	cores_per_worker=4	# For the default Dataflow worker machine type
 	n_workers=$(expr $cores / $cores_per_worker)
@@ -321,3 +481,12 @@ case $runner in
 	exit 1
 	;;
 esac
+
+if $run; then
+    if test ! -e $output; then
+	echo "$csv_heading" >> $output
+    fi
+    parse < log.txt >> $output
+else
+    exit 0
+fi
