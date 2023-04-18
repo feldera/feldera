@@ -804,7 +804,12 @@ impl FunctionValidator {
                 self.expr_types.insert(expr_id, Ok(ColumnType::Usize));
             }
 
-            "dbsp.str.is_nfc" | "dbsp.str.is_nfd" | "dbsp.str.is_nfkc" | "dbsp.str.is_nfkd" => {
+            "dbsp.str.is_nfc"
+            | "dbsp.str.is_nfd"
+            | "dbsp.str.is_nfkc"
+            | "dbsp.str.is_nfkd"
+            | "dbsp.str.is_lowercase"
+            | "dbsp.str.is_uppercase" => {
                 if call.args().len() != 1 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
                         expr_id,

@@ -40,6 +40,8 @@ impl CodegenCtx<'_> {
             "dbsp.str.is_nfd" => self.string_is_nfd(expr_id, call, builder),
             "dbsp.str.is_nfkc" => self.string_is_nfkc(expr_id, call, builder),
             "dbsp.str.is_nfkd" => self.string_is_nfkd(expr_id, call, builder),
+            "dbsp.str.is_lowercase" => self.string_is_lowercase(expr_id, call, builder),
+            "dbsp.str.is_uppercase" => self.string_is_uppercase(expr_id, call, builder),
 
             // `fn(timestamp) -> date
             "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
@@ -606,6 +608,42 @@ impl CodegenCtx<'_> {
         let is_nfkd = builder.call_fn(is_nfkd, &[ptr, length]);
 
         self.add_expr(expr_id, is_nfkd, ColumnType::Bool, None);
+    }
+
+    fn string_is_lowercase(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_lowercase = self.imports.string_is_lowercase(self.module, builder.func);
+        let is_lowercase = builder.call_fn(is_lowercase, &[ptr, length]);
+
+        self.add_expr(expr_id, is_lowercase, ColumnType::Bool, None);
+    }
+
+    fn string_is_uppercase(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+
+        let ptr = self.string_ptr(string, builder);
+        // TODO: Apply readonly when possible
+        let length = self.string_length(string, false, builder);
+
+        let is_uppercase = self.imports.string_is_uppercase(self.module, builder.func);
+        let is_uppercase = builder.call_fn(is_uppercase, &[ptr, length]);
+
+        self.add_expr(expr_id, is_uppercase, ColumnType::Bool, None);
     }
 
     fn timestamp_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {

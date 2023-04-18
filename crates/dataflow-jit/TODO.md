@@ -79,15 +79,17 @@
       - [x] `@dbsp.str.is_nfd()`
       - [x] `@dbsp.str.is_nfkc()`
       - [x] `@dbsp.str.is_nfkd()`
+    - [ ] `@dbsp.str.to_normalized()` (NFC, NFD, NFKC or NFKD normalization)
+    - [ ] `@dbsp.str.make_normalized()` (NFC, NFD, NFKC or NFKD normalization)
     - [x] `@dbsp.str.bit_length()`
     - [x] `@dbsp.str.char_length()`
     - [x] `@dbsp.str.byte_length()`
+    - [x] `@dbsp.str.is_lowercase()`
     - [ ] `@dbsp.str.to_lowercase()`
     - [ ] `@dbsp.str.make_lowercase()`
+    - [x] `@dbsp.str.is_uppercase()`
     - [ ] `@dbsp.str.to_uppercase()`
     - [ ] `@dbsp.str.make_uppercase()`
-    - [ ] `@dbsp.str.to_normalized()` (NFC, NFD, NFKC or NFKD normalization)
-    - [ ] `@dbsp.str.make_normalized()` (NFC, NFD, NFKC or NFKD normalization)
   - [ ] Vec/Array manipulation
   - [ ] Timestamp manipulation
     - [x] `@dbsp.timestamp.epoch`
