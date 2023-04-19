@@ -37,9 +37,10 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: db
+          args: db -- --nocapture
         env:
-          PGHOST: localhost 
+          PGHOST: localhost
           PGUSER: postgres
           PGPASSWORD: postgres
-          RUN_POSTGRES_TESTS: 1 
+          RUN_POSTGRES_TESTS: 1
+          RUST_LOG: trace

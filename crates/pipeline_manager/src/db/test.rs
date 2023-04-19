@@ -18,8 +18,6 @@ use std::time::SystemTime;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
-static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(5555);
-
 struct DbHandle {
     db: ProjectDB,
     _temp_dir: TempDir,
@@ -43,7 +41,21 @@ async fn test_setup() -> DbHandle {
     let _temp_dir = tempfile::tempdir().unwrap();
     let temp_path = _temp_dir.path();
 
-    let port = DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    use std::net::TcpListener;
+    // Find a free port to use for running the test database.
+    let port = {
+        /// This is a fallback method counter for port selection in case binding
+        /// to port 0 on localhost fails (to select a random, open
+        /// port).
+        static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(5555);
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to port 0");
+        listener
+            .local_addr()
+            .map(|l| l.port())
+            .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
+    };
+
     let conn = ProjectDB::connect_inner(
         "postgres-embed",
         &Some("".to_string()),
@@ -918,6 +930,7 @@ impl Storage for Mutex<DbModel> {
         // same behavior as the current implementation which means we insert
         // attached_connectors until we encouter one that doesn't exist
         if let Some(connectors) = connectors {
+            c.attached_connectors.clear();
             for ac in connectors {
                 if db_connectors.contains_key(&ac.connector_id) {
                     c.attached_connectors.push(ac.clone());

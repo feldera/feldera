@@ -36,7 +36,7 @@ futures = "0.3"
 tokio-postgres = "0.7"
 async-trait = "0.1"
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
-pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "2073129" }
+pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "116a466" }
 
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.4.1" }

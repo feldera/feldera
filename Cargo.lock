@@ -1062,9 +1062,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.2.2"
+version = "4.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b802d85aaf3a1cdb02b224ba472ebdea62014fccfcb269b95a4d76443b5ee5a"
+checksum = "49f9152d70e42172fdb87de2efd7327160beee37886027cf86f30a233d5b30b4"
 dependencies = [
  "clap_builder",
  "clap_derive 4.2.0",
@@ -1073,9 +1073,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.2.2"
+version = "4.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14a1a858f532119338887a4b8e1af9c60de8249cd7bafd68036a489e261e37b6"
+checksum = "e067b220911598876eb55d52725ddcc201ffe3f0904018195973bc5b012ea2ca"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1647,7 +1647,7 @@ dependencies = [
  "bitvec",
  "cfg-if",
  "chrono",
- "clap 4.2.2",
+ "clap 4.2.3",
  "cranelift",
  "cranelift-codegen",
  "cranelift-jit",
@@ -1735,7 +1735,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "bytestring",
- "clap 4.2.2",
+ "clap 4.2.3",
  "crossbeam",
  "csv",
  "dbsp",
@@ -1803,7 +1803,7 @@ dependencies = [
  "async-trait",
  "awc",
  "chrono",
- "clap 4.2.2",
+ "clap 4.2.3",
  "daemonize",
  "dbsp_adapters",
  "env_logger",
@@ -2245,9 +2245,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "h2"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66b91535aa35fea1523ad1b86cb6b53c28e0ae566ba4a460f4457e936cad7c6f"
+checksum = "17f8a914c2987b688368b5138aa05321db91f4090cf26118185672ad588bce21"
 dependencies = [
  "bytes",
  "fnv",
@@ -2605,7 +2605,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.0",
  "bytecount",
- "clap 4.2.2",
+ "clap 4.2.3",
  "fancy-regex",
  "fraction",
  "getrandom",
@@ -2702,9 +2702,9 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d59d8c75012853d2e872fb56bc8a2e53718e2cafe1a4c823143141c6d90c322f"
+checksum = "3f508063cc7bb32987c71511216bd5a32be15bccb6a80b52df8b9d7f01fc3aa2"
 
 [[package]]
 name = "local-channel"
@@ -3249,7 +3249,7 @@ dependencies = [
 [[package]]
 name = "pg-embed"
 version = "0.7.2"
-source = "git+https://github.com/gz/pg-embed.git?rev=2073129#2073129ad9306c61f1f015fb7395573d3d40427b"
+source = "git+https://github.com/gz/pg-embed.git?rev=ff12a88#ff12a88700620601c614a372746d116f47936d81"
 dependencies = [
  "archiver-rs",
  "async-trait",
@@ -3918,9 +3918,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-demangle"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4a36c42d1873f9a77c53bde094f9664d9891bc604a45b4798fd2c389ed12e5b"
+checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
 
 [[package]]
 name = "rustc-hash"
@@ -3939,9 +3939,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.37.11"
+version = "0.37.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85597d61f83914ddeba6a47b3b8ffe7365107221c2e557ed94426489fefb5f77"
+checksum = "722529a737f5a942fdbac3a46cee213053196737c5eaa3386d52e85b786f2659"
 dependencies = [
  "bitflags 1.3.2",
  "errno",

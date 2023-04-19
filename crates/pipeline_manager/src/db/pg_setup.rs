@@ -1,10 +1,16 @@
+//! This code downloads and install postgres.
+//!
+//! It caches the downloaded binaries as well. Check the `pg_embed` crate for
+//! more details.
+
 use crate::AnyResult;
 use pg_embed::pg_enums::PgAuthMethod;
 use pg_embed::pg_fetch::{PgFetchSettings, PG_V15};
 use pg_embed::postgres::{PgEmbed, PgSettings};
 use std::path::PathBuf;
 
-/// Install and starts a Postgres Db instance.
+/// Install and start an embedded postgres DB instance. This only runs if the
+/// manager is started with postgres-embedded.
 ///
 /// # Arguments
 /// - `database_dir` - Path to the directory where the database files will be
