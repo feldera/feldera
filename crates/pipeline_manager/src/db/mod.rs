@@ -20,8 +20,6 @@ pub(crate) mod storage;
 /// The API assumes that the caller holds a database lock, and therefore
 /// doesn't use transactions (and hence doesn't need to deal with conflicts).
 ///
-/// The database schema is defined in `create_db.sql`.
-///
 /// # Compilation queue
 ///
 /// We use the `status` and `status_since` columns to maintain the compilation

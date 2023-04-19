@@ -6,6 +6,10 @@ use crate::{Direction, ProjectStatus};
 use anyhow::{anyhow, Result as AnyResult};
 use async_trait::async_trait;
 
+/// The storage trait contains the methods to interact with the pipeline manager
+/// storage layer (e.g., PostgresDB) to implement the public API.
+///
+/// We use a trait so we can mock the storage layer in tests.
 #[async_trait]
 pub(crate) trait Storage {
     async fn reset_project_status(&self) -> AnyResult<()>;
