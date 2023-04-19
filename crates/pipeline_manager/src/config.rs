@@ -89,10 +89,10 @@ pub(crate) struct ManagerConfig {
     #[arg(long)]
     pub unix_daemon: bool,
 
-    /// Point to a relational database to use for state management.
-    /// Accepted values are `sqlite` or `postgres://<host>:<port>`.
-    /// For sqlite, we simply create a DB in the current working directory.
-    /// For postgres, we use the connection string as provided.
+    /// Point to a relational database to use for state management. Accepted
+    /// values are `sqlite`, `postgres://<host>:<port>` or `postgres-embed`. For
+    /// sqlite or postgres-embed we simply create a DB in the current working
+    /// directory. For postgres, we use the connection string as provided.
     #[serde(default = "default_db_connection_string")]
     #[arg(short, long, default_value_t = default_db_connection_string())]
     pub db_connection_string: String,
@@ -227,13 +227,20 @@ impl ManagerConfig {
         Path::new(&self.working_directory).join("cargo_workspace")
     }
 
+    /// Where Postgres embed stores the database.
+    pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
+        Path::new(&self.working_directory).join("data")
+    }
+
     /// Manager pid file.
     #[cfg(unix)]
     pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
         Path::new(&self.working_directory).join("manager.pid")
     }
 
-    /// SQlite database file.
+    /// Database connection string.
+    ///
+    /// For SQlite, the connection string is the path to the database file.
     pub(crate) fn database_connection_string(&self) -> String {
         if "sqlite" == self.db_connection_string {
             let mut s = "sqlite:".to_owned();
@@ -246,6 +253,8 @@ impl ManagerConfig {
             );
             s
         } else if self.db_connection_string.starts_with("postgres://") {
+            self.db_connection_string.clone()
+        } else if self.db_connection_string.starts_with("postgres-embed") {
             self.db_connection_string.clone()
         } else {
             panic!("Invalid connection string {}", self.db_connection_string)
