@@ -63,6 +63,7 @@ use utoipa_swagger_ui::SwaggerUi;
 mod compiler;
 mod config;
 mod db;
+mod pg_setup;
 mod runner;
 
 pub(crate) use compiler::{Compiler, ProjectStatus};
@@ -286,8 +287,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 
     let dev_mode = config.dev_mode;
     rt::System::new().block_on(async {
-        let db =
-            ProjectDB::connect(&config.database_connection_string(), &config.initial_sql).await?;
+        let db = ProjectDB::connect(&config).await?;
         let db = Arc::new(Mutex::new(db));
         let compiler = Compiler::new(&config, db.clone()).await?;
 

@@ -1,4 +1,5 @@
-use crate::{AttachedConnector, Direction, ProjectStatus};
+use crate::pg_setup;
+use crate::{config::ManagerConfig, AttachedConnector, Direction, ProjectStatus};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use log::{debug, error};
@@ -8,7 +9,7 @@ use sqlx::{
     pool::PoolOptions,
     Any, ConnectOptions, Pool, Row,
 };
-use std::{error::Error as StdError, fmt, fmt::Display, str::FromStr};
+use std::{error::Error as StdError, fmt, fmt::Display, path::PathBuf, str::FromStr};
 use utoipa::ToSchema;
 
 /// Project database API.
@@ -27,6 +28,8 @@ use utoipa::ToSchema;
 pub(crate) struct ProjectDB {
     conn: Pool<Any>,
     db_type: DbType,
+    #[allow(dead_code)] // We don't have to interact with it, but dropping it stops the DB server.
+    pub pg: Option<pg_embed::postgres::PgEmbed>,
 }
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
@@ -307,11 +310,19 @@ pub(crate) struct ConnectorDescr {
 }
 
 impl ProjectDB {
-    pub(crate) async fn connect(
-        connection_str: &str,
-        initial_sql: &Option<String>,
-    ) -> AnyResult<Self> {
-        Self::connect_inner(connection_str, PoolOptions::new(), initial_sql).await
+    pub(crate) async fn connect(config: &ManagerConfig) -> AnyResult<Self> {
+        let connection_str = &config.database_connection_string();
+        let initial_sql = &config.initial_sql;
+        let database_dir = config.postgres_embed_data_dir();
+
+        Self::connect_inner(
+            connection_str,
+            PoolOptions::new(),
+            initial_sql,
+            database_dir,
+            true,
+        )
+        .await
     }
 
     fn auto_increment(db_type: &DbType) -> &str {
@@ -329,10 +340,21 @@ impl ProjectDB {
     }
 
     /// Connect to the project database.
+    ///
+    /// # Arguments
+    /// - `connection_str`: The connection string to the database.
+    /// - `pool_options`: The pool options to use.
+    /// - `initial_sql`: The initial SQL to execute on the database.
+    /// - `database_dir`: The directory to use for the embedded Postgres
+    ///   database.
+    /// - `is_persistent`: Whether the embedded postgres database should be
+    ///   persistent or removed on shutdown.
     async fn connect_inner(
         connection_str: &str,
         pool_options: PoolOptions<Any>,
         initial_sql: &Option<String>,
+        database_dir: PathBuf,
+        is_persistent: bool,
     ) -> AnyResult<Self> {
         let db_type = if connection_str.starts_with("sqlite") {
             DbType::Sqlite
@@ -341,9 +363,18 @@ impl ProjectDB {
         } else {
             panic!("Unsupported connection string {}", connection_str)
         };
+
+        let (pg, connection_str) = if connection_str.starts_with("postgres-embed") {
+            let pg = pg_setup::install(database_dir, is_persistent, None).await?;
+            let connection_string = pg.db_uri.to_string();
+            (Some(pg), connection_string)
+        } else {
+            (None, connection_str.to_string())
+        };
+
         //sqlx::any::install_default_drivers();
         debug!("Opening connection to {:?}", connection_str);
-        let mut options = AnyConnectOptions::from_str(connection_str)?;
+        let mut options = AnyConnectOptions::from_str(&connection_str)?;
         options.log_statements(log::LevelFilter::Trace);
         let conn = pool_options.connect_with(options).await?;
         sqlx::query(
@@ -447,7 +478,7 @@ impl ProjectDB {
             }
         }
 
-        Ok(Self { conn, db_type })
+        Ok(Self { conn, db_type, pg })
     }
 
     /// Reset everything that is set through compilation of the project.
@@ -885,8 +916,8 @@ impl ProjectDB {
             .fetch_one(&self.conn).await;
 
         if let Ok(row) = res {
-            let project_id: ProjectId = ProjectId(row.get(0));
-            let version: Version = Version(row.get(1));
+            let project_id: ProjectId = ProjectId(row.get::<i32, _>(0) as i64);
+            let version: Version = Version(row.get::<i32, _>(1) as i64);
             Ok(Some((project_id, version)))
         } else {
             Ok(None)
@@ -977,7 +1008,7 @@ impl ProjectDB {
             .bind(config)
             .fetch_one(&self.conn)
             .await?;
-        let config_id = ConfigId(row.get(0));
+        let config_id = ConfigId(row.get::<i32, _>(0) as i64);
 
         if let Some(connectors) = connectors {
             // Add the connectors.
@@ -1121,7 +1152,7 @@ impl ProjectDB {
         config_id: ConfigId,
         ac: &AttachedConnector,
     ) -> AnyResult<AttachedConnectorId> {
-        let _descr = self.get_config(config_id).await?;
+        //let _descr = self.get_config(config_id).await?;
         let _descr = self.get_connector(ac.connector_id).await?;
         let is_input = (ac.direction == Direction::Input) as i32;
 
@@ -1136,7 +1167,7 @@ impl ProjectDB {
             .fetch_one(&self.conn)
             .await?;
 
-        Ok(AttachedConnectorId(row.get(0)))
+        Ok(AttachedConnectorId(row.get::<i32, _>(0) as i64))
     }
 
     /// Get an attached connector.
@@ -1277,7 +1308,7 @@ impl ProjectDB {
             .bind(config)
             .fetch_one(&self.conn)
             .await?;
-        Ok(ConnectorId(row.get(0)))
+        Ok(ConnectorId(row.get::<i32, _>(0) as i64))
     }
 
     /// Retrieve connectors list from the DB.
@@ -1308,14 +1339,14 @@ impl ProjectDB {
         &self,
         connector_id: ConnectorId,
     ) -> AnyResult<ConnectorDescr> {
-        let row = sqlx::query("SELECT name, description, typ, config FROM connector WHERE id = ?")
+        let row = sqlx::query("SELECT name, description, typ, config FROM connector WHERE id = $1")
             .bind(connector_id.0)
             .fetch_one(&self.conn)
             .await?;
 
         let name: String = row.get(0);
         let description: String = row.get(1);
-        let typ: ConnectorType = row.get::<i64, _>(2).into();
+        let typ: ConnectorType = (row.get::<i32, _>(2) as i64).into();
         let config: String = row.get(3);
 
         Ok(ConnectorDescr {
@@ -1379,54 +1410,69 @@ mod test {
     use sqlx::{Any, Row};
     use tempfile::TempDir;
 
-    async fn test_setup(db_type: &DbType) -> (ProjectDB, TempDir) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        match db_type {
+    struct DbHandle {
+        db: ProjectDB,
+        _temp_dir: TempDir,
+    }
+
+    impl Drop for DbHandle {
+        fn drop(&mut self) {
+            // We drop `pg` before the temp dir gets deleted (which will
+            // shutdown postgres). Otherwise postgres log an error that the
+            // directory is already gone during shutdown which could be
+            // confusing for a developer.
+            if let Some(pg) = self.db.pg.as_mut() {
+                let _r = async {
+                    pg.stop_db().await.unwrap();
+                };
+            }
+        }
+    }
+
+    async fn test_setup(db_type: &DbType) -> DbHandle {
+        let _r = env_logger::try_init();
+        let _temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = _temp_dir.path();
+
+        let conn = match db_type {
             DbType::Sqlite => {
                 let s = format!(
                     "sqlite:{}",
-                    temp_dir.path().join("db.sqlite?mode=rwc").to_str().unwrap()
+                    temp_path.join("db.sqlite?mode=rwc").to_str().unwrap()
                 );
-                (
-                    ProjectDB::connect_inner(
-                        s.as_str(),
-                        PoolOptions::<Any>::new(),
-                        &Some("".to_string()),
-                    )
-                    .await
-                    .unwrap(),
-                    temp_dir,
+                ProjectDB::connect_inner(
+                    s.as_str(),
+                    PoolOptions::<Any>::new(),
+                    &Some("".to_string()),
+                    temp_path.into(),
+                    false,
                 )
+                .await
+                .unwrap()
             }
-            DbType::Postgres => {
-                let s = "postgres://";
-                let conn =
-                    ProjectDB::connect_inner(s, PoolOptions::<Any>::new(), &Some("".to_string()))
-                        .await
-                        .unwrap();
-                for table in vec![
-                    "project",
-                    "project_config",
-                    "pipeline",
-                    "attached_connector",
-                    "connector",
-                ] {
-                    sqlx::query(format!("truncate table {} cascade;", table).as_str())
-                        .execute(&conn.conn)
-                        .await
-                        .unwrap();
-                }
-                (conn, temp_dir)
-            }
+            DbType::Postgres => ProjectDB::connect_inner(
+                "postgres-embed",
+                PoolOptions::<Any>::new(),
+                &Some("".to_string()),
+                temp_path.into(),
+                false,
+            )
+            .await
+            .unwrap(),
+        };
+
+        DbHandle {
+            db: conn,
+            _temp_dir,
         }
     }
 
     #[tokio::test]
     #[serial]
     async fn schema_creation() {
-        let (db, _dir) = test_setup(&DbType::Sqlite).await;
+        let handle = test_setup(&DbType::Sqlite).await;
         let rows = sqlx::query("SELECT name FROM sqlite_schema WHERE type = 'table'")
-            .fetch_all(&db.conn)
+            .fetch_all(&handle.db.conn)
             .await
             .unwrap();
         let mut expected = std::collections::HashSet::new();
@@ -1455,12 +1501,13 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let res = db
+        let handle = test_setup(&db_type).await;
+        let res = handle
+            .db
             .new_project("test1", "project desc", "ignored")
             .await
             .unwrap();
-        let rows = db.list_projects().await.unwrap();
+        let rows = handle.db.list_projects().await.unwrap();
         assert_eq!(1, rows.len());
         let expected = ProjectDescr {
             project_id: res.0,
@@ -1483,9 +1530,13 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let _ = db.new_project("test1", "project desc", "ignored").await;
-        let res = db
+        let handle = test_setup(&db_type).await;
+        let _ = handle
+            .db
+            .new_project("test1", "project desc", "ignored")
+            .await;
+        let res = handle
+            .db
             .new_project("test1", "project desc", "ignored")
             .await
             .expect_err("Expecting unique violation");
@@ -1502,22 +1553,26 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        db.new_project("test1", "project desc", "ignored")
+        let handle = test_setup(&db_type).await;
+        handle
+            .db
+            .new_project("test1", "project desc", "ignored")
             .await
             .unwrap();
-        db.new_project("test2", "project desc", "ignored")
+        handle
+            .db
+            .new_project("test2", "project desc", "ignored")
             .await
             .unwrap();
-        db.reset_project_status().await.unwrap();
-        let results = db.list_projects().await.unwrap();
+        handle.db.reset_project_status().await.unwrap();
+        let results = handle.db.list_projects().await.unwrap();
         for p in results {
             assert_eq!(ProjectStatus::None, p.status);
             assert_eq!(None, p.schema); //can't check for error fields directly
         }
         let results =
             sqlx::query("SELECT * FROM project WHERE status != '' OR error != '' OR schema != ''")
-                .fetch_all(&db.conn)
+                .fetch_all(&handle.db.conn)
                 .await;
         assert_eq!(0, results.unwrap().len());
     }
@@ -1531,12 +1586,13 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let (project_id, _) = db
+        let handle = test_setup(&db_type).await;
+        let (project_id, _) = handle
+            .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
             .unwrap();
-        let results = db.project_code(project_id).await.unwrap();
+        let results = handle.db.project_code(project_id).await.unwrap();
         assert_eq!("test1", results.0.name);
         assert_eq!("project desc", results.0.description);
         assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
@@ -1551,15 +1607,17 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let (project_id, _) = db
+        let handle = test_setup(&db_type).await;
+        let (project_id, _) = handle
+            .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
             .unwrap();
-        let _ = db
+        let _ = handle
+            .db
             .update_project(project_id, "updated_test1", "some new description", &None)
             .await;
-        let results = db.list_projects().await.unwrap();
+        let results = handle.db.list_projects().await.unwrap();
         assert_eq!(1, results.len());
         let row = results.get(0).unwrap();
         assert_eq!("updated_test1", row.name);
@@ -1575,16 +1633,22 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let (project_id, _) = db
+        let handle = test_setup(&db_type).await;
+        let (project_id, _) = handle
+            .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
             .unwrap();
-        let desc = db.get_project_if_exists(project_id).await.unwrap().unwrap();
+        let desc = handle
+            .db
+            .get_project_if_exists(project_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!("test1", desc.name);
-        let desc = db.lookup_project("test1").await.unwrap().unwrap();
+        let desc = handle.db.lookup_project("test1").await.unwrap().unwrap();
         assert_eq!("test1", desc.name);
-        let desc = db.lookup_project("test2").await.unwrap();
+        let desc = handle.db.lookup_project("test2").await.unwrap();
         assert!(desc.is_none());
     }
 
@@ -1597,17 +1661,30 @@ mod test {
             println!("Ignoring postgres test");
             return;
         };
-        let (db, _dir) = test_setup(&db_type).await;
-        let (project_id, _) = db
+        let handle = test_setup(&db_type).await;
+        let (project_id, _) = handle
+            .db
             .new_project("test1", "project desc", "create table t1(c1 integer);")
             .await
             .unwrap();
-        let desc = db.get_project_if_exists(project_id).await.unwrap().unwrap();
+        let desc = handle
+            .db
+            .get_project_if_exists(project_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(ProjectStatus::None, desc.status);
-        db.set_project_status(project_id, ProjectStatus::CompilingRust)
+        handle
+            .db
+            .set_project_status(project_id, ProjectStatus::CompilingRust)
             .await
             .unwrap();
-        let desc = db.get_project_if_exists(project_id).await.unwrap().unwrap();
+        let desc = handle
+            .db
+            .get_project_if_exists(project_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(ProjectStatus::CompilingRust, desc.status);
     }
 }

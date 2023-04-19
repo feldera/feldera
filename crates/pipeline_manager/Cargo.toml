@@ -37,6 +37,7 @@ actix = "0.13.0"
 actix-web-actors = "4.2.0"
 futures-util = "0.3.28"
 futures = "0.3"
+pg-embed = "0.7.1"
 
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.4.1" }
