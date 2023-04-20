@@ -44,3 +44,6 @@ jobs:
           PGPASSWORD: postgres
           RUN_POSTGRES_TESTS: 1
           RUST_LOG: trace
+          # This is important for windows test as default encoding there is
+          # WIN1252 but tokio-postgres assumes UTF8
+          PGCLIENTENCODING: UTF8
