@@ -1,8 +1,10 @@
 [tasks.openapi_json]
 description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
 dependencies = ["build-release"]
-command = "cargo"
-args = ["run", "--release",  "--", "--dump-openapi"]
+script = '''
+cd ../../
+cargo run --release --bin=dbsp_pipeline_manager -- --dump-openapi
+'''
 
 [tasks.openapi_python]
 description = "Generate Python bindings for the REST API"
@@ -11,7 +13,7 @@ script = '''
 pip3 install openapi-python-client
 cd ../../python
 rm -rf dbsp-api-client
-openapi-python-client generate --path ../crates/pipeline_manager/openapi.json
+openapi-python-client generate --path ../openapi.json
 pip3 install ./dbsp-api-client
 pip3 install .
 pip3 install websockets
