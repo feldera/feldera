@@ -1,6 +1,6 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -35,10 +35,6 @@ impl DataflowNode for Sum {
         F: FnMut(&mut NodeId),
     {
         self.inputs.iter_mut().for_each(map);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -97,10 +93,6 @@ impl DataflowNode for Minus {
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {

@@ -1,6 +1,6 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -40,10 +40,6 @@ impl DataflowNode for Export {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -112,10 +108,6 @@ impl DataflowNode for ExportedNode {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.layout.kind())
-    }
-
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(self.layout)
     }
@@ -164,10 +156,6 @@ impl DataflowNode for Source {
     where
         F: FnMut(&mut NodeId),
     {
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Set)
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -228,10 +216,6 @@ impl DataflowNode for SourceMap {
     {
     }
 
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Map)
-    }
-
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(StreamLayout::Map(self.key_layout, self.value_layout))
     }
@@ -282,10 +266,6 @@ impl DataflowNode for Sink {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        None
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {

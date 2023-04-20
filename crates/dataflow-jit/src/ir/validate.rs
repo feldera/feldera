@@ -44,6 +44,10 @@ impl Validator {
         self.node_outputs.clear();
     }
 
+    pub const fn layout_cache(&self) -> &RowLayoutCache {
+        &self.function_validator.layout_cache
+    }
+
     // FIXME: Make this return a result instead of panicking
     // TODO: Ensure that delta0 only occurs within subgraphs
     // TODO: Validate nested subgraphs
@@ -72,8 +76,7 @@ impl Validator {
 
                 Node::Neg(neg) => {
                     self.node_inputs.insert(node_id, vec![neg.input()]);
-                    self.node_outputs
-                        .insert(node_id, StreamLayout::Set(neg.output_layout()));
+                    self.node_outputs.insert(node_id, neg.layout());
                 }
 
                 Node::Sum(sum) => {
@@ -164,7 +167,7 @@ impl Validator {
 
                 Node::Neg(neg) => {
                     let input_layout = self.get_expected_input(node_id, neg.input());
-                    assert_eq!(input_layout, StreamLayout::Set(neg.output_layout()));
+                    assert_eq!(input_layout, neg.layout());
                 }
 
                 Node::IndexWith(index_with) => {

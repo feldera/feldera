@@ -2,7 +2,7 @@ use crate::ir::{
     function::Function,
     graph::{self, GraphExt},
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, DelayedFeedback, Delta0, Export, Node, StreamKind, StreamLayout},
+    nodes::{DataflowNode, DelayedFeedback, Delta0, Export, Node, StreamLayout},
     LayoutId, NodeId,
 };
 use petgraph::prelude::DiGraphMap;
@@ -135,10 +135,6 @@ impl DataflowNode for Subgraph {
     {
         self.subgraph_mut().map_inputs_mut_inner(map);
         // TODO: Probably need to map over the feedback nodes as well
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        None
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {

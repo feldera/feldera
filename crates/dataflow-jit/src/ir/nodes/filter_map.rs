@@ -1,7 +1,7 @@
 use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     InputFlags, LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -61,10 +61,6 @@ impl DataflowNode for Map {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.output_layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -202,10 +198,6 @@ impl DataflowNode for Filter {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
-    }
-
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(match inputs[0] {
             StreamLayout::Set(value) => StreamLayout::Set(value),
@@ -283,10 +275,6 @@ impl DataflowNode for FilterMap {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {

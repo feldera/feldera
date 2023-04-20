@@ -93,9 +93,11 @@ pub trait DataflowNode {
     where
         F: FnMut(&mut NodeId);
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind>;
-
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout>;
+
+    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
+        self.output_stream(inputs).map(StreamLayout::kind)
+    }
 
     fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache);
 
@@ -226,10 +228,6 @@ impl DataflowNode for Distinct {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
-    }
-
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(inputs[0])
     }
@@ -276,10 +274,6 @@ impl DataflowNode for DelayedFeedback {
     where
         F: FnMut(&mut NodeId),
     {
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Set)
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -332,10 +326,6 @@ impl DataflowNode for Delta0 {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
-    }
-
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(inputs[0])
     }
@@ -356,24 +346,20 @@ impl DataflowNode for Delta0 {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Neg {
     input: NodeId,
-    // FIXME: Neg should be able to operate over maps as well
-    output_layout: LayoutId,
+    layout: StreamLayout,
 }
 
 impl Neg {
-    pub fn new(input: NodeId, output_layout: LayoutId) -> Self {
-        Self {
-            input,
-            output_layout,
-        }
+    pub fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
     }
 
-    pub const fn output_layout(&self) -> LayoutId {
-        self.output_layout
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
     }
 }
 
@@ -392,15 +378,8 @@ impl DataflowNode for Neg {
         map(&mut self.input);
     }
 
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
-    }
-
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(match inputs[0] {
-            StreamLayout::Set(value) => StreamLayout::Set(value),
-            StreamLayout::Map(key, value) => StreamLayout::Map(key, value),
-        })
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
@@ -411,10 +390,10 @@ impl DataflowNode for Neg {
     where
         F: FnMut(LayoutId),
     {
-        map(self.output_layout);
+        self.layout.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.output_layout = mappings[&self.output_layout];
+        self.layout.remap_layouts(mappings);
     }
 }

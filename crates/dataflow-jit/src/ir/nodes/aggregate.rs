@@ -2,7 +2,7 @@ use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
     literal::RowLiteral,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     ColumnType, InputFlags, LayoutId, NodeId, RowLayoutBuilder,
 };
 use dbsp::operator::time_series::RelRange;
@@ -38,10 +38,6 @@ impl DataflowNode for Min {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -97,10 +93,6 @@ impl DataflowNode for Max {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -208,10 +200,6 @@ impl DataflowNode for Fold {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Map)
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -388,10 +376,6 @@ impl DataflowNode for PartitionedRollingFold {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Map)
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {

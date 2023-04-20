@@ -1,7 +1,7 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
     literal::{StreamCollection, StreamLiteral},
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -122,10 +122,6 @@ impl DataflowNode for ConstantStream {
     where
         F: FnMut(&mut NodeId),
     {
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
