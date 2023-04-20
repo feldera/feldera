@@ -974,29 +974,7 @@ impl CompiledDataflow {
 
             match node {
                 DataflowNode::Map(map) => self.map(node_id, map, &mut streams),
-
-                DataflowNode::Filter(filter) => {
-                    let input = &streams[&filter.input()];
-
-                    let filtered = match (filter.filter_fn, input) {
-                        (FilterFn::Set(filter_fn), RowStream::Set(input)) => {
-                            let filtered =
-                                input.filter(move |input| unsafe { filter_fn(input.as_ptr()) });
-                            RowStream::Set(filtered)
-                        }
-
-                        (FilterFn::Map(filter_fn), RowStream::Map(input)) => {
-                            let filtered = input.filter(move |(key, value)| unsafe {
-                                filter_fn(key.as_ptr(), value.as_ptr())
-                            });
-                            RowStream::Map(filtered)
-                        }
-
-                        _ => unreachable!(),
-                    };
-
-                    streams.insert(node_id, filtered);
-                }
+                DataflowNode::Filter(filter) => self.filter(node_id, filter, &mut streams),
 
                 DataflowNode::FilterMap(map) => {
                     let input = &streams[&map.input];
@@ -1120,15 +1098,7 @@ impl CompiledDataflow {
                     streams.insert(node_id, difference);
                 }
 
-                DataflowNode::Neg(neg) => {
-                    let input = &streams[&neg.input];
-                    let negated = match input {
-                        RowStream::Set(input) => RowStream::Set(input.neg()),
-                        RowStream::Map(input) => RowStream::Map(input.neg()),
-                    };
-
-                    streams.insert(node_id, negated);
-                }
+                DataflowNode::Neg(neg) => self.neg(node_id, neg, &mut streams),
 
                 DataflowNode::Differentiate(diff) => {
                     let input = &streams[&diff.input];
@@ -1377,16 +1347,7 @@ impl CompiledDataflow {
                 DataflowNode::Export(_) => todo!(),
 
                 DataflowNode::Constant(constant) => {
-                    let constant_stream = match constant.value {
-                        RowZSet::Set(set) => {
-                            RowStream::Set(circuit.add_source(Generator::new(move || set.clone())))
-                        }
-
-                        RowZSet::Map(map) => {
-                            RowStream::Map(circuit.add_source(Generator::new(move || map.clone())))
-                        }
-                    };
-                    streams.insert(node_id, constant_stream);
+                    self.constant(node_id, constant, circuit, &mut streams);
                 }
 
                 DataflowNode::Subgraph(subgraph) => self.subgraph(subgraph, circuit, &mut streams),
@@ -1423,40 +1384,11 @@ impl CompiledDataflow {
                     };
                     match node {
                         DataflowNode::Constant(constant) => {
-                            let constant_stream = match constant.value {
-                                RowZSet::Set(set) => RowStream::Set(
-                                    subcircuit.add_source(Generator::new(move || set.clone())),
-                                ),
-
-                                RowZSet::Map(map) => RowStream::Map(
-                                    subcircuit.add_source(Generator::new(move || map.clone())),
-                                ),
-                            };
-                            substreams.insert(node_id, constant_stream);
+                            self.constant(node_id, constant, subcircuit, &mut substreams);
                         }
-
                         DataflowNode::Map(map) => self.map(node_id, map, &mut substreams),
-
                         DataflowNode::Filter(filter) => {
-                            let input = &substreams[&filter.input()];
-                            let filtered = match (filter.filter_fn, input) {
-                                (FilterFn::Set(filter_fn), RowStream::Set(input)) => {
-                                    let filtered = input
-                                        .filter(move |input| unsafe { filter_fn(input.as_ptr()) });
-                                    RowStream::Set(filtered)
-                                }
-
-                                (FilterFn::Map(filter_fn), RowStream::Map(input)) => {
-                                    let filtered = input.filter(move |(key, value)| unsafe {
-                                        filter_fn(key.as_ptr(), value.as_ptr())
-                                    });
-                                    RowStream::Map(filtered)
-                                }
-
-                                _ => unreachable!(),
-                            };
-
-                            substreams.insert(node_id, filtered);
+                            self.filter(node_id, filter, &mut substreams);
                         }
 
                         DataflowNode::FilterMap(map) => {
@@ -1591,15 +1523,7 @@ impl CompiledDataflow {
                             substreams.insert(node_id, difference);
                         }
 
-                        DataflowNode::Neg(neg) => {
-                            let input = &substreams[&neg.input];
-                            let negated = match input {
-                                RowStream::Set(input) => RowStream::Set(input.neg()),
-                                RowStream::Map(input) => RowStream::Map(input.neg()),
-                            };
-
-                            substreams.insert(node_id, negated);
-                        }
+                        DataflowNode::Neg(neg) => self.neg(node_id, neg, &mut substreams),
 
                         DataflowNode::Sink(_)
                         | DataflowNode::Source(_)
@@ -2021,6 +1945,65 @@ impl CompiledDataflow {
         };
 
         streams.insert(node_id, antijoined);
+    }
+
+    fn neg<C>(&self, node_id: NodeId, neg: Neg, streams: &mut BTreeMap<NodeId, RowStream<C>>)
+    where
+        C: Circuit,
+    {
+        let negated = match &streams[&neg.input] {
+            RowStream::Set(input) => RowStream::Set(input.neg()),
+            RowStream::Map(input) => RowStream::Map(input.neg()),
+        };
+
+        streams.insert(node_id, negated);
+    }
+
+    fn filter<C>(
+        &self,
+        node_id: NodeId,
+        filter: Filter,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        let filtered = match (filter.filter_fn, &streams[&filter.input()]) {
+            (FilterFn::Set(filter_fn), RowStream::Set(input)) => {
+                let filtered = input.filter(move |input| unsafe { filter_fn(input.as_ptr()) });
+                RowStream::Set(filtered)
+            }
+
+            (FilterFn::Map(filter_fn), RowStream::Map(input)) => {
+                let filtered = input
+                    .filter(move |(key, value)| unsafe { filter_fn(key.as_ptr(), value.as_ptr()) });
+                RowStream::Map(filtered)
+            }
+
+            _ => unreachable!(),
+        };
+
+        streams.insert(node_id, filtered);
+    }
+
+    fn constant<C>(
+        &self,
+        node_id: NodeId,
+        constant: nodes::Constant,
+        circuit: &mut C,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        let constant = match constant.value {
+            RowZSet::Set(set) => {
+                RowStream::Set(circuit.add_source(Generator::new(move || set.clone())))
+            }
+
+            RowZSet::Map(map) => {
+                RowStream::Map(circuit.add_source(Generator::new(move || map.clone())))
+            }
+        };
+        streams.insert(node_id, constant);
     }
 
     fn map<C>(&self, node_id: NodeId, map: Map, streams: &mut BTreeMap<NodeId, RowStream<C>>)

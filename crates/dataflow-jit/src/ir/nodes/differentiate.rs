@@ -1,6 +1,6 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -35,10 +35,6 @@ impl DataflowNode for Differentiate {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
@@ -89,10 +85,6 @@ impl DataflowNode for Integrate {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(inputs[0].kind())
     }
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {

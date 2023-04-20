@@ -80,10 +80,6 @@ impl DataflowNode for JoinCore {
         map(&mut self.rhs);
     }
 
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.output_kind)
-    }
-
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(match self.output_kind {
             StreamKind::Set => StreamLayout::Set(self.key_layout),
@@ -178,10 +174,6 @@ impl DataflowNode for MonotonicJoin {
         map(&mut self.rhs);
     }
 
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Set)
-    }
-
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
         Some(StreamLayout::Set(self.key_layout))
     }
@@ -254,10 +246,6 @@ impl DataflowNode for Antijoin {
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {

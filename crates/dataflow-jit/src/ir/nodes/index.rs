@@ -1,7 +1,7 @@
 use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -63,10 +63,6 @@ impl DataflowNode for IndexWith {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(StreamKind::Map)
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {

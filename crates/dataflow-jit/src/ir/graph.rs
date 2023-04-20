@@ -705,7 +705,7 @@ mod tests {
         // ```
         // let stream7879: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7874.neg();
         // ```
-        let stream7879 = graph.add_node(Neg::new(stream7874, nullable_i32));
+        let stream7879 = graph.add_node(Neg::new(stream7874, StreamLayout::Set(nullable_i32)));
 
         // TODO: Constant sources/generators
         // ```

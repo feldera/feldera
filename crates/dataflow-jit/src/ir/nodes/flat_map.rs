@@ -11,7 +11,7 @@
 //   the proper vtable pointer before pushing the row value to the vec
 
 use crate::ir::{
-    nodes::{DataflowNode, StreamKind, StreamLayout},
+    nodes::{DataflowNode, StreamLayout},
     Function, LayoutId, NodeId, RowLayoutCache,
 };
 use schemars::JsonSchema;
@@ -93,10 +93,6 @@ impl DataflowNode for FlatMap {
         F: FnMut(&mut NodeId),
     {
         map(&mut self.input);
-    }
-
-    fn output_kind(&self, _inputs: &[StreamLayout]) -> Option<StreamKind> {
-        Some(self.output_layout.kind())
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
