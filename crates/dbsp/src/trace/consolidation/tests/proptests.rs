@@ -174,10 +174,8 @@ proptest! {
         quicksort(&mut keys, &mut values);
 
         data.sort_unstable_by_key(|&(key, _)| key);
-        let (expected_keys, expected_values): (Vec<_>, Vec<_>) = data.into_iter().unzip();
 
-        prop_assert_eq!(keys, expected_keys);
-        prop_assert_eq!(values, expected_values);
+        super::assert_sorted_eq(&mut data, &keys, &values, &mut Vec::new());
     }
 
     #[test]

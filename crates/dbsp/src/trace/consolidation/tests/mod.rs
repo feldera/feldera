@@ -2,6 +2,10 @@
 
 mod proptests;
 
+use std::fmt::Debug;
+
+use itertools::Itertools;
+
 use crate::trace::consolidation::{
     consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
     consolidate_slice, dedup_payload_starting_at, quicksort::quicksort, retain_starting_at,
@@ -158,42 +162,137 @@ fn consolidate_paired_slices_corpus() {
     assert_eq!(&values[..length], &[1]);
 }
 
+/// Checks that the given vectors are equivalent, even if their sorting
+/// algorithms have different orderings for identical keys
+#[track_caller]
+fn assert_sorted_eq<T, U>(
+    expected: &mut Vec<(T, U)>,
+    keys: &[T],
+    values: &[U],
+    buffer: &mut Vec<(T, U)>,
+) where
+    T: Clone + Ord + Debug,
+    U: Clone + Ord + Debug,
+{
+    assert_eq!(keys.len(), values.len());
+    assert_eq!(expected.len(), keys.len());
+
+    buffer.clear();
+    buffer.reserve(keys.len());
+    buffer.extend(keys.iter().cloned().zip(values.iter().cloned()));
+
+    for ((idx, (key, value)), (_, (next_key, next_value))) in
+        buffer.iter().enumerate().tuple_windows()
+    {
+        if key > next_key {
+            panic!("tuple at index {idx} isn't sorted: ({key:?}, {value:?}) > ({next_key:?}, {next_value:?})");
+        }
+    }
+
+    buffer.sort();
+    expected.sort();
+
+    for ((key, value), (expected_key, expected_value)) in buffer.iter().zip(expected) {
+        if key != expected_key {
+            panic!("key is incorrect: {key:?} != {expected_key:?}");
+        }
+
+        if value != expected_value {
+            panic!("value is incorrect: {value:?} != {expected_value:?}");
+        }
+    }
+}
+
 #[test]
 fn quicksort_corpus() {
-    let corpus: &[&[(u32, u32)]] = &[&[
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 1),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (1, 0),
-        (0, 0),
-    ]];
+    let corpus: &[&[(u32, u32)]] = &[
+        &[
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 1),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (1, 0),
+            (0, 0),
+        ],
+        &[
+            (2355195229, 0),
+            (2355195229, 0),
+            (0, 0),
+            (2806675676, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (10797240, 0),
+            (2043475975, 0),
+            (0, 0),
+            (10797240, 0),
+            (1697570063, 0),
+            (630495336, 0),
+            (10797240, 0),
+            (797216936, 0),
+            (797216936, 0),
+            (797216936, 0),
+            (797216936, 0),
+            (997754872, 0),
+            (997754872, 0),
+            (997754872, 0),
+            (997754872, 0),
+            (997754872, 0),
+            (997754872, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (1103036604, 0),
+            (301201423, 0),
+            (2060381626, 0),
+            (301201423, 0),
+            (10797240, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            (2355195229, 1),
+            (10797240, 0),
+        ],
+    ];
 
+    let mut buffer = Vec::new();
     for batch in corpus {
         let (mut keys, mut values): (Vec<_>, Vec<_>) = batch.iter().copied().unzip();
         quicksort(&mut keys, &mut values);
 
         let mut expected = batch.to_vec();
         expected.sort_unstable_by_key(|&(key, _)| key);
-        let (expected_keys, expected_values): (Vec<_>, Vec<_>) = expected.into_iter().unzip();
 
-        assert_eq!(keys, expected_keys);
-        assert_eq!(values, expected_values);
+        assert_sorted_eq(&mut expected, &keys, &values, &mut buffer);
     }
 }
 
