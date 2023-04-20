@@ -3249,7 +3249,7 @@ dependencies = [
 [[package]]
 name = "pg-embed"
 version = "0.7.2"
-source = "git+https://github.com/gz/pg-embed.git?rev=116a466#116a466269cc0bfb6c50f4bd21c2533f824f0624"
+source = "git+https://github.com/gz/pg-embed.git?rev=8906af8#8906af840b2cc083e3ec61c42f28638807cf76f6"
 dependencies = [
  "archiver-rs",
  "async-trait",
