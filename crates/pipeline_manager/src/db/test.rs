@@ -1143,11 +1143,14 @@ impl Storage for Mutex<DbModel> {
     }
 
     async fn delete_connector(&self, connector_id: super::ConnectorId) -> anyhow::Result<()> {
-        self.lock()
-            .await
-            .connectors
+        let mut s = self.lock().await;
+        s.connectors
             .remove(&connector_id)
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
+        s.configs.values_mut().for_each(|c| {
+            c.attached_connectors
+                .retain(|c| c.connector_id != connector_id);
+        });
         Ok(())
     }
 }
