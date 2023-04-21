@@ -2,17 +2,40 @@ volumes:
   redpanda-0: null
 
 services:
+  db:
+    image: postgres
+    container_name: dbsp-postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   dbsp:
    build:
      context: ../
      dockerfile: deploy/Dockerfile
+   depends_on:
+      db:
+        condition: service_healthy
    image: dbspmanager
    ports:
      - "8085:8080"
    stop_grace_period: 0s
    container_name: dbsp
    environment:
+     - RUST_BACKTRACE=1
      - REDPANDA_BROKERS=redpanda:9092
+   command:
+     - ./dbsp_pipeline_manager 
+     - --bind-address=0.0.0.0 
+     - --working-directory=/working-dir 
+     - --sql-compiler-home=/sql-to-dbsp-compiler 
+     - --dbsp-override-path=/database-stream-processor
+     - --db-connection-string=postgresql://postgres:postgres@dbsp-postgres:5432
 
   redpanda:
     command:
