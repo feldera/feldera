@@ -796,9 +796,9 @@ impl Storage for ProjectDB {
             .await?;
 
         if row.get(0) {
-            Ok(Direction::Output)
-        } else {
             Ok(Direction::Input)
+        } else {
+            Ok(Direction::Output)
         }
     }
 

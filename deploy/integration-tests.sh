@@ -1,15 +1,6 @@
 #!/bin/bash
 
-set -e
-
-host=$1
-
-curl -X 'POST' \
-  "http://${host}/projects" \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "code": "CREATE TABLE Example(name varchar);",
-  "description": "Example description",
-  "name": "Example project"
-}'
+set -e 
+docker compose -f docker-compose-dev.yml up -d
+sleep 20
+docker run --network `docker inspect dbsp -f "{{json .NetworkSettings.Networks }}" | jq -r 'keys[0]'` --name test --rm -it dbspmanager-dev bash -c "python3 python/test.py http://dbsp:8080 http"

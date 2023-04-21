@@ -20,17 +20,28 @@ jobs:
         with:
           submodules: true
 
+      - name: Install jq tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install jq
+
       - name: Build Docker image
         run: |
           cd deploy && \
-          docker build -f Dockerfile -t dbspmanager ../
+          docker build -f Dockerfile -t dbspmanager ../ && \
+          docker build -f Dockerfile --target=client -t dbspmanager-dev ../
+
+      # - name: Run integration tests
+      #   run: |
+      #     docker network create test && \
+      #     docker run --name dbsp -h dbsp --network test -p 8080 -itd dbspmanager && \
+      #     sleep 10 && \
+      #     docker run --name test --network test --rm dbspmanager bash -c "/database-stream-processor/deploy/integration-tests.sh dbsp:8080"
 
       - name: Run integration tests
         run: |
-          docker network create test && \
-          docker run --name dbsp -h dbsp --network test -p 8080 -itd dbspmanager && \
-          sleep 10 && \
-          docker run --name test --network test --rm dbspmanager bash -c "/database-stream-processor/deploy/integration-tests.sh dbsp:8080"
+          cd deploy && \
+          bash integration-tests.sh
 
       - uses: engineerd/setup-kind@v0.5.0
         with:
@@ -40,8 +51,8 @@ jobs:
       - name: Set up kind
         run: cd deploy/kind && ./setup.sh && ./setup.sh 
         
-      - name: Deploy DBSP
-        run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
+      # - name: Deploy DBSP
+      #   run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
       
       - name: Log in to the Container registry
         if: github.event_name == 'release'

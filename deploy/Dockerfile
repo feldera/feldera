@@ -9,6 +9,7 @@ RUN apt update && apt install libssl-dev build-essential pkg-config \
      adduser libfontconfig1 unzip -y
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y     
 
+
 # Use cargo-chef to produce a recipe.json file 
 # to cache the requisite dependencies
 FROM base as chef
@@ -42,7 +43,7 @@ COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 # the submodule is _not_ in detached head state, which indicates that the user
 # is working on the submodule and wants to build a container with their modified
 # SQL compiler version.
-RUN bash -c "if [[ ! -e /sql/sql-to-dbsp-compiler/.git ]] || [[ -z $(cd /sql/sql-to-dbsp-compiler && git branch --show-current) ]]; \ 
+RUN bash -c "if [[ ! -e /sql/sql-to-dbsp-compiler/.git ]] ; \ 
    then cd /sql && git submodule update --init; fi"
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
@@ -55,17 +56,13 @@ COPY . /database-stream-processor
 CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
 
 # The dev target adds an rpk client and demo projects
-FROM builder as dev
-COPY --from=javabuild /sql/sql-to-dbsp-compiler /sql-to-dbsp-compiler 
+FROM builder as client
 RUN arch=`dpkg --print-architecture`; \
    curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
    && unzip rpk-linux-$arch.zip -d /bin/ \
    && rpk version \
    && rm rpk-linux-$arch.zip
-RUN cd crates/pipeline_manager && /root/.cargo/bin/cargo make openapi_python
-# RUN /app/target/release/dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/sql-to-dbsp-compiler --dbsp-override-path=/app/ --unix-daemon \
-    # && /app/demo/create_demo_projects.sh
-# RUN /app/demo/create_demo_projects.sh
+RUN /root/.cargo/bin/cargo make --cwd crates/pipeline_manager openapi_python
 CMD bash
 
 # By default, only build the release version
