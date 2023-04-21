@@ -31,12 +31,16 @@ impl Function {
         &self.args
     }
 
-    pub fn entry_block(&self) -> BlockId {
+    pub const fn entry_block(&self) -> BlockId {
         self.entry_block
     }
 
-    pub fn blocks(&self) -> &BTreeMap<BlockId, Block> {
+    pub const fn blocks(&self) -> &BTreeMap<BlockId, Block> {
         &self.blocks
+    }
+
+    pub fn blocks_mut(&mut self) -> &mut BTreeMap<BlockId, Block> {
+        &mut self.blocks
     }
 
     pub const fn return_type(&self) -> ColumnType {
@@ -61,7 +65,7 @@ impl Function {
 }
 
 impl schemars::JsonSchema for Function {
-    fn schema_name() -> std::string::String {
+    fn schema_name() -> String {
         "Function".to_owned()
     }
 
