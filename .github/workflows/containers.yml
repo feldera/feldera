@@ -31,13 +31,6 @@ jobs:
           docker build -f Dockerfile -t dbspmanager ../ && \
           docker build -f Dockerfile --target=client -t dbspmanager-dev ../
 
-      # - name: Run integration tests
-      #   run: |
-      #     docker network create test && \
-      #     docker run --name dbsp -h dbsp --network test -p 8080 -itd dbspmanager && \
-      #     sleep 10 && \
-      #     docker run --name test --network test --rm dbspmanager bash -c "/database-stream-processor/deploy/integration-tests.sh dbsp:8080"
-
       - name: Run integration tests
         run: |
           cd deploy && \
