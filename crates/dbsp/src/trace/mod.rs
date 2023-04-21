@@ -18,7 +18,7 @@ pub mod ord;
 pub mod persistent;
 pub mod spine_fueled;
 
-pub use cursor::{Consumer, Cursor, UnorderedCursor, ValueConsumer};
+pub use cursor::{Consumer, Cursor, ValueConsumer};
 #[cfg(feature = "persistence")]
 pub use persistent::PersistentTrace as Spine;
 #[cfg(not(feature = "persistence"))]
@@ -393,45 +393,4 @@ where
     /// has not brought `fuel` to zero. Otherwise, the merge is still in
     /// progress.
     fn done(self) -> Output;
-}
-
-pub trait UnorderedBatchReader: NumEntries + SizeOf + 'static
-where
-    Self: Sized,
-{
-    /// Key by which updates are indexed
-    type Key: DBData;
-
-    /// Values associated with keys
-    type Val: DBData;
-
-    /// Timestamps associated with updates
-    type Time: DBTimestamp;
-
-    /// Associated update
-    type R: DBWeight;
-
-    /// An unordered cursor for traversing the current batch
-    type UnorderedCursor<'a>: UnorderedCursor<'a, Self::Key, Self::Val, Self::Time, Self::R>;
-
-    /// Creates an unordered cursor for traversing the current batch
-    fn unordered_cursor(&self) -> Self::UnorderedCursor<'_>;
-
-    /// The number of keys in the batch.
-    fn key_count(&self) -> (usize, Option<usize>);
-
-    /// The number of updates in the batch
-    fn len(&self) -> usize;
-
-    /// Returns `true` if the current batch is empty
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// All times in the batch are greater or equal to an element of `lower`
-    fn lower(&self) -> AntichainRef<'_, Self::Time>;
-
-    /// All times in the batch are not greater or equal to any element of
-    /// `upper`
-    fn upper(&self) -> AntichainRef<'_, Self::Time>;
 }
