@@ -57,6 +57,13 @@ macro_rules! create_ids {
                     }
                 }
 
+                impl Default for $name {
+                    #[inline]
+                    fn default() -> Self {
+                        Self::MAX
+                    }
+                }
+
                 impl FromStr for $name {
                     type Err = <NonZeroU32 as FromStr>::Err;
 

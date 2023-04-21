@@ -165,20 +165,15 @@ fn consolidate_paired_slices_corpus() {
 /// Checks that the given vectors are equivalent, even if their sorting
 /// algorithms have different orderings for identical keys
 #[track_caller]
-fn assert_sorted_eq<T, U>(
-    expected: &mut Vec<(T, U)>,
-    keys: &[T],
-    values: &[U],
-    buffer: &mut Vec<(T, U)>,
-) where
+fn assert_sorted_eq<T, U>(expected: &[(T, U)], keys: &[T], values: &[U])
+where
     T: Clone + Ord + Debug,
     U: Clone + Ord + Debug,
 {
     assert_eq!(keys.len(), values.len());
     assert_eq!(expected.len(), keys.len());
 
-    buffer.clear();
-    buffer.reserve(keys.len());
+    let mut buffer = Vec::with_capacity(keys.len());
     buffer.extend(keys.iter().cloned().zip(values.iter().cloned()));
 
     for ((idx, (key, value)), (_, (next_key, next_value))) in
@@ -189,16 +184,21 @@ fn assert_sorted_eq<T, U>(
         }
     }
 
-    buffer.sort();
-    expected.sort();
+    let mut sorted_buffer: Vec<_> = buffer.iter().cloned().enumerate().collect();
+    sorted_buffer.sort_by(|(_, lhs), (_, rhs)| lhs.cmp(rhs));
 
-    for ((key, value), (expected_key, expected_value)) in buffer.iter().zip(expected) {
+    let mut sorted_expected = expected.to_vec();
+    sorted_expected.sort();
+
+    for ((index, (key, value)), (expected_key, expected_value)) in
+        sorted_buffer.into_iter().zip(sorted_expected)
+    {
         if key != expected_key {
-            panic!("key is incorrect: {key:?} != {expected_key:?}");
+            panic!("key is incorrect at index {index}: {key:?} != {expected_key:?}\n left: `{buffer:?}`\nright: `{expected:?}`");
         }
 
         if value != expected_value {
-            panic!("value is incorrect: {value:?} != {expected_value:?}");
+            panic!("value is incorrect at index {index}: {value:?} != {expected_value:?}\n left: `{buffer:?}`\nright: `{expected:?}`");
         }
     }
 }
@@ -284,7 +284,6 @@ fn quicksort_corpus() {
         ],
     ];
 
-    let mut buffer = Vec::new();
     for batch in corpus {
         let (mut keys, mut values): (Vec<_>, Vec<_>) = batch.iter().copied().unzip();
         quicksort(&mut keys, &mut values);
@@ -292,7 +291,7 @@ fn quicksort_corpus() {
         let mut expected = batch.to_vec();
         expected.sort_unstable_by_key(|&(key, _)| key);
 
-        assert_sorted_eq(&mut expected, &keys, &values, &mut buffer);
+        assert_sorted_eq(&expected, &keys, &values);
     }
 }
 

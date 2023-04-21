@@ -175,7 +175,7 @@ proptest! {
 
         data.sort_unstable_by_key(|&(key, _)| key);
 
-        super::assert_sorted_eq(&mut data, &keys, &values, &mut Vec::new());
+        super::assert_sorted_eq(& data, &keys, &values);
     }
 
     #[test]

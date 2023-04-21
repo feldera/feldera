@@ -14,6 +14,7 @@ impl Function {
     #[tracing::instrument(skip_all)]
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         // self.remove_redundant_casts();
+        self.dce();
         self.remove_unit_memory_operations(layout_cache);
         self.deduplicate_input_loads();
         self.simplify_branches();
