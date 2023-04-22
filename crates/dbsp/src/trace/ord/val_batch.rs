@@ -366,7 +366,7 @@ where
     cursor: OrderedCursor<'s, K, O, OrderedLayer<V, ColumnLayer<T, R>, O>>,
 }
 
-impl<'s, K, V, T, R, O> Cursor<'s, K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
+impl<'s, K, V, T, R, O> Cursor<K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
 where
     K: Ord + Clone,
     V: Ord + Clone,

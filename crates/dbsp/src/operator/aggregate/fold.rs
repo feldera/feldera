@@ -73,9 +73,9 @@ where
     type Output = O;
     type Semigroup = S;
 
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
-        C: Cursor<'s, V, (), T, R>,
+        C: Cursor<V, (), T, R>,
     {
         let mut acc = self.init.clone();
         let mut non_empty = false;

@@ -329,7 +329,7 @@ where
     cursor: ColumnLayerCursor<'s, K, R>,
 }
 
-impl<'s, K, R> Cursor<'s, K, (), (), R> for OrdZSetCursor<'s, K, R>
+impl<'s, K, R> Cursor<K, (), (), R> for OrdZSetCursor<'s, K, R>
 where
     K: DBData,
     R: DBWeight,

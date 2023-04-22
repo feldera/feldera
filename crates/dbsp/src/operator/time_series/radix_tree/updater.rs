@@ -89,12 +89,12 @@ where
     phantom: PhantomData<(R, S)>,
 }
 
-impl<'a, 'b, TS, A, R, S, TC> TreeUpdater<'a, TS, A, R, S, TC>
+impl<'a, TS, A, R, S, TC> TreeUpdater<'a, TS, A, R, S, TC>
 where
     TS: PrimInt + Debug,
     A: Clone + Default + Debug,
     S: Semigroup<A>,
-    TC: RadixTreeCursor<'b, TS, A, R>,
+    TC: RadixTreeCursor<TS, A, R>,
     R: HasZero,
 {
     /// Create a new `TreeUpdater` backed by `tree_cursor`.
@@ -364,7 +364,7 @@ where
 /// * `output_updates` - empty vector to accumulate tree updates in. When the
 ///   method returns `output_updates` contains ordered updates that can be used
 ///   to construct a batch of updates to apply to the tree.
-pub(super) fn radix_tree_update<'a, 'b, TS, V, R, Agg, UC, IC, TC, OR>(
+pub(super) fn radix_tree_update<'a, TS, V, R, Agg, UC, IC, TC, OR>(
     mut input_delta: UC,
     mut input: IC,
     tree: TC,
@@ -375,9 +375,9 @@ pub(super) fn radix_tree_update<'a, 'b, TS, V, R, Agg, UC, IC, TC, OR>(
     R: MonoidValue,
     Agg: Aggregator<V, (), R>,
     Agg::Accumulator: Clone + Default + Eq + Debug,
-    UC: Cursor<'b, TS, V, (), R>,
-    IC: Cursor<'b, TS, V, (), R>,
-    TC: RadixTreeCursor<'b, TS, Agg::Accumulator, OR>,
+    UC: Cursor<TS, V, (), R>,
+    IC: Cursor<TS, V, (), R>,
+    TC: RadixTreeCursor<TS, Agg::Accumulator, OR>,
     OR: MonoidValue,
 {
     let mut tree_updater =

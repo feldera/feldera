@@ -15,9 +15,9 @@ pub struct CursorGroup<'c, K, T, C> {
 impl<'c, K, T, C> CursorGroup<'c, K, T, C> {
     /// Creates a cursor over values associated with the current key
     /// of the `base` cursor restricted to times `<= upper`.
-    pub fn new<'s, V, R>(base: &'c mut C, upper: T) -> Self
+    pub fn new<V, R>(base: &'c mut C, upper: T) -> Self
     where
-        C: Cursor<'s, K, V, T, R>,
+        C: Cursor<K, V, T, R>,
     {
         debug_assert!(base.key_valid());
         Self {
@@ -29,10 +29,10 @@ impl<'c, K, T, C> CursorGroup<'c, K, T, C> {
     }
 }
 
-impl<'c, 's, K, V, T, R, C> Cursor<'s, V, (), T, R> for CursorGroup<'c, K, T, C>
+impl<'c, K, V, T, R, C> Cursor<V, (), T, R> for CursorGroup<'c, K, T, C>
 where
     T: Timestamp,
-    C: Cursor<'s, K, V, T, R>,
+    C: Cursor<K, V, T, R>,
     K: PartialEq,
 {
     fn key_valid(&self) -> bool {

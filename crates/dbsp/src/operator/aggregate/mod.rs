@@ -105,17 +105,17 @@ pub trait Aggregator<K, T, R>: Clone + 'static {
     ///
     /// * The method must return `None` if the total weight of each key is zero.
     ///   It must return `Some` otherwise.
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
-        C: Cursor<'s, K, (), T, R>;
+        C: Cursor<K, (), T, R>;
 
     /// Compute the final value of the aggregate.
     fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output;
 
     /// Applies `aggregate` to `cursor` followed by `finalize`.
-    fn aggregate_and_finalize<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate_and_finalize<C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
-        C: Cursor<'s, K, (), T, R>,
+        C: Cursor<K, (), T, R>,
     {
         self.aggregate(cursor).map(|x| self.finalize(x))
     }
@@ -135,9 +135,9 @@ where
     type Output = R;
     type Semigroup = DefaultSemigroup<R>;
 
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
-        C: Cursor<'s, (), (), T, R>,
+        C: Cursor<(), (), T, R>,
     {
         let mut weight = R::zero();
 

@@ -35,9 +35,9 @@ where
     type Output = V;
     type Semigroup = MinSemigroup<V>;
 
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Output>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<Self::Output>
     where
-        C: Cursor<'s, V, (), T, R>,
+        C: Cursor<V, (), T, R>,
     {
         while cursor.key_valid() {
             // FIXME: This could be more succinct if we had an `Add<&Self, Output = Self>`
