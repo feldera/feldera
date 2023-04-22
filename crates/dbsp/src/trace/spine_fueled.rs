@@ -333,7 +333,7 @@ where
 
 pub struct SpineCursor<'s, B: Batch + 's> {
     #[allow(clippy::type_complexity)]
-    cursor: CursorList<'s, B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
+    cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
 }
 
 impl<'s, B: Batch> SpineCursor<'s, B>
@@ -348,7 +348,7 @@ where
     }
 }
 
-impl<'s, B: Batch> Cursor<'s, B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B>
+impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B>
 where
     B::Key: Ord,
     B::Val: Ord,

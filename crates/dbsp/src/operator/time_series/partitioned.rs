@@ -39,9 +39,9 @@ pub struct PartitionCursor<'b, PK, K, V, R, C> {
     phantom: PhantomData<(PK, V, R)>,
 }
 
-impl<'a, 'b, PK, K, V, R, C> PartitionCursor<'b, PK, K, V, R, C>
+impl<'b, PK, K, V, R, C> PartitionCursor<'b, PK, K, V, R, C>
 where
-    C: Cursor<'a, PK, (K, V), (), R>,
+    C: Cursor<PK, (K, V), (), R>,
     K: Clone,
 {
     pub fn new(cursor: &'b mut C) -> Self {
@@ -54,9 +54,9 @@ where
     }
 }
 
-impl<'a, 'b, C, PK, K, V, R> Cursor<'a, K, V, (), R> for PartitionCursor<'b, PK, K, V, R, C>
+impl<'b, C, PK, K, V, R> Cursor<K, V, (), R> for PartitionCursor<'b, PK, K, V, R, C>
 where
-    C: Cursor<'a, PK, (K, V), (), R>,
+    C: Cursor<PK, (K, V), (), R>,
     K: Clone + Eq + Ord,
     V: 'static,
 {
@@ -138,6 +138,23 @@ where
 
     fn rewind_vals(&mut self) {
         unimplemented!()
+    }
+}
+
+/// Cursor over a single partition of a partitioned batch.
+///
+/// Iterates over a single partition of a partitioned collection.
+pub struct PartitionValueCursor<'b, PK, K, V, R, C> {
+    cursor: &'b PartitionCursor<'b, PK, K, V, R, C>,
+}
+
+impl<'b, 'c, PK, K, V, R, C> PartitionValueCursor<'c, PK, K, V, R, C>
+where
+    C: Cursor<PK, (K, V), (), R>,
+    K: Clone,
+{
+    pub fn new(cursor: &'c PartitionCursor<'b, PK, K, V, R, C>) -> Self {
+        Self { cursor }
     }
 }
 

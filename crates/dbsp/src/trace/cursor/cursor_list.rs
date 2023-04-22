@@ -12,14 +12,14 @@ use std::marker::PhantomData;
 /// the indices of cursors with the minimum key and minimum value. It performs
 /// no clever management of these sets otherwise.
 #[derive(Debug)]
-pub struct CursorList<'s, K, V, T, R, C: Cursor<'s, K, V, T, R>> {
+pub struct CursorList<K, V, T, R, C: Cursor<K, V, T, R>> {
     cursors: Vec<C>,
     min_key: Vec<usize>,
     min_val: Vec<usize>,
-    __type: PhantomData<&'s (K, V, T, R)>,
+    __type: PhantomData<(K, V, T, R)>,
 }
 
-impl<'s, K, V, T, R, C: Cursor<'s, K, V, T, R>> CursorList<'s, K, V, T, R, C>
+impl<K, V, T, R, C: Cursor<K, V, T, R>> CursorList<K, V, T, R, C>
 where
     K: Ord,
     V: Ord,
@@ -94,8 +94,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R, C: Cursor<'s, K, V, T, R>> Cursor<'s, K, V, T, R>
-    for CursorList<'s, K, V, T, R, C>
+impl<K, V, T, R, C: Cursor<K, V, T, R>> Cursor<K, V, T, R> for CursorList<K, V, T, R, C>
 where
     K: Ord,
     V: Ord,

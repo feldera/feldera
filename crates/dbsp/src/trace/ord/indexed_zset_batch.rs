@@ -393,7 +393,7 @@ where
     cursor: OrderedCursor<'s, K, O, ColumnLayer<V, R>>,
 }
 
-impl<'s, K, V, R, O> Cursor<'s, K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
+impl<'s, K, V, R, O> Cursor<K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
 where
     K: Ord + Clone,
     V: Ord + Clone,

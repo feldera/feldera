@@ -112,7 +112,7 @@ const RADIX_BITS: u32 = RADIX.trailing_zeros();
 /// (specifically, 1).  The natural ordering of `Prefix`s guarantees that the
 /// cursor iterates over the tree in pre-order (parent before children),
 /// starting from the root node.
-pub trait RadixTreeCursor<'a, TS, A, R>: Cursor<'a, Prefix<TS>, TreeNode<TS, A>, (), R>
+pub trait RadixTreeCursor<TS, A, R>: Cursor<Prefix<TS>, TreeNode<TS, A>, (), R>
 where
     TS: PrimInt + Debug,
 {
@@ -334,10 +334,10 @@ where
     }
 }
 
-impl<'a, TS, A, R, C> RadixTreeCursor<'a, TS, A, R> for C
+impl<TS, A, R, C> RadixTreeCursor<TS, A, R> for C
 where
     TS: PrimInt + Debug,
-    C: Cursor<'a, Prefix<TS>, TreeNode<TS, A>, (), R>,
+    C: Cursor<Prefix<TS>, TreeNode<TS, A>, (), R>,
 {
 }
 
@@ -698,11 +698,9 @@ pub(super) mod test {
 
     // Checks that `aggregate_range` correctly computes aggregates for all
     // possible ranges.  Enumerates quadratic number of ranges.
-    pub(super) fn test_aggregate_range<'a, TS, A, R, C, S>(
-        cursor: &mut C,
-        contents: &BTreeMap<TS, A>,
-    ) where
-        C: RadixTreeCursor<'a, TS, A, R>,
+    pub(super) fn test_aggregate_range<TS, A, R, C, S>(cursor: &mut C, contents: &BTreeMap<TS, A>)
+    where
+        C: RadixTreeCursor<TS, A, R>,
         TS: PrimInt + Debug,
         A: Clone + Eq + Debug,
         R: HasZero,

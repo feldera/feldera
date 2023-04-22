@@ -301,7 +301,7 @@ where
     cursor: OrderedCursor<'s, K, O, ColumnLayer<T, R>>,
 }
 
-impl<'s, K, T, R, O> Cursor<'s, K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
+impl<'s, K, T, R, O> Cursor<K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
 where
     K: Ord + Clone,
     T: Lattice + Ord + Clone,

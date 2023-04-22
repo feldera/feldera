@@ -20,7 +20,7 @@ pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 
 /// A cursor for navigating ordered `(key, val, time, diff)` tuples.
-pub trait Cursor<'s, K, V, T, R> {
+pub trait Cursor<K, V, T, R> {
     /// Indicates if the current key is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all keys.
@@ -175,7 +175,7 @@ pub trait ValueConsumer<'a, V, R, T> {
 }
 
 /// Debugging and testing utilities for Cursor.
-pub trait CursorDebug<'s, K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<'s, K, V, T, R> {
+pub trait CursorDebug<K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<K, V, T, R> {
     /// Rewinds the cursor and outputs its contents to a Vec
     #[allow(clippy::type_complexity)]
     fn to_vec(&mut self) -> Vec<((K, V), Vec<(T, R)>)> {
@@ -220,7 +220,7 @@ pub trait CursorDebug<'s, K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<'s, K,
     }
 }
 
-impl<'s, C, K: Clone, V: Clone, T: Clone, R: Clone> CursorDebug<'s, K, V, T, R> for C where
-    C: Cursor<'s, K, V, T, R>
+impl<C, K: Clone, V: Clone, T: Clone, R: Clone> CursorDebug<K, V, T, R> for C where
+    C: Cursor<K, V, T, R>
 {
 }

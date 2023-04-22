@@ -34,9 +34,9 @@ where
     type Semigroup = MaxSemigroup<V>;
 
     // TODO: this can be more efficient with reverse iterator.
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<Self::Accumulator>
     where
-        C: Cursor<'s, V, (), T, R>,
+        C: Cursor<V, (), T, R>,
     {
         let mut result = None;
 

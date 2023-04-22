@@ -20,12 +20,12 @@ pub struct CursorPair<C1, C2> {
                           * valid. */
 }
 
-impl<'s, K, V, T, R, C1, C2> Cursor<'s, K, V, T, R> for CursorPair<C1, C2>
+impl<K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<C1, C2>
 where
     K: Ord,
     V: Ord,
-    C1: Cursor<'s, K, V, T, R>,
-    C2: Cursor<'s, K, V, T, R>,
+    C1: Cursor<K, V, T, R>,
+    C2: Cursor<K, V, T, R>,
     R: MonoidValue,
 {
     // validation methods

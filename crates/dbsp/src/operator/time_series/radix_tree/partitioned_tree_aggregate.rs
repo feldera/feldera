@@ -55,8 +55,8 @@ type OrdPartitionedRadixTreeStream<PK, TS, A, R> =
     Stream<RootCircuit, OrdPartitionedRadixTree<PK, TS, A, R>>;
 
 /// Cursor over partitioned radix tree.
-pub trait PartitionedRadixTreeCursor<'a, PK, TS, A, R>:
-    Cursor<'a, PK, (Prefix<TS>, TreeNode<TS, A>), (), R> + Sized
+pub trait PartitionedRadixTreeCursor<PK, TS, A, R>:
+    Cursor<PK, (Prefix<TS>, TreeNode<TS, A>), (), R> + Sized
 {
     /// Produce a semi-human-readable representation of the partitioned tree
     /// for debugging purposes.
@@ -101,8 +101,8 @@ pub trait PartitionedRadixTreeCursor<'a, PK, TS, A, R>:
     }
 }
 
-impl<'a, PK, TS, A, R, C> PartitionedRadixTreeCursor<'a, PK, TS, A, R> for C where
-    C: Cursor<'a, PK, (Prefix<TS>, TreeNode<TS, A>), (), R>
+impl<PK, TS, A, R, C> PartitionedRadixTreeCursor<PK, TS, A, R> for C where
+    C: Cursor<PK, (Prefix<TS>, TreeNode<TS, A>), (), R>
 {
 }
 
@@ -240,7 +240,7 @@ impl<TS, V, R> EmptyCursor<TS, V, R> {
     }
 }
 
-impl<'a, TS, V, R> Cursor<'a, TS, V, (), R> for EmptyCursor<TS, V, R>
+impl<TS, V, R> Cursor<TS, V, (), R> for EmptyCursor<TS, V, R>
 where
     TS: DBData,
     V: 'static,
@@ -489,11 +489,11 @@ mod test {
 
     // Checks that `aggregate_range` correctly computes aggregates for all
     // possible ranges in all partitions.
-    fn test_partitioned_aggregate_range<'a, PK, TS, A, R, C, S>(
+    fn test_partitioned_aggregate_range<PK, TS, A, R, C, S>(
         cursor: &mut C,
         contents: &BTreeMap<PK, BTreeMap<TS, A>>,
     ) where
-        C: PartitionedRadixTreeCursor<'a, PK, TS, A, R>,
+        C: PartitionedRadixTreeCursor<PK, TS, A, R>,
         PK: DBData,
         TS: DBData + PrimInt,
         A: DBData,

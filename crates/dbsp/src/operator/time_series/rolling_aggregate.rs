@@ -79,9 +79,9 @@ where
 
     type Semigroup = DefaultSemigroup<A>;
 
-    fn aggregate<'s, C>(&self, cursor: &mut C) -> Option<A>
+    fn aggregate<C>(&self, cursor: &mut C) -> Option<A>
     where
-        C: Cursor<'s, V, (), (), R>,
+        C: Cursor<V, (), (), R>,
     {
         let mut res: Option<A> = None;
 
@@ -433,9 +433,9 @@ impl<TS, V, Agg> PartitionedRollingAggregate<TS, V, Agg> {
         }
     }
 
-    fn affected_ranges<'a, R, C>(&self, delta_cursor: &mut C) -> Ranges<TS>
+    fn affected_ranges<R, C>(&self, delta_cursor: &mut C) -> Ranges<TS>
     where
-        C: Cursor<'a, TS, V, (), R>,
+        C: Cursor<TS, V, (), R>,
         TS: PrimInt,
     {
         let mut affected_ranges = Ranges::new();

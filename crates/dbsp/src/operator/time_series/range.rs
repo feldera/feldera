@@ -228,10 +228,10 @@ where
     phantom: PhantomData<(V, R)>,
 }
 
-impl<'a, TS, V, R, C> RangeCursor<TS, V, R, C>
+impl<TS, V, R, C> RangeCursor<TS, V, R, C>
 where
     TS: PrimInt,
-    C: Cursor<'a, TS, V, (), R>,
+    C: Cursor<TS, V, (), R>,
 {
     /// Create a new `RangeCursor` that restricts keys in `cursor` to `ranges`.
     pub fn new(cursor: C, ranges: Ranges<TS>) -> Self {
@@ -265,10 +265,10 @@ where
     }
 }
 
-impl<'a, TS, V, R, C> Cursor<'a, TS, V, (), R> for RangeCursor<TS, V, R, C>
+impl<TS, V, R, C> Cursor<TS, V, (), R> for RangeCursor<TS, V, R, C>
 where
     TS: PrimInt,
-    C: Cursor<'a, TS, V, (), R>,
+    C: Cursor<TS, V, (), R>,
 {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid() && self.current_range < self.ranges.len()

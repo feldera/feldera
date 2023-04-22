@@ -326,7 +326,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R> Cursor<'s, K, V, T, R> for TestBatchCursor<K, V, T, R>
+impl<K, V, T, R> Cursor<K, V, T, R> for TestBatchCursor<K, V, T, R>
 where
     K: DBData,
     V: DBData,
