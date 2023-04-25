@@ -75,3 +75,7 @@ docker tag dbspmanager localhost:5001/dbspmanager && docker push localhost:5001/
 
 #### Set up ingress controller
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+#### Set up DBSP namespace and database secrets
+kubectl create namespace dbsp
+kubectl create secret generic db-creds --from-literal=postgres-password='postgres' -n dbsp
