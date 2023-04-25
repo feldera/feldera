@@ -19,7 +19,7 @@ import { Icon } from '@iconify/react'
 import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
@@ -44,10 +44,11 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const handleClose = () => {
     props.setShow(false)
   }
-  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
+  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
     handleClose()
-    if (connector_id !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector_id)
+    console.log('onFormSubmitted', connector)
+    if (connector !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector)
     }
   }
 
@@ -78,10 +79,10 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.KAFKA_IN,
+      typ: ConnectorType.KAFKA_OUT,
       config: YAML.stringify({
         transport: {
-          name: connectorTypeToConfig(ConnectorType.KAFKA_IN),
+          name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
           config: {
             'bootstrap.servers': data.host,
             'auto.offset.reset': data.auto_offset,

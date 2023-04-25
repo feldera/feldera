@@ -12,11 +12,11 @@ import { Icon } from '@iconify/react'
 import useDrawerState from 'src/streaming/builder/hooks/useDrawerState'
 import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
 import { useState, Dispatch, useEffect } from 'react'
-import { AttachedConnector, ConnectorDescr, ConnectorId, ConnectorType, Direction } from 'src/types/manager'
+import { AttachedConnector, ConnectorDescr, ConnectorType, Direction } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/connectors'
 import { randomString } from 'src/utils'
-import useAddIoNode from 'src/streaming/builder/hooks/useAddIoNode'
+import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
 
 import { CsvFileConnectorDialog } from '../dialogs/CsvFileConnector'
@@ -35,7 +35,7 @@ const Header = styled(Box)<BoxProps>(({ theme }) => ({
 interface IoSelectBoxProps {
   icon: string
   howMany: number
-  onSuccess: Dispatch<ConnectorId>
+  onSuccess: Dispatch<ConnectorDescr>
   openSelectTable: () => void
   closeDrawer: () => void
   dialog: (props: ConnectorDialogProps) => React.ReactNode
@@ -131,16 +131,16 @@ const SideBarAddIo = () => {
     setSelectTable(ioTable)
   }
 
-  const addIoNode = useAddIoNode(forNodes === 'inputNode' ? 'inputPlaceholder' : 'outputPlaceholder')
-  const onAddClick = (connector_id: ConnectorId) => {
+  const addConnector = useAddConnector()
+  const onAddClick = (connector: ConnectorDescr) => {
     closeDrawer()
     const ac: AttachedConnector = {
       uuid: randomString(),
-      connector_id,
+      connector_id: connector.connector_id,
       config: '',
       direction: forNodes === 'inputNode' ? Direction.INPUT : Direction.OUTPUT
     }
-    addIoNode(ac)
+    addConnector(connector, ac)
   }
 
   return (

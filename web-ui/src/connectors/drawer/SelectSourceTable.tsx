@@ -7,12 +7,15 @@ import Card from '@mui/material/Card'
 import { useQuery } from '@tanstack/react-query'
 import { GridColumns, GridRenderCellParams } from '@mui/x-data-grid-pro'
 
-import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
-import { ConnectorId, ConnectorType, Direction } from 'src/types/manager'
+import { ConnectorDescr, ConnectorType, Direction } from 'src/types/manager'
 
-const SelectSourceTable = (props: { direction: Direction; typ: ConnectorType; onAddClick: Dispatch<ConnectorId> }) => {
+const SelectSourceTable = (props: {
+  direction: Direction
+  typ: ConnectorType
+  onAddClick: Dispatch<ConnectorDescr>
+}) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
   const fetchQuery = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
 
@@ -43,12 +46,7 @@ const SelectSourceTable = (props: { direction: Direction; typ: ConnectorType; on
       headerName: '',
       renderCell: (params: GridRenderCellParams) => {
         return (
-          <Button
-            size='small'
-            variant='outlined'
-            color='secondary'
-            onClick={() => props.onAddClick(params.row.connector_id)}
-          >
+          <Button size='small' variant='outlined' color='secondary' onClick={() => props.onAddClick(params.row)}>
             Add
           </Button>
         )

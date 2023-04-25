@@ -1,11 +1,12 @@
 // Logic to add either a input or output node to the graph.
 
 import { useCallback } from 'react'
-import { NodeProps, useReactFlow, getConnectedEdges } from 'reactflow'
+import { useReactFlow, getConnectedEdges } from 'reactflow'
 import { AttachedConnector, Direction } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { Schema } from 'src/types/program'
 import { randomString } from 'src/utils'
+import { useRedoLayout } from './useAutoLayout'
 
 const HEIGHT_OFFSET = 120
 
@@ -21,6 +22,7 @@ export function connectorConnects(ac: AttachedConnector, schema: Schema): boolea
 
 export function useAddConnector() {
   const { setNodes, getNodes, getNode, addNodes, addEdges } = useReactFlow()
+  const redoLayout = useRedoLayout()
 
   const addNewConnector = useCallback(
     (connector: ConnectorDescr, ac: AttachedConnector) => {
@@ -59,6 +61,7 @@ export function useAddConnector() {
           deletable: true,
           data: { connector, ac }
         })
+        redoLayout()
       }
 
       // Now that we have the node, we need to add a connector if we have one
@@ -95,46 +98,3 @@ export function useAddConnector() {
 
   return addNewConnector
 }
-
-// When we click on input or output placeholder, we (a) add a new node at the
-// position where the placeholder was, and (b) move the placeholder node a bit
-// below its former position.
-export function useAddIoNode(id: NodeProps['id']) {
-  const { getNode, setNodes, addNodes } = useReactFlow()
-  const onClick = (ac: AttachedConnector) => {
-    // The parent is the placeholder we just clicked
-    const parentNode = getNode(id)
-    if (!parentNode) {
-      return
-    }
-
-    // Input or Output?
-    const newNodeType = parentNode.id === 'inputPlaceholder' ? 'inputNode' : 'outputNode'
-
-    setNodes(nodes =>
-      nodes.map(node => {
-        // Move the placeholder node down a bit
-        if (node.id === id) {
-          return {
-            ...node,
-            position: { x: parentNode.position.x, y: parentNode.position.y + HEIGHT_OFFSET }
-          }
-        }
-
-        return node
-      })
-    )
-
-    addNodes({
-      position: { x: parentNode.position.x, y: parentNode.position.y },
-      id: ac.uuid,
-      type: newNodeType,
-      deletable: true,
-      data: { ac: ac }
-    })
-  }
-
-  return onClick
-}
-
-export default useAddIoNode

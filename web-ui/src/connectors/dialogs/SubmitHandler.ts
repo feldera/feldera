@@ -10,15 +10,17 @@ import {
   CancelError,
   ConnectorService,
   UpdateConnectorRequest,
-  UpdateConnectorResponse
+  UpdateConnectorResponse,
+  ConnectorDescr
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
+import { connectorTypeToDirection } from 'src/types/connectors'
 
 // Sends the request to create a new connector.
 //
 // Display success or error status message on completion.
 export const ConnectorFormNewRequest = <TData extends FieldValues>(
-  onFormSubmitted: (connector_id: number | undefined) => void,
+  onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
   toNewConnectorRequest: (data: TData) => NewConnectorRequest
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
@@ -32,13 +34,28 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
 
   return (data: TData) => {
     const source_desc = toNewConnectorRequest(data)
+    console.log('ConnectorFormNewRequest')
+    console.log(source_desc)
+    console.log(data)
 
     if (!newIsLoading) {
       newConnector(source_desc, {
         onSuccess: resp => {
+          console.log('onSuccess')
+
+          console.log(source_desc)
+          console.log(data)
+
           queryClient.invalidateQueries(['connector'])
           pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
-          onFormSubmitted(resp.connector_id)
+          onFormSubmitted({
+            connector_id: resp.connector_id,
+            name: source_desc.name,
+            description: source_desc.description,
+            config: source_desc.config,
+            direction: connectorTypeToDirection(source_desc.typ),
+            typ: source_desc.typ
+          })
         },
         onError: error => {
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
@@ -53,7 +70,7 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
 //
 // Display success or error status message on completion.
 export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
-  onFormSubmitted: (connector_id: number | undefined) => void,
+  onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
   toConnectorFormUpdateRequest: (data: TData) => UpdateConnectorRequest
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
@@ -76,7 +93,14 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
         },
         onSuccess: () => {
           pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
-          onFormSubmitted(source_desc.connector_id)
+          onFormSubmitted({
+            connector_id: source_desc.connector_id,
+            name: source_desc.name,
+            config: data.config,
+            description: data.description,
+            direction: connectorTypeToDirection(data.typ),
+            typ: data.typ
+          })
         },
         onError: error => {
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
