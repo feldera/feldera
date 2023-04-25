@@ -1,3 +1,7 @@
+// See the status of a input table or output view.
+//
+// Note: This is still a work in progress and currently does not work as well as
+// it should or is not very flexible in displaying what a user wants.
 import Card from '@mui/material/Card'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'

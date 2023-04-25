@@ -1,3 +1,4 @@
+// The main menu that shows up on the left side of the screen.
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
 
 const navigation = (): VerticalNavItemsType => {

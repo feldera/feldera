@@ -113,7 +113,6 @@ const SideBarAddIo = () => {
         .reduce(
           (acc: { [Key in ConnectorType]: number }, typ: ConnectorType) => {
             acc[typ] += 1
-
             return acc
           },
           { [ConnectorType.KAFKA_IN]: 0, [ConnectorType.KAFKA_OUT]: 0, [ConnectorType.FILE]: 0 }

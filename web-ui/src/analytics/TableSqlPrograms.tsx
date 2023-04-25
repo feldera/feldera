@@ -55,52 +55,10 @@ const TableSqlPrograms = () => {
   const fetchQuery = useQuery<ProjectDescr[]>({ queryKey: ['project'] })
   const { pushMessage } = useStatusNotification()
 
-  // Editing a row
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
-  const mutation = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(ProjectService.updateProject)
-  const processRowUpdate = (newRow: ProjectDescr, oldRow: ProjectDescr) => {
-    mutation.mutate(
-      {
-        project_id: newRow.project_id,
-        description: newRow.description,
-        name: newRow.name
-      },
-      {
-        onError: (error: CancelError) => {
-          queryClient.invalidateQueries(['project'])
-          queryClient.invalidateQueries(['projectStatus', { project_id: newRow.project_id }])
-          pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-          apiRef.current.updateRows([oldRow])
-        }
-      }
-    )
 
-    return newRow
-  }
-
-  // Deleting a row
-  const deleteMutation = useMutation<void, CancelError, number>(ProjectService.deleteProject)
-  const deleteProject = useCallback(
-    (curRow: ProjectDescr) => {
-      setTimeout(() => {
-        const oldRow = rows.find(row => row.project_id === curRow.project_id)
-        if (oldRow !== undefined) {
-          deleteMutation.mutate(curRow.project_id, {
-            onSuccess: () => {
-              setRows(prevRows => prevRows.filter(row => row.project_id !== curRow.project_id))
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries(['project'])
-            }
-          })
-        }
-      })
-    },
-    [queryClient, deleteMutation, rows, pushMessage]
-  )
-
+  // Table columns
   const columns: GridColumns = [
     {
       flex: 0.05,
@@ -152,6 +110,50 @@ const TableSqlPrograms = () => {
       }
     }
   ]
+
+  // Editing a row
+  const mutation = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(ProjectService.updateProject)
+  const processRowUpdate = (newRow: ProjectDescr, oldRow: ProjectDescr) => {
+    mutation.mutate(
+      {
+        project_id: newRow.project_id,
+        description: newRow.description,
+        name: newRow.name
+      },
+      {
+        onError: (error: CancelError) => {
+          queryClient.invalidateQueries(['project'])
+          queryClient.invalidateQueries(['projectStatus', { project_id: newRow.project_id }])
+          pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+          apiRef.current.updateRows([oldRow])
+        }
+      }
+    )
+
+    return newRow
+  }
+
+  // Deleting a row
+  const deleteMutation = useMutation<void, CancelError, number>(ProjectService.deleteProject)
+  const deleteProject = useCallback(
+    (curRow: ProjectDescr) => {
+      setTimeout(() => {
+        const oldRow = rows.find(row => row.project_id === curRow.project_id)
+        if (oldRow !== undefined) {
+          deleteMutation.mutate(curRow.project_id, {
+            onSuccess: () => {
+              setRows(prevRows => prevRows.filter(row => row.project_id !== curRow.project_id))
+            },
+            onError: error => {
+              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              queryClient.invalidateQueries(['project'])
+            }
+          })
+        }
+      })
+    },
+    [queryClient, deleteMutation, rows, pushMessage]
+  )
 
   // Table properties, passed to the underlying grid-table
   const tableProps = {

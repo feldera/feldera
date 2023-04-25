@@ -5,7 +5,7 @@ import { ProjectWithSchema } from 'src/types/program'
 import { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { create } from 'zustand'
 
-interface BuilderState {
+interface PipelineBuilderState {
   saveState: SaveIndicatorState
   project: ProjectWithSchema | undefined
   name: string
@@ -18,7 +18,7 @@ interface BuilderState {
   setProject: (config: ProjectWithSchema | undefined) => void
 }
 
-export const useBuilderState = create<BuilderState>(set => ({
+export const useBuilderState = create<PipelineBuilderState>(set => ({
   saveState: 'isUpToDate',
   project: undefined,
   name: '',

@@ -43,7 +43,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
           options={programs.map(p => p.name)}
           getOptionLabel={option => option}
           renderInput={params => (
-            <TextField {...params} className='nodrag' label='Program' placeholder='Search for SQL...' />
+            <TextField {...params} className='nodrag' label='Program' placeholder='Select SQL...' />
           )}
         />
       </CardContent>

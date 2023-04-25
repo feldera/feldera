@@ -39,7 +39,9 @@ export function useAddConnector() {
       if (existingNode) {
         return
       } else {
-        // Move the placeholder node down a bit
+        // Move the placeholder node down a bit; useAutoLayout will eventually
+        // also place it at the right spot, but it looks better when it happens
+        // here immediately.
         setNodes(nodes =>
           nodes.map(node => {
             if (node.id === placeholderId) {

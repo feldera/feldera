@@ -1,3 +1,7 @@
+// Switches the layout between light/dark mode.
+//
+// Currently does not persist across full-reloads, for that we have to save the
+// settings in local storage.
 import { PaletteMode } from '@mui/material'
 import IconButton from '@mui/material/IconButton'
 import WeatherNight from 'mdi-material-ui/WeatherNight'

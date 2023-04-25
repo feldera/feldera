@@ -14,7 +14,6 @@ const MaskImg = styled(Image)(() => ({
   position: 'absolute'
 }))
 
-
 const FooterIllustrations = () => {
   const theme = useTheme()
 

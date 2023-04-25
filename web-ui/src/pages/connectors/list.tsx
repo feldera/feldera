@@ -8,8 +8,8 @@ const SqlPrograms = () => {
   return (
     <Grid container spacing={6} className='match-height'>
       <PageHeader
-        title={<Typography variant='h5'>Data Sources</Typography>}
-        subtitle={<Typography variant='body2'>View status and edit already data sources.</Typography>}
+        title={<Typography variant='h5'>Connectors</Typography>}
+        subtitle={<Typography variant='body2'>View and edit data sources.</Typography>}
       />
 
       <Grid item xs={12}>

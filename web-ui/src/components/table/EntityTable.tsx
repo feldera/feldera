@@ -45,9 +45,14 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
 }
 
 const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TData>) => {
+  // By default 7 rows are displayed
+  const ROWS_DISPLAYED = 7
+  // We can choose between these options for the number of rows per page
+  const ROWS_PER_PAGE_OPTIONS = [7, 10, 25, 50]
+
   const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, addActions } = props
 
-  const [pageSize, setPageSize] = useState<number>(7)
+  const [pageSize, setPageSize] = useState<number>(ROWS_DISPLAYED)
   const [searchText, setSearchText] = useState<string>('')
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
@@ -91,6 +96,11 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
 
   const handleSearch = (searchValue: string) => {
     setSearchText(searchValue)
+    if (searchValue.length == 0) {
+      setFilteredData([])
+      return
+    }
+
     const searchRegex = new RegExp(escapeRegExp(searchValue), 'i')
     if (!isLoading && !isError) {
       const filteredRows = data.filter((row: any) => {
@@ -101,11 +111,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           }
         })
       })
-      if (searchValue.length) {
-        setFilteredData(filteredRows)
-      } else {
-        setFilteredData([])
-      }
+      setFilteredData(filteredRows)
     }
   }
 
@@ -122,7 +128,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
         }}
         rows={filteredData.length ? filteredData : tableProps.rows}
         pageSize={pageSize}
-        rowsPerPageOptions={[7, 10, 25, 50]}
+        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
         onPageSizeChange={newPageSize => setPageSize(newPageSize)}
         processRowUpdate={onUpdateRow}
         error={error}

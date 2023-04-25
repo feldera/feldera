@@ -126,8 +126,8 @@ const DataSourceTable = () => {
       field: 'typ',
       headerName: 'Type',
       renderCell: (params: GridRenderCellParams) => {
+        // Shows the connector type in a chip
         const status = getStatusObj(params.row.typ)
-
         return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
       }
     }
