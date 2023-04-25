@@ -34,7 +34,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd deploy && \
-          bash integration-tests.sh
+          bash integration-tests.sh http://dbsp:8080
 
       - uses: engineerd/setup-kind@v0.5.0
         with:
@@ -44,9 +44,9 @@ jobs:
       - name: Set up kind
         run: cd deploy/kind && ./setup.sh && ./setup.sh 
         
-      # - name: Deploy DBSP
-      #   run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
-      
+      - name: Deploy DBSP
+        run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
+
       - name: Log in to the Container registry
         if: github.event_name == 'release'
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
