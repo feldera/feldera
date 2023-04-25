@@ -20,7 +20,7 @@ import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
 import DialogTabSource from 'src/connectors/dialogs/tabs/DialogTabSource'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
 import { connectorTypeToConfig, connectorToFormSchema } from 'src/types/connectors'
@@ -42,10 +42,10 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const handleClose = () => {
     props.setShow(false)
   }
-  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
+  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
     handleClose()
-    if (connector_id !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector_id)
+    if (connector !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector)
     }
   }
 

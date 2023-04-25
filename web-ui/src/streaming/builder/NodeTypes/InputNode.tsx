@@ -1,33 +1,19 @@
 // InputNodes are on the left and connect to tables of the program.
 
-import { useEffect, useState } from 'react'
 import CardHeader from '@mui/material/CardHeader'
 import Avatar from '@mui/material/Avatar'
 import { Box } from '@mui/material'
 import IconButton from '@mui/material/IconButton'
 import { Position, NodeProps, Connection, useReactFlow, getConnectedEdges } from 'reactflow'
-import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@iconify/react'
 
 import useNodeDelete from '../hooks/useNodeDelete'
 import { Handle, Node } from '../NodeTypes'
 import { connectorTypeToIcon } from 'src/types/connectors'
-import { ConnectorDescr, ConnectorService, ConnectorType } from 'src/types/manager'
 
 const InputNode = ({ id, data }: NodeProps) => {
   const { getNode, getEdges, deleteElements } = useReactFlow()
   const onDelete = useNodeDelete(id)
-
-  // Fetch the connector data for the corresponding ac.connector_id
-  const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
-  const connectorQuery = useQuery(['connector', { connector_id: data.ac.connector_id }], () =>
-    ConnectorService.connectorStatus(data.ac.connector_id)
-  )
-  useEffect(() => {
-    if (!connectorQuery.isError && !connectorQuery.isLoading) {
-      setConnector(connectorQuery.data)
-    }
-  }, [data, connectorQuery.isError, connectorQuery.isLoading, connectorQuery.data])
 
   const isValidConnection = (connection: Connection) => {
     // We drop the other edge if there already is one (no more than one outgoing
@@ -50,22 +36,22 @@ const InputNode = ({ id, data }: NodeProps) => {
         connection.targetHandle != null &&
         connection.targetHandle.startsWith('table-')
       )
+    } else {
+      return false
     }
-
-    return false
   }
 
   return (
     <Node>
       <CardHeader
-        title={connector?.name || '<unnamed>'}
-        subheader={connector?.description || ''}
+        title={data.connector.name}
+        subheader={data.connector.description}
         sx={{ py: 5, alignItems: 'flex-start' }}
         titleTypographyProps={{ variant: 'h5' }}
         subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
         avatar={
           <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
-            <Icon icon={connectorTypeToIcon(connector?.typ || ConnectorType.FILE)} />
+            <Icon icon={connectorTypeToIcon(data.connector.typ)} />
           </Avatar>
         }
         action={

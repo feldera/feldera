@@ -22,7 +22,7 @@ import { useTheme } from '@mui/material'
 import { Editor } from '@monaco-editor/react'
 
 import Transition from './tabs/Transition'
-import { ConnectorId, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { connectorToFormSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
@@ -42,10 +42,10 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   const handleClose = () => {
     props.setShow(false)
   }
-  const onFormSubmitted = (connector_id: ConnectorId | undefined) => {
+  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
     handleClose()
-    if (connector_id !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector_id)
+    if (connector !== undefined && props.onSuccess !== undefined) {
+      props.onSuccess(connector)
     }
   }
 
