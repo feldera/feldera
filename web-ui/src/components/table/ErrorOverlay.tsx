@@ -1,7 +1,7 @@
 // The error message that is shown instead of the EntityTable if we failed to
 // load data for some reason (e.g. network error).
 
-import { Alert, AlertTitle, Link } from '@mui/material'
+import { Alert, AlertTitle } from '@mui/material'
 
 export interface ErrorProps {
   isError: boolean
@@ -15,11 +15,7 @@ export const ErrorOverlay = (props: ErrorProps) => {
         <AlertTitle>Error</AlertTitle>
         Can't display programs: <strong>{props.error.message}</strong>
         <br />
-        Check network connectivity,{' '}
-        <Link href='#' underline='always'>
-          then try again
-        </Link>
-        .
+        Check network connectivity, then try to refresh the page. .
       </Alert>
     )
   } else {

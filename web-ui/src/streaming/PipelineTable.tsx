@@ -190,12 +190,6 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                   flex: 0.15,
                   renderCell: params => humanSize(inputMetrics?.get(params.row.ac.config.trim())?.total_bytes || 0)
                 },
-                //{
-                //field: 'enabled',
-                //headerName: 'Active',
-                //flex: 0.15,
-                //renderCell: () => <Switch defaultChecked disabled />
-                //},
                 {
                   field: 'action',
                   headerName: 'Action',

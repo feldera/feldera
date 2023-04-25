@@ -31,10 +31,10 @@ export const sqlPlaceholderNode: Node = {
   deletable: false
 }
 
-// Initial setup: Add the three placeholder nodes. The id is the same as the
-// type for them as we only ever want to display one of these.
+// Initial layout of the window: We add the three placeholder nodes.
 //
-// The sqlPlaceholder gets removed/replaced with a real program.
+// The sqlPlaceholderNode gets removed/replaced with a SQL program by the user.
+// The inputPlaceholder and outputPlaceholder always remain visible.
 const defaultNodes: Node[] = [
   {
     id: 'inputPlaceholder',

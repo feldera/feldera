@@ -1,6 +1,7 @@
 // Show cards for adding new connectors.
 //
-// Attaches the dialog too so it can be opened when Add is.
+// Also attached the dialog for the connector that opens when someone clicks
+// on Add.
 
 import { SetStateAction, useState, Dispatch } from 'react'
 import Button from '@mui/material/Button'

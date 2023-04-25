@@ -1,3 +1,5 @@
+// Footer for a dialog with tabs it contains the next and previous buttons. The
+// next button can turn into a submit button if we're on the last tab.
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import { Icon } from '@iconify/react'

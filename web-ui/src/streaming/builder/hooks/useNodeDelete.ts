@@ -12,9 +12,6 @@ export function useNodeDelete(id: NodeProps['id']) {
   const savePipeline = useDebouncedSave()
   const setProject = useBuilderState(state => state.setProject)
 
-  //const queryClient = useQueryClient()
-  //const configId = useBuilderState(state => state.config_id)
-
   const onClick = useCallback(() => {
     const parentNode = getNode(id)
     if (!parentNode) {
@@ -24,12 +21,6 @@ export function useNodeDelete(id: NodeProps['id']) {
 
     if (isSqlProgram) {
       setProject(undefined)
-
-      /*if (configId) {
-        queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
-          return oldData ? { ...oldData, project_id: undefined } : oldData
-        })
-      }*/
     }
 
     // Just hide the node(s) for now (see issue below):

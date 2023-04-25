@@ -6,7 +6,7 @@ import {
   AddKafkaInputConnectorCard
 } from 'src/connectors/dialogs'
 
-const DialogExamples = () => {
+const ConnectorCreateGrid = () => {
   return (
     <Grid container spacing={6} className='match-height'>
       <Grid item md={4} sm={6} xs={12}>
@@ -25,4 +25,4 @@ const DialogExamples = () => {
   )
 }
 
-export default DialogExamples
+export default ConnectorCreateGrid

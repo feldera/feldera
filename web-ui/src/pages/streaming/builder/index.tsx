@@ -112,9 +112,9 @@ export const PipelineWithProvider = (props: {
       let validConnections: AttachedConnector[] = attachedConnectors
       console.log(attachedConnectors)
 
-      // We don't set saveState here because we don't want to override the
-      // saveState (when we get the query result back). Otherwise it will cancel
-      // in-progress saves.
+      // We don't set so `setSaveState` here because we don't want to override
+      // the saveState every time the backend returns some result. Because it
+      // could cancel potentially in-progress saves (started by client action).
 
       if (configQuery.data.project_id) {
         const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
@@ -234,7 +234,10 @@ export const PipelineWithProvider = (props: {
           const connector = source?.id === 'sql' ? target : source
 
           const ac = connector?.data.ac
-          console.log('edge.sourceHandle', edge.sourceHandle, 'edge', edge)
+          //console.log('edge.sourceHandle', edge.sourceHandle, 'edge', edge)
+          if (ac == undefined) {
+            throw new Error('data.ac in an edge was undefined')
+          }
           const tableOrView =
             ac.direction === Direction.INPUT
               ? removePrefix(edge.targetHandle || '', 'table-')

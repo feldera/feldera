@@ -27,6 +27,7 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHan
 import { connectorToFormSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
+import { PLACEHOLDER_VALUES } from 'src/utils'
 
 const schema = yup
   .object({
@@ -109,7 +110,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
       onClose={() => props.setShow(false)}
       TransitionComponent={Transition}
     >
-      <form id='create-csv-file' onSubmit={handleSubmit(onSubmit)}>
+      <form id='create-form' onSubmit={handleSubmit(onSubmit)}>
         <DialogContent sx={{ pb: 8, px: { xs: 8, sm: 15 }, pt: { xs: 8, sm: 12.5 }, position: 'relative' }}>
           <IconButton
             size='small'
@@ -133,7 +134,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
                   render={({ field }) => (
                     <TextField
                       label='Datasource Name'
-                      placeholder='AAPL'
+                      placeholder={PLACEHOLDER_VALUES['connector_name']}
                       error={Boolean(errors.name)}
                       aria-describedby='validation-name'
                       {...field}
@@ -156,7 +157,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
                     <TextField
                       fullWidth
                       label='Description'
-                      placeholder='5 min Stock Ticker Data'
+                      placeholder={PLACEHOLDER_VALUES['connector_description']}
                       error={Boolean(errors.description)}
                       aria-describedby='validation-description'
                       {...field}
@@ -192,7 +193,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             sx={{ mr: 1 }}
             color='success'
             endIcon={<Icon icon='bx:check' />}
-            form='create-csv-file'
+            form='create-form'
             type='submit'
           >
             {props.connector !== undefined ? 'Update' : 'Create'}

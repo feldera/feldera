@@ -16,8 +16,9 @@ const nodesInitializedSelector = (state: ReactFlowState) =>
 // We want to sort input nodes so that if we connect them to a program node, the
 // edges will not overlap each other.
 //
-// We do this by: Extract and sort connectors that have an edge Merge items that
-// don't have an edge yet with sorted connectors
+// We do this by:
+// - Extract and sort connectors that have an edge.
+// - Merge items that don't have an edge yet with sorted connectors
 //
 // Also note that this approach won't work for positioning of the output node
 // because they can have multiple edges.
@@ -80,7 +81,7 @@ function sortInputConnectors(nodes: Node[], edges: Edge[], tableOrder: Map<strin
 // - Output nodes are on the right
 // - Program node is in the middle
 // - The Input and Output nodes are evenly spaced vertically.
-// - The program node is centered vertically wrg. to the input and output nodes.
+// - The program node is centered vertically wrt. to the input and output nodes.
 // - Input nodes are reordered based on which table they are connected to.
 //
 // The input and output nodes are evenly spaced horizontally from the program
@@ -116,7 +117,7 @@ function layoutNodesFixed(
   //
   // We want to:
   // - Keep the input and output nodes evenly spaced.
-  // - Keep the program window centered vertically wrg. to the input and output nodes
+  // - Keep the program window centered vertically wrt. to the input and output nodes
   const totalInputHeight = inputNodes
     .filter(node => node.type === 'inputNode')
     .map(node => {
@@ -133,7 +134,7 @@ function layoutNodesFixed(
   // Horizontal adjustment
   //
   // We right align the input column based on the widest input node. We make
-  // spavce between input/program and program/output is the same.
+  // sure the space between input/program and program/output is the same.
   const maxInputWidth = inputNodes.map(node => node.width || 0).reduce((a, b) => Math.max(a, b), 0)
   const programWidth = programNode.map(node => node.width || 0).reduce((a, b) => Math.max(a, b), 0)
   const programHeight = programNode.map(node => node.height || 0).reduce((a, b) => Math.max(a, b), 0)
@@ -212,18 +213,11 @@ export function useRedoLayout() {
 
 // Does positioning of the nodes in the graph.
 function useAutoLayout() {
-  const nodeCount = useStore(nodeCountSelector)
-
-  //const edgeCount = useStore(edgeCountSelector)
-  const nodesInitialized = useStore(nodesInitializedSelector)
-  const { getNodes, setNodes, getEdges } = useReactFlow()
+  const redoLayout = useRedoLayout()
 
   useEffect(() => {
-    if (!nodeCount || !nodesInitialized) {
-      return
-    }
-    layoutNodesFixed(getNodes, setNodes, getEdges)
-  }, [nodeCount, nodesInitialized, getNodes, setNodes, getEdges])
+    redoLayout()
+  }, [redoLayout])
 }
 
 export default useAutoLayout

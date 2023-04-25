@@ -6,11 +6,13 @@ import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
-import { KafkaOutputSchema } from '../KafkaOutputConnector'
+import Autocomplete from '@mui/material/Autocomplete'
 
-const TabKafkaOutDetails = (props: {
-  control: Control<KafkaOutputSchema>
-  errors: Partial<FieldErrors<KafkaOutputSchema>>
+import { KafkaInputSchema } from 'src/connectors/dialogs'
+
+const TabKafkaInputDetails = (props: {
+  control: Control<KafkaInputSchema>
+  errors: Partial<FieldErrors<KafkaInputSchema>>
 }) => {
   return (
     <Grid container spacing={6}>
@@ -23,7 +25,7 @@ const TabKafkaOutDetails = (props: {
               <TextField
                 fullWidth
                 label='Bootstrap Server Hostname'
-                placeholder='localhost'
+                placeholder='kafka.example.com'
                 error={Boolean(props.errors.host)}
                 aria-describedby='validation-host'
                 {...field}
@@ -56,30 +58,31 @@ const TabKafkaOutDetails = (props: {
       </Grid>
 
       <Grid item xs={12}>
-        <FormControl>
+        <FormControl fullWidth>
           <Controller
-            name='topic'
+            name='topics'
             control={props.control}
-            render={({ field }) => (
-              <TextField
-                fullWidth
-                label='Topic Name'
-                placeholder='my-topic'
-                error={Boolean(props.errors.topic)}
-                aria-describedby='validation-topic'
+            render={({ field: { ref, onChange, ...field } }) => (
+              <Autocomplete
                 {...field}
+                fullWidth
+                multiple
+                freeSolo
+                options={[]}
+                onChange={(event, item) => {
+                  onChange(item)
+                }}
+                renderInput={params => (
+                  <TextField {...params} inputRef={ref} label='Topics' placeholder='Add topic, press Enter to add...' />
+                )}
               />
             )}
           />
-          {props.errors.topic && (
-            <FormHelperText sx={{ color: 'error.main' }} id='validation-topic'>
-              {props.errors.topic.message}
-            </FormHelperText>
-          )}
+          <FormHelperText>What topics to consume from.</FormHelperText>
         </FormControl>
       </Grid>
     </Grid>
   )
 }
 
-export default TabKafkaOutDetails
+export default TabKafkaInputDetails

@@ -30,12 +30,12 @@ import { ProjectService } from 'src/types/manager/services/ProjectService'
 import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
+import { PLACEHOLDER_VALUES } from 'src/utils'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000
 
-// The errors we can have on the form. We only have a problem if the name is not
-// unique.
+// The error format for the editor form.
 interface FormError {
   name?: { message?: string }
 }
@@ -66,7 +66,7 @@ const MetadataForm = (props: { errors: FormError; project: ProgramState; setProj
             fullWidth
             type='text'
             label='Name'
-            placeholder='Sql Program #1'
+            placeholder={PLACEHOLDER_VALUES['program_name']}
             value={props.project.name}
             error={Boolean(props.errors.name)}
             onChange={updateName}
@@ -83,7 +83,7 @@ const MetadataForm = (props: { errors: FormError; project: ProgramState; setProj
           fullWidth
           type='Description'
           label='Description'
-          placeholder='Average price over last 3 months.'
+          placeholder={PLACEHOLDER_VALUES['program_description']}
           value={props.project.description}
           onChange={updateDescription}
         />
@@ -120,7 +120,6 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
     .with('isUpToDate' as const, () => {
       return 'Saved'
     })
-
     .exhaustive()
 
 // Watches for changes to the form and saves them as a new project (if we don't
@@ -245,38 +244,36 @@ const useUpdateProjectIfChanged = (
     ProjectService.updateProject
   )
   useEffect(() => {
-    if (project.project_id !== null) {
-      if (state === 'isModified' && !isLoading) {
-        mutate(
-          {
-            project_id: project.project_id,
-            name: project.name,
-            description: project.description,
-            code: project.code
+    if (project.project_id !== null && state === 'isModified' && !isLoading) {
+      mutate(
+        {
+          project_id: project.project_id,
+          name: project.name,
+          description: project.description,
+          code: project.code
+        },
+        {
+          onSuccess: (data: UpdateProjectResponse) => {
+            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
+            setState('isUpToDate')
+            queryClient.invalidateQueries(['project'])
+            queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
+            queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
+            setFormError({})
           },
-          {
-            onSuccess: (data: UpdateProjectResponse) => {
-              setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
-              setState('isUpToDate')
-              queryClient.invalidateQueries(['project'])
-              queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
-              queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
-              setFormError({})
-            },
-            onError: (error: CancelError) => {
-              // TODO: would be good to have error codes from the API
-              if (error.message.includes('name already exists')) {
-                setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
-                // This won't try to save again, but set the save indicator to
-                // Saving... until the user changes something:
-                setState('isDebouncing')
-              } else {
-                pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              }
+          onError: (error: CancelError) => {
+            // TODO: would be good to have error codes from the API
+            if (error.message.includes('name already exists')) {
+              setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+              // This won't try to save again, but set the save indicator to
+              // Saving... until the user changes something:
+              setState('isDebouncing')
+            } else {
+              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
             }
           }
-        )
-      }
+        }
+      )
     }
   }, [
     mutate,
@@ -420,7 +417,7 @@ const usePollCompilationStatus = (
   ])
 }
 
-const useDisplayCompilerErrosInEditor = (project: ProgramState, editorRef: MutableRefObject<any>) => {
+const useDisplayCompilerErrorsInEditor = (project: ProgramState, editorRef: MutableRefObject<any>) => {
   const monaco = useMonaco()
   useEffect(() => {
     if (monaco !== null && editorRef.current !== null) {
@@ -475,15 +472,13 @@ const Editors = (props: { program: ProgramState }) => {
     setState('isDebouncing')
     debouncedCodeEditStateUpdate()
   }
-  useDisplayCompilerErrosInEditor(project, editorRef)
+  useDisplayCompilerErrorsInEditor(project, editorRef)
 
   return (
     <Grid container spacing={6}>
       <PageHeader
         title={<Typography variant='h5'>SQL Editor</Typography>}
-        subtitle={
-          <Typography variant='body2'>Define your analytics and data transformation on the input pipelines.</Typography>
-        }
+        subtitle={<Typography variant='body2'>Define your analytics and data transformations.</Typography>}
       />
 
       <Grid item xs={12}>

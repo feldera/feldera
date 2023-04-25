@@ -1,6 +1,6 @@
 // Layout of the status snackbar component.
 //
-// The message can be clicked away or it will disappear after some seconds.
+// The message can be clicked away or it will disappear after a few seconds.
 
 import { useEffect, SyntheticEvent } from 'react'
 import Snackbar from '@mui/material/Snackbar'

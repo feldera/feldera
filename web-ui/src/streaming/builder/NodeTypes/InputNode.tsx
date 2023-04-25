@@ -17,7 +17,7 @@ const InputNode = ({ id, data }: NodeProps) => {
 
   const isValidConnection = (connection: Connection) => {
     // We drop the other edge if there already is one (no more than one outgoing
-    // connection from inputs).
+    // connection from each input).
     if (connection.source) {
       const sourceNode = getNode(connection.source)
       if (sourceNode !== undefined) {

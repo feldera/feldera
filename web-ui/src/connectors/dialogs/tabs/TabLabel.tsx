@@ -1,3 +1,6 @@
+// Displays the labels for individual tabs in a dialog. A tab can be active or
+// inactive. If it's active we're showing it with a different background color.
+
 import { ReactElement } from 'react'
 
 import Avatar from '@mui/material/Avatar'

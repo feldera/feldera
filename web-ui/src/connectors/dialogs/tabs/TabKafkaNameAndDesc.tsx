@@ -1,9 +1,13 @@
+// Contains the name and description form elements for kafka input and output
+// connectors.
+
 import TextField from '@mui/material/TextField'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
 import { FormControl, FormHelperText, Grid } from '@mui/material'
 import { KafkaInputConfig, KafkaOutputConfig } from 'src/types/manager'
+import { PLACEHOLDER_VALUES } from 'src/utils'
 
-const TabDetails = (props: {
+const TabKafkaNameAndDesc = (props: {
   control: Control<KafkaInputConfig | KafkaOutputConfig>
   errors: Partial<FieldErrors<KafkaInputConfig | KafkaOutputConfig>>
 }) => {
@@ -17,7 +21,7 @@ const TabDetails = (props: {
             render={({ field }) => (
               <TextField
                 label='Datasource Name'
-                placeholder='AAPL'
+                placeholder={PLACEHOLDER_VALUES['connector_name']}
                 error={Boolean(props.errors.name)}
                 aria-describedby='validation-name'
                 {...field}
@@ -40,7 +44,7 @@ const TabDetails = (props: {
               <TextField
                 fullWidth
                 label='Description'
-                placeholder='5 min Stock Ticker Data'
+                placeholder={PLACEHOLDER_VALUES['connector_description']}
                 error={Boolean(props.errors.description)}
                 aria-describedby='validation-description'
                 {...field}
@@ -58,4 +62,4 @@ const TabDetails = (props: {
   )
 }
 
-export default TabDetails
+export default TabKafkaNameAndDesc

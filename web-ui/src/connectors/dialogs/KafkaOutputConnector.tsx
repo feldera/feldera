@@ -16,14 +16,14 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
 import { Icon } from '@iconify/react'
 
-import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
+import TabKafkaNameAndDesc from 'src/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
-import TabKafkaOutDetails from './tabs/TabKafkaOutDetails'
+import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 
@@ -190,7 +190,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <DialogTabDetails control={control} errors={errors} />
+                <TabKafkaNameAndDesc control={control} errors={errors} />
                 <TabFooter
                   isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
@@ -203,7 +203,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='sourceTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabKafkaOutDetails control={control} errors={errors} />
+                <TabkafkaOutputDetails control={control} errors={errors} />
                 <TabFooter
                   isUpdate={props.connector !== undefined}
                   activeTab={activeTab}

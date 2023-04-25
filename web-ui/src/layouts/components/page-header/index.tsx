@@ -7,7 +7,7 @@ const PageHeader = (props: PageHeaderProps) => {
   return (
     <Grid item xs={12}>
       {title}
-      {subtitle || null}
+      {subtitle}
     </Grid>
   )
 }

@@ -25,6 +25,7 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHan
 import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
+import { PLACEHOLDER_VALUES } from 'src/utils'
 
 const schema = yup
   .object({
@@ -130,7 +131,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
                   render={({ field }) => (
                     <TextField
                       label='Datasource Name'
-                      placeholder='AAPL'
+                      placeholder={PLACEHOLDER_VALUES['connector_name']}
                       error={Boolean(errors.name)}
                       aria-describedby='validation-name'
                       {...field}
@@ -153,7 +154,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
                     <TextField
                       fullWidth
                       label='Description'
-                      placeholder='5 min Stock Ticker Data'
+                      placeholder={PLACEHOLDER_VALUES['connector_description']}
                       error={Boolean(errors.description)}
                       aria-describedby='validation-description'
                       {...field}
@@ -176,7 +177,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
                     <TextField
                       fullWidth
                       label='File Path'
-                      placeholder='https://gist.githubusercontent.com/...'
+                      placeholder='data.csv'
                       error={Boolean(errors.description)}
                       aria-describedby='validation-description'
                       {...field}

@@ -16,8 +16,8 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
 import { Icon } from '@iconify/react'
 
-import DialogTabDetails from 'src/connectors/dialogs/tabs/DialogTabDetails'
-import DialogTabSource from 'src/connectors/dialogs/tabs/DialogTabSource'
+import TabKafkaNameAndDesc from 'src/connectors/dialogs/tabs/TabKafkaNameAndDesc'
+import TabKafkaInputDetails from 'src/connectors/dialogs/tabs/TabKafkaInputDetails'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
@@ -185,7 +185,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <DialogTabDetails control={control} errors={errors} />
+                <TabKafkaNameAndDesc control={control} errors={errors} />
                 <TabFooter
                   isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
@@ -198,7 +198,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='sourceTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <DialogTabSource control={control} errors={errors} />
+                <TabKafkaInputDetails control={control} errors={errors} />
                 <TabFooter
                   isUpdate={props.connector !== undefined}
                   activeTab={activeTab}
