@@ -395,7 +395,7 @@ fn clone_layout(
 
             // Strings need their clone function called
             ColumnType::String => {
-                let clone_string = imports.string_clone(module, builder.func);
+                let clone_string = imports.get("string_clone", module, builder.func);
                 builder.call_fn(clone_string, &[src_value])
             }
 

@@ -60,7 +60,7 @@ impl Codegen {
                         }
 
                         // Hash the null-ness byte
-                        let hash_u8 = imports.u8_hash(ctx.module, builder.func);
+                        let hash_u8 = imports.get("u8_hash", ctx.module, builder.func);
                         builder.ins().call(hash_u8, &[hasher, non_null]);
 
                         // For nullable unit types we don't need to do anything else
@@ -105,28 +105,22 @@ impl Codegen {
                     };
 
                     let hash_function = match ty {
-                        ColumnType::Bool | ColumnType::U8 => {
-                            imports.u8_hash(ctx.module, builder.func)
-                        }
-                        ColumnType::I8 => imports.i8_hash(ctx.module, builder.func),
-                        ColumnType::U16 => imports.u16_hash(ctx.module, builder.func),
-                        ColumnType::I16 => imports.i16_hash(ctx.module, builder.func),
-                        ColumnType::U32 => imports.u32_hash(ctx.module, builder.func),
-                        ColumnType::I32 | ColumnType::Date => {
-                            imports.i32_hash(ctx.module, builder.func)
-                        }
-                        ColumnType::U64 => imports.u64_hash(ctx.module, builder.func),
-                        ColumnType::I64 | ColumnType::Timestamp => {
-                            imports.i64_hash(ctx.module, builder.func)
-                        }
+                        ColumnType::Bool | ColumnType::U8 => "u8_hash",
+                        ColumnType::I8 => "i8_hash",
+                        ColumnType::U16 => "u16_hash",
+                        ColumnType::I16 => "i16_hash",
+                        ColumnType::U32 => "u32_hash",
+                        ColumnType::I32 | ColumnType::Date => "i32_hash",
+                        ColumnType::U64 => "u64_hash",
+                        ColumnType::I64 | ColumnType::Timestamp => "i64_hash",
                         ColumnType::Usize => {
                             let ptr_ty = ctx.pointer_type();
                             if ptr_ty == types::I64 {
-                                imports.u64_hash(ctx.module, builder.func)
+                                "u64_hash"
                             } else if ptr_ty == types::I32 {
-                                imports.u32_hash(ctx.module, builder.func)
+                                "u32_hash"
                             } else if ptr_ty == types::I16 {
-                                imports.u16_hash(ctx.module, builder.func)
+                                "u16_hash"
                             } else {
                                 unreachable!("unsupported pointer width: {ptr_ty}")
                             }
@@ -134,20 +128,21 @@ impl Codegen {
                         ColumnType::Isize => {
                             let ptr_ty = ctx.pointer_type();
                             if ptr_ty == types::I64 {
-                                imports.i64_hash(ctx.module, builder.func)
+                                "i64_hash"
                             } else if ptr_ty == types::I32 {
-                                imports.i32_hash(ctx.module, builder.func)
+                                "i32_hash"
                             } else if ptr_ty == types::I16 {
-                                imports.i16_hash(ctx.module, builder.func)
+                                "i16_hash"
                             } else {
                                 unreachable!("unsupported pointer width: {ptr_ty}")
                             }
                         }
-                        ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
-                        ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
-                        ColumnType::String => imports.string_hash(ctx.module, builder.func),
+                        ColumnType::F32 => "u32_hash",
+                        ColumnType::F64 => "u64_hash",
+                        ColumnType::String => "string_hash",
                         ColumnType::Ptr | ColumnType::Unit => unreachable!(),
                     };
+                    let hash_function = imports.get(hash_function, ctx.module, builder.func);
                     builder.ins().call(hash_function, &[hasher, value]);
 
                     if let Some(next_clone) = next_hash {

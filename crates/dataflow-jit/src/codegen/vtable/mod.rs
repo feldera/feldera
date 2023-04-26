@@ -347,9 +347,9 @@ impl Codegen {
                     let string = builder.ins().load(native_ty, flags, ptr, offset);
 
                     // Get the size of the string's children
-                    let string_size_of_children = ctx
-                        .imports
-                        .string_size_of_children(ctx.module, builder.func);
+                    let string_size_of_children =
+                        ctx.imports
+                            .get("string_size_of_children", ctx.module, builder.func);
                     builder
                         .ins()
                         .call(string_size_of_children, &[string, context]);

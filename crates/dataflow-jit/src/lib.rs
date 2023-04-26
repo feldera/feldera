@@ -8,4 +8,5 @@ mod facade;
 mod thin_str;
 mod utils;
 
+pub use facade::DbspCircuit;
 pub use thin_str::ThinStr;

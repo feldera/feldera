@@ -3,7 +3,7 @@ use crate::{
     dataflow::RowZSet,
     ir::{
         nodes::{StreamKind, StreamLayout},
-        NodeId,
+        LayoutId, NodeId,
     },
     row::Row,
 };
@@ -205,18 +205,19 @@ pub struct DelayedFeedback {}
 
 #[derive(Debug, Clone)]
 pub struct Source {
-    pub output_vtable: &'static VTable,
+    pub key_layout: LayoutId,
 }
 
 #[derive(Debug, Clone)]
 pub struct SourceMap {
-    pub key_vtable: &'static VTable,
-    pub value_vtable: &'static VTable,
+    pub key_layout: LayoutId,
+    pub value_layout: LayoutId,
 }
 
 #[derive(Debug, Clone)]
 pub struct Sink {
     pub input: NodeId,
+    pub layout: StreamLayout,
 }
 
 #[derive(Debug, Clone)]

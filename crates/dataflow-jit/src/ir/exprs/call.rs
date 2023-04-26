@@ -49,6 +49,12 @@ impl ArgType {
     }
 }
 
+impl Default for ArgType {
+    fn default() -> Self {
+        Self::Scalar(ColumnType::Unit)
+    }
+}
+
 /// The call instruction, calls a function
 ///
 /// ### Functions

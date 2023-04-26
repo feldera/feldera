@@ -298,13 +298,14 @@ mod tests {
             inputs
                 .get_mut(&source)
                 .unwrap()
+                .0
                 .as_set_mut()
                 .unwrap()
                 .append(&mut values);
 
             runtime.step().unwrap();
 
-            let output = outputs[&sink].as_set().unwrap().consolidate();
+            let output = outputs[&sink].0.as_set().unwrap().consolidate();
 
             let mut batch = Vec::with_capacity(10 * 10 * 4);
             for k in 0..10 {

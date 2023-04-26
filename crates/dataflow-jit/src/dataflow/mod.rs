@@ -3,7 +3,7 @@ mod operators;
 mod tests;
 
 use crate::{
-    codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayout, NativeLayoutCache, VTable},
+    codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
         FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn,
@@ -11,12 +11,11 @@ use crate::{
     },
     ir::{
         graph,
-        literal::{NullableConstant, RowLiteral, StreamCollection},
+        literal::StreamCollection,
         nodes::{DataflowNode as _, Node, StreamKind, StreamLayout, Subgraph as SubgraphNode},
-        Constant, Graph, GraphExt, LayoutId, NodeId,
+        Graph, GraphExt, LayoutId, NodeId,
     },
-    row::{Row, UninitRow},
-    ThinStr,
+    row::{row_from_literal, Row, UninitRow},
 };
 use cranelift_jit::JITModule;
 use cranelift_module::FuncId;
@@ -40,8 +39,8 @@ use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
 type RowSet = OrdZSet<Row, i32>;
 type RowMap = OrdIndexedZSet<Row, Row, i32>;
 
-type Inputs = BTreeMap<NodeId, RowInput>;
-type Outputs = BTreeMap<NodeId, RowOutput>;
+type Inputs = BTreeMap<NodeId, (RowInput, StreamLayout)>;
+type Outputs = BTreeMap<NodeId, (RowOutput, StreamLayout)>;
 
 #[derive(Clone, IsVariant, Unwrap)]
 pub enum RowInput {
@@ -689,23 +688,26 @@ impl CompiledDataflow {
                             *node_id,
                             DataflowNode::Sink(Sink {
                                 input: sink.input(),
+                                layout: node_streams[&sink.input()].unwrap(),
                             }),
                         );
                     }
 
                     Node::Source(source) => {
-                        let output_vtable = unsafe { &*vtables[&source.layout()] };
-                        nodes.insert(*node_id, DataflowNode::Source(Source { output_vtable }));
+                        nodes.insert(
+                            *node_id,
+                            DataflowNode::Source(Source {
+                                key_layout: source.layout(),
+                            }),
+                        );
                     }
 
                     Node::SourceMap(source) => {
-                        let key_vtable = unsafe { &*vtables[&source.key()] };
-                        let value_vtable = unsafe { &*vtables[&source.value()] };
                         nodes.insert(
                             *node_id,
                             DataflowNode::SourceMap(SourceMap {
-                                key_vtable,
-                                value_vtable,
+                                key_layout: source.key(),
+                                value_layout: source.value(),
                             }),
                         );
                     }
@@ -1128,31 +1130,66 @@ impl CompiledDataflow {
                         RowStream::Map(input) => RowOutput::Map(input.output()),
                     };
 
-                    outputs.insert(node_id, output);
+                    outputs.insert(node_id, (output, sink.layout));
                 }
 
                 DataflowNode::Source(source) => {
                     let (stream, handle) = circuit.add_input_zset::<Row, i32>();
 
                     if cfg!(debug_assertions) {
-                        stream.inspect(|row| {
+                        let key_layout = source.key_layout;
+                        stream.inspect(move |row| {
+                            tracing::trace!("running assertions over source {node_id}");
+
                             let mut cursor = row.cursor();
                             while cursor.key_valid() {
                                 let key = cursor.key();
-                                assert_eq!(key.vtable().layout_id, source.output_vtable.layout_id);
+                                assert_eq!(key.vtable().layout_id, key_layout);
                                 cursor.step_key();
                             }
                         });
                     }
 
                     streams.insert(node_id, RowStream::Set(stream));
-                    inputs.insert(node_id, RowInput::Set(handle));
+                    inputs.insert(
+                        node_id,
+                        (RowInput::Set(handle), StreamLayout::Set(source.key_layout)),
+                    );
                 }
 
-                DataflowNode::SourceMap(_source) => {
+                DataflowNode::SourceMap(source) => {
                     let (stream, handle) = circuit.add_input_indexed_zset::<Row, Row, i32>();
+
+                    if cfg!(debug_assertions) {
+                        let (key_layout, value_layout) = (source.key_layout, source.value_layout);
+                        stream.inspect(move |row| {
+                            tracing::trace!("running assertions over source {node_id}");
+
+                            let mut cursor = row.cursor();
+                            while cursor.key_valid() {
+                                while cursor.val_valid() {
+                                    let key = cursor.key();
+                                    assert_eq!(key.vtable().layout_id, key_layout);
+
+                                    let value = cursor.val();
+                                    assert_eq!(value.vtable().layout_id, value_layout);
+
+                                    cursor.step_val();
+                                }
+
+                                cursor.step_key();
+                            }
+                        });
+                    }
+
                     streams.insert(node_id, RowStream::Map(stream));
-                    inputs.insert(node_id, RowInput::Map(handle));
+                    inputs.insert(
+                        node_id,
+                        (
+                            RowInput::Map(handle),
+                            StreamLayout::Map(source.key_layout, source.value_layout),
+                        ),
+                    );
                 }
 
                 DataflowNode::Delta0(_) => todo!(),
@@ -1464,6 +1501,10 @@ impl CompiledDataflow {
 
                             let indexed = match input {
                                 RowStream::Set(input) => input.index_with(move |input| {
+                                    tracing::trace!(
+                                        "running IndexWith {node_id} with input {input:?}",
+                                    );
+
                                     let (mut key_output, mut value_output) =
                                         (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
 
@@ -1674,6 +1715,8 @@ impl CompiledDataflow {
                                 StreamKind::Set => RowStream::Set(lhs.unwrap_map().join_generic(
                                     &rhs.unwrap_map(),
                                     move |key, lhs_val, rhs_val| {
+                                        tracing::trace!("running JoinCore {node_id} with input {key:?}, {lhs_val:?}, {rhs_val:?}");
+
                                         let mut output = UninitRow::new(key_vtable);
                                         unsafe {
                                             join_fn(
@@ -2070,66 +2113,5 @@ impl CompiledDataflow {
         };
 
         streams.insert(node_id, mapped);
-    }
-}
-
-unsafe fn row_from_literal(
-    literal: &RowLiteral,
-    vtable: &'static VTable,
-    layout: &NativeLayout,
-) -> Row {
-    let mut row = UninitRow::new(vtable);
-
-    for (idx, column) in literal.rows().iter().enumerate() {
-        match column {
-            NullableConstant::NonNull(constant) => unsafe {
-                let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
-                write_constant_to(constant, column_ptr);
-            },
-
-            NullableConstant::Nullable(constant) => {
-                row.set_column_null(idx, layout, constant.is_none());
-
-                if let Some(constant) = constant {
-                    unsafe {
-                        let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
-
-                        write_constant_to(constant, column_ptr)
-                    }
-                }
-            }
-        }
-    }
-
-    unsafe { row.assume_init() }
-}
-
-unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
-    match *constant {
-        Constant::Unit => ptr.cast::<()>().write(()),
-
-        Constant::U8(value) => ptr.cast::<u8>().write(value),
-        Constant::I8(value) => ptr.cast::<i8>().write(value),
-
-        Constant::U16(value) => ptr.cast::<u16>().write(value),
-        Constant::I16(value) => ptr.cast::<i16>().write(value),
-
-        Constant::U32(value) => ptr.cast::<u32>().write(value),
-        Constant::I32(value) => ptr.cast::<i32>().write(value),
-
-        Constant::U64(value) => ptr.cast::<u64>().write(value),
-        Constant::I64(value) => ptr.cast::<i64>().write(value),
-
-        Constant::Usize(value) => ptr.cast::<usize>().write(value),
-        Constant::Isize(value) => ptr.cast::<isize>().write(value),
-
-        Constant::F32(value) => ptr.cast::<f32>().write(value),
-        Constant::F64(value) => ptr.cast::<f64>().write(value),
-
-        Constant::Bool(value) => ptr.cast::<bool>().write(value),
-
-        Constant::String(ref value) => ptr.cast::<ThinStr>().write(ThinStr::from(&**value)),
-        // Constant::Date(date) => ptr.cast::<i32>().write(date),
-        // Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp),
     }
 }

@@ -37,7 +37,7 @@ impl Codegen {
 
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
-            let str_debug = ctx.imports.str_debug(ctx.module, builder.func);
+            let str_debug = ctx.imports.get("str_debug", ctx.module, builder.func);
 
             // Create the entry block
             let entry_block = builder.create_block();
@@ -161,51 +161,44 @@ impl Codegen {
 
                         let debug_fn = match ty {
                             // TODO: We can manually inline this
-                            ColumnType::Bool => ctx.imports.bool_debug(ctx.module, builder.func),
+                            ColumnType::Bool => "bool_debug",
 
                             ColumnType::U8 | ColumnType::U16 | ColumnType::U32 => {
                                 value = builder.ins().uextend(types::I64, value);
-                                ctx.imports.uint_debug(ctx.module, builder.func)
+                                "uint_debug"
                             }
-                            ColumnType::U64 => ctx.imports.uint_debug(ctx.module, builder.func),
+                            ColumnType::U64 => "uint_debug",
 
-                            ColumnType::Usize if ptr_ty == types::I64 => {
-                                ctx.imports.uint_debug(ctx.module, builder.func)
-                            }
+                            ColumnType::Usize if ptr_ty == types::I64 => "uint_debug",
                             ColumnType::Usize => {
                                 value = builder.ins().uextend(types::I64, value);
-                                ctx.imports.uint_debug(ctx.module, builder.func)
+                                "uint_debug"
                             }
 
                             ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
                                 value = builder.ins().sextend(types::I64, value);
-                                ctx.imports.int_debug(ctx.module, builder.func)
+                                "int_debug"
                             }
-                            ColumnType::I64 => ctx.imports.int_debug(ctx.module, builder.func),
+                            ColumnType::I64 => "int_debug",
 
-                            ColumnType::Isize if ptr_ty == types::I64 => {
-                                ctx.imports.int_debug(ctx.module, builder.func)
-                            }
+                            ColumnType::Isize if ptr_ty == types::I64 => "int_debug",
                             ColumnType::Isize => {
                                 value = builder.ins().sextend(types::I64, value);
-                                ctx.imports.int_debug(ctx.module, builder.func)
+                                "int_debug"
                             }
 
-                            ColumnType::F32 => ctx.imports.f32_debug(ctx.module, builder.func),
-                            ColumnType::F64 => ctx.imports.f64_debug(ctx.module, builder.func),
+                            ColumnType::F32 => "f32_debug",
+                            ColumnType::F64 => "f64_debug",
 
-                            ColumnType::Date => ctx.imports.date_debug(ctx.module, builder.func),
-                            ColumnType::Timestamp => {
-                                ctx.imports.timestamp_debug(ctx.module, builder.func)
-                            }
+                            ColumnType::Date => "date_debug",
+                            ColumnType::Timestamp => "timestamp_debug",
 
-                            ColumnType::String => {
-                                ctx.imports.string_debug(ctx.module, builder.func)
-                            }
+                            ColumnType::String => "string_debug",
 
                             ColumnType::Ptr | ColumnType::Unit => unreachable!(),
                         };
 
+                        let debug_fn = ctx.imports.get(debug_fn, ctx.module, builder.func);
                         builder.call_fn(debug_fn, &[value, fmt])
                     };
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 
 bitflags::bitflags! {
-    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy, Deserialize, Serialize)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy, Default, Deserialize, Serialize)]
     #[serde(try_from = "String", into = "String")]
     pub struct InputFlags: u8 {
         /// The parameter can be used as an input

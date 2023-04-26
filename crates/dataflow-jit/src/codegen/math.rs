@@ -2,6 +2,13 @@ use crate::codegen::{utils::FunctionBuilderExt, CodegenCtx, TRAP_DIV_OVERFLOW};
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
 
 impl CodegenCtx<'_> {
+    /// Check if a float is NaN
+    pub(super) fn float_is_nan(&mut self, x: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        debug_assert!(builder.value_type(x).is_float());
+        // TODO: Float comparison conditions are confusing, I think this is correct though
+        builder.ins().fcmp(FloatCC::Unordered, x, x)
+    }
+
     /// Based off of rust's [`f32::total_cmp()`] and [`f64::total_cmp()`]
     /// implementations
     ///
@@ -43,7 +50,7 @@ impl CodegenCtx<'_> {
     /// [`f32::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
     /// [`f64::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
     pub(super) fn normalize_float(&self, float: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        let ty = builder.func.dfg.value_type(float);
+        let ty = builder.value_type(float);
         let (int_ty, first_shift) = if ty == types::F32 {
             (types::I32, 31)
         } else if ty == types::F64 {
@@ -58,7 +65,7 @@ impl CodegenCtx<'_> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.value_inst(int),
+                builder.value_def(int),
                 format!("normalize {ty} for totalOrder"),
             );
         }
@@ -142,9 +149,9 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> (Value, Value) {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
+        let lhs_ty = builder.value_type(lhs);
         debug_assert!(lhs_ty.is_int());
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
 
         let (div, rem) = self.div_rem(true, lhs, rhs, builder);
 
@@ -183,8 +190,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
         // Signed floored division
@@ -233,8 +240,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
         // Signed floored modulus
@@ -306,8 +313,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
         // ```rust,ignore
@@ -356,8 +363,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_float());
 
         // ```rust,ignore
@@ -377,7 +384,7 @@ impl CodegenCtx<'_> {
 
         let div = builder.ins().fdiv(lhs, rhs);
         let q = builder.ins().trunc(div);
-        self.comment(builder.value_inst(div), || {
+        self.comment(builder.value_def(div), || {
             format!("fdiv_euclid({lhs}, {rhs})")
         });
 
@@ -416,8 +423,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
         // ```rust,ignore
@@ -439,7 +446,7 @@ impl CodegenCtx<'_> {
         // }
         // ```
         let r = builder.ins().srem(lhs, rhs);
-        self.comment(builder.value_inst(r), || {
+        self.comment(builder.value_def(r), || {
             format!("srem_euclid({lhs}, {rhs})")
         });
 
@@ -456,8 +463,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_float());
 
         // ```rust,ignore
@@ -473,7 +480,7 @@ impl CodegenCtx<'_> {
         };
 
         let r = self.fmod(lhs, rhs, builder);
-        self.comment(builder.value_inst(r), || {
+        self.comment(builder.value_def(r), || {
             format!("frem_euclid({lhs}, {rhs})")
         });
 
@@ -491,33 +498,27 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_float());
 
         // TODO: Manually implement these functions
         // https://github.com/rust-lang/libm/blob/master/src/math/fmod.rs
-        if lhs_ty == types::F64 {
-            let fmod = self.imports.fmod(self.module, builder.func);
-            let modulus = builder.call_fn(fmod, &[lhs, rhs]);
-            self.comment(builder.value_inst(modulus), || {
-                format!("call fmod({lhs}, {rhs})")
-            });
-
-            modulus
-
+        let intrinsic = if lhs_ty == types::F64 {
+            "fmod"
         // https://github.com/rust-lang/libm/blob/master/src/math/fmodf.rs
         } else {
             debug_assert_eq!(lhs_ty, types::F32);
+            "fmodf"
+        };
 
-            let fmodf = self.imports.fmodf(self.module, builder.func);
-            let modulus = builder.call_fn(fmodf, &[lhs, rhs]);
-            self.comment(builder.value_inst(modulus), || {
-                format!("call fmodf({lhs}, {rhs})")
-            });
+        let fmod = self.imports.get(intrinsic, self.module, builder.func);
+        let modulus = builder.call_fn(fmod, &[lhs, rhs]);
+        self.comment(builder.value_def(modulus), || {
+            format!("call {intrinsic}({lhs}, {rhs})")
+        });
 
-            modulus
-        }
+        modulus
     }
 
     pub(super) fn sdiv_checked(
@@ -537,8 +538,8 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> (Value, Value) {
-        let lhs_ty = builder.func.dfg.value_type(lhs);
-        debug_assert_eq!(lhs_ty, builder.func.dfg.value_type(rhs));
+        let lhs_ty = builder.value_type(lhs);
+        debug_assert_eq!(lhs_ty, builder.value_type(rhs));
         debug_assert!(lhs_ty.is_int());
 
         let min = match lhs_ty {

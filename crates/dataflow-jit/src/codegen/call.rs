@@ -1,12 +1,12 @@
 use crate::{
     codegen::{
-        utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT, TRAP_ASSERT_EQ,
-        TRAP_CAPACITY_OVERFLOW,
+        intrinsics::TRIG_INTRINSICS, utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT,
+        TRAP_ASSERT_EQ, TRAP_CAPACITY_OVERFLOW,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
 };
-use cranelift::prelude::{types, FunctionBuilder, InstBuilder, IntCC, MemFlags};
+use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags};
 use std::mem::align_of;
 
 impl CodegenCtx<'_> {
@@ -36,12 +36,12 @@ impl CodegenCtx<'_> {
             "dbsp.str.char_length" => self.string_char_length(expr_id, call, builder),
             "dbsp.str.byte_length" => self.string_byte_length(expr_id, call, builder),
 
-            "dbsp.str.is_nfc" => self.string_is_nfc(expr_id, call, builder),
-            "dbsp.str.is_nfd" => self.string_is_nfd(expr_id, call, builder),
-            "dbsp.str.is_nfkc" => self.string_is_nfkc(expr_id, call, builder),
-            "dbsp.str.is_nfkd" => self.string_is_nfkd(expr_id, call, builder),
-            "dbsp.str.is_lowercase" => self.string_is_lowercase(expr_id, call, builder),
-            "dbsp.str.is_uppercase" => self.string_is_uppercase(expr_id, call, builder),
+            function @ ("dbsp.str.is_nfc"
+            | "dbsp.str.is_nfd"
+            | "dbsp.str.is_nfkc"
+            | "dbsp.str.is_nfkd"
+            | "dbsp.str.is_lowercase"
+            | "dbsp.str.is_uppercase") => self.string_checks(function, expr_id, call, builder),
 
             // `fn(timestamp) -> date
             "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
@@ -110,6 +110,18 @@ impl CodegenCtx<'_> {
                 self.constant_zero_date_function(expr_id, call, function, builder);
             }
 
+            "dbsp.math.is_power_of_two" => self.math_is_power_of_two(expr_id, call, builder),
+            "dbsp.math.is_sign_positive" => self.math_is_is_sign_positive(expr_id, call, builder),
+            "dbsp.math.is_sign_negative" => self.math_is_is_sign_negative(expr_id, call, builder),
+
+            trig if TRIG_INTRINSICS.contains(&trig) => {
+                self.trig_intrinsic(expr_id, call, trig, builder)
+            }
+            "dbsp.math.cot" => self.math_cot(expr_id, call, builder),
+            "dbsp.math.fdim" => self.math_fdim(expr_id, call, builder),
+            "dbsp.math.radians_to_degrees" => self.math_radians_to_degrees(expr_id, call, builder),
+            "dbsp.math.degrees_to_radians" => self.math_degrees_to_radians(expr_id, call, builder),
+
             unknown => todo!("unknown function call: @{unknown}"),
         }
     }
@@ -173,7 +185,7 @@ impl CodegenCtx<'_> {
             builder.ins().trapz(are_equal, TRAP_ASSERT_EQ);
         }
 
-        let dbsp_row_vec_push = self.imports.row_vec_push(self.module, builder.func);
+        let dbsp_row_vec_push = self.imports.get("row_vec_push", self.module, builder.func);
         let call_inst = builder
             .ins()
             .call(dbsp_row_vec_push, &[vec_ptr, vtable_ptr, row]);
@@ -210,7 +222,7 @@ impl CodegenCtx<'_> {
             .brif(is_sigil_string, after_block, &[], set_string_length, &[]);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(is_sigil_string).unwrap_inst();
+            let inst = builder.value_def(is_sigil_string);
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @dbsp.str.truncate({string}, {truncated_length})"),
@@ -317,7 +329,7 @@ impl CodegenCtx<'_> {
         );
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(is_sigil_string).unwrap_inst();
+            let inst = builder.value_def(is_sigil_string);
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @dbsp.str.truncate({string}, {truncated_length})"),
@@ -328,7 +340,9 @@ impl CodegenCtx<'_> {
         builder.switch_to_block(allocate_truncated_string);
 
         // Allocate a string with the given capacity
-        let string_with_capacity = self.imports.string_with_capacity(self.module, builder.func);
+        let string_with_capacity =
+            self.imports
+                .get("string_with_capacity", self.module, builder.func);
         let allocated = builder.call_fn(string_with_capacity, &[new_length]);
 
         // Ensure that neither `string` nor `allocated` are empty strings
@@ -390,7 +404,7 @@ impl CodegenCtx<'_> {
             .brif(is_capacity_zero, after_block, &[], set_string_length, &[]);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(string_capacity).unwrap_inst();
+            let inst = builder.value_def(string_capacity);
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.str.clear({string})"));
@@ -431,7 +445,9 @@ impl CodegenCtx<'_> {
             self.string_length(string, false, builder),
         );
 
-        let push_str = self.imports.string_push_str(self.module, builder.func);
+        let push_str = self
+            .imports
+            .get("string_push_str", self.module, builder.func);
         let concat = builder
             .ins()
             .call(push_str, &[target, string_ptr, string_len]);
@@ -468,7 +484,9 @@ impl CodegenCtx<'_> {
                 .uadd_overflow_trap(first_length, second_length, TRAP_CAPACITY_OVERFLOW);
 
         // Allocate a string of the requested capacity
-        let with_capacity = self.imports.string_with_capacity(self.module, builder.func);
+        let with_capacity = self
+            .imports
+            .get("string_with_capacity", self.module, builder.func);
         let allocated = builder.call_fn(with_capacity, &[total_length]);
         let allocated_ptr = self.string_ptr(allocated, builder);
 
@@ -505,7 +523,7 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, allocated, ColumnType::String, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(allocated).unwrap_inst();
+            let inst = builder.value_def(allocated);
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @dbsp.str.concat_clone({first}, {second})"),
@@ -539,7 +557,9 @@ impl CodegenCtx<'_> {
         // TODO: Apply readonly when possible
         let length = self.string_length(string, false, builder);
 
-        let count_chars = self.imports.string_count_chars(self.module, builder.func);
+        let count_chars = self
+            .imports
+            .get("string_count_chars", self.module, builder.func);
         let chars = builder.call_fn(count_chars, &[ptr, length]);
 
         self.add_expr(expr_id, chars, ColumnType::Usize, None);
@@ -558,92 +578,40 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, length, ColumnType::Usize, None);
     }
 
-    fn string_is_nfc(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let string = self.value(call.args()[0]);
-
-        let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
-
-        let is_nfc = self.imports.string_is_nfc(self.module, builder.func);
-        let is_nfc = builder.call_fn(is_nfc, &[ptr, length]);
-
-        self.add_expr(expr_id, is_nfc, ColumnType::Bool, None);
-    }
-
-    fn string_is_nfd(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let string = self.value(call.args()[0]);
-
-        let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
-
-        let is_nfd = self.imports.string_is_nfd(self.module, builder.func);
-        let is_nfd = builder.call_fn(is_nfd, &[ptr, length]);
-
-        self.add_expr(expr_id, is_nfd, ColumnType::Bool, None);
-    }
-
-    fn string_is_nfkc(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let string = self.value(call.args()[0]);
-
-        let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
-
-        let is_nfkc = self.imports.string_is_nfkc(self.module, builder.func);
-        let is_nfkc = builder.call_fn(is_nfkc, &[ptr, length]);
-
-        self.add_expr(expr_id, is_nfkc, ColumnType::Bool, None);
-    }
-
-    fn string_is_nfkd(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let string = self.value(call.args()[0]);
-
-        let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
-
-        let is_nfkd = self.imports.string_is_nfkd(self.module, builder.func);
-        let is_nfkd = builder.call_fn(is_nfkd, &[ptr, length]);
-
-        self.add_expr(expr_id, is_nfkd, ColumnType::Bool, None);
-    }
-
-    fn string_is_lowercase(
+    fn string_checks(
         &mut self,
+        func: &str,
         expr_id: ExprId,
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
+        let intrinsic = match func {
+            "dbsp.str.is_nfc" => "string_is_nfc",
+            "dbsp.str.is_nfd" => "string_is_nfd",
+            "dbsp.str.is_nfkc" => "string_is_nfkc",
+            "dbsp.str.is_nfkd" => "string_is_nfkd",
+            "dbsp.str.is_lowercase" => "string_is_lowercase",
+            "dbsp.str.is_uppercase" => "string_is_uppercase",
+            _ => unreachable!(),
+        };
+
         let string = self.value(call.args()[0]);
 
         let ptr = self.string_ptr(string, builder);
         // TODO: Apply readonly when possible
         let length = self.string_length(string, false, builder);
 
-        let is_lowercase = self.imports.string_is_lowercase(self.module, builder.func);
-        let is_lowercase = builder.call_fn(is_lowercase, &[ptr, length]);
+        let string_is = self.imports.get(intrinsic, self.module, builder.func);
+        let string_is = builder.call_fn(string_is, &[ptr, length]);
 
-        self.add_expr(expr_id, is_lowercase, ColumnType::Bool, None);
-    }
+        self.add_expr(expr_id, string_is, ColumnType::Bool, None);
 
-    fn string_is_uppercase(
-        &mut self,
-        expr_id: ExprId,
-        call: &Call,
-        builder: &mut FunctionBuilder<'_>,
-    ) {
-        let string = self.value(call.args()[0]);
-
-        let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
-
-        let is_uppercase = self.imports.string_is_uppercase(self.module, builder.func);
-        let is_uppercase = builder.call_fn(is_uppercase, &[ptr, length]);
-
-        self.add_expr(expr_id, is_uppercase, ColumnType::Bool, None);
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.value_def(string_is);
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @{func}({string})"));
+        }
     }
 
     fn timestamp_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
@@ -654,7 +622,7 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, epoch, ColumnType::I64, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(epoch).unwrap_inst();
+            let inst = builder.value_def(epoch);
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.timestamp.epoch({timestamp})"));
@@ -669,12 +637,14 @@ impl CodegenCtx<'_> {
     ) {
         let timestamp = self.value(call.args()[0]);
 
-        let intrinsic = self.imports.timestamp_floor_week(self.module, builder.func);
+        let intrinsic = self
+            .imports
+            .get("timestamp_floor_week", self.module, builder.func);
         let value = builder.call_fn(intrinsic, &[timestamp]);
         self.add_expr(expr_id, value, ColumnType::Timestamp, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(value).unwrap_inst();
+            let inst = builder.value_def(value);
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @dbsp.timestamp.floor_week({timestamp})"),
@@ -696,7 +666,7 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, days_i32, ColumnType::I32, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(days).unwrap_inst();
+            let inst = builder.value_def(days);
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.timestamp.to_date({timestamp})"));
@@ -717,7 +687,7 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, milliseconds, ColumnType::Timestamp, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(days).unwrap_inst();
+            let inst = builder.value_def(days);
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.date.to_timestamp({date})"));
@@ -734,7 +704,7 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, epoch, ColumnType::I32, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(epoch).unwrap_inst();
+            let inst = builder.value_def(epoch);
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.date.epoch({date})"));
@@ -752,12 +722,267 @@ impl CodegenCtx<'_> {
         self.add_expr(expr_id, zero, ColumnType::I32, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.func.dfg.value_def(zero).unwrap_inst();
+            let inst = builder.value_def(zero);
             writer.borrow_mut().add_comment(
                 inst,
                 format!("call @{function}({})", self.value(call.args()[0])),
             );
         }
+    }
+
+    fn math_is_power_of_two(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let int = self.value(call.args()[0]);
+        debug_assert!(builder.value_type(int).is_int());
+
+        // `(x.count_ones() == 1) ≡ (2ⁿ == x)`
+        let ones = builder.ins().popcnt(int);
+        let is_power_of_two = builder.ins().icmp_imm(IntCC::Equal, ones, 1);
+        self.add_expr(expr_id, is_power_of_two, ColumnType::Bool, None);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            let inst = builder.value_def(ones);
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @dbsp.math.is_power_of_two({int})"));
+        }
+    }
+
+    fn math_cot(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let float = self.value(call.args()[0]);
+        let float_ty = builder.value_type(float);
+        debug_assert!(float_ty.is_float());
+
+        let tan = if float_ty == types::F32 {
+            "tanf"
+        } else {
+            debug_assert_eq!(float_ty, types::F64);
+            "tan"
+        };
+        let tan = self.imports.get(tan, self.module, builder.func);
+        let tan = builder.call_fn(tan, &[float]);
+
+        // 1.0 / tan(x)
+        let one = builder.float_one(float_ty);
+        let cotan = builder.ins().fdiv(one, tan);
+
+        self.add_expr(
+            expr_id,
+            cotan,
+            call.arg_types()[0].as_scalar().unwrap(),
+            None,
+        );
+    }
+
+    // https://github.com/rust-lang/libm/blob/master/src/math/fdim.rs
+    // https://github.com/rust-lang/libm/blob/master/src/math/fdimf.rs
+    //
+    // ```
+    // if x.is_nan() {
+    //     x
+    // } else if y.is_nan() {
+    //     y
+    // } else if x > y {
+    //     x - y
+    // } else {
+    //     0.0
+    // }
+    // ```
+    fn math_fdim(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let (x, y) = (self.value(call.args()[0]), self.value(call.args()[1]));
+        let float_ty = builder.value_type(x);
+        debug_assert!(float_ty.is_float());
+        debug_assert_eq!(float_ty, builder.value_type(y));
+
+        let x_nan = self.float_is_nan(x, builder);
+        let y_nan = self.float_is_nan(x, builder);
+        let nan_value = builder.ins().select(x_nan, x, y);
+        let either_nan = builder.ins().bor(x_nan, y_nan);
+
+        let zero = builder.float_zero(float_ty);
+        let x_sub_y = builder.ins().fsub(x, y);
+        let x_gt_y = builder.ins().fcmp(FloatCC::GreaterThan, x, y);
+        let non_nan_value = builder.ins().select(x_gt_y, x_sub_y, zero);
+
+        let fdim = builder.ins().select(either_nan, nan_value, non_nan_value);
+
+        self.add_expr(
+            expr_id,
+            fdim,
+            call.arg_types()[0].as_scalar().unwrap(),
+            None,
+        );
+    }
+
+    // ```
+    // fn to_degrees(self) -> f32 {
+    //     // Use a constant for better precision.
+    //     const PIS_IN_180: f32 = 57.2957795130823208767981548141051703_f32;
+    //     self * PIS_IN_180
+    // }
+    //
+    // fn to_degrees(self) -> f64 {
+    //     // The division here is correctly rounded with respect to the true
+    //     // value of 180/π. (This differs from f32, where a constant must be
+    //     // used to ensure a correctly rounded result.)
+    //     self * (180.0f64 / consts::PI)
+    // }
+    // ```
+    fn math_radians_to_degrees(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let float = self.value(call.args()[0]);
+        let float_ty = call.arg_types()[0].as_scalar().unwrap();
+        debug_assert!(float_ty.is_float());
+
+        #[allow(clippy::excessive_precision)]
+        let pis_in_180 = if float_ty.is_f32() {
+            builder
+                .ins()
+                .f32const(57.2957795130823208767981548141051703)
+        } else {
+            let one_eighty = builder.ins().f64const(180.0);
+            let pi = builder.ins().f64const(core::f64::consts::PI);
+            builder.ins().fdiv(one_eighty, pi)
+        };
+
+        let degrees = builder.ins().fmul(float, pis_in_180);
+
+        self.add_expr(expr_id, degrees, float_ty, None);
+    }
+
+    // ```
+    // fn to_radians(self) -> f32 {
+    //     let value: f32 = consts::PI;
+    //     self * (value / 180.0f32)
+    // }
+    //
+    // fn to_radians(self) -> f64 {
+    //     let value: f64 = consts::PI;
+    //     self * (value / 180.0)
+    // }
+    // ```
+    fn math_degrees_to_radians(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let float = self.value(call.args()[0]);
+        let float_ty = builder.value_type(float);
+        debug_assert!(float_ty.is_float());
+
+        let pi = builder.float_pi(float_ty);
+        let one_eighty = if float_ty == types::F32 {
+            builder.ins().f32const(180.0)
+        } else {
+            builder.ins().f64const(180.0)
+        };
+        let pi_div_180 = builder.ins().fdiv(pi, one_eighty);
+
+        let radians = builder.ins().fmul(float, pi_div_180);
+
+        self.add_expr(
+            expr_id,
+            radians,
+            call.arg_types()[0].as_scalar().unwrap(),
+            None,
+        );
+    }
+
+    fn math_is_is_sign_positive(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let value = self.value(call.args()[0]);
+        let value_ty = call.arg_types()[0].as_scalar().unwrap();
+
+        // Check if signed values are greater than or equal to zero
+        let is_negative = if value_ty.is_signed_int() {
+            builder
+                .ins()
+                .icmp_imm(IntCC::SignedGreaterThanOrEqual, value, 0)
+
+        // Unsigned values are always positive
+        } else if value_ty.is_unsigned_int() {
+            builder.true_byte()
+
+        // Transmute float to int and mask the sign bit
+        } else if value_ty.is_float() {
+            let int_ty = builder.value_type(value).as_int();
+
+            let mask = if int_ty == types::I32 {
+                0x8000_0000i64
+            } else if int_ty == types::I64 {
+                0x8000_0000_0000_0000u64 as i64
+            } else {
+                unreachable!()
+            };
+
+            let int_value = builder.ins().bitcast(int_ty, MemFlags::new(), value);
+            let sign = builder.ins().band_imm(int_value, mask);
+            builder.ins().icmp_imm(IntCC::Equal, sign, 0)
+
+        // Should be prevented by validation
+        } else {
+            unreachable!(
+                "invalid value for is_sign_negative: expected float or int, got {value_ty}",
+            )
+        };
+
+        self.add_expr(expr_id, is_negative, ColumnType::Bool, None);
+    }
+
+    fn math_is_is_sign_negative(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let value = self.value(call.args()[0]);
+        let value_ty = call.arg_types()[0].as_scalar().unwrap();
+
+        // Check if signed values are less than zero
+        let is_negative = if value_ty.is_signed_int() {
+            builder.ins().icmp_imm(IntCC::SignedLessThan, value, 0)
+
+        // Unsigned values are always positive
+        } else if value_ty.is_unsigned_int() {
+            builder.false_byte()
+
+        // Transmute float to int and mask the sign bit
+        } else if value_ty.is_float() {
+            let int_ty = builder.value_type(value).as_int();
+
+            let mask = if int_ty == types::I32 {
+                0x8000_0000i64
+            } else if int_ty == types::I64 {
+                0x8000_0000_0000_0000u64 as i64
+            } else {
+                unreachable!()
+            };
+
+            let int_value = builder.ins().bitcast(int_ty, MemFlags::new(), value);
+            let sign = builder.ins().band_imm(int_value, mask);
+            builder.ins().icmp_imm(IntCC::NotEqual, sign, 0)
+
+        // Should be prevented by validation
+        } else {
+            unreachable!(
+                "invalid value for is_sign_negative: expected float or int, got {value_ty}",
+            )
+        };
+
+        self.add_expr(expr_id, is_negative, ColumnType::Bool, None);
     }
 }
 
@@ -771,12 +996,12 @@ macro_rules! timestamp_intrinsics {
 
                         let intrinsic = self
                             .imports
-                            .[<timestamp_ $name>](self.module, builder.func);
+                            .get(stringify!([<timestamp_ $name>]), self.module, builder.func);
                         let value = builder.call_fn(intrinsic, &[timestamp]);
                         self.add_expr(expr_id, value, ColumnType::I64, None);
 
                         if let Some(writer) = self.comment_writer.as_deref() {
-                            let inst = builder.func.dfg.value_def(value).unwrap_inst();
+                            let inst = builder.value_def(value);
                             writer.borrow_mut().add_comment(
                                 inst,
                                 format!("call @dbsp.timestamp.{}({timestamp})", stringify!($name)),
@@ -819,12 +1044,12 @@ macro_rules! date_intrinsics {
 
                         let intrinsic = self
                             .imports
-                            .[<date_ $name>](self.module, builder.func);
+                            .get(stringify!([<date_ $name>]), self.module, builder.func);
                         let value = builder.call_fn(intrinsic, &[date]);
                         self.add_expr(expr_id, value, ColumnType::I64, None);
 
                         if let Some(writer) = self.comment_writer.as_deref() {
-                            let inst = builder.func.dfg.value_def(value).unwrap_inst();
+                            let inst = builder.value_def(value);
                             writer.borrow_mut().add_comment(
                                 inst,
                                 format!("call @dbsp.date.{}({date})", stringify!($name)),

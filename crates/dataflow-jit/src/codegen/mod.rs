@@ -13,6 +13,7 @@ pub use layout::{BitSetType, InvalidBitsetType, NativeLayout, NativeType};
 pub use layout_cache::NativeLayoutCache;
 pub use vtable::{LayoutVTable, VTable};
 
+pub(crate) use intrinsics::TRIG_INTRINSICS;
 pub(crate) use layout::LayoutConfig;
 
 use crate::{
@@ -443,7 +444,7 @@ impl Codegen {
 
                             let value = if copy_val.value_ty() == ColumnType::String {
                                 let clone_string =
-                                    ctx.imports.string_clone(ctx.module, builder.func);
+                                    ctx.imports.get("string_clone", ctx.module, builder.func);
                                 builder.call_fn(clone_string, &[value])
                             } else {
                                 value

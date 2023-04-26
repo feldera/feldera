@@ -10,8 +10,7 @@ CREATE TABLE demographics (
     long FLOAT64,
     city_pop INTEGER,
     job STRING,
-    dob STRING
-    --dob DATE
+    dob DATE
 );
 
 CREATE TABLE transactions (
