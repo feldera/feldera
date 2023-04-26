@@ -43,12 +43,15 @@ macro_rules! create_ids {
                     };
 
                     #[inline]
-                    pub(crate) fn new(id: u32) -> Self {
-                        Self(NonZeroU32::new(id).expect(concat!(
-                            "created a ",
-                            stringify!($name),
-                            " from an id of zero",
-                        )))
+                    pub(crate) const fn new(id: u32) -> Self {
+                        match NonZeroU32::new(id) {
+                            Some(id) => Self(id),
+                            None => panic!(concat!(
+                                "created a ",
+                                stringify!($name),
+                                " from an id of zero",
+                            )),
+                        }
                     }
 
                     #[inline]

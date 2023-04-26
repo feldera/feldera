@@ -199,7 +199,7 @@ fn drop_layout(
         let string = builder.ins().load(native_ty, flags, ptr, offset);
 
         // Drop the string
-        let string_drop_in_place = imports.string_drop_in_place(module, builder.func);
+        let string_drop_in_place = imports.get("string_drop_in_place", module, builder.func);
         builder.ins().call(string_drop_in_place, &[string]);
 
         if let Some(next_drop) = next_drop {

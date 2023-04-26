@@ -133,41 +133,53 @@
     - [x] `@dbsp.date.microsecond` (returns constant zero)
     - [x] `@dbsp.date.to_timestamp`
   - [ ] Math functions (taken from <https://www.postgresql.org/docs/current/functions-math.html>)
-    - [ ] Exponentiation
-    - [x] Square root `@dbsp.math.sqrt({int, float}) -> {int, float}` (currently implemented as unary op, maybe should be a function?)
-    - [ ] Cube root `@dbsp.math.cbrt({int, float}) -> {int, float}`
     - [ ] Degrees to radians
     - [ ] Radians to degrees
     - [ ] Factorial
     - [ ] Greatest common divisor
     - [ ] Least common multiple
-    - [ ] Natural logarithm
-    - [ ] Base 10 logarithm
     - [ ] Logarithm `x` to base `b`
     - [ ] Power
     - [ ] Round
     - [ ] `@dbsp.math.sign({int, float}) -> {int, float}`
-    - [ ] `@dbsp.math.is_sign_positive({int, float}) -> bool`
-    - [ ] `@dbsp.math.is_sign_negative({int, float}) -> bool`
-    - [ ] `@dbsp.math.cos()`
+    - [x] `@dbsp.math.is_sign_positive({int, float}) -> bool`
+    - [x] `@dbsp.math.is_sign_negative({int, float}) -> bool`
+    - [x] `@dbsp.math.cos()`
     - [ ] `@dbsp.math.cosd()`
-    - [ ] `@dbsp.math.acos()`
+    - [x] `@dbsp.math.acos()`
     - [ ] `@dbsp.math.acosd()`
-    - [ ] `@dbsp.math.sin()`
+    - [x] `@dbsp.math.cosh()`
+    - [x] `@dbsp.math.acosh()`
+    - [x] `@dbsp.math.sin()`
     - [ ] `@dbsp.math.sind()`
-    - [ ] `@dbsp.math.asin()`
+    - [x] `@dbsp.math.asin()`
     - [ ] `@dbsp.math.asind()`
-    - [ ] `@dbsp.math.tan()`
+    - [x] `@dbsp.math.tan()`
     - [ ] `@dbsp.math.tand()`
-    - [ ] `@dbsp.math.atan()`
+    - [x] `@dbsp.math.atan()`
     - [ ] `@dbsp.math.atand()`
     - [ ] `@dbsp.math.atan2()`
     - [ ] `@dbsp.math.atan2d()`
-    - [ ] `@dbsp.math.cot()`
+    - [x] `@dbsp.math.cot()`
     - [ ] `@dbsp.math.cotd()`
-    - [ ] `@dbsp.math.sinh()`
-    - [ ] `@dbsp.math.cosh()`
-    - [ ] `@dbsp.math.tanh()`
-    - [ ] `@dbsp.math.asinh()`
-    - [ ] `@dbsp.math.acosh()`
-    - [ ] `@dbsp.math.atanh()`
+    - [x] `@dbsp.math.sinh()`
+    - [x] `@dbsp.math.cosh()`
+    - [x] `@dbsp.math.tanh()`
+    - [x] `@dbsp.math.asinh()`
+    - [x] `@dbsp.math.atanh()`
+    - [x] `@dbsp.math.is_power_of_two()` Returns true if the given unsigned integer is a power of two
+    - [x] `@dbsp.math.log()`
+    - [x] `@dbsp.math.log2()`
+    - [x] `@dbsp.math.log10()`
+    - [x] `@dbsp.math.log1p()`
+    - [x] `@dbsp.math.sqrt()` Square root
+    - [x] `@dbsp.math.cbrt()` Cube root
+    - [x] `@dbsp.math.tgamma()`
+    - [x] `@dbsp.math.lgamma()`
+    - [x] `@dbsp.math.exp()`
+    - [x] `@dbsp.math.exp2()`
+    - [x] `@dbsp.math.exp10()`
+    - [x] `@dbsp.math.expm1()`
+    - [x] `@dbsp.math.fdim()` Positive difference between floating point values
+    - [x] `@dbsp.math.radians_to_degrees()` Converts radians to degrees
+    - [x] `@dbsp.math.degrees_to_radians()` Converts degrees to radians 

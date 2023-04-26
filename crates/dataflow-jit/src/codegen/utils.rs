@@ -1,6 +1,6 @@
 use cranelift::{
     codegen::ir::{FuncRef, Inst},
-    prelude::{types, Block, FunctionBuilder, InstBuilder, MemFlags, Value},
+    prelude::{types, Block, FunctionBuilder, InstBuilder, MemFlags, Type, Value},
 };
 
 pub(crate) trait FunctionBuilderExt {
@@ -24,7 +24,15 @@ pub(crate) trait FunctionBuilderExt {
     /// Panics if `func` doesn't return any values
     fn call_fn(&mut self, func: FuncRef, args: &[Value]) -> Value;
 
-    fn value_inst(&self, value: Value) -> Inst;
+    fn value_def(&self, value: Value) -> Inst;
+
+    fn value_type(&self, value: Value) -> Type;
+
+    fn float_zero(&mut self, ty: Type) -> Value;
+
+    fn float_one(&mut self, ty: Type) -> Value;
+
+    fn float_pi(&mut self, ty: Type) -> Value;
 }
 
 impl FunctionBuilderExt for FunctionBuilder<'_> {
@@ -52,8 +60,42 @@ impl FunctionBuilderExt for FunctionBuilder<'_> {
         self.func.dfg.first_result(call)
     }
 
-    fn value_inst(&self, value: Value) -> Inst {
+    fn value_def(&self, value: Value) -> Inst {
         self.func.dfg.value_def(value).unwrap_inst()
+    }
+
+    fn value_type(&self, value: Value) -> Type {
+        self.func.dfg.value_type(value)
+    }
+
+    fn float_zero(&mut self, ty: Type) -> Value {
+        match ty {
+            types::F32 => self.ins().f32const(0.0),
+            types::F64 => self.ins().f64const(0.0),
+            other => unreachable!(
+                "called `FunctionBuilderExt::float_zero()` with the non-float type {other}",
+            ),
+        }
+    }
+
+    fn float_one(&mut self, ty: Type) -> Value {
+        match ty {
+            types::F32 => self.ins().f32const(1.0),
+            types::F64 => self.ins().f64const(1.0),
+            other => unreachable!(
+                "called `FunctionBuilderExt::float_one()` with the non-float type {other}",
+            ),
+        }
+    }
+
+    fn float_pi(&mut self, ty: Type) -> Value {
+        match ty {
+            types::F32 => self.ins().f32const(core::f32::consts::PI),
+            types::F64 => self.ins().f64const(core::f64::consts::PI),
+            other => unreachable!(
+                "called `FunctionBuilderExt::float_pi()` with the non-float type {other}",
+            ),
+        }
     }
 }
 

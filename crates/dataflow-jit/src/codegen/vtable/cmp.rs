@@ -180,7 +180,8 @@ impl Codegen {
                         // potentially let us skip function calls for the happy path of
                         // comparing two of the same (either via deduplication or cloning) string
                         ColumnType::String => {
-                            let string_eq = imports.string_eq(&mut self.module, builder.func);
+                            let string_eq =
+                                imports.get("string_eq", &mut self.module, builder.func);
                             builder.call_fn(string_eq, &[lhs, rhs])
                         }
 
@@ -397,7 +398,8 @@ impl Codegen {
                         ColumnType::Ptr | ColumnType::Unit => unreachable!(),
 
                         ColumnType::String => {
-                            let string_lt = imports.string_lt(&mut self.module, builder.func);
+                            let string_lt =
+                                imports.get("string_lt", &mut self.module, builder.func);
                             builder.call_fn(string_lt, &[lhs, rhs])
                         }
                     };
@@ -665,7 +667,8 @@ impl Codegen {
                         }
 
                         ColumnType::String => {
-                            let string_cmp = imports.string_cmp(&mut self.module, builder.func);
+                            let string_cmp =
+                                imports.get("string_cmp", &mut self.module, builder.func);
 
                             // -1 for less, 0 for equal, 1 for greater
                             let cmp = builder.call_fn(string_cmp, &[lhs, rhs]);

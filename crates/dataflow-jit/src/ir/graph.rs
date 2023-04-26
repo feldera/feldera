@@ -862,13 +862,20 @@ mod tests {
             inputs
                 .get_mut(&source)
                 .unwrap()
+                .0
                 .as_set_mut()
                 .unwrap()
                 .append(&mut values);
 
             runtime.step().unwrap();
 
-            let output = outputs.get(&sink).unwrap().as_set().unwrap().consolidate();
+            let output = outputs
+                .get(&sink)
+                .unwrap()
+                .0
+                .as_set()
+                .unwrap()
+                .consolidate();
             let mut cursor = output.cursor();
             while cursor.key_valid() {
                 let weight = cursor.weight();

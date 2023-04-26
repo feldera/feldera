@@ -125,13 +125,14 @@ fn compiled_dataflow() {
     inputs
         .get_mut(&source)
         .unwrap()
+        .0
         .as_set_mut()
         .unwrap()
         .append(&mut values);
 
     runtime.step().unwrap();
 
-    let mul_sink = &outputs[&mul_sink];
+    let (mul_sink, _) = &outputs[&mul_sink];
     if let RowOutput::Set(output) = mul_sink {
         let output = output.consolidate();
         let mut cursor = output.cursor();
@@ -148,7 +149,7 @@ fn compiled_dataflow() {
         unreachable!()
     }
 
-    let y_squared_sink = &outputs[&y_squared_sink];
+    let (y_squared_sink, _) = &outputs[&y_squared_sink];
     if let RowOutput::Set(output) = y_squared_sink {
         let output = output.consolidate();
         let mut cursor = output.cursor();
@@ -353,7 +354,7 @@ fn bfs() {
         let u64x2_vtable = unsafe { &*jit_handle.vtables()[&u64x2] };
         let u64x2_layout = layout_cache.layout_of(u64x2);
 
-        let roots = inputs.get_mut(&roots).unwrap().as_set_mut().unwrap();
+        let roots = inputs.get_mut(&roots).unwrap().0.as_set_mut().unwrap();
         let mut source_vertex = UninitRow::new(u64x2_vtable);
         unsafe {
             source_vertex
@@ -371,7 +372,7 @@ fn bfs() {
         }
 
         let vertices_data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let vertices = inputs.get_mut(&vertices).unwrap().as_set_mut().unwrap();
+        let vertices = inputs.get_mut(&vertices).unwrap().0.as_set_mut().unwrap();
         for &vertex in vertices_data {
             let mut key = UninitRow::new(u64x1_vtable);
             unsafe {
@@ -403,7 +404,7 @@ fn bfs() {
             (8, 1),
             (9, 4),
         ];
-        let edges = inputs.get_mut(&edges).unwrap().as_map_mut().unwrap();
+        let edges = inputs.get_mut(&edges).unwrap().0.as_map_mut().unwrap();
         for &(src, dest) in edge_data {
             let (mut key, mut value) = (UninitRow::new(u64x1_vtable), UninitRow::new(u64x1_vtable));
 
@@ -428,7 +429,7 @@ fn bfs() {
         let u64x2_layout = layout_cache.layout_of(u64x2);
         let mut produced = Vec::new();
 
-        let outputs = outputs[&sink].as_set().unwrap().consolidate();
+        let outputs = outputs[&sink].0.as_set().unwrap().consolidate();
         let mut cursor = outputs.cursor();
         while cursor.key_valid() {
             let weight = cursor.weight();

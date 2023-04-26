@@ -1,5 +1,6 @@
 use crate::{
-    codegen::{pretty_clif::CommentWriter, VTable},
+    codegen::{pretty_clif::CommentWriter, utils::FunctionBuilderExt, CodegenCtx, VTable},
+    ir::{exprs::Call, ExprId},
     row::{Row, UninitRow},
     thin_str::ThinStrRef,
     ThinStr,
@@ -7,13 +8,14 @@ use crate::{
 use chrono::{DateTime, Datelike, LocalResult, NaiveDate, TimeZone, Timelike, Utc};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
-    prelude::{types, AbiParam, Signature as ClifSignature},
+    prelude::{types, AbiParam, FunctionBuilder, Signature as ClifSignature},
 };
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use std::{
     cell::RefCell,
     cmp::Ordering,
+    collections::HashMap,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
     mem::ManuallyDrop,
@@ -22,10 +24,12 @@ use std::{
 };
 
 macro_rules! intrinsics {
-    ($($intrinsic:ident = fn($($arg:tt),*) $(-> $ret:tt)?),+ $(,)?) => {
+    ($($intrinsic:ident = $(($func_attr:ident))? fn($($arg:ident $(: $arg_attr:ident)? ),*) $(-> $ret:tt)?),+ $(,)?) => {
+        const TOTAL_INTRINSICS: usize = [$(stringify!($intrinsic),)*].len();
+
         #[derive(Debug, Clone)]
         pub(crate) struct Intrinsics {
-            $(pub $intrinsic: FuncId,)+
+            intrinsics: HashMap<&'static str, FuncId>,
         }
 
         impl Intrinsics {
@@ -39,43 +43,43 @@ macro_rules! intrinsics {
                 let ptr_type = module.isa().pointer_type();
                 let call_conv = module.isa().default_call_conv();
 
-                paste::paste! {
-                    $(
-                        let $intrinsic = module
-                            .declare_function(
-                                stringify!($intrinsic),
-                                Linkage::Import,
-                                &{
-                                    let mut sig = ClifSignature::new(call_conv);
-                                    $(sig.params.push(AbiParam::new(intrinsics!(@type ptr_type $arg)));)*
-                                    $(sig.returns.push(AbiParam::new(intrinsics!(@type ptr_type $ret)));)?
-                                    sig
-                                },
-                            )
-                            .unwrap();
-                    )+
-                }
+                let mut intrinsics = HashMap::with_capacity(TOTAL_INTRINSICS);
 
-                Self { $($intrinsic,)+ }
+                $(
+                    let $intrinsic = module
+                        .declare_function(
+                            stringify!($intrinsic),
+                            Linkage::Import,
+                            &{
+                                let mut sig = ClifSignature::new(call_conv);
+                                $(sig.params.push(AbiParam::new(intrinsics!(@clif_type ptr_type $arg)));)*
+                                $(sig.returns.push(AbiParam::new(intrinsics!(@clif_type ptr_type $ret)));)?
+                                sig
+                            },
+                        )
+                        .unwrap();
+
+                    let displaced = intrinsics.insert(stringify!($intrinsic), $intrinsic);
+                    debug_assert_eq!(displaced, None, "duplicate intrinsic `{}`", stringify!($intrinsic));
+                )+
+
+                Self { intrinsics }
             }
 
             /// Registers all intrinsics within the given [`JITBuilder`]
             ///
             /// Should be called before [`Intrinsics::new()`]
             pub(crate) fn register(builder: &mut JITBuilder) {
-                paste::paste! {
-                    $(
-                        // Ensure all functions have `extern "C"` abi
-                        let _: unsafe extern "C" fn($(intrinsics!(@replace $arg _),)+) $(-> intrinsics!(@replace $ret _))?
-                            = $intrinsic;
+                $(
+                    // Ensure all functions have `extern "C"` abi
+                    let _: unsafe extern "C" fn($(intrinsics!(@replace $arg _),)+) $(-> intrinsics!(@replace $ret _))?
+                        = $intrinsic;
 
-                        builder.symbol(
-                            stringify!($intrinsic),
-                            $intrinsic as *const u8,
-                        );
-                    )+
-                }
-
+                    builder.symbol(
+                        stringify!($intrinsic),
+                        $intrinsic as *const u8,
+                    );
+                )+
             }
 
             pub(crate) fn import(&self, comment_writer: Option<Rc<RefCell<CommentWriter>>>) -> ImportIntrinsics {
@@ -83,98 +87,311 @@ macro_rules! intrinsics {
             }
         }
 
-        #[derive(Debug, Clone)]
-        pub(crate) struct ImportIntrinsics {
-            $($intrinsic: Result<FuncRef, FuncId>,)+
-            comment_writer: Option<Rc<RefCell<CommentWriter>>>,
+        /*
+        pub fn intrinsics() -> HashMap<&'static str, Intrinsic> {
+            let mut intrinsics = HashMap::with_capacity(TOTAL_INTRINSICS);
+
+            $(
+                let replaced = intrinsics.insert(
+                    stringify!($intrinsic),
+                    Intrinsic {
+                        name: stringify!($intrinsic),
+                        args: tiny_vec![[ArgType; 2] => $(ArgType::Scalar(intrinsics!(@type $arg)),)*],
+                        arg_flags: tiny_vec![[ArgFlag; INLINE_FLAGS] => $(intrinsics!(@arg_flag $($arg_attr)?),)*],
+                        ret: ArgType::Scalar(intrinsics!(@type $($ret)?)),
+                        flags: intrinsics!(@func_flag $($func_attr)?),
+                    },
+                );
+
+                debug_assert!(
+                    replaced.is_none(),
+                    concat!("duplicate intrinsic: ", stringify!($intrinsic)),
+                );
+            )*
+
+            intrinsics
         }
-
-        impl ImportIntrinsics {
-            pub(crate) fn new(intrinsics: &Intrinsics, comment_writer: Option<Rc<RefCell<CommentWriter>>>) -> Self {
-                Self {
-                    $($intrinsic: Err(intrinsics.$intrinsic),)+
-                    comment_writer,
-                }
-            }
-
-            paste::paste! {
-                $(
-                    pub fn $intrinsic(&mut self, module: &mut JITModule, func: &mut Function) -> FuncRef {
-                        match self.$intrinsic {
-                            Ok(func_ref) => func_ref,
-                            Err(func_id) => {
-                                let func_ref = module.declare_func_in_func(func_id, func);
-                                self.$intrinsic = Ok(func_ref);
-
-                                if let Some(writer) = self.comment_writer.as_deref() {
-                                    writer.borrow_mut().add_comment(
-                                        func_ref,
-                                        stringify!($intrinsic),
-                                    );
-                                }
-
-                                func_ref
-                            }
-                        }
-                    }
-                )+
-            }
-        }
+        */
     };
 
-    (@type $ptr_type:ident ptr) => { $ptr_type };
-    (@type $ptr_type:ident bool) => { types::I8 };
-    (@type $ptr_type:ident u8) => { types::I8 };
-    (@type $ptr_type:ident i8) => { types::I8 };
-    (@type $ptr_type:ident u16) => { types::I16 };
-    (@type $ptr_type:ident i16) => { types::I16 };
-    (@type $ptr_type:ident u32) => { types::I32 };
-    (@type $ptr_type:ident i32) => { types::I32 };
-    (@type $ptr_type:ident u64) => { types::I64 };
-    (@type $ptr_type:ident i64) => { types::I64 };
-    (@type $ptr_type:ident f32) => { types::F32 };
-    (@type $ptr_type:ident f64) => { types::F64 };
+    // (@func_flag pure) => { FunctionFlag::Pure };
+    // (@func_flag effectful) => { FunctionFlag::Effectful };
+    // (@func_flag) => { FunctionFlag::None };
+    //
+    // (@arg_flag consume) => { ArgFlag::Consume };
+    // (@arg_flag mutable) => { ArgFlag::Mutable };
+    // (@arg_flag immutable) => { ArgFlag::Immutable };
+    // (@arg_flag) => { ArgFlag::Immutable };
+
+    (@clif_type $ptr_type:ident ptr)  => { $ptr_type };
+    (@clif_type $ptr_type:ident usize)  => { $ptr_type };
+    (@clif_type $ptr_type:ident str)  => { $ptr_type };
+    (@clif_type $ptr_type:ident bool) => { types::I8 };
+    (@clif_type $ptr_type:ident u8)   => { types::I8 };
+    (@clif_type $ptr_type:ident i8)   => { types::I8 };
+    (@clif_type $ptr_type:ident u16)  => { types::I16 };
+    (@clif_type $ptr_type:ident i16)  => { types::I16 };
+    (@clif_type $ptr_type:ident u32)  => { types::I32 };
+    (@clif_type $ptr_type:ident i32)  => { types::I32 };
+    (@clif_type $ptr_type:ident u64)  => { types::I64 };
+    (@clif_type $ptr_type:ident i64)  => { types::I64 };
+    (@clif_type $ptr_type:ident f32)  => { types::F32 };
+    (@clif_type $ptr_type:ident f64)  => { types::F64 };
+
+    (@type)  => { ColumnType::Unit };
+    (@type ptr)  => { ColumnType::Ptr };
+    (@type usize)  => { ColumnType::Usize };
+    (@type str)  => { ColumnType::String };
+    (@type bool) => { ColumnType::Bool };
+    (@type u8)   => { ColumnType::U8 };
+    (@type i8)   => { ColumnType::I8 };
+    (@type u16)  => { ColumnType::U16 };
+    (@type i16)  => { ColumnType::I16 };
+    (@type u32)  => { ColumnType::U32 };
+    (@type i32)  => { ColumnType::I32 };
+    (@type u64)  => { ColumnType::U64 };
+    (@type i64)  => { ColumnType::I64 };
+    (@type f32)  => { ColumnType::F32 };
+    (@type f64)  => { ColumnType::F64 };
 
     (@replace $x:tt $y:tt) => { $y };
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ImportIntrinsics {
+    intrinsics: HashMap<&'static str, Result<FuncRef, FuncId>>,
+    comment_writer: Option<Rc<RefCell<CommentWriter>>>,
+}
+
+impl ImportIntrinsics {
+    pub(crate) fn new(
+        intrinsics: &Intrinsics,
+        comment_writer: Option<Rc<RefCell<CommentWriter>>>,
+    ) -> Self {
+        Self {
+            intrinsics: intrinsics
+                .intrinsics
+                .iter()
+                .map(|(&name, &id)| (name, Err(id)))
+                .collect(),
+            comment_writer,
+        }
+    }
+
+    pub fn get(&mut self, intrinsic: &str, module: &mut JITModule, func: &mut Function) -> FuncRef {
+        match self
+            .intrinsics
+            .get_mut(intrinsic)
+            .expect("got intrinsic that doesn't exist")
+        {
+            Ok(func_ref) => *func_ref,
+            func_id => {
+                let func_ref = module.declare_func_in_func(func_id.unwrap_err(), func);
+                *func_id = Ok(func_ref);
+
+                if let Some(writer) = self.comment_writer.as_deref() {
+                    writer.borrow_mut().add_comment(func_ref, intrinsic);
+                }
+
+                func_ref
+            }
+        }
+    }
+}
+
+/*
+struct IntrinsicValidator {
+    intrinsics: HashMap<&'static str, Intrinsic>,
+}
+
+impl IntrinsicValidator {
+    pub fn new() -> Self {
+        Self {
+            intrinsics: intrinsics(),
+        }
+    }
+
+    pub fn validate(
+        &self,
+        expr_id: ExprId,
+        call: &Call,
+        func: &mut FunctionValidator,
+    ) -> ValidationResult {
+        if let Some(intrinsic) = self.intrinsics.get(&call.function()) {
+            if call.args().len() != intrinsic.args.len() {
+                return Err(ValidationError::IncorrectFunctionArgLen {
+                    expr_id,
+                    function: call.function().to_owned(),
+                    expected_args: intrinsic.args.len(),
+                    args: call.args().len(),
+                });
+            }
+
+            let actual_arg_types = call
+                .args()
+                .iter()
+                .map(|&arg| {
+                    Ok(match func.expr_type(arg)? {
+                        Ok(scalar) => ArgType::Scalar(scalar),
+                        Err(layout) => ArgType::Row(layout),
+                    })
+                })
+                .collect::<ValidationResult<Vec<_>>>()?;
+            assert_eq!(actual_arg_types, call.arg_types());
+
+            if !actual_arg_types[0]
+                .as_scalar()
+                .map_or(false, ColumnType::is_unsigned_int)
+            {
+                todo!(
+                    "mismatched argument type in {expr_id}, should be an unsigned integer but instead got {:?}",
+                    actual_arg_types[0],
+                );
+            }
+
+            func.expr_types
+                .insert(expr_id, Ok(intrinsic.ret.as_scalar().unwrap()));
+
+            Ok(())
+        } else {
+            Err(ValidationError::UnknownFunction {
+                expr_id,
+                function: call.function().to_owned(),
+            })
+        }
+    }
+}
+
+const INLINE_FLAGS: usize = (usize::BITS as usize * 3) - 1;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum ArgFlag {
+    Consume,
+    Mutable,
+    #[default]
+    Immutable,
+}
+
+impl ArgFlag {
+    #[must_use]
+    #[inline]
+    pub const fn is_consume(&self) -> bool {
+        matches!(self, Self::Consume)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_mutable(&self) -> bool {
+        matches!(self, Self::Mutable)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_immutable(&self) -> bool {
+        matches!(self, Self::Immutable)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum FunctionFlag {
+    /// The function has no particular flags
+    #[default]
+    None,
+    /// The function is pure
+    Pure,
+    /// The function has side effects
+    Effectful,
+}
+
+impl FunctionFlag {
+    /// Returns `true` if the function flags is [`Pure`].
+    ///
+    /// [`Pure`]: FunctionFlags::Pure
+    #[must_use]
+    #[inline]
+    pub const fn is_pure(&self) -> bool {
+        matches!(self, Self::Pure)
+    }
+
+    /// Returns `true` if the function flags is [`Effectful`].
+    ///
+    /// [`Effectful`]: FunctionFlags::Effectful
+    #[must_use]
+    #[inline]
+    pub const fn is_effectful(&self) -> bool {
+        matches!(self, Self::Effectful)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Intrinsic {
+    pub name: &'static str,
+    pub args: TinyVec<[ArgType; 2]>,
+    pub arg_flags: TinyVec<[ArgFlag; INLINE_FLAGS]>,
+    pub ret: ArgType,
+    pub flags: FunctionFlag,
+}
+
+impl Intrinsic {
+    pub fn mutables_arg(&self, arg: usize) -> bool {
+        self.arg_flags[arg].is_mutable()
+    }
+
+    #[inline]
+    pub const fn is_pure(&self) -> bool {
+        self.flags.is_pure()
+    }
+
+    #[inline]
+    pub const fn is_effectful(&self) -> bool {
+        self.flags.is_effectful()
+    }
+}
+*/
+
 intrinsics! {
-    string_eq = fn(ptr, ptr) -> bool,
-    string_lt = fn(ptr, ptr) -> bool,
-    string_cmp = fn(ptr, ptr) -> i8,
-    string_clone = fn(ptr) -> ptr,
-    string_drop_in_place = fn(ptr),
-    string_size_of_children = fn(ptr, ptr),
-    string_debug = fn(ptr, ptr) -> bool,
-    str_debug = fn(ptr, ptr, ptr) -> bool,
-    bool_debug = fn(bool, ptr) -> bool,
-    int_debug = fn(i64, ptr) -> bool,
-    uint_debug = fn(u64, ptr) -> bool,
-    f32_debug = fn(f32, ptr) -> bool,
-    f64_debug = fn(f64, ptr) -> bool,
-    date_debug = fn(i32, ptr) -> bool,
-    timestamp_debug = fn(i64, ptr) -> bool,
-    u8_hash = fn(ptr, u8),
-    i8_hash = fn(ptr, i8),
-    u16_hash = fn(ptr, u16),
-    i16_hash = fn(ptr, i16),
-    u32_hash = fn(ptr, u32),
-    i32_hash = fn(ptr, i32),
-    u64_hash = fn(ptr, u64),
-    i64_hash = fn(ptr, i64),
-    string_hash = fn(ptr, ptr),
-    row_vec_push = fn(ptr, ptr, ptr),
+    row_vec_push = fn(ptr: mutable, ptr, ptr: consume),
+
+    // Debug functions
+    string_debug = fn(str, ptr: mutable) -> bool,
+    str_debug = fn(ptr, usize, ptr: mutable) -> bool,
+    bool_debug = fn(bool, ptr: mutable) -> bool,
+    int_debug = fn(i64, ptr: mutable) -> bool,
+    uint_debug = fn(u64, ptr: mutable) -> bool,
+    f32_debug = fn(f32, ptr: mutable) -> bool,
+    f64_debug = fn(f64, ptr: mutable) -> bool,
+    date_debug = fn(i32, ptr: mutable) -> bool,
+    timestamp_debug = fn(i64, ptr: mutable) -> bool,
+
+    // Hash functions
+    u8_hash = fn(ptr: mutable, u8),
+    i8_hash = fn(ptr: mutable, i8),
+    u16_hash = fn(ptr: mutable, u16),
+    i16_hash = fn(ptr: mutable, i16),
+    u32_hash = fn(ptr: mutable, u32),
+    i32_hash = fn(ptr: mutable, i32),
+    u64_hash = fn(ptr: mutable, u64),
+    i64_hash = fn(ptr: mutable, i64),
+    string_hash = fn(ptr: mutable, str),
 
     // String functions
-    string_with_capacity = fn(ptr) -> ptr,
-    string_push_str = fn(ptr, ptr, ptr),
-    string_count_chars = fn(ptr, ptr) -> ptr,
-    string_is_nfc = fn(ptr, ptr) -> bool,
-    string_is_nfd = fn(ptr, ptr) -> bool,
-    string_is_nfkc = fn(ptr, ptr) -> bool,
-    string_is_nfkd = fn(ptr, ptr) -> bool,
-    string_is_lowercase = fn(ptr, ptr) -> bool,
-    string_is_uppercase = fn(ptr, ptr) -> bool,
+    string_eq = fn(str, str) -> bool,
+    string_lt = fn(str, str) -> bool,
+    string_cmp = fn(str, str) -> i8,
+    string_clone = fn(str) -> str,
+    string_drop_in_place = fn(str: consume),
+    string_size_of_children = fn(str, ptr),
+
+    string_with_capacity = fn(usize) -> str,
+    string_push_str = fn(str: mutable, ptr, usize),
+
+    string_count_chars = fn(str, usize) -> ptr,
+    string_is_nfc = fn(ptr, usize) -> bool,
+    string_is_nfd = fn(ptr, usize) -> bool,
+    string_is_nfkc = fn(ptr, usize) -> bool,
+    string_is_nfkd = fn(ptr, usize) -> bool,
+    string_is_lowercase = fn(ptr, usize) -> bool,
+    string_is_uppercase = fn(ptr, usize) -> bool,
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -213,6 +430,54 @@ intrinsics! {
     // Float functions
     fmod = fn(f64, f64) -> f64,
     fmodf = fn(f32, f32) -> f32,
+    cos = fn(f64) -> f64,
+    cosf = fn(f32) -> f32,
+    cosh = fn(f64) -> f64,
+    coshf = fn(f32) -> f32,
+    acos = fn(f64) -> f64,
+    acosf = fn(f32) -> f32,
+    acosh = fn(f64) -> f64,
+    acoshf = fn(f32) -> f32,
+    sin = fn(f64) -> f64,
+    sinf = fn(f32) -> f32,
+    sinh = fn(f64) -> f64,
+    sinhf = fn(f32) -> f32,
+    asin = fn(f64) -> f64,
+    asinf = fn(f32) -> f32,
+    asinh = fn(f64) -> f64,
+    asinhf = fn(f32) -> f32,
+    tan = fn(f64) -> f64,
+    tanf = fn(f32) -> f32,
+    tanh = fn(f64) -> f64,
+    tanhf = fn(f32) -> f32,
+    atan = fn(f64) -> f64,
+    atanf = fn(f32) -> f32,
+    atanh = fn(f64) -> f64,
+    atanhf = fn(f32) -> f32,
+    log = fn(f64) -> f64,
+    logf = fn(f32) -> f32,
+    log2 = fn(f64) -> f64,
+    log2f = fn(f32) -> f32,
+    log10 = fn(f64) -> f64,
+    log10f = fn(f32) -> f32,
+    log1p = fn(f64) -> f64,
+    log1pf = fn(f32) -> f32,
+    sqrt = fn(f64) -> f64,
+    sqrtf = fn(f32) -> f32,
+    cbrt = fn(f64) -> f64,
+    cbrtf = fn(f32) -> f32,
+    tgamma = fn(f64) -> f64,
+    tgammaf = fn(f32) -> f32,
+    lgamma = fn(f64) -> f64,
+    lgammaf = fn(f32) -> f32,
+    exp = fn(f64) -> f64,
+    expf = fn(f32) -> f32,
+    exp2 = fn(f64) -> f64,
+    exp2f = fn(f32) -> f32,
+    exp10 = fn(f64) -> f64,
+    exp10f = fn(f32) -> f32,
+    expm1 = fn(f64) -> f64,
+    expm1f = fn(f32) -> f32,
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`
@@ -388,6 +653,86 @@ unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {
 
 unsafe extern "C" fn fmodf(lhs: f32, rhs: f32) -> f32 {
     libm::fmodf(lhs, rhs)
+}
+
+macro_rules! trig_intrinsics {
+    ($($name:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn $name(x: f64) -> f64 {
+                    libm::$name(x)
+                }
+
+                unsafe extern "C" fn [<$name f>](x: f32) -> f32 {
+                    libm::[<$name f>](x)
+                }
+            )+
+
+            pub static TRIG_INTRINSICS: &[&str] = &[
+                $(concat!("dbsp.math.", stringify!($name)),)+
+            ];
+
+            impl CodegenCtx<'_> {
+                pub(super) fn trig_intrinsic(&mut self, expr_id: ExprId, call: &Call, function: &str, builder: &mut FunctionBuilder<'_>) {
+                    match function {
+                        $(
+                            concat!("dbsp.math.", stringify!($name)) => {
+                                let float = self.value(call.args()[0]);
+                                let float_ty = builder.func.dfg.value_type(float);
+
+                                let intrinsic = if float_ty == types::F32 {
+                                    stringify!([<$name f>])
+                                } else if float_ty == types::F64 {
+                                    stringify!($name)
+                                } else {
+                                    unreachable!("called math function with {float_ty}, expected f32 or f64")
+                                };
+                                let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+
+                                let result = builder.call_fn(intrinsic, &[float]);
+                                self.add_expr(expr_id, result, call.arg_types()[0].as_scalar().unwrap(), None);
+                            }
+                        )+
+
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+    };
+}
+
+trig_intrinsics! {
+    cos,
+    cosh,
+    acos,
+    acosh,
+
+    sin,
+    sinh,
+    asin,
+    asinh,
+
+    tan,
+    tanh,
+    atan,
+    atanh,
+
+    log,
+    log2,
+    log10,
+    log1p,
+
+    sqrt,
+    cbrt,
+
+    tgamma,
+    lgamma,
+
+    exp,
+    exp2,
+    exp10,
+    expm1,
 }
 
 macro_rules! timestamp_intrinsics {

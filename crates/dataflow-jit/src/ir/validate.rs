@@ -1,11 +1,14 @@
-use crate::ir::{
-    exprs::ArgType,
-    exprs::{Call, Select},
-    graph::GraphExt,
-    nodes::{DataflowNode, Node, StreamKind, StreamLayout},
-    BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
-    InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull, Store,
-    UnaryOpKind, UninitRow,
+use crate::{
+    codegen::TRIG_INTRINSICS,
+    ir::{
+        exprs::ArgType,
+        exprs::{Call, Select},
+        graph::GraphExt,
+        nodes::{DataflowNode, Node, StreamKind, StreamLayout},
+        BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
+        InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull,
+        Store, UnaryOpKind, UninitRow,
+    },
 };
 use derive_more::Display;
 use std::{
@@ -964,6 +967,104 @@ impl FunctionValidator {
                 }
 
                 self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
+            }
+
+            "dbsp.math.is_power_of_two" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if !actual_arg_types[0]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_unsigned_int)
+                {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be an unsigned integer but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
+            }
+
+            "dbsp.math.fdim" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if !actual_arg_types[0]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_float)
+                {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a float but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if !actual_arg_types[1]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_float)
+                {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a float but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                let (x_ty, y_ty) = (
+                    actual_arg_types[0].as_scalar().unwrap(),
+                    actual_arg_types[1].as_scalar().unwrap(),
+                );
+                if x_ty != y_ty {
+                    todo!(
+                        "mismatched argument types in {expr_id}, both arguments should be the same type. \
+                        First argument has the type {x_ty} and the second arg has the type {y_ty}",
+                    )
+                }
+
+                self.expr_types.insert(expr_id, Ok(x_ty));
+            }
+
+            trig if TRIG_INTRINSICS.contains(&trig)
+                || [
+                    "dbsp.math.cot",
+                    "dbsp.math.degrees_to_radians",
+                    "dbsp.math.radians_to_degrees",
+                ]
+                .contains(&trig) =>
+            {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if !actual_arg_types[0]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_float)
+                {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a float but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                self.expr_types
+                    .insert(expr_id, Ok(actual_arg_types[0].as_scalar().unwrap()));
             }
 
             unknown => {

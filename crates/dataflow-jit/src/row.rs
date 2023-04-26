@@ -1,4 +1,11 @@
-use crate::codegen::{BitSetType, NativeLayout, VTable};
+use crate::{
+    codegen::{BitSetType, NativeLayout, VTable},
+    ir::{
+        literal::{NullableConstant, RowLiteral},
+        Constant,
+    },
+    ThinStr,
+};
 use bincode::{
     de::Decoder,
     enc::Encoder,
@@ -366,5 +373,69 @@ impl Debug for Row {
         } else {
             Err(fmt::Error)
         }
+    }
+}
+
+/// # Safety
+///
+/// TODO
+pub unsafe fn row_from_literal(
+    literal: &RowLiteral,
+    vtable: &'static VTable,
+    layout: &NativeLayout,
+) -> Row {
+    let mut row = UninitRow::new(vtable);
+
+    for (idx, column) in literal.rows().iter().enumerate() {
+        match column {
+            NullableConstant::NonNull(constant) => unsafe {
+                let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
+                write_constant_to(constant, column_ptr);
+            },
+
+            NullableConstant::Nullable(constant) => {
+                row.set_column_null(idx, layout, constant.is_none());
+
+                if let Some(constant) = constant {
+                    unsafe {
+                        let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
+
+                        write_constant_to(constant, column_ptr)
+                    }
+                }
+            }
+        }
+    }
+
+    unsafe { row.assume_init() }
+}
+
+unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
+    match *constant {
+        Constant::Unit => ptr.cast::<()>().write(()),
+
+        Constant::U8(value) => ptr.cast::<u8>().write(value),
+        Constant::I8(value) => ptr.cast::<i8>().write(value),
+
+        Constant::U16(value) => ptr.cast::<u16>().write(value),
+        Constant::I16(value) => ptr.cast::<i16>().write(value),
+
+        Constant::U32(value) => ptr.cast::<u32>().write(value),
+        Constant::I32(value) => ptr.cast::<i32>().write(value),
+
+        Constant::U64(value) => ptr.cast::<u64>().write(value),
+        Constant::I64(value) => ptr.cast::<i64>().write(value),
+
+        Constant::Usize(value) => ptr.cast::<usize>().write(value),
+        Constant::Isize(value) => ptr.cast::<isize>().write(value),
+
+        Constant::F32(value) => ptr.cast::<f32>().write(value),
+        Constant::F64(value) => ptr.cast::<f64>().write(value),
+
+        Constant::Bool(value) => ptr.cast::<bool>().write(value),
+
+        Constant::String(ref value) => ptr.cast::<ThinStr>().write(ThinStr::from(&**value)),
+        // Constant::Date(date) => ptr.cast::<i32>().write(date),
+        // Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp),
     }
 }
