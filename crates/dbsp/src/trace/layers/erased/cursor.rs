@@ -117,18 +117,6 @@ where
         );
     }
 
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        if self.bounds.1 > self.bounds.0 {
-            let idx = self.bounds.1 - 1;
-            Some((
-                self.storage.keys.index_as(idx),
-                self.storage.diffs.index_as(idx),
-            ))
-        } else {
-            None
-        }
-    }
-
     fn valid(&self) -> bool {
         self.current < self.bounds.1
     }
@@ -144,6 +132,18 @@ where
     fn reposition(&mut self, lower: usize, upper: usize) {
         self.current = lower;
         self.bounds = (lower, upper);
+    }
+
+    fn step_reverse(&mut self) {
+        todo!()
+    }
+
+    fn seek_reverse(&mut self, _key: &Self::Key) {
+        todo!()
+    }
+
+    fn fast_forward(&mut self) {
+        todo!()
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    trace::layers::{advance, column_layer::ColumnLayer, Cursor},
+    trace::layers::{advance, column_layer::ColumnLayer, retreat, Cursor},
     utils::cursor_position_oob,
     DBData, DBWeight,
 };
@@ -12,7 +12,9 @@ where
     K: Ord + Clone,
     R: Clone,
 {
-    pos: usize,
+    // We represent current position of the cursor as isize, so we can use `-1`
+    // to represent invalid cursor that rolled over the left bound of the range.
+    pos: isize,
     storage: &'s ColumnLayer<K, R>,
     bounds: (usize, usize),
 }
@@ -24,7 +26,7 @@ where
 {
     pub const fn new(pos: usize, storage: &'s ColumnLayer<K, R>, bounds: (usize, usize)) -> Self {
         Self {
-            pos,
+            pos: pos as isize,
             storage,
             bounds,
         }
@@ -43,15 +45,35 @@ where
         P: Fn(&K) -> bool,
     {
         unsafe { self.storage.assume_invariants() }
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], predicate);
+        if self.valid() {
+            self.pos += advance(
+                &self.storage.keys[self.pos as usize..self.bounds.1],
+                predicate,
+            ) as isize;
+        }
+    }
+
+    pub fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool,
+    {
+        unsafe { self.storage.assume_invariants() }
+        if self.valid() {
+            self.pos -= retreat(
+                &self.storage.keys[self.bounds.0..=self.pos as usize],
+                predicate,
+            ) as isize;
+        }
     }
 
     pub fn current_key(&self) -> &K {
-        &self.storage.keys[self.pos]
+        debug_assert!(self.pos >= 0);
+        &self.storage.keys[self.pos as usize]
     }
 
     pub fn current_diff(&self) -> &R {
-        &self.storage.diffs[self.pos]
+        debug_assert!(self.pos >= 0);
+        &self.storage.diffs[self.pos as usize]
     }
 }
 
@@ -76,11 +98,14 @@ where
         // Elide extra bounds checking
         unsafe { self.storage.assume_invariants() }
 
-        if self.pos >= self.storage.keys.len() {
+        if self.pos >= self.storage.keys.len() as isize || self.pos < 0 {
             cursor_position_oob(self.pos, self.storage.keys.len());
         }
 
-        (&self.storage.keys[self.pos], &self.storage.diffs[self.pos])
+        (
+            &self.storage.keys[self.pos as usize],
+            &self.storage.diffs[self.pos as usize],
+        )
     }
 
     fn values(&self) {}
@@ -88,44 +113,56 @@ where
     fn step(&mut self) {
         self.pos += 1;
 
-        if !self.valid() {
-            self.pos = self.bounds.1;
+        if self.pos >= self.bounds.1 as isize {
+            self.pos = self.bounds.1 as isize;
         }
     }
 
     fn seek(&mut self, key: &Self::Key) {
         unsafe { self.storage.assume_invariants() }
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k.lt(key));
-    }
-
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        unsafe { self.storage.assume_invariants() }
-
-        if self.bounds.1 > self.bounds.0 {
-            Some((
-                &self.storage.keys[self.bounds.1 - 1],
-                &self.storage.diffs[self.bounds.1 - 1],
-            ))
-        } else {
-            None
+        if self.valid() {
+            self.pos += advance(&self.storage.keys[self.pos as usize..self.bounds.1], |k| {
+                k.lt(key)
+            }) as isize;
         }
     }
 
     fn valid(&self) -> bool {
-        self.pos < self.bounds.1
+        self.pos >= self.bounds.0 as isize && self.pos < self.bounds.1 as isize
     }
 
     fn rewind(&mut self) {
-        self.pos = self.bounds.0;
+        self.pos = self.bounds.0 as isize;
     }
 
     fn position(&self) -> usize {
-        self.pos
+        self.pos as usize
     }
 
     fn reposition(&mut self, lower: usize, upper: usize) {
-        self.pos = lower;
+        self.pos = lower as isize;
         self.bounds = (lower, upper);
+    }
+
+    fn step_reverse(&mut self) {
+        self.pos -= 1;
+
+        if self.pos < self.bounds.0 as isize {
+            self.pos = self.bounds.0 as isize - 1;
+        }
+    }
+
+    fn seek_reverse(&mut self, key: &Self::Key) {
+        unsafe { self.storage.assume_invariants() }
+        if self.valid() {
+            self.pos -= retreat(&self.storage.keys[self.bounds.0..=self.pos as usize], |k| {
+                k.gt(key)
+            }) as isize;
+        }
+    }
+
+    fn fast_forward(&mut self) {
+        self.pos = self.bounds.1 as isize - 1;
     }
 }
 

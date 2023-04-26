@@ -644,7 +644,7 @@ struct HashedKVCursor<'a, K, V, R, O> {
     __type: PhantomData<&'a (K, V, R, O)>,
 }
 
-impl<'a, K, V, R, O> Cursor<'a, K, V, (), R> for HashedKVCursor<'a, K, V, R, O> {
+impl<'a, K, V, R, O> Cursor<K, V, (), R> for HashedKVCursor<'a, K, V, R, O> {
     fn key_valid(&self) -> bool {
         todo!()
     }
@@ -683,11 +683,15 @@ impl<'a, K, V, R, O> Cursor<'a, K, V, (), R> for HashedKVCursor<'a, K, V, R, O> 
         todo!()
     }
 
+    fn step_key_reverse(&mut self) {
+        todo!()
+    }
+
     fn seek_key(&mut self, _key: &K) {
         todo!()
     }
 
-    fn last_key(&mut self) -> Option<&K> {
+    fn seek_key_reverse(&mut self, _key: &K) {
         todo!()
     }
 
@@ -695,7 +699,15 @@ impl<'a, K, V, R, O> Cursor<'a, K, V, (), R> for HashedKVCursor<'a, K, V, R, O> 
         todo!()
     }
 
+    fn step_val_reverse(&mut self) {
+        todo!()
+    }
+
     fn seek_val(&mut self, _value: &V) {
+        todo!()
+    }
+
+    fn seek_val_reverse(&mut self, _value: &V) {
         todo!()
     }
 
@@ -706,11 +718,26 @@ impl<'a, K, V, R, O> Cursor<'a, K, V, (), R> for HashedKVCursor<'a, K, V, R, O> 
         todo!()
     }
 
+    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        todo!()
+    }
+
     fn rewind_keys(&mut self) {
         todo!()
     }
 
+    fn fast_forward_keys(&mut self) {
+        todo!()
+    }
+
     fn rewind_vals(&mut self) {
+        todo!()
+    }
+
+    fn fast_forward_vals(&mut self) {
         todo!()
     }
 }

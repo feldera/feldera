@@ -189,7 +189,6 @@ enum CursorAction<
     RewindKeys,
     RewindVals,
     Key,
-    LastKey,
     Val,
     MapTimes,
     MapTimesThrough(T),
@@ -207,7 +206,6 @@ fn action<
         Just(CursorAction::RewindKeys),
         Just(CursorAction::RewindVals),
         Just(CursorAction::Key),
-        Just(CursorAction::LastKey),
         Just(CursorAction::Val),
         Just(CursorAction::MapTimes),
         any::<T>().prop_map(CursorAction::MapTimesThrough),
@@ -326,10 +324,6 @@ fn cursor_trait<B, I>(
                 if model_cursor.key_valid() {
                     assert_eq!(model_cursor.key(), totest_cursor.key());
                 }
-                check_eq_invariants(i, &model_cursor, &totest_cursor);
-            }
-            CursorAction::LastKey => {
-                assert_eq!(model_cursor.last_key(), totest_cursor.last_key());
                 check_eq_invariants(i, &model_cursor, &totest_cursor);
             }
             CursorAction::Val => {

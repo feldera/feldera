@@ -7,6 +7,9 @@ use super::{
     ValueConsumer,
 };
 use crate::{algebra::HasZero, utils::VecExt, DBData, DBTimestamp, DBWeight, NumEntries};
+use rand::seq::IteratorRandom;
+use rand::SeedableRng;
+use rand_chacha::ChaChaRng;
 use size_of::SizeOf;
 use std::{
     cmp::max,
@@ -42,6 +45,87 @@ where
         .collect::<Vec<_>>()
 }
 
+/// Convert any batch into a vector of tuples.
+pub fn batch_to_tuples_reverse_vals<B>(batch: &B) -> Vec<((B::Key, B::Val, B::Time), B::R)>
+where
+    B: BatchReader,
+{
+    let mut result = Vec::new();
+    let mut cursor = batch.cursor();
+
+    while cursor.key_valid() {
+        cursor.fast_forward_vals();
+
+        while cursor.val_valid() {
+            let key = cursor.key().clone();
+            let val = cursor.val().clone();
+            cursor
+                .map_times(|t, r| result.push(((key.clone(), val.clone(), t.clone()), r.clone())));
+            cursor.step_val_reverse();
+        }
+        cursor.step_key()
+    }
+
+    <TestBatch<B::Key, B::Val, B::Time, B::R>>::from_data(&result)
+        .data
+        .into_iter()
+        .collect::<Vec<_>>()
+}
+
+pub fn batch_to_tuples_reverse_keys<B>(batch: &B) -> Vec<((B::Key, B::Val, B::Time), B::R)>
+where
+    B: BatchReader,
+{
+    let mut result = Vec::new();
+    let mut cursor = batch.cursor();
+
+    cursor.fast_forward_keys();
+
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let key = cursor.key().clone();
+            let val = cursor.val().clone();
+            cursor
+                .map_times(|t, r| result.push(((key.clone(), val.clone(), t.clone()), r.clone())));
+            cursor.step_val();
+        }
+        cursor.step_key_reverse()
+    }
+
+    <TestBatch<B::Key, B::Val, B::Time, B::R>>::from_data(&result)
+        .data
+        .into_iter()
+        .collect::<Vec<_>>()
+}
+
+pub fn batch_to_tuples_reverse_keys_vals<B>(batch: &B) -> Vec<((B::Key, B::Val, B::Time), B::R)>
+where
+    B: BatchReader,
+{
+    let mut result = Vec::new();
+    let mut cursor = batch.cursor();
+
+    cursor.fast_forward_keys();
+
+    while cursor.key_valid() {
+        cursor.fast_forward_vals();
+
+        while cursor.val_valid() {
+            let key = cursor.key().clone();
+            let val = cursor.val().clone();
+            cursor
+                .map_times(|t, r| result.push(((key.clone(), val.clone(), t.clone()), r.clone())));
+            cursor.step_val_reverse();
+        }
+        cursor.step_key_reverse()
+    }
+
+    <TestBatch<B::Key, B::Val, B::Time, B::R>>::from_data(&result)
+        .data
+        .into_iter()
+        .collect::<Vec<_>>()
+}
+
 /// Panic if `batch1` and `batch2` contain different tuples.
 pub fn assert_batch_eq<B1, B2>(batch1: &B1, batch2: &B2)
 where
@@ -49,7 +133,12 @@ where
     B2: BatchReader<Key = B1::Key, Val = B1::Val, Time = B1::Time, R = B1::R>,
 {
     let tuples1 = batch_to_tuples(batch1);
+    assert_eq!(tuples1, batch_to_tuples_reverse_vals(batch1));
+    assert_eq!(tuples1, batch_to_tuples_reverse_keys(batch1));
+    assert_eq!(tuples1, batch_to_tuples_reverse_keys_vals(batch1));
+
     let tuples2 = batch_to_tuples(batch2);
+    assert_eq!(tuples2, batch_to_tuples_reverse_vals(batch2));
 
     assert_eq!(tuples1, tuples2);
 }
@@ -60,18 +149,95 @@ where
     T2: Trace<Key = T1::Key, Val = T1::Val, Time = T1::Time, R = T1::R>,
 {
     let mut tuples1 = batch_to_tuples(trace1);
+    assert_eq!(tuples1, batch_to_tuples_reverse_vals(trace1));
+    assert_eq!(tuples1, batch_to_tuples_reverse_keys(trace1));
+    assert_eq!(tuples1, batch_to_tuples_reverse_keys_vals(trace1));
 
     if let Some(bound) = trace1.lower_value_bound() {
         tuples1.retain(|((_k, v, _t), _r)| v >= bound);
     }
 
     let mut tuples2 = batch_to_tuples(trace2);
+    assert_eq!(tuples2, batch_to_tuples_reverse_vals(trace2));
 
     if let Some(bound) = trace2.lower_value_bound() {
         tuples2.retain(|((_k, v, _t), _r)| v >= bound);
     }
 
     assert_eq!(tuples1, tuples2);
+}
+
+pub fn assert_batch_cursors_eq<B1, B2>(batch: &B1, ref_batch: &B2, seed: u64)
+where
+    B1: BatchReader,
+    B2: BatchReader<Key = B1::Key, Val = B1::Val, Time = B1::Time, R = B1::R>,
+{
+    // Extract all key/value pairs.
+    let mut tuples = batch_to_tuples(ref_batch)
+        .into_iter()
+        .map(|((k, v, _t), _r)| (k, v))
+        .collect::<Vec<_>>();
+    tuples.dedup();
+
+    // Randomly sample 1/3 of the pairs.
+    let sample_len = tuples.len() / 3;
+    let mut rng = ChaChaRng::seed_from_u64(seed);
+    let mut sample: Vec<(B1::Key, B1::Val)> =
+        tuples.into_iter().choose_multiple(&mut rng, sample_len);
+    sample.sort();
+    sample.dedup();
+
+    let mut sample_map = <BTreeMap<B1::Key, Vec<B1::Val>>>::new();
+
+    for (k, v) in sample.into_iter() {
+        sample_map.entry(k).or_default().push(v);
+    }
+
+    let mut cursor = batch.cursor();
+
+    for key in sample_map.keys() {
+        cursor.seek_key(key);
+        assert!(cursor.key_valid());
+        assert_eq!(cursor.key(), key);
+
+        for val in sample_map.get(key).unwrap().iter() {
+            cursor.seek_val(val);
+            assert!(cursor.val_valid());
+            assert_eq!(cursor.val(), val);
+        }
+
+        cursor.fast_forward_vals();
+        assert!(cursor.val_valid());
+
+        for val in sample_map.get(key).unwrap().iter().rev() {
+            cursor.seek_val_reverse(val);
+            assert!(cursor.val_valid());
+            assert_eq!(cursor.val(), val);
+        }
+    }
+
+    cursor.fast_forward_keys();
+
+    for key in sample_map.keys().rev() {
+        cursor.seek_key_reverse(key);
+        assert!(cursor.key_valid());
+        assert_eq!(cursor.key(), key);
+
+        for val in sample_map.get(key).unwrap().iter() {
+            cursor.seek_val(val);
+            assert!(cursor.val_valid());
+            assert_eq!(cursor.val(), val);
+        }
+
+        cursor.fast_forward_vals();
+        assert!(cursor.val_valid());
+
+        for val in sample_map.get(key).unwrap().iter().rev() {
+            cursor.seek_val_reverse(val);
+            assert!(cursor.val_valid());
+            assert_eq!(cursor.val(), val);
+        }
+    }
 }
 
 /// Inefficient but simple batch implementation as a B-tree map.
@@ -395,18 +561,18 @@ where
         self.val_valid = true;
     }
 
+    fn step_key_reverse(&mut self) {
+        todo!()
+    }
+
     fn seek_key(&mut self, key: &K) {
         while self.index < self.data.len() && &self.data[self.index].0 .0 < key {
             self.index += 1;
         }
     }
 
-    fn last_key(&mut self) -> Option<&K> {
-        if self.data.is_empty() {
-            None
-        } else {
-            Some(&self.data[self.data.len() - 1].0 .0)
-        }
+    fn seek_key_reverse(&mut self, _key: &K) {
+        todo!()
     }
 
     fn step_val(&mut self) {
@@ -423,8 +589,13 @@ where
         }
     }
 
-    fn seek_val(&mut self, _val: &V) {
-        todo!()
+    fn seek_val(&mut self, val: &V) {
+        loop {
+            if !self.val_valid() || self.val() >= val {
+                break;
+            }
+            self.step_val();
+        }
     }
 
     fn seek_val_with<P>(&mut self, _predicate: P)
@@ -438,8 +609,70 @@ where
         self.index = 0;
     }
 
+    fn fast_forward_keys(&mut self) {
+        todo!()
+    }
+
     fn rewind_vals(&mut self) {
         todo!()
+    }
+
+    fn step_val_reverse(&mut self) {
+        let current_key = self.data[self.index].0 .0.clone();
+        let current_val = self.data[self.index].0 .1.clone();
+
+        while self.data[self.index].0 .1 == current_val {
+            if self.index > 0 && self.data[self.index - 1].0 .0 == current_key {
+                self.index -= 1;
+            } else {
+                self.val_valid = false;
+                return;
+            }
+        }
+
+        let current_val = self.data[self.index].0 .1.clone();
+
+        while self.index > 0
+            && self.data[self.index - 1].0 .0 == current_key
+            && self.data[self.index - 1].0 .1 == current_val
+        {
+            self.index -= 1;
+        }
+    }
+
+    fn seek_val_reverse(&mut self, val: &V) {
+        loop {
+            if !self.val_valid() || self.val() >= val {
+                break;
+            }
+            self.step_val_reverse();
+        }
+    }
+
+    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        todo!()
+    }
+
+    fn fast_forward_vals(&mut self) {
+        let current_key = self.data[self.index].0 .0.clone();
+
+        while self.index + 1 < self.data.len() && self.data[self.index + 1].0 .0 == current_key {
+            self.index += 1;
+        }
+
+        let current_val = self.data[self.index].0 .1.clone();
+
+        while self.index > 0
+            && self.data[self.index - 1].0 .0 == current_key
+            && self.data[self.index - 1].0 .1 == current_val
+        {
+            self.index -= 1;
+        }
+
+        self.val_valid = true;
     }
 }
 

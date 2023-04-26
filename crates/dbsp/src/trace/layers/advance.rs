@@ -71,6 +71,84 @@ where
     }
 }
 
+/// Reports the number of elements satisfying the predicate in the suffix of
+/// `slice`.
+///
+/// This methods *relies strongly* on the assumption that the predicate
+/// stays false once it becomes false, a joint property of the predicate
+/// and the slice. This allows `retreat` to use exponential search to
+/// count the number of elements in time logarithmic in the result.
+pub fn retreat<T, F>(slice: &[T], function: F) -> usize
+where
+    F: Fn(&T) -> bool,
+{
+    retreat_raw::<T, F, DEFAULT_SMALL_LIMIT>(slice, function)
+}
+
+/// Reports the number of elements satisfying the predicate in the suffix of
+/// `slice` with the additional ability to specify the limit for linear
+/// searches.
+///
+/// This methods *relies strongly* on the assumption that the predicate
+/// stays false once it becomes false, a joint property of the predicate
+/// and the slice. This allows `retreat` to use exponential search to
+/// count the number of elements in time logarithmic in the result.
+pub fn retreat_raw<T, F, const SMALL_LIMIT: usize>(slice: &[T], function: F) -> usize
+where
+    F: Fn(&T) -> bool,
+{
+    if slice.is_empty() {
+        return 0;
+    }
+
+    let last_index = slice.len() - 1;
+
+    // Exponential search if the answer isn't within `SMALL_LIMIT`.
+    if slice.len() > SMALL_LIMIT && function(&slice[last_index - SMALL_LIMIT]) {
+        // Skip `slice[..SMALL_LIMIT]` outright, the above condition established
+        // that nothing within it satisfies the predicate
+        let mut index = SMALL_LIMIT + 1;
+
+        if index < slice.len() && function(&slice[last_index - index]) {
+            // Advance in exponentially growing steps
+            let mut step = 1;
+            while index + step < slice.len() && function(&slice[last_index - (index + step)]) {
+                index += step;
+                step <<= 1;
+            }
+
+            // Advance in exponentially shrinking steps
+            step >>= 1;
+            while step > 0 {
+                if index + step < slice.len() && function(&slice[last_index - (index + step)]) {
+                    index += step;
+                }
+                step >>= 1;
+            }
+
+            index += 1;
+        }
+
+        index
+
+    // If `slice[.. last_index - SMALL_LIMIT]` doesn't satisfy the predicate, we
+    // can simply perform a linear search on `slice[last_index -
+    // SMALL_LIMIT..]`
+    } else {
+        // Clamp to the length of the slice, this branch will also be hit if the slice
+        // is smaller than SMALL_LIMIT
+        let limit = min(last_index, SMALL_LIMIT);
+
+        slice[last_index - limit..]
+            .iter()
+            .rev()
+            .position(|x| !function(x))
+            // If nothing within `slice[last_index - limit ..]` satisfies the predicate, we can
+            // advance past the searched prefix
+            .unwrap_or(limit + 1)
+    }
+}
+
 pub fn advance_erased<F>(slice: &[MaybeUninit<u8>], size: usize, function: F) -> usize
 where
     F: Fn(*const u8) -> bool,
@@ -159,7 +237,7 @@ impl SlicePtr {
 #[cfg(test)]
 mod tests {
     use crate::{
-        trace::layers::advance::{advance, advance_erased, DEFAULT_SMALL_LIMIT},
+        trace::layers::advance::{advance, advance_erased, retreat, DEFAULT_SMALL_LIMIT},
         utils::bytes_of,
     };
     use proptest::{
@@ -175,12 +253,14 @@ mod tests {
         // Haystack that's smaller than `DEFAULT_SMALL_LIMIT`
         let haystack = &[false, false, false, false, false];
         assert_eq!(advance(haystack, |&x| x), 0);
+        assert_eq!(retreat(haystack, |&x| x), 0);
 
         // Haystack that turns `false` before `DEFAULT_SMALL_LIMIT`
         let haystack = &[
             false, false, false, false, false, false, false, false, false, false,
         ];
         assert_eq!(advance(haystack, |&x| x), 0);
+        assert_eq!(retreat(haystack, |&x| x), 0);
     }
 
     #[test]
@@ -188,21 +268,25 @@ mod tests {
         // Haystack that's smaller than `DEFAULT_SMALL_LIMIT`
         let haystack = &[true, true, false, false, false];
         assert_eq!(advance(haystack, |&x| x), 2);
+        assert_eq!(retreat(haystack, |&x| !x), 3);
 
         // Haystack that turns `false` before `DEFAULT_SMALL_LIMIT`
         let haystack = &[
             true, true, true, false, false, false, false, false, false, false,
         ];
         assert_eq!(advance(haystack, |&x| x), 3);
+        assert_eq!(retreat(haystack, |&x| !x), 7);
     }
 
     #[test]
     fn advance_medium() {
         // Haystack that's longer than `DEFAULT_SMALL_LIMIT`
         let haystack = &[
-            true, true, true, true, true, true, true, true, true, true, false, false, false,
+            true, true, true, true, true, true, true, true, true, true, false, false, false, false,
+            false, false, false, false, false, false,
         ];
         assert_eq!(advance(haystack, |&x| x), 10);
+        assert_eq!(retreat(haystack, |&x| !x), 10);
     }
 
     #[test]
@@ -285,6 +369,18 @@ mod tests {
         Ok(())
     }
 
+    fn retreat_test(needle: usize, haystack: &[usize]) -> TestCaseResult {
+        let count = retreat(haystack, |&x| x > needle);
+        let expected = haystack
+            .iter()
+            .rev()
+            .position(|&x| x <= needle)
+            .unwrap_or(haystack.len());
+
+        prop_assert_eq!(count, expected);
+        Ok(())
+    }
+
     fn advance_erased_test(needle: usize, haystack: &[usize]) -> TestCaseResult {
         let count = advance_erased(bytes_of(haystack), size_of::<usize>(), |x| unsafe {
             assert!(
@@ -308,10 +404,31 @@ mod tests {
             advance_test(needle, &haystack)?;
         }
 
+        #[test]
+        fn retreat_less_than(needle in any::<usize>(), haystack in haystack(0..100_000usize, any::<usize>())) {
+            retreat_test(needle, &haystack)?;
+        }
+
+        // Force `advance()` to stop in the beginning of the haystack.
+        #[test]
+        fn advance_less_than_unsat1(needle in ..HALF, haystack in haystack(0..100_000usize, HALF..)) {
+            advance_test(needle, &haystack)?;
+        }
+
         // Force `advance()` to search the entire haystack
         #[test]
-        fn advance_less_than_unsat(needle in ..HALF, haystack in haystack(0..100_000usize, HALF..)) {
+        fn advance_less_than_unsat2(needle in HALF.., haystack in haystack(0..100_000usize, ..HALF)) {
             advance_test(needle, &haystack)?;
+        }
+
+        #[test]
+        fn retreat_less_than_unsat1(needle in ..HALF, haystack in haystack(0..100_000usize, HALF..)) {
+            retreat_test(needle, &haystack)?;
+        }
+
+        #[test]
+        fn retreat_less_than_unsat2(needle in HALF.., haystack in haystack(0..100_000usize, ..HALF)) {
+            retreat_test(needle, &haystack)?;
         }
 
         // Ensure that we check the case of the haystack being shorter than `DEFAULT_SMALL_LIMIT`
@@ -320,10 +437,30 @@ mod tests {
             advance_test(needle, &haystack)?;
         }
 
+        #[test]
+        fn retreat_less_than_small(needle in any::<usize>(), haystack in haystack(0..=DEFAULT_SMALL_LIMIT, any::<usize>())) {
+            retreat_test(needle, &haystack)?;
+        }
+
         // Force `advance()` to search the entire haystack
         #[test]
-        fn advance_less_than_small_unsat(needle in ..HALF, haystack in haystack(0..=DEFAULT_SMALL_LIMIT, HALF..)) {
+        fn advance_less_than_small_unsat1(needle in ..HALF, haystack in haystack(0..=DEFAULT_SMALL_LIMIT, HALF..)) {
             advance_test(needle, &haystack)?;
+        }
+
+        #[test]
+        fn advance_less_than_small_unsat2(needle in HALF.., haystack in haystack(0..=DEFAULT_SMALL_LIMIT, ..HALF)) {
+            advance_test(needle, &haystack)?;
+        }
+
+        #[test]
+        fn retreat_less_than_small_unsat1(needle in ..HALF, haystack in haystack(0..=DEFAULT_SMALL_LIMIT, HALF..)) {
+            retreat_test(needle, &haystack)?;
+        }
+
+        #[test]
+        fn retreat_less_than_small_unsat2(needle in HALF.., haystack in haystack(0..=DEFAULT_SMALL_LIMIT, ..HALF)) {
+            retreat_test(needle, &haystack)?;
         }
 
         #[test]

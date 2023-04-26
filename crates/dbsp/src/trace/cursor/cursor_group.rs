@@ -91,12 +91,16 @@ where
         self.base.step_val();
     }
 
+    fn step_key_reverse(&mut self) {
+        self.base.step_val_reverse();
+    }
+
     fn seek_key(&mut self, val: &V) {
         self.base.seek_val(val)
     }
 
-    fn last_key(&mut self) -> Option<&V> {
-        unimplemented!()
+    fn seek_key_reverse(&mut self, val: &V) {
+        self.base.seek_val_reverse(val)
     }
 
     fn step_val(&mut self) {
@@ -118,7 +122,30 @@ where
         self.base.rewind_vals();
     }
 
+    fn fast_forward_keys(&mut self) {
+        self.base.fast_forward_vals();
+    }
+
     fn rewind_vals(&mut self) {
+        self.val_valid = true;
+    }
+
+    fn step_val_reverse(&mut self) {
+        self.val_valid = false;
+    }
+
+    fn seek_val_reverse(&mut self, _val: &()) {}
+
+    fn seek_val_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&()) -> bool + Clone,
+    {
+        if !predicate(&()) {
+            self.val_valid = false;
+        }
+    }
+
+    fn fast_forward_vals(&mut self) {
         self.val_valid = true;
     }
 }

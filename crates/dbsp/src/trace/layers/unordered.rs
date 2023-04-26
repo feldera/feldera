@@ -132,10 +132,6 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        todo!()
-    }
-
     fn valid(&self) -> bool {
         todo!()
     }
@@ -149,6 +145,18 @@ impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
     }
 
     fn reposition(&mut self, _lower: usize, _upper: usize) {
+        todo!()
+    }
+
+    fn step_reverse(&mut self) {
+        todo!()
+    }
+
+    fn seek_reverse(&mut self, _key: &Self::Key) {
+        todo!()
+    }
+
+    fn fast_forward(&mut self) {
         todo!()
     }
 }
