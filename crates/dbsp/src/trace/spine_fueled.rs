@@ -408,12 +408,16 @@ where
         self.cursor.step_key();
     }
 
+    fn step_key_reverse(&mut self) {
+        self.cursor.step_key_reverse();
+    }
+
     fn seek_key(&mut self, key: &B::Key) {
         self.cursor.seek_key(key);
     }
 
-    fn last_key(&mut self) -> Option<&B::Key> {
-        self.cursor.last_key()
+    fn seek_key_reverse(&mut self, key: &B::Key) {
+        self.cursor.seek_key_reverse(key);
     }
 
     fn step_val(&mut self) {
@@ -435,8 +439,31 @@ where
         self.cursor.rewind_keys();
     }
 
+    fn fast_forward_keys(&mut self) {
+        self.cursor.fast_forward_keys();
+    }
+
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
+    }
+
+    fn step_val_reverse(&mut self) {
+        self.cursor.step_val_reverse();
+    }
+
+    fn seek_val_reverse(&mut self, val: &B::Val) {
+        self.cursor.seek_val_reverse(val);
+    }
+
+    fn seek_val_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&B::Val) -> bool + Clone,
+    {
+        self.cursor.seek_val_with_reverse(predicate);
+    }
+
+    fn fast_forward_vals(&mut self) {
+        self.cursor.fast_forward_vals();
     }
 }
 
@@ -1183,7 +1210,7 @@ mod test {
     use crate::{
         trace::{
             ord::{OrdKeyBatch, OrdValBatch},
-            test_batch::{assert_batch_eq, assert_trace_eq, TestBatch},
+            test_batch::{assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, TestBatch},
             Batch, BatchReader, Spine, Trace,
         },
         OrdIndexedZSet, OrdZSet,
@@ -1291,7 +1318,7 @@ mod test {
         }
 
         #[test]
-        fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20)) {
+        fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::max_value()) {
             let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
             let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
 
@@ -1300,11 +1327,13 @@ mod test {
                 let ref_batch = TestBatch::from_tuples((), tuples);
 
                 assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(&batch, &ref_batch, seed);
 
                 trace.insert(batch);
                 ref_trace.insert(ref_batch);
 
                 assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(&trace, &ref_trace, seed);
 
                 trace.truncate_keys_below(&key_bound);
                 ref_trace.truncate_keys_below(&key_bound);
@@ -1313,6 +1342,7 @@ mod test {
                 ref_trace.truncate_values_below(&val_bound);
 
                 assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(&trace, &ref_trace, seed);
             }
         }
 
@@ -1340,7 +1370,7 @@ mod test {
         }
 
         #[test]
-        fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20)) {
+        fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
             let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
             let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
 
@@ -1349,11 +1379,13 @@ mod test {
                 let ref_batch = TestBatch::from_tuples(time as u32, tuples);
 
                 assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(&batch, &ref_batch, seed);
 
                 trace.insert(batch);
                 ref_trace.insert(ref_batch);
 
                 assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(&trace, &ref_trace, seed);
 
                 trace.truncate_keys_below(&key_bound);
                 ref_trace.truncate_keys_below(&key_bound);
@@ -1362,6 +1394,7 @@ mod test {
                 ref_trace.truncate_values_below(&val_bound);
 
                 assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(&trace, &ref_trace, seed);
             }
         }
     }

@@ -309,11 +309,15 @@ where
         self.advance();
     }
 
+    fn step_key_reverse(&mut self) {
+        unimplemented!()
+    }
+
     fn seek_key(&mut self, _key: &TS) {
         unimplemented!()
     }
 
-    fn last_key(&mut self) -> Option<&TS> {
+    fn seek_key_reverse(&mut self, _key: &TS) {
         unimplemented!()
     }
 
@@ -336,8 +340,31 @@ where
         unimplemented!()
     }
 
+    fn fast_forward_keys(&mut self) {
+        unimplemented!()
+    }
+
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals()
+    }
+
+    fn step_val_reverse(&mut self) {
+        self.cursor.step_val_reverse();
+    }
+
+    fn seek_val_reverse(&mut self, val: &V) {
+        self.cursor.seek_val_reverse(val)
+    }
+
+    fn seek_val_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        self.cursor.seek_val_with_reverse(predicate)
+    }
+
+    fn fast_forward_vals(&mut self) {
+        self.cursor.fast_forward_vals()
     }
 }
 

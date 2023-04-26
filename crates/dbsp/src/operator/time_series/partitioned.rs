@@ -105,6 +105,17 @@ where
         }
     }
 
+    fn step_key_reverse(&mut self) {
+        while self.cursor.val_valid() {
+            if self.cursor.val().0 == self.key {
+                self.cursor.step_val_reverse();
+            } else {
+                self.key = self.cursor.val().0.clone();
+                break;
+            }
+        }
+    }
+
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek_val_with(|(k, _)| k >= key);
         if self.cursor.val_valid() {
@@ -112,8 +123,11 @@ where
         }
     }
 
-    fn last_key(&mut self) -> Option<&K> {
-        unimplemented!()
+    fn seek_key_reverse(&mut self, key: &K) {
+        self.cursor.seek_val_with_reverse(|(k, _)| k <= key);
+        if self.cursor.val_valid() {
+            self.key = self.cursor.val().0.clone();
+        }
     }
 
     fn step_val(&mut self) {
@@ -136,25 +150,32 @@ where
         self.key = self.cursor.val().0.clone();
     }
 
+    fn fast_forward_keys(&mut self) {
+        self.cursor.fast_forward_vals();
+        self.key = self.cursor.val().0.clone();
+    }
+
     fn rewind_vals(&mut self) {
         unimplemented!()
     }
-}
 
-/// Cursor over a single partition of a partitioned batch.
-///
-/// Iterates over a single partition of a partitioned collection.
-pub struct PartitionValueCursor<'b, PK, K, V, R, C> {
-    cursor: &'b PartitionCursor<'b, PK, K, V, R, C>,
-}
+    fn step_val_reverse(&mut self) {
+        self.cursor.step_val_reverse();
+    }
 
-impl<'b, 'c, PK, K, V, R, C> PartitionValueCursor<'c, PK, K, V, R, C>
-where
-    C: Cursor<PK, (K, V), (), R>,
-    K: Clone,
-{
-    pub fn new(cursor: &'c PartitionCursor<'b, PK, K, V, R, C>) -> Self {
-        Self { cursor }
+    fn seek_val_reverse(&mut self, _val: &V) {
+        unimplemented!()
+    }
+
+    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        unimplemented!()
+    }
+
+    fn fast_forward_vals(&mut self) {
+        unimplemented!()
     }
 }
 

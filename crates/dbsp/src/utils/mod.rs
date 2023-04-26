@@ -7,6 +7,7 @@ pub use dyn_vec::{DynIter, DynVec, DynVecVTable};
 pub(crate) use vec_ext::VecExt;
 
 use std::{
+    fmt::Display,
     hint::unreachable_unchecked,
     mem::{forget, ManuallyDrop, MaybeUninit},
     ptr,
@@ -31,7 +32,7 @@ pub(crate) unsafe fn assume(cond: bool) {
 
 #[cold]
 #[inline(never)]
-pub(crate) fn cursor_position_oob(position: usize, length: usize) -> ! {
+pub(crate) fn cursor_position_oob<P: Display>(position: P, length: usize) -> ! {
     panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
 }
 

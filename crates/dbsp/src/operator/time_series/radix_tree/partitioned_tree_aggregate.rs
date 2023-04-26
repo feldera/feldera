@@ -283,11 +283,13 @@ where
         panic!("")
     }
 
-    fn seek_key(&mut self, _key: &TS) {}
-
-    fn last_key(&mut self) -> Option<&TS> {
+    fn step_key_reverse(&mut self) {
         panic!("")
     }
+
+    fn seek_key(&mut self, _key: &TS) {}
+
+    fn seek_key_reverse(&mut self, _key: &TS) {}
 
     fn step_val(&mut self) {
         panic!("")
@@ -303,7 +305,23 @@ where
 
     fn rewind_keys(&mut self) {}
 
+    fn fast_forward_keys(&mut self) {}
+
     fn rewind_vals(&mut self) {}
+
+    fn step_val_reverse(&mut self) {
+        panic!("")
+    }
+
+    fn seek_val_reverse(&mut self, _val: &V) {}
+
+    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+    }
+
+    fn fast_forward_vals(&mut self) {}
 }
 
 /// Ternary operator that implements the internals of

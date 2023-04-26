@@ -5,8 +5,7 @@
 //! ordered collections of tuples of the form `(key, val, time, diff)`.  The
 //! tuples are ordered by key, then by value within each key.  Ordering by time
 //! is not guaranteed, in particular [`CursorList`](`cursor_list::CursorList`)
-//! and [`CursorPair`](`cursor_pair::CursorPair`) cursors can contain
-//! out-of-order and duplicate timestamps.
+//! cursors can contain out-of-order and duplicate timestamps.
 //!
 //! The cursor is different from an iterator both because it allows navigation
 //! on multiple levels (key and val), but also because it supports efficient
@@ -14,7 +13,6 @@
 
 pub mod cursor_group;
 pub mod cursor_list;
-pub mod cursor_pair;
 
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
@@ -110,17 +108,26 @@ pub trait Cursor<K, V, T, R> {
     /// Advances the cursor to the next key.
     fn step_key(&mut self);
 
+    /// Moves the cursor to the previous key.
+    fn step_key_reverse(&mut self);
+
     /// Advances the cursor to the specified key.
     fn seek_key(&mut self, key: &K);
 
-    /// Returns the last key in the cursor or `None` if the cursor is empty.
-    fn last_key(&mut self) -> Option<&K>;
+    /// Moves the cursor back to the specified key.
+    fn seek_key_reverse(&mut self, key: &K);
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
 
+    /// Moves the cursor to the previous value.
+    fn step_val_reverse(&mut self);
+
     /// Advances the cursor to the specified value.
     fn seek_val(&mut self, val: &V);
+
+    /// Moves the cursor back to the specified value.
+    fn seek_val_reverse(&mut self, val: &V);
 
     /// Move the cursor to the first value (for the current key) that satisfies
     /// `predicate`.  Assumes that `predicate` remains true once it turns true.
@@ -128,11 +135,24 @@ pub trait Cursor<K, V, T, R> {
     where
         P: Fn(&V) -> bool + Clone;
 
+    /// Move the cursor back to the largest value (for the current key) that
+    /// satisfies `predicate`.  Assumes that `predicate` remains true once
+    /// it turns true.
+    fn seek_val_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone;
+
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self);
 
+    /// Moves the cursor to the last key.
+    fn fast_forward_keys(&mut self);
+
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self);
+
+    /// Move the cursor to the last value for the current key.
+    fn fast_forward_vals(&mut self);
 }
 
 /// A cursor for taking ownership of ordered `(K, V, R, T)` tuples

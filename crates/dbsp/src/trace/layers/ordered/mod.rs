@@ -8,8 +8,8 @@ pub use consumer::{OrderedLayerConsumer, OrderedLayerValues};
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::layers::{
-        advance, column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, OrdOffset, Trie,
-        TupleBuilder,
+        advance, column_layer::ColumnLayer, retreat, Builder, Cursor, MergeBuilder, OrdOffset,
+        Trie, TupleBuilder,
     },
     utils::{assume, cast_uninit_vec},
     DBData, NumEntries,
@@ -269,7 +269,7 @@ where
                 child: self
                     .vals
                     .cursor_from(child_lower.into_usize(), child_upper.into_usize()),
-                pos: lower,
+                pos: lower as isize,
             }
         } else {
             OrderedCursor {
@@ -890,7 +890,7 @@ where
     L: Trie,
 {
     storage: &'s OrderedLayer<K, L, O>,
-    pos: usize,
+    pos: isize,
     bounds: (usize, usize),
     /// The cursor for the trie layer below this one.
     pub child: L::Cursor<'s>,
@@ -930,12 +930,36 @@ where
     where
         P: Fn(&K) -> bool,
     {
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], predicate);
+        if self.valid() {
+            self.pos += advance(
+                &self.storage.keys[self.pos as usize..self.bounds.1],
+                predicate,
+            ) as isize;
+        }
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
+            );
+        }
+    }
+
+    pub fn seek_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool,
+    {
+        if self.valid() {
+            self.pos -= retreat(
+                &self.storage.keys[self.bounds.0..=self.pos as usize],
+                predicate,
+            ) as isize;
+        }
+
+        if self.valid() {
+            self.child.reposition(
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             );
         }
     }
@@ -962,14 +986,14 @@ where
 
     #[inline]
     fn item(&self) -> Self::Item<'s> {
-        &self.storage.keys[self.pos]
+        &self.storage.keys[self.pos as usize]
     }
 
     fn values(&self) -> L::Cursor<'s> {
         if self.valid() {
             self.storage.vals.cursor_from(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             )
         } else {
             self.storage.vals.cursor_from(0, 0)
@@ -979,63 +1003,97 @@ where
     fn step(&mut self) {
         self.pos += 1;
 
-        if self.valid() {
+        if self.pos < self.bounds.1 as isize {
             self.child.reposition(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             );
         } else {
-            self.pos = self.bounds.1;
+            self.pos = self.bounds.1 as isize;
         }
     }
 
     fn seek(&mut self, key: &Self::Key) {
-        self.pos += advance(&self.storage.keys[self.pos..self.bounds.1], |k| k < key);
+        if self.valid() {
+            self.pos += advance(&self.storage.keys[self.pos as usize..self.bounds.1], |k| {
+                k < key
+            }) as isize;
+        }
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             );
         }
     }
 
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        // Cursor not empty?
-        if self.bounds.1 > self.bounds.0 {
-            Some(&self.storage.keys[self.bounds.1 - 1])
-        } else {
-            None
-        }
-    }
-
     fn valid(&self) -> bool {
-        self.pos < self.bounds.1
+        self.pos >= self.bounds.0 as isize && self.pos < self.bounds.1 as isize
     }
 
     fn rewind(&mut self) {
-        self.pos = self.bounds.0;
+        self.pos = self.bounds.0 as isize;
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             );
         }
     }
 
     fn position(&self) -> usize {
-        self.pos
+        self.pos as usize
     }
 
     fn reposition(&mut self, lower: usize, upper: usize) {
-        self.pos = lower;
+        self.pos = lower as isize;
         self.bounds = (lower, upper);
 
         if self.valid() {
             self.child.reposition(
-                self.storage.offs[self.pos].into_usize(),
-                self.storage.offs[self.pos + 1].into_usize(),
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
+            );
+        }
+    }
+
+    fn step_reverse(&mut self) {
+        self.pos -= 1;
+
+        if self.pos >= self.bounds.0 as isize {
+            self.child.reposition(
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
+            );
+        } else {
+            self.pos = self.bounds.0 as isize - 1;
+        }
+    }
+
+    fn seek_reverse(&mut self, key: &Self::Key) {
+        if self.valid() {
+            self.pos -= retreat(&self.storage.keys[self.bounds.0..=self.pos as usize], |k| {
+                k > key
+            }) as isize;
+        }
+
+        if self.valid() {
+            self.child.reposition(
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
+            );
+        }
+    }
+
+    fn fast_forward(&mut self) {
+        self.pos = self.bounds.1 as isize - 1;
+
+        if self.valid() {
+            self.child.reposition(
+                self.storage.offs[self.pos as usize].into_usize(),
+                self.storage.offs[self.pos as usize + 1].into_usize(),
             );
         }
     }

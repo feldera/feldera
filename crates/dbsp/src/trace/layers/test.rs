@@ -195,6 +195,25 @@ where
     result
 }
 
+fn ordered_leaf_to_map1_reverse<T, R>(trie: &OrderedLeaf<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step_reverse();
+    }
+
+    result
+}
+
 fn column_layer_to_map1<T, R>(trie: &ColumnLayer<T, R>) -> Map1<T, R>
 where
     T: DBData,
@@ -208,6 +227,25 @@ where
         let (t, r) = Cursor::item(&cursor);
         result.insert(t.clone(), r.clone());
         cursor.step();
+    }
+
+    result
+}
+
+fn column_layer_to_map1_reverse<T, R>(trie: &ColumnLayer<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step_reverse();
     }
 
     result
@@ -244,6 +282,39 @@ where
     result
 }
 
+fn ordered_column_layer_to_map2_reverse<K, T, R>(
+    trie: &OrderedLayer<K, ColumnLayer<T, R>, usize>,
+) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        result.insert(cursor.item().clone(), BTreeMap::new());
+
+        let mut leaf_cursor = cursor.values();
+        leaf_cursor.fast_forward();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item()).unwrap();
+            entry.insert(t.clone(), r.clone());
+
+            leaf_cursor.step_reverse();
+        }
+        cursor.step_reverse();
+    }
+
+    result
+}
+
 fn ordered_leaf_layer_to_map2<K, T, R>(
     trie: &OrderedLayer<K, OrderedLeaf<T, R>, usize>,
 ) -> Map2<K, T, R>
@@ -270,6 +341,39 @@ where
             leaf_cursor.step();
         }
         cursor.step();
+    }
+
+    result
+}
+
+fn ordered_leaf_layer_to_map2_reverse<K, T, R>(
+    trie: &OrderedLayer<K, OrderedLeaf<T, R>, usize>,
+) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        result.insert(cursor.item().clone(), BTreeMap::new());
+
+        let mut leaf_cursor = cursor.values();
+        leaf_cursor.fast_forward();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item()).unwrap();
+            entry.insert(t.clone(), r.clone());
+
+            leaf_cursor.step_reverse();
+        }
+        cursor.step_reverse();
     }
 
     result
@@ -322,6 +426,57 @@ where
     result
 }
 
+fn ordered_column_layer_to_map3_reverse<K, V, T, R>(
+    trie: &OrderedLayer<K, OrderedLayer<V, ColumnLayer<T, R>, usize>, usize>,
+) -> Map3<K, V, T, R>
+where
+    K: DBData,
+    V: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map3<K, V, T, R> = BTreeMap::new();
+
+    let mut cursor1 = trie.cursor();
+    cursor1.fast_forward();
+
+    while cursor1.valid() {
+        let k = cursor1.item();
+
+        result.insert(k.clone(), BTreeMap::new());
+
+        let mut cursor2 = cursor1.values();
+        cursor2.fast_forward();
+
+        while cursor2.valid() {
+            let v = cursor2.item();
+
+            result
+                .get_mut(k)
+                .unwrap()
+                .insert(v.clone(), BTreeMap::new());
+
+            let mut cursor3 = cursor2.values();
+            cursor3.fast_forward();
+
+            while cursor3.valid() {
+                let (t, r) = cursor3.item();
+                result
+                    .get_mut(k)
+                    .unwrap()
+                    .get_mut(v)
+                    .unwrap()
+                    .insert(t.clone(), r.clone());
+                cursor3.step_reverse();
+            }
+            cursor2.step_reverse();
+        }
+        cursor1.step_reverse();
+    }
+
+    result
+}
+
 fn ordered_leaf_layer_to_map3<K, V, T, R>(
     trie: &OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, usize>, usize>,
 ) -> Map3<K, V, T, R>
@@ -364,6 +519,57 @@ where
             cursor2.step();
         }
         cursor1.step();
+    }
+
+    result
+}
+
+fn ordered_leaf_layer_to_map3_reverse<K, V, T, R>(
+    trie: &OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, usize>, usize>,
+) -> Map3<K, V, T, R>
+where
+    K: DBData,
+    V: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map3<K, V, T, R> = BTreeMap::new();
+
+    let mut cursor1 = trie.cursor();
+    cursor1.fast_forward();
+
+    while cursor1.valid() {
+        let k = cursor1.item();
+
+        result.insert(k.clone(), BTreeMap::new());
+
+        let mut cursor2 = cursor1.values();
+        cursor2.fast_forward();
+
+        while cursor2.valid() {
+            let v = cursor2.item();
+
+            result
+                .get_mut(k)
+                .unwrap()
+                .insert(v.clone(), BTreeMap::new());
+
+            let mut cursor3 = cursor2.values();
+            cursor3.fast_forward();
+
+            while cursor3.valid() {
+                let (t, r) = cursor3.item();
+                result
+                    .get_mut(k)
+                    .unwrap()
+                    .get_mut(v)
+                    .unwrap()
+                    .insert(t.clone(), r.clone());
+                cursor3.step_reverse();
+            }
+            cursor2.step_reverse();
+        }
+        cursor1.step_reverse();
     }
 
     result
@@ -650,18 +856,24 @@ proptest! {
     #[test]
     fn test_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
         test_trie1::<_, _, OrderedLeaf<_, _>, _>(&left, &right, &ordered_leaf_to_map1);
+        test_trie1::<_, _, OrderedLeaf<_, _>, _>(&left, &right, &ordered_leaf_to_map1_reverse);
         test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1);
+        test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1_reverse);
     }
 
     #[test]
     fn test_nested_layers(left in tuples2(10, 10, 2, 5000), right in tuples2(10, 5, 2, 5000)) {
         test_trie2::<_, _, _, OrderedLayer<_, ColumnLayer<_, _>, usize>, _>(&left, &right, &ordered_column_layer_to_map2);
+        test_trie2::<_, _, _, OrderedLayer<_, ColumnLayer<_, _>, usize>, _>(&left, &right, &ordered_column_layer_to_map2_reverse);
         test_trie2::<_, _, _, OrderedLayer<_, OrderedLeaf<_, _>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map2);
+        test_trie2::<_, _, _, OrderedLayer<_, OrderedLeaf<_, _>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map2_reverse);
     }
 
     #[test]
     fn test_twice_nested_layers(left in tuples3(10, 5, 5, 2, 5000), right in tuples3(10, 5, 5, 2, 5000)) {
         test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, OrderedLeaf<_, _>, usize>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map3);
+        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, OrderedLeaf<_, _>, usize>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map3_reverse);
         test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, ColumnLayer<_, _>, usize>, usize>, _>(&left, &right, &ordered_column_layer_to_map3);
+        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, ColumnLayer<_, _>, usize>, usize>, _>(&left, &right, &ordered_column_layer_to_map3_reverse);
     }
 }

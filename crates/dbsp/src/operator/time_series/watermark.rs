@@ -37,7 +37,8 @@ where
     {
         let local_watermark = self.stream_fold(TS::default(), move |old_watermark, batch| {
             let mut cursor = batch.cursor();
-            match cursor.last_key() {
+            cursor.fast_forward_keys();
+            match cursor.get_key() {
                 Some(key) => max(old_watermark, watermark_func(key)),
                 None => old_watermark,
             }

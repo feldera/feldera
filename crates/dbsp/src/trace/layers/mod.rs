@@ -17,7 +17,7 @@ pub mod unordered;
 #[cfg(test)]
 mod test;
 
-pub use advance::{advance, advance_erased, advance_raw};
+pub use advance::{advance, advance_erased, advance_raw, retreat};
 
 use crate::algebra::HasZero;
 use size_of::SizeOf;
@@ -200,16 +200,20 @@ pub trait Cursor<'s> {
     /// Reveals the current item.
     fn item(&self) -> Self::Item<'s>;
 
+    /// Returns cursor over values associted with the current key.
     fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s>;
 
     /// Advances the cursor by one element.
     fn step(&mut self);
 
+    /// Move cursor back by one element.
+    fn step_reverse(&mut self);
+
     /// Advances the cursor until the location where `key` would be expected.
     fn seek(&mut self, key: &Self::Key);
 
-    /// Returns the last item in the cursor or `None` if the cursor is empty.
-    fn last_item(&mut self) -> Option<Self::Item<'s>>;
+    /// Move the cursor back until the location where `key` would be expected.
+    fn seek_reverse(&mut self, key: &Self::Key);
 
     /// Returns `true` if the cursor points at valid data. Returns `false` if
     /// the cursor is exhausted.
@@ -217,6 +221,9 @@ pub trait Cursor<'s> {
 
     /// Rewinds the cursor to its initial state.
     fn rewind(&mut self);
+
+    /// Moves the cursor to the last position.
+    fn fast_forward(&mut self);
 
     /// Current position of the cursor.
     fn position(&self) -> usize;
@@ -355,10 +362,6 @@ impl<'s> Cursor<'s> for () {
 
     fn seek(&mut self, _key: &Self::Key) {}
 
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        None
-    }
-
     fn valid(&self) -> bool {
         false
     }
@@ -369,4 +372,10 @@ impl<'s> Cursor<'s> for () {
     }
 
     fn reposition(&mut self, _lower: usize, _upper: usize) {}
+
+    fn step_reverse(&mut self) {}
+
+    fn seek_reverse(&mut self, _key: &Self::Key) {}
+
+    fn fast_forward(&mut self) {}
 }

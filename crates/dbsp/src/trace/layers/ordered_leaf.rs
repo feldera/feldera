@@ -2,7 +2,7 @@
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
-    trace::layers::{advance, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+    trace::layers::{advance, retreat, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
@@ -65,7 +65,7 @@ where
         OrderedLeafCursor {
             storage: self,
             bounds: (lower, upper),
-            pos: lower,
+            pos: lower as isize,
         }
     }
 
@@ -248,9 +248,9 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
     ) -> usize {
         let trie1 = cursor1.storage;
         let trie2 = cursor2.storage;
-        let mut lower1 = cursor1.pos;
+        let mut lower1 = cursor1.pos as usize;
         let upper1 = cursor1.bounds.1;
-        let mut lower2 = cursor2.pos;
+        let mut lower2 = cursor2.pos as usize;
         let upper2 = cursor2.bounds.1;
 
         self.vals.reserve((upper1 - lower1) + (upper2 - lower2));
@@ -355,7 +355,7 @@ where
     K: Eq + Ord + Clone,
     R: Clone,
 {
-    pos: usize,
+    pos: isize,
     storage: &'s OrderedLeaf<K, R>,
     bounds: (usize, usize),
 }
@@ -396,43 +396,63 @@ where
     }
 
     fn item(&self) -> Self::Item<'s> {
-        &self.storage.vals[self.pos]
+        &self.storage.vals[self.pos as usize]
     }
 
     fn values(&self) {}
 
     fn step(&mut self) {
         self.pos += 1;
-        if !self.valid() {
-            self.pos = self.bounds.1;
+
+        if self.pos >= self.bounds.1 as isize {
+            self.pos = self.bounds.1 as isize;
         }
     }
 
     fn seek(&mut self, key: &Self::Key) {
-        self.pos += advance(&self.storage.vals[self.pos..self.bounds.1], |(k, _)| {
-            k.lt(key)
-        });
-    }
-
-    fn last_item(&mut self) -> Option<Self::Item<'s>> {
-        if self.bounds.1 > self.bounds.0 {
-            Some(&self.storage.vals[self.bounds.1 - 1])
-        } else {
-            None
+        if self.valid() {
+            self.pos += advance(
+                &self.storage.vals[self.pos as usize..self.bounds.1],
+                |(k, _)| k.lt(key),
+            ) as isize;
         }
     }
 
     fn valid(&self) -> bool {
-        self.pos < self.bounds.1
+        self.pos >= self.bounds.0 as isize && self.pos < self.bounds.1 as isize
     }
+
     fn rewind(&mut self) {
-        self.pos = self.bounds.0;
+        self.pos = self.bounds.0 as isize;
     }
+
     fn position(&self) -> usize {
-        self.pos
+        self.pos as usize
     }
+
     fn reposition(&mut self, lower: usize, upper: usize) {
-        self.pos = lower;
+        self.pos = lower as isize;
         self.bounds = (lower, upper);
+    }
+
+    fn step_reverse(&mut self) {
+        self.pos -= 1;
+
+        if self.pos < self.bounds.0 as isize {
+            self.pos = self.bounds.0 as isize - 1;
+        }
+    }
+
+    fn seek_reverse(&mut self, key: &Self::Key) {
+        if self.valid() {
+            self.pos -= retreat(
+                &self.storage.vals[self.bounds.0..=self.pos as usize],
+                |(k, _)| k.gt(key),
+            ) as isize;
+        }
+    }
+
+    fn fast_forward(&mut self) {
+        self.pos = self.bounds.1 as isize - 1;
     }
 }

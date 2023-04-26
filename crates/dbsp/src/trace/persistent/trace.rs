@@ -230,11 +230,7 @@ where
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        let mut cursor = PersistentTraceCursor::new(&self.cf);
-        if let Some(bound) = &self.lower_key_bound {
-            cursor.seek_key(bound);
-        }
-        cursor
+        PersistentTraceCursor::new(&self.cf, &self.lower_key_bound)
     }
 
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
