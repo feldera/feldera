@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 #[cfg(test)]
 mod test;
 
+#[cfg(feature = "dev")]
 mod pg_setup;
 pub(crate) mod storage;
 
@@ -1023,7 +1024,7 @@ impl ProjectDB {
         #[cfg(feature = "dev")]
         let connection_str = if connection_str.starts_with("postgres-embed") {
             let database_dir = config.postgres_embed_data_dir();
-            let pg = pg_setup::embedded::install(database_dir, true, Some(8082)).await?;
+            let pg = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg.db_uri.to_string();
             let _ = PG.set(pg);
             connection_string
