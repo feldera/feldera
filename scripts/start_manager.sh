@@ -37,4 +37,5 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release -- \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
     --static-html=static \
-    --unix-daemon
+    --unix-daemon \
+    --db-connection-string="postgres-embed"
