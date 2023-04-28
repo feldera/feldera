@@ -55,7 +55,7 @@ async fn test_setup() -> DbHandle {
             .map(|l| l.port())
             .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
     };
-    let pg = pg_setup::embedded::install(temp_path.into(), false, Some(port))
+    let pg = pg_setup::install(temp_path.into(), false, Some(port))
         .await
         .unwrap();
 
