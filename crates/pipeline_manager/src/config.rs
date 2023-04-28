@@ -24,7 +24,7 @@ fn default_sql_compiler_home() -> String {
 }
 
 fn default_db_connection_string() -> String {
-    "postgres-embed".to_string()
+    "".to_string()
 }
 
 /// Pipeline manager configuration read from a YAML config file or from command
@@ -228,6 +228,7 @@ impl ManagerConfig {
     }
 
     /// Where Postgres embed stores the database.
+    #[cfg(feature = "dev")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
         Path::new(&self.working_directory).join("data")
     }

@@ -1813,6 +1813,7 @@ dependencies = [
  "futures-util",
  "log",
  "mime",
+ "once_cell",
  "pg-embed",
  "pretty_assertions",
  "proptest",

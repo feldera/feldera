@@ -3,10 +3,11 @@ use super::{
     storage::Storage, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
     ConnectorType, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
 };
-use crate::db::DBError;
+use crate::db::{pg_setup, DBError};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use chrono::DateTime;
+use pg_embed::postgres::PgEmbed;
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -20,6 +21,7 @@ use tokio::sync::Mutex;
 
 struct DbHandle {
     db: ProjectDB,
+    pg: PgEmbed,
     _temp_dir: TempDir,
 }
 
@@ -29,11 +31,9 @@ impl Drop for DbHandle {
         // shutdown postgres). Otherwise postgres log an error that the
         // directory is already gone during shutdown which could be
         // confusing for a developer.
-        if let Some(pg) = self.db.pg.as_mut() {
-            let _r = async {
-                pg.stop_db().await.unwrap();
-            };
-        }
+        let _r = async {
+            self.pg.stop_db().await.unwrap();
+        };
     }
 }
 
@@ -55,19 +55,17 @@ async fn test_setup() -> DbHandle {
             .map(|l| l.port())
             .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
     };
+    let pg = pg_setup::embedded::install(temp_path.into(), false, Some(port))
+        .await
+        .unwrap();
 
-    let conn = ProjectDB::connect_inner(
-        "postgres-embed",
-        &Some("".to_string()),
-        temp_path.into(),
-        false,
-        Some(port),
-    )
-    .await
-    .unwrap();
+    let conn = ProjectDB::connect_inner(&pg.db_uri, &Some("".to_string()))
+        .await
+        .unwrap();
 
     DbHandle {
         db: conn,
+        pg: pg,
         _temp_dir,
     }
 }
