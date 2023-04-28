@@ -2,4 +2,7 @@
     "testExplorer.addToEditorContextMenu": true,
     "testExplorer.showOnRun": true,
     "testExplorer.useNativeTesting": true,
+    "cSpell.words": [
+        "avaliable"
+    ],
 }

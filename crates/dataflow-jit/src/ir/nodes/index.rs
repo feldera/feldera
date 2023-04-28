@@ -102,9 +102,9 @@ impl DataflowNode for IndexWith {
 }
 
 /// Creates an index from an input set, using the `key_column`th column of the
-/// input as the index's key and discarding all columns within `discarded_values`
-/// in the values field (with the implicit addition of `key_column`, which will
-/// never appear in the output value)
+/// input as the index's key and discarding all columns within
+/// `discarded_values` in the values field (with the implicit addition of
+/// `key_column`, which will never appear in the output value)
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct IndexByColumn {
     input: NodeId,
