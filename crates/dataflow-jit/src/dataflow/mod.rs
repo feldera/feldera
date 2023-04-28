@@ -31,7 +31,12 @@ use nodes::{
     DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
 };
 use petgraph::{algo, prelude::DiGraphMap};
-use std::{collections::BTreeMap, iter, mem::transmute, ptr::NonNull};
+use std::{
+    collections::BTreeMap,
+    iter,
+    mem::{transmute, ManuallyDrop, MaybeUninit},
+    ptr::{self, NonNull},
+};
 
 // TODO: Keep layout ids in dataflow nodes so we can do assertions that types
 // are correct
@@ -2153,7 +2158,7 @@ impl CompiledDataflow {
 
     fn index_by_column<C>(
         &self,
-        _node_id: NodeId,
+        node_id: NodeId,
         index_by: IndexByColumn,
         streams: &mut BTreeMap<NodeId, RowStream<C>>,
     ) where
@@ -2162,26 +2167,71 @@ impl CompiledDataflow {
         let IndexByColumn {
             input,
             owned_fn,
-            borrowed_fn: _,
+            borrowed_fn,
             key_vtable,
             value_vtable,
         } = index_by;
         let input = streams[&input].as_set().unwrap();
 
-        let _indexed = input.apply_core(
+        let indexed = input.apply_core(
             "IndexByColumn",
             move |owned| {
-                let (mut inputs, _diffs, _lower_bound) = owned.layer.into_parts();
-                // TODO: What to do with `lower_bound`, truncate `inputs` and `diffs`?
+                let (inputs, mut diffs, lower_bound) = owned.layer.into_parts();
+                // Remove all diffs at `..lower_bound`
+                diffs.drain(..lower_bound).for_each(|_| ());
+
+                // Make `inputs` contain `MaybeUninit<Row>`s so we can drop the keys at
+                // `..lower_bound` without shifting the vec
+                let mut inputs = cast_uninit_vec(inputs);
+                // Drop all keys below `lower_bound`
+                unsafe { ptr::drop_in_place(&mut inputs[..lower_bound]) }
+
+                let length = inputs.len() - lower_bound;
+
+                let mut key_output: Vec<Row> = Vec::with_capacity(length);
+                let mut value_output: Vec<Row> = Vec::with_capacity(length);
+
+                // TODO: We could pre-sort the inputs so that we could directly create
+                // an `OrdIndexedZSet` after splitting into keys and values
+                unsafe {
+                    inputs.set_len(0);
+
+                    owned_fn(
+                        inputs.as_mut_ptr().add(lower_bound).cast(),
+                        key_output.as_mut_ptr().cast(),
+                        key_vtable,
+                        value_output.as_mut_ptr().cast(),
+                        value_vtable,
+                        length,
+                    );
+
+                    key_output.set_len(length);
+                    value_output.set_len(length);
+                }
+
+                // TODO: We'd rather construct the index directly
+                assert!(key_output.len() == value_output.len() && key_output.len() == diffs.len());
+                let mut batch = key_output
+                    .into_iter()
+                    .zip(value_output)
+                    .zip(diffs)
+                    .collect();
+
+                let mut batcher =
+                    <OrdIndexedZSet<Row, Row, i32> as Batch>::Batcher::new_batcher(());
+                batcher.push_batch(&mut batch);
+                batcher.seal()
+            },
+            move |borrowed| {
+                let (inputs, diffs, lower_bound) = borrowed.layer.as_parts();
+                let (inputs, diffs) = (&inputs[lower_bound..], &diffs[lower_bound..]);
 
                 let mut key_output: Vec<Row> = Vec::with_capacity(inputs.len());
                 let mut value_output: Vec<Row> = Vec::with_capacity(inputs.len());
 
                 unsafe {
-                    value_output.set_len(0);
-
-                    owned_fn(
-                        inputs.as_mut_ptr().cast(),
+                    borrowed_fn(
+                        inputs.as_ptr().cast(),
                         key_output.as_mut_ptr().cast(),
                         key_vtable,
                         value_output.as_mut_ptr().cast(),
@@ -2193,13 +2243,37 @@ impl CompiledDataflow {
                     value_output.set_len(inputs.len());
                 }
 
-                // I think this needs trinary columnar consolidation
-                // so that we can call `consolidate(key_output, value_output, diffs)`
+                // TODO: We'd rather construct the index directly
+                assert!(key_output.len() == value_output.len() && key_output.len() == diffs.len());
+                let mut batch = key_output
+                    .into_iter()
+                    .zip(value_output)
+                    .zip(diffs.iter().copied())
+                    .collect();
 
-                todo!()
+                let mut batcher =
+                    <OrdIndexedZSet<Row, Row, i32> as Batch>::Batcher::new_batcher(());
+                batcher.push_batch(&mut batch);
+                batcher.seal()
             },
-            |_borrowed| todo!(),
             |_scope| true,
         );
+
+        streams.insert(node_id, RowStream::Map(indexed));
     }
+}
+
+#[inline]
+fn cast_uninit_vec<T>(vec: Vec<T>) -> Vec<MaybeUninit<T>> {
+    // Make sure we don't drop the old vec
+    let mut vec = ManuallyDrop::new(vec);
+
+    // Get the length, capacity and pointer of the vec (we get the pointer last as a
+    // rather nitpicky thing irt stacked borrows since the `.len()` and
+    // `.capacity()` calls technically reborrow the vec). Ideally we'd use
+    // `Vec::into_raw_parts()` but it's currently unstable via rust/#65816
+    let (len, cap, ptr) = (vec.len(), vec.capacity(), vec.as_mut_ptr());
+
+    // Create a new vec with the different type
+    unsafe { Vec::from_raw_parts(ptr.cast::<MaybeUninit<T>>(), len, cap) }
 }

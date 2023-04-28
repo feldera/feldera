@@ -22,7 +22,8 @@ impl Codegen {
             index_by.value_layout(),
         );
 
-        // If a satisfactory function already exists, reuse it instead of generating another
+        // If a satisfactory function already exists, reuse it instead of generating
+        // another
         if let Some(&index_by_column) = self.index_by_columns.get(&impl_key) {
             return index_by_column;
         }
@@ -35,8 +36,9 @@ impl Codegen {
         (owned, borrowed)
     }
 
-    // TODO: We could elide the `if source_len == 0` check at the beginning of the loop
-    // since that can be done within the operator while it reserves capacity for the output
+    // TODO: We could elide the `if source_len == 0` check at the beginning of the
+    // loop since that can be done within the operator while it reserves
+    // capacity for the output
     fn index_by_column(&mut self, index_by: &IndexByColumn, source_owned: bool) -> FuncId {
         let ptr_ty = self.module.isa().pointer_type();
 

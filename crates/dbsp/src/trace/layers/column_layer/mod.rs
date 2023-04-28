@@ -53,7 +53,12 @@ impl<K, R> ColumnLayer<K, R> {
         }
     }
 
-    /// Breaks an `ColumnLayer` into its component parts
+    /// Exposes a `ColumnLayer` as its component parts
+    pub fn as_parts(&self) -> (&[K], &[R], usize) {
+        (&self.keys, &self.diffs, self.lower_bound)
+    }
+
+    /// Breaks a `ColumnLayer` into its component parts
     pub fn into_parts(self) -> (Vec<K>, Vec<R>, usize) {
         (self.keys, self.diffs, self.lower_bound)
     }
