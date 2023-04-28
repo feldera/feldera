@@ -45,6 +45,18 @@ pub enum DataflowNode {
     PartitionedRollingFold(PartitionedRollingFold),
     FlatMap(FlatMap),
     Antijoin(Antijoin),
+    IndexByColumn(IndexByColumn),
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexByColumn {
+    pub input: NodeId,
+    pub owned_fn:
+        unsafe extern "C" fn(*mut u8, *mut u8, &'static VTable, *mut u8, &'static VTable, usize),
+    pub borrowed_fn:
+        unsafe extern "C" fn(*const u8, *mut u8, &'static VTable, *mut u8, &'static VTable, usize),
+    pub key_vtable: &'static VTable,
+    pub value_vtable: &'static VTable,
 }
 
 #[derive(Debug, Clone)]

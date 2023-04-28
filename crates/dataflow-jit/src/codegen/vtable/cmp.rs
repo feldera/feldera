@@ -1,7 +1,6 @@
 use crate::{
     codegen::{
-        utils::{normalize_float, FunctionBuilderExt},
-        vtable::column_non_null,
+        utils::{column_non_null, normalize_float, FunctionBuilderExt},
         Codegen, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId},

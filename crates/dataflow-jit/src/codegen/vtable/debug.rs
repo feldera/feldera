@@ -1,5 +1,8 @@
 use crate::{
-    codegen::{utils::FunctionBuilderExt, vtable::column_non_null, Codegen, CodegenCtx},
+    codegen::{
+        utils::{column_non_null, FunctionBuilderExt},
+        Codegen, CodegenCtx,
+    },
     ir::{ColumnType, LayoutId},
 };
 use cranelift::prelude::{types, FunctionBuilder, InstBuilder, MemFlags};
@@ -125,7 +128,7 @@ impl Codegen {
 
                         if let Some(writer) = ctx.comment_writer.as_deref() {
                             writer.borrow_mut().add_comment(
-                                builder.func.dfg.value_def(unit_ptr).unwrap_inst(),
+                                builder.value_def(unit_ptr),
                                 format!(
                                     "debug col {idx} ({}) of {:?}",
                                     ColumnType::Unit,
@@ -150,7 +153,7 @@ impl Codegen {
                         if let Some(writer) = ctx.comment_writer.as_deref() {
                             let layout = ctx.layout_cache.row_layout(layout_id);
                             writer.borrow_mut().add_comment(
-                                builder.func.dfg.value_def(value).unwrap_inst(),
+                                builder.value_def(value),
                                 format!(
                                     "debug col {idx} ({}) of {:?}",
                                     layout.column_type(idx),

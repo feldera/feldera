@@ -1,7 +1,8 @@
 use crate::{
     codegen::{
-        intrinsics::ImportIntrinsics, utils::FunctionBuilderExt, vtable::column_non_null, Codegen,
-        NativeLayout, TRAP_NULL_PTR,
+        intrinsics::ImportIntrinsics,
+        utils::{column_non_null, FunctionBuilderExt},
+        Codegen, NativeLayout, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId, RowLayout},
 };

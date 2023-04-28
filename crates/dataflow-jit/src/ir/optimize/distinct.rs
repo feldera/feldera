@@ -198,7 +198,7 @@ impl Subgraph {
                     }
                 }
 
-                Node::Constant(constant) => {
+                Node::ConstantStream(constant) => {
                     if constant.consolidated() && !is_distinct.contains(&node_id) {
                         // If all tuples/rows within the stream have a weight of 1, the stream is
                         // distinct

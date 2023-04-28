@@ -6,8 +6,8 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, Integrate, JoinCore, MapFn,
-        Max, Min, Minus, Noop, PartitionedRollingFold,
+        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Integrate,
+        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold,
     },
     ir::{
         graph,
@@ -353,6 +353,18 @@ impl CompiledDataflow {
                             .or_insert_with(|| codegen.vtable_for(index_with.value_layout()));
                     }
 
+                    Node::IndexByColumn(index_by) => {
+                        let (owned, borrowed) = codegen.codegen_index_by_column(index_by);
+                        functions.insert(node_id, vec![owned, borrowed]);
+
+                        vtables
+                            .entry(index_by.key_layout())
+                            .or_insert_with(|| codegen.vtable_for(index_by.key_layout()));
+                        vtables
+                            .entry(index_by.value_layout())
+                            .or_insert_with(|| codegen.vtable_for(index_by.value_layout()));
+                    }
+
                     Node::Source(source) => {
                         vtables
                             .entry(source.layout())
@@ -395,7 +407,7 @@ impl CompiledDataflow {
                         collect_functions(codegen, functions, vtables, subgraph.subgraph());
                     }
 
-                    Node::Constant(constant) => match constant.layout() {
+                    Node::ConstantStream(constant) => match constant.layout() {
                         StreamLayout::Set(key) => {
                             vtables
                                 .entry(key)
@@ -736,6 +748,24 @@ impl CompiledDataflow {
                         nodes.insert(*node_id, node);
                     }
 
+                    Node::IndexByColumn(index_by) => {
+                        let input = index_by.input();
+                        let owned_fn = jit.get_finalized_function(node_functions[node_id][0]);
+                        let borrowed_fn = jit.get_finalized_function(node_functions[node_id][1]);
+                        let key_vtable = unsafe { &*vtables[&index_by.key_layout()] };
+                        let value_vtable = unsafe { &*vtables[&index_by.value_layout()] };
+
+                        let node = DataflowNode::IndexByColumn(IndexByColumn {
+                            input,
+                            owned_fn: unsafe { transmute(owned_fn) },
+                            borrowed_fn: unsafe { transmute(borrowed_fn) },
+                            key_vtable,
+                            value_vtable,
+                        });
+
+                        nodes.insert(*node_id, node);
+                    }
+
                     Node::Differentiate(diff) => {
                         nodes.insert(
                             *node_id,
@@ -878,7 +908,7 @@ impl CompiledDataflow {
                         nodes.insert(*node_id, node);
                     }
 
-                    Node::Constant(constant) => {
+                    Node::ConstantStream(constant) => {
                         let value = match constant.value().value() {
                             StreamCollection::Set(set) => {
                                 let key_layout = constant.layout().unwrap_set();
@@ -977,6 +1007,9 @@ impl CompiledDataflow {
             match node {
                 DataflowNode::Map(map) => self.map(node_id, map, &mut streams),
                 DataflowNode::Filter(filter) => self.filter(node_id, filter, &mut streams),
+                DataflowNode::IndexByColumn(index_by) => {
+                    self.index_by_column(node_id, index_by, &mut streams);
+                }
 
                 DataflowNode::FilterMap(map) => {
                     let input = &streams[&map.input];
@@ -1426,6 +1459,9 @@ impl CompiledDataflow {
                         DataflowNode::Map(map) => self.map(node_id, map, &mut substreams),
                         DataflowNode::Filter(filter) => {
                             self.filter(node_id, filter, &mut substreams);
+                        }
+                        DataflowNode::IndexByColumn(index_by) => {
+                            self.index_by_column(node_id, index_by, &mut substreams);
                         }
 
                         DataflowNode::FilterMap(map) => {
@@ -2113,5 +2149,57 @@ impl CompiledDataflow {
         };
 
         streams.insert(node_id, mapped);
+    }
+
+    fn index_by_column<C>(
+        &self,
+        _node_id: NodeId,
+        index_by: IndexByColumn,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        let IndexByColumn {
+            input,
+            owned_fn,
+            borrowed_fn: _,
+            key_vtable,
+            value_vtable,
+        } = index_by;
+        let input = streams[&input].as_set().unwrap();
+
+        let _indexed = input.apply_core(
+            "IndexByColumn",
+            move |owned| {
+                let (mut inputs, _diffs, _lower_bound) = owned.layer.into_parts();
+                // TODO: What to do with `lower_bound`, truncate `inputs` and `diffs`?
+
+                let mut key_output: Vec<Row> = Vec::with_capacity(inputs.len());
+                let mut value_output: Vec<Row> = Vec::with_capacity(inputs.len());
+
+                unsafe {
+                    value_output.set_len(0);
+
+                    owned_fn(
+                        inputs.as_mut_ptr().cast(),
+                        key_output.as_mut_ptr().cast(),
+                        key_vtable,
+                        value_output.as_mut_ptr().cast(),
+                        value_vtable,
+                        inputs.len(),
+                    );
+
+                    key_output.set_len(inputs.len());
+                    value_output.set_len(inputs.len());
+                }
+
+                // I think this needs trinary columnar consolidation
+                // so that we can call `consolidate(key_output, value_output, diffs)`
+
+                todo!()
+            },
+            |_borrowed| todo!(),
+            |_scope| true,
+        );
     }
 }

@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 pub struct ConstantStream {
     value: StreamLiteral,
     layout: StreamLayout,
-    #[serde(skip_deserializing)]
+    #[serde(default)]
     consolidated: bool,
 }
 

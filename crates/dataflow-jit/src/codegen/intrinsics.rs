@@ -13,6 +13,7 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use std::{
+    alloc::Layout,
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
@@ -350,6 +351,8 @@ impl Intrinsic {
 */
 
 intrinsics! {
+    alloc = fn(usize, usize) -> ptr,
+    dealloc = fn(ptr: mutable, usize, usize),
     row_vec_push = fn(ptr: mutable, ptr, ptr: consume),
 
     // Debug functions
@@ -478,6 +481,38 @@ intrinsics! {
     exp10f = fn(f32) -> f32,
     expm1 = fn(f64) -> f64,
     expm1f = fn(f32) -> f32,
+}
+
+/// Allocates memory with the given size and alignment
+///
+/// Calls [`std::alloc::handle_alloc_error`] in the event that
+/// an allocation fails
+///
+/// # Safety
+///
+/// See [`std::alloc::alloc`] and [`Layout::from_size_align_unchecked`]
+unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
+    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+    debug_assert!(Layout::from_size_align(size, align).is_ok());
+
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    if ptr.is_null() {
+        std::alloc::handle_alloc_error(layout);
+    }
+
+    ptr
+}
+
+/// Deallocates the given pointer with the given size and alignment
+///
+/// # Safety
+///
+/// See [`std::alloc::dealloc`] and [`Layout::from_size_align_unchecked`]
+unsafe extern "C" fn dealloc(ptr: *mut u8, size: usize, align: usize) {
+    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+    debug_assert!(Layout::from_size_align(size, align).is_ok());
+
+    unsafe { std::alloc::dealloc(ptr, layout) }
 }
 
 /// Returns `true` if `lhs` is equal to `rhs`

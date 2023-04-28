@@ -82,6 +82,7 @@ fn main() -> ExitCode {
             if let Err(errors) = schema.validate(&source) {
                 let mut total_errors = 0;
                 for error in errors {
+                    println!("{error:?}");
                     eprintln!(
                         "json validation error at `{}`: {error}",
                         error.instance_path,
