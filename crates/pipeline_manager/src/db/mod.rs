@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::{error::Error as StdError, fmt, fmt::Display, path::PathBuf};
+use std::{error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
 use tokio_postgres::{Client, NoTls};
 use utoipa::ToSchema;
@@ -28,9 +28,13 @@ pub(crate) mod storage;
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
     conn: Client,
-    #[allow(dead_code)] // We don't have to interact with it, but dropping it stops the DB server.
-    pub pg: Option<pg_embed::postgres::PgEmbed>,
 }
+
+// Used in dev mode for having an embedded Postgres DB live through the lifetime
+// of the program.
+#[cfg(feature = "dev")]
+static PG: once_cell::sync::OnceCell<pg_embed::postgres::PgEmbed> =
+    once_cell::sync::OnceCell::new();
 
 /// Unique project id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
@@ -1013,21 +1017,21 @@ impl Storage for ProjectDB {
 
 impl ProjectDB {
     pub(crate) async fn connect(config: &ManagerConfig) -> AnyResult<Self> {
-        let connection_str = &config.database_connection_string();
+        let connection_str = config.database_connection_string();
         let initial_sql = &config.initial_sql;
-        let database_dir = config.postgres_embed_data_dir();
 
-        Self::connect_inner(
-            connection_str,
-            initial_sql,
-            // Remaining settings for postgres-embed only:
-            database_dir,
-            true,
-            // Use a non-standard port for postgres-embed so we don't interfere
-            // with an existing postgres installation
-            Some(8082),
-        )
-        .await
+        #[cfg(feature = "dev")]
+        let connection_str = if connection_str.starts_with("postgres-embed") {
+            let database_dir = config.postgres_embed_data_dir();
+            let pg = pg_setup::embedded::install(database_dir, true, Some(8082)).await?;
+            let connection_string = pg.db_uri.to_string();
+            let _ = PG.set(pg);
+            connection_string
+        } else {
+            connection_str
+        };
+
+        Self::connect_inner(connection_str.as_str(), initial_sql).await
     }
 
     /// Connect to the project database.
@@ -1041,24 +1045,10 @@ impl ProjectDB {
     /// - `is_persistent`: Whether the embedded postgres database should be
     ///   persistent or removed on shutdown.
     /// - `port`: The port to use for the embedded Postgres database to run on.
-    async fn connect_inner(
-        connection_str: &str,
-        initial_sql: &Option<String>,
-        database_dir: PathBuf,
-        is_persistent: bool,
-        port: Option<u16>,
-    ) -> AnyResult<Self> {
+    async fn connect_inner(connection_str: &str, initial_sql: &Option<String>) -> AnyResult<Self> {
         if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
         }
-
-        let (pg, connection_str) = if connection_str.starts_with("postgres-embed") {
-            let pg = pg_setup::install(database_dir, is_persistent, port).await?;
-            let connection_string = pg.db_uri.to_string();
-            (Some(pg), connection_string)
-        } else {
-            (None, connection_str.to_string())
-        };
 
         debug!("Opening connection to {:?}", connection_str);
         let (client, conn) = tokio_postgres::connect(&connection_str, NoTls).await?;
@@ -1171,7 +1161,7 @@ impl ProjectDB {
             }
         }
 
-        Ok(Self { conn: client, pg })
+        Ok(Self { conn: client })
     }
 
     /// Attach connector to the config.
