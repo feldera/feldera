@@ -14,7 +14,7 @@ pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
 pub use flat_map::FlatMap;
-pub use index::IndexWith;
+pub use index::{IndexByColumn, IndexWith};
 pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
 pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
@@ -53,16 +53,17 @@ pub enum Node {
     Export(Export),
     ExportedNode(ExportedNode),
     MonotonicJoin(MonotonicJoin),
-    Constant(ConstantStream),
+    ConstantStream(ConstantStream),
     PartitionedRollingFold(PartitionedRollingFold),
     FlatMap(FlatMap),
     Antijoin(Antijoin),
+    IndexByColumn(IndexByColumn),
     // TODO: OrderBy, Windows
 }
 
 impl Node {
     pub const fn as_constant(&self) -> Option<&ConstantStream> {
-        if let Self::Constant(constant) = self {
+        if let Self::ConstantStream(constant) = self {
             Some(constant)
         } else {
             None

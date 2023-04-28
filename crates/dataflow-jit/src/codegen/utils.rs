@@ -3,6 +3,8 @@ use cranelift::{
     prelude::{types, Block, FunctionBuilder, InstBuilder, MemFlags, Type, Value},
 };
 
+use crate::codegen::NativeLayout;
+
 pub(crate) trait FunctionBuilderExt {
     /// Seals the current basic block
     ///
@@ -160,4 +162,48 @@ pub(super) fn normalize_float(float: Value, builder: &mut FunctionBuilder<'_>) -
 
     // left ^= shifted
     builder.ins().bxor(int, shifted)
+}
+
+/// Checks if the given row is currently null, returns zero for non-null and
+/// non-zero for null
+// TODO: If we make sure that memory is zeroed (or at the very least that
+// padding bytes are zeroed), we can simplify checks for null flags that are the
+// only occupant of their given bitset. This'd allow us to go from
+// `x = load; x1 = and x, 1` to just `x = load` for what should be a fairly
+// common case. We could also do our best to distribute null flags across
+// padding bytes when possible to try and make that happy path occur as much
+// as possible
+pub(super) fn column_non_null(
+    column: usize,
+    row_ptr: Value,
+    layout: &NativeLayout,
+    builder: &mut FunctionBuilder,
+    readonly: bool,
+) -> Value {
+    debug_assert!(layout.is_nullable(column));
+
+    let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
+    let bitset_ty = bitset_ty.native_type();
+
+    // Create the flags for the load
+    let mut flags = MemFlags::trusted();
+    if readonly {
+        flags.set_readonly();
+    }
+
+    // Load the bitset containing the given column's nullability
+    let bitset = builder
+        .ins()
+        .load(bitset_ty, flags, row_ptr, bitset_offset as i32);
+
+    // Zero is true (the value isn't null), non-zero is false
+    // (the value is null)
+    if layout.bitset_occupants(column) == 1 {
+        // If there's only a single occupant of the bitset, it's already in the proper
+        // format
+        bitset
+    } else {
+        // Otherwise we mask all bits other than the one we're interested in
+        builder.ins().band_imm(bitset, 1i64 << bit_idx)
+    }
 }

@@ -1,5 +1,8 @@
 use crate::{
-    codegen::{utils::FunctionBuilderExt, vtable::column_non_null, Codegen, CodegenCtx},
+    codegen::{
+        utils::{column_non_null, FunctionBuilderExt},
+        Codegen, CodegenCtx,
+    },
     ir::{ColumnType, LayoutId},
 };
 use cranelift::prelude::{types, FunctionBuilder, InstBuilder, IntCC, MemFlags};

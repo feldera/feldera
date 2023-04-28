@@ -3370,4 +3370,82 @@ mod tests {
     }
 }
 "#;
+
+    const CONSTANT_STREAM_TEST: &str = r#"{
+    "nodes": {
+        "1": {
+            "ConstantStream": {
+                "value": {
+                    "layout": {
+                        "Set": 1
+                    },
+                    "value": {
+                        "Set": [
+                            [
+                                {
+                                    "rows": [
+                                        {
+                                            "NonNull": {
+                                                "U32": 1
+                                            }
+                                        }
+                                    ]
+                                },
+                                1
+                            ]
+                        ]
+                    }
+                },
+                "layout": {
+                    "Set": 1
+                }
+            }
+        },
+        "2": {
+            "Sink": {
+                "input": 1
+            }
+        }
+    },
+    "layouts": {
+        "1": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "U32"
+                }
+            ]
+        }
+    }
+}
+"#;
+
+    #[test]
+    fn constant_stream() {
+        utils::test_logger();
+
+        // Deserialize the graph from json
+        let graph = serde_json::from_str::<SqlGraph>(CONSTANT_STREAM_TEST)
+            .unwrap()
+            .rematerialize();
+
+        // Create the circuit
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
+
+        // Step the circuit
+        circuit.step().unwrap();
+
+        // Inspect outputs
+        let output = circuit.consolidate_output(NodeId::new(2));
+
+        // Shut down the circuit
+        circuit.kill().unwrap();
+
+        // Ensure the output is correct
+        let expected = StreamCollection::Set(vec![(
+            RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(1))]),
+            1,
+        )]);
+        assert_eq!(output, expected);
+    }
 }

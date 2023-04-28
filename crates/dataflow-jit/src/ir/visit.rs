@@ -1,9 +1,9 @@
 use crate::ir::{
     nodes::{
         Antijoin, ConstantStream, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexWith, Integrate, JoinCore, Map, Max,
-        Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink, Source, SourceMap,
-        Subgraph, Sum,
+        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn, IndexWith, Integrate,
+        JoinCore, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink,
+        Source, SourceMap, Subgraph, Sum,
     },
     GraphExt, NodeId,
 };
@@ -42,6 +42,7 @@ pub trait NodeVisitor {
     }
     fn visit_flat_map(&mut self, _node_id: NodeId, _flat_map: &FlatMap) {}
     fn visit_antijoin(&mut self, _node_id: NodeId, _antijoin: &Antijoin) {}
+    fn visit_index_by_column(&mut self, _node_id: NodeId, _index_by_column: &IndexByColumn) {}
 
     fn visit_subgraph(&mut self, node_id: NodeId, subgraph: &Subgraph) {
         self.enter_subgraph(node_id, subgraph);
@@ -91,6 +92,7 @@ pub trait MutNodeVisitor {
     }
     fn visit_flat_map(&mut self, _node_id: NodeId, _flat_map: &mut FlatMap) {}
     fn visit_antijoin(&mut self, _node_id: NodeId, _antijoin: &mut Antijoin) {}
+    fn visit_index_by_column(&mut self, _node_id: NodeId, _index_by_column: &mut IndexByColumn) {}
 
     fn visit_subgraph(&mut self, node_id: NodeId, subgraph: &mut Subgraph) {
         self.enter_subgraph(node_id, subgraph);
@@ -140,12 +142,15 @@ impl Node {
             Self::MonotonicJoin(monotonic_join) => {
                 visitor.visit_monotonic_join(node_id, monotonic_join);
             }
-            Self::Constant(constant) => visitor.visit_constant(node_id, constant),
+            Self::ConstantStream(constant) => visitor.visit_constant(node_id, constant),
             Self::PartitionedRollingFold(partitioned_rolling_fold) => {
                 visitor.visit_partitioned_rolling_fold(node_id, partitioned_rolling_fold);
             }
             Self::FlatMap(flat_map) => visitor.visit_flat_map(node_id, flat_map),
             Self::Antijoin(antijoin) => visitor.visit_antijoin(node_id, antijoin),
+            Self::IndexByColumn(index_by_column) => {
+                visitor.visit_index_by_column(node_id, index_by_column);
+            }
         }
     }
 
@@ -185,12 +190,15 @@ impl Node {
             Self::MonotonicJoin(monotonic_join) => {
                 visitor.visit_monotonic_join(node_id, monotonic_join);
             }
-            Self::Constant(constant) => visitor.visit_constant(node_id, constant),
+            Self::ConstantStream(constant) => visitor.visit_constant(node_id, constant),
             Self::PartitionedRollingFold(partitioned_rolling_fold) => {
                 visitor.visit_partitioned_rolling_fold(node_id, partitioned_rolling_fold);
             }
             Self::FlatMap(flat_map) => visitor.visit_flat_map(node_id, flat_map),
             Self::Antijoin(antijoin) => visitor.visit_antijoin(node_id, antijoin),
+            Self::IndexByColumn(index_by_column) => {
+                visitor.visit_index_by_column(node_id, index_by_column);
+            }
         }
     }
 }

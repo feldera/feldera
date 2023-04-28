@@ -1,15 +1,15 @@
-use std::cmp::Ordering;
-
 use crate::{
     codegen::{
-        intrinsics::ImportIntrinsics, utils::FunctionBuilderExt, vtable::column_non_null, Codegen,
-        NativeLayout, TRAP_NULL_PTR,
+        intrinsics::ImportIntrinsics,
+        utils::{column_non_null, FunctionBuilderExt},
+        Codegen, NativeLayout, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId, RowLayout},
 };
 use cranelift::prelude::{FunctionBuilder, InstBuilder, IntCC, MemFlags, TrapCode, Value};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
+use std::cmp::Ordering;
 
 // FIXME: For non-trivial layouts we could potentially encounter leaks if
 // cloning panics part of the way through. For example, if while cloning a `{

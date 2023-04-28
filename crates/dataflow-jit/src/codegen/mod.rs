@@ -1,4 +1,5 @@
 mod call;
+mod index_by_column;
 mod intrinsics;
 mod layout;
 mod layout_cache;
@@ -165,6 +166,9 @@ pub struct Codegen {
     config: CodegenConfig,
     intrinsics: Intrinsics,
     vtables: BTreeMap<LayoutId, LayoutVTable>,
+    /// A cache of `IndexByColumn` functions, maps the input layout,
+    /// key index, key layout and value layout to its associated function
+    index_by_columns: HashMap<(LayoutId, usize, LayoutId, LayoutId), (FuncId, FuncId)>,
     data: HashMap<Box<[u8]>, DataId>,
     comment_writer: Option<Rc<RefCell<CommentWriter>>>,
 }
@@ -205,6 +209,7 @@ impl Codegen {
             config,
             intrinsics,
             vtables: BTreeMap::new(),
+            index_by_columns: HashMap::new(),
             data: HashMap::new(),
             comment_writer: None,
         }

@@ -24,6 +24,7 @@ use std::{
 
 // TODO: Column value read/write functions
 
+#[repr(C)]
 pub struct UninitRow {
     data: NonNull<u8>,
     vtable: &'static VTable,
