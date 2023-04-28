@@ -1051,7 +1051,7 @@ impl ProjectDB {
         }
 
         debug!("Opening connection to {:?}", connection_str);
-        let (client, conn) = tokio_postgres::connect(&connection_str, NoTls).await?;
+        let (client, conn) = tokio_postgres::connect(connection_str, NoTls).await?;
 
         // The `tokio_postgres` API requires allocating a thread to `connection`,
         // which will handle datbase I/O and should automatically terminate once
