@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 #[cfg(test)]
 mod test;
 
-#[cfg(feature = "dev")]
+#[cfg(any(test, feature = "dev"))]
 mod pg_setup;
 pub(crate) mod storage;
 

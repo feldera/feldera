@@ -49,8 +49,11 @@ static-files = "0.2.3"
 proptest = "1.0.0"
 proptest-derive = "0.3.0"
 pretty_assertions = "1.3.0"
+# Workaround to enable dev feature during tests: https://github.com/rust-lang/cargo/issues/2911
+dbsp_pipeline_manager = { path = ".", features = ["dev"]}
 
+[package.metadata.cargo-udeps.ignore]
+development = ["dbsp_pipeline_manager"] # false positive from cargo udeps
 
 [features]
-default = ["dev"]
 dev = ["dep:pg-embed", "dep:once_cell"]
