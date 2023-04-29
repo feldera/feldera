@@ -3,14 +3,14 @@ use crate::{
     algebra::{HasOne, HasZero, Semigroup, ZRingValue},
     circuit::{
         operator_traits::{Operator, TernaryOperator},
-        GlobalNodeId, OwnershipPreference, Scope,
+        GlobalNodeId, Scope,
     },
     circuit_cache_key,
     operator::{
         time_series::{
             PartitionCursor, PartitionedBatch, PartitionedBatchReader, PartitionedIndexedZSet,
         },
-        trace::{DelayedTraceId, IntegrateTraceId, TraceBounds, UntimedTraceAppend, Z1Trace},
+        trace::{TraceBounds, TraceFeedback},
         Aggregator,
     },
     trace::{Builder, Cursor, Spine},
@@ -168,7 +168,7 @@ where
                             //                                                    │                                    │                │
                             //                                                    │                                ┌───┴───┐            │
                             //                                                    └────────────────────────────────┤Z1Trace│◄───────────┘
-                            //                                                          output_trace_delayed       └───────┘
+                            //                                                          delayed_trace              └───────┘
                             // ```
 
                             // Note: In most use cases `partitioned_tree_aggregate` is applied to
@@ -176,48 +176,19 @@ where
                             // output traces are naturally bounded as we are maintaining the tree
                             // over a bounded range of keys.
                             let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
-                            let (output_trace_delayed, z1feedback) =
-                                circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
-                                    false,
-                                    self.circuit().root_scope(),
-                                    bounds.clone(),
-                                ));
-                            output_trace_delayed.mark_sharded();
+
+                            let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(bounds);
 
                             let output = circuit
                                 .add_ternary_operator(
                                     PartitionedRadixTreeAggregate::new(aggregator),
                                     &stream,
                                     &stream.integrate_trace(),
-                                    &output_trace_delayed,
+                                    &feedback.delayed_trace,
                                 )
                                 .mark_sharded();
 
-                            let output_trace = circuit
-                                .add_binary_operator_with_preference(
-                                    <UntimedTraceAppend<Spine<O>>>::new(),
-                                    (
-                                        &output_trace_delayed,
-                                        OwnershipPreference::STRONGLY_PREFER_OWNED,
-                                    ),
-                                    (&output, OwnershipPreference::PREFER_OWNED),
-                                )
-                                .mark_sharded();
-
-                            z1feedback.connect_with_preference(
-                                &output_trace,
-                                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                            );
-
-                            circuit.cache_insert(
-                                DelayedTraceId::new(output_trace.origin_node_id().clone()),
-                                output_trace_delayed,
-                            );
-
-                            circuit.cache_insert(
-                                IntegrateTraceId::new(output.origin_node_id().clone()),
-                                (output_trace, bounds),
-                            );
+                            feedback.connect(&output);
 
                             output
                         })
