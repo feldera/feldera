@@ -2,8 +2,8 @@ use crate::{
     circuit::{
         metadata::{MetaItem, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
-        Circuit, ExportId, ExportStream, GlobalNodeId, OwnershipPreference, Scope, Stream,
-        WithClock,
+        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
+        Scope, Stream, WithClock,
     },
     circuit_cache_key,
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
@@ -303,6 +303,105 @@ where
         trace.clone()
     }
 }
+
+/// See [`trait TraceFeedback`] documentation.
+pub struct TraceFeedbackConnector<C, T>
+where
+    C: Circuit,
+    T: Trace,
+{
+    feedback: FeedbackConnector<C, T, T, Z1Trace<T>>,
+    /// `delayed_trace` stream in the diagram in
+    /// [`trait TraceFeedback`] documentation.
+    pub delayed_trace: Stream<C, T>,
+    export_trace: Stream<C::Parent, T>,
+    bounds: TraceBounds<T::Key, T::Val>,
+}
+
+impl<C, T> TraceFeedbackConnector<C, T>
+where
+    T: Trace + Clone,
+    C: Circuit,
+{
+    pub fn connect(self, stream: &Stream<C, T::Batch>) {
+        let circuit = self.delayed_trace.circuit();
+
+        let trace = circuit.add_binary_operator_with_preference(
+            <UntimedTraceAppend<T>>::new(),
+            (
+                &self.delayed_trace,
+                OwnershipPreference::STRONGLY_PREFER_OWNED,
+            ),
+            (
+                &stream.try_sharded_version(),
+                OwnershipPreference::PREFER_OWNED,
+            ),
+        );
+
+        if stream.has_sharded_version() {
+            self.delayed_trace.mark_sharded();
+            trace.mark_sharded();
+        }
+
+        self.feedback
+            .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+        circuit.cache_insert(
+            DelayedTraceId::new(trace.origin_node_id().clone()),
+            self.delayed_trace.clone(),
+        );
+        circuit.cache_insert(
+            IntegrateTraceId::new(stream.origin_node_id().clone()),
+            (trace.clone(), self.bounds.clone()),
+        );
+        circuit.cache_insert(
+            ExportId::new(trace.origin_node_id().clone()),
+            self.export_trace,
+        );
+    }
+}
+
+/// Extension trait to trait [`Circuit`] that provides a convenience API
+/// to construct circuits of the following shape:
+///
+/// ```text
+///  external inputs    ┌───┐    output    ┌──────────────────┐
+/// ───────────────────►│ F ├─────────────►│UntimedTraceAppend├───┐
+///                     └───┘              └──────────────────┘   │
+///                       ▲                      ▲                │trace
+///                       │                      │                │
+///                       │    delayed_trace   ┌─┴──┐             │
+///                       └────────────────────┤Z^-1│◄────────────┘
+///                                            └────┘
+/// ```
+/// where `F` is an operator that consumes an integral of its own output
+/// stream.
+///
+/// Use the [`add_integrate_trace_feedback`] method to create a [`TraceFeedbackConnector`]
+/// struct.  The struct contains the `delayed_traece` stream, which can be used as input
+/// to instantiate `F` and the `output` stream.  Close the loop by calling
+/// `TraceFeedbackConnector::connect(output)`.
+pub trait TraceFeedback: Circuit {
+    fn add_integrate_trace_feedback<T>(
+        &self,
+        bounds: TraceBounds<T::Key, T::Val>,
+    ) -> TraceFeedbackConnector<Self, T>
+    where
+        T: Trace + Clone,
+    {
+        let (ExportStream { local, export }, feedback) =
+            self.add_feedback_with_export(Z1Trace::new(true, self.root_scope(), bounds.clone()));
+
+        TraceFeedbackConnector {
+            feedback,
+            delayed_trace: local,
+            export_trace: export,
+            bounds,
+        }
+    }
+}
+
+impl<C: Circuit> TraceFeedback for C {}
 
 impl<C, T> Stream<C, T>
 where

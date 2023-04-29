@@ -2,7 +2,7 @@ use crate::{
     algebra::{DefaultSemigroup, GroupValue, HasOne, HasZero, IndexedZSet, MulByRef, ZRingValue},
     circuit::{
         operator_traits::{Operator, QuaternaryOperator},
-        OwnershipPreference, Scope,
+        Scope,
     },
     operator::{
         time_series::{
@@ -11,9 +11,7 @@ use crate::{
             OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
             PartitionedIndexedZSet, RelOffset,
         },
-        trace::{
-            DelayedTraceId, IntegrateTraceId, TraceBound, TraceBounds, UntimedTraceAppend, Z1Trace,
-        },
+        trace::{TraceBound, TraceBounds, TraceFeedback},
         Aggregator, FilterMap,
     },
     trace::{Builder, Cursor, Spine},
@@ -276,7 +274,7 @@ impl<B> Stream<RootCircuit, B> {
         //      └──────────────────────────────────────────┘               │                 │                        │
         //                                                                 │               ┌─┴──┐                     │
         //                                                                 └───────────────┤Z^-1│◄────────────────────┘
-        //                                                            output_trace_delayed └────┘
+        //                                                                   delayed_trace └────┘
         // ```
         self.circuit().region("partitioned_rolling_aggregate", || {
             self.partitioned_rolling_aggregate_inner(self, aggregator, range, TraceBound::new())
@@ -314,12 +312,7 @@ impl<B> Stream<RootCircuit, B> {
         bounds.add_key_bound(TraceBound::new());
         bounds.add_val_bound(bound);
 
-        let (output_trace_delayed, z1feedback) = circuit.add_feedback(<Z1Trace<Spine<O>>>::new(
-            false,
-            circuit.root_scope(),
-            bounds,
-        ));
-        output_trace_delayed.mark_sharded();
+        let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(bounds);
 
         let output = circuit
             .add_quaternary_operator(
@@ -327,33 +320,11 @@ impl<B> Stream<RootCircuit, B> {
                 &stream,
                 &input_trace,
                 &tree,
-                &output_trace_delayed,
+                &feedback.delayed_trace,
             )
             .mark_sharded();
 
-        let output_trace = circuit
-            .add_binary_operator_with_preference(
-                <UntimedTraceAppend<Spine<O>>>::new(),
-                (
-                    &output_trace_delayed,
-                    OwnershipPreference::STRONGLY_PREFER_OWNED,
-                ),
-                (&output, OwnershipPreference::PREFER_OWNED),
-            )
-            .mark_sharded();
-
-        z1feedback
-            .connect_with_preference(&output_trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-
-        circuit.cache_insert(
-            DelayedTraceId::new(output_trace.origin_node_id().clone()),
-            output_trace_delayed,
-        );
-        let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
-        circuit.cache_insert(
-            IntegrateTraceId::new(output.origin_node_id().clone()),
-            (output_trace, bounds),
-        );
+        feedback.connect(&output);
 
         output
     }
