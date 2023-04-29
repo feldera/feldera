@@ -1807,6 +1807,7 @@ dependencies = [
  "clap 4.2.4",
  "daemonize",
  "dbsp_adapters",
+ "dbsp_pipeline_manager",
  "env_logger",
  "fs_extra",
  "futures",

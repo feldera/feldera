@@ -114,20 +114,20 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ matrix.cargo_args }} --no-run --all-features --features "dev" --target ${{ matrix.target }}
+          args: ${{ matrix.cargo_args }} --no-run --all-features --target ${{ matrix.target }}
 
       - name: Build tests with no features
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ matrix.cargo_args }} --no-run --no-default-features --features "dev" --target ${{ matrix.target }}
+          args: ${{ matrix.cargo_args }} --no-run --no-default-features --target ${{ matrix.target }}
 
       - name: Run tests
         if: runner.os != 'Windows'
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ matrix.cargo_args }} ${{ env.ALMOST_ALL_FEATURES }} --features "dev" --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
+          args: ${{ matrix.cargo_args }} ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
 
       # Only run basic tests on windows, which tends to run out of resources.
       - name: Run tests on Windows
@@ -264,7 +264,7 @@ jobs:
           EXCLUDE_JIT: "${{ matrix.sanitizer == 'memory' && '--exclude dataflow-jit' || '' }}"
         with:
           command: test
-          args: ${{ env.EXCLUDE_SQLITE3 }} ${{ env.EXCLUDE_JIT }} --workspace ${{ env.ALMOST_ALL_FEATURES }} --features "dev" --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
+          args: ${{ env.EXCLUDE_SQLITE3 }} ${{ env.EXCLUDE_JIT }} --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
 
   clippy:
     name: Clippy
