@@ -436,8 +436,6 @@ mod tests {
 
         let sink = graph.sink(transactions_join_demographics);
 
-        println!("{}", serde_json::to_string_pretty(&graph).unwrap());
-
         // Create the circuit
         let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
 
