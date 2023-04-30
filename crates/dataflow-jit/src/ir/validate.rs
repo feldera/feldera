@@ -199,14 +199,14 @@ impl Validator {
                         let input_layout = self.layout_cache().get(index_by.input_layout());
                         assert!(
                             index_by.key_column() < input_layout.len(),
-                            "key column {} doesn't exist, {input_layout} only has {} layouts",
+                            "key column {} doesn't exist, {input_layout} only has {} columns",
                             index_by.key_column(),
                             input_layout.len(),
                         );
                         for &value in index_by.discarded_values() {
                             assert!(
                                 value < input_layout.len(),
-                                "discarded value column {value} doesn't exist, {input_layout} only has {} layouts",
+                                "discarded value column {value} doesn't exist, {input_layout} only has {} columns",
                                 input_layout.len(),
                             );
                         }
