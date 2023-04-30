@@ -256,7 +256,8 @@ mod tests {
         codegen::CodegenConfig,
         ir::{
             literal::{NullableConstant, RowLiteral, StreamCollection},
-            Constant, NodeId,
+            nodes::{IndexByColumn, StreamKind},
+            ColumnType, Constant, Graph, GraphExt, NodeId, RowLayoutBuilder,
         },
         sql_graph::SqlGraph,
         utils, DbspCircuit,
@@ -285,8 +286,168 @@ mod tests {
         circuit.step().unwrap();
 
         // TODO: Inspect outputs
-
         let _output = circuit.consolidate_output(SINK_ID);
+
+        // Shut down the circuit
+        circuit.kill().unwrap();
+    }
+
+    #[test]
+    fn time_series_enrich_e2e_2() {
+        utils::test_logger();
+
+        // Deserialize the graph from json
+        let mut graph = Graph::new();
+
+        let unit_layout = graph.layout_cache().unit();
+        let demographics_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::F64, false)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::I32, true)
+                .with_column(ColumnType::F64, true)
+                .with_column(ColumnType::F64, true)
+                .with_column(ColumnType::I32, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::Date, true)
+                .build(),
+        );
+        let transactions_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Timestamp, false)
+                .with_column(ColumnType::F64, false)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::F64, true)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::I32, true)
+                .with_column(ColumnType::F64, true)
+                .with_column(ColumnType::F64, true)
+                .with_column(ColumnType::I32, true)
+                .build(),
+        );
+        let key_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::F64, false)
+                .build(),
+        );
+        let culled_demographics_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .build(),
+        );
+        let culled_transactions_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Timestamp, false)
+                .build(),
+        );
+        let output_layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::Timestamp, false)
+                .with_column(ColumnType::F64, false)
+                .with_column(ColumnType::String, true)
+                .with_column(ColumnType::String, true)
+                .build(),
+        );
+
+        let demographics_src = graph.source(demographics_layout);
+        let transactions_src = graph.source(transactions_layout);
+
+        let indexed_demographics = graph.add_node(IndexByColumn::new(
+            demographics_src,
+            demographics_layout,
+            0,
+            vec![2, 3, 5, 6, 7, 8, 9, 10, 11],
+            key_layout,
+            culled_demographics_layout,
+        ));
+        let indexed_transactions = graph.add_node(IndexByColumn::new(
+            transactions_src,
+            transactions_layout,
+            1,
+            vec![2, 3, 4, 5, 6, 7, 8, 9],
+            key_layout,
+            culled_transactions_layout,
+        ));
+
+        let transactions_join_demographics = graph.join_core(
+            indexed_transactions,
+            indexed_demographics,
+            {
+                let mut builder = graph.function_builder();
+
+                let key = builder.add_input(key_layout);
+                let transaction = builder.add_input(culled_transactions_layout);
+                let demographic = builder.add_input(culled_demographics_layout);
+                let output = builder.add_output(output_layout);
+                let _unit_output = builder.add_output(unit_layout);
+
+                let trans_date_trans_time = builder.load(transaction, 0);
+                let cc_num = builder.load(key, 0);
+                builder.store(output, 0, trans_date_trans_time);
+                builder.store(output, 1, cc_num);
+
+                {
+                    let first_not_null = builder.create_block();
+                    let after = builder.create_block();
+
+                    let first_null = builder.is_null(demographic, 0);
+                    builder.set_null(output, 2, first_null);
+                    builder.branch(first_null, after, [], first_not_null, []);
+
+                    builder.move_to(first_not_null);
+                    let first = builder.load(demographic, 0);
+                    let first = builder.copy(first);
+                    builder.store(output, 2, first);
+                    builder.jump(after, []);
+
+                    builder.move_to(after);
+                }
+
+                {
+                    let city_not_null = builder.create_block();
+                    let after = builder.create_block();
+
+                    let city_null = builder.is_null(demographic, 1);
+                    builder.set_null(output, 3, city_null);
+                    builder.branch(city_null, after, [], city_not_null, []);
+
+                    builder.move_to(city_not_null);
+                    let city = builder.load(demographic, 1);
+                    let city = builder.copy(city);
+                    builder.store(output, 3, city);
+                    builder.jump(after, []);
+
+                    builder.move_to(after);
+                }
+
+                builder.ret_unit();
+                builder.build()
+            },
+            output_layout,
+            unit_layout,
+            StreamKind::Set,
+        );
+
+        let sink = graph.sink(transactions_join_demographics);
+
+        // Create the circuit
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
+
+        // Ingest data
+        circuit.append_input(transactions_src, &transactions());
+        circuit.append_input(demographics_src, &demographics());
+
+        // Step the circuit
+        circuit.step().unwrap();
+
+        // TODO: Inspect outputs
+        let _output = circuit.consolidate_output(sink);
 
         // Shut down the circuit
         circuit.kill().unwrap();
@@ -299,7 +460,6 @@ mod tests {
 
     fn transactions() -> StreamCollection {
         let tsx_path = Path::new(PATH).join("transactions_20K.csv");
-        println!("{}", tsx_path.display());
 
         let mut transactions = Vec::new();
 

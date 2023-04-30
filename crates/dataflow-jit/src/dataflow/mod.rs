@@ -2184,7 +2184,9 @@ impl CompiledDataflow {
                 // `..lower_bound` without shifting the vec
                 let mut inputs = cast_uninit_vec(inputs);
                 // Drop all keys below `lower_bound`
-                unsafe { ptr::drop_in_place(&mut inputs[..lower_bound]) }
+                unsafe { ptr::drop_in_place(&mut inputs[..lower_bound] as *mut [_] as *mut [Row]) }
+
+                debug_assert_eq!(inputs[lower_bound..].len(), diffs.len());
 
                 let length = inputs.len() - lower_bound;
 
@@ -2194,8 +2196,6 @@ impl CompiledDataflow {
                 // TODO: We could pre-sort the inputs so that we could directly create
                 // an `OrdIndexedZSet` after splitting into keys and values
                 unsafe {
-                    inputs.set_len(0);
-
                     owned_fn(
                         inputs.as_mut_ptr().add(lower_bound).cast(),
                         key_output.as_mut_ptr().cast(),

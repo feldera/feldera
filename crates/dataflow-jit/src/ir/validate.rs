@@ -6,8 +6,8 @@ use crate::{
         graph::GraphExt,
         nodes::{DataflowNode, Node, StreamKind, StreamLayout},
         BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
-        InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutCache, SetNull,
-        Store, UnaryOpKind, UninitRow,
+        InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutBuilder,
+        RowLayoutCache, SetNull, Store, UnaryOpKind, UninitRow,
     },
 };
 use derive_more::Display;
@@ -144,6 +144,14 @@ impl Validator {
                     self.node_inputs.insert(node_id, vec![distinct.input()]);
                 }
 
+                Node::IndexByColumn(index_by) => {
+                    self.node_inputs.insert(node_id, vec![index_by.input()]);
+                    self.node_outputs.insert(
+                        node_id,
+                        StreamLayout::Map(index_by.key_layout(), index_by.value_layout()),
+                    );
+                }
+
                 _ => todo!(),
             }
         }
@@ -181,6 +189,52 @@ impl Validator {
 
                     self.function_validator
                         .validate_function(index_with.index_fn())?;
+                }
+
+                Node::IndexByColumn(index_by) => {
+                    let input_layout = self.get_expected_input(node_id, index_by.input());
+                    assert_eq!(input_layout, StreamLayout::Set(index_by.input_layout()));
+
+                    let (key_layout, value_layout) = {
+                        let input_layout = self.layout_cache().get(index_by.input_layout());
+                        assert!(
+                            index_by.key_column() < input_layout.len(),
+                            "key column {} doesn't exist, {input_layout} only has {} layouts",
+                            index_by.key_column(),
+                            input_layout.len(),
+                        );
+                        for &value in index_by.discarded_values() {
+                            assert!(
+                                value < input_layout.len(),
+                                "discarded value column {value} doesn't exist, {input_layout} only has {} layouts",
+                                input_layout.len(),
+                            );
+                        }
+
+                        let key_layout = RowLayoutBuilder::new()
+                            .with_column(
+                                input_layout.column_type(index_by.key_column()),
+                                input_layout.column_nullable(index_by.key_column()),
+                            )
+                            .build();
+
+                        let mut value_layout = RowLayoutBuilder::new();
+                        for (column, (ty, nullable)) in input_layout.iter().enumerate() {
+                            if column != index_by.key_column()
+                                && !index_by.discarded_values().contains(&column)
+                            {
+                                value_layout.add_column(ty, nullable);
+                            }
+                        }
+
+                        (key_layout, value_layout.build())
+                    };
+
+                    let expected_key = self.layout_cache().add(key_layout);
+                    assert_eq!(index_by.key_layout(), expected_key);
+
+                    let expected_value = self.layout_cache().add(value_layout);
+                    assert_eq!(index_by.value_layout(), expected_value);
                 }
 
                 Node::JoinCore(join) => {
