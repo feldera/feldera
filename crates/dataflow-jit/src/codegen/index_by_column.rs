@@ -66,10 +66,10 @@ impl Codegen {
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
             // Get the relevant layouts
+            let key_layout = self.layout_cache.layout_of(index_by.key_layout()).clone();
+            let value_layout = self.layout_cache.layout_of(index_by.value_layout()).clone();
             let (src_layout, src_row_layout) =
                 self.layout_cache.get_layouts(index_by.input_layout());
-            let key_layout = self.layout_cache.layout_of(index_by.key_layout());
-            let value_layout = self.layout_cache.layout_of(index_by.value_layout());
 
             // Create the entry block
             let entry_block = builder.create_block();
@@ -107,24 +107,36 @@ impl Codegen {
                     .load(ptr_ty, MemFlags::trusted().with_readonly(), source_ptr, 0);
 
             let alloc_fn = ctx.imports.get("alloc", ctx.module, builder.func);
+
+            let key_row = if key_layout.is_zero_sized() {
+                // Make a dangling pointer
+                builder.ins().iconst(ptr_ty, key_layout.align() as i64)
+            } else {
+                let (key_size, key_align) = (
+                    builder.ins().iconst(ptr_ty, key_layout.size() as i64),
+                    builder.ins().iconst(ptr_ty, key_layout.align() as i64),
+                );
+
+                // Allocate a row value
+                builder.call_fn(alloc_fn, &[key_size, key_align])
+            };
+
+            let value_row = if value_layout.is_zero_sized() {
+                // Make a dangling pointer
+                builder.ins().iconst(ptr_ty, value_layout.align() as i64)
+            } else {
+                let (value_size, value_align) = (
+                    builder.ins().iconst(ptr_ty, value_layout.size() as i64),
+                    builder.ins().iconst(ptr_ty, value_layout.align() as i64),
+                );
+
+                // Allocate a row value
+                builder.call_fn(alloc_fn, &[value_size, value_align])
+            };
+
             let mut row_idx = 0;
             for (idx, (ty, nullable)) in src_row_layout.iter().enumerate() {
                 if idx == index_by.key_column() {
-                    let allocated_row = if key_layout.is_zero_sized() {
-                        // Make a dangling pointer
-                        builder.ins().iconst(ptr_ty, key_layout.align() as i64)
-                    } else {
-                        debug_assert!(!nullable && ty.is_unit());
-
-                        let (key_size, key_align) = (
-                            builder.ins().iconst(ptr_ty, key_layout.size() as i64),
-                            builder.ins().iconst(ptr_ty, key_layout.align() as i64),
-                        );
-
-                        // Allocate a row value
-                        builder.call_fn(alloc_fn, &[key_size, key_align])
-                    };
-
                     if nullable {
                         let is_null =
                             column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
@@ -132,7 +144,7 @@ impl Codegen {
                         set_column_null(
                             is_null,
                             0,
-                            allocated_row,
+                            key_row,
                             MemFlags::trusted(),
                             &key_layout,
                             &mut builder,
@@ -144,7 +156,7 @@ impl Codegen {
                                 native.native_type(&ctx.frontend_config()),
                                 MemFlags::trusted().with_readonly(),
                                 data_ptr,
-                                key_layout.offset_of(idx) as i32,
+                                src_layout.offset_of(idx) as i32,
                             );
 
                             // Clone the value if needed
@@ -153,7 +165,7 @@ impl Codegen {
                                 let after = builder.create_block();
                                 builder.append_block_param(after, ptr_ty);
 
-                                let null = builder.ins().null(ptr_ty);
+                                let null = builder.ins().iconst(ptr_ty, 0);
                                 builder.ins().brif(is_null, after, &[null], clone_val, &[]);
 
                                 builder.switch_to_block(clone_val);
@@ -172,7 +184,7 @@ impl Codegen {
                             builder.ins().store(
                                 MemFlags::trusted(),
                                 cloned,
-                                allocated_row,
+                                key_row,
                                 key_layout.offset_of(0) as i32,
                             );
                         }
@@ -182,7 +194,7 @@ impl Codegen {
                             native.native_type(&ctx.frontend_config()),
                             MemFlags::trusted().with_readonly(),
                             data_ptr,
-                            key_layout.offset_of(idx) as i32,
+                            src_layout.offset_of(idx) as i32,
                         );
 
                         // Clone the key if needed
@@ -198,7 +210,7 @@ impl Codegen {
                         builder.ins().store(
                             MemFlags::trusted(),
                             cloned,
-                            allocated_row,
+                            key_row,
                             key_layout.offset_of(0) as i32,
                         );
                     }
@@ -206,7 +218,7 @@ impl Codegen {
                     // Store the row pointer to the key vec
                     builder
                         .ins()
-                        .store(MemFlags::trusted(), allocated_row, key_ptr, 0);
+                        .store(MemFlags::trusted(), key_row, key_ptr, 0);
 
                     // Store the vtable pointer to the key vec
                     builder.ins().store(
@@ -225,28 +237,13 @@ impl Codegen {
                 }
 
                 // Propagate values
-                let allocated_row = if value_layout.is_zero_sized() {
-                    // Make a dangling pointer
-                    builder.ins().iconst(ptr_ty, value_layout.align() as i64)
-                } else {
-                    debug_assert!(!nullable && ty.is_unit());
-
-                    let (value_size, value_align) = (
-                        builder.ins().iconst(ptr_ty, value_layout.size() as i64),
-                        builder.ins().iconst(ptr_ty, value_layout.align() as i64),
-                    );
-
-                    // Allocate a row value
-                    builder.call_fn(alloc_fn, &[value_size, value_align])
-                };
-
                 if nullable {
                     let is_null = column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
 
                     set_column_null(
                         is_null,
                         row_idx,
-                        allocated_row,
+                        value_row,
                         MemFlags::trusted(),
                         &value_layout,
                         &mut builder,
@@ -258,7 +255,7 @@ impl Codegen {
                             native.native_type(&ctx.frontend_config()),
                             MemFlags::trusted().with_readonly(),
                             data_ptr,
-                            value_layout.offset_of(idx) as i32,
+                            src_layout.offset_of(idx) as i32,
                         );
 
                         // Clone the value if needed
@@ -267,7 +264,7 @@ impl Codegen {
                             let after = builder.create_block();
                             builder.append_block_param(after, ptr_ty);
 
-                            let null = builder.ins().null(ptr_ty);
+                            let null = builder.ins().iconst(ptr_ty, 0);
                             builder.ins().brif(is_null, after, &[null], clone_val, &[]);
 
                             builder.switch_to_block(clone_val);
@@ -286,7 +283,7 @@ impl Codegen {
                         builder.ins().store(
                             MemFlags::trusted(),
                             cloned,
-                            allocated_row,
+                            value_row,
                             value_layout.offset_of(row_idx) as i32,
                         );
                     }
@@ -296,7 +293,7 @@ impl Codegen {
                         native.native_type(&ctx.frontend_config()),
                         MemFlags::trusted().with_readonly(),
                         data_ptr,
-                        value_layout.offset_of(idx) as i32,
+                        src_layout.offset_of(idx) as i32,
                     );
 
                     // Clone the value if needed
@@ -311,26 +308,26 @@ impl Codegen {
                     builder.ins().store(
                         MemFlags::trusted(),
                         cloned,
-                        allocated_row,
+                        value_row,
                         value_layout.offset_of(row_idx) as i32,
                     );
                 }
 
-                // Store the row pointer to the value vec
-                builder
-                    .ins()
-                    .store(MemFlags::trusted(), allocated_row, value_ptr, 0);
-
-                // Store the vtable pointer to the value vec
-                builder.ins().store(
-                    MemFlags::trusted(),
-                    value_vtable,
-                    value_ptr,
-                    size_of::<usize>() as i32,
-                );
-
                 row_idx += 1;
             }
+
+            // Store the value pointer to the value vec
+            builder
+                .ins()
+                .store(MemFlags::trusted(), value_row, value_ptr, 0);
+
+            // Store the vtable pointer to the value vec
+            builder.ins().store(
+                MemFlags::trusted(),
+                value_vtable,
+                value_ptr,
+                size_of::<usize>() as i32,
+            );
 
             // Deallocate the source row if the input is owned
             if source_owned && !src_layout.is_zero_sized() {
@@ -339,7 +336,7 @@ impl Codegen {
                     builder.ins().iconst(ptr_ty, src_layout.size() as i64),
                     builder.ins().iconst(ptr_ty, src_layout.align() as i64),
                 );
-                builder.ins().call(dealloc, &[source_ptr, size, align]);
+                builder.ins().call(dealloc, &[data_ptr, size, align]);
             }
 
             // Increment all pointers
@@ -353,10 +350,10 @@ impl Codegen {
                 .icmp(IntCC::UnsignedLessThan, src_ptr_inc, source_end);
             builder.ins().brif(
                 src_is_oob,
-                tail,
-                &[],
                 body,
                 &[src_ptr_inc, key_ptr_inc, value_ptr_inc],
+                tail,
+                &[],
             );
 
             builder.switch_to_block(tail);
@@ -384,7 +381,7 @@ fn set_column_null(
     let bitset_ty = bitset_ty.native_type();
 
     let bitset = if layout.bitset_occupants(column) == 1 {
-        let null_ty = builder.func.dfg.value_type(is_null);
+        let null_ty = builder.value_type(is_null);
         match bitset_ty.bytes().cmp(&null_ty.bytes()) {
             Ordering::Less => builder.ins().ireduce(bitset_ty, is_null),
             Ordering::Equal => is_null,

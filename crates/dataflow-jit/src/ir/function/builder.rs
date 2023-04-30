@@ -169,12 +169,12 @@ impl FunctionBuilder {
         expr
     }
 
-    pub fn copy_val(&mut self, value: ExprId) -> ExprId {
+    pub fn copy(&mut self, value: ExprId) -> ExprId {
         let value_ty = self
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect_column("attempted to call `CopyVal` on a row value");
+            .expect_column("attempted to call `Copy` on a row value");
         let expr = self.add_expr(Copy::new(value, value_ty));
         self.set_expr_type(expr, value_ty);
         expr
