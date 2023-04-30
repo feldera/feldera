@@ -233,6 +233,43 @@ impl Codegen {
 
                 // Skip discarded values
                 if index_by.discarded_values().contains(&idx) {
+                    if source_owned && src_row_layout.column_type(idx).is_string() {
+                        let drop_string =
+                            ctx.imports
+                                .get("string_drop_in_place", ctx.module, builder.func);
+
+                        if src_layout.is_nullable(idx) {
+                            let is_null =
+                                column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
+
+                            let drop_val = builder.create_block();
+                            let after = builder.create_block();
+
+                            builder.ins().brif(is_null, after, &[], drop_val, &[]);
+                            builder.switch_to_block(drop_val);
+
+                            let string = builder.ins().load(
+                                src_layout.type_of(idx).native_type(&ctx.frontend_config()),
+                                MemFlags::trusted().with_readonly(),
+                                data_ptr,
+                                src_layout.offset_of(idx) as i32,
+                            );
+                            builder.ins().call(drop_string, &[string]);
+
+                            builder.ins().jump(after, &[]);
+                            builder.switch_to_block(after);
+                        } else {
+                            let string = builder.ins().load(
+                                src_layout.type_of(idx).native_type(&ctx.frontend_config()),
+                                MemFlags::trusted().with_readonly(),
+                                data_ptr,
+                                src_layout.offset_of(idx) as i32,
+                            );
+
+                            builder.ins().call(drop_string, &[string]);
+                        }
+                    }
+
                     continue;
                 }
 
