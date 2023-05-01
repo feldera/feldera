@@ -71,9 +71,9 @@ jobs:
       - name: Install dependencies
         run: yarn install
       - name: Check format
-        run: Format check
+        run: yarn format:check
       - name: Check eslint
-        run: Lint check
+        run: yarn lint
       - name: Build with Next.js
         run: yarn next build
       - name: Static HTML export with Next.js

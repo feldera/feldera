@@ -11,7 +11,7 @@ export interface ProjectWithSchema {
   schema: Schema
 }
 
-export function projectToProjectWithSchema(project: ProjectDescr): ProjectWithSchema {
+export function parseProjectSchema(project: ProjectDescr): ProjectWithSchema {
   return {
     name: project.name,
     project_id: project.project_id,
