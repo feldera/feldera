@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 #[cfg(test)]
 mod test;
 
-#[cfg(any(test, feature = "dev"))]
+#[cfg(any(test, feature = "pg-embed"))]
 mod pg_setup;
 pub(crate) mod storage;
 
@@ -29,13 +29,13 @@ pub(crate) mod storage;
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
     conn: Client,
+    // Used in dev mode for having an embedded Postgres DB live through the
+    // lifetime of the program.
+    #[cfg(feature = "pg-embed")]
+    #[allow(dead_code)] // It has to stay alive until ProjectDB is dropped.
+    pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
-// Used in dev mode for having an embedded Postgres DB live through the lifetime
-// of the program.
-#[cfg(feature = "dev")]
-static PG: once_cell::sync::OnceCell<pg_embed::postgres::PgEmbed> =
-    once_cell::sync::OnceCell::new();
 
 /// Unique project id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
@@ -1021,18 +1021,16 @@ impl ProjectDB {
         let connection_str = config.database_connection_string();
         let initial_sql = &config.initial_sql;
 
-        #[cfg(feature = "dev")]
-        let connection_str = if connection_str.starts_with("postgres-embed") {
+        #[cfg(feature = "pg-embed")]
+        if connection_str.starts_with("postgres-embed") {
             let database_dir = config.postgres_embed_data_dir();
-            let pg = pg_setup::install(database_dir, true, Some(8082)).await?;
-            let connection_string = pg.db_uri.to_string();
-            let _ = PG.set(pg);
-            connection_string
-        } else {
-            connection_str
+            let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
+            let connection_string = pg_inst.db_uri.to_string();
+            return Self::connect_inner(connection_string.as_str(), initial_sql, Some(pg_inst)).await
         };
 
-        Self::connect_inner(connection_str.as_str(), initial_sql).await
+        Self::connect_inner(connection_str.as_str(), initial_sql, #[cfg(feature = "pg-embed")] None).await
+
     }
 
     /// Connect to the project database.
@@ -1046,7 +1044,7 @@ impl ProjectDB {
     /// - `is_persistent`: Whether the embedded postgres database should be
     ///   persistent or removed on shutdown.
     /// - `port`: The port to use for the embedded Postgres database to run on.
-    async fn connect_inner(connection_str: &str, initial_sql: &Option<String>) -> AnyResult<Self> {
+    async fn connect_inner(connection_str: &str, initial_sql: &Option<String>, #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>) -> AnyResult<Self> {
         if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
         }
@@ -1162,7 +1160,10 @@ impl ProjectDB {
             }
         }
 
-        Ok(Self { conn: client })
+        #[cfg(feature = "pg-embed")]
+        return Ok(Self { conn: client, pg_inst });
+        #[cfg(not(feature = "pg-embed"))]
+        return Ok(Self { conn: client });
     }
 
     /// Attach connector to the config.

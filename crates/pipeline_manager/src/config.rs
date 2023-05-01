@@ -228,7 +228,7 @@ impl ManagerConfig {
     }
 
     /// Where Postgres embed stores the database.
-    #[cfg(feature = "dev")]
+    #[cfg(feature = "pg-embed")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
         Path::new(&self.working_directory).join("data")
     }

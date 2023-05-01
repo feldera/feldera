@@ -30,8 +30,8 @@ pkill -9 dbsp_pipeline_
 
 set -e
 
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release -- \
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release --features pg-embed
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release --features pg-embed -- \
     --bind-address="${BIND_ADDRESS}" \
     --working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
