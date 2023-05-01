@@ -441,6 +441,18 @@ where
     fn seek_key(&mut self, key: &K) {
         self.cursor.seek(key);
     }
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        self.cursor.seek_with(|k| !predicate(k));
+    }
+    fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        self.cursor.seek_with_reverse(|k| !predicate(k));
+    }
     fn seek_key_reverse(&mut self, key: &K) {
         self.cursor.seek_reverse(key);
     }

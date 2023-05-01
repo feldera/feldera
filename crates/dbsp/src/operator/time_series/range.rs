@@ -317,6 +317,20 @@ where
         unimplemented!()
     }
 
+    fn seek_key_with<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&TS) -> bool + Clone,
+    {
+        unimplemented!()
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&TS) -> bool + Clone,
+    {
+        unimplemented!()
+    }
+
     fn seek_key_reverse(&mut self, _key: &TS) {
         unimplemented!()
     }

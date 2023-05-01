@@ -2,15 +2,9 @@
 
 use crate::{
     algebra::{HasZero, MonoidValue},
-    trace::cursor::Cursor,
+    trace::cursor::{Cursor, Direction},
 };
 use std::marker::PhantomData;
-
-#[derive(Debug, PartialEq, Eq)]
-enum Direction {
-    Forward,
-    Backward,
-}
 
 /// Provides a cursor interface over a list of cursors.
 ///
@@ -22,7 +16,8 @@ pub struct CursorList<K, V, T, R, C: Cursor<K, V, T, R>> {
     cursors: Vec<C>,
     current_key: Vec<usize>,
     current_val: Vec<usize>,
-    direction: Direction,
+    #[cfg(debug_assertions)]
+    val_direction: Direction,
     __type: PhantomData<(K, V, T, R)>,
 }
 
@@ -37,13 +32,30 @@ where
             cursors,
             current_key: Vec::new(),
             current_val: Vec::new(),
-            direction: Direction::Forward,
+            #[cfg(debug_assertions)]
+            val_direction: Direction::Forward,
             __type: PhantomData,
         };
 
         result.minimize_keys();
         result
     }
+
+    #[cfg(debug_assertions)]
+    fn set_val_direction(&mut self, direction: Direction) {
+        self.val_direction = direction;
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn set_val_direction(&mut self, _direction: Direction) {}
+
+    #[cfg(debug_assertions)]
+    fn assert_val_direction(&self, direction: Direction) {
+        debug_assert_eq!(self.val_direction, direction);
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn assert_val_direction(&self, _direction: Direction) {}
 
     // Initialize current_key with the indices of cursors with the minimum key.
     //
@@ -55,7 +67,7 @@ where
     // Once finished, it invokes `minimize_vals()` to ensure the value cursor is
     // in a consistent state as well.
     fn minimize_keys(&mut self) {
-        debug_assert!(self.direction == Direction::Forward);
+        self.assert_val_direction(Direction::Forward);
 
         self.current_key.clear();
 
@@ -106,7 +118,7 @@ where
     // far. As it goes, if it observes an improved value it clears the current
     // list, updates the minimum value, and continues.
     fn minimize_vals(&mut self) {
-        debug_assert!(self.direction == Direction::Forward);
+        self.assert_val_direction(Direction::Forward);
 
         self.current_val.clear();
 
@@ -127,7 +139,7 @@ where
     }
 
     fn maximize_vals(&mut self) {
-        debug_assert!(self.direction == Direction::Backward);
+        self.assert_val_direction(Direction::Backward);
 
         self.current_val.clear();
 
@@ -213,7 +225,8 @@ where
         for &index in self.current_key.iter() {
             self.cursors[index].step_key();
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
     }
 
@@ -221,7 +234,8 @@ where
         for &index in self.current_key.iter() {
             self.cursors[index].step_key_reverse();
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
@@ -229,20 +243,46 @@ where
         for cursor in self.cursors.iter_mut() {
             cursor.seek_key(key);
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
+    }
+
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        for cursor in self.cursors.iter_mut() {
+            cursor.seek_key_with(&predicate);
+        }
+
+        self.set_val_direction(Direction::Forward);
+        self.minimize_keys();
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        for cursor in self.cursors.iter_mut() {
+            cursor.seek_key_with_reverse(&predicate);
+        }
+
+        self.set_val_direction(Direction::Forward);
+        self.maximize_keys();
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
         for cursor in self.cursors.iter_mut() {
             cursor.seek_key_reverse(key);
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
     fn step_val(&mut self) {
-        debug_assert_eq!(self.direction, Direction::Forward);
+        self.assert_val_direction(Direction::Forward);
 
         for &index in self.current_val.iter() {
             self.cursors[index].step_val();
@@ -251,7 +291,7 @@ where
     }
 
     fn seek_val(&mut self, val: &V) {
-        debug_assert_eq!(self.direction, Direction::Forward);
+        self.assert_val_direction(Direction::Forward);
 
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val(val);
@@ -263,7 +303,7 @@ where
     where
         P: Fn(&V) -> bool + Clone,
     {
-        debug_assert_eq!(self.direction, Direction::Forward);
+        self.assert_val_direction(Direction::Forward);
 
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_with(predicate.clone());
@@ -275,7 +315,8 @@ where
         for cursor in self.cursors.iter_mut() {
             cursor.rewind_keys();
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
     }
 
@@ -283,7 +324,8 @@ where
         for cursor in self.cursors.iter_mut() {
             cursor.fast_forward_keys();
         }
-        self.direction = Direction::Forward;
+
+        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
@@ -292,12 +334,12 @@ where
             self.cursors[index].rewind_vals();
         }
 
-        self.direction = Direction::Forward;
+        self.set_val_direction(Direction::Forward);
         self.minimize_vals();
     }
 
     fn step_val_reverse(&mut self) {
-        debug_assert_eq!(self.direction, Direction::Backward);
+        self.assert_val_direction(Direction::Backward);
 
         for &index in self.current_val.iter() {
             self.cursors[index].step_val_reverse();
@@ -306,7 +348,7 @@ where
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
-        debug_assert_eq!(self.direction, Direction::Backward);
+        self.assert_val_direction(Direction::Backward);
 
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_reverse(val);
@@ -318,7 +360,7 @@ where
     where
         P: Fn(&V) -> bool + Clone,
     {
-        debug_assert_eq!(self.direction, Direction::Backward);
+        self.assert_val_direction(Direction::Backward);
 
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_with_reverse(predicate.clone());
@@ -331,7 +373,7 @@ where
             self.cursors[index].fast_forward_vals();
         }
 
-        self.direction = Direction::Backward;
+        self.set_val_direction(Direction::Backward);
         self.maximize_vals();
     }
 }

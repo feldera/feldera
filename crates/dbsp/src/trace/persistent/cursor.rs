@@ -272,6 +272,13 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         }
     }
 
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&B::Key) -> bool + Clone,
+    {
+        unimplemented!()
+    }
+
     fn seek_key_reverse(&mut self, key: &B::Key) {
         if self.cur_key.is_none() {
             // We are at the end of the cursor.

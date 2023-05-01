@@ -14,10 +14,18 @@
 pub mod cursor_empty;
 pub mod cursor_group;
 pub mod cursor_list;
+pub mod cursor_pair;
+
+#[derive(Debug, PartialEq, Eq)]
+enum Direction {
+    Forward,
+    Backward,
+}
 
 pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
+pub use cursor_pair::CursorPair;
 
 /// A cursor for navigating ordered `(key, val, time, diff)` tuples.
 pub trait Cursor<K, V, T, R> {
@@ -115,6 +123,18 @@ pub trait Cursor<K, V, T, R> {
 
     /// Advances the cursor to the specified key.
     fn seek_key(&mut self, key: &K);
+
+    /// Move the cursor to the first key that satisfies `predicate`.
+    /// Assumes that `predicate` remains true once it turns true.
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone;
+
+    /// Move the cursor back to the first key that satisfies `predicate`.
+    /// Assumes that `predicate` remains true once it turns true.
+    fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone;
 
     /// Moves the cursor back to the specified key.
     fn seek_key_reverse(&mut self, key: &K);

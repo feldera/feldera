@@ -25,7 +25,7 @@ pub use persistent::PersistentTrace as Spine;
 pub use spine_fueled::Spine;
 
 #[cfg(test)]
-mod test_batch;
+pub mod test_batch;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
