@@ -18,6 +18,7 @@ mod differentiate;
 mod distinct;
 mod filter_map;
 mod generator;
+mod group;
 mod index;
 mod input;
 mod integrate;
