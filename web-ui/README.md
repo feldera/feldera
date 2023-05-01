@@ -46,6 +46,15 @@ yarn format
 yarn lint
 ```
 
+If `yarn audit` fails for a transitive dependency you can try to update it:
+
+```bash
+yarn up --recursive loader-utils
+```
+
+For direct dependencies, you can adjust the version in `package.json`
+and run `yarn install`.
+
 ## OpenAPI bindings
 
 The bindings for OpenAPI (under src/types/manager) are generated using
