@@ -13,7 +13,7 @@ use crate::{
         trace::{TraceBounds, TraceFeedback},
         Aggregator,
     },
-    trace::{Builder, Cursor, Spine},
+    trace::{cursor::CursorEmpty, Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream,
 };
 use num::PrimInt;
@@ -198,103 +198,6 @@ where
     }
 }
 
-/// Cursor that contains no data.
-struct EmptyCursor<TS, V, R> {
-    phantom: PhantomData<(TS, V, R)>,
-}
-
-impl<TS, V, R> EmptyCursor<TS, V, R> {
-    fn new() -> Self {
-        Self {
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<TS, V, R> Cursor<TS, V, (), R> for EmptyCursor<TS, V, R>
-where
-    TS: DBData,
-    V: 'static,
-{
-    fn key_valid(&self) -> bool {
-        false
-    }
-
-    fn val_valid(&self) -> bool {
-        false
-    }
-
-    fn key(&self) -> &TS {
-        panic!("EmptyCursor::key")
-    }
-
-    fn val(&self) -> &V {
-        panic!("")
-    }
-
-    fn fold_times<F, U>(&mut self, init: U, _fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        init
-    }
-
-    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, _fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        init
-    }
-
-    fn weight(&mut self) -> R {
-        panic!("")
-    }
-
-    fn step_key(&mut self) {
-        panic!("")
-    }
-
-    fn step_key_reverse(&mut self) {
-        panic!("")
-    }
-
-    fn seek_key(&mut self, _key: &TS) {}
-
-    fn seek_key_reverse(&mut self, _key: &TS) {}
-
-    fn step_val(&mut self) {
-        panic!("")
-    }
-
-    fn seek_val(&mut self, _val: &V) {}
-
-    fn seek_val_with<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&V) -> bool,
-    {
-    }
-
-    fn rewind_keys(&mut self) {}
-
-    fn fast_forward_keys(&mut self) {}
-
-    fn rewind_vals(&mut self) {}
-
-    fn step_val_reverse(&mut self) {
-        panic!("")
-    }
-
-    fn seek_val_reverse(&mut self, _val: &V) {}
-
-    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
-    }
-
-    fn fast_forward_vals(&mut self) {}
-}
-
 /// Ternary operator that implements the internals of
 /// `partitioned_tree_aggregate`.
 ///
@@ -395,7 +298,7 @@ where
                     radix_tree_update::<TS, V, Z::R, Agg, _, _, _, _>(
                         delta_partition_cursor,
                         PartitionCursor::new(&mut input_cursor),
-                        <EmptyCursor<_, _, O::R>>::new(),
+                        <CursorEmpty<_, _, _, O::R>>::new(),
                         &self.aggregator,
                         &mut updates,
                     );
@@ -403,7 +306,7 @@ where
             } else if output_cursor.key_valid() && output_cursor.key() == &key {
                 radix_tree_update::<TS, V, Z::R, Agg, _, _, _, _>(
                     delta_partition_cursor,
-                    EmptyCursor::new(),
+                    CursorEmpty::new(),
                     PartitionCursor::new(&mut output_cursor),
                     &self.aggregator,
                     &mut updates,
@@ -411,8 +314,8 @@ where
             } else {
                 radix_tree_update::<TS, V, Z::R, Agg, _, _, _, _>(
                     delta_partition_cursor,
-                    EmptyCursor::new(),
-                    <EmptyCursor<_, _, O::R>>::new(),
+                    CursorEmpty::new(),
+                    <CursorEmpty<_, _, _, O::R>>::new(),
                     &self.aggregator,
                     &mut updates,
                 );

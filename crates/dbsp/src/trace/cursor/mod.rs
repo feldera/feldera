@@ -11,9 +11,11 @@
 //! on multiple levels (key and val), but also because it supports efficient
 //! seeking (via the `seek_key` and `seek_val` methods).
 
+pub mod cursor_empty;
 pub mod cursor_group;
 pub mod cursor_list;
 
+pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 
