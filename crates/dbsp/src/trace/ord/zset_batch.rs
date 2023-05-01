@@ -388,6 +388,22 @@ where
         self.valid = true;
     }
 
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        self.cursor.seek_key_with(|k| !predicate(k));
+        self.valid = true;
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        self.cursor.seek_key_with_reverse(|k| !predicate(k));
+        self.valid = true;
+    }
+
     fn seek_key_reverse(&mut self, key: &K) {
         self.cursor.seek_reverse(key);
         self.valid = true;

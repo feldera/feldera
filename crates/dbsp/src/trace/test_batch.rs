@@ -167,10 +167,10 @@ where
     assert_eq!(tuples1, tuples2);
 }
 
-pub fn assert_batch_cursors_eq<B1, B2>(batch: &B1, ref_batch: &B2, seed: u64)
+pub fn assert_batch_cursors_eq<C, B>(mut cursor: C, ref_batch: &B, seed: u64)
 where
-    B1: BatchReader,
-    B2: BatchReader<Key = B1::Key, Val = B1::Val, Time = B1::Time, R = B1::R>,
+    B: BatchReader,
+    C: Cursor<B::Key, B::Val, B::Time, B::R>,
 {
     // Extract all key/value pairs.
     let mut tuples = batch_to_tuples(ref_batch)
@@ -182,18 +182,16 @@ where
     // Randomly sample 1/3 of the pairs.
     let sample_len = tuples.len() / 3;
     let mut rng = ChaChaRng::seed_from_u64(seed);
-    let mut sample: Vec<(B1::Key, B1::Val)> =
+    let mut sample: Vec<(B::Key, B::Val)> =
         tuples.into_iter().choose_multiple(&mut rng, sample_len);
     sample.sort();
     sample.dedup();
 
-    let mut sample_map = <BTreeMap<B1::Key, Vec<B1::Val>>>::new();
+    let mut sample_map = <BTreeMap<B::Key, Vec<B::Val>>>::new();
 
     for (k, v) in sample.into_iter() {
         sample_map.entry(k).or_default().push(v);
     }
-
-    let mut cursor = batch.cursor();
 
     for key in sample_map.keys() {
         cursor.seek_key(key);
@@ -268,7 +266,7 @@ where
     R: DBWeight,
 {
     /// Create batch from sorted or unsorted tuples.
-    fn from_data(records: &[((K, V, T), R)]) -> Self {
+    pub fn from_data(records: &[((K, V, T), R)]) -> Self {
         let mut data: BTreeMap<(K, V, T), R> = BTreeMap::new();
 
         for ((k, v, t), r) in records.iter() {
@@ -569,6 +567,20 @@ where
         while self.index < self.data.len() && &self.data[self.index].0 .0 < key {
             self.index += 1;
         }
+    }
+
+    fn seek_key_with<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        todo!()
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        todo!()
     }
 
     fn seek_key_reverse(&mut self, _key: &K) {

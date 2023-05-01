@@ -99,6 +99,20 @@ where
         self.base.seek_val(val)
     }
 
+    fn seek_key_with<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        self.base.seek_val_with(predicate)
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, predicate: P)
+    where
+        P: Fn(&V) -> bool + Clone,
+    {
+        self.base.seek_val_with_reverse(predicate)
+    }
+
     fn seek_key_reverse(&mut self, val: &V) {
         self.base.seek_val_reverse(val)
     }
