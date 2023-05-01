@@ -770,8 +770,6 @@ impl FunctionValidator {
                         actual_arg_types[1],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::String));
             }
 
             "dbsp.str.clear" => {
@@ -840,8 +838,6 @@ impl FunctionValidator {
                         actual_arg_types[1],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::String));
             }
 
             "dbsp.str.bit_length" | "dbsp.str.char_length" | "dbsp.str.byte_length" => {
@@ -860,8 +856,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Usize));
             }
 
             "dbsp.str.is_nfc"
@@ -885,8 +879,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
             }
 
             "dbsp.timestamp.epoch"
@@ -922,8 +914,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::I64));
             }
 
             "dbsp.timestamp.floor_week" => {
@@ -942,8 +932,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
             }
 
             "dbsp.timestamp.to_date" => {
@@ -962,8 +950,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Date));
             }
 
             "dbsp.date.hour"
@@ -999,8 +985,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::I32));
             }
 
             "dbsp.date.to_timestamp" => {
@@ -1019,8 +1003,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Timestamp));
             }
 
             "dbsp.math.is_power_of_two" => {
@@ -1042,8 +1024,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types.insert(expr_id, Ok(ColumnType::Bool));
             }
 
             "dbsp.math.fdim" => {
@@ -1086,8 +1066,6 @@ impl FunctionValidator {
                         First argument has the type {x_ty} and the second arg has the type {y_ty}",
                     )
                 }
-
-                self.expr_types.insert(expr_id, Ok(x_ty));
             }
 
             trig if TRIG_INTRINSICS.contains(&trig)
@@ -1116,9 +1094,6 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
-
-                self.expr_types
-                    .insert(expr_id, Ok(actual_arg_types[0].as_scalar().unwrap()));
             }
 
             unknown => {
