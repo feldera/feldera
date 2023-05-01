@@ -7,7 +7,7 @@ import { Autocomplete, CardContent, TextField, Typography } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
 import { PlaceholderNode } from '../NodeTypes'
-import { projectToProjectWithSchema, ProjectWithSchema } from 'src/types/program'
+import { parseProjectSchema, ProjectWithSchema } from 'src/types/program'
 import useSqlPlaceholderClick from '../hooks/useSqlPlaceholderClick'
 import { ProjectDescr } from 'src/types/manager'
 
@@ -24,7 +24,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
   const { isLoading, isError, data } = useQuery<ProjectDescr[]>(['project'])
   useEffect(() => {
     if (!isLoading && !isError) {
-      setPrograms(data.filter(p => p.schema).map(projectToProjectWithSchema))
+      setPrograms(data.filter(p => p.schema).map(parseProjectSchema))
     }
   }, [isLoading, isError, data])
 

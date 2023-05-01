@@ -28,7 +28,7 @@ import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { useDebouncedCallback } from 'use-debounce'
 import { removePrefix } from 'src/utils'
 import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
-import { projectToProjectWithSchema } from 'src/types/program'
+import { parseProjectSchema } from 'src/types/program'
 import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
@@ -125,7 +125,7 @@ export const PipelineWithProvider = (props: {
             setMissingSchemaDialog(false)
           }
 
-          const programWithSchema = projectToProjectWithSchema(foundProject)
+          const programWithSchema = parseProjectSchema(foundProject)
           if (attachedConnectors) {
             invalidConnections = attachedConnectors.filter(attached_connector => {
               return !connectorConnects(attached_connector, programWithSchema.schema)

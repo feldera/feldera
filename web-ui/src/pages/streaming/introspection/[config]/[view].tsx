@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
 import { ConfigDescr, ConfigId, ProjectDescr } from 'src/types/manager'
 import { parse } from 'csv-parse'
-import { projectToProjectWithSchema } from 'src/types/program'
+import { parseProjectSchema } from 'src/types/program'
 
 const IntrospectInputOutput = () => {
   const apiRef = useGridApiRef()
@@ -29,7 +29,7 @@ const IntrospectInputOutput = () => {
   useEffect(() => {
     if (!projectQuery.isLoading && !projectQuery.isError && viewName) {
       if (projectQuery.data && projectQuery.data.schema) {
-        const program = projectToProjectWithSchema(projectQuery.data)
+        const program = parseProjectSchema(projectQuery.data)
         const view = program.schema['outputs'].find(v => v.name === viewName)
         if (view) {
           const id = [{ field: 'genId', headerName: 'genId', flex: 0.1 }]
