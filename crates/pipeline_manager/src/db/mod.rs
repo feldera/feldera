@@ -36,7 +36,6 @@ pub(crate) struct ProjectDB {
     pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
-
 /// Unique project id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -1026,11 +1025,17 @@ impl ProjectDB {
             let database_dir = config.postgres_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
-            return Self::connect_inner(connection_string.as_str(), initial_sql, Some(pg_inst)).await
+            return Self::connect_inner(connection_string.as_str(), initial_sql, Some(pg_inst))
+                .await;
         };
 
-        Self::connect_inner(connection_str.as_str(), initial_sql, #[cfg(feature = "pg-embed")] None).await
-
+        Self::connect_inner(
+            connection_str.as_str(),
+            initial_sql,
+            #[cfg(feature = "pg-embed")]
+            None,
+        )
+        .await
     }
 
     /// Connect to the project database.
@@ -1044,7 +1049,11 @@ impl ProjectDB {
     /// - `is_persistent`: Whether the embedded postgres database should be
     ///   persistent or removed on shutdown.
     /// - `port`: The port to use for the embedded Postgres database to run on.
-    async fn connect_inner(connection_str: &str, initial_sql: &Option<String>, #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>) -> AnyResult<Self> {
+    async fn connect_inner(
+        connection_str: &str,
+        initial_sql: &Option<String>,
+        #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
+    ) -> AnyResult<Self> {
         if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
         }
@@ -1112,6 +1121,13 @@ impl ProjectDB {
 
         client
             .execute(
+                "ALTER TABLE pipeline DROP CONSTRAINT IF EXISTS pipeline_config_id_fkey CASCADE;
+            ",
+                &[],
+            )
+            .await?;
+        client
+            .execute(
                 "
                 -- We can't add this in the create statement due to the circular dependency
                 ALTER TABLE pipeline
@@ -1161,7 +1177,10 @@ impl ProjectDB {
         }
 
         #[cfg(feature = "pg-embed")]
-        return Ok(Self { conn: client, pg_inst });
+        return Ok(Self {
+            conn: client,
+            pg_inst,
+        });
         #[cfg(not(feature = "pg-embed"))]
         return Ok(Self { conn: client });
     }
