@@ -1,3 +1,5 @@
+// This is the top bar that decides whether to show the hamburger menu or not it
+// also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
 import { Theme } from '@mui/material/styles'
 import TextField from '@mui/material/TextField'
