@@ -20,8 +20,9 @@
     "build": "next build",
     "start": "next start",
     "export": "next export",
-    "lint": "eslint --fix \"src/**/*.{js,jsx,ts,tsx}\"",
+    "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
     "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/types/manager && rm ./openapi.json"
   },
   "dependencies": {

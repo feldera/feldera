@@ -95,7 +95,7 @@ export function useAddConnector() {
         }
       }
     },
-    [getNode, getNodes, setNodes, addNodes, addEdges]
+    [getNode, getNodes, setNodes, addNodes, addEdges, redoLayout]
   )
 
   return addNewConnector
