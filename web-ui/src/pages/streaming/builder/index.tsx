@@ -94,6 +94,7 @@ export const PipelineWithProvider = (props: {
   })
   useEffect(() => {
     if (
+      saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing' &&
       !configQuery.isLoading &&
       !configQuery.isError &&
       !projects.isLoading &&
