@@ -93,81 +93,82 @@ export const PipelineWithProvider = (props: {
       configId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
-    if (
-      saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing' &&
-      !configQuery.isLoading &&
-      !configQuery.isError &&
-      !projects.isLoading &&
-      !projects.isError &&
-      !connectorQuery.isLoading &&
-      !connectorQuery.isError
-    ) {
-      setConfigId(() => configQuery.data.config_id)
-      setName(configQuery.data.name)
-      setDescription(configQuery.data.description)
-      setConfig(configQuery.data.config)
-      setSaveState('isUpToDate')
+    if (saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing') {
+      if (
+        !configQuery.isLoading &&
+        !configQuery.isError &&
+        !projects.isLoading &&
+        !projects.isError &&
+        !connectorQuery.isLoading &&
+        !connectorQuery.isError
+      ) {
+        setConfigId(() => configQuery.data.config_id)
+        setName(configQuery.data.name)
+        setDescription(configQuery.data.description)
+        setConfig(configQuery.data.config)
+        setSaveState('isUpToDate')
 
-      const attachedConnectors = configQuery.data.attached_connectors
-      let invalidConnections: AttachedConnector[] = []
-      let validConnections: AttachedConnector[] = attachedConnectors
-      console.log(attachedConnectors)
+        const attachedConnectors = configQuery.data.attached_connectors
+        let invalidConnections: AttachedConnector[] = []
+        let validConnections: AttachedConnector[] = attachedConnectors
+        console.log(attachedConnectors)
 
-      // We don't set so `setSaveState` here because we don't want to override
-      // the saveState every time the backend returns some result. Because it
-      // could cancel potentially in-progress saves (started by client action).
+        // We don't set so `setSaveState` here because we don't want to override
+        // the saveState every time the backend returns some result. Because it
+        // could cancel potentially in-progress saves (started by client action).
 
-      if (configQuery.data.project_id) {
-        const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
-        if (foundProject) {
-          if (foundProject.schema == null) {
-            setMissingSchemaDialog(true)
-          } else {
-            setMissingSchemaDialog(false)
+        if (configQuery.data.project_id) {
+          const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
+          if (foundProject) {
+            if (foundProject.schema == null) {
+              setMissingSchemaDialog(true)
+            } else {
+              setMissingSchemaDialog(false)
+            }
+
+            const programWithSchema = parseProjectSchema(foundProject)
+            if (attachedConnectors) {
+              invalidConnections = attachedConnectors.filter(attached_connector => {
+                return !connectorConnects(attached_connector, programWithSchema.schema)
+              })
+              validConnections = attachedConnectors.filter(attached_connector => {
+                return connectorConnects(attached_connector, programWithSchema.schema)
+              })
+            }
+
+            setProject(programWithSchema)
+            replacePlaceholder(programWithSchema)
           }
-
-          const programWithSchema = parseProjectSchema(foundProject)
-          if (attachedConnectors) {
-            invalidConnections = attachedConnectors.filter(attached_connector => {
-              return !connectorConnects(attached_connector, programWithSchema.schema)
-            })
-            validConnections = attachedConnectors.filter(attached_connector => {
-              return connectorConnects(attached_connector, programWithSchema.schema)
-            })
-          }
-
-          setProject(programWithSchema)
-          replacePlaceholder(programWithSchema)
         }
-      }
 
-      if (invalidConnections.length > 0) {
-        pushMessage({
-          key: new Date().getTime(),
-          color: 'warning',
-          message: `Could not attach ${
-            invalidConnections.length
-          } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
-        })
-      }
+        if (invalidConnections.length > 0) {
+          pushMessage({
+            key: new Date().getTime(),
+            color: 'warning',
+            message: `Could not attach ${
+              invalidConnections.length
+            } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
+          })
+        }
 
-      if (validConnections) {
-        validConnections.forEach(attached_connector => {
-          const connector = connectorQuery.data.find(
-            connector => connector.connector_id === attached_connector.connector_id
-          )
-          if (connector) {
-            addConnector(connector, attached_connector)
-          }
-        })
+        if (validConnections) {
+          validConnections.forEach(attached_connector => {
+            const connector = connectorQuery.data.find(
+              connector => connector.connector_id === attached_connector.connector_id
+            )
+            if (connector) {
+              addConnector(connector, attached_connector)
+            }
+          })
+        }
+      } else if (configId === undefined) {
+        setProject(undefined)
+        setSaveState('isNew')
+        setName('')
+        setDescription('')
+        // TODO: Set to 8 for now, needs to be configurable eventually
+        setConfig('workers: 8\n')
       }
-    } else if (configId === undefined) {
-      setProject(undefined)
-      setSaveState('isNew')
-      setName('')
-      setDescription('')
-      // TODO: Set to 8 for now, needs to be configurable eventually
-      setConfig('workers: 8\n')
     }
   }, [
     connectorQuery.isLoading,
@@ -188,7 +189,8 @@ export const PipelineWithProvider = (props: {
     replacePlaceholder,
     addConnector,
     configId,
-    pushMessage
+    pushMessage,
+    saveState
   ])
 
   const debouncedSave = useDebouncedCallback(() => {
