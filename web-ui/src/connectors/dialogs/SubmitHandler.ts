@@ -98,7 +98,8 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
             name: source_desc.name,
             config: data.config,
             description: data.description,
-            direction: connectorTypeToDirection(data.typ),
+            // @ts-ignore
+            direction: connectorTypeToDirection(source_desc.typ),
             typ: data.typ
           })
         },

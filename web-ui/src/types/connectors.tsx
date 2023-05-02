@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction } from 'react'
 import { match, P } from 'ts-pattern'
 import YAML from 'yaml'
+import assert from 'assert'
 
 import { Direction, ConnectorDescr } from './manager'
 import {
@@ -60,50 +61,54 @@ export const ConnectorDialog = (props: {
     })
     .exhaustive()
 
-// Given an existing ConnectorDescr return an object with the right values for
-// the dialog form.
-//
-// e.g., The ConnectorType.FILE will return an object corresponding to the yup
-// schema defined in CsvFileConnector.tsx.
-export const connectorToFormSchema = (
-  connector: ConnectorDescr
-): KafkaInputSchema | KafkaOutputSchema | CsvFileSchema | EditorSchema => {
+// Given an existing ConnectorDescr return the KafkaInputSchema
+// if connector is of type KAFKA_IN.
+export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.KAFKA_IN)
   const config = YAML.parse(connector.config)
-  return match(connectorDescrToType(connector))
-    .with(ConnectorType.KAFKA_IN, () => {
-      return {
-        name: connector.name,
-        description: connector.description,
-        host: config.transport.config['bootstrap.servers'],
-        auto_offset: config.transport.config['auto.offset.reset'],
-        topics: config.transport.config.topics
-      } as KafkaInputSchema
-    })
-    .with(ConnectorType.KAFKA_OUT, () => {
-      return {
-        name: connector.name,
-        description: connector.description,
-        host: config.transport.config['bootstrap.servers'],
-        auto_offset: config.transport.config['auto.offset.reset'],
-        topic: config.transport.config.topic
-      } as KafkaOutputSchema
-    })
-    .with(ConnectorType.FILE, () => {
-      return {
-        name: connector.name,
-        description: connector.description,
-        url: config.transport.config.path,
-        has_headers: true // TODO: this isn't represented by the connector
-      } as CsvFileSchema
-    })
-    .with(ConnectorType.UNKNOWN, () => {
-      return {
-        name: connector.name,
-        description: connector.description,
-        config: connector.config
-      } as EditorSchema
-    })
-    .exhaustive()
+  return {
+    name: connector.name,
+    description: connector.description,
+    host: config.transport.config['bootstrap.servers'],
+    auto_offset: config.transport.config['auto.offset.reset'],
+    topics: config.transport.config.topics
+  }
+}
+
+// Given an existing ConnectorDescr return the KafkaOutputSchema
+// if connector is of type KAFKA_OUT.
+export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.KAFKA_OUT)
+  const config = YAML.parse(connector.config)
+  return {
+    name: connector.name,
+    description: connector.description,
+    host: config.transport.config['bootstrap.servers'],
+    auto_offset: config.transport.config['auto.offset.reset'],
+    topic: config.transport.config.topic
+  }
+}
+
+// Given an existing ConnectorDescr return the CsvFileSchema
+// if connector is of type FILE.
+export const parseCsvFileSchema = (connector: ConnectorDescr): CsvFileSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.FILE)
+  const config = YAML.parse(connector.config)
+  return {
+    name: connector.name,
+    description: connector.description,
+    url: config.transport.config.path,
+    has_headers: true // TODO: this isn't represented by the connector
+  }
+}
+
+// Given an existing ConnectorDescr return EditorSchema for it.
+export const parseEditorSchema = (connector: ConnectorDescr): EditorSchema => {
+  return {
+    name: connector.name,
+    description: connector.description,
+    config: connector.config
+  }
 }
 
 // Given a ConnectorType determine for what it can be used, inputs, outputs or

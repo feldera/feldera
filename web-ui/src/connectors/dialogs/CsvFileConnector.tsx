@@ -22,10 +22,11 @@ import { Controller, useForm } from 'react-hook-form'
 import Transition from './tabs/Transition'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
+import { connectorTypeToConfig, parseCsvFileSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
+import { useEffect, useState } from 'react'
 
 const schema = yup
   .object({
@@ -39,7 +40,33 @@ const schema = yup
 export type CsvFileSchema = yup.InferType<typeof schema>
 
 export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
+  const [curValues, setCurValues] = useState<CsvFileSchema | undefined>(undefined)
+
+  // Initialize the form either with default or values from the passed in connector
+  useEffect(() => {
+    if (props.connector) {
+      setCurValues(parseCsvFileSchema(props.connector))
+    }
+  }, [props.connector])
+
+  const {
+    control,
+    reset,
+    handleSubmit,
+    formState: { errors }
+  } = useForm<CsvFileSchema>({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      name: '',
+      description: '',
+      url: '',
+      has_headers: true
+    },
+    values: curValues
+  })
+
   const handleClose = () => {
+    reset()
     props.setShow(false)
   }
   const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
@@ -48,24 +75,6 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
       props.onSuccess(connector)
     }
   }
-
-  // Initialize the form either with default or values from the passed in connector
-  const defaultValues = props.connector
-    ? connectorToFormSchema(props.connector)
-    : {
-        name: '',
-        description: '',
-        url: '',
-        has_headers: true
-      }
-  const {
-    control,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<CsvFileSchema>({
-    resolver: yupResolver(schema),
-    defaultValues
-  })
 
   // Define what should happen when the form is submitted
   const genericRequest = (data: CsvFileSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {

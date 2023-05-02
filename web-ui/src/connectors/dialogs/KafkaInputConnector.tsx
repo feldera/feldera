@@ -23,7 +23,7 @@ import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
-import { connectorTypeToConfig, connectorToFormSchema } from 'src/types/connectors'
+import { connectorTypeToConfig, parseKafkaInputSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 
@@ -39,34 +39,44 @@ export type KafkaInputSchema = yup.InferType<typeof schema>
 
 export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const [curValues, setCurValues] = useState<KafkaInputSchema | undefined>(undefined)
+
+  // Initialize the form either with default or values from the passed in connector
+  useEffect(() => {
+    if (props.connector) {
+      setCurValues(parseKafkaInputSchema(props.connector))
+    }
+  }, [props.connector])
+
+  const {
+    control,
+    reset,
+    handleSubmit,
+    formState: { errors }
+  } = useForm<KafkaInputSchema>({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      name: '',
+      description: '',
+      host: '',
+      auto_offset: 'earliest',
+      topics: []
+    },
+    values: curValues
+  })
+
   const handleClose = () => {
+    reset()
+    setActiveTab('detailsTab')
     props.setShow(false)
   }
+
   const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
     handleClose()
     if (connector !== undefined && props.onSuccess !== undefined) {
       props.onSuccess(connector)
     }
   }
-
-  // Initialize the form either with default or values from the passed in connector
-  const defaultValues = props.connector
-    ? connectorToFormSchema(props.connector)
-    : {
-        name: '',
-        description: '',
-        host: '',
-        auto_offset: 'earliest',
-        topics: []
-      }
-  const {
-    control,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<KafkaInputSchema>({
-    resolver: yupResolver(schema),
-    defaultValues
-  })
 
   // Define what should happen when the form is submitted
   const genericRequest = (
