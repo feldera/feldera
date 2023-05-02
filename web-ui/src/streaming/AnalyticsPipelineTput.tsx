@@ -19,7 +19,6 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
     .slice(1)
     .map(m => m.total_processed_records)
     .filter(x => x != 0)
-  console.log(totalProcessed)
   const throughput = totalProcessed.slice(1).map((x, i) => x - totalProcessed[i])
   const smoothTput = throughput.slice(1).map((x, i) => x * 0.6 + 0.4 * throughput[i])
 

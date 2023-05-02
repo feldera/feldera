@@ -94,7 +94,6 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
 
   useEffect(() => {
     if (!pipelineStatusQuery.isLoading && !pipelineStatusQuery.isError) {
-      console.log(pipelineStatusQuery.data)
       const metrics = pipelineStatusQuery.data['global_metrics']
       setGlobalMetrics(oldMetrics => [...oldMetrics, metrics])
 
@@ -183,12 +182,8 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                   field: 'records',
                   headerName: 'Records',
                   flex: 0.15,
-                  renderCell: params => {
-                    console.log(params.row.ac.config.trim())
-                    console.log(inputMetrics)
-
-                    return format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
-                  }
+                  renderCell: params =>
+                    format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
                 },
                 {
                   field: 'traffic',
@@ -359,7 +354,6 @@ export default function PipelineTable() {
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
-      console.log(data)
     }
   }, [isLoading, isError, data, setRows])
 

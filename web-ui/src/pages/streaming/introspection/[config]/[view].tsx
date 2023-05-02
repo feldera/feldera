@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { ConfigDescr, ConfigId, ProjectDescr } from 'src/types/manager'
+import { ConfigDescr, ConfigId, Direction, ProjectDescr } from 'src/types/manager'
 import { parse } from 'csv-parse'
 import { parseProjectSchema } from 'src/types/program'
 
@@ -68,7 +68,12 @@ const IntrospectInputOutput = () => {
   const ws = useRef<WebSocket | null>(null)
   useEffect(() => {
     if (configDescr && configDescr.pipeline && view !== undefined && headers !== undefined && apiRef.current) {
-      const socket = new WebSocket('ws://localhost:' + configDescr.pipeline.port + '/output_endpoint/debug-' + view)
+      const endpoint = configDescr.attached_connectors.find(ac => ac.config == view)
+      const direction = endpoint?.direction === Direction.INPUT ? '/input_endpoint/' : '/output_endpoint/'
+      const socket = new WebSocket(
+        'ws://localhost:' + configDescr.pipeline.port + direction + 'debug-' + endpoint?.uuid
+      )
+
       socket.onopen = () => {
         console.log('opened')
       }
@@ -78,7 +83,6 @@ const IntrospectInputOutput = () => {
       }
 
       socket.onmessage = event => {
-        console.log('got message')
         event.data.text().then((txt: string) => {
           parse(
             txt,
