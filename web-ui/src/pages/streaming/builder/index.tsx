@@ -1,14 +1,14 @@
+import assert from 'assert'
+import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import PageHeader from 'src/layouts/components/page-header'
-
 import { Card, CardContent } from '@mui/material'
 import PipelineGraph from 'src/streaming/builder/PipelineBuilder'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { match } from 'ts-pattern'
 import Metadata from 'src/streaming/builder/Metadata'
 import { useBuilderState } from 'src/streaming/builder/useBuilderState'
-import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import {
   AttachedConnector,
   CancelError,
@@ -23,7 +23,7 @@ import {
   UpdateConfigRequest,
   UpdateConfigResponse
 } from 'src/types/manager'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { useDebouncedCallback } from 'use-debounce'
 import { removePrefix } from 'src/utils'
@@ -56,6 +56,7 @@ export const PipelineWithProvider = (props: {
   configId: ConfigId | undefined
   setConfigId: Dispatch<SetStateAction<ConfigId | undefined>>
 }) => {
+  const queryClient = useQueryClient()
   const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
 
   const { configId, setConfigId } = props
@@ -260,11 +261,30 @@ export const PipelineWithProvider = (props: {
         }
 
         updateConfigMutate(updateRequest, {
+          onSettled: () => {
+            assert(configId !== undefined)
+            queryClient.invalidateQueries(['configStatus', { config_id: configId }])
+          },
           onError: (error: CancelError) => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
             setSaveState('isUpToDate')
           },
           onSuccess: () => {
+            // It's important to update the query cache here because otherwise
+            // sometimes the query cache will be out of date and the UI will
+            // show the old connectors again after deletion.
+            queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
+              return oldData
+                ? {
+                    ...oldData,
+                    name,
+                    description,
+                    project_id: project?.project_id,
+                    config,
+                    attached_connectors: connectors
+                  }
+                : oldData
+            })
             setSaveState('isUpToDate')
           }
         })
@@ -284,7 +304,8 @@ export const PipelineWithProvider = (props: {
     config,
     getNode,
     getEdges,
-    pushMessage
+    pushMessage,
+    queryClient
   ])
 
   return (
