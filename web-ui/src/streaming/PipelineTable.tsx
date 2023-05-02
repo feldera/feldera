@@ -100,13 +100,15 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
 
       const newInputMetrics = new Map<string, InputConnectorMetrics>()
       pipelineStatusQuery.data['inputs'].forEach((cs: ConnectorStatus) => {
-        newInputMetrics.set(cs.endpoint_name, cs.metrics as InputConnectorMetrics)
+        // @ts-ignore (config is untyped needs backend fix)
+        newInputMetrics.set(cs.config['stream'], cs.metrics as InputConnectorMetrics)
       })
       setInputMetrics(newInputMetrics)
 
       const newOutputMetrics = new Map<string, OutputConnectorMetrics>()
       pipelineStatusQuery.data['outputs'].forEach((cs: ConnectorStatus) => {
-        newOutputMetrics.set(cs.endpoint_name, cs.metrics as OutputConnectorMetrics)
+        // @ts-ignore (config is untyped needs backend fix)
+        newOutputMetrics.set(cs.config['stream'], cs.metrics as OutputConnectorMetrics)
       })
       setOutputMetrics(newOutputMetrics)
     }
@@ -181,8 +183,12 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                   field: 'records',
                   headerName: 'Records',
                   flex: 0.15,
-                  renderCell: params =>
-                    format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
+                  renderCell: params => {
+                    console.log(params.row.ac.config.trim())
+                    console.log(inputMetrics)
+
+                    return format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
+                  }
                 },
                 {
                   field: 'traffic',
