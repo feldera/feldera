@@ -2,6 +2,7 @@
 //
 // It just has an editor for the YAML config.
 
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import Button from '@mui/material/Button'
@@ -24,10 +25,10 @@ import { Editor } from '@monaco-editor/react'
 import Transition from './tabs/Transition'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorToFormSchema } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
+import { parseEditorSchema } from 'src/types/connectors'
 
 const schema = yup
   .object({
@@ -40,7 +41,44 @@ const schema = yup
 export type EditorSchema = yup.InferType<typeof schema>
 
 export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
+  const theme = useTheme()
+  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
+  const [curValues, setCurValues] = useState<EditorSchema | undefined>(undefined)
+
+  // Initialize the form either with default or values from the passed in connector
+  useEffect(() => {
+    if (props.connector) {
+      setCurValues(parseEditorSchema(props.connector))
+    }
+  }, [props.connector])
+
+  const {
+    control,
+    reset,
+    handleSubmit,
+    formState: { errors }
+  } = useForm<EditorSchema>({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      name: '',
+      description: '',
+      config: YAML.stringify({
+        transport: {
+          name: 'transport-name',
+          config: {
+            property: 'value'
+          }
+        },
+        format: {
+          name: 'csv'
+        }
+      })
+    },
+    values: curValues
+  })
+
   const handleClose = () => {
+    reset()
     props.setShow(false)
   }
   const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
@@ -49,36 +87,6 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
       props.onSuccess(connector)
     }
   }
-
-  const theme = useTheme()
-  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
-
-  // Initialize the form either with default or values from the passed in connector
-  const defaultValues = props.connector
-    ? connectorToFormSchema(props.connector)
-    : {
-        name: '',
-        description: '',
-        config: YAML.stringify({
-          transport: {
-            name: 'transport-name',
-            config: {
-              property: 'value'
-            }
-          },
-          format: {
-            name: 'csv'
-          }
-        })
-      }
-  const {
-    control,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<EditorSchema>({
-    resolver: yupResolver(schema),
-    defaultValues
-  })
 
   // Define what should happen when the form is submitted
   const genericRequest = (data: EditorSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {

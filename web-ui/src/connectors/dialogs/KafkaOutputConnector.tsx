@@ -22,7 +22,7 @@ import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorToFormSchema, connectorTypeToConfig } from 'src/types/connectors'
+import { connectorTypeToConfig, parseKafkaOutputSchema } from 'src/types/connectors'
 import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
@@ -41,9 +41,38 @@ export type KafkaOutputSchema = yup.InferType<typeof schema>
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const [curValues, setCurValues] = useState<KafkaOutputSchema | undefined>(undefined)
+
+  // Initialize the form either with values from the passed in connector
+  useEffect(() => {
+    if (props.connector) {
+      setCurValues(parseKafkaOutputSchema(props.connector))
+    }
+  }, [props.connector])
+
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<KafkaOutputSchema>({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      name: '',
+      description: '',
+      host: '',
+      auto_offset: 'earliest',
+      topic: ''
+    },
+    values: curValues
+  })
+
   const handleClose = () => {
+    reset()
+    setActiveTab('detailsTab')
     props.setShow(false)
   }
+
   const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
     handleClose()
     console.log('onFormSubmitted', connector)
@@ -51,25 +80,6 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       props.onSuccess(connector)
     }
   }
-
-  // Initialize the form either with default or values from the passed in connector
-  const defaultValues = props.connector
-    ? connectorToFormSchema(props.connector)
-    : {
-        name: '',
-        description: '',
-        host: '',
-        auto_offset: 'earliest',
-        topic: ''
-      }
-  const {
-    control,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<KafkaOutputSchema>({
-    resolver: yupResolver(schema),
-    defaultValues
-  })
 
   // Define what should happen when the form is submitted
   const genericRequest = (
