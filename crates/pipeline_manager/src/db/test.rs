@@ -257,7 +257,7 @@ enum StorageAction {
     DeleteConfig(ConfigId),
     NewPipeline(ConfigId, Version),
     PipelineSetPort(PipelineId, u16),
-    SetPipelineKilled(PipelineId),
+    SetPipelineShutdown(PipelineId),
     DeletePipeline(PipelineId),
     GetPipeline(PipelineId),
     ListPipelines,
@@ -502,9 +502,9 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.pipeline_set_port(pipeline_id, port).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetPipelineKilled(pipeline_id) => {
-                                let model_response = model.set_pipeline_killed(pipeline_id).await;
-                                let impl_response = handle.db.set_pipeline_killed(pipeline_id).await;
+                            StorageAction::SetPipelineShutdown(pipeline_id) => {
+                                let model_response = model.set_pipeline_shutdown(pipeline_id).await;
+                                let impl_response = handle.db.set_pipeline_shutdown(pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(pipeline_id) => {
@@ -998,7 +998,7 @@ impl Storage for Mutex<DbModel> {
                 pipeline_id,
                 config_id: Some(config_id),
                 port: 0,
-                killed: false,
+                shutdown: false,
                 created: DateTime::default(),
             },
         );
@@ -1025,12 +1025,12 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn set_pipeline_killed(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
+    async fn set_pipeline_shutdown(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
         s.configs.values_mut().for_each(|c| {
             if let Some(pipeline) = &mut c.pipeline {
                 if pipeline.pipeline_id == pipeline_id {
-                    pipeline.killed = true;
+                    pipeline.shutdown = true;
                 }
             }
         });
@@ -1038,8 +1038,8 @@ impl Storage for Mutex<DbModel> {
         Ok(s.pipelines
             .get_mut(&pipeline_id)
             .map(|p| {
-                p.killed = true;
-                p.killed
+                p.shutdown = true;
+                p.shutdown
             })
             .unwrap_or(false))
     }

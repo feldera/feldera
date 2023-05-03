@@ -245,7 +245,6 @@ where
         .service(dump_profile)
         .service(input_endpoint)
         .service(output_endpoint)
-        .service(kill)
 }
 
 #[get("/start")]
@@ -330,7 +329,12 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
     let controller = state.controller.lock().unwrap().take();
     if let Some(controller) = controller {
         match controller.stop() {
-            Ok(()) => HttpResponse::Ok().json("Pipeline terminated"),
+            Ok(()) => {
+                if let Some(sender) = &state.terminate_sender {
+                    let _ = sender.send(()).await;
+                }
+                HttpResponse::Ok().json("Pipeline terminated")
+            }
             Err(e) => HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
                 "Failed to terminate the pipeline: {e}"
             ))),
@@ -338,14 +342,6 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
     } else {
         HttpResponse::Ok().json("Pipeline already terminated")
     }
-}
-
-#[get("/kill")]
-async fn kill(state: WebData<ServerState>) -> impl Responder {
-    if let Some(sender) = &state.terminate_sender {
-        let _ = sender.send(()).await;
-    }
-    HttpResponse::Ok()
 }
 
 #[get("/input_endpoint/{endpoint_name}")]

@@ -63,9 +63,9 @@ pub(crate) enum Runner {
 /// recorded in the database.  In the latter case, the error message is
 /// returned to the client.
 ///
-/// # Killing a pipeline
+/// # Shutting down a pipeline
 ///
-/// To stop the pipeline, the runner sends a `/kill` HTTP request to the
+/// To shutdown the pipeline, the runner sends a `/shutdown` HTTP request to the
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
 pub struct LocalRunner {
@@ -104,8 +104,8 @@ impl Runner {
         }
     }
 
-    /// Send a `/kill` request to the pipeline process, but keep the pipeline
-    /// state in the database and file system.
+    /// Send a `/shutdown` request to the pipeline process, but keep the
+    /// pipeline state in the database and file system.
     ///
     /// After calling this method, the user can still do post-mortem analysis
     /// of the pipeline, e.g., access its logs.
@@ -271,7 +271,7 @@ impl LocalRunner {
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
 
-        if pipeline_descr.killed {
+        if pipeline_descr.shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
 
@@ -313,7 +313,7 @@ impl LocalRunner {
         mut body: actix_web::web::Payload,
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
-        if pipeline_descr.killed {
+        if pipeline_descr.shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
         let port = pipeline_descr.port;
@@ -529,18 +529,18 @@ impl LocalRunner {
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = db.get_pipeline(pipeline_id).await?;
 
-        if pipeline_descr.killed {
+        if pipeline_descr.shutdown {
             return Ok(HttpResponse::Ok().json("Pipeline already shut down."));
         };
 
-        let url = format!("http://localhost:{}/kill", pipeline_descr.port);
+        let url = format!("http://localhost:{}/shutdown", pipeline_descr.port);
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
                 if let Some(config_id) = pipeline_descr.config_id {
                     db.remove_pipeline_from_config(config_id).await?;
                 }
-                db.set_pipeline_killed(pipeline_id).await?;
+                db.set_pipeline_shutdown(pipeline_id).await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
                 return Ok(
@@ -553,7 +553,7 @@ impl LocalRunner {
             if let Some(config_id) = pipeline_descr.config_id {
                 db.remove_pipeline_from_config(config_id).await?;
             }
-            db.set_pipeline_killed(pipeline_id).await?;
+            db.set_pipeline_shutdown(pipeline_id).await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
             Ok(HttpResponse::InternalServerError().json(
