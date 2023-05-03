@@ -10,6 +10,7 @@ export type SaveIndicatorState = 'isNew' | 'isDebouncing' | 'isModified' | 'isSa
 
 // Options passed to the SaveIndicator component.
 export interface SaveIndicatorProps {
+  id?: string
   state: SaveIndicatorState
   stateToLabel: (state: SaveIndicatorState) => string
 }
@@ -33,12 +34,11 @@ const stateToIcon = (state: SaveIndicatorState) => {
 // The SaveIndicator displaying status of the form save state.
 const SaveIndicator = (props: SaveIndicatorProps) => {
   const label = props.stateToLabel(props.state)
-
   const tooltip = props.state === ('isUpToDate' as const) ? 'Everything saved to cloud' : ''
 
   return (
     <Tooltip title={tooltip}>
-      <ColoredChip label={label} skin='light' sx={{ mr: 2 }} icon={stateToIcon(props.state)} />
+      <ColoredChip label={label} skin='light' sx={{ mr: 2 }} icon={stateToIcon(props.state)} id={props.id} />
     </Tooltip>
   )
 }

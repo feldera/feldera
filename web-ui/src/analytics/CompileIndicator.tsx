@@ -12,6 +12,7 @@ import { match, P } from 'ts-pattern'
 import CustomChip from 'src/@core/components/mui/chip'
 
 export interface CompileIndicatorProps {
+  id?: string
   state: ProjectStatus
 }
 
@@ -70,6 +71,7 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       isCompiling: false,
       label: successLabel
     }))
+    // If you change the 'Success' string, adjust the webui-tester too
     .with('Success', () => ({ visible: true, color: 'success' as const, isCompiling: false, label: successLabel }))
     .exhaustive()
 
@@ -77,6 +79,7 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
     return (
       <Tooltip title={buttonState.toolTip}>
         <CustomChip
+          id={props.id}
           sx={{ mr: 1 }}
           label={buttonState.label}
           skin='light'
