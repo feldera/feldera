@@ -118,7 +118,8 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
       onClose={() => props.setShow(false)}
       TransitionComponent={Transition}
     >
-      <form id='create-form' onSubmit={handleSubmit(onSubmit)}>
+      {/* id is referenced by webui-tester */}
+      <form id='generic-connector-form' onSubmit={handleSubmit(onSubmit)}>
         <DialogContent sx={{ pb: 8, px: { xs: 8, sm: 15 }, pt: { xs: 8, sm: 12.5 }, position: 'relative' }}>
           <IconButton
             size='small'
@@ -141,6 +142,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
                   control={control}
                   render={({ field }) => (
                     <TextField
+                      id='connector-name' // referenced by webui-tester
                       label='Datasource Name'
                       placeholder={PLACEHOLDER_VALUES['connector_name']}
                       error={Boolean(errors.name)}
@@ -164,6 +166,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
                   render={({ field }) => (
                     <TextField
                       fullWidth
+                      id='connector-description' // referenced by webui-tester
                       label='Description'
                       placeholder={PLACEHOLDER_VALUES['connector_description']}
                       error={Boolean(errors.description)}
@@ -201,7 +204,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             sx={{ mr: 1 }}
             color='success'
             endIcon={<Icon icon='bx:check' />}
-            form='create-form'
+            form='generic-connector-form'
             type='submit'
           >
             {props.connector !== undefined ? 'Update' : 'Create'}
@@ -216,5 +219,6 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
 }
 
 export const AddGenericConnectorCard = () => {
-  return <AddConnectorCard icon='file-icons:test-generic' title='A generic connector' dialog={ConfigEditorDialog} />
+  // id is referenced by webui-tester
+  return <AddConnectorCard id="generic-connector" icon='file-icons:test-generic' title='A generic connector' dialog={ConfigEditorDialog} />
 }

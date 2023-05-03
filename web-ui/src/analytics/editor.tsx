@@ -63,6 +63,7 @@ const MetadataForm = (props: { errors: FormError; project: ProgramState; setProj
       <Grid item xs={4}>
         <FormControl fullWidth>
           <TextField
+            id='program-name' // Referenced by webui-tester
             fullWidth
             type='text'
             label='Name'
@@ -81,6 +82,7 @@ const MetadataForm = (props: { errors: FormError; project: ProgramState; setProj
       <Grid item xs={8}>
         <TextField
           fullWidth
+          id='program-description' // Referenced by webui-tester
           type='Description'
           label='Description'
           placeholder={PLACEHOLDER_VALUES['program_description']}
@@ -118,6 +120,7 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
       return 'Saving ...'
     })
     .with('isUpToDate' as const, () => {
+      // If you change this string, adjust the webui-tester too
       return 'Saved'
     })
     .exhaustive()
@@ -489,11 +492,13 @@ const Editors = (props: { program: ProgramState }) => {
           </CardContent>
           <CardContent>
             <Grid item xs={12}>
-              <SaveIndicator stateToLabel={stateToEditorLabel} state={state} />
-              <CompileIndicator state={project.status} />
+              {/* ids referenced by webui-tester */}
+              <SaveIndicator id='save-indicator' stateToLabel={stateToEditorLabel} state={state} />
+              <CompileIndicator id='compile-indicator' state={project.status} />
             </Grid>
           </CardContent>
-          <CardContent>
+          {/* id referenced by webui-tester */}
+          <CardContent id='editor-content'>
             <Editor
               height='60vh'
               theme={vscodeTheme}

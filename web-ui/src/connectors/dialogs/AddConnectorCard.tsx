@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import { Icon } from '@iconify/react'
 
 export interface AddConnectorCardProps {
+  id?: string
   icon: string
   title: string
   dialog: React.ElementType<{ show: boolean; setShow: Dispatch<SetStateAction<boolean>> }>
@@ -20,7 +21,7 @@ export const AddConnectorCard = (props: AddConnectorCardProps) => {
   const [show, setShow] = useState<boolean>(false)
 
   return (
-    <Card>
+    <Card id={props.id}>
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
         <Icon icon={props.icon} fontSize='4rem' />
         <Typography sx={{ mb: 3 }}>{props.title}</Typography>
