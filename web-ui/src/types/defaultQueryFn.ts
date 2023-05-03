@@ -8,10 +8,72 @@
 //    no queryFn is provided (ideally we never provide a queryFn to reduce
 //    duplication and bugs but always rely on defaultQueryFn to route to the correct API call)
 
-import { QueryFunctionContext } from '@tanstack/react-query'
+import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
+import {
+  ConfigService,
+  ConnectorService,
+  PipelineService,
+  ProjectCodeResponse,
+  ProjectDescr,
+  ProjectService,
+  UpdateProjectRequest
+} from './manager'
 
-import { ConfigService, ConnectorService, PipelineService, ProjectService } from './manager'
+// Updates the query cache for a `UpdateProjectRequest` response.
+export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: UpdateProjectRequest) => {
+  queryClient.setQueryData(
+    ['projectCode', { project_id: newData.project_id }],
+    (oldData: ProjectCodeResponse | undefined) => {
+      if (oldData) {
+        const newd = {
+          ...oldData,
+          ...{
+            project: {
+              ...oldData.project,
+              ...{
+                name: newData.name,
+                description: newData.description ? newData.description : oldData.project.description
+              },
+            },
+            code: newData.code ? newData.code : oldData.code
+          }
+        };
+        console.log('newdata is')
+        console.log(newd);
+        return newd
+      } else {
+        return oldData
+      }
+    }
+  )
+
+  queryClient.setQueryData(
+    ['projectStatus', { project_id: newData.project_id }],
+    (oldData: ProjectDescr | undefined) => {
+      return oldData
+        ? {
+            ...oldData,
+            ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
+          }
+        : oldData
+    }
+  )
+
+  queryClient.setQueryData(['project'], (oldData: ProjectDescr[] | undefined) =>
+    oldData?.map((project: ProjectDescr) => {
+      if (project.project_id === newData.project_id) {
+        const projectDescUpdates = {
+          name: newData.name,
+          description: newData.description ? newData.description : project.description
+        }
+        return { ...project, ...projectDescUpdates }
+      } else {
+        return project
+      }
+    })
+  )
+}
 
 export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
