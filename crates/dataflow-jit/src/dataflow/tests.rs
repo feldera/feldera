@@ -259,7 +259,7 @@ fn bfs() {
             func.build()
         });
 
-        let min = subgraph.add_node(Min::new(joined_plus_roots));
+        let min = subgraph.add_node(Min::new(joined_plus_roots, StreamLayout::Map(u64x1, u64x1)));
         let min_set = subgraph.map(
             min,
             StreamLayout::Map(u64x1, u64x1),

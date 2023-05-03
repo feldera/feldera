@@ -14,7 +14,7 @@ pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
 pub use flat_map::FlatMap;
-pub use index::{IndexByColumn, IndexWith};
+pub use index::{IndexByColumn, IndexWith, UnitMapToSet};
 pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
 pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
@@ -58,6 +58,7 @@ pub enum Node {
     FlatMap(FlatMap),
     Antijoin(Antijoin),
     IndexByColumn(IndexByColumn),
+    UnitMapToSet(UnitMapToSet),
     // TODO: OrderBy, Windows
 }
 

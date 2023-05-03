@@ -49,6 +49,11 @@ impl<K, L, O> OrderedLayer<K, L, O> {
         (self.keys, self.offs, self.vals, self.lower_bound)
     }
 
+    /// Expose an `OrderedLayer` as its constituent parts
+    pub fn as_parts(&self) -> (&[K], &[O], &L, usize) {
+        (&self.keys, &self.offs, &self.vals, self.lower_bound)
+    }
+
     /// Create a new `OrderedLayer` from its component parts
     ///
     /// # Safety

@@ -25,36 +25,42 @@ fn main() -> ExitCode {
             .init();
     }
 
-    let args = Args::parse();
+    match Args::parse() {
+        Args::Validate {
+            file,
+            print_layouts,
+        } => validate(&file, print_layouts),
 
+        Args::PrintSchema => print_schema(),
+    }
+}
+
+fn validate(file: &Path, print_layouts: bool) -> ExitCode {
     let schema_json = {
         let schema = schemars::schema_for!(SqlGraph);
         let schema = serde_json::to_string_pretty(&schema).unwrap();
-        if args.print_schema {
-            println!("{schema}");
-        }
 
         serde_json::from_str::<Value>(&schema).unwrap()
     };
 
-    let mut source: Box<dyn Read> = if args.file == Path::new("-") {
+    let mut source: Box<dyn Read> = if file == Path::new("-") {
         Box::new(io::stdin())
     } else {
-        if args.file.extension().is_none() {
+        if file.extension().is_none() {
             eprintln!(
                 "warning: {} has no extension and is not a json file",
-                args.file.display(),
+                file.display(),
             );
-        } else if let Some(extension) = args.file.extension() {
+        } else if let Some(extension) = file.extension() {
             if extension != Path::new("json") {
-                eprintln!("warning: {} is not a json file", args.file.display());
+                eprintln!("warning: {} is not a json file", file.display());
             }
         }
 
-        match File::open(&args.file) {
+        match File::open(file) {
             Ok(file) => Box::new(file),
             Err(error) => {
-                eprintln!("failed to read {}: {error}", args.file.display());
+                eprintln!("failed to read {}: {error}", file.display());
                 return ExitCode::FAILURE;
             }
         }
@@ -120,12 +126,10 @@ fn main() -> ExitCode {
     let mut graph = match serde_json::from_value::<SqlGraph>(source) {
         Ok(graph) => graph.rematerialize(),
         Err(error) => {
-            eprintln!("failed to parse json from {}: {error}", args.file.display());
+            eprintln!("failed to parse json from {}: {error}", file.display());
             return ExitCode::FAILURE;
         }
     };
-
-    // TODO: Validate the given graph once validation works
 
     println!("Unoptimized: {graph:#?}");
     if let Err(error) = Validator::new(graph.layout_cache().clone()).validate_graph(&graph) {
@@ -134,8 +138,12 @@ fn main() -> ExitCode {
     }
     graph.optimize();
 
-    let (dataflow, jit_handle, _layout_cache) =
+    let (dataflow, jit_handle, layout_cache) =
         CompiledDataflow::new(&graph, CodegenConfig::release());
+
+    if print_layouts {
+        layout_cache.print_layouts();
+    }
 
     let (runtime, _) =
         Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
@@ -148,12 +156,27 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn print_schema() -> ExitCode {
+    let schema = schemars::schema_for!(SqlGraph);
+    let schema = serde_json::to_string_pretty(&schema).unwrap();
+    println!("{schema}");
+
+    ExitCode::SUCCESS
+}
+
 #[derive(Parser)]
-struct Args {
-    /// The file to parse json from, if `-` is passed then stdin will be read
-    /// from
-    pub file: PathBuf,
+enum Args {
+    /// Validate the given dataflow graph
+    Validate {
+        /// The file to parse json from, if `-` is passed then stdin will be read
+        /// from
+        file: PathBuf,
+
+        /// Print out all layouts involved in the program
+        #[arg(long)]
+        print_layouts: bool,
+    },
+
     /// Print the json schema of the dataflow graph
-    #[clap(long)]
-    pub print_schema: bool,
+    PrintSchema,
 }

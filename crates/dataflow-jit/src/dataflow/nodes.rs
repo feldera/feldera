@@ -46,6 +46,12 @@ pub enum DataflowNode {
     FlatMap(FlatMap),
     Antijoin(Antijoin),
     IndexByColumn(IndexByColumn),
+    UnitMapToSet(UnitMapToSet),
+}
+
+#[derive(Debug, Clone)]
+pub struct UnitMapToSet {
+    pub input: NodeId,
 }
 
 #[derive(Debug, Clone)]

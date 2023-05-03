@@ -206,3 +206,72 @@ impl DataflowNode for IndexByColumn {
         self.value_layout = mappings[&self.value_layout];
     }
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct UnitMapToSet {
+    input: NodeId,
+    value_layout: LayoutId,
+}
+
+impl UnitMapToSet {
+    pub const fn new(input: NodeId, value_layout: LayoutId) -> Self {
+        Self {
+            input,
+
+            value_layout,
+        }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
+    pub const fn value_layout(&self) -> LayoutId {
+        self.value_layout
+    }
+}
+
+impl DataflowNode for UnitMapToSet {
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId),
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId),
+    {
+        map(&mut self.input);
+    }
+
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(StreamLayout::Set(self.value_layout))
+    }
+
+    fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(
+            inputs[0],
+            StreamLayout::Map(layout_cache.unit(), self.value_layout)
+        );
+    }
+
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn functions<'a>(&'a self, _functions: &mut Vec<&'a Function>) {}
+
+    fn functions_mut<'a>(&'a mut self, _functions: &mut Vec<&'a mut Function>) {}
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId),
+    {
+        map(self.value_layout);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.value_layout = mappings[&self.value_layout];
+    }
+}

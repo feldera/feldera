@@ -836,6 +836,7 @@ impl<'a> CodegenCtx<'a> {
     }
 
     /// Get the layout of the given expression
+    #[allow(dead_code)]
     fn layout_of(&self, expr_id: ExprId) -> Ref<'_, NativeLayout> {
         self.layout_cache.layout_of(self.layout_id(expr_id))
     }
@@ -1203,14 +1204,31 @@ impl<'a> CodegenCtx<'a> {
         let layout_id = self.layout_id(is_null.target());
         let layout = self.layout_cache.layout_of(layout_id);
 
-        let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(is_null.column());
-        let bitset_occupants = layout.bitset_occupants(is_null.column());
-        drop(layout);
-
         let mut flags = MemFlags::trusted();
         if self.is_readonly(is_null.target()) {
             flags.set_readonly();
         }
+
+        if self
+            .layout_cache
+            .row_layout(layout_id)
+            .column_type(is_null.column())
+            .is_string()
+        {
+            let string_ty = layout.type_of(is_null.column());
+            let offset = layout.offset_of(is_null.column());
+            let string = self.load_from_row(is_null.target(), flags, string_ty, offset, builder);
+            drop(layout);
+
+            let is_null = builder.ins().icmp_imm(IntCC::Equal, string, 0);
+            self.add_expr(expr_id, is_null, ColumnType::Bool, None);
+
+            return;
+        }
+
+        let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(is_null.column());
+        let bitset_occupants = layout.bitset_occupants(is_null.column());
+        drop(layout);
 
         let bitset = self.load_from_row(
             is_null.target(),
@@ -1254,10 +1272,6 @@ impl<'a> CodegenCtx<'a> {
         self.add_expr(expr_id, is_null, ColumnType::Bool, None);
     }
 
-    // TODO: If the given nullish flag is the only occupant of its bitset,
-    // we can simplify the codegen a good bit by just storing a value with
-    // our desired configuration instead of loading the bitset, toggling the
-    // bit and then storing the bitset
     fn set_null(
         &mut self,
         _expr_id: ExprId,
@@ -1266,7 +1280,65 @@ impl<'a> CodegenCtx<'a> {
     ) {
         debug_assert!(!self.is_readonly(set_null.target()));
 
-        let layout = self.layout_of(set_null.target());
+        let layout_id = self.layout_id(set_null.target());
+        let layout = self.layout_cache.layout_of(layout_id);
+
+        if self
+            .layout_cache
+            .row_layout(layout_id)
+            .column_type(set_null.column())
+            .is_string()
+        {
+            match set_null.is_null() {
+                RValue::Expr(expr) => {
+                    let is_null = self.exprs[expr];
+
+                    let do_set = builder.create_block();
+                    let after = builder.create_block();
+
+                    builder.ins().brif(is_null, do_set, &[], after, &[]);
+                    builder.switch_to_block(do_set);
+
+                    let string_ty = layout
+                        .type_of(set_null.column())
+                        .native_type(&self.frontend_config());
+                    let offset = layout.offset_of(set_null.column());
+                    let null = builder.ins().iconst(string_ty, 0);
+                    self.store_to_row(
+                        set_null.target(),
+                        null,
+                        MemFlags::trusted(),
+                        offset,
+                        builder,
+                    );
+                    builder.ins().jump(after, &[]);
+
+                    builder.switch_to_block(after);
+                }
+
+                &RValue::Imm(Constant::Bool(is_null)) => {
+                    if is_null {
+                        let string_ty = layout
+                            .type_of(set_null.column())
+                            .native_type(&self.frontend_config());
+                        let offset = layout.offset_of(set_null.column());
+                        let null = builder.ins().iconst(string_ty, 0);
+                        self.store_to_row(
+                            set_null.target(),
+                            null,
+                            MemFlags::trusted(),
+                            offset,
+                            builder,
+                        );
+                    }
+                }
+
+                RValue::Imm(_) => unreachable!(),
+            }
+
+            return;
+        }
+
         let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(set_null.column());
         let bitset_ty = bitset_ty.native_type();
 

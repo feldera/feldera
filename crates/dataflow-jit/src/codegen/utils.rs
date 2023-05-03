@@ -1,6 +1,6 @@
 use cranelift::{
     codegen::ir::{FuncRef, Inst},
-    prelude::{types, Block, FunctionBuilder, InstBuilder, MemFlags, Type, Value},
+    prelude::{types, Block, FunctionBuilder, InstBuilder, IntCC, MemFlags, Type, Value},
 };
 
 use crate::codegen::NativeLayout;
@@ -177,13 +177,10 @@ pub(super) fn column_non_null(
     column: usize,
     row_ptr: Value,
     layout: &NativeLayout,
-    builder: &mut FunctionBuilder,
+    builder: &mut FunctionBuilder<'_>,
     readonly: bool,
 ) -> Value {
     debug_assert!(layout.is_nullable(column));
-
-    let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
-    let bitset_ty = bitset_ty.native_type();
 
     // Create the flags for the load
     let mut flags = MemFlags::trusted();
@@ -191,19 +188,30 @@ pub(super) fn column_non_null(
         flags.set_readonly();
     }
 
-    // Load the bitset containing the given column's nullability
-    let bitset = builder
-        .ins()
-        .load(bitset_ty, flags, row_ptr, bitset_offset as i32);
+    if layout.column_type_of(column).is_string() {
+        let ptr_ty = builder.value_type(row_ptr);
+        let offset = layout.offset_of(column) as i32;
 
-    // Zero is true (the value isn't null), non-zero is false
-    // (the value is null)
-    if layout.bitset_occupants(column) == 1 {
-        // If there's only a single occupant of the bitset, it's already in the proper
-        // format
-        bitset
+        let string = builder.ins().load(ptr_ty, flags, row_ptr, offset);
+        builder.ins().icmp_imm(IntCC::NotEqual, string, 0)
     } else {
-        // Otherwise we mask all bits other than the one we're interested in
-        builder.ins().band_imm(bitset, 1i64 << bit_idx)
+        let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
+        let bitset_ty = bitset_ty.native_type();
+
+        // Load the bitset containing the given column's nullability
+        let bitset = builder
+            .ins()
+            .load(bitset_ty, flags, row_ptr, bitset_offset as i32);
+
+        // Zero is true (the value isn't null), non-zero is false
+        // (the value is null)
+        if layout.bitset_occupants(column) == 1 {
+            // If there's only a single occupant of the bitset, it's already in the proper
+            // format
+            bitset
+        } else {
+            // Otherwise we mask all bits other than the one we're interested in
+            builder.ins().band_imm(bitset, 1i64 << bit_idx)
+        }
     }
 }

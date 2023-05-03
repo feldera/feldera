@@ -3,7 +3,7 @@ use crate::{
         utils::{column_non_null, FunctionBuilderExt},
         Codegen, CodegenCtx, NativeLayout,
     },
-    ir::nodes::IndexByColumn,
+    ir::{nodes::IndexByColumn, LayoutId},
     row::Row,
 };
 use cranelift::prelude::{AbiParam, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
@@ -134,86 +134,20 @@ impl Codegen {
                 builder.call_fn(alloc_fn, &[value_size, value_align])
             };
 
-            let mut row_idx = 0;
-            for (idx, (ty, nullable)) in src_row_layout.iter().enumerate() {
+            let mut value_idx = 0;
+            for idx in 0..src_row_layout.len() {
                 if idx == index_by.key_column() {
-                    if nullable {
-                        let is_null =
-                            column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
-
-                        set_column_null(
-                            is_null,
-                            0,
-                            key_row,
-                            MemFlags::trusted(),
-                            &key_layout,
-                            &mut builder,
-                        );
-
-                        if let Some(native) = ty.native_type() {
-                            // Load the key from source
-                            let src_key = builder.ins().load(
-                                native.native_type(&ctx.frontend_config()),
-                                MemFlags::trusted().with_readonly(),
-                                data_ptr,
-                                src_layout.offset_of(idx) as i32,
-                            );
-
-                            // Clone the value if needed
-                            let cloned = if ty.is_string() && !source_owned {
-                                let clone_val = builder.create_block();
-                                let after = builder.create_block();
-                                builder.append_block_param(after, ptr_ty);
-
-                                let null = builder.ins().iconst(ptr_ty, 0);
-                                builder.ins().brif(is_null, after, &[null], clone_val, &[]);
-
-                                builder.switch_to_block(clone_val);
-                                let clone_str =
-                                    ctx.imports.get("string_clone", ctx.module, builder.func);
-                                let cloned = builder.call_fn(clone_str, &[src_key]);
-                                builder.ins().jump(after, &[cloned]);
-
-                                builder.switch_to_block(after);
-                                builder.block_params(after)[0]
-                            } else {
-                                src_key
-                            };
-
-                            // Store the cloned key to the allocated row
-                            builder.ins().store(
-                                MemFlags::trusted(),
-                                cloned,
-                                key_row,
-                                key_layout.offset_of(0) as i32,
-                            );
-                        }
-                    } else if let Some(native) = ty.native_type() {
-                        // Load the key from source
-                        let src_key = builder.ins().load(
-                            native.native_type(&ctx.frontend_config()),
-                            MemFlags::trusted().with_readonly(),
-                            data_ptr,
-                            src_layout.offset_of(idx) as i32,
-                        );
-
-                        // Clone the key if needed
-                        let cloned = if ty.is_string() && !source_owned {
-                            let clone_str =
-                                ctx.imports.get("string_clone", ctx.module, builder.func);
-                            builder.call_fn(clone_str, &[src_key])
-                        } else {
-                            src_key
-                        };
-
-                        // Store the cloned key to the allocated row
-                        builder.ins().store(
-                            MemFlags::trusted(),
-                            cloned,
-                            key_row,
-                            key_layout.offset_of(0) as i32,
-                        );
-                    }
+                    // Load the key from `data_ptr` (cloning if needed) and then store it to `key_row`
+                    ctx.load_and_store_column(
+                        data_ptr,
+                        source_owned,
+                        index_by.input_layout(),
+                        idx,
+                        key_row,
+                        index_by.key_layout(),
+                        0,
+                        &mut builder,
+                    );
 
                     // Store the row pointer to the key vec
                     builder
@@ -238,34 +172,25 @@ impl Codegen {
                             ctx.imports
                                 .get("string_drop_in_place", ctx.module, builder.func);
 
-                        if src_layout.is_nullable(idx) {
-                            let is_null =
-                                column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
+                        let string = builder.ins().load(
+                            src_layout.type_of(idx).native_type(&ctx.frontend_config()),
+                            MemFlags::trusted().with_readonly(),
+                            data_ptr,
+                            src_layout.offset_of(idx) as i32,
+                        );
 
+                        if src_layout.is_nullable(idx) {
                             let drop_val = builder.create_block();
                             let after = builder.create_block();
 
-                            builder.ins().brif(is_null, after, &[], drop_val, &[]);
+                            builder.ins().brif(string, drop_val, &[], after, &[]);
                             builder.switch_to_block(drop_val);
 
-                            let string = builder.ins().load(
-                                src_layout.type_of(idx).native_type(&ctx.frontend_config()),
-                                MemFlags::trusted().with_readonly(),
-                                data_ptr,
-                                src_layout.offset_of(idx) as i32,
-                            );
                             builder.ins().call(drop_string, &[string]);
 
                             builder.ins().jump(after, &[]);
                             builder.switch_to_block(after);
                         } else {
-                            let string = builder.ins().load(
-                                src_layout.type_of(idx).native_type(&ctx.frontend_config()),
-                                MemFlags::trusted().with_readonly(),
-                                data_ptr,
-                                src_layout.offset_of(idx) as i32,
-                            );
-
                             builder.ins().call(drop_string, &[string]);
                         }
                     }
@@ -273,84 +198,18 @@ impl Codegen {
                     continue;
                 }
 
-                // Propagate values
-                if nullable {
-                    let is_null = column_non_null(idx, data_ptr, &src_layout, &mut builder, true);
-
-                    set_column_null(
-                        is_null,
-                        row_idx,
-                        value_row,
-                        MemFlags::trusted(),
-                        &value_layout,
-                        &mut builder,
-                    );
-
-                    if let Some(native) = ty.native_type() {
-                        // Load the value from source
-                        let src_value = builder.ins().load(
-                            native.native_type(&ctx.frontend_config()),
-                            MemFlags::trusted().with_readonly(),
-                            data_ptr,
-                            src_layout.offset_of(idx) as i32,
-                        );
-
-                        // Clone the value if needed
-                        let cloned = if ty.is_string() && !source_owned {
-                            let clone_val = builder.create_block();
-                            let after = builder.create_block();
-                            builder.append_block_param(after, ptr_ty);
-
-                            let null = builder.ins().iconst(ptr_ty, 0);
-                            builder.ins().brif(is_null, after, &[null], clone_val, &[]);
-
-                            builder.switch_to_block(clone_val);
-                            let clone_str =
-                                ctx.imports.get("string_clone", ctx.module, builder.func);
-                            let cloned = builder.call_fn(clone_str, &[src_value]);
-                            builder.ins().jump(after, &[cloned]);
-
-                            builder.switch_to_block(after);
-                            builder.block_params(after)[0]
-                        } else {
-                            src_value
-                        };
-
-                        // Store the cloned value to the allocated row
-                        builder.ins().store(
-                            MemFlags::trusted(),
-                            cloned,
-                            value_row,
-                            value_layout.offset_of(row_idx) as i32,
-                        );
-                    }
-                } else if let Some(native) = ty.native_type() {
-                    // Load the value from source
-                    let src_value = builder.ins().load(
-                        native.native_type(&ctx.frontend_config()),
-                        MemFlags::trusted().with_readonly(),
-                        data_ptr,
-                        src_layout.offset_of(idx) as i32,
-                    );
-
-                    // Clone the value if needed
-                    let cloned = if ty.is_string() && !source_owned {
-                        let clone_str = ctx.imports.get("string_clone", ctx.module, builder.func);
-                        builder.call_fn(clone_str, &[src_value])
-                    } else {
-                        src_value
-                    };
-
-                    // Store the cloned value to the allocated row
-                    builder.ins().store(
-                        MemFlags::trusted(),
-                        cloned,
-                        value_row,
-                        value_layout.offset_of(row_idx) as i32,
-                    );
-                }
-
-                row_idx += 1;
+                // Load the value from `data_ptr` (cloning if needed) and then store it to `value_row`
+                ctx.load_and_store_column(
+                    data_ptr,
+                    source_owned,
+                    index_by.input_layout(),
+                    idx,
+                    value_row,
+                    index_by.value_layout(),
+                    value_idx,
+                    &mut builder,
+                );
+                value_idx += 1;
             }
 
             // Store the value pointer to the value vec
@@ -402,6 +261,198 @@ impl Codegen {
 
         self.finalize_function(func_id);
         func_id
+    }
+}
+
+impl CodegenCtx<'_> {
+    #[allow(clippy::too_many_arguments)]
+    fn load_and_store_column(
+        &mut self,
+        source_ptr: Value,
+        source_owned: bool,
+        source_layout: LayoutId,
+        source_column: usize,
+        dest_ptr: Value,
+        dest_layout: LayoutId,
+        dest_column: usize,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let is_string = self
+            .layout_cache
+            .row_layout(source_layout)
+            .column_type(source_column)
+            .is_string();
+
+        if is_string {
+            self.load_and_store_string(
+                source_ptr,
+                source_owned,
+                source_layout,
+                source_column,
+                dest_ptr,
+                dest_layout,
+                dest_column,
+                builder,
+            );
+        } else {
+            self.load_and_store_scalar(
+                source_ptr,
+                source_layout,
+                source_column,
+                dest_ptr,
+                dest_layout,
+                dest_column,
+                builder,
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn load_and_store_string(
+        &mut self,
+        source_ptr: Value,
+        source_owned: bool,
+        source_layout: LayoutId,
+        source_column: usize,
+        dest_ptr: Value,
+        dest_layout: LayoutId,
+        dest_column: usize,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let (source_value, nullable) = {
+            let (source_layout, source_row_layout) = self.layout_cache.get_layouts(source_layout);
+            let nullable = source_row_layout.column_nullable(source_column);
+
+            let source_ty = source_row_layout.column_type(source_column);
+            debug_assert!(source_ty.is_string());
+
+            let native_ty = source_ty
+                .native_type()
+                .unwrap()
+                .native_type(&self.frontend_config());
+
+            let source_offset = source_layout.offset_of(source_column) as i32;
+
+            // Load the source value
+            let source_value = builder.ins().load(
+                native_ty,
+                MemFlags::trusted().with_readonly(),
+                source_ptr,
+                source_offset,
+            );
+
+            (source_value, nullable)
+        };
+
+        // If the source is owned, we can take ownership of its string directly
+        // Since the string contains its own null niche, this also copies over
+        // its nullability (if it has one)
+        let output_value = if source_owned {
+            source_value
+
+        // If the string is nullable, we have to conditionally clone it
+        } else if nullable {
+            let clone_string = builder.create_block();
+            let after = builder.create_block();
+            builder.append_block_param(after, self.pointer_type());
+
+            // If the string is non-null jump to `clone_string`, otherwise
+            // jump to `after` and give it our null string
+            builder
+                .ins()
+                .brif(source_value, clone_string, &[], after, &[source_value]);
+
+            // Clone the string within the `clone_string` block
+            builder.switch_to_block(clone_string);
+            let cloned = self.clone_string(source_value, builder);
+            builder.ins().jump(after, &[cloned]);
+
+            // Get the conditionally cloned string or the null value
+            builder.switch_to_block(after);
+            builder.block_params(after)[0]
+
+        // If the string isn't nullable we can unconditionally clone it
+        } else {
+            self.clone_string(source_value, builder)
+        };
+
+        let dest_offset = self
+            .layout_cache
+            .layout_of(dest_layout)
+            .offset_of(dest_column) as i32;
+
+        builder
+            .ins()
+            .store(MemFlags::trusted(), output_value, dest_ptr, dest_offset);
+    }
+
+    fn clone_string(&mut self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        let clone_str = self.imports.get("string_clone", self.module, builder.func);
+        builder.call_fn(clone_str, &[string])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn load_and_store_scalar(
+        &mut self,
+        source_ptr: Value,
+        source_layout: LayoutId,
+        source_column: usize,
+        dest_ptr: Value,
+        dest_layout: LayoutId,
+        dest_column: usize,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let (source_value, is_null) = {
+            let (source_layout, source_row_layout) = self.layout_cache.get_layouts(source_layout);
+
+            let source_ty = source_row_layout.column_type(source_column);
+            debug_assert!(!source_ty.is_string() && !source_ty.needs_drop());
+
+            if source_ty.is_unit() {
+                return;
+            }
+
+            let native_ty = source_ty
+                .native_type()
+                .unwrap()
+                .native_type(&self.frontend_config());
+
+            let source_offset = source_layout.offset_of(source_column) as i32;
+
+            // Load the source value
+            let source_value = builder.ins().load(
+                native_ty,
+                MemFlags::trusted().with_readonly(),
+                source_ptr,
+                source_offset,
+            );
+
+            let is_null = source_row_layout
+                .column_nullable(source_column)
+                .then(|| column_non_null(source_column, source_ptr, &source_layout, builder, true));
+
+            (source_value, is_null)
+        };
+
+        let dest_layout = self.layout_cache.layout_of(dest_layout);
+        let dest_offset = dest_layout.offset_of(dest_column) as i32;
+
+        // If the column is nullable, set its null flag in dest
+        if let Some(is_null) = is_null {
+            set_column_null(
+                is_null,
+                dest_column,
+                dest_ptr,
+                MemFlags::trusted(),
+                &dest_layout,
+                builder,
+            );
+        }
+
+        // Store the scalar value to dest
+        builder
+            .ins()
+            .store(MemFlags::trusted(), source_value, dest_ptr, dest_offset);
     }
 }
 
