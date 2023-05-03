@@ -222,8 +222,8 @@ pub(crate) trait Storage {
 
     async fn pipeline_set_port(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()>;
 
-    /// Set `killed` flag to `true`.
-    async fn set_pipeline_killed(&self, pipeline_id: PipelineId) -> AnyResult<bool>;
+    /// Set `shutdown` flag to `true`.
+    async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool>;
 
     /// Delete `pipeline` from the DB.
     async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool>;

@@ -278,7 +278,7 @@ pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
     pub config_id: Option<ConfigId>,
     pub port: u16,
-    pub killed: bool,
+    pub shutdown: bool,
     pub created: DateTime<Utc>,
 }
 
@@ -812,7 +812,7 @@ impl Storage for ProjectDB {
         config_version: Version,
     ) -> AnyResult<PipelineId> {
         let row = self.conn.query_one(
-                "INSERT INTO pipeline (config_id, config_version, killed, created) VALUES($1, $2, false, extract(epoch from now())) RETURNING id",
+                "INSERT INTO pipeline (config_id, config_version, shutdown, created) VALUES($1, $2, false, extract(epoch from now())) RETURNING id",
             &[&config_id.0, &config_version.0])
             .await
             .map_err(|e| ProjectDB::maybe_config_id_foreign_key_constraint_err(e, config_id))?;
@@ -831,11 +831,11 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn set_pipeline_killed(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+    async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
         let res = self
             .conn
             .execute(
-                "UPDATE pipeline SET killed=true WHERE id = $1",
+                "UPDATE pipeline SET shutdown=true WHERE id = $1",
                 &[&pipeline_id.0],
             )
             .await?;
@@ -854,7 +854,7 @@ impl Storage for ProjectDB {
         let row = self
             .conn
             .query_one(
-                "SELECT id, config_id, port, killed, created FROM pipeline WHERE id = $1",
+                "SELECT id, config_id, port, shutdown, created FROM pipeline WHERE id = $1",
                 &[&pipeline_id.0],
             )
             .await
@@ -872,7 +872,7 @@ impl Storage for ProjectDB {
             pipeline_id: PipelineId(row.get(0)),
             config_id: row.get::<_, Option<i64>>(1).map(ConfigId),
             port: row.get::<_, Option<i16>>(2).unwrap_or(0) as u16,
-            killed: row.get(3),
+            shutdown: row.get(3),
             created: DateTime::<Utc>::from_utc(created_naive, Utc),
         })
     }
@@ -881,7 +881,7 @@ impl Storage for ProjectDB {
         let rows = self
             .conn
             .query(
-                "SELECT id, config_id, port, killed, created FROM pipeline",
+                "SELECT id, config_id, port, shutdown, created FROM pipeline",
                 &[],
             )
             .await?;
@@ -900,7 +900,7 @@ impl Storage for ProjectDB {
                 pipeline_id: PipelineId(row.get(0)),
                 config_id: row.get::<_, Option<i64>>(1).map(ConfigId),
                 port: row.get::<_, Option<i16>>(2).unwrap_or(0) as u16,
-                killed: row.get(3),
+                shutdown: row.get(3),
                 created: DateTime::<Utc>::from_utc(created_naive, Utc),
             });
         }
@@ -1096,7 +1096,7 @@ impl ProjectDB {
             config_version bigint NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port smallint,
-            killed bool NOT NULL,
+            shutdown bool NOT NULL,
             created bigint NOT NULL)",
                 &[],
             )
