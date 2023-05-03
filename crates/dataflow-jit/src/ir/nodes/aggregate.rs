@@ -13,15 +13,20 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Min {
     input: NodeId,
+    layout: StreamLayout,
 }
 
 impl Min {
-    pub const fn new(input: NodeId) -> Self {
-        Self { input }
+    pub const fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
     }
 }
 
@@ -40,23 +45,27 @@ impl DataflowNode for Min {
         map(&mut self.input);
     }
 
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        // TODO
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
     }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn map_layouts<F>(&self, _map: &mut F)
+    fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId),
     {
+        self.layout.map_layouts(map);
     }
 
-    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

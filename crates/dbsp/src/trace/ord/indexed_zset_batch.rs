@@ -36,7 +36,8 @@ where
     O: OrdOffset,
 {
     /// Where all the data is.
-    pub(crate) layer: Layers<K, V, R, O>,
+    #[doc(hidden)]
+    pub layer: Layers<K, V, R, O>,
 }
 
 impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>

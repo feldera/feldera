@@ -62,6 +62,27 @@ impl NativeLayoutCache {
 
         (native_layout, row_layout)
     }
+
+    pub fn print_layouts(&self) {
+        let layouts = Ref::map(self.inner.borrow(), |layouts| &layouts.layouts);
+        println!("total layouts: {}", layouts.len());
+
+        for (&layout_id, layout) in layouts.iter() {
+            println!(
+                "{layout_id}: {}\n  size {}\n  align {}\n  \
+                padding bytes {}\n  columns {}\n  nullable columns {}\n  \
+                bitsets {}\n  padding gaps {}",
+                self.row_layout(layout_id),
+                layout.size(),
+                layout.align(),
+                layout.total_padding(),
+                layout.total_columns(),
+                layout.nullable_columns(),
+                layout.total_bitsets(),
+                layout.padding_bytes().len(),
+            );
+        }
+    }
 }
 
 struct NativeLayoutCacheInner {

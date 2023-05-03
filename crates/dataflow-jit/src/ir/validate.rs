@@ -152,6 +152,12 @@ impl Validator {
                     );
                 }
 
+                Node::UnitMapToSet(map_to_set) => {
+                    self.node_inputs.insert(node_id, vec![map_to_set.input()]);
+                    self.node_outputs
+                        .insert(node_id, StreamLayout::Set(map_to_set.value_layout()));
+                }
+
                 _ => todo!(),
             }
         }

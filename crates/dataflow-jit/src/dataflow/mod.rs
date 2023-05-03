@@ -7,7 +7,7 @@ use crate::{
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
         FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Integrate,
-        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold,
+        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, UnitMapToSet,
     },
     ir::{
         graph,
@@ -429,6 +429,12 @@ impl CompiledDataflow {
                         }
                     },
 
+                    Node::UnitMapToSet(map_to_set) => {
+                        vtables
+                            .entry(map_to_set.value_layout())
+                            .or_insert_with(|| codegen.vtable_for(map_to_set.value_layout()));
+                    }
+
                     Node::Min(_)
                     | Node::Max(_)
                     | Node::Distinct(_)
@@ -771,6 +777,15 @@ impl CompiledDataflow {
                         nodes.insert(*node_id, node);
                     }
 
+                    Node::UnitMapToSet(map_to_set) => {
+                        nodes.insert(
+                            *node_id,
+                            DataflowNode::UnitMapToSet(UnitMapToSet {
+                                input: map_to_set.input(),
+                            }),
+                        );
+                    }
+
                     Node::Differentiate(diff) => {
                         nodes.insert(
                             *node_id,
@@ -1014,6 +1029,9 @@ impl CompiledDataflow {
                 DataflowNode::Filter(filter) => self.filter(node_id, filter, &mut streams),
                 DataflowNode::IndexByColumn(index_by) => {
                     self.index_by_column(node_id, index_by, &mut streams);
+                }
+                DataflowNode::UnitMapToSet(map_to_set) => {
+                    self.unit_map_to_set(node_id, map_to_set, &mut streams);
                 }
 
                 DataflowNode::FilterMap(map) => {
@@ -1467,6 +1485,9 @@ impl CompiledDataflow {
                         }
                         DataflowNode::IndexByColumn(index_by) => {
                             self.index_by_column(node_id, index_by, &mut substreams);
+                        }
+                        DataflowNode::UnitMapToSet(map_to_set) => {
+                            self.unit_map_to_set(node_id, map_to_set, &mut substreams);
                         }
 
                         DataflowNode::FilterMap(map) => {
@@ -2260,6 +2281,29 @@ impl CompiledDataflow {
         );
 
         streams.insert(node_id, RowStream::Map(indexed));
+    }
+
+    fn unit_map_to_set<C>(
+        &self,
+        node_id: NodeId,
+        map_to_set: UnitMapToSet,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        let input = streams[&map_to_set.input].as_map().unwrap();
+        let set = input.apply_core(
+            "UnitMapToSet",
+            |owned| OrdZSet {
+                layer: owned.layer.into_parts().2,
+            },
+            |borrowed| OrdZSet {
+                layer: borrowed.layer.as_parts().2.clone(),
+            },
+            |_| true,
+        );
+
+        streams.insert(node_id, RowStream::Set(set));
     }
 }
 

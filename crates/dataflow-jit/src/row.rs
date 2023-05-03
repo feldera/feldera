@@ -89,6 +89,16 @@ impl UninitRow {
     // `layout` argument TODO: Make sure that `layout` corresponds to the
     // current row's layout
     pub fn set_column_null(&mut self, column: usize, layout: &NativeLayout, null: bool) {
+        if layout.column_type_of(column).is_string() {
+            if null {
+                let offset = layout.offset_of(column) as usize;
+                let string_ptr = unsafe { self.as_mut_ptr().add(offset).cast::<usize>() };
+                unsafe { string_ptr.write(0) };
+            }
+
+            return;
+        }
+
         let (ty, bit_offset, bit) = layout.nullability_of(column);
 
         let bitset = unsafe { self.as_mut_ptr().add(bit_offset as usize) };
@@ -145,6 +155,12 @@ impl UninitRow {
     // `layout` argument TODO: Make sure that `layout` corresponds to the
     // current row's layout
     pub unsafe fn column_is_null(&self, column: usize, layout: &NativeLayout) -> bool {
+        if layout.column_type_of(column).is_string() {
+            let offset = layout.offset_of(column) as usize;
+            let string = unsafe { self.as_ptr().add(offset).cast::<*mut u8>().read() };
+            return string.is_null();
+        }
+
         let (ty, bit_offset, bit) = layout.nullability_of(column);
 
         let bitset = unsafe { self.as_ptr().add(bit_offset as usize) };

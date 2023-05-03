@@ -303,62 +303,82 @@ fn clone_layout(
         // TODO: For nullable scalar values we can unconditionally copy them over, we
         // only need to branch for non-trivial clones
         let next_clone = if nullable {
-            // Zero = value isn't null, non-zero = value is null
-            let value_non_null = column_non_null(idx, src, layout, builder, true);
+            // Strings have inherent null niches
+            if ty.is_string() {
+                let offset = layout.offset_of(idx) as i32;
+                let native_ty = layout
+                    .type_of(idx)
+                    .native_type(&module.isa().frontend_config());
 
-            // If the value is null, set the cloned value to null
-            let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
-            let bitset_ty = bitset_ty.native_type();
+                // Load the source string
+                let src_string = builder.ins().load(native_ty, src_flags, src, offset);
 
-            let bitset = if layout.bitset_occupants(idx) == 1 {
-                let null_ty = builder.func.dfg.value_type(value_non_null);
-                match bitset_ty.bytes().cmp(&null_ty.bytes()) {
-                    Ordering::Less => builder.ins().ireduce(bitset_ty, value_non_null),
-                    Ordering::Equal => value_non_null,
-                    Ordering::Greater => builder.ins().uextend(bitset_ty, value_non_null),
-                }
+                let clone_string = builder.create_block();
+                let after = builder.create_block();
+                builder.append_block_param(after, module.isa().pointer_type());
+
+                builder
+                    .ins()
+                    .brif(src_string, clone_string, &[], after, &[src_string]);
+                builder.switch_to_block(clone_string);
+
+                // Clone the string
+                let clone_string = imports.get("string_clone", module, builder.func);
+                let cloned = builder.call_fn(clone_string, &[src_string]);
+                builder.ins().jump(after, &[cloned]);
+
+                builder.switch_to_block(after);
+                // Store the cloned value
+                let cloned_string = builder.block_params(after)[0];
+                builder.ins().store(dest_flags, cloned_string, dest, offset);
+
+                continue;
             } else {
-                // Load the bitset's current value
-                let current_bitset =
+                // Zero = value isn't null, non-zero = value is null
+                let value_non_null = column_non_null(idx, src, layout, builder, true);
+
+                // If the value is null, set the cloned value to null
+                let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
+                let bitset_ty = bitset_ty.native_type();
+
+                let bitset = if layout.bitset_occupants(idx) == 1 {
+                    let null_ty = builder.func.dfg.value_type(value_non_null);
+                    match bitset_ty.bytes().cmp(&null_ty.bytes()) {
+                        Ordering::Less => builder.ins().ireduce(bitset_ty, value_non_null),
+                        Ordering::Equal => value_non_null,
+                        Ordering::Greater => builder.ins().uextend(bitset_ty, value_non_null),
+                    }
+                } else {
+                    // Load the bitset's current value
+                    let current_bitset =
+                        builder
+                            .ins()
+                            .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
+
+                    let mask = 1 << bit_idx;
+                    let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
+                    let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
+
                     builder
                         .ins()
-                        .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
+                        .select(value_non_null, bitset_with_null, bitset_with_non_null)
+                };
 
-                let mask = 1 << bit_idx;
-                let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
-                let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
-
+                // Store the newly modified bitset back into the row
                 builder
                     .ins()
-                    .select(value_non_null, bitset_with_null, bitset_with_non_null)
-            };
+                    .store(dest_flags, bitset, dest, bitset_offset as i32);
 
-            // Store the newly modified bitset back into the row
-            builder
-                .ins()
-                .store(dest_flags, bitset, dest, bitset_offset as i32);
+                // For nullable unit types we don't need to do anything else
+                if ty.is_unit() {
+                    continue;
 
-            // For nullable unit types we don't need to do anything else
-            if ty.is_unit() {
-                continue;
-
-            // For non-scalar values we need to conditionally clone their
-            // innards, we can't clone uninit data without causing UB
-            } else if ty.requires_nontrivial_clone() {
-                let clone_innards = builder.create_block();
-                let next_clone = builder.create_block();
-                builder
-                    .ins()
-                    .brif(value_non_null, next_clone, &[], clone_innards, &[]);
-
-                builder.switch_to_block(clone_innards);
-                Some(next_clone)
-
-            // For scalar values we can unconditionally copy over the inner
-            // value, it doesn't matter if it's uninit or not since we'll never
-            // observe it
-            } else {
-                None
+                // For scalar values we can unconditionally copy over the inner
+                // value, it doesn't matter if it's uninit or not since we'll never
+                // observe it
+                } else {
+                    None
+                }
             }
         } else {
             None

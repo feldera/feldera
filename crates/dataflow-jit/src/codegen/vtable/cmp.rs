@@ -286,8 +286,31 @@ impl Codegen {
                     }
 
                     if nullable {
-                        let lhs_non_null = column_non_null(idx, lhs, &layout, &mut builder, true);
-                        let rhs_non_null = column_non_null(idx, rhs, &layout, &mut builder, true);
+                        let (lhs_non_null, rhs_non_null) = if row_type.is_string() {
+                            let (lhs, rhs, native_ty) = {
+                                let offset = layout.offset_of(idx) as i32;
+                                let native_ty = layout
+                                    .type_of(idx)
+                                    .native_type(&self.module.isa().frontend_config());
+                                let flags = MemFlags::trusted().with_readonly();
+
+                                let lhs = builder.ins().load(native_ty, flags, lhs, offset);
+                                let rhs = builder.ins().load(native_ty, flags, rhs, offset);
+
+                                (lhs, rhs, native_ty)
+                            };
+
+                            let zero = builder.ins().iconst(native_ty, 0);
+                            let lhs_null = builder.ins().icmp(IntCC::Equal, lhs, zero);
+                            let rhs_null = builder.ins().icmp(IntCC::Equal, rhs, zero);
+
+                            (lhs_null, rhs_null)
+                        } else {
+                            (
+                                column_non_null(idx, lhs, &layout, &mut builder, true),
+                                column_non_null(idx, rhs, &layout, &mut builder, true),
+                            )
+                        };
 
                         if row_type.is_unit() {
                             // `lhs_non_null < rhs_non_null` gives us our proper ordering, making
@@ -516,8 +539,31 @@ impl Codegen {
 
                     if nullable {
                         // Zero = non-null, non-zero = null
-                        let lhs_non_null = column_non_null(idx, lhs, &layout, &mut builder, true);
-                        let rhs_non_null = column_non_null(idx, rhs, &layout, &mut builder, true);
+                        let (lhs_non_null, rhs_non_null) = if row_type.is_string() {
+                            let (lhs, rhs, native_ty) = {
+                                let offset = layout.offset_of(idx) as i32;
+                                let native_ty = layout
+                                    .type_of(idx)
+                                    .native_type(&self.module.isa().frontend_config());
+                                let flags = MemFlags::trusted().with_readonly();
+
+                                let lhs = builder.ins().load(native_ty, flags, lhs, offset);
+                                let rhs = builder.ins().load(native_ty, flags, rhs, offset);
+
+                                (lhs, rhs, native_ty)
+                            };
+
+                            let zero = builder.ins().iconst(native_ty, 0);
+                            let lhs_null = builder.ins().icmp(IntCC::Equal, lhs, zero);
+                            let rhs_null = builder.ins().icmp(IntCC::Equal, rhs, zero);
+
+                            (lhs_null, rhs_null)
+                        } else {
+                            (
+                                column_non_null(idx, lhs, &layout, &mut builder, true),
+                                column_non_null(idx, rhs, &layout, &mut builder, true),
+                            )
+                        };
 
                         let check_null = builder.create_block();
 

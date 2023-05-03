@@ -311,6 +311,7 @@ pub struct NativeLayout {
     size: u32,
     /// The alignment of the layout
     align: u32,
+    column_types: Vec<ColumnType>,
     /// The native type of each column's data
     /// For zsts this is meaningless
     types: Vec<NativeType>,
@@ -352,6 +353,31 @@ impl NativeLayout {
         &self.padding_bytes
     }
 
+    pub fn total_padding(&self) -> usize {
+        self.memory_order
+            .iter()
+            .filter_map(|entry| entry.as_padding_bytes().map(|bytes| bytes as usize))
+            .sum()
+    }
+
+    pub fn total_columns(&self) -> usize {
+        self.column_types.len()
+    }
+
+    pub fn nullable_columns(&self) -> usize {
+        self.memory_order
+            .iter()
+            .filter(|entry| matches!(entry, MemoryEntry::Column { nullable: true, .. }))
+            .count()
+    }
+
+    pub fn total_bitsets(&self) -> usize {
+        self.memory_order
+            .iter()
+            .filter(|entry| entry.is_bitset())
+            .count()
+    }
+
     /// Returns the offset of the given column
     pub fn offset_of(&self, column: usize) -> u32 {
         self.offsets[column]
@@ -362,9 +388,29 @@ impl NativeLayout {
         self.types[column]
     }
 
+    pub fn column_type_of(&self, column: usize) -> ColumnType {
+        self.column_types[column]
+    }
+
     /// Returns `true` if the given column is nullable
     pub fn is_nullable(&self, column: usize) -> bool {
-        !self.bitsets.is_empty() && self.bitsets[column].is_some()
+        (!self.bitsets.is_empty() && self.bitsets[column].is_some())
+            || self
+                .memory_order
+                .iter()
+                .find_map(|memory| {
+                    if let &MemoryEntry::Column {
+                        column: memory_column,
+                        nullable,
+                        ..
+                    } = memory
+                    {
+                        (column == memory_column as usize).then_some(nullable)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(false)
     }
 
     /// Returns the offset, type and bit offset of the given column's
@@ -573,6 +619,8 @@ pub enum MemoryEntry {
         ty: NativeType,
         /// The column associated with this entry
         column: u32,
+        /// Whether the column is nullable
+        nullable: bool,
     },
 
     /// The data associated with a bitset
@@ -605,6 +653,14 @@ impl MemoryEntry {
 
     pub const fn is_padding(&self) -> bool {
         matches!(self, Self::Padding { .. })
+    }
+
+    pub const fn as_padding_bytes(&self) -> Option<u8> {
+        if let Self::Padding { bytes, .. } = *self {
+            Some(bytes)
+        } else {
+            None
+        }
     }
 
     /// Returns the offset this memory entry resides at
@@ -641,7 +697,7 @@ mod algorithm {
             layout::{next_multiple_of, LayoutConfig, MemoryEntry},
             BitSetType, NativeLayout, NativeType,
         },
-        ir::RowLayout,
+        ir::{ColumnType, RowLayout},
     };
     use std::cmp::Reverse;
     use tinyvec::TinyVec;
@@ -650,6 +706,8 @@ mod algorithm {
         Column {
             column: u32,
             ty: Option<NativeType>,
+            column_ty: ColumnType,
+            nullable: bool,
         },
         BitSet {
             // TODO: Could use delta encoding on these
@@ -658,16 +716,14 @@ mod algorithm {
         },
     }
 
-    // TODO: Strings can use zero as their null value, this requires actual
-    //       null-checking abstractions for writing code with though
     // TODO: Ideally we'd spread the bitsets around to try and get as many in their
     //       own bytes as possible, e.g. if we have a 4 padding bytes and 4 null
-    // flags       then each flag should have its own byte, even if the padding
-    // bytes take       the form of a u32 or two u16s
+    //       flags then each flag should have its own byte, even if the padding
+    //       bytes take the form of a u32 or two u16s
     // TODO: We could also incorporate heuristics into this to try and determine
     //       the most-accessed null flags and then prioritize putting them in their
     //       own unique bytes to maximize the happy path of just loading a byte
-    // instead       of dealing with bitset munging
+    //       instead of dealing with bitset munging
     pub(super) fn compute_native_layout(layout: &RowLayout, config: &LayoutConfig) -> NativeLayout {
         // Ensure that the given layout has less than u32::MAX fields
         debug_assert!(
@@ -683,9 +739,11 @@ mod algorithm {
                 .columns()
                 .iter()
                 .enumerate()
-                .map(|(column, &ty)| Field::Column {
+                .map(|(column, &column_ty)| Field::Column {
                     column: column as u32,
-                    ty: NativeType::from_column_type(ty),
+                    ty: NativeType::from_column_type(column_ty),
+                    column_ty,
+                    nullable: layout.column_nullable(column),
                 }),
         );
         bitsets(
@@ -695,7 +753,10 @@ mod algorithm {
                 .iter()
                 .by_vals()
                 .enumerate()
-                .filter_map(|(column, nullable)| nullable.then_some(column as u32)),
+                .filter_map(|(column, nullable)| {
+                    // Strings have a null niche
+                    (nullable && !layout.column_type(column).is_string()).then_some(column as u32)
+                }),
             &mut fields,
         );
 
@@ -725,6 +786,7 @@ mod algorithm {
         let (mut align, mut offset) = (1, 0u32);
         let mut offsets = vec![0; layout.len()];
         let mut types = vec![NativeType::U8; layout.len()];
+        let mut column_types = vec![ColumnType::Unit; layout.len()];
         // If the row doesn't have any nullable columns we use an empty bitsets vec as
         // an optimization
         let mut bitsets = if null_columns == 0 {
@@ -754,7 +816,12 @@ mod algorithm {
                 align = align.max(field_align);
 
                 match *field {
-                    Field::Column { column, .. } => types[column as usize] = field_ty,
+                    Field::Column {
+                        column, column_ty, ..
+                    } => {
+                        types[column as usize] = field_ty;
+                        column_types[column as usize] = column_ty;
+                    }
 
                     Field::BitSet { ref columns, ty } => {
                         debug_assert!(columns.len() <= u8::MAX as usize);
@@ -772,11 +839,21 @@ mod algorithm {
             };
 
             match *field {
-                Field::Column { column, ty } => {
+                Field::Column {
+                    column,
+                    ty,
+                    nullable,
+                    ..
+                } => {
                     offsets[column as usize] = offset;
 
                     if let Some(ty) = ty {
-                        memory_order.push(MemoryEntry::Column { offset, ty, column });
+                        memory_order.push(MemoryEntry::Column {
+                            offset,
+                            ty,
+                            column,
+                            nullable,
+                        });
                     }
                 }
 
@@ -812,6 +889,7 @@ mod algorithm {
             size,
             align,
             types,
+            column_types,
             offsets,
             bitsets,
             memory_order,
