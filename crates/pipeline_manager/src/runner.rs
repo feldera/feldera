@@ -46,8 +46,13 @@ impl Display for RunnerError {
 
 impl StdError for RunnerError {}
 
-/// The Runner component responsible for running and interacting with
+/// A runner component responsible for running and interacting with
 /// pipelines at runtime.
+pub(crate) enum Runner {
+    Local(LocalRunner),
+}
+
+/// A runner that executes pipelines locally
 ///
 /// # Starting a pipeline
 ///
@@ -63,7 +68,7 @@ impl StdError for RunnerError {}
 /// To stop the pipeline, the runner sends a `/kill` HTTP request to the
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
-pub struct Runner {
+pub struct LocalRunner {
     db: Arc<Mutex<ProjectDB>>,
     config: ManagerConfig,
 }
@@ -86,17 +91,89 @@ struct PipelineMetadata {
 }
 
 impl Runner {
-    pub(crate) async fn new(db: Arc<Mutex<ProjectDB>>, config: &ManagerConfig) -> AnyResult<Self> {
+    /// Start a new pipeline.
+    ///
+    /// Starts the pipeline executable and waits for the pipeline to initialize,
+    /// returning pipeline id and port number.
+    pub(crate) async fn run_pipeline(
+        &self,
+        request: &NewPipelineRequest,
+    ) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => local.run_pipeline(request).await,
+        }
+    }
+
+    /// Send a `/kill` request to the pipeline process, but keep the pipeline
+    /// state in the database and file system.
+    ///
+    /// After calling this method, the user can still do post-mortem analysis
+    /// of the pipeline, e.g., access its logs.
+    ///
+    /// Use the [`delete_pipeline`](`Self::delete_pipeline`) method to remove
+    /// all traces of the pipeline from the manager.
+    pub(crate) async fn shutdown_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => local.shutdown_pipeline(pipeline_id).await,
+        }
+    }
+
+    /// Delete the pipeline from the database. Shuts down the pipeline first if
+    /// it is already running.
+    /// Takes a reference to an already locked DB instance, since this function
+    /// is invoked in contexts where the client already holds the lock.
+    pub(crate) async fn delete_pipeline(
+        &self,
+        db: &ProjectDB,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => local.delete_pipeline(db, pipeline_id).await,
+        }
+    }
+
+    pub(crate) async fn forward_to_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+        method: Method,
+        endpoint: &str,
+    ) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => {
+                local
+                    .forward_to_pipeline(pipeline_id, method, endpoint)
+                    .await
+            }
+        }
+    }
+
+    pub(crate) async fn forward_to_pipeline_as_stream(
+        &self,
+        pipeline_id: PipelineId,
+        uuid: &str,
+        req: HttpRequest,
+        body: actix_web::web::Payload,
+    ) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(r) => {
+                r.forward_to_pipeline_as_stream(pipeline_id, uuid, req, body)
+                    .await
+            }
+        }
+    }
+}
+
+impl LocalRunner {
+    pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &ManagerConfig) -> AnyResult<Self> {
         Ok(Self {
             db,
             config: config.clone(),
         })
     }
 
-    /// Start a new pipeline.
-    ///
-    /// Starts the pipeline executable and waits for the pipeline to initialize,
-    /// returning pipeline id and port number.
     pub(crate) async fn run_pipeline(
         &self,
         request: &NewPipelineRequest,
@@ -157,6 +234,127 @@ impl Runner {
                 Err(e)
             }
         }
+    }
+
+    pub(crate) async fn shutdown_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
+        let db = self.db.lock().await;
+
+        self.do_shutdown_pipeline(&db, pipeline_id).await
+    }
+
+    pub(crate) async fn delete_pipeline(
+        &self,
+        db: &ProjectDB,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
+        // Kill pipeline.
+        let response = self.do_shutdown_pipeline(db, pipeline_id).await?;
+        if !response.status().is_success() {
+            return Ok(response);
+        }
+
+        // Delete pipeline directory.
+        remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
+        db.delete_pipeline(pipeline_id).await?;
+
+        Ok(HttpResponse::Ok().json("Pipeline successfully deleted."))
+    }
+
+    pub(crate) async fn forward_to_pipeline(
+        &self,
+        pipeline_id: PipelineId,
+        method: Method,
+        endpoint: &str,
+    ) -> AnyResult<HttpResponse> {
+        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
+
+        if pipeline_descr.killed {
+            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+        }
+
+        let client = Client::default();
+        let request = client.request(
+            method,
+            &format!(
+                "http://localhost:{port}/{endpoint}",
+                port = pipeline_descr.port
+            ),
+        );
+
+        let mut response = request
+            .send()
+            .await
+            .map_err(|e| AnyError::msg(format!("Failed to connect to pipeline: {e}")))?;
+
+        let response_body = response.body().await?;
+
+        let mut response_builder = HttpResponse::build(response.status());
+        // Remove `Connection` as per
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
+        for (header_name, header_value) in response
+            .headers()
+            .iter()
+            .filter(|(h, _)| *h != "connection")
+        {
+            response_builder.insert_header((header_name.clone(), header_value.clone()));
+        }
+
+        Ok(response_builder.body(response_body))
+    }
+
+    pub(crate) async fn forward_to_pipeline_as_stream(
+        &self,
+        pipeline_id: PipelineId,
+        uuid: &str,
+        req: HttpRequest,
+        mut body: actix_web::web::Payload,
+    ) -> AnyResult<HttpResponse> {
+        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
+        if pipeline_descr.killed {
+            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+        }
+        let port = pipeline_descr.port;
+        let direction = self
+            .db
+            .lock()
+            .await
+            .get_attached_connector_direction(uuid)
+            .await?;
+        let url = if direction == Direction::Input {
+            format!("ws://localhost:{port}/input_endpoint/{uuid}")
+        } else {
+            format!("ws://localhost:{port}/output_endpoint/{uuid}")
+        };
+
+        let (_, socket) = awc::Client::new().ws(url).connect().await.unwrap();
+        let mut io = socket.into_parts().io;
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let mut buf = BytesMut::new();
+        actix_web::rt::spawn(async move {
+            loop {
+                tokio::select! {
+                    res = body.next() => {
+                        match res {
+                            None => return,
+                            Some(body) => {
+                                let bytes = body.unwrap();
+                                io.write_all(&bytes).await.unwrap();
+                            }
+                        }
+                    }
+                    res = io.read_buf(&mut buf) => {
+                        let size = res.unwrap();
+                        let bytes = buf.split_to(size).freeze();
+                        tx.unbounded_send(Ok::<_, Error>(bytes)).unwrap();
+                    }
+                }
+            }
+        });
+        let mut resp = handshake(&req).unwrap();
+        Ok(resp.streaming(rx))
     }
 
     async fn start(
@@ -324,23 +522,6 @@ impl Runner {
             .unwrap_or_else(|e| format!("[unable to read log file: {e}]"))
     }
 
-    /// Send a `/kill` request to the pipeline process, but keep the pipeline
-    /// state in the database and file system.
-    ///
-    /// After calling this method, the user can still do post-mortem analysis
-    /// of the pipeline, e.g., access its logs.
-    ///
-    /// Use the [`delete_pipeline`](`Self::delete_pipeline`) method to remove
-    /// all traces of the pipeline from the manager.
-    pub(crate) async fn shutdown_pipeline(
-        &self,
-        pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
-        let db = self.db.lock().await;
-
-        self.do_shutdown_pipeline(&db, pipeline_id).await
-    }
-
     async fn do_shutdown_pipeline(
         &self,
         db: &ProjectDB,
@@ -381,121 +562,5 @@ impl Runner {
                 )),
             ))
         }
-    }
-
-    /// Kill the pipeline if it is still running, delete its file system state
-    /// and remove the pipeline from the database.
-    // Takes a reference to an already locked DB instance, since this function
-    // is invoked in contexts where the client already holds the lock.
-    pub(crate) async fn delete_pipeline(
-        &self,
-        db: &ProjectDB,
-        pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
-        // Kill pipeline.
-        let response = self.do_shutdown_pipeline(db, pipeline_id).await?;
-        if !response.status().is_success() {
-            return Ok(response);
-        }
-
-        // Delete pipeline directory.
-        remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
-        db.delete_pipeline(pipeline_id).await?;
-
-        Ok(HttpResponse::Ok().json("Pipeline successfully deleted."))
-    }
-
-    pub(crate) async fn forward_to_pipeline(
-        &self,
-        pipeline_id: PipelineId,
-        method: Method,
-        endpoint: &str,
-    ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
-
-        if pipeline_descr.killed {
-            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
-        }
-
-        let client = Client::default();
-        let request = client.request(
-            method,
-            &format!(
-                "http://localhost:{port}/{endpoint}",
-                port = pipeline_descr.port
-            ),
-        );
-
-        let mut response = request
-            .send()
-            .await
-            .map_err(|e| AnyError::msg(format!("Failed to connect to pipeline: {e}")))?;
-
-        let response_body = response.body().await?;
-
-        let mut response_builder = HttpResponse::build(response.status());
-        // Remove `Connection` as per
-        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
-        for (header_name, header_value) in response
-            .headers()
-            .iter()
-            .filter(|(h, _)| *h != "connection")
-        {
-            response_builder.insert_header((header_name.clone(), header_value.clone()));
-        }
-
-        Ok(response_builder.body(response_body))
-    }
-
-    pub(crate) async fn forward_to_pipeline_as_stream(
-        &self,
-        pipeline_id: PipelineId,
-        uuid: &str,
-        req: HttpRequest,
-        mut body: actix_web::web::Payload,
-    ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
-        if pipeline_descr.killed {
-            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
-        }
-        let port = pipeline_descr.port;
-        let direction = self
-            .db
-            .lock()
-            .await
-            .get_attached_connector_direction(uuid)
-            .await?;
-        let url = if direction == Direction::Input {
-            format!("ws://localhost:{port}/input_endpoint/{uuid}")
-        } else {
-            format!("ws://localhost:{port}/output_endpoint/{uuid}")
-        };
-
-        let (_, socket) = awc::Client::new().ws(url).connect().await.unwrap();
-        let mut io = socket.into_parts().io;
-        let (tx, rx) = futures::channel::mpsc::unbounded();
-        let mut buf = BytesMut::new();
-        actix_web::rt::spawn(async move {
-            loop {
-                tokio::select! {
-                    res = body.next() => {
-                        match res {
-                            None => return,
-                            Some(body) => {
-                                let bytes = body.unwrap();
-                                io.write_all(&bytes).await.unwrap();
-                            }
-                        }
-                    }
-                    res = io.read_buf(&mut buf) => {
-                        let size = res.unwrap();
-                        let bytes = buf.split_to(size).freeze();
-                        tx.unbounded_send(Ok::<_, Error>(bytes)).unwrap();
-                    }
-                }
-            }
-        });
-        let mut resp = handshake(&req).unwrap();
-        Ok(resp.streaming(rx))
     }
 }

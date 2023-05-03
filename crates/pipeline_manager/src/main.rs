@@ -71,7 +71,7 @@ use db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConfigId, ConnectorId, ConnectorType,
     DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, Version,
 };
-use runner::{Runner, RunnerError};
+use runner::{LocalRunner, Runner, RunnerError};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -239,7 +239,7 @@ impl ServerState {
         db: Arc<Mutex<ProjectDB>>,
         compiler: Compiler,
     ) -> AnyResult<Self> {
-        let runner = Runner::new(db.clone(), &config).await?;
+        let runner = Runner::Local(LocalRunner::new(db.clone(), &config)?);
 
         Ok(Self {
             db,
