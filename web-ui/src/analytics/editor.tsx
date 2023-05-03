@@ -31,6 +31,7 @@ import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { PLACEHOLDER_VALUES } from 'src/utils'
+import { projectQueryCacheUpdate } from 'src/types/defaultQueryFn'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000
@@ -248,20 +249,24 @@ const useUpdateProjectIfChanged = (
   )
   useEffect(() => {
     if (project.project_id !== null && state === 'isModified' && !isLoading) {
+      const updateRequest = {
+        project_id: project.project_id,
+        name: project.name,
+        description: project.description,
+        code: project.code
+      }
       mutate(
+        updateRequest,
         {
-          project_id: project.project_id,
-          name: project.name,
-          description: project.description,
-          code: project.code
-        },
-        {
-          onSuccess: (data: UpdateProjectResponse) => {
-            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
-            setState('isUpToDate')
+          onSettled: () => {
             queryClient.invalidateQueries(['project'])
             queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
             queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
+          },
+          onSuccess: (data: UpdateProjectResponse) => {
+            projectQueryCacheUpdate(queryClient, updateRequest)
+            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
+            setState('isUpToDate')
             setFormError({})
           },
           onError: (error: CancelError) => {
