@@ -199,7 +199,9 @@ impl CodegenCtx<'_> {
     }
 
     fn string_truncate(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let (string, truncated_length) = (self.value(call.args()[0]), self.value(call.args()[1]));
+        let [string_id, length_id]: [_; 2] = call.args().try_into().unwrap();
+        let (string, truncated_length) = (self.value(string_id), self.value(length_id));
+        debug_assert!(!self.is_readonly(string_id));
 
         // Right now with the current design of strings (having them be a
         // pointer to { length, capacity, ..data } instead of { length, capacity, *data
@@ -245,7 +247,8 @@ impl CodegenCtx<'_> {
             builder.ins().trapz(less_than_max, TRAP_ASSERT_EQ);
         }
 
-        // Get the current length of the string
+        // Get the current length of the string, will never be readonly since we're
+        // about to manipulate it
         let current_length = self.string_length(string, false, builder);
 
         // The string's length will be set to the minimum of the proposed
@@ -254,6 +257,7 @@ impl CodegenCtx<'_> {
 
         // Ensure that the chosen length is less than the string's capacity
         if self.debug_assertions() {
+            // Will never be readonly since we're about to manipulate it
             let capacity = self.string_capacity(string, false, builder);
             let length_less_than_capacity =
                 builder
@@ -288,7 +292,11 @@ impl CodegenCtx<'_> {
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let (string, truncated_length) = (self.value(call.args()[0]), self.value(call.args()[1]));
+        let [string_id, length_id]: [_; 2] = call.args().try_into().unwrap();
+        let (string, truncated_length) = (self.value(string_id), self.value(length_id));
+        // This string can be readonly since the function clones and doesn't manipulate
+        // the underlying string
+        let string_readonly = self.is_readonly(string_id);
 
         // Right now with the current design of strings (having them be a
         // pointer to { length, capacity, ..data } instead of { length, capacity, *data
@@ -300,7 +308,7 @@ impl CodegenCtx<'_> {
         let allocate_truncated_string = builder.create_block();
 
         // Get the current length of the string
-        let current_length = self.string_length(string, false, builder);
+        let current_length = self.string_length(string, string_readonly, builder);
         // The string's length will be set to the minimum of the proposed
         // length and the string's current length
         let new_length = builder.ins().umin(truncated_length, current_length);
@@ -380,7 +388,9 @@ impl CodegenCtx<'_> {
     }
 
     fn string_clear(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let string = self.value(call.args()[0]);
+        let string_id = call.args()[0];
+        let string = self.value(string_id);
+        debug_assert!(!self.is_readonly(string_id));
 
         // Right now with the current design of strings (having them be a
         // pointer to { length, capacity, ..data } instead of { length, capacity, *data
@@ -437,12 +447,12 @@ impl CodegenCtx<'_> {
     }
 
     fn string_concat(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let (target, string) = (self.value(call.args()[0]), self.value(call.args()[1]));
+        let [target_id, string_id]: [_; 2] = call.args().try_into().unwrap();
+        let (target, string) = (self.value(target_id), self.value(string_id));
 
-        // TODO: Apply readonly where applicable
         let (string_ptr, string_len) = (
             self.string_ptr(string, builder),
-            self.string_length(string, false, builder),
+            self.string_length(string, self.is_readonly(string_id), builder),
         );
 
         let push_str = self
@@ -467,13 +477,13 @@ impl CodegenCtx<'_> {
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let (first, second) = (self.value(call.args()[0]), self.value(call.args()[1]));
+        let [first_id, second_id]: [_; 2] = call.args().try_into().unwrap();
+        let (first, second) = (self.value(first_id), self.value(second_id));
 
         // Load the string's lengths
-        // TODO: Apply readonly where possible
         let (first_length, second_length) = (
-            self.string_length(first, false, builder),
-            self.string_length(second, false, builder),
+            self.string_length(first, self.is_readonly(first_id), builder),
+            self.string_length(second, self.is_readonly(second_id), builder),
         );
 
         // Add both string's lengths so that we can allocate a string to hold
@@ -537,10 +547,10 @@ impl CodegenCtx<'_> {
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let string = self.value(call.args()[0]);
+        let string_id = call.args()[0];
+        let string = self.value(string_id);
 
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
+        let length = self.string_length(string, self.is_readonly(string_id), builder);
         let bits = builder.ins().imul_imm(length, 8);
         self.add_expr(expr_id, bits, ColumnType::Usize, None);
     }
@@ -551,11 +561,11 @@ impl CodegenCtx<'_> {
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let string = self.value(call.args()[0]);
+        let string_id = call.args()[0];
+        let string = self.value(string_id);
 
         let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
+        let length = self.string_length(string, self.is_readonly(string_id), builder);
 
         let count_chars = self
             .imports
@@ -571,10 +581,10 @@ impl CodegenCtx<'_> {
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let string = self.value(call.args()[0]);
+        let string_id = call.args()[0];
+        let string = self.value(string_id);
 
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
+        let length = self.string_length(string, self.is_readonly(string_id), builder);
         self.add_expr(expr_id, length, ColumnType::Usize, None);
     }
 
@@ -595,11 +605,11 @@ impl CodegenCtx<'_> {
             _ => unreachable!(),
         };
 
-        let string = self.value(call.args()[0]);
+        let string_id = call.args()[0];
+        let string = self.value(string_id);
 
         let ptr = self.string_ptr(string, builder);
-        // TODO: Apply readonly when possible
-        let length = self.string_length(string, false, builder);
+        let length = self.string_length(string, self.is_readonly(string_id), builder);
 
         let string_is = self.imports.get(intrinsic, self.module, builder.func);
         let string_is = builder.call_fn(string_is, &[ptr, length]);

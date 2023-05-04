@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use crate::{
-    codegen::{BitSetType, Codegen, CodegenConfig},
+    codegen::{Codegen, CodegenConfig},
     ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
+    row::UninitRow,
     ThinStr,
 };
 use dbsp::{trace::layers::erased::DataVTable, utils::DynVec};
@@ -274,67 +275,57 @@ fn dyn_vec() {
         let (jit, layout_cache) = codegen.finalize_definitions();
 
         let layout = layout_cache.layout_of(layout_id);
-        let vtable = Box::into_raw(Box::new(DataVTable {
+        let data_vtable = Box::into_raw(Box::new(DataVTable {
             common: vtable.erased(&jit),
         }));
+        let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
 
         {
             // Create a dynamic vector
-            let mut vec = DynVec::new(unsafe { &*vtable });
+            let mut vec = DynVec::new(unsafe { &*data_vtable });
 
             // Initialize the dynvec
             {
                 // We don't statically know the layout of the value we're creating, so we
                 // allocate a place for it on the heap, write to it and then push to our DynVec
                 // from that place
-                let place = layout.alloc().unwrap().as_ptr();
+                let mut place = UninitRow::new(unsafe { &*vtable });
 
                 macro_rules! emplace {
                     ($($value:ident: $ty:ty),+ $(,)?) => {
-                        let mut offset = 0;
+                        let mut column = 0;
 
                         $(
+                            dbg!(column);
                             place
-                                .add(layout.offset_of(offset) as usize)
+                                .as_mut_ptr()
+                                .add(layout.offset_of(column) as usize)
                                 .cast::<$ty>()
                                 .write($value.0.clone());
-                            offset += 1;
+                            column += 1;
 
-                            let (ty, bit_offset, bit) = layout.nullability_of(offset);
-                            let bitset = place.add(bit_offset as usize);
-                            let mut mask = match ty {
-                                BitSetType::U8 => bitset.read() as u64,
-                                BitSetType::U16 => bitset.cast::<u16>().read() as u64,
-                                BitSetType::U32 => bitset.cast::<u32>().read() as u64,
-                                BitSetType::U64 => bitset.cast::<u64>().read() as u64,
-                            };
-                            if $value.1.is_some() {
-                                mask &= !(1 << bit);
-                            } else {
-                                mask |= 1 << bit;
-                            }
-                            match ty {
-                                BitSetType::U8 => bitset.write(mask as u8),
-                                BitSetType::U16  => bitset.cast::<u16>().write(mask as u16),
-                                BitSetType::U32  => bitset.cast::<u32>().write(mask as u32),
-                                BitSetType::U64  => bitset.cast::<u64>().write(mask as u64),
-                            }
+                            place.set_column_null(column, &layout, $value.1.is_none());
 
+                            dbg!(column);
                             if let Some(val) = $value.1.clone() {
+                                dbg!(4);
                                 place
-                                    .add(layout.offset_of(offset) as usize)
+                                    .as_mut_ptr()
+                                    .add(layout.offset_of(column) as usize)
                                     .cast::<$ty>()
                                     .write(val);
+                                dbg!(5);
                             }
 
                             #[allow(unused_assignments)]
-                            { offset += 1 };
+                            { column += 1 };
                         )+
                     };
                 }
 
                 for (bools, u16s, u32s, u64s, i16s, i32s, i64s, f32s, f64s, units, strs) in data {
                     unsafe {
+                        dbg!("a");
                         // Fill `place` with our data
                         emplace! {
                             bools: bool,
@@ -349,15 +340,16 @@ fn dyn_vec() {
                             units: (),
                             strs: ThinStr,
                         }
+                        dbg!("b");
 
                         // Push the value we created to the vec
-                        vec.push_raw(place)
+                        vec.push_raw(place.as_mut_ptr());
+                        dbg!("c");
                     }
                 }
-
-                // Deallocate our place
-                unsafe { layout.dealloc(place) }
             }
+
+            dbg!();
 
             let clone = vec.clone();
             assert_eq!(vec, clone);
@@ -368,6 +360,7 @@ fn dyn_vec() {
 
         unsafe {
             drop(Box::from_raw(vtable));
+            drop(Box::from_raw(data_vtable));
             jit.free_memory();
         }
     }
@@ -687,13 +680,13 @@ mod proptests {
                     }
 
                     MaybeColumn::Nullable(value, false) => {
-                        // Set the column to not be null
-                        row.set_column_null(idx, &layout, false);
-                        prop_assert!(!row.column_is_null(idx, &layout));
-
                         // Write the column's value
                         let column = row.as_mut_ptr().add(offset);
                         value.write_to(column)?;
+
+                        // Set the column to not be null
+                        row.set_column_null(idx, &layout, false);
+                        prop_assert!(!row.column_is_null(idx, &layout));
                     }
 
                     MaybeColumn::Nullable(_, true) => {

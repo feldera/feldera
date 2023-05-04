@@ -137,7 +137,8 @@ impl Codegen {
             let mut value_idx = 0;
             for idx in 0..src_row_layout.len() {
                 if idx == index_by.key_column() {
-                    // Load the key from `data_ptr` (cloning if needed) and then store it to `key_row`
+                    // Load the key from `data_ptr` (cloning if needed) and then store it to
+                    // `key_row`
                     ctx.load_and_store_column(
                         data_ptr,
                         source_owned,
@@ -198,7 +199,8 @@ impl Codegen {
                     continue;
                 }
 
-                // Load the value from `data_ptr` (cloning if needed) and then store it to `value_row`
+                // Load the value from `data_ptr` (cloning if needed) and then store it to
+                // `value_row`
                 ctx.load_and_store_column(
                     data_ptr,
                     source_owned,

@@ -168,8 +168,8 @@ fn print_schema() -> ExitCode {
 enum Args {
     /// Validate the given dataflow graph
     Validate {
-        /// The file to parse json from, if `-` is passed then stdin will be read
-        /// from
+        /// The file to parse json from, if `-` is passed then stdin will be
+        /// read from
         file: PathBuf,
 
         /// Print out all layouts involved in the program

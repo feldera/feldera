@@ -83,6 +83,10 @@ pub struct CodegenConfig {
     /// trap when the float is NaN and if this option is enabled then float
     /// to int casts will yield zero when the float is NaN
     pub saturating_float_to_int_casts: bool,
+    /// Whether or not to propagate readonly from input parameters.
+    /// Causes readonly to be transitively applied to any values loaded from
+    /// input parameters
+    pub propagate_readonly: bool,
 }
 
 impl CodegenConfig {
@@ -92,6 +96,7 @@ impl CodegenConfig {
         optimize_layouts: bool,
         clif_comments: bool,
         saturating_float_to_int_casts: bool,
+        propagate_readonly: bool,
     ) -> Self {
         Self {
             debug_assertions,
@@ -99,6 +104,7 @@ impl CodegenConfig {
             optimize_layouts,
             clif_comments,
             saturating_float_to_int_casts,
+            propagate_readonly,
         }
     }
 
@@ -130,6 +136,11 @@ impl CodegenConfig {
         self
     }
 
+    pub const fn with_propagate_readonly(mut self, propagate_readonly: bool) -> Self {
+        self.propagate_readonly = propagate_readonly;
+        self
+    }
+
     pub const fn debug() -> Self {
         Self {
             debug_assertions: true,
@@ -137,6 +148,7 @@ impl CodegenConfig {
             optimize_layouts: true,
             clif_comments: true,
             saturating_float_to_int_casts: true,
+            propagate_readonly: true,
         }
     }
 
@@ -147,6 +159,7 @@ impl CodegenConfig {
             optimize_layouts: true,
             clif_comments: false,
             saturating_float_to_int_casts: true,
+            propagate_readonly: true,
         }
     }
 }
@@ -282,6 +295,11 @@ impl Codegen {
                 self.intrinsics.import(self.comment_writer.clone()),
                 self.comment_writer.clone(),
             );
+
+            if self.config.propagate_readonly {
+                ctx.propagate_readonly(function);
+            }
+
             let mut builder =
                 FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
 
@@ -395,6 +413,7 @@ impl Codegen {
                         Expr::IsNull(is_null) => ctx.is_null(expr_id, is_null, &mut builder),
                         Expr::SetNull(set_null) => ctx.set_null(expr_id, set_null, &mut builder),
 
+                        // FIXME: Doesn't perform cloning where needed
                         Expr::CopyRowTo(copy_row) => {
                             debug_assert_eq!(
                                 ctx.layout_id(copy_row.src()),
@@ -573,6 +592,7 @@ struct CodegenCtx<'a> {
     exprs: BTreeMap<ExprId, Value>,
     expr_types: BTreeMap<ExprId, ColumnType>,
     expr_layouts: BTreeMap<ExprId, LayoutId>,
+    readonly_exprs: BTreeSet<ExprId>,
     stack_slots: BTreeMap<ExprId, StackSlot>,
     function_inputs: BTreeMap<ExprId, InputFlags>,
     imports: ImportIntrinsics,
@@ -600,6 +620,7 @@ impl<'a> CodegenCtx<'a> {
             exprs: BTreeMap::new(),
             expr_types: BTreeMap::new(),
             expr_layouts: BTreeMap::new(),
+            readonly_exprs: BTreeSet::new(),
             stack_slots: BTreeMap::new(),
             function_inputs: BTreeMap::new(),
             imports,
@@ -632,6 +653,26 @@ impl<'a> CodegenCtx<'a> {
         self.function_inputs
             .get(&expr)
             .map_or(false, InputFlags::is_readonly)
+            || self.readonly_exprs.contains(&expr)
+    }
+
+    fn propagate_readonly(&mut self, function: &Function) {
+        self.readonly_exprs
+            .extend(self.function_inputs.keys().copied());
+
+        // TODO: Propagate readonly across block params when all inputs are readonly
+        // TODO: Use actual block traversal
+        for _ in 0..2 {
+            for block in function.blocks().values() {
+                for &(expr_id, ref expr) in block.body() {
+                    if let Expr::Load(load) = expr {
+                        if self.readonly_exprs.contains(&load.source()) {
+                            self.readonly_exprs.insert(expr_id);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Returns `true` if debug assertions are enabled
@@ -1161,7 +1202,7 @@ impl<'a> CodegenCtx<'a> {
 
             if let Some(writer) = self.comment_writer.as_deref() {
                 writer.borrow_mut().add_comment(
-                    builder.func.dfg.value_def(value).unwrap_inst(),
+                    builder.value_def(value),
                     format!(
                         "load {value} from {slot} at col {} (offset {offset}) of {:?}",
                         load.column(),
@@ -1185,7 +1226,7 @@ impl<'a> CodegenCtx<'a> {
 
             if let Some(writer) = self.comment_writer.as_deref() {
                 writer.borrow_mut().add_comment(
-                    builder.func.dfg.value_def(value).unwrap_inst(),
+                    builder.value_def(value),
                     format!(
                         "load {value} from {addr} at col {} (offset {offset}) of {:?}",
                         load.column(),
@@ -1240,7 +1281,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(bitset).unwrap_inst(),
+                builder.value_def(bitset),
                 format!(
                     "check if column {} of {} is null",
                     is_null.column(),
@@ -1350,7 +1391,7 @@ impl<'a> CodegenCtx<'a> {
                 RValue::Expr(expr) => {
                     let is_null = self.exprs[expr];
                     // TODO: Assert that `is_null` is a valid boolean when debug_assertions are on
-                    let null_ty = builder.func.dfg.value_type(is_null);
+                    let null_ty = builder.value_type(is_null);
                     debug_assert_eq!(null_ty, types::I8);
 
                     // Make sure that is_null is the same type as the target bitset
@@ -1441,7 +1482,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             let first_expr = if let Some(first_expr) = first_expr {
-                builder.func.dfg.value_def(first_expr).unwrap_inst()
+                builder.value_def(first_expr)
             } else {
                 store
             };
@@ -1526,10 +1567,7 @@ impl<'a> CodegenCtx<'a> {
     fn binary_op(&mut self, expr_id: ExprId, binop: &BinaryOp, builder: &mut FunctionBuilder<'_>) {
         let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
         let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
-        debug_assert_eq!(
-            builder.func.dfg.value_type(lhs),
-            builder.func.dfg.value_type(rhs),
-        );
+        debug_assert_eq!(builder.value_type(lhs), builder.value_type(rhs),);
         debug_assert_eq!(lhs_ty, rhs_ty);
 
         let mut value_ty = lhs_ty;
@@ -1604,38 +1642,13 @@ impl<'a> CodegenCtx<'a> {
 
             BinaryOpKind::Eq => {
                 value_ty = ColumnType::Bool;
-
-                if lhs_ty.is_float() {
-                    if self.config.total_float_comparisons {
-                        let (lhs, rhs) = (
-                            self.normalize_float(lhs, builder),
-                            self.normalize_float(rhs, builder),
-                        );
-                        builder.ins().icmp(IntCC::Equal, lhs, rhs)
-                    } else {
-                        builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
-                    }
-                } else {
-                    builder.ins().icmp(IntCC::Equal, lhs, rhs)
-                }
+                self.binop_eq(lhs_ty, lhs, binop.lhs(), rhs, binop.rhs(), builder)
             }
             BinaryOpKind::Neq => {
                 value_ty = ColumnType::Bool;
-
-                if lhs_ty.is_float() {
-                    if self.config.total_float_comparisons {
-                        let (lhs, rhs) = (
-                            self.normalize_float(lhs, builder),
-                            self.normalize_float(rhs, builder),
-                        );
-                        builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
-                    } else {
-                        builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
-                    }
-                } else {
-                    builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
-                }
+                self.binop_neq(lhs_ty, lhs, binop.lhs(), rhs, binop.rhs(), builder)
             }
+            // FIXME: Strings
             BinaryOpKind::LessThan => {
                 value_ty = ColumnType::Bool;
 
@@ -1647,6 +1660,7 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
                 }
             }
+            // FIXME: Strings
             BinaryOpKind::GreaterThan => {
                 value_ty = ColumnType::Bool;
 
@@ -1658,6 +1672,7 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs)
                 }
             }
+            // FIXME: Strings
             BinaryOpKind::LessThanOrEqual => {
                 value_ty = ColumnType::Bool;
 
@@ -1677,6 +1692,7 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs)
                 }
             }
+            // FIXME: Strings
             BinaryOpKind::GreaterThanOrEqual => {
                 value_ty = ColumnType::Bool;
 
@@ -1703,6 +1719,7 @@ impl<'a> CodegenCtx<'a> {
                 }
             }
 
+            // FIXME: Strings
             BinaryOpKind::Min => {
                 if lhs_ty.is_float() {
                     if self.config.total_float_comparisons {
@@ -1720,6 +1737,7 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().umin(lhs, rhs)
                 }
             }
+            // FIXME: Strings
             BinaryOpKind::Max => {
                 if lhs_ty.is_float() {
                     if self.config.total_float_comparisons {
@@ -1744,6 +1762,140 @@ impl<'a> CodegenCtx<'a> {
         };
 
         self.add_expr(expr_id, value, value_ty, None);
+    }
+
+    fn binop_eq(
+        &mut self,
+        ty: ColumnType,
+        lhs: Value,
+        lhs_id: ExprId,
+        rhs: Value,
+        rhs_id: ExprId,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // Strings
+        if ty.is_string() {
+            let compare_contents = builder.create_block();
+            let actually_compare = builder.create_block();
+            let result_block = builder.create_block();
+            builder.append_block_param(result_block, types::I8);
+
+            let lhs_len = self.string_length(lhs, self.is_readonly(lhs_id), builder);
+            let rhs_len = self.string_length(rhs, self.is_readonly(rhs_id), builder);
+            let lengths_eq = builder.ins().icmp(IntCC::Equal, lhs_len, rhs_len);
+
+            // If the strings have equal lengths we have to compare their contents in
+            // `compare_contents`, otherwise (if they have different lengths) they're not
+            // equal
+            let false_val = builder.false_byte();
+            builder.ins().brif(
+                lengths_eq,
+                compare_contents,
+                &[],
+                result_block,
+                &[false_val],
+            );
+
+            builder.switch_to_block(compare_contents);
+
+            // If the string's length is zero, they're equal
+            let true_val = builder.true_byte();
+            builder
+                .ins()
+                .brif(lhs_len, result_block, &[true_val], actually_compare, &[]);
+
+            builder.switch_to_block(actually_compare);
+
+            // Compare the innards of the function
+            let comparison = builder.call_memcmp(self.frontend_config(), lhs, rhs, lhs_len);
+            // `memcmp()` returns -1, 0 or 1 with 0 meaning the strings are equal
+            let contents_equal = builder.ins().icmp_imm(IntCC::Equal, comparison, 0);
+            builder.ins().jump(result_block, &[contents_equal]);
+
+            builder.switch_to_block(result_block);
+            builder.block_params(result_block)[0]
+
+        // Floating point numbers
+        } else if ty.is_float() {
+            if self.config.total_float_comparisons {
+                let (lhs, rhs) = (
+                    self.normalize_float(lhs, builder),
+                    self.normalize_float(rhs, builder),
+                );
+                builder.ins().icmp(IntCC::Equal, lhs, rhs)
+            } else {
+                builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+            }
+
+        // Other scalar types (integers, booleans, timestamps, etc.)
+        } else {
+            builder.ins().icmp(IntCC::Equal, lhs, rhs)
+        }
+    }
+
+    fn binop_neq(
+        &mut self,
+        ty: ColumnType,
+        lhs: Value,
+        lhs_id: ExprId,
+        rhs: Value,
+        rhs_id: ExprId,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // Strings
+        if ty.is_string() {
+            let compare_contents = builder.create_block();
+            let actually_compare = builder.create_block();
+            let result_block = builder.create_block();
+            builder.append_block_param(result_block, types::I8);
+
+            let lhs_len = self.string_length(lhs, self.is_readonly(lhs_id), builder);
+            let rhs_len = self.string_length(rhs, self.is_readonly(rhs_id), builder);
+            let lengths_eq = builder.ins().icmp(IntCC::Equal, lhs_len, rhs_len);
+
+            // If the strings have equal lengths we have to compare their contents in
+            // `compare_contents`, otherwise (if they have different lengths) they're not
+            // equal
+            let true_val = builder.true_byte();
+            builder
+                .ins()
+                .brif(lengths_eq, compare_contents, &[], result_block, &[true_val]);
+
+            builder.switch_to_block(compare_contents);
+
+            // If the string's length is zero, they're equal
+            let false_val = builder.false_byte();
+            builder
+                .ins()
+                .brif(lhs_len, result_block, &[false_val], actually_compare, &[]);
+
+            builder.switch_to_block(actually_compare);
+
+            // Compare the innards of the function
+            let comparison = builder.call_memcmp(self.frontend_config(), lhs, rhs, lhs_len);
+            // `memcmp()` returns -1, 0 or 1 with 0 meaning the strings are equal
+            let contents_equal = builder.ins().icmp_imm(IntCC::NotEqual, comparison, 0);
+            builder.ins().jump(result_block, &[contents_equal]);
+
+            builder.switch_to_block(result_block);
+            builder.block_params(result_block)[0]
+
+        // Floating point numbers
+        } else if ty.is_float() {
+            if self.config.total_float_comparisons {
+                let (lhs, rhs) = (
+                    self.normalize_float(lhs, builder),
+                    self.normalize_float(rhs, builder),
+                );
+                builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
+            } else {
+                builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+            }
+
+        // Other scalar types (integers, booleans, timestamps, etc.)
+        } else {
+            builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
+        }
     }
 
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
@@ -1849,8 +2001,7 @@ impl<'a> CodegenCtx<'a> {
 
                 UnaryOpKind::StringLen => {
                     debug_assert!(value_ty.is_string());
-                    // TODO: Activate readonly when possible
-                    self.string_length(value, false, builder)
+                    self.string_length(value, self.is_readonly(value_id), builder)
                 }
             };
 
@@ -1968,7 +2119,7 @@ impl<'a> CodegenCtx<'a> {
         readonly: bool,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
+        debug_assert_eq!(builder.value_type(string), self.pointer_type());
 
         // Get the offset of the length field
         let length_offset = ThinStr::length_offset();
@@ -1985,7 +2136,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(length).unwrap_inst(),
+                builder.value_def(length),
                 format!("get the length of the string {string}"),
             );
         }
@@ -1999,7 +2150,7 @@ impl<'a> CodegenCtx<'a> {
         readonly: bool,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
+        debug_assert_eq!(builder.value_type(string), self.pointer_type());
 
         // Get the offset of the capacity field
         let capacity_offset = ThinStr::capacity_offset();
@@ -2017,7 +2168,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(capacity).unwrap_inst(),
+                builder.value_def(capacity),
                 format!("get the capacity of the string {string}"),
             );
         }
@@ -2026,7 +2177,7 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn string_ptr(&self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        debug_assert_eq!(builder.func.dfg.value_type(string), self.pointer_type());
+        debug_assert_eq!(builder.value_type(string), self.pointer_type());
 
         // Get the offset of the pointer field
         let pointer_offset = ThinStr::pointer_offset();
@@ -2036,7 +2187,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(pointer).unwrap_inst(),
+                builder.value_def(pointer),
                 format!("get the pointer to the string {string}'s data"),
             );
         }
