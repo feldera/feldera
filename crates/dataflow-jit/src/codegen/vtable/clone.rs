@@ -374,8 +374,8 @@ fn clone_layout(
                     continue;
 
                 // For scalar values we can unconditionally copy over the inner
-                // value, it doesn't matter if it's uninit or not since we'll never
-                // observe it
+                // value, it doesn't matter if it's uninit or not since we'll
+                // never observe it
                 } else {
                     None
                 }

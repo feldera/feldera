@@ -193,7 +193,7 @@ pub(super) fn column_non_null(
         let offset = layout.offset_of(column) as i32;
 
         let string = builder.ins().load(ptr_ty, flags, row_ptr, offset);
-        builder.ins().icmp_imm(IntCC::NotEqual, string, 0)
+        builder.ins().icmp_imm(IntCC::Equal, string, 0)
     } else {
         let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
         let bitset_ty = bitset_ty.native_type();

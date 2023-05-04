@@ -144,7 +144,18 @@ impl Subgraph {
                     }
                 }
 
-                // Antijoin preserves it's left hand stream's distinct-ness
+                // UnitMapToSet is preserves distinct-ness
+                Node::UnitMapToSet(map_to_set) => {
+                    if is_distinct.contains(&map_to_set.input()) && is_distinct.insert(node_id) {
+                        tracing::trace!(
+                            "marking UnitMapToSet node {node_id} as distinct, its input stream {} is distinct",
+                            map_to_set.input(),
+                        );
+                        changed = true;
+                    }
+                }
+
+                // Antijoin preserves its left hand stream's distinct-ness
                 // (distinct is automatically applied to the right hand stream)
                 Node::Antijoin(antijoin) => {
                     if is_distinct.contains(&antijoin.lhs()) && is_distinct.insert(node_id) {

@@ -4,6 +4,7 @@ use crate::{
         Codegen, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId},
+    ThinStr,
 };
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags};
 use cranelift_module::{FuncId, Module};
@@ -21,7 +22,8 @@ impl Codegen {
         tracing::info!("creating eq vtable function for {layout_id}");
 
         // fn(*const u8, *const u8) -> bool
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let ptr_ty = self.module.isa().pointer_type();
+        let func_id = self.new_vtable_fn([ptr_ty; 2], Some(types::I8));
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
@@ -179,6 +181,35 @@ impl Codegen {
                         // potentially let us skip function calls for the happy path of
                         // comparing two of the same (either via deduplication or cloning) string
                         ColumnType::String => {
+                            // Load the string's lengths
+                            let lhs_len = builder.ins().load(
+                                ptr_ty,
+                                MemFlags::trusted().with_readonly(),
+                                lhs,
+                                ThinStr::length_offset() as i32,
+                            );
+                            let rhs_len = builder.ins().load(
+                                ptr_ty,
+                                MemFlags::trusted().with_readonly(),
+                                rhs,
+                                ThinStr::length_offset() as i32,
+                            );
+
+                            let equal = builder.create_block();
+
+                            // Check that both string's lengths are equal, if they are then we call
+                            // the string comparison function
+                            let lengths_equal = builder.ins().icmp(IntCC::Equal, lhs_len, rhs_len);
+                            builder.ins().brif(
+                                lengths_equal,
+                                equal,
+                                &[],
+                                return_block,
+                                &[lengths_equal],
+                            );
+
+                            builder.switch_to_block(equal);
+
                             let string_eq =
                                 imports.get("string_eq", &mut self.module, builder.func);
                             builder.call_fn(string_eq, &[lhs, rhs])
