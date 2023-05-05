@@ -17,7 +17,7 @@ use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Write},
     hash::{Hash, Hasher},
     rc::Rc,
     slice, str,
@@ -123,36 +123,42 @@ macro_rules! intrinsics {
     // (@arg_flag immutable) => { ArgFlag::Immutable };
     // (@arg_flag) => { ArgFlag::Immutable };
 
-    (@clif_type $ptr_type:ident ptr)  => { $ptr_type };
-    (@clif_type $ptr_type:ident usize)  => { $ptr_type };
-    (@clif_type $ptr_type:ident str)  => { $ptr_type };
+    (@clif_type $ptr_type:ident ptr) => { $ptr_type };
+    (@clif_type $ptr_type:ident usize) => { $ptr_type };
+    (@clif_type $ptr_type:ident str) => { $ptr_type };
     (@clif_type $ptr_type:ident bool) => { types::I8 };
-    (@clif_type $ptr_type:ident u8)   => { types::I8 };
-    (@clif_type $ptr_type:ident i8)   => { types::I8 };
-    (@clif_type $ptr_type:ident u16)  => { types::I16 };
-    (@clif_type $ptr_type:ident i16)  => { types::I16 };
-    (@clif_type $ptr_type:ident u32)  => { types::I32 };
-    (@clif_type $ptr_type:ident i32)  => { types::I32 };
-    (@clif_type $ptr_type:ident u64)  => { types::I64 };
-    (@clif_type $ptr_type:ident i64)  => { types::I64 };
-    (@clif_type $ptr_type:ident f32)  => { types::F32 };
-    (@clif_type $ptr_type:ident f64)  => { types::F64 };
+    (@clif_type $ptr_type:ident u8) => { types::I8 };
+    (@clif_type $ptr_type:ident i8) => { types::I8 };
+    (@clif_type $ptr_type:ident u16) => { types::I16 };
+    (@clif_type $ptr_type:ident i16) => { types::I16 };
+    (@clif_type $ptr_type:ident u32) => { types::I32 };
+    (@clif_type $ptr_type:ident i32) => { types::I32 };
+    (@clif_type $ptr_type:ident u64) => { types::I64 };
+    (@clif_type $ptr_type:ident i64) => { types::I64 };
+    (@clif_type $ptr_type:ident f32) => { types::F32 };
+    (@clif_type $ptr_type:ident f64) => { types::F64 };
+    (@clif_type $ptr_type:ident date) => { types::I32 };
+    (@clif_type $ptr_type:ident timestamp) => { types::I64 };
 
-    (@type)  => { ColumnType::Unit };
-    (@type ptr)  => { ColumnType::Ptr };
-    (@type usize)  => { ColumnType::Usize };
-    (@type str)  => { ColumnType::String };
+    (@type) => { ColumnType::Unit };
+    (@type ptr) => { ColumnType::Ptr };
+    (@type usize) => { ColumnType::Usize };
+    (@type str) => { ColumnType::String };
     (@type bool) => { ColumnType::Bool };
-    (@type u8)   => { ColumnType::U8 };
-    (@type i8)   => { ColumnType::I8 };
-    (@type u16)  => { ColumnType::U16 };
-    (@type i16)  => { ColumnType::I16 };
-    (@type u32)  => { ColumnType::U32 };
-    (@type i32)  => { ColumnType::I32 };
-    (@type u64)  => { ColumnType::U64 };
-    (@type i64)  => { ColumnType::I64 };
-    (@type f32)  => { ColumnType::F32 };
-    (@type f64)  => { ColumnType::F64 };
+    (@type u8) => { ColumnType::U8 };
+    (@type i8) => { ColumnType::I8 };
+    (@type u16) => { ColumnType::U16 };
+    (@type i16) => { ColumnType::I16 };
+    (@type u32) => { ColumnType::U32 };
+    (@type i32) => { ColumnType::I32 };
+    (@type u64) => { ColumnType::U64 };
+    (@type i64) => { ColumnType::I64 };
+    (@type f32) => { ColumnType::F32 };
+    (@type f64) => { ColumnType::F64 };
+    (@type f32) => { ColumnType::F32 };
+    (@type f64) => { ColumnType::F64 };
+    (@type date) => { ColumnType::Date };
+    (@type timestamp) => { ColumnType::Timestamp };
 
     (@replace $x:tt $y:tt) => { $y };
 }
@@ -358,12 +364,12 @@ intrinsics! {
     string_debug = fn(str, ptr: mutable) -> bool,
     str_debug = fn(ptr, usize, ptr: mutable) -> bool,
     bool_debug = fn(bool, ptr: mutable) -> bool,
-    int_debug = fn(i64, ptr: mutable) -> bool,
-    uint_debug = fn(u64, ptr: mutable) -> bool,
+    i64_debug = fn(i64, ptr: mutable) -> bool,
+    u64_debug = fn(u64, ptr: mutable) -> bool,
     f32_debug = fn(f32, ptr: mutable) -> bool,
     f64_debug = fn(f64, ptr: mutable) -> bool,
-    date_debug = fn(i32, ptr: mutable) -> bool,
-    timestamp_debug = fn(i64, ptr: mutable) -> bool,
+    date_debug = fn(date, ptr: mutable) -> bool,
+    timestamp_debug = fn(timestamp, ptr: mutable) -> bool,
 
     // Hash functions
     u8_hash = fn(ptr: mutable, u8),
@@ -375,6 +381,20 @@ intrinsics! {
     u64_hash = fn(ptr: mutable, u64),
     i64_hash = fn(ptr: mutable, i64),
     string_hash = fn(ptr: mutable, str),
+
+    // Write functions
+    write_i8_to_string = fn(str: consume, i8) -> str,
+    write_u8_to_string = fn(str: consume, u8) -> str,
+    write_u16_to_string = fn(str: consume, u16) -> str,
+    write_i16_to_string = fn(str: consume, i16) -> str,
+    write_u32_to_string = fn(str: consume, u32) -> str,
+    write_i32_to_string = fn(str: consume, i32) -> str,
+    write_u64_to_string = fn(str: consume, u64) -> str,
+    write_i64_to_string = fn(str: consume, i64) -> str,
+    write_f32_to_string = fn(str: consume, f32) -> str,
+    write_f64_to_string = fn(str: consume, f64) -> str,
+    write_timestamp_to_string = fn(str: consume, timestamp) -> str,
+    write_date_to_string = fn(str: consume, date) -> str,
 
     // String functions
     string_eq = fn(str, str) -> bool,
@@ -399,37 +419,37 @@ intrinsics! {
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
-    timestamp_month = fn(i64) -> i64,
-    timestamp_day = fn(i64) -> i64,
-    timestamp_quarter = fn(i64) -> i64,
-    timestamp_decade = fn(i64) -> i64,
-    timestamp_century = fn(i64) -> i64,
-    timestamp_millennium = fn(i64) -> i64,
-    timestamp_iso_year = fn(i64) -> i64,
-    timestamp_week = fn(i64) -> i64,
-    timestamp_day_of_week = fn(i64) -> i64,
-    timestamp_iso_day_of_week = fn(i64) -> i64,
-    timestamp_day_of_year = fn(i64) -> i64,
-    timestamp_millisecond = fn(i64) -> i64,
-    timestamp_microsecond = fn(i64) -> i64,
-    timestamp_second = fn(i64) -> i64,
-    timestamp_minute = fn(i64) -> i64,
-    timestamp_hour = fn(i64) -> i64,
-    timestamp_floor_week = fn(i64) -> i64,
+    timestamp_month = fn(timestamp) -> i64,
+    timestamp_day = fn(timestamp) -> i64,
+    timestamp_quarter = fn(timestamp) -> i64,
+    timestamp_decade = fn(timestamp) -> i64,
+    timestamp_century = fn(timestamp) -> i64,
+    timestamp_millennium = fn(timestamp) -> i64,
+    timestamp_iso_year = fn(timestamp) -> i64,
+    timestamp_week = fn(timestamp) -> i64,
+    timestamp_day_of_week = fn(timestamp) -> i64,
+    timestamp_iso_day_of_week = fn(timestamp) -> i64,
+    timestamp_day_of_year = fn(timestamp) -> i64,
+    timestamp_millisecond = fn(timestamp) -> i64,
+    timestamp_microsecond = fn(timestamp) -> i64,
+    timestamp_second = fn(timestamp) -> i64,
+    timestamp_minute = fn(timestamp) -> i64,
+    timestamp_hour = fn(timestamp) -> i64,
+    timestamp_floor_week = fn(timestamp) -> i64,
 
     // Date functions
-    date_year = fn(i32) -> i32,
-    date_month = fn(i32) -> i32,
-    date_day = fn(i32) -> i32,
-    date_quarter = fn(i32) -> i32,
-    date_decade = fn(i32) -> i32,
-    date_century = fn(i32) -> i32,
-    date_millennium = fn(i32) -> i32,
-    date_iso_year = fn(i32) -> i32,
-    date_week = fn(i32) -> i32,
-    date_day_of_week = fn(i32) -> i32,
-    date_iso_day_of_week = fn(i32) -> i32,
-    date_day_of_year = fn(i32) -> i32,
+    date_year = fn(date) -> i32,
+    date_month = fn(date) -> i32,
+    date_day = fn(date) -> i32,
+    date_quarter = fn(date) -> i32,
+    date_decade = fn(date) -> i32,
+    date_century = fn(date) -> i32,
+    date_millennium = fn(date) -> i32,
+    date_iso_year = fn(date) -> i32,
+    date_week = fn(date) -> i32,
+    date_day_of_week = fn(date) -> i32,
+    date_iso_day_of_week = fn(date) -> i32,
+    date_day_of_year = fn(date) -> i32,
 
     // Float functions
     fmod = fn(f64, f64) -> f64,
@@ -567,29 +587,25 @@ unsafe extern "C" fn str_debug(
     (*fmt).write_str(string).is_ok()
 }
 
-unsafe extern "C" fn bool_debug(boolean: bool, fmt: *mut fmt::Formatter<'_>) -> bool {
-    debug_assert!(!fmt.is_null());
-    Debug::fmt(&boolean, &mut *fmt).is_ok()
+macro_rules! debug_primitives {
+    ($($primitive:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<$primitive _debug>](value: $primitive, fmt: *mut fmt::Formatter<'_>) -> bool {
+                    debug_assert!(!fmt.is_null());
+                    Debug::fmt(&value, &mut *fmt).is_ok()
+                }
+            )+
+        }
+    };
 }
 
-unsafe extern "C" fn int_debug(int: i64, fmt: *mut fmt::Formatter<'_>) -> bool {
-    debug_assert!(!fmt.is_null());
-    Debug::fmt(&int, &mut *fmt).is_ok()
-}
-
-unsafe extern "C" fn uint_debug(uint: u64, fmt: *mut fmt::Formatter<'_>) -> bool {
-    debug_assert!(!fmt.is_null());
-    Debug::fmt(&uint, &mut *fmt).is_ok()
-}
-
-unsafe extern "C" fn f32_debug(float: f32, fmt: *mut fmt::Formatter<'_>) -> bool {
-    debug_assert!(!fmt.is_null());
-    Debug::fmt(&float, &mut *fmt).is_ok()
-}
-
-unsafe extern "C" fn f64_debug(double: f64, fmt: *mut fmt::Formatter<'_>) -> bool {
-    debug_assert!(!fmt.is_null());
-    Debug::fmt(&double, &mut *fmt).is_ok()
+debug_primitives! {
+    bool,
+    i64,
+    u64,
+    f32,
+    f64,
 }
 
 unsafe extern "C" fn date_debug(date: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
@@ -613,6 +629,52 @@ unsafe extern "C" fn timestamp_debug(timestamp: i64, fmt: *mut fmt::Formatter<'_
         tracing::error!("failed to create timestamp from {timestamp}");
         false
     }
+}
+
+macro_rules! write_primitives {
+    ($($primitive:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<write_ $primitive _to_string>](mut string: ThinStr, value: $primitive) -> ThinStr {
+                    write!(string, "{value}").unwrap();
+                    string
+                }
+            )+
+        }
+    };
+}
+
+write_primitives! {
+    i8,  u8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
+    f32,
+    f64,
+}
+
+unsafe extern "C" fn write_timestamp_to_string(mut string: ThinStr, millis: i64) -> ThinStr {
+    if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(millis) {
+        if let Err(error) = write!(string, "{}", timestamp.format("%+")) {
+            tracing::error!("error while writing timestamp {timestamp} to string: {error}");
+        }
+    } else {
+        tracing::error!("failed to create timestamp from {millis} in write_timestamp_to_string");
+    }
+
+    string
+}
+
+unsafe extern "C" fn write_date_to_string(mut string: ThinStr, days: i32) -> ThinStr {
+    if let LocalResult::Single(date) = Utc.timestamp_opt(days as i64 * 86400, 0) {
+        if let Err(error) = write!(string, "{}", date.format("%Y-%m-%d")) {
+            tracing::error!("error while writing date {days} to string: {error}");
+        }
+    } else {
+        tracing::error!("failed to create date from {days} in write_date_to_string");
+    }
+
+    string
 }
 
 unsafe extern "C" fn row_vec_push(vec: &mut Vec<Row>, vtable: &'static VTable, row: *mut u8) {

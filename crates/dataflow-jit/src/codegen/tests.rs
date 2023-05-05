@@ -665,6 +665,117 @@ fn clear_string() {
 }
 
 #[test]
+fn write_to_string() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let string = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder = FunctionBuilder::new(layout_cache.clone());
+        let string_input = builder.add_input_output(string);
+
+        let string = builder.load(string_input, 0);
+
+        let u8_val = builder.constant(Constant::U8(5));
+        let string = builder.add_expr(Call::new(
+            "dbsp.str.write".into(),
+            vec![string, u8_val],
+            vec![
+                ArgType::Scalar(ColumnType::String),
+                ArgType::Scalar(ColumnType::U8),
+            ],
+            ColumnType::String,
+        ));
+
+        let true_val = builder.constant(Constant::Bool(true));
+        let string = builder.add_expr(Call::new(
+            "dbsp.str.write".into(),
+            vec![string, true_val],
+            vec![
+                ArgType::Scalar(ColumnType::String),
+                ArgType::Scalar(ColumnType::Bool),
+            ],
+            ColumnType::String,
+        ));
+
+        let i32_val = builder.constant(Constant::I32(-12546));
+        let string = builder.add_expr(Call::new(
+            "dbsp.str.write".into(),
+            vec![string, i32_val],
+            vec![
+                ArgType::Scalar(ColumnType::String),
+                ArgType::Scalar(ColumnType::I32),
+            ],
+            ColumnType::String,
+        ));
+
+        let i16_val = builder.constant(Constant::I16(984));
+        let string = builder.add_expr(Call::new(
+            "dbsp.str.write".into(),
+            vec![string, i16_val],
+            vec![
+                ArgType::Scalar(ColumnType::String),
+                ArgType::Scalar(ColumnType::I16),
+            ],
+            ColumnType::String,
+        ));
+
+        builder.store(string_input, 0, string);
+
+        builder.ret_unit();
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::release());
+    let function = codegen.codegen_func("write_to_string", &function);
+    let string_vtable = codegen.vtable_for(string);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
+
+        let string_length = unsafe {
+            transmute::<*const u8, extern "C" fn(*mut u8)>(jit.get_finalized_function(function))
+        };
+
+        let value = ThinStr::from("foobarbaz ");
+
+        let mut input = UninitRow::new(unsafe { &*string_vtable });
+        unsafe {
+            input
+                .as_mut_ptr()
+                .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                .cast::<ThinStr>()
+                .write(value);
+        }
+        let mut input = unsafe { input.assume_init() };
+
+        string_length(input.as_mut_ptr());
+
+        {
+            let written = unsafe {
+                input
+                    .as_ptr()
+                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                    .cast::<ThinStrRef>()
+                    .read()
+            };
+            assert_eq!(&*written, "foobarbaz 5true-12546984");
+        }
+        drop(input);
+
+        unsafe { drop(Box::from_raw(string_vtable)) }
+    }
+    unsafe { jit.free_memory() };
+}
+
+#[test]
 fn unwrap_optional_bool() {
     utils::test_logger();
 

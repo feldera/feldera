@@ -874,6 +874,33 @@ impl FunctionValidator {
                 assert_eq!(call.ret_ty(), ColumnType::Bool);
             }
 
+            "dbsp.str.write" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, argument 0 should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if !actual_arg_types[1].is_scalar() {
+                    todo!(
+                        "mismatched argument type in {expr_id}, argument 1 should be a scalar but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), ColumnType::String);
+            }
+
             "dbsp.timestamp.epoch"
             | "dbsp.timestamp.year"
             | "dbsp.timestamp.month"

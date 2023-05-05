@@ -563,6 +563,18 @@ impl Clone for ThinStr {
     }
 }
 
+impl fmt::Write for ThinStr {
+    fn write_str(&mut self, string: &str) -> fmt::Result {
+        self.push_str(string);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> fmt::Result {
+        self.push(c);
+        Ok(())
+    }
+}
+
 impl Drop for ThinStr {
     fn drop(&mut self) {
         if self.capacity() != 0 {

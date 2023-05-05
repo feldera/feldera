@@ -37,6 +37,8 @@ impl CodegenCtx<'_> {
             "dbsp.str.char_length" => self.string_char_length(expr_id, call, builder),
             "dbsp.str.byte_length" => self.string_byte_length(expr_id, call, builder),
 
+            "dbsp.str.write" => self.string_write(expr_id, call, builder),
+
             function @ ("dbsp.str.is_nfc"
             | "dbsp.str.is_nfd"
             | "dbsp.str.is_nfkc"
@@ -527,7 +529,6 @@ impl CodegenCtx<'_> {
         }
     }
 
-    // TODO: Allow to be variadic
     fn string_concat_clone(
         &mut self,
         expr_id: ExprId,
@@ -607,6 +608,113 @@ impl CodegenCtx<'_> {
             writer
                 .borrow_mut()
                 .add_comment(inst, format!("call @dbsp.str.concat_clone({string_ids:?})"));
+        }
+    }
+
+    fn string_write(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let [target_id, value_id]: [_; 2] = call.args().try_into().unwrap();
+        let (target, value) = (self.value(target_id), self.value(value_id));
+
+        let written = match self.expr_ty(value_id) {
+            ty @ (ColumnType::U8
+            | ColumnType::I8
+            | ColumnType::U16
+            | ColumnType::I16
+            | ColumnType::U32
+            | ColumnType::I32
+            | ColumnType::U64
+            | ColumnType::I64
+            | ColumnType::Usize
+            | ColumnType::Isize
+            | ColumnType::F32
+            | ColumnType::F64
+            | ColumnType::Date
+            | ColumnType::Timestamp) => {
+                let intrinsic = match ty {
+                    ColumnType::U8 => "write_i8_to_string",
+                    ColumnType::I8 => "write_u8_to_string",
+                    ColumnType::U16 => "write_u16_to_string",
+                    ColumnType::I16 => "write_i16_to_string",
+                    ColumnType::U32 => "write_u32_to_string",
+                    ColumnType::I32 => "write_i32_to_string",
+                    ColumnType::U64 => "write_u64_to_string",
+                    ColumnType::I64 => "write_i64_to_string",
+                    ColumnType::F32 => "write_f32_to_string",
+                    ColumnType::F64 => "write_f64_to_string",
+                    ColumnType::Usize => {
+                        if self.pointer_type().bits() == 32 {
+                            "write_u32_to_string"
+                        } else {
+                            "write_u64_to_string"
+                        }
+                    }
+                    ColumnType::Isize => {
+                        if self.pointer_type().bits() == 32 {
+                            "write_i32_to_string"
+                        } else {
+                            "write_i64_to_string"
+                        }
+                    }
+                    ColumnType::Date => "write_date_to_string",
+                    ColumnType::Timestamp => "write_timestamp_to_string",
+
+                    ColumnType::Bool | ColumnType::String | ColumnType::Unit | ColumnType::Ptr => {
+                        unreachable!()
+                    }
+                };
+
+                let write = self.imports.get(intrinsic, self.module, builder.func);
+                builder.call_fn(write, &[target, value])
+            }
+
+            // Write a boolean to the string
+            ColumnType::Bool => {
+                let (true_ptr, true_len) = self.import_string("true", builder);
+                let (false_ptr, false_len) = self.import_string("false", builder);
+
+                let (bool_ptr, bool_len) = (
+                    builder.ins().select(value, true_ptr, false_ptr),
+                    builder.ins().select(value, true_len, false_len),
+                );
+
+                let push_str = self
+                    .imports
+                    .get("string_push_str", self.module, builder.func);
+                builder.call_fn(push_str, &[target, bool_ptr, bool_len])
+            }
+
+            // Write `unit` to the string
+            ColumnType::Unit => {
+                let (unit_ptr, unit_len) = self.import_string("unit", builder);
+
+                let push_str = self
+                    .imports
+                    .get("string_push_str", self.module, builder.func);
+                builder.call_fn(push_str, &[target, unit_ptr, unit_len])
+            }
+
+            // Push the string to the target string
+            ColumnType::String => {
+                let (string_ptr, string_len) = (
+                    self.string_ptr(value, builder),
+                    self.string_length(value, self.is_readonly(value_id), builder),
+                );
+
+                let push_str = self
+                    .imports
+                    .get("string_push_str", self.module, builder.func);
+                builder.call_fn(push_str, &[target, string_ptr, string_len])
+            }
+
+            ColumnType::Ptr => unreachable!(),
+        };
+
+        self.add_expr(expr_id, written, ColumnType::String, None);
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                builder.value_def(written),
+                format!("call @dbsp.str.write({target_id}, {value_id})"),
+            );
         }
     }
 

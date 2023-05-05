@@ -91,6 +91,7 @@
     - [ ] `@dbsp.str.to_uppercase()`
     - [ ] `@dbsp.str.make_uppercase()`
     - [x] `@dbsp.str.is_ascii()`
+    - [x] `@dbsp.str.write()`
   - [ ] Vec/Array manipulation
   - [ ] Timestamp manipulation
     - [x] `@dbsp.timestamp.epoch`
