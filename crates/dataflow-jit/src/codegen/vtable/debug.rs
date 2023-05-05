@@ -168,26 +168,26 @@ impl Codegen {
 
                             ColumnType::U8 | ColumnType::U16 | ColumnType::U32 => {
                                 value = builder.ins().uextend(types::I64, value);
-                                "uint_debug"
+                                "u64_debug"
                             }
-                            ColumnType::U64 => "uint_debug",
+                            ColumnType::U64 => "u64_debug",
 
-                            ColumnType::Usize if ptr_ty == types::I64 => "uint_debug",
+                            ColumnType::Usize if ptr_ty == types::I64 => "u64_debug",
                             ColumnType::Usize => {
                                 value = builder.ins().uextend(types::I64, value);
-                                "uint_debug"
+                                "u64_debug"
                             }
 
                             ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
                                 value = builder.ins().sextend(types::I64, value);
-                                "int_debug"
+                                "i64_debug"
                             }
-                            ColumnType::I64 => "int_debug",
+                            ColumnType::I64 => "i64_debug",
 
-                            ColumnType::Isize if ptr_ty == types::I64 => "int_debug",
+                            ColumnType::Isize if ptr_ty == types::I64 => "i64_debug",
                             ColumnType::Isize => {
                                 value = builder.ins().sextend(types::I64, value);
-                                "int_debug"
+                                "i64_debug"
                             }
 
                             ColumnType::F32 => "f32_debug",
