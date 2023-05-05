@@ -19,7 +19,6 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
-    mem::ManuallyDrop,
     rc::Rc,
     slice, str,
 };
@@ -386,15 +385,17 @@ intrinsics! {
     string_size_of_children = fn(str, ptr),
 
     string_with_capacity = fn(usize) -> str,
-    string_push_str = fn(str: mutable, ptr, usize),
+    string_push_str = fn(str: consume, ptr, usize) -> str,
+    string_push_str_variadic = fn(str: consume, ptr, usize) -> str,
 
-    string_count_chars = fn(str, usize) -> ptr,
+    string_count_chars = fn(ptr, usize) -> usize,
     string_is_nfc = fn(ptr, usize) -> bool,
     string_is_nfd = fn(ptr, usize) -> bool,
     string_is_nfkc = fn(ptr, usize) -> bool,
     string_is_nfkd = fn(ptr, usize) -> bool,
     string_is_lowercase = fn(ptr, usize) -> bool,
     string_is_uppercase = fn(ptr, usize) -> bool,
+    string_is_ascii = fn(ptr, usize) -> bool,
 
     // Timestamp functions
     // timestamp_year = fn(i64) -> i64,
@@ -637,14 +638,37 @@ unsafe fn str_from_raw_parts<'a>(ptr: *const u8, len: usize) -> &'a str {
     unsafe { str::from_utf8_unchecked(bytes) }
 }
 
-// TODO: Make a `ThinStrMut` type instead of `ManuallyDrop<ThinStr>`
-unsafe extern "C" fn string_push_str(
-    mut target: ManuallyDrop<ThinStr>,
-    ptr: *const u8,
-    len: usize,
-) {
+unsafe extern "C" fn string_push_str(mut target: ThinStr, ptr: *const u8, len: usize) -> ThinStr {
     let string = unsafe { str_from_raw_parts(ptr, len) };
     target.push_str(string);
+    target
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct Slice {
+    ptr: *const u8,
+    length: usize,
+}
+
+unsafe extern "C" fn string_push_str_variadic(
+    mut target: ThinStr,
+    strings: *const Slice,
+    len: usize,
+) -> ThinStr {
+    let strings = unsafe { slice::from_raw_parts(strings, len) };
+
+    // Reserve the space we'll need up-front
+    let required_capacity = strings.iter().map(|slice| slice.length).sum();
+    target.reserve(required_capacity);
+
+    // Push all strings to the vec
+    for &Slice { ptr, length } in strings {
+        let string = unsafe { str_from_raw_parts(ptr, length) };
+        target.push_str(string);
+    }
+
+    target
 }
 
 unsafe extern "C" fn string_count_chars(ptr: *const u8, len: usize) -> usize {
@@ -680,6 +704,11 @@ unsafe extern "C" fn string_is_lowercase(ptr: *const u8, len: usize) -> bool {
 unsafe extern "C" fn string_is_uppercase(ptr: *const u8, len: usize) -> bool {
     let string = unsafe { str_from_raw_parts(ptr, len) };
     string.chars().all(char::is_uppercase)
+}
+
+unsafe extern "C" fn string_is_ascii(ptr: *const u8, len: usize) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    string.is_ascii()
 }
 
 unsafe extern "C" fn fmod(lhs: f64, rhs: f64) -> f64 {

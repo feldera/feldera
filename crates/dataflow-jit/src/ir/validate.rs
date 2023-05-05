@@ -703,6 +703,8 @@ impl FunctionValidator {
                         args: call.args().len(),
                     });
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
             "dbsp.row.vec.push" => {
@@ -726,6 +728,8 @@ impl FunctionValidator {
                 if actual_arg_types[1].is_scalar() {
                     todo!("passed a scalar as the second argument to `@dbsp.row.vec.push()` in {expr_id} when it should be a row value")
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
             "dbsp.str.truncate" => {
@@ -751,6 +755,8 @@ impl FunctionValidator {
                         actual_arg_types[1],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
             "dbsp.str.truncate_clone" => {
@@ -776,6 +782,8 @@ impl FunctionValidator {
                         actual_arg_types[1],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::String);
             }
 
             "dbsp.str.clear" => {
@@ -794,10 +802,12 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
-            "dbsp.str.concat" => {
-                if call.args().len() != 2 {
+            "dbsp.str.concat" | "dbsp.str.concat_clone" => {
+                if call.args().len() < 2 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
                         expr_id,
                         function: call.function().to_owned(),
@@ -806,44 +816,16 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
-                    todo!(
-                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
-                        actual_arg_types[0],
-                    );
+                for (idx, arg) in actual_arg_types.iter().enumerate() {
+                    if arg != &ArgType::Scalar(ColumnType::String) {
+                        todo!(
+                            "mismatched argument type in {expr_id}, argument {idx} should be a string but instead got {:?}",
+                            arg,
+                        );
+                    }
                 }
 
-                if actual_arg_types[1] != ArgType::Scalar(ColumnType::String) {
-                    todo!(
-                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
-                        actual_arg_types[1],
-                    );
-                }
-            }
-
-            "dbsp.str.concat_clone" => {
-                if call.args().len() != 2 {
-                    return Err(ValidationError::IncorrectFunctionArgLen {
-                        expr_id,
-                        function: call.function().to_owned(),
-                        expected_args: 2,
-                        args: call.args().len(),
-                    });
-                }
-
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
-                    todo!(
-                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
-                        actual_arg_types[0],
-                    );
-                }
-
-                if actual_arg_types[1] != ArgType::Scalar(ColumnType::String) {
-                    todo!(
-                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
-                        actual_arg_types[1],
-                    );
-                }
+                assert_eq!(call.ret_ty(), ColumnType::String);
             }
 
             "dbsp.str.bit_length" | "dbsp.str.char_length" | "dbsp.str.byte_length" => {
@@ -862,6 +844,8 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Usize);
             }
 
             "dbsp.str.is_nfc"
@@ -869,7 +853,8 @@ impl FunctionValidator {
             | "dbsp.str.is_nfkc"
             | "dbsp.str.is_nfkd"
             | "dbsp.str.is_lowercase"
-            | "dbsp.str.is_uppercase" => {
+            | "dbsp.str.is_uppercase"
+            | "dbsp.str.is_ascii" => {
                 if call.args().len() != 1 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
                         expr_id,
@@ -885,6 +870,8 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Bool);
             }
 
             "dbsp.timestamp.epoch"

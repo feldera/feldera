@@ -194,6 +194,12 @@ impl ThinStr {
         unsafe { ThinStrRef::from_raw(self.buf) }
     }
 
+    pub fn reserve(&mut self, additional: usize) {
+        if additional > self.capacity() - self.len() {
+            self.grow(additional);
+        }
+    }
+
     #[inline]
     fn from_str(string: &str) -> Self {
         if string.is_empty() {

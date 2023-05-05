@@ -66,14 +66,14 @@
   - [ ] `@dbsp.min()`
   - [ ] `@dbsp.max()`
   - [x] `@dbsp.error.abort()`
-  - [x] `@dbsp.row.vec.push`
-  - [ ] `@dbsp.row.vec.reserve`
+  - [x] `@dbsp.row.vec.push()`
+  - [ ] `@dbsp.row.vec.reserve()`
   - [ ] String manipulation
-    - [x] `@dbsp.str.truncate`
-    - [x] `@dbsp.str.truncate_clone`
-    - [x] `@dbsp.str.clear`
-    - [x] `@dbsp.str.concat`
-    - [x] `@dbsp.str.concat_clone`
+    - [x] `@dbsp.str.truncate()`
+    - [x] `@dbsp.str.truncate_clone()`
+    - [x] `@dbsp.str.clear()`
+    - [x] `@dbsp.str.concat()` (Can now concat an unbounded number of strings)
+    - [x] `@dbsp.str.concat_clone()` (Can now concat an unbounded number of strings)
     - [ ] `@dbsp.str.is_normalized()` (check for NFC, NFD, NFKC or NFKD normalization)
       - [x] `@dbsp.str.is_nfc()`
       - [x] `@dbsp.str.is_nfd()`
@@ -90,6 +90,7 @@
     - [x] `@dbsp.str.is_uppercase()`
     - [ ] `@dbsp.str.to_uppercase()`
     - [ ] `@dbsp.str.make_uppercase()`
+    - [x] `@dbsp.str.is_ascii()`
   - [ ] Vec/Array manipulation
   - [ ] Timestamp manipulation
     - [x] `@dbsp.timestamp.epoch`

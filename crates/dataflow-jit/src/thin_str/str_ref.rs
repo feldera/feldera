@@ -16,7 +16,7 @@ use std::{
 #[repr(transparent)]
 pub struct ThinStrRef<'a> {
     buf: NonNull<StrHeader>,
-    __lifetime: PhantomData<&'a ()>,
+    __lifetime: PhantomData<&'a str>,
 }
 
 impl<'a> ThinStrRef<'a> {
