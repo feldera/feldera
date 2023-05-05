@@ -217,6 +217,195 @@ fn string_length() {
 }
 
 #[test]
+fn concat_string() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let strings = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+    let string = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder = FunctionBuilder::new(layout_cache.clone());
+        let string_input = builder.add_input(strings);
+        let string_output = builder.add_output(string);
+
+        let first = builder.load(string_input, 0);
+        let first = builder.copy(first);
+        let second = builder.load(string_input, 1);
+        let concatenated = builder.add_expr(Call::new(
+            "dbsp.str.concat".into(),
+            vec![first, second],
+            vec![ArgType::Scalar(ColumnType::String); 2],
+            ColumnType::String,
+        ));
+        builder.store(string_output, 0, concatenated);
+        builder.ret_unit();
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("concat_string", &function);
+    let strings_vtable = codegen.vtable_for(strings);
+    let string_vtable = codegen.vtable_for(string);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let strings_vtable = Box::into_raw(Box::new(strings_vtable.marshalled(&jit)));
+        let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
+
+        let string_length = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let mut input = UninitRow::new(unsafe { &*strings_vtable });
+        unsafe {
+            input
+                .as_mut_ptr()
+                .add(layout_cache.layout_of(strings).offset_of(0) as usize)
+                .cast::<ThinStr>()
+                .write(ThinStr::from("foobar"));
+            input
+                .as_mut_ptr()
+                .add(layout_cache.layout_of(strings).offset_of(1) as usize)
+                .cast::<ThinStr>()
+                .write(ThinStr::from("bazbing"));
+        }
+        let input = unsafe { input.assume_init() };
+
+        let mut concatenated = UninitRow::new(unsafe { &*string_vtable });
+        string_length(input.as_ptr(), concatenated.as_mut_ptr());
+        drop(input);
+
+        let concatenated_row = unsafe { concatenated.assume_init() };
+        {
+            let concatenated = unsafe {
+                concatenated_row
+                    .as_ptr()
+                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                    .cast::<ThinStrRef>()
+                    .read()
+            };
+            assert_eq!(&*concatenated, "foobarbazbing");
+        }
+        drop(concatenated_row);
+
+        unsafe {
+            drop(Box::from_raw(strings_vtable));
+            drop(Box::from_raw(string_vtable));
+        }
+    }
+    unsafe { jit.free_memory() };
+}
+
+#[test]
+fn concat_many_strings() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let strings = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+    let string = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder = FunctionBuilder::new(layout_cache.clone());
+        let string_input = builder.add_input(strings);
+        let string_output = builder.add_output(string);
+
+        let mut strings: Vec<_> = (0..5).map(|idx| builder.load(string_input, idx)).collect();
+        strings[0] = builder.copy(strings[0]);
+
+        let concatenated = builder.add_expr(Call::new(
+            "dbsp.str.concat".into(),
+            strings,
+            vec![ArgType::Scalar(ColumnType::String); 5],
+            ColumnType::String,
+        ));
+        builder.store(string_output, 0, concatenated);
+        builder.ret_unit();
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("concat_clone_string", &function);
+    let strings_vtable = codegen.vtable_for(strings);
+    let string_vtable = codegen.vtable_for(string);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let strings_vtable = Box::into_raw(Box::new(strings_vtable.marshalled(&jit)));
+        let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
+
+        let string_length = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let mut input = UninitRow::new(unsafe { &*strings_vtable });
+        unsafe {
+            for idx in 0..5 {
+                input
+                    .as_mut_ptr()
+                    .add(layout_cache.layout_of(strings).offset_of(idx) as usize)
+                    .cast::<ThinStr>()
+                    .write(ThinStr::from(&*format!("<string {idx}>")));
+            }
+        }
+        let input = unsafe { input.assume_init() };
+
+        let mut concatenated = UninitRow::new(unsafe { &*string_vtable });
+        string_length(input.as_ptr(), concatenated.as_mut_ptr());
+        drop(input);
+
+        let concatenated_row = unsafe { concatenated.assume_init() };
+        {
+            let concatenated = unsafe {
+                concatenated_row
+                    .as_ptr()
+                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                    .cast::<ThinStrRef>()
+                    .read()
+            };
+            assert_eq!(
+                &*concatenated,
+                "<string 0><string 1><string 2><string 3><string 4>",
+            );
+        }
+        drop(concatenated_row);
+
+        unsafe {
+            drop(Box::from_raw(strings_vtable));
+            drop(Box::from_raw(string_vtable));
+        }
+    }
+    unsafe { jit.free_memory() };
+}
+
+#[test]
 fn concat_clone_string() {
     utils::test_logger();
 
@@ -297,6 +486,100 @@ fn concat_clone_string() {
                     .read()
             };
             assert_eq!(&*concatenated, "foobarbazbing");
+        }
+        drop(concatenated_row);
+
+        unsafe {
+            drop(Box::from_raw(strings_vtable));
+            drop(Box::from_raw(string_vtable));
+        }
+    }
+    unsafe { jit.free_memory() };
+}
+
+#[test]
+fn concat_clone_many_strings() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let strings = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+    let string = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::String, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder = FunctionBuilder::new(layout_cache.clone());
+        let string_input = builder.add_input(strings);
+        let string_output = builder.add_output(string);
+
+        let strings: Vec<_> = (0..5).map(|idx| builder.load(string_input, idx)).collect();
+        let concatenated = builder.add_expr(Call::new(
+            "dbsp.str.concat_clone".into(),
+            strings,
+            vec![ArgType::Scalar(ColumnType::String); 5],
+            ColumnType::String,
+        ));
+        builder.store(string_output, 0, concatenated);
+        builder.ret_unit();
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("concat_clone_string", &function);
+    let strings_vtable = codegen.vtable_for(strings);
+    let string_vtable = codegen.vtable_for(string);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let strings_vtable = Box::into_raw(Box::new(strings_vtable.marshalled(&jit)));
+        let string_vtable = Box::into_raw(Box::new(string_vtable.marshalled(&jit)));
+
+        let string_length = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let mut input = UninitRow::new(unsafe { &*strings_vtable });
+        unsafe {
+            for idx in 0..5 {
+                input
+                    .as_mut_ptr()
+                    .add(layout_cache.layout_of(strings).offset_of(idx) as usize)
+                    .cast::<ThinStr>()
+                    .write(ThinStr::from(&*format!("<string {idx}>")));
+            }
+        }
+        let input = unsafe { input.assume_init() };
+
+        let mut concatenated = UninitRow::new(unsafe { &*string_vtable });
+        string_length(input.as_ptr(), concatenated.as_mut_ptr());
+        drop(input);
+
+        let concatenated_row = unsafe { concatenated.assume_init() };
+        {
+            let concatenated = unsafe {
+                concatenated_row
+                    .as_ptr()
+                    .add(layout_cache.layout_of(string).offset_of(0) as usize)
+                    .cast::<ThinStrRef>()
+                    .read()
+            };
+            assert_eq!(
+                &*concatenated,
+                "<string 0><string 1><string 2><string 3><string 4>",
+            );
         }
         drop(concatenated_row);
 

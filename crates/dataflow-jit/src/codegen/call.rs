@@ -1,13 +1,14 @@
 use crate::{
     codegen::{
         intrinsics::TRIG_INTRINSICS, utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT,
-        TRAP_ASSERT_EQ, TRAP_CAPACITY_OVERFLOW,
+        TRAP_ASSERT_EQ,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
 };
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags};
-use std::mem::align_of;
+use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
+use std::mem::{align_of, size_of};
 
 impl CodegenCtx<'_> {
     pub(super) fn call(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
@@ -24,7 +25,7 @@ impl CodegenCtx<'_> {
             "dbsp.str.truncate_clone" => self.string_truncate_clone(expr_id, call, builder),
 
             // `fn(first: str, second: str)` (mutates the first string)
-            "dbsp.str.concat" => self.string_concat(call, builder),
+            "dbsp.str.concat" => self.string_concat(expr_id, call, builder),
 
             // `fn(first: str, second: str) -> str`
             "dbsp.str.concat_clone" => self.string_concat_clone(expr_id, call, builder),
@@ -446,80 +447,145 @@ impl CodegenCtx<'_> {
         builder.seal_block(set_string_length);
     }
 
-    fn string_concat(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
-        let [target_id, string_id]: [_; 2] = call.args().try_into().unwrap();
-        let (target, string) = (self.value(target_id), self.value(string_id));
+    // TODO: Should we provide a few more specializations other than 2?
+    fn string_concat(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        // Concatenation for two strings
+        if call.args().len() == 2 {
+            let [target_id, string_id]: [_; 2] = call.args().try_into().unwrap();
+            let (target, string) = (self.value(target_id), self.value(string_id));
 
-        let (string_ptr, string_len) = (
-            self.string_ptr(string, builder),
-            self.string_length(string, self.is_readonly(string_id), builder),
-        );
+            let (string_ptr, string_len) = (
+                self.string_ptr(string, builder),
+                self.string_length(string, self.is_readonly(string_id), builder),
+            );
 
-        let push_str = self
-            .imports
-            .get("string_push_str", self.module, builder.func);
-        let concat = builder
-            .ins()
-            .call(push_str, &[target, string_ptr, string_len]);
+            let push_str = self
+                .imports
+                .get("string_push_str", self.module, builder.func);
+            let concatenated = builder.call_fn(push_str, &[target, string_ptr, string_len]);
 
-        if let Some(writer) = self.comment_writer.as_deref() {
-            writer
-                .borrow_mut()
-                .add_comment(concat, format!("call @dbsp.str.concat({target}, {string})"));
+            self.add_expr(expr_id, concatenated, ColumnType::String, None);
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.value_def(concatenated),
+                    format!("call @dbsp.str.concat({target}, {string})"),
+                );
+            }
+
+        // Concatenation for an unbounded number of strings
+        } else {
+            let target_id = call.args()[0];
+            let target = self.value(target_id);
+
+            let strings = &call.args()[1..];
+
+            // Make a stack slot to hold the strings we're passing
+            let slice_size = size_of::<*const u8>() * 2;
+            let slot_size = strings.len() * slice_size;
+            let string_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                slot_size as u32,
+            ));
+
+            // Fill the stack slot with all of the strings
+            for (idx, &string_id) in strings.iter().enumerate() {
+                let string = self.value(string_id);
+                let (string_ptr, string_len) = (
+                    self.string_ptr(string, builder),
+                    self.string_length(string, self.is_readonly(string_id), builder),
+                );
+
+                // Store each string's pointer and length to the stack slot
+                builder
+                    .ins()
+                    .stack_store(string_ptr, string_slot, (idx * slice_size) as i32);
+                builder.ins().stack_store(
+                    string_len,
+                    string_slot,
+                    (idx * slice_size + size_of::<*const u8>()) as i32,
+                );
+            }
+
+            // Get the address and length of the strings
+            let ptr_ty = self.pointer_type();
+            let strings_addr = builder.ins().stack_addr(ptr_ty, string_slot, 0);
+            let strings_len = builder.ins().iconst(ptr_ty, strings.len() as i64);
+
+            // Call the variadic push function
+            let push_str = self
+                .imports
+                .get("string_push_str_variadic", self.module, builder.func);
+            let concatenated = builder.call_fn(push_str, &[target, strings_addr, strings_len]);
+
+            self.add_expr(expr_id, concatenated, ColumnType::String, None);
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.value_def(concatenated),
+                    format!("call @dbsp.str.concat({target_id}, {strings:?})"),
+                );
+            }
         }
     }
 
-    // FIXME: Handle the case where both strings are empty, we can't write to a
-    // sigil string
+    // TODO: Allow to be variadic
     fn string_concat_clone(
         &mut self,
         expr_id: ExprId,
         call: &Call,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let [first_id, second_id]: [_; 2] = call.args().try_into().unwrap();
-        let (first, second) = (self.value(first_id), self.value(second_id));
+        let string_ids = call.args();
+        let strings: Vec<_> = string_ids
+            .iter()
+            .map(|&string| self.value(string))
+            .collect();
 
         // Load the string's lengths
-        let (first_length, second_length) = (
-            self.string_length(first, self.is_readonly(first_id), builder),
-            self.string_length(second, self.is_readonly(second_id), builder),
-        );
+        let lengths: Vec<_> = strings
+            .iter()
+            .zip(string_ids)
+            .map(|(&string, &string_id)| {
+                self.string_length(string, self.is_readonly(string_id), builder)
+            })
+            .collect();
 
-        // Add both string's lengths so that we can allocate a string to hold
-        // both of them, trapping if it overflows
-        let total_length =
-            builder
-                .ins()
-                .uadd_overflow_trap(first_length, second_length, TRAP_CAPACITY_OVERFLOW);
+        // TODO: A tree reduction is probably better here
+        // TODO: `.uadd_overflow_trap(sum, length, TRAP_CAPACITY_OVERFLOW)`?
+        let total_length = lengths[1..]
+            .iter()
+            .fold(lengths[0], |sum, &length| builder.ins().iadd(sum, length));
+
+        let do_concat = builder.create_block();
+        let after = builder.create_block();
+        builder.append_block_param(after, self.pointer_type());
+
+        let sigil = builder
+            .ins()
+            .iconst(self.pointer_type(), ThinStr::sigil_addr() as i64);
+        builder
+            .ins()
+            .brif(total_length, do_concat, &[], after, &[sigil]);
+
+        builder.switch_to_block(do_concat);
 
         // Allocate a string of the requested capacity
         let with_capacity = self
             .imports
             .get("string_with_capacity", self.module, builder.func);
         let allocated = builder.call_fn(with_capacity, &[total_length]);
-        let allocated_ptr = self.string_ptr(allocated, builder);
 
-        // Copy the first string into the allocation
-        let first_ptr = self.string_ptr(first, builder);
-        builder.call_memmove(
-            self.frontend_config(),
-            allocated_ptr,
-            first_ptr,
-            first_length,
-        );
+        // Copy each string into the allocated string
+        let mut target_pointer = self.string_ptr(allocated, builder);
+        for (idx, (string, length)) in strings.into_iter().zip(lengths).enumerate() {
+            // Copy each string into the allocation
+            let string_ptr = self.string_ptr(string, builder);
+            builder.call_memmove(self.frontend_config(), target_pointer, string_ptr, length);
 
-        // Offset the allocation's pointer to the end of the first string's data
-        let allocated_ptr2 = builder.ins().iadd(allocated_ptr, first_length);
-
-        // Copy the second string's data into the allocation
-        let second_ptr = self.string_ptr(second, builder);
-        builder.call_memmove(
-            self.frontend_config(),
-            allocated_ptr2,
-            second_ptr,
-            second_length,
-        );
+            if idx + 1 != string_ids.len() {
+                // Advance the pointer
+                target_pointer = builder.ins().iadd(target_pointer, length);
+            }
+        }
 
         // Set the allocated string's length
         let length_offset = ThinStr::length_offset();
@@ -530,14 +596,17 @@ impl CodegenCtx<'_> {
             length_offset as i32,
         );
 
-        self.add_expr(expr_id, allocated, ColumnType::String, None);
+        builder.ins().jump(after, &[allocated]);
+        builder.switch_to_block(after);
+
+        let concatenated_string = builder.block_params(after)[0];
+        self.add_expr(expr_id, concatenated_string, ColumnType::String, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
             let inst = builder.value_def(allocated);
-            writer.borrow_mut().add_comment(
-                inst,
-                format!("call @dbsp.str.concat_clone({first}, {second})"),
-            );
+            writer
+                .borrow_mut()
+                .add_comment(inst, format!("call @dbsp.str.concat_clone({string_ids:?})"));
         }
     }
 
@@ -602,6 +671,8 @@ impl CodegenCtx<'_> {
             "dbsp.str.is_nfkd" => "string_is_nfkd",
             "dbsp.str.is_lowercase" => "string_is_lowercase",
             "dbsp.str.is_uppercase" => "string_is_uppercase",
+            // TODO: is_ascii can be implemented manually
+            "dbsp.str.is_ascii" => "string_is_ascii",
             _ => unreachable!(),
         };
 

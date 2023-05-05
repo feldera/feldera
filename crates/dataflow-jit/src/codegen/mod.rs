@@ -58,7 +58,7 @@ const TRAP_NULL_PTR: TrapCode = TrapCode::User(0);
 const TRAP_UNALIGNED_PTR: TrapCode = TrapCode::User(1);
 const TRAP_INVALID_BOOL: TrapCode = TrapCode::User(2);
 const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
-const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
+// const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 const TRAP_ABORT: TrapCode = TrapCode::User(6);
 
