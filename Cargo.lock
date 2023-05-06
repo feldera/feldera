@@ -1848,7 +1848,6 @@ dependencies = [
  "colored",
  "daemonize",
  "dbsp_adapters",
- "dbsp_pipeline_manager",
  "deadpool-postgres",
  "env_logger",
  "fs_extra",
@@ -1856,10 +1855,12 @@ dependencies = [
  "futures-util",
  "log",
  "mime",
+ "pg-client-config",
  "pg-embed",
  "pretty_assertions",
  "proptest",
  "proptest-derive",
+ "rand",
  "regex",
  "reqwest",
  "serde",
@@ -1966,6 +1967,12 @@ dependencies = [
  "redox_users",
  "winapi",
 ]
+
+[[package]]
+name = "dlv-list"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0688c2a7f92e427f44895cd63841bff7b29f8d7a1648b9e7e07a4a365b2e1257"
 
 [[package]]
 name = "dotenvy"
@@ -3225,6 +3232,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-multimap"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccd746e37177e1711c20dd619a1620f34f5c8b569c53590a72dedd5344d8924a"
+dependencies = [
+ "dlv-list",
+ "hashbrown 0.12.3",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3359,6 +3376,17 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_derive",
+]
+
+[[package]]
+name = "pg-client-config"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdaef248e227c77c51e5e3ea05e86c3b2831cdeb70f67655b123e51c541bf894"
+dependencies = [
+ "rust-ini",
+ "thiserror",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -4025,6 +4053,16 @@ checksum = "512b0ab6853f7e14e3c8754acb43d6f748bb9ced66aa5915a6553ac8213f7731"
 dependencies = [
  "sha2",
  "walkdir",
+]
+
+[[package]]
+name = "rust-ini"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6d5f2436026b4f6e79dc829837d467cc7e9a55ee40e750d716713540715a2df"
+dependencies = [
+ "cfg-if",
+ "ordered-multimap",
 ]
 
 [[package]]
