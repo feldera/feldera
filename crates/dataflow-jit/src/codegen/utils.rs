@@ -1,9 +1,9 @@
+use crate::codegen::NativeLayout;
 use cranelift::{
     codegen::ir::{FuncRef, Inst},
     prelude::{types, Block, FunctionBuilder, InstBuilder, IntCC, MemFlags, Type, Value},
 };
-
-use crate::codegen::NativeLayout;
+use std::cmp::Ordering;
 
 pub(crate) trait FunctionBuilderExt {
     /// Seals the current basic block
@@ -214,4 +214,44 @@ pub(super) fn column_non_null(
             builder.ins().band_imm(bitset, 1i64 << bit_idx)
         }
     }
+}
+
+pub(super) fn set_column_null(
+    is_null: Value,
+    column: usize,
+    dest: Value,
+    dest_flags: MemFlags,
+    layout: &NativeLayout,
+    builder: &mut FunctionBuilder<'_>,
+) {
+    // If the value is null, set the cloned value to null
+    let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
+    let bitset_ty = bitset_ty.native_type();
+
+    let bitset = if layout.bitset_occupants(column) == 1 {
+        let null_ty = builder.value_type(is_null);
+        match bitset_ty.bytes().cmp(&null_ty.bytes()) {
+            Ordering::Less => builder.ins().ireduce(bitset_ty, is_null),
+            Ordering::Equal => is_null,
+            Ordering::Greater => builder.ins().uextend(bitset_ty, is_null),
+        }
+    } else {
+        // Load the bitset's current value
+        let current_bitset = builder
+            .ins()
+            .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
+
+        let mask = 1 << bit_idx;
+        let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
+        let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
+
+        builder
+            .ins()
+            .select(is_null, bitset_with_null, bitset_with_non_null)
+    };
+
+    // Store the newly modified bitset back into the row
+    builder
+        .ins()
+        .store(dest_flags, bitset, dest, bitset_offset as i32);
 }
