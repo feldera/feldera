@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 #[cfg(test)]
 mod test;
 
-#[cfg(any(test, feature = "pg-embed"))]
+#[cfg(feature = "pg-embed")]
 mod pg_setup;
 pub(crate) mod storage;
 
@@ -583,11 +583,11 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .query_opt(
-                "UPDATE project SET 
-                 status = (CASE WHEN version = $4 THEN $1 ELSE status END), 
-                 error = (CASE WHEN version = $4 THEN $2 ELSE error END), 
+                "UPDATE project SET
+                 status = (CASE WHEN version = $4 THEN $1 ELSE status END),
+                 error = (CASE WHEN version = $4 THEN $2 ELSE error END),
                  status_since = (CASE WHEN version = $4 THEN extract(epoch from now())
-                                 ELSE status_since END) 
+                                 ELSE status_since END)
                  WHERE id = $3 RETURNING id",
                 &[&status, &error, &project_id.0, &expected_version.0],
             )
@@ -649,11 +649,11 @@ impl Storage for ProjectDB {
             // For every pipeline config, produce a JSON representation of all connectors
             .query(
                 "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
-                COALESCE(json_agg(json_build_object('uuid', uuid, 
-                                                    'connector_id', connector_id, 
-                                                    'config', ac.config, 
-                                                    'is_input', is_input)) 
-                                FILTER (WHERE uuid IS NOT NULL), 
+                COALESCE(json_agg(json_build_object('uuid', uuid,
+                                                    'connector_id', connector_id,
+                                                    'config', ac.config,
+                                                    'is_input', is_input))
+                                FILTER (WHERE uuid IS NOT NULL),
                         '[]')
                 FROM project_config p
                 LEFT JOIN attached_connector ac on p.id = ac.config_id
@@ -694,11 +694,11 @@ impl Storage for ProjectDB {
             .await?
             .query_opt(
                 "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
-                COALESCE(json_agg(json_build_object('uuid', uuid, 
-                                                    'connector_id', connector_id, 
-                                                    'config', ac.config, 
-                                                    'is_input', is_input)) 
-                                FILTER (WHERE uuid IS NOT NULL), 
+                COALESCE(json_agg(json_build_object('uuid', uuid,
+                                                    'connector_id', connector_id,
+                                                    'config', ac.config,
+                                                    'is_input', is_input))
+                                FILTER (WHERE uuid IS NOT NULL),
                         '[]')
                 FROM project_config p
                 LEFT JOIN attached_connector ac on p.id = ac.config_id
@@ -1142,14 +1142,31 @@ impl ProjectDB {
     /// Connect to the project database.
     ///
     /// # Arguments
-    /// - `connection_str`: The connection string to the database.
-    /// - `pool_options`: The pool options to use.
+    /// - `config` a tokio postgres config
     /// - `initial_sql`: The initial SQL to execute on the database.
-    /// - `database_dir`: The directory to use for the embedded Postgres
-    ///   database.
-    /// - `is_persistent`: Whether the embedded postgres database should be
-    ///   persistent or removed on shutdown.
-    /// - `port`: The port to use for the embedded Postgres database to run on.
+    ///
+    /// # Notes
+    /// Maybe this should become the preferred way to create a ProjectDb
+    /// together with `pg-client-config` (and drop `connect_inner`).
+    #[cfg(all(test, not(feature = "pg-embed")))]
+    async fn with_config(
+        config: tokio_postgres::Config,
+        initial_sql: &Option<String>,
+    ) -> AnyResult<Self> {
+        ProjectDB::initialize(
+            config,
+            initial_sql,
+            #[cfg(feature = "pg-embed")]
+            None,
+        )
+        .await
+    }
+
+    /// Connect to the project database.
+    ///
+    /// # Arguments
+    /// - `connection_str`: The connection string to the database.
+    /// - `initial_sql`: The initial SQL to execute on the database.
     async fn connect_inner(
         connection_str: &str,
         initial_sql: &Option<String>,
@@ -1158,9 +1175,23 @@ impl ProjectDB {
         if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
         }
-
-        debug!("Opening connection to {:?}", connection_str);
         let config = connection_str.parse::<tokio_postgres::Config>()?;
+        debug!("Opening connection to {:?}", connection_str);
+
+        ProjectDB::initialize(
+            config,
+            initial_sql,
+            #[cfg(feature = "pg-embed")]
+            pg_inst,
+        )
+        .await
+    }
+
+    async fn initialize(
+        config: tokio_postgres::Config,
+        initial_sql: &Option<String>,
+        #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
+    ) -> AnyResult<Self> {
         let mgr_config = deadpool_postgres::ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         };

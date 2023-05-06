@@ -1,9 +1,8 @@
 use super::PipelineDescr;
 use super::{
     storage::Storage, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
-    ConnectorType, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
+    ConnectorType, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
 };
-use crate::db::{pg_setup, DBError};
 use crate::Direction;
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
@@ -14,18 +13,23 @@ use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::SystemTime;
 use std::vec;
-use tempfile::TempDir;
 use tokio::sync::Mutex;
+
+#[cfg(feature = "pg-embed")]
+use crate::db::pg_setup;
 
 struct DbHandle {
     db: ProjectDB,
-    _temp_dir: TempDir,
+    #[cfg(feature = "pg-embed")]
+    _temp_dir: tempfile::TempDir,
+    #[cfg(not(feature = "pg-embed"))]
+    config: tokio_postgres::Config,
 }
 
 impl Drop for DbHandle {
+    #[cfg(feature = "pg-embed")]
     fn drop(&mut self) {
         // We drop `pg` before the temp dir gets deleted (which will
         // shutdown postgres). Otherwise postgres log an error that the
@@ -37,6 +41,29 @@ impl Drop for DbHandle {
             };
         }
     }
+
+    #[cfg(not(feature = "pg-embed"))]
+    fn drop(&mut self) {
+        let _r = async {
+            let db_name = self.config.get_dbname().unwrap_or("").clone();
+
+            // This command cannot be executed while connected to the target
+            // database. Thus we make a new connection.
+            let mut config = self.config.clone();
+            config.dbname("");
+            let (client, conn) = config.connect(tokio_postgres::NoTls).await.unwrap();
+            tokio::spawn(async move {
+                if let Err(e) = conn.await {
+                    eprintln!("connection error: {}", e);
+                }
+            });
+
+            client
+                .execute(format!("DROP DATABASE {} FORCE", db_name).as_str(), &[])
+                .await
+                .unwrap();
+        };
+    }
 }
 
 #[cfg(test)]
@@ -46,11 +73,14 @@ impl Version {
     }
 }
 
+#[cfg(feature = "pg-embed")]
 async fn test_setup() -> DbHandle {
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicU16, Ordering};
+
     let _temp_dir = tempfile::tempdir().unwrap();
     let temp_path = _temp_dir.path();
 
-    use std::net::TcpListener;
     // Find a free port to use for running the test database.
     let port = {
         /// This is a fallback method counter for port selection in case binding
@@ -75,6 +105,40 @@ async fn test_setup() -> DbHandle {
     DbHandle {
         db: conn,
         _temp_dir,
+    }
+}
+
+#[cfg(not(feature = "pg-embed"))]
+async fn test_setup() -> DbHandle {
+    use pg_client_config::load_config;
+
+    let mut config = load_config(None).unwrap();
+    let test_db = format!("test_{}", rand::thread_rng().gen::<u32>());
+    let (client, conn) = config
+        .connect(tokio_postgres::NoTls)
+        .await
+        .expect("Failure connecting to test PG instance");
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    client
+        .execute(format!("CREATE DATABASE {}", test_db).as_str(), &[])
+        .await
+        .expect("Failure in test setup");
+    drop(client);
+
+    log::debug!("tests connecting to: {config:#?}");
+
+    config.dbname(&test_db);
+    let conn = ProjectDB::with_config(config.clone(), &Some("".to_string()))
+        .await
+        .unwrap();
+
+    DbHandle {
+        db: conn,
+        config: config,
     }
 }
 
