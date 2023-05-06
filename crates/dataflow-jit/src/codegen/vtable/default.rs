@@ -1,21 +1,19 @@
 use crate::{
     codegen::{
-        utils::{column_non_null, FunctionBuilderExt},
-        Codegen, CodegenCtx,
+        layout::MemoryEntry, utils::FunctionBuilderExt, BitSetType, Codegen, CodegenCtx, NativeType,
     },
-    ir::{ColumnType, LayoutId},
+    ir::LayoutId,
+    ThinStr,
 };
-use cranelift::prelude::{types, FunctionBuilder, InstBuilder, IntCC, MemFlags};
+use cranelift::prelude::{FunctionBuilder, InstBuilder, MemFlags};
 use cranelift_module::{FuncId, Module};
 
 impl Codegen {
-    #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_default(&mut self, layout_id: LayoutId) -> FuncId {
         tracing::info!("creating default vtable function for {layout_id}");
 
-        // fn(*muy u8)
+        // fn(*mut u8)
         let func_id = self.new_vtable_fn([self.module.isa().pointer_type()], None);
-        let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_default"),
@@ -42,94 +40,99 @@ impl Codegen {
 
             let (layout, row_layout) = ctx.layout_cache.get_layouts(layout_id);
 
-            // Zero sized types have nothing to hash
+            ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
+
+            // Zero sized types are already initialized to their default
             if !layout.is_zero_sized() {
-                for (idx, (ty, nullable)) in row_layout.iter().enumerate() {
-                    if ty.is_unit() && !nullable {
-                        continue;
-                    }
+                // If all fields are non-null and trivially zeroable, we can emit a memset
+                if !row_layout.has_nullable_columns()
+                    && row_layout.columns().iter().all(|ty| !ty.is_string())
+                {
+                    tracing::trace!("{layout_id} is trivially initializable, emitting zeroed memset for default");
 
-                    let next_hash = if nullable {
-                        // Zero = value isn't null, non-zero = value is null
-                        let non_null = column_non_null(idx, ptr, &layout, &mut builder, true);
-                        // One = value isn't null, zero = value is null
-                        let mut non_null = builder.ins().icmp_imm(IntCC::Equal, non_null, 0);
-                        // Shrink the null-ness to a single byte
-                        if builder.func.dfg.value_type(non_null) != types::I8 {
-                            non_null = builder.ins().ireduce(types::I8, non_null);
+                    builder.emit_small_memset(
+                        ctx.frontend_config(),
+                        place,
+                        0x00,
+                        layout.size() as u64,
+                        layout.align() as u8,
+                        MemFlags::trusted(),
+                    );
+                } else {
+                    // TODO: Could emit memsets for zeroable head and tail of type
+
+                    for entry in layout.memory_order() {
+                        match *entry {
+                            // Set non-null columns to their default value
+                            MemoryEntry::Column {
+                                offset,
+                                ty,
+                                column,
+                                nullable: false,
+                            } => {
+                                // For strings initialize to the empty string
+                                let default = if row_layout.column_type(column as usize).is_string()
+                                {
+                                    builder
+                                        .ins()
+                                        .iconst(ctx.pointer_type(), ThinStr::sigil_addr() as i64)
+
+                                // For other scalars, initialize to zero
+                                } else {
+                                    let native = ty.native_type(&ctx.frontend_config());
+                                    match ty {
+                                        NativeType::U8
+                                        | NativeType::I8
+                                        | NativeType::U16
+                                        | NativeType::I16
+                                        | NativeType::U32
+                                        | NativeType::I32
+                                        | NativeType::U64
+                                        | NativeType::I64
+                                        | NativeType::Ptr
+                                        // Zero is false for bools
+                                        | NativeType::Bool
+                                        | NativeType::Usize
+                                        | NativeType::Isize => builder.ins().iconst(native, 0),
+                                        NativeType::F32 => builder.ins().f32const(0.0),
+                                        NativeType::F64 => builder.ins().f64const(0.0),
+                                    }
+                                };
+
+                                builder.ins().store(
+                                    MemFlags::trusted(),
+                                    default,
+                                    place,
+                                    offset as i32,
+                                );
+                            }
+
+                            // Do nothing for nullable columns
+                            MemoryEntry::Column { .. } => {}
+
+                            // Set all bitsets to null
+                            MemoryEntry::BitSet { offset, ty, .. } => {
+                                let all_ones = builder.ins().iconst(
+                                    ty.native_type(),
+                                    match ty {
+                                        BitSetType::U8 => u8::MAX as i64,
+                                        BitSetType::U16 => u16::MAX as i64,
+                                        BitSetType::U32 => u32::MAX as i64,
+                                        BitSetType::U64 => u64::MAX as i64,
+                                    },
+                                );
+
+                                builder.ins().store(
+                                    MemFlags::trusted(),
+                                    all_ones,
+                                    place,
+                                    offset as i32,
+                                );
+                            }
+
+                            // Do nothing to padding bytes
+                            MemoryEntry::Padding { .. } => {}
                         }
-
-                        // Hash the null-ness byte
-                        let hash_u8 = imports.u8_hash(ctx.module, builder.func);
-                        builder.ins().call(hash_u8, &[hasher, non_null]);
-
-                        // For nullable unit types we don't need to do anything else
-                        if ty.is_unit() {
-                            continue;
-                        }
-
-                        // For all other types we only hash the inner value if it's non-null
-                        let hash_innards = builder.create_block();
-                        let next_hash = builder.create_block();
-                        builder
-                            .ins()
-                            .brif(non_null, hash_innards, &[], next_hash, &[]);
-
-                        builder.seal_block(builder.current_block().unwrap());
-                        builder.switch_to_block(hash_innards);
-                        Some(next_hash)
-                    } else {
-                        None
-                    };
-
-                    debug_assert!(!ty.is_unit());
-
-                    let offset = layout.offset_of(idx) as i32;
-                    let native_ty = layout.type_of(idx).native_type(&ctx.frontend_config());
-
-                    // Load the source value
-                    let flags = MemFlags::trusted().with_readonly();
-                    let value = if !native_ty.is_float() {
-                        builder.ins().load(native_ty, flags, ptr, offset)
-
-                    // If total float comparisons are enabled, we normalize the
-                    // float before hashing it
-                    } else if self.config.total_float_comparisons {
-                        let float = builder.ins().load(native_ty, flags, ptr, offset);
-                        ctx.normalize_float(float, &mut builder)
-
-                    // Otherwise we load the floating point value as its raw
-                    // bits and then hash those raw bits
-                    } else {
-                        builder.ins().load(native_ty.as_int(), flags, ptr, offset)
-                    };
-
-                    let hash_function = match ty {
-                        ColumnType::Bool | ColumnType::U8 => {
-                            imports.u8_hash(ctx.module, builder.func)
-                        }
-                        ColumnType::I8 => imports.i8_hash(ctx.module, builder.func),
-                        ColumnType::U16 => imports.u16_hash(ctx.module, builder.func),
-                        ColumnType::I16 => imports.i16_hash(ctx.module, builder.func),
-                        ColumnType::U32 => imports.u32_hash(ctx.module, builder.func),
-                        ColumnType::I32 | ColumnType::Date => {
-                            imports.i32_hash(ctx.module, builder.func)
-                        }
-                        ColumnType::U64 => imports.u64_hash(ctx.module, builder.func),
-                        ColumnType::I64 | ColumnType::Timestamp => {
-                            imports.i64_hash(ctx.module, builder.func)
-                        }
-                        ColumnType::F32 => imports.u32_hash(ctx.module, builder.func),
-                        ColumnType::F64 => imports.u64_hash(ctx.module, builder.func),
-                        ColumnType::String => imports.string_hash(ctx.module, builder.func),
-                        ColumnType::Unit => unreachable!(),
-                    };
-                    builder.ins().call(hash_function, &[hasher, value]);
-
-                    if let Some(next_clone) = next_hash {
-                        builder.ins().jump(next_clone, &[]);
-                        builder.seal_block(builder.current_block().unwrap());
-                        builder.switch_to_block(next_clone);
                     }
                 }
             }

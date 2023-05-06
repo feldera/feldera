@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
-        utils::{column_non_null, FunctionBuilderExt},
-        Codegen, CodegenCtx, NativeLayout,
+        utils::{column_non_null, set_column_null, FunctionBuilderExt},
+        Codegen, CodegenCtx,
     },
     ir::{nodes::IndexByColumn, LayoutId},
     row::Row,
@@ -9,7 +9,7 @@ use crate::{
 use cranelift::prelude::{AbiParam, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
 use cranelift_codegen::ir::UserFuncName;
 use cranelift_module::{FuncId, Module};
-use std::{cmp::Ordering, mem::size_of};
+use std::mem::size_of;
 
 impl Codegen {
     // Returns `(owned, borrowed)` versions
@@ -456,44 +456,4 @@ impl CodegenCtx<'_> {
             .ins()
             .store(MemFlags::trusted(), source_value, dest_ptr, dest_offset);
     }
-}
-
-fn set_column_null(
-    is_null: Value,
-    column: usize,
-    dest: Value,
-    dest_flags: MemFlags,
-    layout: &NativeLayout,
-    builder: &mut FunctionBuilder<'_>,
-) {
-    // If the value is null, set the cloned value to null
-    let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
-    let bitset_ty = bitset_ty.native_type();
-
-    let bitset = if layout.bitset_occupants(column) == 1 {
-        let null_ty = builder.value_type(is_null);
-        match bitset_ty.bytes().cmp(&null_ty.bytes()) {
-            Ordering::Less => builder.ins().ireduce(bitset_ty, is_null),
-            Ordering::Equal => is_null,
-            Ordering::Greater => builder.ins().uextend(bitset_ty, is_null),
-        }
-    } else {
-        // Load the bitset's current value
-        let current_bitset = builder
-            .ins()
-            .load(bitset_ty, dest_flags, dest, bitset_offset as i32);
-
-        let mask = 1 << bit_idx;
-        let bitset_with_null = builder.ins().bor_imm(current_bitset, mask);
-        let bitset_with_non_null = builder.ins().band_imm(current_bitset, !mask);
-
-        builder
-            .ins()
-            .select(is_null, bitset_with_null, bitset_with_non_null)
-    };
-
-    // Store the newly modified bitset back into the row
-    builder
-        .ins()
-        .store(dest_flags, bitset, dest, bitset_offset as i32);
 }

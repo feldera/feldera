@@ -1,7 +1,7 @@
 mod clone;
 mod cmp;
 mod debug;
-// mod default;
+mod default;
 mod drop;
 mod hash;
 mod tests;
@@ -173,7 +173,7 @@ vtable! {
     drop_slice_in_place: unsafe extern "C" fn(*mut u8, usize),
     type_name: unsafe extern "C" fn(*mut usize) -> *const u8,
     hash: unsafe extern "C" fn(&mut &mut dyn Hasher, *const u8),
-    // default: unsafe extern "C" fn (*mut u8),
+    default: unsafe extern "C" fn (*mut u8),
 }
 
 // TODO: Move these functions onto `CodegenCtx`
