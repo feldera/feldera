@@ -4,27 +4,64 @@ use crate::{
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,
-        ColumnType, Constant, Graph, GraphExt, NodeId, RowLayout, Validator,
+        ColumnType, Constant, Graph, GraphExt, LayoutId, NodeId, RowLayout, Validator,
     },
-    row::{row_from_literal, Row},
+    row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
 };
+use cranelift_module::FuncId;
+use csv::StringRecord;
 use dbsp::{
     trace::{BatchReader, Cursor},
     DBSPHandle, Error, Runtime,
 };
-use std::{collections::BTreeMap, ops::Not, thread, time::Instant};
+use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
+
+// TODO: A lot of this still needs fleshing out, mainly the little tweaks that
+// users may want to add to parsing and how to do that ergonomically.
+// We also need checks to make sure that the type is being fully initialized, as
+// well as support for parsing maps from csv
+
+pub struct Demands<'a> {
+    #[allow(clippy::type_complexity)]
+    csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<&'a str>)>>,
+}
+
+impl<'a> Demands<'a> {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            csv: BTreeMap::new(),
+        }
+    }
+
+    pub fn add_csv_demand(
+        &mut self,
+        layout: LayoutId,
+        column_mappings: Vec<(usize, usize, Option<&'a str>)>,
+    ) {
+        let displaced = self.csv.insert(layout, column_mappings);
+        assert_eq!(displaced, None);
+    }
+}
 
 pub struct DbspCircuit {
     jit: JitHandle,
     runtime: DBSPHandle,
     inputs: BTreeMap<NodeId, (RowInput, StreamLayout)>,
     outputs: BTreeMap<NodeId, (RowOutput, StreamLayout)>,
+    csv_demands: BTreeMap<LayoutId, FuncId>,
     layout_cache: NativeLayoutCache,
 }
 
 impl DbspCircuit {
-    pub fn new(mut graph: Graph, optimize: bool, workers: usize, config: CodegenConfig) -> Self {
+    pub fn new(
+        mut graph: Graph,
+        optimize: bool,
+        workers: usize,
+        config: CodegenConfig,
+        demands: Demands,
+    ) -> Self {
         {
             let mut validator = Validator::new(graph.layout_cache().clone());
             validator
@@ -39,7 +76,17 @@ impl DbspCircuit {
             }
         }
 
-        let (dataflow, jit, layout_cache) = CompiledDataflow::new(&graph, config);
+        let mut csv_demands = BTreeMap::new();
+        let (dataflow, jit, layout_cache) = CompiledDataflow::new(&graph, config, |codegen| {
+            csv_demands = demands
+                .csv
+                .into_iter()
+                .map(|(layout, mappings)| {
+                    let from_csv = codegen.codegen_layout_from_csv(layout, &mappings);
+                    (layout, from_csv)
+                })
+                .collect();
+        });
 
         let (runtime, (inputs, outputs)) =
             Runtime::init_circuit(workers, move |circuit| dataflow.construct(circuit))
@@ -50,6 +97,7 @@ impl DbspCircuit {
             runtime,
             inputs,
             outputs,
+            csv_demands,
             layout_cache,
         }
     }
@@ -126,6 +174,46 @@ impl DbspCircuit {
                 input.as_map_mut().unwrap().append(&mut batch);
             }
         }
+    }
+
+    pub fn append_csv_input(&mut self, target: NodeId, path: &Path) {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap();
+
+        let mut csv = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(path)
+            .unwrap();
+
+        let start = Instant::now();
+
+        let records = match *layout {
+            StreamLayout::Set(key_layout) => {
+                let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
+                let marshall_csv = unsafe {
+                    transmute::<_, unsafe extern "C" fn(*mut u8, *const StringRecord)>(
+                        self.jit
+                            .jit
+                            .get_finalized_function(self.csv_demands[&key_layout]),
+                    )
+                };
+
+                let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
+                while csv.read_record(&mut buf).unwrap() {
+                    let mut row = UninitRow::new(key_vtable);
+                    unsafe { marshall_csv(row.as_mut_ptr(), &buf as *const StringRecord) };
+                    batch.push((unsafe { row.assume_init() }, 1));
+                }
+
+                let records = batch.len();
+                input.as_set_mut().unwrap().append(&mut batch);
+                records
+            }
+
+            StreamLayout::Map(..) => todo!(),
+        };
+
+        let elapsed = start.elapsed();
+        tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
     }
 
     pub fn consolidate_output(&mut self, output: NodeId) -> StreamCollection {
@@ -254,6 +342,7 @@ unsafe fn constant_from_column(
 mod tests {
     use crate::{
         codegen::CodegenConfig,
+        facade::Demands,
         ir::{
             literal::{NullableConstant, RowLiteral, StreamCollection},
             nodes::{IndexByColumn, StreamKind},
@@ -262,8 +351,6 @@ mod tests {
         sql_graph::SqlGraph,
         utils, DbspCircuit,
     };
-    use chrono::{NaiveDate, NaiveDateTime};
-    use csv::ReaderBuilder;
     use std::path::Path;
 
     #[test]
@@ -275,12 +362,28 @@ mod tests {
             .unwrap()
             .rematerialize();
 
+        let transactions_layout = graph.nodes()[&TRANSACTIONS_ID]
+            .clone()
+            .unwrap_source()
+            .layout();
+        let demographics_layout = graph.nodes()[&DEMOGRAPHICS_ID]
+            .clone()
+            .unwrap_source()
+            .layout();
+
+        let mut demands = Demands::new();
+        demands.add_csv_demand(transactions_layout, transaction_mappings());
+        demands.add_csv_demand(demographics_layout, demographic_mappings());
+
         // Create the circuit
-        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
 
         // Ingest data
-        circuit.append_input(TRANSACTIONS_ID, &transactions());
-        circuit.append_input(DEMOGRAPHICS_ID, &demographics());
+        circuit.append_csv_input(
+            TRANSACTIONS_ID,
+            &Path::new(PATH).join("transactions_20K.csv"),
+        );
+        circuit.append_csv_input(DEMOGRAPHICS_ID, &Path::new(PATH).join("demographics.csv"));
 
         // Step the circuit
         circuit.step().unwrap();
@@ -436,12 +539,19 @@ mod tests {
 
         let sink = graph.sink(transactions_join_demographics);
 
+        let mut demands = Demands::new();
+        demands.add_csv_demand(transactions_layout, transaction_mappings());
+        demands.add_csv_demand(demographics_layout, demographic_mappings());
+
         // Create the circuit
-        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
 
         // Ingest data
-        circuit.append_input(transactions_src, &transactions());
-        circuit.append_input(demographics_src, &demographics());
+        circuit.append_csv_input(
+            transactions_src,
+            &Path::new(PATH).join("transactions_20K.csv"),
+        );
+        circuit.append_csv_input(demographics_src, &Path::new(PATH).join("demographics.csv"));
 
         // Step the circuit
         circuit.step().unwrap();
@@ -458,103 +568,36 @@ mod tests {
         "/../../demo/project_demo01-TimeSeriesEnrich",
     );
 
-    fn transactions() -> StreamCollection {
-        let tsx_path = Path::new(PATH).join("transactions_20K.csv");
-
-        let mut transactions = Vec::new();
-
-        let mut reader = ReaderBuilder::new()
-            .has_headers(false)
-            .from_path(tsx_path)
-            .unwrap();
-        for tsx in reader.records() {
-            let tsx = tsx.unwrap();
-
-            let trans_date_trans_time = NaiveDateTime::parse_from_str(tsx.get(0).unwrap(), "%F %T")
-                .unwrap()
-                .timestamp_millis();
-            let cc_num = tsx.get(1).unwrap().parse::<u64>().unwrap() as f64;
-
-            let row = vec![
-                NullableConstant::NonNull(Constant::I64(trans_date_trans_time)),
-                NullableConstant::NonNull(Constant::F64(cc_num)),
-                NullableConstant::Nullable(Some(Constant::String(tsx.get(2).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::String(tsx.get(3).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::F64(
-                    tsx.get(4).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::String(tsx.get(5).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::I32(
-                    tsx.get(6).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::F64(
-                    tsx.get(7).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::F64(
-                    tsx.get(8).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::I32(
-                    tsx.get(9).unwrap().parse().unwrap(),
-                ))),
-            ];
-
-            transactions.push((RowLiteral::new(row), 1));
-        }
-
-        tracing::info!("loaded {} transactions", transactions.len());
-        StreamCollection::Set(transactions)
+    fn transaction_mappings() -> Vec<(usize, usize, Option<&'static str>)> {
+        vec![
+            (0, 0, Some("%F %T")),
+            (1, 1, None),
+            (2, 2, None),
+            (3, 3, None),
+            (4, 4, None),
+            (5, 5, None),
+            (6, 6, None),
+            (7, 7, None),
+            (8, 8, None),
+            (9, 9, None),
+        ]
     }
 
-    fn demographics() -> StreamCollection {
-        let demo_path = Path::new(PATH).join("demographics.csv");
-
-        let mut demographics = Vec::new();
-
-        let mut reader = ReaderBuilder::new()
-            .has_headers(false)
-            .from_path(demo_path)
-            .unwrap();
-        for demo in reader.records() {
-            let demo = demo.unwrap();
-
-            let cc_num = demo.get(0).unwrap().parse::<u64>().unwrap() as f64;
-            let dob = NaiveDate::parse_from_str(demo.get(11).unwrap(), "%F")
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-                / (86400 * 1000);
-
-            let row = vec![
-                NullableConstant::NonNull(Constant::F64(cc_num)),
-                NullableConstant::Nullable(Some(Constant::String(demo.get(1).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::String(demo.get(2).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::String(demo.get(3).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::String(demo.get(4).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::String(demo.get(5).unwrap().to_owned()))),
-                NullableConstant::Nullable(Some(Constant::I32(
-                    demo.get(6).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::F64(
-                    demo.get(7).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::F64(
-                    demo.get(8).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::I32(
-                    demo.get(9).unwrap().parse().unwrap(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::String(
-                    demo.get(10).unwrap().to_owned(),
-                ))),
-                NullableConstant::Nullable(Some(Constant::I32(dob as i32))),
-            ];
-
-            demographics.push((RowLiteral::new(row), 1));
-        }
-
-        tracing::info!("loaded {} demographics", demographics.len());
-        StreamCollection::Set(demographics)
+    fn demographic_mappings() -> Vec<(usize, usize, Option<&'static str>)> {
+        vec![
+            (0, 0, None),
+            (1, 1, None),
+            (2, 2, None),
+            (3, 3, None),
+            (4, 4, None),
+            (5, 5, None),
+            (6, 6, None),
+            (7, 7, None),
+            (8, 8, None),
+            (9, 9, None),
+            (10, 10, None),
+            (11, 11, Some("%F")),
+        ]
     }
 
     const TRANSACTIONS_ID: NodeId = NodeId::new(54);
@@ -3590,7 +3633,7 @@ mod tests {
             .rematerialize();
 
         // Create the circuit
-        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug());
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
 
         // Step the circuit
         circuit.step().unwrap();

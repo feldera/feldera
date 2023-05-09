@@ -5,13 +5,14 @@ use crate::{
     thin_str::ThinStrRef,
     ThinStr,
 };
-use chrono::{DateTime, Datelike, LocalResult, NaiveDate, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
     prelude::{types, AbiParam, FunctionBuilder, Signature as ClifSignature},
 };
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use csv::StringRecord;
 use std::{
     alloc::Layout,
     cell::RefCell,
@@ -19,6 +20,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug, Write},
     hash::{Hash, Hasher},
+    mem::MaybeUninit,
     rc::Rc,
     slice, str,
 };
@@ -188,7 +190,7 @@ impl ImportIntrinsics {
         match self
             .intrinsics
             .get_mut(intrinsic)
-            .expect("got intrinsic that doesn't exist")
+            .unwrap_or_else(|| panic!("got intrinsic that doesn't exist: `{intrinsic}`"))
         {
             Ok(func_ref) => *func_ref,
             func_id => {
@@ -502,6 +504,37 @@ intrinsics! {
     exp10f = fn(f32) -> f32,
     expm1 = fn(f64) -> f64,
     expm1f = fn(f32) -> f32,
+
+    // Csv functions
+    csv_get_u8 = fn(ptr, usize) -> u8,
+    csv_get_i8 = fn(ptr, usize) -> i8,
+    csv_get_u16 = fn(ptr, usize) -> u16,
+    csv_get_i16 = fn(ptr, usize) -> i16,
+    csv_get_u32 = fn(ptr, usize) -> u32,
+    csv_get_i32 = fn(ptr, usize) -> i32,
+    csv_get_u64 = fn(ptr, usize) -> u64,
+    csv_get_i64 = fn(ptr, usize) -> i64,
+    csv_get_f32 = fn(ptr, usize) -> f32,
+    csv_get_f64 = fn(ptr, usize) -> f64,
+    csv_get_str = fn(ptr, usize) -> str,
+    csv_get_bool = fn(ptr, usize) -> bool,
+    csv_get_date = fn(ptr, usize, ptr, ptr) -> date,
+    csv_get_timestamp = fn(ptr, usize, ptr, ptr) -> timestamp,
+
+    csv_get_nullable_u8 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_i8 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_u16 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_i16 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_u32 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_i32 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_u64 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_i64 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_f32 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_f64 = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_str = fn(ptr, usize) -> str,
+    csv_get_nullable_bool = fn(ptr, usize, ptr) -> bool,
+    csv_get_nullable_date = fn(ptr, usize, ptr, ptr, ptr) -> bool,
+    csv_get_nullable_timestamp = fn(ptr, usize, ptr, ptr, ptr) -> bool,
 }
 
 /// Allocates memory with the given size and alignment
@@ -971,4 +1004,178 @@ hash! {
     u64 = u64,
     i64 = i64,
     string = ThinStrRef,
+}
+
+macro_rules! parse_csv {
+    ($($ty:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<csv_get_ $ty>](record: &StringRecord, column: usize) -> $ty {
+                    record
+                        .get(column)
+                        .and_then(|column| match column.parse() {
+                            Ok(value) => Some(value),
+                            Err(error) => {
+                                tracing::error!(
+                                    "failed to parse {} from column {column}: {error}",
+                                    stringify!($ty),
+                                );
+                                None
+                            }
+                        })
+                        .unwrap_or(<$ty>::default())
+                }
+
+                // Returns `true` if the value is null
+                unsafe extern "C" fn [<csv_get_nullable_ $ty>](
+                    record: &StringRecord,
+                    column: usize,
+                    output: &mut MaybeUninit<$ty>,
+                ) -> bool {
+                    if let Some(value) = record
+                        .get(column)
+                        .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
+                        .and_then(|column| match column.parse() {
+                            Ok(value) => Some(value),
+                            Err(error) => {
+                                tracing::error!(
+                                    "failed to parse {} from column {column}: {error}",
+                                    stringify!($ty),
+                                );
+                                None
+                            }
+                        })
+                    {
+                        output.write(value);
+                        false
+                    } else {
+                        true
+                    }
+                }
+            )+
+        }
+    }
+}
+
+// TODO: Use lexical to parse floats
+parse_csv! {
+    u8, i8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
+    f32, f64,
+    bool,
+}
+
+unsafe extern "C" fn csv_get_str(record: &StringRecord, column: usize) -> ThinStr {
+    record
+        .get(column)
+        .map_or_else(
+            || {
+                tracing::error!(
+                    "tried to get string from column {column} which doesn't exist, record only has {} rows",
+                    record.len(),
+                );
+                ThinStr::new()
+            },
+            ThinStr::from,
+        )
+}
+
+unsafe extern "C" fn csv_get_nullable_str(record: &StringRecord, column: usize) -> Option<ThinStr> {
+    record.get(column).map(ThinStr::from)
+}
+
+unsafe extern "C" fn csv_get_date(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+) -> i32 {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    record
+        .get(column)
+        .and_then(|date| match NaiveDate::parse_from_str(date, format) {
+            Ok(date) => date.and_hms_opt(0, 0, 0),
+            Err(error) => {
+                tracing::error!("error parsing csv date from column {column}: {error}");
+                None
+            }
+        })
+        .map_or(0, |date| date.timestamp_millis() / (86400 * 1000)) as i32
+}
+
+unsafe extern "C" fn csv_get_nullable_date(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    output: &mut MaybeUninit<i32>,
+) -> bool {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    if let Some(date) = record
+        .get(column)
+        .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
+        .and_then(|date| match NaiveDate::parse_from_str(date, format) {
+            Ok(date) => date.and_hms_opt(0, 0, 0),
+            Err(error) => {
+                tracing::error!("error parsing csv date from column {column}: {error}");
+                None
+            }
+        })
+    {
+        output.write((date.timestamp_millis() / (86400 * 1000)) as i32);
+        false
+    } else {
+        true
+    }
+}
+
+unsafe extern "C" fn csv_get_timestamp(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+) -> i64 {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    record
+        .get(column)
+        .and_then(
+            |timestamp| match NaiveDateTime::parse_from_str(timestamp, format) {
+                Ok(time) => Some(time.timestamp_millis()),
+                Err(error) => {
+                    tracing::error!("error parsing csv timestamp from column {column}: {error}");
+                    None
+                }
+            },
+        )
+        .unwrap_or(0)
+}
+
+unsafe extern "C" fn csv_get_nullable_timestamp(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    output: &mut MaybeUninit<i64>,
+) -> bool {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    if let Some(timestamp) = record
+        .get(column)
+        .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
+        .and_then(
+            |timestamp| match NaiveDateTime::parse_from_str(timestamp, format) {
+                Ok(time) => Some(time.timestamp_millis()),
+                Err(error) => {
+                    tracing::error!("error parsing csv timestamp from column {column}: {error}");
+                    None
+                }
+            },
+        )
+    {
+        output.write(timestamp);
+        false
+    } else {
+        true
+    }
 }

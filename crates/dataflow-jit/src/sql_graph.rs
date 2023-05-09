@@ -276,7 +276,7 @@ mod tests {
         graph.optimize();
 
         let (dataflow, jit_handle, layout_cache) =
-            CompiledDataflow::new(&graph, Default::default());
+            CompiledDataflow::new(&graph, Default::default(), |_| ());
         let i32_offset = layout_cache.layout_of(i32).offset_of(0) as usize;
         let i32_vtable = unsafe { &*jit_handle.vtables()[&i32] };
 

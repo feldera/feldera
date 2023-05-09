@@ -139,7 +139,7 @@ fn validate(file: &Path, print_layouts: bool) -> ExitCode {
     graph.optimize();
 
     let (dataflow, jit_handle, layout_cache) =
-        CompiledDataflow::new(&graph, CodegenConfig::release());
+        CompiledDataflow::new(&graph, CodegenConfig::release(), |_| ());
 
     if print_layouts {
         layout_cache.print_layouts();

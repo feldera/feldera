@@ -100,7 +100,7 @@ fn compiled_dataflow() {
     // validator.validate_graph(&graph);
 
     let (dataflow, jit_handle, layout_cache) =
-        CompiledDataflow::new(&graph, CodegenConfig::debug());
+        CompiledDataflow::new(&graph, CodegenConfig::debug(), |_| ());
 
     let (mut runtime, (mut inputs, outputs)) =
         Runtime::init_circuit(1, move |circuit| dbg!(dataflow).construct(circuit)).unwrap();
@@ -344,7 +344,7 @@ fn bfs() {
     let sink = graph.sink(distances);
 
     let (dataflow, jit_handle, layout_cache) =
-        CompiledDataflow::new(&graph, CodegenConfig::debug());
+        CompiledDataflow::new(&graph, CodegenConfig::debug(), |_| ());
     let (mut runtime, (mut inputs, outputs)) =
         Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
