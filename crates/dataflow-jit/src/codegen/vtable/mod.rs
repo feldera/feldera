@@ -1,5 +1,6 @@
 mod clone;
 mod cmp;
+mod csv;
 mod debug;
 mod default;
 mod drop;

@@ -22,7 +22,12 @@ const _: () = assert!(
     size_of::<ThinStr>() == size_of::<*const u8>()
         && align_of::<ThinStr>() == align_of::<*const u8>()
         && size_of::<ThinStr>() == size_of::<ThinStrRef<'_>>()
-        && align_of::<ThinStr>() == align_of::<ThinStrRef<'_>>(),
+        && align_of::<ThinStr>() == align_of::<ThinStrRef<'_>>()
+        // Ensure that the null niche exists
+        && size_of::<Option<ThinStr>>() == size_of::<*const u8>()
+        && align_of::<Option<ThinStr>>() == align_of::<*const u8>()
+        && size_of::<Option<ThinStr>>() == size_of::<Option<ThinStrRef<'_>>>()
+        && align_of::<Option<ThinStr>>() == align_of::<Option<ThinStrRef<'_>>>(),
 );
 
 static EMPTY: StrHeader = StrHeader {

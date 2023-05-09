@@ -12,24 +12,25 @@ name = "dataflow-jit"
 required-features = ["binary"]
 
 [dependencies]
+csv = "1.2.1"
 libm = "0.2.6"
 paste = "1.0.9"
 cfg-if = "1.0.0"
 # pretty = "0.11.3"
 size-of = "0.1.4"
 tracing = "0.1.37"
-cranelift = "0.94.0"
+cranelift = "0.95.1"
 enum_dispatch = "0.3.8"
-cranelift-jit = "0.94.0"
+cranelift-jit = "0.95.1"
 target-lexicon = "0.12.5"
-cranelift-module = "0.94.0"
-cranelift-native = "0.94.0"
+cranelift-module = "0.95.1"
+cranelift-native = "0.95.1"
 unicode-normalization = "0.1.22"
 dbsp = { path = "../dbsp", features = ["serde"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 bitflags = { version = "2.0.1", features = ["serde"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-cranelift-codegen = { version = "0.94.0", features = ["unwind"] }
+cranelift-codegen = { version = "0.95.1", features = ["unwind"] }
 petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 
@@ -71,7 +72,6 @@ version = "0.3.9"
 features = ["winnt"]
 
 [dev-dependencies]
-csv = "1.2.1"
 proptest = "1.0.0"
 num-integer = "0.1.45"
 proptest-derive = "0.3.0"

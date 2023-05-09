@@ -149,7 +149,7 @@ pub enum RowZSet {
 }
 
 pub struct JitHandle {
-    jit: JITModule,
+    pub(crate) jit: JITModule,
     vtables: BTreeMap<LayoutId, *mut VTable>,
 }
 
@@ -182,7 +182,14 @@ pub struct CompiledDataflow {
 }
 
 impl CompiledDataflow {
-    pub fn new(graph: &Graph, config: CodegenConfig) -> (Self, JitHandle, NativeLayoutCache) {
+    pub fn new<F>(
+        graph: &Graph,
+        config: CodegenConfig,
+        with_codegen: F,
+    ) -> (Self, JitHandle, NativeLayoutCache)
+    where
+        F: FnOnce(&mut Codegen),
+    {
         let mut node_kinds = BTreeMap::new();
         let mut node_streams: BTreeMap<NodeId, Option<_>> = BTreeMap::new();
 
@@ -464,6 +471,7 @@ impl CompiledDataflow {
             &mut vtables,
             graph.graph(),
         );
+        with_codegen(&mut codegen);
 
         fn compile_nodes(
             graph: &graph::Subgraph,
