@@ -12,8 +12,8 @@ sudo apt-get install -y nodejs
 npm install --global yarn
 npm install --global openapi-typescript-codegen
 
-git clone https://github.com/vmware/database-stream-processor.git
-cd database-stream-processor/web-ui
+git clone https://github.com/feldera/dbsp.git
+cd dbsp/web-ui
 ```
 
 If you don't run ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)
