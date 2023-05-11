@@ -12,10 +12,12 @@ use actix_web::{
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
+use colored::Colorize;
 use dbsp::DBSPHandle;
 use env_logger::Env;
 use log::{error, info};
 use serde::Serialize;
+use std::io::Write;
 use std::{net::TcpListener, sync::Mutex};
 use tokio::{
     spawn,
@@ -104,23 +106,29 @@ pub fn server_main<F>(circuit_factory: &F) -> AnyResult<()>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
-    // Create env logger.
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
-    server_main_inner(circuit_factory).map_err(|e| {
-        error!("{e}");
-        e
-    })
-}
-
-fn server_main_inner<F>(circuit_factory: &F) -> AnyResult<()>
-where
-    F: Fn(usize) -> (DBSPHandle, Catalog),
-{
     let args = Args::try_parse()?;
-
     let yaml_config = std::fs::read(&args.config_file)?;
     let yaml_config = String::from_utf8(yaml_config)?;
+    let config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str())
+        .map_err(|e| AnyError::msg(format!("error parsing pipeline configuration: {e}")))?;
+
+    // Create env logger.
+    let pipeline_name = config.name.clone();
+    let pipeline_name = format!("[{pipeline_name}]").cyan();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format(move |buf, record| {
+            let t = chrono::Utc::now();
+            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+            writeln!(
+                buf,
+                "{} {} {} {}",
+                t,
+                buf.default_styled_level(record.level()),
+                pipeline_name,
+                record.args()
+            )
+        })
+        .init();
 
     let meta = match args.metadata_file {
         None => String::new(),
@@ -129,15 +137,15 @@ where
             String::from_utf8(meta)?
         }
     };
-
-    run_server(circuit_factory, &yaml_config, meta, args.default_port)?;
-
-    Ok(())
+    run_server(circuit_factory, &config, meta, args.default_port).map_err(|e| {
+        error!("{e}");
+        e
+    })
 }
 
 pub fn run_server<F>(
     circuit_factory: &F,
-    yaml_config: &str,
+    config: &PipelineConfig,
     meta: String,
     default_port: Option<u16>,
 ) -> AnyResult<()>
@@ -149,7 +157,7 @@ where
     // If you change these messages, make sure to make a corresponding change to
     // `runner.rs`.
     let (port, server, mut terminate_receiver) =
-        create_server(circuit_factory, yaml_config, meta, default_port)
+        create_server(circuit_factory, config, meta, default_port)
             .map_err(|e| AnyError::msg(format!("Failed to create pipeline: {e}")))?;
 
     std::fs::write(SERVER_PORT_FILE, format!("{}\n", port))?;
@@ -170,22 +178,19 @@ where
 
 pub fn create_server<F>(
     circuit_factory: &F,
-    yaml_config: &str,
+    config: &PipelineConfig,
     meta: String,
     default_port: Option<u16>,
 ) -> AnyResult<(u16, Server, Receiver<()>)>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
-    let config: PipelineConfig = serde_yaml::from_str(yaml_config)
-        .map_err(|e| AnyError::msg(format!("error parsing pipeline configuration: {e}")))?;
-
     let (circuit, catalog) = circuit_factory(config.global.workers as usize);
 
     let controller = Controller::with_config(
         circuit,
         catalog,
-        &config,
+        config,
         Box::new(|e| error!("{e}")) as Box<dyn Fn(ControllerError) + Send + Sync>,
     )?;
 

@@ -31,6 +31,9 @@ pub struct PipelineConfig {
     #[schema(inline)]
     pub global: GlobalPipelineConfig,
 
+    // Pipeline name
+    pub name: String,
+
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
 

@@ -46,11 +46,13 @@ use actix_web::{
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
+use colored::Colorize;
 #[cfg(unix)]
 use daemonize::Daemonize;
 use env_logger::Env;
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::{
     fs::{read, write},
     net::TcpListener,
@@ -197,7 +199,21 @@ fn main() -> AnyResult<()> {
     // Stay in single-threaded mode (no tokio) until calling `daemonize`.
 
     // Create env logger.
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    let name = "[manager]".cyan();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
+        .format(move |buf, record| {
+            let t = chrono::Utc::now();
+            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+            writeln!(
+                buf,
+                "{} {} {} {}",
+                t,
+                buf.default_styled_level(record.level()),
+                name,
+                record.args()
+            )
+        })
+        .init();
 
     let mut config = ManagerConfig::try_parse()?;
 
