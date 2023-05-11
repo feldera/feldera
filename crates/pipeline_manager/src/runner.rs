@@ -12,22 +12,18 @@ use actix_web_actors::ws::handshake;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use awc::Client;
 use futures_util::StreamExt;
-use regex::Regex;
 use serde::Serialize;
-use std::{
-    error::Error as StdError, fmt, fmt::Display, path::Path, pin::Pin, process::Stdio, sync::Arc,
-};
+use std::{error::Error as StdError, fmt, fmt::Display, path::Path, process::Stdio, sync::Arc};
 use tokio::{
     fs,
-    fs::{create_dir_all, remove_dir_all, File},
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncWriteExt, BufReader, SeekFrom},
+    fs::{create_dir_all, remove_dir_all},
+    io::{AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
     sync::Mutex,
     time::{sleep, Duration, Instant},
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
-const LOG_SUFFIX_LEN: i64 = 10_000;
 
 #[derive(Debug)]
 pub(crate) enum RunnerError {
@@ -208,7 +204,7 @@ impl LocalRunner {
         // Unlock db -- the next part can be slow.
         drop(db);
 
-        match Self::wait_for_startup(&self.config.log_file_path(pipeline_id)).await {
+        match Self::wait_for_startup(&&self.config.port_file_path(pipeline_id)).await {
             Ok(port) => {
                 // Store pipeline in the database.
                 if let Err(e) = self
@@ -439,11 +435,6 @@ impl LocalRunner {
         )
         .await?;
 
-        let log_file_path = self.config.log_file_path(pipeline_id);
-        let log_file = File::create(&log_file_path).await?;
-        let out_file_path = self.config.out_file_path(pipeline_id);
-        let out_file = File::create(&out_file_path).await?;
-
         // Locate project executable.
         let executable = self.config.project_executable(project_id);
 
@@ -456,8 +447,6 @@ impl LocalRunner {
             .arg("--metadata-file")
             .arg(&metadata_file_path)
             .stdin(Stdio::null())
-            .stdout(out_file.into_std().await)
-            .stderr(log_file.into_std().await)
             .spawn()
             .map_err(|e| AnyError::msg(format!("failed to run '{}': {e}", executable.display())))?;
 
@@ -466,60 +455,32 @@ impl LocalRunner {
 
     /// Monitor pipeline log until either port number or error shows up or
     /// the child process exits.
-    async fn wait_for_startup(log_file_path: &Path) -> AnyResult<u16> {
-        let mut log_file_lines = BufReader::new(File::open(log_file_path).await?).lines();
-
+    async fn wait_for_startup(port_file_path: &Path) -> AnyResult<u16> {
         let start = Instant::now();
-
-        let portnum_regex = Regex::new(r"Started HTTP server on port (\w+)\b").unwrap();
-        let error_regex = Regex::new(r"Failed to create pipeline.*").unwrap();
-
         loop {
-            if let Some(line) = log_file_lines.next_line().await? {
-                if let Some(captures) = portnum_regex.captures(&line) {
-                    if let Some(portnum_match) = captures.get(1) {
-                        if let Ok(port) = portnum_match.as_str().parse::<u16>() {
-                            return Ok(port);
-                        } else {
-                            return Err(AnyError::msg("invalid port number in log: '{line}'"));
-                        }
-                    } else {
-                        return Err(AnyError::msg(
-                            "couldn't parse server port number from log: '{line}'",
-                        ));
+            let res: Result<String, std::io::Error> = fs::read_to_string(port_file_path).await;
+            match res {
+                Ok(port) => {
+                    let parse = port.trim().parse::<u16>();
+                    return match parse {
+                        Ok(port) => Ok(port),
+                        Err(e) => Err(AnyError::msg(format!(
+                            "Could not parse port from port file: {e:?}\n"
+                        ))),
+                    };
+                }
+                Err(e) => {
+                    if start.elapsed() > STARTUP_TIMEOUT {
+                        return Err(AnyError::msg(format!("Waiting for pipeline initialization status timed out after {STARTUP_TIMEOUT:?}\n")));
                     }
-                };
-                if let Some(mtch) = error_regex.find(&line) {
-                    return Err(AnyError::msg(mtch.as_str().to_string()));
-                };
-            }
-
-            if start.elapsed() > STARTUP_TIMEOUT {
-                let log = Self::log_suffix(log_file_path).await;
-                return Err(AnyError::msg(format!("waiting for pipeline initialization status timed out after {STARTUP_TIMEOUT:?}\n{log}")));
+                    log::info!(
+                        "IO Error when attempting to read port file. Retrying.\n{}",
+                        e
+                    );
+                }
             }
             sleep(Duration::from_millis(100)).await;
         }
-    }
-
-    async fn log_suffix_inner(log_file_path: &Path) -> AnyResult<String> {
-        let mut buf = Vec::with_capacity(LOG_SUFFIX_LEN as usize);
-
-        let mut file = File::open(log_file_path).await?;
-
-        Pin::new(&mut file).start_seek(SeekFrom::End(-LOG_SUFFIX_LEN))?;
-        file.read_to_end(&mut buf).await?;
-
-        let suffix = String::from_utf8_lossy(&buf);
-        Ok(format!("log file tail:\n{suffix}"))
-    }
-
-    /// Read up to `LOG_SUFFIX_LEN` bytes from the end of the pipeline log in
-    /// order to include the suffix of the log in a diagnostic message.
-    async fn log_suffix(log_file_path: &Path) -> String {
-        Self::log_suffix_inner(log_file_path)
-            .await
-            .unwrap_or_else(|e| format!("[unable to read log file: {e}]"))
     }
 
     async fn do_shutdown_pipeline(

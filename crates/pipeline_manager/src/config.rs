@@ -329,15 +329,10 @@ impl ManagerConfig {
         self.pipeline_dir(pipeline_id).join("metadata.json")
     }
 
-    /// Location to redirect the pipeline stderr stream (where the pipeline
-    /// writes its log records).
-    pub(crate) fn log_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
-        self.pipeline_dir(pipeline_id).join("pipeline.log")
-    }
-
-    /// Location to redirect the pipeline stdout stream.
-    pub(crate) fn out_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
-        self.pipeline_dir(pipeline_id).join("pipeline.out")
+    /// Location for pipeline port file
+    pub(crate) fn port_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.pipeline_dir(pipeline_id)
+            .join(dbsp_adapters::server::SERVER_PORT_FILE)
     }
 
     /// The path to `schema.json` that contains a JSON description of input and
