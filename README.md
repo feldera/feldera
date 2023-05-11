@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![CI workflow](https://github.com/vmware/database-stream-processor/actions/workflows/main.yml/badge.svg)](https://github.com/vmware/database-stream-processor/actions)
-[![codecov](https://codecov.io/gh/vmware/database-stream-processor/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/vmware/database-stream-processor)
+[![CI workflow](https://github.com/feldera/dbsp/actions/workflows/main.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
+[![codecov](https://codecov.io/gh/feldera/dbsp/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/dbsp)
 
 # Database Stream Processor
 
@@ -45,7 +45,7 @@ described in the accompanying paper:
 - [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic
   Incremental View Maintenance for Rich Query Languages, Conference on
   Very Large Databases, August 2023, Vancouver,
-  Canada](https://github.com/vmware/database-stream-processor/blob/main/doc/vldb23/main.pdf)
+  Canada](https://github.com/feldera/dbsp/blob/main/doc/vldb23/main.pdf)
 
 - Here is the [video of a DBSP
 presentation](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
@@ -113,7 +113,7 @@ The DBSP core engine is written in Rust and provides a Rust API for building
 data-parallel dataflow programs by instantiating and connecting streaming
 operators.  Developers can use this API directly to implement complex
 streaming queries.  We are also developing a
-[compiler from SQL to DBSP](https://github.com/vmware/sql-to-dbsp-compiler) that
+[compiler from SQL to DBSP](https://github.com/feldera/sql2dbsp) that
 enables engineers and data scientists to use the engine via a familiar
 query language.  In the future, we will add DBSP bindings for languages
 like Python and Scala.

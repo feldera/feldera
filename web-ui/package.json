@@ -5,16 +5,16 @@
   "version": "0.0.1",
   "author": {
     "name": "DBSP",
-    "url": "https://github.com/vmware/database-stream-processor"
+    "url": "https://github.com/feldera/dbsp"
   },
   "bugs": {
-    "url": "https://github.com/vmware/database-stream-processor/issues"
+    "url": "https://github.com/feldera/dbsp/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/vmware/database-stream-processor.git"
+    "url": "https://github.com/feldera/dbsp.git"
   },
-  "homepage": "https://github.com/vmware/database-stream-processor",
+  "homepage": "https://github.com/feldera/dbsp",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

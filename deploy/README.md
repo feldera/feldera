@@ -7,7 +7,7 @@ First, install [Docker compose](https://docs.docker.com/compose/install/).
 Next, to bring up a local DBSP instance and a Redpanda container, run the following:
 
 ```
-curl https://raw.githubusercontent.com/vmware/database-stream-processor/main/deploy/docker-compose.yml | docker compose -f - up
+curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - up
 ```
 
 This will bring up two containers: `dbsp` and `redpanda`.
@@ -23,7 +23,7 @@ docker build -f Dockerfile -t dbspmanager ../
 docker compose -f docker-compose-dev.yml up
 ```
 
-If you'd like a "dev" image which has additional utilities installed (like rpk, 
+If you'd like a "dev" image which has additional utilities installed (like rpk,
 the DBSP python API and some demo projects), build the dev target for the Docker image:
 
 ```
