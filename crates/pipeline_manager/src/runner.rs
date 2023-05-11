@@ -204,7 +204,7 @@ impl LocalRunner {
         // Unlock db -- the next part can be slow.
         drop(db);
 
-        match Self::wait_for_startup(&&self.config.port_file_path(pipeline_id)).await {
+        match Self::wait_for_startup(&self.config.port_file_path(pipeline_id)).await {
             Ok(port) => {
                 // Store pipeline in the database.
                 if let Err(e) = self
@@ -395,6 +395,7 @@ impl LocalRunner {
         }
 
         let mut config = config_descr.config.clone();
+        config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
         config.push_str("inputs:\n");
         for ac in config_descr
             .attached_connectors
