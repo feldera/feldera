@@ -24,6 +24,7 @@ use tokio::{
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
+const PORT_FILE_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
 
 #[derive(Debug)]
 pub(crate) enum RunnerError {
@@ -458,6 +459,7 @@ impl LocalRunner {
     /// the child process exits.
     async fn wait_for_startup(port_file_path: &Path) -> AnyResult<u16> {
         let start = Instant::now();
+        let mut count = 0;
         loop {
             let res: Result<String, std::io::Error> = fs::read_to_string(port_file_path).await;
             match res {
@@ -474,10 +476,10 @@ impl LocalRunner {
                     if start.elapsed() > STARTUP_TIMEOUT {
                         return Err(AnyError::msg(format!("Waiting for pipeline initialization status timed out after {STARTUP_TIMEOUT:?}\n")));
                     }
-                    log::info!(
-                        "IO Error when attempting to read port file. Retrying.\n{}",
-                        e
-                    );
+                    if start.elapsed() > PORT_FILE_LOG_QUIET_PERIOD && (count % 10) == 0 {
+                        log::info!("Could not read runner port file yet. Retrying\n{}", e);
+                    }
+                    count = count + 1;
                 }
             }
             sleep(Duration::from_millis(100)).await;

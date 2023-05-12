@@ -109,8 +109,11 @@ where
     let args = Args::try_parse()?;
     let yaml_config = std::fs::read(&args.config_file)?;
     let yaml_config = String::from_utf8(yaml_config)?;
-    let config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str())
-        .map_err(|e| AnyError::msg(format!("error parsing pipeline configuration: {e}")))?;
+    let config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str()).map_err(|e| {
+        let err = format!("error parsing pipeline configuration: {e}");
+        error!("{err}");
+        AnyError::msg(err)
+    })?;
 
     // Create env logger.
     let pipeline_name = config.name.clone();
@@ -121,10 +124,8 @@ where
             let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
             writeln!(
                 buf,
-                "{} {} {} {}",
-                t,
+                "{t} {} {pipeline_name} {}",
                 buf.default_styled_level(record.level()),
-                pipeline_name,
                 record.args()
             )
         })
