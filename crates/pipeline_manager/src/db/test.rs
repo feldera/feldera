@@ -161,6 +161,20 @@ async fn update_project() {
         .unwrap();
     let _ = handle
         .db
+        .update_project(
+            project_id,
+            "test2",
+            "different desc",
+            &Some("create table t2(c2 integer);".to_string()),
+        )
+        .await;
+    let (descr, code) = handle.db.project_code(project_id).await.unwrap();
+    assert_eq!("test2", descr.name);
+    assert_eq!("different desc", descr.description);
+    assert_eq!("create table t2(c2 integer);", code);
+
+    let _ = handle
+        .db
         .update_project(project_id, "updated_test1", "some new description", &None)
         .await;
     let results = handle.db.list_projects().await.unwrap();
@@ -949,7 +963,7 @@ impl Storage for Mutex<DbModel> {
 
         c.name = config_name.to_owned();
         c.description = config_description.to_owned();
-        c.version = c.version.increment();
+        c.version = Version(c.version.0 + 1);
         if let Some(config) = config {
             c.config = config.clone();
         }
