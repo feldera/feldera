@@ -128,7 +128,10 @@ async fn project_reset() {
     }
     let results = handle
         .db
-        .conn
+        .pool
+        .get()
+        .await
+        .unwrap()
         .query(
             "SELECT * FROM project WHERE status != '' OR error != '' OR schema != ''",
             &[],
@@ -369,7 +372,7 @@ fn db_impl_behaves_like_model() {
                     // (with RESTART IDENTITY)
                     handle
                         .db
-                        .conn
+                        .pool.get().await.unwrap()
                         .execute("DO $$ DECLARE r RECORD;
                             BEGIN
                                 FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname =current_schema()) LOOP
@@ -846,10 +849,19 @@ impl Storage for Mutex<DbModel> {
             }
         }
 
-        // lel transactions
+        // To simulate transactions, we first check whether all the connectors
+        // can be inserted (i.e., no foreign key violations). Only if that
+        // succeeds will we insert the connectors and configurations.
+        // This is of course not robust to all failure modes.
+        if let Some(connectors) = connectors {
+            for ac in connectors {
+                if !s.connectors.contains_key(&ac.connector_id) {
+                    return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
+                }
+            }
+        }
         let config_id = ConfigId(s.next_config_id);
         let version = Version(1);
-
         s.configs.insert(
             config_id,
             ConfigDescr {
@@ -863,10 +875,6 @@ impl Storage for Mutex<DbModel> {
                 version: Version(1),
             },
         );
-
-        // TODO: The db does currently not use transactions; so we mimic the
-        // same behavior as the current implementation which means we insert
-        // attached_connectors until we encouter one that doesn't exist
         if let Some(connectors) = connectors {
             for ac in connectors {
                 if s.connectors.contains_key(&ac.connector_id) {
@@ -875,8 +883,6 @@ impl Storage for Mutex<DbModel> {
                         .unwrap() // we just inserted
                         .attached_connectors
                         .push(ac.clone());
-                } else {
-                    return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
             }
         }
