@@ -108,12 +108,6 @@ impl Display for Version {
     }
 }
 
-impl Version {
-    fn increment(&self) -> Self {
-        Self(self.0 + 1)
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum DBError {
     UnknownProject(ProjectId),
@@ -328,6 +322,8 @@ pub(crate) struct ConnectorDescr {
     pub direction: Direction,
 }
 
+// The goal for these methods is to avoid multiple DB interactions as much as possible
+// and if not, use transactions
 #[async_trait]
 impl Storage for ProjectDB {
     async fn reset_project_status(&self) -> AnyResult<()> {
@@ -406,20 +402,14 @@ impl Storage for ProjectDB {
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
         debug!("new_project {project_name} {project_description} {project_code}");
-        self.conn.execute(
+        let row = self.conn.query_one(
                     "INSERT INTO project (version, name, description, code, schema, status, error, status_since)
-                        VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now()));",
+                        VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now())) RETURNING id;",
                 &[&project_name, &project_description, &project_code]
             )
             .await
             .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
-
-        // name has a UNIQUE constraint
-        let id = self
-            .conn
-            .query_one("SELECT id FROM project WHERE name = $1", &[&project_name])
-            .await?
-            .get(0);
+        let id = row.get(0);
 
         Ok((ProjectId(id), Version(1)))
     }
@@ -433,39 +423,46 @@ impl Storage for ProjectDB {
         project_description: &str,
         project_code: &Option<String>,
     ) -> AnyResult<Version> {
-        let (mut version, old_code): (Version, String) = self
-            .conn
-            .query_one(
-                "SELECT version, code FROM project where id = $1",
-                &[&project_id.0],
-            )
-            .await
-            .map(|row| (Version(row.get(0)), row.get(1)))
-            .map_err(|_| DBError::UnknownProject(project_id))?;
-
-        match project_code {
-            Some(code) if &old_code != code => {
+        let row = match project_code {
+            Some(code) => {
                 // Only increment `version` if new code actually differs from the
                 // current version.
-                version = version.increment();
-                self.conn.execute(
-                            "UPDATE project SET version = $1, name = $2, description = $3, code = $4, status = NULL, error = NULL, schema = NULL WHERE id = $5",
-                            &[&version.0, &project_name, &project_description, &code, &project_id.0])
-                            .await
-                            .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
+                self
+                    .conn
+                    .query_one(
+                        "UPDATE project
+                            SET
+                                version = (CASE WHEN code = $3 THEN version ELSE version + 1 END),
+                                name = $1,
+                                description = $2,
+                                code = $3,
+                                status = (CASE WHEN code = $3 THEN code ELSE NULL END),
+                                error = (CASE WHEN code = $3 THEN code ELSE NULL END),
+                                schema = (CASE WHEN code = $3 THEN code ELSE NULL END)
+                        WHERE id = $4
+                        RETURNING version
+                    ",
+                        &[
+                            &project_name,
+                            &project_description,
+                            &code,
+                            &project_id.0,
+                        ],
+                    )
+                    .await
+                    .map_err(|_| DBError::UnknownProject(project_id))?
             }
             _ => {
                 self.conn
-                    .execute(
-                        "UPDATE project SET name = $1, description = $2 WHERE id = $3",
+                    .query_one(
+                        "UPDATE project SET name = $1, description = $2 WHERE id = $3 RETURNING version",
                         &[&project_name, &project_description, &project_id.0],
                     )
                     .await
-                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
+                    .map_err(|_| DBError::UnknownProject(project_id))?
             }
-        }
-
-        Ok(version)
+        };
+        Ok(Version(row.get(0)))
     }
 
     /// Retrieve project descriptor.
@@ -554,16 +551,26 @@ impl Storage for ProjectDB {
         status: ProjectStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
-
-        let descr = self.get_project(project_id).await?;
-        if descr.version == expected_version {
-            self.conn.execute(
-                    "UPDATE project SET status = $1, error = $2, status_since = extract(epoch from now()) WHERE id = $3",
-            &[&status, &error, &project_id.0])
+        // We could perform the guard in the WHERE clause, but that does not
+        // tell us whether the ID existed or not.
+        // Instead, we use a case statement for the guard.
+        let row = self
+            .conn
+            .query_opt(
+                "UPDATE project SET 
+                 status = (CASE WHEN version = $4 THEN $1 ELSE status END), 
+                 error = (CASE WHEN version = $4 THEN $2 ELSE error END), 
+                 status_since = (CASE WHEN version = $4 THEN extract(epoch from now())
+                                 ELSE status_since END) 
+                 WHERE id = $3 RETURNING id",
+                &[&status, &error, &project_id.0, &expected_version.0],
+            )
             .await?;
+        if row.is_none() {
+            Err(anyhow!(DBError::UnknownProject(project_id)))
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     async fn set_project_schema(&self, project_id: ProjectId, schema: String) -> AnyResult<()> {
@@ -604,6 +611,7 @@ impl Storage for ProjectDB {
         }
     }
 
+    // XXX: Multiple statements
     async fn list_configs(&self) -> AnyResult<Vec<ConfigDescr>> {
         let rows = self.conn.query(
             "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config", &[])
@@ -635,6 +643,7 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
+    // XXX: Multiple statements
     async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
         let row = self.conn.query_opt(
             "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config WHERE id = $1",
@@ -666,6 +675,7 @@ impl Storage for ProjectDB {
         }
     }
 
+    // XXX: Multiple statements
     async fn new_config(
         &self,
         project_id: Option<ProjectId>,
@@ -730,6 +740,7 @@ impl Storage for ProjectDB {
         }
     }
 
+    // XXX: Multiple statements
     async fn update_config(
         &self,
         config_id: ConfigId,
@@ -739,8 +750,6 @@ impl Storage for ProjectDB {
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> AnyResult<Version> {
-        let _descr = self.get_config(config_id).await?;
-
         log::trace!(
             "Updating config {} {} {} {} {:?} {:?}",
             config_id.0,
@@ -750,9 +759,6 @@ impl Storage for ProjectDB {
             config,
             connectors
         );
-        let descr = self.get_config(config_id).await?;
-        let config = config.clone().unwrap_or(descr.config);
-
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             self.conn
@@ -768,14 +774,14 @@ impl Storage for ProjectDB {
                 self.attach_connector(config_id, ac).await?;
             }
         }
-
-        let version = descr.version.increment();
-        self.conn.execute("UPDATE project_config SET version = $1, name = $2, description = $3, config = $4, project_id = $5 WHERE id = $6",
-            &[&version.0, &config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
+        let row = self.conn.query_opt("UPDATE project_config SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), project_id = $4 WHERE id = $5 RETURNING version",
+            &[&config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
             .await
             .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(e, project_id))?;
-
-        Ok(version)
+        match row {
+            Some(row) => Ok(Version(row.get(0))),
+            None => Err(DBError::UnknownConfig(config_id).into()),
+        }
     }
 
     async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
@@ -1194,16 +1200,30 @@ impl ProjectDB {
         config_id: ConfigId,
         ac: &AttachedConnector,
     ) -> AnyResult<AttachedConnectorId> {
-        //let _descr = self.get_config(config_id).await?;
-        let _descr = self.get_connector(ac.connector_id).await?;
         let is_input = ac.direction == Direction::Input;
-
         let row = self.conn.query_one(
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
             &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
-            .await?;
-
-        Ok(AttachedConnectorId(row.get(0)))
+            .await;
+        match row {
+            Ok(row) => Ok(AttachedConnectorId(row.get(0))),
+            Err(e) => {
+                let db_err = e.as_db_error();
+                if let Some(db_err) = db_err {
+                    if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
+                        if db_err.constraint() == Some("attached_connector_config_id_fkey") {
+                            return Err(anyhow!(DBError::UnknownConfig(config_id)));
+                        }
+                        if db_err.constraint() == Some("attached_connector_connector_id_fkey") {
+                            return Err(anyhow!(DBError::UnknownConnector(ConnectorId(
+                                ac.connector_id.0
+                            ))));
+                        }
+                    }
+                }
+                Err(anyhow!(e))
+            }
+        }
     }
 
     async fn get_attached_connectors(
@@ -1265,7 +1285,6 @@ impl ProjectDB {
                 }
             }
         }
-
         anyhow!(e)
     }
 
@@ -1278,16 +1297,16 @@ impl ProjectDB {
         let db_err = e.as_db_error();
         if let Some(db_err) = db_err {
             if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                && db_err.constraint() == Some("pipeline_config_id_fkey")
+                && (db_err.constraint() == Some("pipeline_config_id_fkey")
+                    || db_err.constraint() == Some("attached_connector_config_id_fkey"))
             {
                 return anyhow!(DBError::UnknownConfig(config_id));
             }
         }
-
         anyhow!(e)
     }
 
-    /// Helper to convert config_id foreign key constraint error into an
+    /// Helper to convert pipeline_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_pipeline_id_foreign_key_constraint_err(
         e: tokio_postgres::Error,
