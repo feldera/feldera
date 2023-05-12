@@ -14,6 +14,8 @@ where
     D: Clone + 'static + Neg<Output = D> + NegByRef,
     C: Circuit,
 {
+    /// Returns a stream with the same type as `self` in which each value is
+    /// negated. Negating an indexed Z-set negates all the weights.
     pub fn neg(&self) -> Stream<C, D> {
         let negated = self
             .circuit()

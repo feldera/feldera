@@ -48,6 +48,10 @@ impl Display for Error {
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
 /// runtime.
 ///
+/// Schedulers are per-[`Circuit`], not per-[`Runtime`](crate::Runtime).  They
+/// decide the order in which a step through the circuit evaluates operators.
+/// They do not affect process or thread scheduling.
+///
 /// A valid schedule evaluates each node exactly once, after all of its upstream
 /// nodes have been evaluated.  Note that this works for circuits with logical
 /// cycles, as all such cycles must contain a strict operator, which maps into a

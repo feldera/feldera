@@ -1,9 +1,17 @@
 //! Synchronous circuits over streams.
 //!
 //! A circuit consists of [operators](`operator_traits::Operator`) connected by
-//! [streams](`circuit_builder::Stream`). At every clock cycle, each operator in
-//! the circuit is triggered, consuming a single value from each of its input
-//! streams and emitting a single value to the output stream.
+//! [streams](`circuit_builder::Stream`). At every clock cycle, each operator
+//! consumes a single value from each of its input streams and emits a single
+//! value to the output stream.
+//!
+//! Use `RootCircuit::build` to create and populate an circuit that executes in
+//! the calling thread, or `Runtime::init_circuit` to create a multi-circuit,
+//! multi-worker threaded runtime.  These functions return a [`CircuitHandle`]
+//! or [`DBSPHandle`], respectively, that control the circuits' execution,
+//! plus, when used in the recommended way, additional input handles for
+//! feeding data into the circuits and output handles for obtaining their
+//! output.
 
 mod activations;
 mod dbsp_handle;

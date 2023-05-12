@@ -32,6 +32,8 @@ where
     /// Integrate the input stream.
     ///
     /// Computes the sum of values in the input stream.
+    /// The first output value is the first input value, the second output
+    /// value is the sum of the first two inputs, and so on.
     ///
     /// # Examples
     ///
@@ -43,19 +45,28 @@ where
     /// let circuit = RootCircuit::build(move |circuit| {
     ///     // Generate a stream of 1's.
     ///     let stream = circuit.add_source(Generator::new(|| 1));
+    ///     stream.inspect(move |n| eprintln!("{n}"));
     ///     // Integrate the stream.
     ///     let integral = stream.integrate();
-    /// #   let mut counter1 = 0;
-    /// #   integral.inspect(move |n| { counter1 += 1; assert_eq!(*n, counter1) });
-    /// #   let mut counter2 = 0;
-    /// #   integral.delay().inspect(move |n| { assert_eq!(*n, counter2); counter2 += 1; });
+    ///     integral.inspect(move |n| eprintln!("{n}"));
+    ///     let mut counter1 = 0;
+    ///     eprintln!("{counter1}");
+    ///     integral.inspect(move |n| {
+    ///         counter1 += 1;
+    ///         assert_eq!(*n, counter1)
+    ///     });
+    ///     let mut counter2 = 0;
+    ///     integral.delay().inspect(move |n| {
+    ///         assert_eq!(*n, counter2);
+    ///         counter2 += 1;
+    ///     });
     /// })
     /// .unwrap()
     /// .0;
     ///
-    /// # for _ in 0..5 {
-    /// #     circuit.step().unwrap();
-    /// # }
+    /// for _ in 0..5 {
+    ///     circuit.step().unwrap();
+    /// }
     /// ```
     ///
     /// The above example generates the following input/output mapping:

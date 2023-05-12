@@ -23,7 +23,7 @@ mod index;
 mod input;
 mod integrate;
 mod join;
-mod join_range;
+pub mod join_range;
 mod neg;
 mod output;
 mod plus;

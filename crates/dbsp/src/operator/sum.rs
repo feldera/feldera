@@ -22,6 +22,9 @@ where
     D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
+    /// The first output is the sum of the first input from each input stream,
+    /// the second output is the sum of the second input from each input stream,
+    /// and so on.
     pub fn sum<'a, I>(&'a self, streams: I) -> Stream<C, D>
     where
         I: IntoIterator<Item = &'a Self>,
