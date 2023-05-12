@@ -49,7 +49,7 @@
 //! values in the time range `[6..30]`, we visit nodes `0001`, `00`, `01`, `10`,
 //! `11`, `1111`.
 //!
-//! The radix tree reprsentation has several nice properties:
+//! The radix tree representation has several nice properties:
 //! * Its height is bounded by `TIMESTAMP_BITS/RADIX_BITS`, where
 //!   `TIMESTAMP_BITS` is the number of bits used to represent the timestamp,
 //!   and `RADIX_BITS` is the number of bits in the radix chosen for the tree,

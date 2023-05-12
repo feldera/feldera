@@ -32,7 +32,7 @@ where
     /// The operator assumes that the input vector is sorted by key and contains
     /// exactly one value per key.
     ///
-    /// This is a stateful operator that internaly maintains the trace of the
+    /// This is a stateful operator that internally maintains the trace of the
     /// collection.
     pub fn upsert<B>(&self) -> Stream<C, B>
     where

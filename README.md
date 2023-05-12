@@ -146,16 +146,13 @@ e.g., Snowflake.
 The distributed runtime will extend DBSP's data-parallel execution model to
 multiple nodes for high availability and throughput.
 
-## Applications
+## Getting started
 
-*TODO*
-
-## Documentation
-
-The project is still in its early days.  API and internals documentation is
-coming soon.
-
-*TODO*
+To learn about using DBSP as a Rust programmer, start by reading the
+[`circuit_builder`](`circuit::circuit_builder`) module documentation.
+The examples folder also has some simple places to start.  For more
+sophisticated examples, try looking at the `nexmark` benchmark in the
+`benches` directory.
 
 # Contributing
 

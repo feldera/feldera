@@ -70,7 +70,7 @@ where
 
 /// Relative time range.
 ///
-/// Specifies a time interval relative to a given point in time.
+/// Specifies a time interval relative to a given moment in time.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RelRange<TS> {

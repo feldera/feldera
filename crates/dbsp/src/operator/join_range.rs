@@ -29,10 +29,8 @@ impl<C, I1> Stream<C, I1>
 where
     C: Circuit,
 {
-    /// Range-join two streams into an `OrdZSet`.
-    ///
-    /// See module documentation for the definition of the range-join operator
-    /// and its arguments.
+    /// Range-join two streams into an `OrdZSet` according to the definition of
+    /// the [range-join operator](crate::operator::join_range).
     ///
     /// This operator is non-incremental, i.e., it joins the pair of batches it
     /// receives at each timestamp ignoring previous inputs.

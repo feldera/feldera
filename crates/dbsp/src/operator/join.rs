@@ -83,6 +83,12 @@ where
         )
     }
 
+    /// More efficient than [`Self::stream_join`], but the output of the join
+    /// function must grow monotonically as `(k, v1, v2)` tuples are fed to it
+    /// in lexicographic order.
+    ///
+    /// One such monotonic function is a join function that returns `(k, v1,
+    /// v2)` itself.
     #[track_caller]
     pub fn monotonic_stream_join<F, I2, Z>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
@@ -121,11 +127,11 @@ impl<I1> Stream<RootCircuit, I1> {
     /// Incremental join of two streams of batches.
     ///
     /// Given streams `a` and `b` of changes to relations `A` and `B`
-    /// respectively, computes a stream of changes to `A <> B` (where `<>`
+    /// respectively, computes a stream of changes to `A ⋈ B` (where `⋈`
     /// is the join operator):
     ///
     /// ```text
-    /// delta(A <> B) = A <> B - z^-1(A) <> z^-1(B) = a <> z^-1(B) + z^-1(A) <> b + a <> b
+    /// delta(A ⋈ B) = A ⋈ B - z^-1(A) ⋈ z^-1(B) = a ⋈ z^-1(B) + z^-1(A) ⋈ b + a ⋈ b
     /// ```
     ///
     /// This method only works in the top-level scope.  It is superseded by
@@ -168,7 +174,7 @@ where
     ///
     /// Given streams `self` and `other` of batches that represent changes to
     /// relations `A` and `B` respectively, computes a stream of changes to
-    /// `A <> B` (where `<>` is the join operator):
+    /// `A ⋈ B` (where `⋈` is the join operator):
     ///
     /// # Type arguments
     ///
@@ -229,7 +235,7 @@ where
         // nesting depth:
         //
         // ```
-        // (↑(a <> b)∆)[t] =
+        // (↑(a ⋈ b)∆)[t] =
         //      __         __            __
         //      ╲          ╲             ╲
         //      ╱          ╱             ╱  {f(k,v1,v2), w1*w2}
@@ -257,7 +263,7 @@ where
         // ```
         // where `t2<t1` and `t2>=t1` refer to the total order in which timestamps are
         // observed during the execution of the circuit, not their logical partial
-        // order.  In particular, all iterations of an earlier clock epoch preceed the
+        // order.  In particular, all iterations of an earlier clock epoch precede the
         // first iteration of a newer epoch.
         //
         // The advantage of this representation is that each term can be computed
@@ -295,7 +301,7 @@ where
     /// Incremental anti-join operator.
     ///
     /// Returns indexed Z-set consisting of the contents of `self`,
-    /// excluding keys that are not present in `other`.
+    /// excluding keys that are present in `other`.
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,

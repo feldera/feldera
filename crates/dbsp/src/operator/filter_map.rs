@@ -41,29 +41,12 @@ use std::{
 /// This trait enables both use cases by allowing the implementer to define
 /// their own record type, which can be either `(K, V)` or `K`.
 ///
-/// # Naming convention
+/// These methods are equally suitable for [streams of data or streams of
+/// deltas](Stream#data-streams-versus-delta-streams).
 ///
-/// This trait uses `_index` and `_generic` suffixes to declare variations of
-/// basic operations, e.g., `map`, `map_index`, `map_generic`,
-/// `map_index_generic`.
-///
-/// ## `_generic` suffix
-///
-/// Most transformations in this trait can assemble their outputs into any
-/// collection type that implements the [`Batch`](`crate::trace::Batch`) trait.
-/// In practice, we typically use [`OrdIndexedZSet`](`crate::OrdIndexedZSet`)
-/// for indexed batches and [`OrdZSet`](`crate::OrdZSet`) for non-indexed
-/// batches.  Methods without the `_generic` suffix return these concrete types,
-/// eliminating the need to type-annotate each invocation, while `_generic`
-/// methods can be used to return arbitrary custom `Batch` implementations.
-///
-/// ## `_index` suffix
-///
-/// Methods without the `_index()` suffix return non-indexed batches.
-/// `<method>_index()` methods combine the effects of `<method>()` and
-/// [`index()`](`crate::Stream::index`), e.g., `stream.map_index(closure)` is
-/// functionally equivalent, but more efficient than, `stream.map(closure).
-/// index()`.
+/// This trait uses the same [naming
+/// convention](Stream#operator-naming-convention) as [`Stream`], for `_index`
+/// and `_generic` suffixes.
 pub trait FilterMap<C> {
     /// Record type of the input stream, e.g., `(K, V)` for a stream of `(key,
     /// value, weight)` tuples or just `K` if the value type is `()`.

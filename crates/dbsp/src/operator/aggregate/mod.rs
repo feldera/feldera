@@ -168,6 +168,8 @@ where
     /// a nested Z-set `ZSet<V, R>`.  This method applies `aggregator`
     /// to each such Z-set and adds it to the output indexed Z-set with
     /// weight `+1`.
+    ///
+    /// [`Min`], [`Max`], and [`Fold`] are useful for `A`.
     #[allow(clippy::type_complexity)]
     pub fn stream_aggregate<A>(
         &self,
@@ -200,6 +202,8 @@ where
     /// It transforms a stream of changes to an indexed Z-set to a stream of
     /// changes to its aggregate computed by applying `aggregator` to each
     /// key in the input.
+    ///
+    /// [`Min`], [`Max`], and [`Fold`] are useful for `A`.
     #[allow(clippy::type_complexity)]
     pub fn aggregate<A>(&self, aggregator: A) -> Stream<C, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where
@@ -282,6 +286,8 @@ where
     ///    ‾‾
     /// (k,v,w) ∈ Z
     /// ```
+    ///
+    /// Discards the values from the input.
     ///
     /// This is a linear operator.
     pub fn weigh<F, T>(&self, f: F) -> Stream<C, OrdZSet<Z::Key, T>>
