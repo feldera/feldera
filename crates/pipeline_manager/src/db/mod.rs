@@ -2,11 +2,12 @@ use crate::{config::ManagerConfig, Direction, ProjectStatus};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::NoTls;
 use utoipa::ToSchema;
 
 #[cfg(test)]
@@ -28,7 +29,7 @@ pub(crate) mod storage;
 /// [`ProjectStatus::Pending`].  The `status_since` column is set to the current
 /// time, which determines the position of the project in the queue.
 pub(crate) struct ProjectDB {
-    conn: Client,
+    pool: Pool,
     // Used in dev mode for having an embedded Postgres DB live through the
     // lifetime of the program.
     #[cfg(feature = "pg-embed")]
@@ -327,7 +328,9 @@ pub(crate) struct ConnectorDescr {
 #[async_trait]
 impl Storage for ProjectDB {
     async fn reset_project_status(&self) -> AnyResult<()> {
-        self.conn
+        self.pool
+            .get()
+            .await?
             .execute(
                 "UPDATE project SET status = NULL, error = NULL, schema = NULL",
                 &[],
@@ -338,7 +341,9 @@ impl Storage for ProjectDB {
 
     async fn list_projects(&self) -> AnyResult<Vec<ProjectDescr>> {
         let rows = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query(
                 r#"SELECT id, name, description, version, status, error, schema FROM project"#,
                 &[],
@@ -366,7 +371,7 @@ impl Storage for ProjectDB {
     }
 
     async fn project_code(&self, project_id: ProjectId) -> AnyResult<(ProjectDescr, String)> {
-        let row = self.conn.query_opt(
+        let row = self.pool.get().await?.query_opt(
             "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1", &[&project_id.0]
         )
         .await?
@@ -402,7 +407,7 @@ impl Storage for ProjectDB {
         project_code: &str,
     ) -> AnyResult<(ProjectId, Version)> {
         debug!("new_project {project_name} {project_description} {project_code}");
-        let row = self.conn.query_one(
+        let row = self.pool.get().await?.query_one(
                     "INSERT INTO project (version, name, description, code, schema, status, error, status_since)
                         VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now())) RETURNING id;",
                 &[&project_name, &project_description, &project_code]
@@ -427,8 +432,7 @@ impl Storage for ProjectDB {
             Some(code) => {
                 // Only increment `version` if new code actually differs from the
                 // current version.
-                self
-                    .conn
+                self.pool.get().await?
                     .query_one(
                         "UPDATE project
                             SET
@@ -453,7 +457,7 @@ impl Storage for ProjectDB {
                     .map_err(|_| DBError::UnknownProject(project_id))?
             }
             _ => {
-                self.conn
+                self.pool.get().await?
                     .query_one(
                         "UPDATE project SET name = $1, description = $2 WHERE id = $3 RETURNING version",
                         &[&project_name, &project_description, &project_id.0],
@@ -472,7 +476,7 @@ impl Storage for ProjectDB {
         &self,
         project_id: ProjectId,
     ) -> AnyResult<Option<ProjectDescr>> {
-        let row = self.conn.query_opt(
+        let row = self.pool.get().await?.query_opt(
                 "SELECT name, description, version, status, error, schema FROM project WHERE id = $1",
                 &[&project_id.0],
             )
@@ -502,7 +506,7 @@ impl Storage for ProjectDB {
 
     /// Lookup project by name.
     async fn lookup_project(&self, project_name: &str) -> AnyResult<Option<ProjectDescr>> {
-        let row = self.conn.query_opt(
+        let row = self.pool.get().await?.query_opt(
                 "SELECT id, description, version, status, error, schema FROM project WHERE name = $1",
                 &[&project_name],
             )
@@ -536,7 +540,7 @@ impl Storage for ProjectDB {
         status: ProjectStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
-        self.conn.execute(
+        self.pool.get().await?.execute(
                 "UPDATE project SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
             &[&status, &error, &project_id.0])
             .await?;
@@ -555,7 +559,9 @@ impl Storage for ProjectDB {
         // tell us whether the ID existed or not.
         // Instead, we use a case statement for the guard.
         let row = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query_opt(
                 "UPDATE project SET 
                  status = (CASE WHEN version = $4 THEN $1 ELSE status END), 
@@ -574,7 +580,9 @@ impl Storage for ProjectDB {
     }
 
     async fn set_project_schema(&self, project_id: ProjectId, schema: String) -> AnyResult<()> {
-        self.conn
+        self.pool
+            .get()
+            .await?
             .execute(
                 "UPDATE project SET schema = $1 WHERE id = $2",
                 &[&schema, &project_id.0],
@@ -586,7 +594,9 @@ impl Storage for ProjectDB {
 
     async fn delete_project(&self, project_id: ProjectId) -> AnyResult<()> {
         let res = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute("DELETE FROM project WHERE id = $1", &[&project_id.0])
             .await?;
 
@@ -599,7 +609,7 @@ impl Storage for ProjectDB {
 
     async fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
         // Find the oldest pending project.
-        let res = self.conn.query_one("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
+        let res = self.pool.get().await?.query_one("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
             .await;
 
         if let Ok(row) = res {
@@ -613,7 +623,7 @@ impl Storage for ProjectDB {
 
     // XXX: Multiple statements
     async fn list_configs(&self) -> AnyResult<Vec<ConfigDescr>> {
-        let rows = self.conn.query(
+        let rows = self.pool.get().await?.query(
             "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config", &[])
             .await?;
 
@@ -645,7 +655,7 @@ impl Storage for ProjectDB {
 
     // XXX: Multiple statements
     async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
-        let row = self.conn.query_opt(
+        let row = self.pool.get().await?.query_opt(
             "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config WHERE id = $1",
         &[&config_id.0])
         .await?;
@@ -684,7 +694,9 @@ impl Storage for ProjectDB {
         config: &str,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> AnyResult<(ConfigId, Version)> {
-        let row = self.conn.query_one(
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let row = txn.query_one(
             "INSERT INTO project_config (project_id, version, name, description, config) VALUES($1, 1, $2, $3, $4) RETURNING id",
             &[&project_id.map(|id| id.0),
             &config_name,
@@ -698,9 +710,10 @@ impl Storage for ProjectDB {
             // Add the connectors.
             // TODO: This should be done in a transaction with the query above.
             for ac in connectors {
-                self.attach_connector(config_id, ac).await?;
+                self.attach_connector(&txn, config_id, ac).await?;
             }
         }
+        txn.commit().await?;
 
         Ok((config_id, Version(1)))
     }
@@ -711,7 +724,9 @@ impl Storage for ProjectDB {
         pipeline_id: PipelineId,
     ) -> AnyResult<()> {
         let rows = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute(
                 "UPDATE project_config SET pipeline_id = $1 WHERE id = $2",
                 &[&pipeline_id.0, &config_id.0],
@@ -727,7 +742,9 @@ impl Storage for ProjectDB {
 
     async fn remove_pipeline_from_config(&self, config_id: ConfigId) -> AnyResult<()> {
         let rows = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute(
                 "UPDATE project_config SET pipeline_id = NULL WHERE id = $1",
                 &[&config_id.0],
@@ -759,25 +776,27 @@ impl Storage for ProjectDB {
             config,
             connectors
         );
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
-            self.conn
-                .execute(
-                    "DELETE FROM attached_connector WHERE config_id = $1",
-                    &[&config_id.0],
-                )
-                .await?;
+            txn.execute(
+                "DELETE FROM attached_connector WHERE config_id = $1",
+                &[&config_id.0],
+            )
+            .await?;
 
             // Rewrite the new set of connectors.
             for ac in connectors {
                 // TODO: This should be done in a transaction with the query above.
-                self.attach_connector(config_id, ac).await?;
+                self.attach_connector(&txn, config_id, ac).await?;
             }
         }
-        let row = self.conn.query_opt("UPDATE project_config SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), project_id = $4 WHERE id = $5 RETURNING version",
+        let row = txn.query_opt("UPDATE project_config SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), project_id = $4 WHERE id = $5 RETURNING version",
             &[&config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
             .await
             .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(e, project_id))?;
+        txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
             None => Err(DBError::UnknownConfig(config_id).into()),
@@ -786,7 +805,9 @@ impl Storage for ProjectDB {
 
     async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
         let res = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute("DELETE FROM project_config WHERE id = $1", &[&config_id.0])
             .await?;
         if res > 0 {
@@ -798,7 +819,9 @@ impl Storage for ProjectDB {
 
     async fn get_attached_connector_direction(&self, uuid: &str) -> AnyResult<Direction> {
         let row = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query_one(
                 "SELECT is_input FROM attached_connector WHERE uuid = $1",
                 &[&uuid],
@@ -817,7 +840,7 @@ impl Storage for ProjectDB {
         config_id: ConfigId,
         config_version: Version,
     ) -> AnyResult<PipelineId> {
-        let row = self.conn.query_one(
+        let row = self.pool.get().await?.query_one(
                 "INSERT INTO pipeline (config_id, config_version, shutdown, created) VALUES($1, $2, false, extract(epoch from now())) RETURNING id",
             &[&config_id.0, &config_version.0])
             .await
@@ -828,7 +851,9 @@ impl Storage for ProjectDB {
 
     async fn pipeline_set_port(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
         let _ = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute(
                 "UPDATE pipeline SET port = $1 where id = $2",
                 &[&(port as i16), &pipeline_id.0],
@@ -839,7 +864,9 @@ impl Storage for ProjectDB {
 
     async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
         let res = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute(
                 "UPDATE pipeline SET shutdown=true WHERE id = $1",
                 &[&pipeline_id.0],
@@ -850,7 +877,9 @@ impl Storage for ProjectDB {
 
     async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
         let res = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id.0])
             .await?;
         Ok(res > 0)
@@ -858,7 +887,9 @@ impl Storage for ProjectDB {
 
     async fn get_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr> {
         let row = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query_one(
                 "SELECT id, config_id, port, shutdown, created FROM pipeline WHERE id = $1",
                 &[&pipeline_id.0],
@@ -885,7 +916,9 @@ impl Storage for ProjectDB {
 
     async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>> {
         let rows = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query(
                 "SELECT id, config_id, port, shutdown, created FROM pipeline",
                 &[],
@@ -922,7 +955,7 @@ impl Storage for ProjectDB {
         config: &str,
     ) -> AnyResult<ConnectorId> {
         debug!("new_connector {name} {description} {config}");
-        let row = self.conn.query_one("INSERT INTO connector (name, description, typ, config) VALUES($1, $2, $3, $4) RETURNING id",
+        let row = self.pool.get().await?.query_one("INSERT INTO connector (name, description, typ, config) VALUES($1, $2, $3, $4) RETURNING id",
             &[&name, &description, &(typ as i64), &config])
             .await?;
         Ok(ConnectorId(row.get(0)))
@@ -930,7 +963,9 @@ impl Storage for ProjectDB {
 
     async fn list_connectors(&self) -> AnyResult<Vec<ConnectorDescr>> {
         let rows = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query(
                 "SELECT id, name, description, typ, config FROM connector",
                 &[],
@@ -956,7 +991,9 @@ impl Storage for ProjectDB {
 
     async fn get_connector(&self, connector_id: ConnectorId) -> AnyResult<ConnectorDescr> {
         let row = self
-            .conn
+            .pool
+            .get()
+            .await?
             .query_opt(
                 "SELECT name, description, typ, config FROM connector WHERE id = $1",
                 &[&connector_id.0],
@@ -992,7 +1029,9 @@ impl Storage for ProjectDB {
         let descr = self.get_connector(connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
 
-        self.conn
+        self.pool
+            .get()
+            .await?
             .execute(
                 "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4",
                 &[
@@ -1009,7 +1048,9 @@ impl Storage for ProjectDB {
 
     async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()> {
         let res = self
-            .conn
+            .pool
+            .get()
+            .await?
             .execute("DELETE FROM connector WHERE id = $1", &[&connector_id.0])
             .await?;
 
@@ -1065,16 +1106,13 @@ impl ProjectDB {
         }
 
         debug!("Opening connection to {:?}", connection_str);
-        let (client, conn) = tokio_postgres::connect(connection_str, NoTls).await?;
-
-        // The `tokio_postgres` API requires allocating a thread to `connection`,
-        // which will handle datbase I/O and should automatically terminate once
-        // the `dbclient` is dropped.
-        tokio::spawn(async move {
-            if let Err(e) = conn.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
+        let config = connection_str.parse::<tokio_postgres::Config>()?;
+        let mgr_config = deadpool_postgres::ManagerConfig {
+            recycling_method: RecyclingMethod::Fast,
+        };
+        let mgr = Manager::from_config(config, NoTls, mgr_config);
+        let pool = Pool::builder(mgr).max_size(16).build().unwrap();
+        let client = pool.get().await?;
 
         client
             .execute(
@@ -1183,12 +1221,9 @@ impl ProjectDB {
         }
 
         #[cfg(feature = "pg-embed")]
-        return Ok(Self {
-            conn: client,
-            pg_inst,
-        });
+        return Ok(Self { pool, pg_inst });
         #[cfg(not(feature = "pg-embed"))]
-        return Ok(Self { conn: client });
+        return Ok(Self { pool: pool });
     }
 
     /// Attach connector to the config.
@@ -1197,11 +1232,12 @@ impl ProjectDB {
     /// - A valid config for `config_id` must exist.
     async fn attach_connector(
         &self,
+        txn: &Transaction<'_>,
         config_id: ConfigId,
         ac: &AttachedConnector,
     ) -> AnyResult<AttachedConnectorId> {
         let is_input = ac.direction == Direction::Input;
-        let row = self.conn.query_one(
+        let row = txn.query_one(
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
             &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
             .await;
@@ -1230,7 +1266,7 @@ impl ProjectDB {
         &self,
         config_id: ConfigId,
     ) -> AnyResult<Vec<AttachedConnector>> {
-        let rows = self.conn.query(
+        let rows = self.pool.get().await?.query(
             "SELECT uuid, connector_id, config, is_input FROM attached_connector WHERE config_id = $1",
             &[&config_id.0])
             .await?;
