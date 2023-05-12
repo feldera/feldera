@@ -36,6 +36,7 @@ futures = "0.3"
 tokio-postgres = "0.7"
 async-trait = "0.1"
 colored = "2.0.0"
+deadpool-postgres = "0.10.5"
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true }
 
