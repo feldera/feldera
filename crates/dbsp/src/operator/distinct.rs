@@ -33,7 +33,7 @@ where
     /// that contains at most one occurrence of each tuple in `B`.
     /// Specifically, for each input tuple `(key, value, weight)` with
     /// `weight > 0` the operator produces an output tuple `(key, value, 1)`.
-    /// Tuples whose `weight` si `<= 0` are dropped.
+    /// Tuples with `weight <= 0` are dropped.
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
-            #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that allows using it as a DBSP weight")]
+            #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that allows using it in a DBSP stream.")]
             #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
             #[repr(transparent)]
             #[size_of(skip_all)]

@@ -6,8 +6,9 @@ use std::{
     ops::{Add, AddAssign, Neg},
 };
 
-/// Ring on numeric values that panics on overflow
-/// Computes exactly like any signed numeric value, but panics on overflow
+/// Ring on numeric values that panics on overflow.
+///
+/// Computes exactly like any signed numeric value, but panics on overflow.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
 pub struct CheckedInt<T> {

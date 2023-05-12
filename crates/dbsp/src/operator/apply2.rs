@@ -12,7 +12,8 @@ where
     C: Circuit,
     T1: Clone + 'static,
 {
-    /// Apply a user-provided binary function to its inputs at each timestamp.
+    /// Apply a user-provided binary function to inputs from two streams at each
+    /// timestamp.
     #[track_caller]
     pub fn apply2<F, T2, T3>(&self, other: &Stream<C, T2>, func: F) -> Stream<C, T3>
     where
@@ -24,8 +25,8 @@ where
             .add_binary_operator(Apply2::new(func, Location::caller()), self, other)
     }
 
-    /// Apply a user-provided binary function to its inputs at each timestamp,
-    /// consuming the first input.
+    /// Apply a user-provided binary function to inputs from two streams at each
+    /// timestamp, consuming the first input.
     #[track_caller]
     pub fn apply2_owned<F, T2, T3>(&self, other: &Stream<C, T2>, func: F) -> Stream<C, T3>
     where

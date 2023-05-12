@@ -119,7 +119,7 @@ where
     /// a data point arriving out-of-order may affect previously
     /// computed rolling aggregate values at future times.
     ///
-    /// The `watermark` stream bounds the out-of-ordedness of the input
+    /// The `watermark` stream bounds the out-of-orderedness of the input
     /// data by providing a monotonically growing lower bound on
     /// timestamps that can appear in the input stream.  The operator
     /// does not expect inputs with timestamps smaller than the current
@@ -129,13 +129,13 @@ where
     /// # Background
     ///
     /// The rolling aggregate operator is typically applied to time series data
-    /// with bounded out-of-ordedness, i.e, having seen a timestamp `ts` in the
-    /// input stream, the operator will never observe a timestamp smaller than
-    /// `ts - b` for some bound `b`.  This in turn means that the value of the
-    /// aggregate will remain constant for timestamps that only depend on times
-    /// `< ts - b`.  Hence, we do not need to maintain the state needed to
-    /// recompute these aggregates, which allows us to bound the amount of state
-    /// maintained by this operator.
+    /// with bounded out-of-orderedness, i.e, having seen a timestamp `ts` in
+    /// the input stream, the operator will never observe a timestamp
+    /// smaller than `ts - b` for some bound `b`.  This in turn means that
+    /// the value of the aggregate will remain constant for timestamps that
+    /// only depend on times `< ts - b`.  Hence, we do not need to maintain
+    /// the state needed to recompute these aggregates, which allows us to
+    /// bound the amount of state maintained by this operator.
     ///
     /// The bound `ts - b` is known as "watermark" and can be computed, e.g., by
     /// the [`watermark_monotonic`](`Stream::watermark_monotonic`) operator.

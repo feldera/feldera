@@ -12,7 +12,11 @@ where
     C: Circuit,
     T1: Clone + 'static,
 {
-    /// Apply  the `Apply` operator to `self`.
+    /// Returns a stream that contains `func(&x)` for each `x` in `self`.
+    ///
+    /// The operator will have a generic name for debugging and profiling
+    /// purposes.  Use [`Stream::apply_named`], instead, to give it a
+    /// specific name.
     #[track_caller]
     pub fn apply<F, T2>(&self, func: F) -> Stream<C, T2>
     where
@@ -25,7 +29,8 @@ where
         )
     }
 
-    /// Apply  the `Apply` operator to `self`.
+    /// Returns a stream that contains `func(&x)` for each `x` in `self`, giving
+    /// the operator the given `name` for debugging and profiling purposes.
     #[track_caller]
     pub fn apply_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
@@ -37,7 +42,11 @@ where
             .add_unary_operator(Apply::new(func, name.into(), Location::caller()), self)
     }
 
-    /// Apply the `ApplyOwned` operator to `self`
+    /// Returns a stream that contains `func(x)` for each `x` in `self`.
+    ///
+    /// The operator will have a generic name for debugging and profiling
+    /// purposes.  Use [`Stream::apply_named`], instead, to give it a
+    /// specific name.
     #[track_caller]
     pub fn apply_owned<F, T2>(&self, func: F) -> Stream<C, T2>
     where
@@ -50,7 +59,8 @@ where
         )
     }
 
-    /// Apply the `ApplyOwned` operator to `self` with a custom name
+    /// Returns a stream that contains `func(&x)` for each `x` in `self`, giving
+    /// the operator the given `name` for debugging and profiling purposes.
     #[track_caller]
     pub fn apply_owned_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
@@ -62,7 +72,7 @@ where
             .add_unary_operator(ApplyOwned::new(func, name.into(), Location::caller()), self)
     }
 
-    /// Apply the `ApplyOwned` operator to `self` with a custom name
+    /// Apply the `ApplyCore` operator to `self` with a custom name
     #[track_caller]
     pub fn apply_core<N, T2, O, B, F>(
         &self,

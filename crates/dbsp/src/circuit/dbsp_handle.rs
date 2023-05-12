@@ -11,17 +11,28 @@ use std::{
     time::Instant,
 };
 
+#[cfg(doc)]
+use crate::circuit::circuit_builder::Stream;
+
 impl Runtime {
     /// Instantiate a circuit in a multithreaded runtime.
     ///
     /// Creates a multithreaded runtime with `nworkers` worker threads and
-    /// instantiates identical circuits in each worker, using `constructor`
-    /// closure. Returns a [`DBSPHandle`] that can be used to control
-    /// the circuit and a user-defined value returned by the constructor.
-    /// This value typically contains one or more input handles used to
-    /// push data to the circuit at runtime (see
-    /// [`RootCircuit::add_input_stream`], [`RootCircuit::add_input_zset`], and
-    /// related methods).
+    /// instantiates an identical circuit in each worker, by calling
+    /// `constructor` once per worker.  `init_circuit` passes each call to
+    /// `constructor` a new [`RootCircuit`], in which it should create input
+    /// operators by calling [`RootCircuit::add_input_zset`] and related
+    /// methods.  Each of these calls returns an input handle and a `Stream`.
+    /// The `constructor` can call
+    /// [`Stream`] methods to do
+    /// computation, each of which yields further `Stream`s.  It can also use
+    /// [`Stream::output`] to obtain an output handle.
+    ///
+    /// Returns a [`DBSPHandle`] that the caller can use to control the circuit
+    /// and a user-defined value returned by the constructor.  The
+    /// `constructor` should use the latter to return the input and output
+    /// handles it obtains, because these allow the caller to feed input into
+    /// the circuit and read output from the circuit.
     ///
     /// To ensure that the multithreaded runtime has identical input/output
     /// behavior to a single-threaded circuit, the `constructor` closure
@@ -30,6 +41,8 @@ impl Runtime {
     /// operators in the same order.  This ensures that operators that shard
     /// their inputs across workers, e.g.,
     /// [`Stream::join`](`crate::Stream::join`), work correctly.
+    /// The closure should return the same value in each worker thread; this
+    /// function returns one of these values arbitrarily.
     ///
     /// TODO: Document other requirements.  Not all operators are currently
     /// thread-safe.

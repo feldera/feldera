@@ -11,7 +11,9 @@ where
     B: BatchReader + Clone + 'static,
 {
     /// Compute the watermark of a time series, where the watermark function is
-    /// monotonic in event time.
+    /// monotonic in event time.  The notion of time here is distinct from the
+    /// DBSP logical time and can be modeled using any type that implements
+    /// `Ord`.
     ///
     /// Watermark is an attribute of a time series that indicates the latest
     /// timestamp such that no data points with timestamps older than the
@@ -23,12 +25,12 @@ where
     /// This method computes the watermark of a time series assuming that the
     /// watermark function is monotonic in the event time, e.g., `watermark
     /// = event_time - 5s`.  Such watermarks are the most common in practice
-    /// and can be computed efficiently by only considering the last
+    /// and can be computed efficiently by only considering the latest
     /// timestamp in each input batch.   The method takes a stream of batches
     /// indexed by timestamp and outputs a stream of watermarks (scalar
-    /// values).  Its output at each timestamp is computed as the maximum of
-    /// the previous watermark and the largest watermark in the new
-    /// input batch.
+    /// values).  Its output at each timestamp is a scalar (not a Z-set),
+    /// computed as the maximum of the previous watermark and the largest
+    /// watermark in the new input batch.
     #[track_caller]
     pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<RootCircuit, TS>
     where
