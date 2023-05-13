@@ -152,6 +152,7 @@ format:
         // the producer starts earlier (the consumer won't start until the
         // rebalancing protocol kicks in).
         let config_str = r#"
+name: test
 inputs:
     test_input1:
         stream: test_input1

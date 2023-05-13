@@ -8,6 +8,7 @@ use dbsp_adapters::{
         kafka::{BufferConsumer, KafkaResources, TestProducer},
         test_circuit, TEST_LOGGER,
     },
+    PipelineConfig,
 };
 use log::LevelFilter;
 use proptest::{
@@ -79,9 +80,11 @@ outputs:
         }
     });
 
+    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+
     server::run_server(
         &test_circuit,
-        config_str,
+        &config,
         "{\"name\": \"example\"}".to_string(),
         Some(8080),
     )
