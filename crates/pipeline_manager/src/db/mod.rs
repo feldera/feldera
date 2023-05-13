@@ -5,6 +5,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
 use tokio_postgres::NoTls;
@@ -621,17 +622,31 @@ impl Storage for ProjectDB {
         }
     }
 
-    // XXX: Multiple statements
     async fn list_configs(&self) -> AnyResult<Vec<ConfigDescr>> {
-        let rows = self.pool.get().await?.query(
-            "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config", &[])
+        let rows = self
+            .pool
+            .get()
+            .await?
+            // For every pipeline config, produce a JSON representation of all connectors
+            .query(
+                "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
+                COALESCE(json_agg(json_build_object('uuid', uuid, 
+                                                    'connector_id', connector_id, 
+                                                    'config', ac.config, 
+                                                    'is_input', is_input)) 
+                                FILTER (WHERE uuid IS NOT NULL), 
+                        '[]')
+                FROM project_config p
+                LEFT JOIN attached_connector ac on p.id = ac.config_id
+                GROUP BY p.id;",
+                &[],
+            )
             .await?;
-
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let config_id = ConfigId(row.get(0));
             let project_id = row.get::<_, Option<i64>>(6).map(ProjectId);
-            let attached_connectors = self.get_attached_connectors(config_id).await?;
+            let attached_connectors = self.json_to_attached_connectors(row.get(7)).await?;
             let pipeline = if let Some(pipeline_id) = row.get::<_, Option<i64>>(5).map(PipelineId) {
                 Some(self.get_pipeline(pipeline_id).await?)
             } else {
@@ -653,12 +668,27 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    // XXX: Multiple statements
     async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
-        let row = self.pool.get().await?.query_opt(
-            "SELECT id, version, name, description, config, pipeline_id, project_id FROM project_config WHERE id = $1",
-        &[&config_id.0])
-        .await?;
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
+                COALESCE(json_agg(json_build_object('uuid', uuid, 
+                                                    'connector_id', connector_id, 
+                                                    'config', ac.config, 
+                                                    'is_input', is_input)) 
+                                FILTER (WHERE uuid IS NOT NULL), 
+                        '[]')
+                FROM project_config p
+                LEFT JOIN attached_connector ac on p.id = ac.config_id
+                WHERE p.id = $1
+                GROUP BY p.id
+                ",
+                &[&config_id.0],
+            )
+            .await?;
 
         if let Some(row) = row {
             let pipeline_id: Option<PipelineId> = row.get::<_, Option<i64>>(5).map(PipelineId);
@@ -674,7 +704,7 @@ impl Storage for ProjectDB {
                 attached_connectors: Vec::new(),
             };
 
-            descr.attached_connectors = self.get_attached_connectors(config_id).await?;
+            descr.attached_connectors = self.json_to_attached_connectors(row.get(7)).await?;
             if let Some(pipeline_id) = pipeline_id {
                 descr.pipeline = Some(self.get_pipeline(pipeline_id).await?);
             }
@@ -1262,32 +1292,29 @@ impl ProjectDB {
         }
     }
 
-    async fn get_attached_connectors(
+    async fn json_to_attached_connectors(
         &self,
-        config_id: ConfigId,
+        connectors_json: Value,
     ) -> AnyResult<Vec<AttachedConnector>> {
-        let rows = self.pool.get().await?.query(
-            "SELECT uuid, connector_id, config, is_input FROM attached_connector WHERE config_id = $1",
-            &[&config_id.0])
-            .await?;
-        let mut result = Vec::with_capacity(rows.len());
-
-        for row in rows {
-            let direction = if row.get(3) {
+        let connector_arr = connectors_json.as_array().unwrap();
+        let mut attached_connectors = Vec::with_capacity(connector_arr.len());
+        for connector in connector_arr {
+            let obj = connector.as_object().unwrap();
+            let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
+            let direction = if is_input {
                 Direction::Input
             } else {
                 Direction::Output
             };
 
-            result.push(AttachedConnector {
-                uuid: row.get(0),
-                connector_id: ConnectorId(row.get(1)),
-                config: row.get(2),
+            attached_connectors.push(AttachedConnector {
+                uuid: obj.get("uuid").unwrap().as_str().unwrap().to_owned(),
+                connector_id: ConnectorId(obj.get("connector_id").unwrap().as_i64().unwrap()),
+                config: obj.get("config").unwrap().as_str().unwrap().to_owned(),
                 direction,
             });
         }
-
-        Ok(result)
+        Ok(attached_connectors)
     }
 
     /// Helper to convert postgres error into a `DBError::DuplicateProjectName`

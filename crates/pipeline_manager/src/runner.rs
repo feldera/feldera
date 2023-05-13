@@ -479,7 +479,7 @@ impl LocalRunner {
                     if start.elapsed() > PORT_FILE_LOG_QUIET_PERIOD && (count % 10) == 0 {
                         log::info!("Could not read runner port file yet. Retrying\n{}", e);
                     }
-                    count = count + 1;
+                    count += 1;
                 }
             }
             sleep(Duration::from_millis(100)).await;
