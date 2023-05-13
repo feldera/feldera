@@ -438,6 +438,7 @@ mod test_with_kafka {
 
         // Config string
         let config_str = r#"
+name: test
 inputs:
     test_input1:
         stream: test_input1

@@ -1068,6 +1068,7 @@ mod test {
                 r#"
 min_batch_size_records: {min_batch_size_records}
 max_buffering_delay_usecs: {max_buffering_delay_usecs}
+name: test
 inputs:
     test_input1:
         stream: test_input1
