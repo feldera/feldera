@@ -110,7 +110,7 @@ impl KafkaProducer {
             self.producer.send(record).unwrap();
         }
         self.producer.flush(Timeout::Never).unwrap();
-        println!("Data written to '{topic}'");
+        // println!("Data written to '{topic}'");
     }
 }
 
