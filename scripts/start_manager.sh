@@ -39,7 +39,5 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release --features pg-embed -- \
     --working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
-    --static-html=static \
     --unix-daemon \
-    --dev-mode \
     --db-connection-string="postgres-embed"
