@@ -27,8 +27,6 @@
 // * Support multi-node DBSP deployments.
 // * Proper UI.
 
-use actix_files as fs;
-use actix_files::NamedFile;
 use actix_web::{
     delete,
     dev::{ServiceFactory, ServiceRequest},
@@ -41,7 +39,6 @@ use actix_web::{
     patch, post, rt, web,
     web::Data as WebData,
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
-    Result as ActixResult,
 };
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
@@ -246,7 +243,7 @@ struct ServerState {
     // Dropping this handle kills the compiler task.
     _compiler: Compiler,
     runner: Runner,
-    config: ManagerConfig,
+    _config: ManagerConfig,
 }
 
 impl ServerState {
@@ -261,7 +258,7 @@ impl ServerState {
             db,
             _compiler: compiler,
             runner,
-            config,
+            _config: config,
         })
     }
 }
@@ -336,18 +333,7 @@ where
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    // Extract the contents of `index.html`, so we can serve it on the
-    // root endpoint (`/`), while other files are served via the`/static`
-    // endpoint.
-    let index_data = match generated.get("index.html") {
-        None => "<html><head><title>DBSP manager</title></head></html>"
-            .as_bytes()
-            .to_owned(),
-        Some(resource) => resource.data.to_owned(),
-    };
-
-    let app = app
-        .app_data(state.clone())
+    app.app_data(state.clone())
         .service(list_projects)
         .service(project_code)
         .service(project_status)
@@ -374,30 +360,8 @@ where
         .service(connector_status)
         .service(delete_connector)
         .service(http_input)
-        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
-
-    if let Some(static_html) = &state.config.static_html {
-        // Serve static contents from the file system.
-        app.route("/", web::get().to(index))
-            .service(fs::Files::new("/static", static_html).show_files_listing())
-    } else {
-        // Serve static contents embedded in the program.
-        app.route(
-            "/",
-            web::get().to(move || {
-                let index_data = index_data.clone();
-                async { HttpResponse::Ok().body(index_data) }
-            }),
-        )
-        .service(ResourceFiles::new("/static", generated))
-    }
-}
-
-async fn index(state: WebData<ServerState>) -> ActixResult<NamedFile> {
-    Ok(NamedFile::open(format!(
-        "{}/index.html",
-        state.config.static_html.as_ref().unwrap()
-    ))?)
+        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
+        .service(ResourceFiles::new("/", generated))
 }
 
 /// Pipeline manager error response.
