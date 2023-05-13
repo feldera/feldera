@@ -97,11 +97,6 @@ pub(crate) struct ManagerConfig {
     #[arg(short, long, default_value_t = default_db_connection_string())]
     pub db_connection_string: String,
 
-    /// [Developers only] serve static content from the specified directory.
-    /// Allows modifying JavaScript without restarting the server.
-    #[arg(short, long)]
-    pub static_html: Option<String>,
-
     /// [Developers only] dump OpenAPI specification to `openapi.json` file and
     /// exit immediately.
     #[serde(skip)]
@@ -135,8 +130,8 @@ pub(crate) struct ManagerConfig {
 impl ManagerConfig {
     /// Convert all directory paths in the `self` to absolute paths.
     ///
-    /// Converts `working_directory` `sql_compiler_home`,
-    /// `dbsp_override_path`, and `static_html` fields to absolute paths;
+    /// Converts `working_directory` `sql_compiler_home`, and
+    /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
     pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
         create_dir_all(&self.working_directory).map_err(|e| {
@@ -200,13 +195,6 @@ impl ManagerConfig {
                         "failed to access dbsp override directory '{path}': {e}"
                     ))
                 })?
-                .to_string_lossy()
-                .into_owned();
-        }
-
-        if let Some(path) = self.static_html.as_mut() {
-            *path = canonicalize(&path)
-                .map_err(|e| AnyError::msg(format!("failed to access '{path}': {e}")))?
                 .to_string_lossy()
                 .into_owned();
         }

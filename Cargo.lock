@@ -1842,6 +1842,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "awc",
+ "change-detection",
  "chrono",
  "clap 4.2.4",
  "colored",

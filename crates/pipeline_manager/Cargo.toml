@@ -44,6 +44,7 @@ daemonize = { version = "0.4.1" }
 
 [build-dependencies]
 static-files = "0.2.3"
+change-detection = "1.2"
 
 [dev-dependencies]
 proptest = "1.0.0"
