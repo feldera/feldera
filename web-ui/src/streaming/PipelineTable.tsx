@@ -200,9 +200,10 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                       <Tooltip title='Inspect Connector'>
                         <IconButton
                           size='small'
-                          onClick={() =>
+                          onClick={e => {
+                            e.preventDefault()
                             router.push('/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config)
-                          }
+                          }}
                         >
                           <Icon icon='bx:show' fontSize={20} />
                         </IconButton>
@@ -270,9 +271,10 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                       <Tooltip title='Inspect Connector'>
                         <IconButton
                           size='small'
-                          onClick={() =>
+                          onClick={e => {
+                            e.preventDefault()
                             router.push('/streaming/introspection/' + props.row.config_id + '/' + params.row.ac.config)
-                          }
+                          }}
                         >
                           <Icon icon='bx:show' fontSize={20} />
                         </IconButton>
@@ -596,7 +598,10 @@ export default function PipelineTable() {
                 <IconButton
                   size='small'
                   href='#'
-                  onClick={() => router.push('/streaming/builder/' + params.row.config_id)}
+                  onClick={e => {
+                    e.preventDefault()
+                    router.push('/streaming/builder/' + params.row.config_id)
+                  }}
                 >
                   <Icon icon='bx:pencil' fontSize={20} />
                 </IconButton>

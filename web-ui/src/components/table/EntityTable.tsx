@@ -70,7 +70,13 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           <>
             {onEditClicked && (
               <Tooltip title='Edit'>
-                <IconButton size='small' href='#' onClick={() => onEditClicked(params.row)}>
+                <IconButton
+                  size='small'
+                  onClick={e => {
+                    e.preventDefault()
+                    onEditClicked(params.row)
+                  }}
+                >
                   <Icon icon='bx:pencil' fontSize={20} />
                 </IconButton>
               </Tooltip>
