@@ -1,1 +1,0 @@
-../../adapters/static/errReporter.ts
