@@ -37,7 +37,7 @@ def prepare():
         print("Downloading transactions.csv (~2 GiB)...")
         from plumbum.cmd import gdown
         gdown['1RBEDUuvb-L15dk_UE9PPv3PgVPmkXJy6',
-              '--output', 'transactions.csv']()
+              '--output', transactions_csv]()
 
     # Push test data to topics
     print('Pushing demographics data to Kafka topic...')
