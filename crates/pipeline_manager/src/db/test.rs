@@ -4,6 +4,7 @@ use super::{
     ConnectorType, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
 };
 use crate::db::{pg_setup, DBError};
+use crate::Direction;
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use chrono::DateTime;
@@ -15,6 +16,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::SystemTime;
+use std::vec;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
@@ -206,6 +208,38 @@ async fn project_queries() {
     assert_eq!("test1", desc.name);
     let desc = handle.db.lookup_project("test2").await.unwrap();
     assert!(desc.is_none());
+}
+
+#[tokio::test]
+async fn project_config() {
+    let handle = test_setup().await;
+    let connector_id = handle
+        .db
+        .new_connector("a", "b", ConnectorType::KafkaIn, "c")
+        .await
+        .unwrap();
+    let ac = AttachedConnector {
+        uuid: "foo".to_string(),
+        direction: Direction::Input,
+        connector_id: connector_id,
+        config: "".to_string(),
+    };
+    let _ = handle
+        .db
+        .new_config(None, "1", "2", "3", &Some(vec![ac.clone()]))
+        .await
+        .unwrap();
+    let res = handle.db.list_configs().await.unwrap();
+    assert_eq!(1, res.len());
+    let config = res.get(0).unwrap();
+    assert_eq!("1", config.name);
+    assert_eq!("2", config.description);
+    assert_eq!("3", config.config);
+    assert_eq!(None, config.project_id);
+    let connectors = &config.attached_connectors;
+    assert_eq!(1, connectors.len());
+    let ac_ret = connectors.get(0).unwrap().clone();
+    assert_eq!(ac, ac_ret);
 }
 
 #[tokio::test]
