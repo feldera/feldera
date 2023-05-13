@@ -26,7 +26,10 @@ DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 
 # Kill manager. pkill doesn't handle process names >15 characters.
-pkill -9 dbsp_pipeline_
+pkill dbsp_pipeline_
+
+# Wait for manager process to exit.
+while ps -p $(pgrep dbsp_pipeline_) > /dev/null; do sleep 1; done
 
 set -e
 
@@ -38,4 +41,5 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release --features pg-embed -- \
     --dbsp-override-path="${ROOT_DIR}" \
     --static-html=static \
     --unix-daemon \
+    --dev-mode \
     --db-connection-string="postgres-embed"
