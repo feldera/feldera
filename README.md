@@ -101,13 +101,34 @@ windows driven by watermarks, etc.
 
 ## Architecture
 
-The following diagram shows the architecture of the DBSP platform.  Solid
-blocks indicate components that we are currently working on; white blocks with
-dashed borders are on our TODO list.
+The following diagram shows the architecture of the DBSP platform.  Blocks
+with solid borders indicate existing components.  Blocks with dashed borders
+are on our TODO list.
 
-<p align="center">
-  <img src="architecture.png" width="400" alt="DBSP architecture">
-</p>
+```text
+                                  Frontends
+                ┌────────────────────────────────────────────┐
+                │┌─────┐  +---------------------------------+│
+                ││ SQL │  | Language bindings (Python, ...) |│
+                │└─────┘  +---------------------------------+│
+ I/O adapters   │┌──────────────────────────────────────────┐│
+┌────────────┐  ││                 Optimizer                ││
+│+----------+│  │└──────────────────────────────────────────┘│
+│| Kinesis  |│  └────────────────────────────────────────────┘
+│+----------+│  +--------------------------------------------+
+│┌──────────┐│  |Distributed runtime, scale-out              |
+││  Kafka   ││  |┌──────────────────────────────────────────┐|
+│└──────────┘│  |│                                          │|
+│+----------+│  |│                                          │|
+│|PostgreSQL|│  |│             DBSP core engine             │|
+│+----------+│  |│                                          │|
+│    ...     │  |│                                          │|
+│+----------+│  |└──────────────────────────────────────────┘|
+│|          |│  |┌──────────────────────────────────────────┐|
+│+----------+│  |│            Persistent indexes            │|
+└────────────┘  |└──────────────────────────────────────────┘|
+                +--------------------------------------------+
+```
 
 The DBSP core engine is written in Rust and provides a Rust API for building
 data-parallel dataflow programs by instantiating and connecting streaming
