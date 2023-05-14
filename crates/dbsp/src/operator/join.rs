@@ -133,6 +133,7 @@ impl<I1> Stream<RootCircuit, I1> {
     /// nested scopes.  We keep this implementation for testing and
     /// benchmarking purposes.
     #[track_caller]
+    #[doc(hidden)]
     pub fn join_incremental<F, I2, Z>(
         &self,
         other: &Stream<RootCircuit, I2>,

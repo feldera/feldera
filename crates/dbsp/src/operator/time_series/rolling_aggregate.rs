@@ -281,6 +281,7 @@ impl<B> Stream<RootCircuit, B> {
         })
     }
 
+    #[doc(hidden)]
     pub fn partitioned_rolling_aggregate_inner<TS, V, Agg, O>(
         &self,
         self_window: &Self,
