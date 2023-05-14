@@ -333,7 +333,7 @@ where
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    app.app_data(state.clone())
+    app.app_data(state)
         .service(list_projects)
         .service(project_code)
         .service(project_status)
