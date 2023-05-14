@@ -53,7 +53,14 @@ const OutputNode = ({ id, data }: NodeProps) => {
           </Box>
         }
       />
-      <Handle type='target' position={Position.Left} isConnectable={true} isValidConnection={isValidConnection} />
+      {/* The .outputHandle is referenced by webui-tester */}
+      <Handle
+        className='outputHandle'
+        type='target'
+        position={Position.Left}
+        isConnectable={true}
+        isValidConnection={isValidConnection}
+      />
     </Node>
   )
 }

@@ -24,6 +24,7 @@ lcov.info
 
 .idea
 *.iml
+.DS_Store
 
 benches/galen_data/
 benches/gdelt-data/

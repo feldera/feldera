@@ -33,6 +33,7 @@ const Metadata = (props: { errors: FormError }) => {
         <FormControl fullWidth>
           <TextField
             fullWidth
+            id='pipeline-name' // referenced by webui-tester
             type='text'
             label='Name'
             placeholder={PLACEHOLDER_VALUES['pipeline_name']}
@@ -50,6 +51,7 @@ const Metadata = (props: { errors: FormError }) => {
       <Grid item xs={8}>
         <TextField
           fullWidth
+          id='pipeline-description' // referenced by webui-tester
           type='Description'
           label='Description'
           placeholder={PLACEHOLDER_VALUES['pipeline_description']}

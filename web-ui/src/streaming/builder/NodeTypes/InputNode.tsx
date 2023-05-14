@@ -62,7 +62,14 @@ const InputNode = ({ id, data }: NodeProps) => {
           </Box>
         }
       />
-      <Handle type='source' position={Position.Right} isConnectable={true} isValidConnection={isValidConnection} />
+      {/* The .inputHandle is referenced by webui-tester */}
+      <Handle
+        className='inputHandle'
+        type='source'
+        position={Position.Right}
+        isConnectable={true}
+        isValidConnection={isValidConnection}
+      />
     </Node>
   )
 }

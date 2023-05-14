@@ -11,7 +11,9 @@ const PipelineManagement = () => {
         subtitle={<Typography variant='body2'>Manage existing streaming pipelines.</Typography>}
       />
 
-      <Grid item xs={12}>
+      <Grid item xs={12} id='pipeline-management-content'>
+        {' '}
+        {/* id referenced by webui-tester */}
         <PipelineTable />
       </Grid>
     </Grid>

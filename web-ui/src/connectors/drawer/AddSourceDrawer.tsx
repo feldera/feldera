@@ -144,6 +144,7 @@ const SideBarAddIo = () => {
 
   return (
     <Drawer
+      id='connector-drawer' // referenced by webui-tester
       open={isOpen}
       anchor='right'
       variant='temporary'
