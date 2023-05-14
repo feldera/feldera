@@ -39,6 +39,13 @@ impl Drop for DbHandle {
     }
 }
 
+#[cfg(test)]
+impl Version {
+    fn increment(&self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
 async fn test_setup() -> DbHandle {
     let _temp_dir = tempfile::tempdir().unwrap();
     let temp_path = _temp_dir.path();
@@ -1003,7 +1010,7 @@ impl Storage for Mutex<DbModel> {
 
         c.name = config_name.to_owned();
         c.description = config_description.to_owned();
-        c.version = Version(c.version.0 + 1);
+        c.version = c.version.increment();
         if let Some(config) = config {
             c.config = config.clone();
         }
