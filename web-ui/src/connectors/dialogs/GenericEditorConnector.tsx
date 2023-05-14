@@ -220,5 +220,12 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
 
 export const AddGenericConnectorCard = () => {
   // id is referenced by webui-tester
-  return <AddConnectorCard id="generic-connector" icon='file-icons:test-generic' title='A generic connector' dialog={ConfigEditorDialog} />
+  return (
+    <AddConnectorCard
+      id='generic-connector'
+      icon='file-icons:test-generic'
+      title='A generic connector'
+      dialog={ConfigEditorDialog}
+    />
+  )
 }

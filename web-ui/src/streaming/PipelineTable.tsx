@@ -146,7 +146,7 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
                         <Icon icon='carbon:port-input' fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
-                    <ListItemText primary={props.row.pipeline.port || '0000'} />
+                    <ListItemText className='pipelinePort' primary={props.row.pipeline.port || '0000'} />
                   </ListItem>
                 </>
               )}
@@ -161,7 +161,8 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
         </Grid>
 
         <Grid item xs={12}>
-          <Paper>
+          {/* className referenced by webui-tester */}
+          <Paper className='inputStats'>
             <DataGridPro
               autoHeight
               getRowId={(row: ConnectorData) => row.ac.uuid}
@@ -225,7 +226,8 @@ const DetailPanelContent = (props: { row: ConfigDescr }) => {
         </Grid>
 
         <Grid item xs={12}>
-          <Paper>
+          {/* className referenced by webui-tester */}
+          <Paper className='outputStats'>
             <DataGridPro
               autoHeight
               getRowId={(row: ConnectorData) => row.ac.uuid}
@@ -570,16 +572,17 @@ export default function PipelineTable() {
 
         return (
           <>
+            {/* the className attributes are used by webui-tester */}
             {needsPause && (
               <Tooltip title='Pause Pipeline'>
-                <IconButton size='small' onClick={() => pausePipelineClick(params.row)}>
+                <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(params.row)}>
                   <Icon icon='bx:pause-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {needsStart && (
               <Tooltip title='Start Pipeline'>
-                <IconButton size='small' onClick={() => startPipelineClick(params.row)}>
+                <IconButton className='startButton' size='small' onClick={() => startPipelineClick(params.row)}>
                   <Icon icon='bx:play-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
@@ -596,6 +599,7 @@ export default function PipelineTable() {
             {needsEdit && (
               <Tooltip title='Edit Pipeline'>
                 <IconButton
+                  className='editButton'
                   size='small'
                   href='#'
                   onClick={e => {
@@ -609,7 +613,7 @@ export default function PipelineTable() {
             )}
             {needsDelete && (
               <Tooltip title='Shutdown Pipeline'>
-                <IconButton size='small' onClick={() => deletePipelineClick(params.row)}>
+                <IconButton className='shutdownButton' size='small' onClick={() => deletePipelineClick(params.row)}>
                   <Icon icon='bx:trash-alt' fontSize={20} />
                 </IconButton>
               </Tooltip>

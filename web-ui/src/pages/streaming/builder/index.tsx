@@ -310,19 +310,21 @@ export const PipelineWithProvider = (props: {
 
   return (
     <>
-      <Grid container spacing={6} className='match-height'>
+      <Grid container spacing={6} className='match-height' id='pipeline-builder-content'>
         <PageHeader
           title={<Typography variant='h5'>Pipeline Creator</Typography>}
           subtitle={<Typography variant='body2'>Define an end-to-end pipeline with analytics.</Typography>}
         />
         <Grid item xs={12}>
+          {/* id referenced by webui-tester */}
           <Card>
             <CardContent>
               <Metadata errors={{}} />
             </CardContent>
             <CardContent>
               <Grid item xs={12}>
-                <SaveIndicator stateToLabel={stateToSaveLabel} state={saveState} />
+                {/* id referenced by webui-tester */}
+                <SaveIndicator id='save-indicator' stateToLabel={stateToSaveLabel} state={saveState} />
               </Grid>
             </CardContent>
           </Card>

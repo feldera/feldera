@@ -255,33 +255,30 @@ const useUpdateProjectIfChanged = (
         description: project.description,
         code: project.code
       }
-      mutate(
-        updateRequest,
-        {
-          onSettled: () => {
-            queryClient.invalidateQueries(['project'])
-            queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
-            queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
-          },
-          onSuccess: (data: UpdateProjectResponse) => {
-            projectQueryCacheUpdate(queryClient, updateRequest)
-            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
-            setState('isUpToDate')
-            setFormError({})
-          },
-          onError: (error: CancelError) => {
-            // TODO: would be good to have error codes from the API
-            if (error.message.includes('name already exists')) {
-              setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
-              // This won't try to save again, but set the save indicator to
-              // Saving... until the user changes something:
-              setState('isDebouncing')
-            } else {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-            }
+      mutate(updateRequest, {
+        onSettled: () => {
+          queryClient.invalidateQueries(['project'])
+          queryClient.invalidateQueries(['projectCode', { project_id: project.project_id }])
+          queryClient.invalidateQueries(['projectStatus', { project_id: project.project_id }])
+        },
+        onSuccess: (data: UpdateProjectResponse) => {
+          projectQueryCacheUpdate(queryClient, updateRequest)
+          setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
+          setState('isUpToDate')
+          setFormError({})
+        },
+        onError: (error: CancelError) => {
+          // TODO: would be good to have error codes from the API
+          if (error.message.includes('name already exists')) {
+            setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+            // This won't try to save again, but set the save indicator to
+            // Saving... until the user changes something:
+            setState('isDebouncing')
+          } else {
+            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
           }
         }
-      )
+      })
     }
   }, [
     mutate,

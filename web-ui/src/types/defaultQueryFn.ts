@@ -34,13 +34,13 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
               ...{
                 name: newData.name,
                 description: newData.description ? newData.description : oldData.project.description
-              },
+              }
             },
             code: newData.code ? newData.code : oldData.code
           }
-        };
+        }
         console.log('newdata is')
-        console.log(newd);
+        console.log(newd)
         return newd
       } else {
         return oldData
