@@ -3,6 +3,7 @@ use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
+use futures_util::TryFutureExt;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -324,6 +325,22 @@ pub(crate) struct ConnectorDescr {
     pub direction: Direction,
 }
 
+// Helper type for composable error handling when dealing
+// with DB errors
+enum EitherError {
+    Tokio(tokio_postgres::Error),
+    Any(AnyError),
+}
+
+impl std::convert::From<EitherError> for AnyError {
+    fn from(value: EitherError) -> Self {
+        match value {
+            EitherError::Tokio(e) => anyhow!(e),
+            EitherError::Any(e) => e,
+        }
+    }
+}
+
 // The goal for these methods is to avoid multiple DB interactions as much as possible
 // and if not, use transactions
 #[async_trait]
@@ -414,7 +431,7 @@ impl Storage for ProjectDB {
                 &[&project_name, &project_description, &project_code]
             )
             .await
-            .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(e, project_name))?;
+            .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))?;
         let id = row.get(0);
 
         Ok((ProjectId(id), Version(1)))
@@ -441,9 +458,9 @@ impl Storage for ProjectDB {
                                 name = $1,
                                 description = $2,
                                 code = $3,
-                                status = (CASE WHEN code = $3 THEN code ELSE NULL END),
-                                error = (CASE WHEN code = $3 THEN code ELSE NULL END),
-                                schema = (CASE WHEN code = $3 THEN code ELSE NULL END)
+                                status = (CASE WHEN code = $3 THEN status ELSE NULL END),
+                                error = (CASE WHEN code = $3 THEN error ELSE NULL END),
+                                schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
                         WHERE id = $4
                         RETURNING version
                     ",
@@ -455,6 +472,7 @@ impl Storage for ProjectDB {
                         ],
                     )
                     .await
+                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))
                     .map_err(|_| DBError::UnknownProject(project_id))?
             }
             _ => {
@@ -464,6 +482,7 @@ impl Storage for ProjectDB {
                         &[&project_name, &project_description, &project_id.0],
                     )
                     .await
+                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))
                     .map_err(|_| DBError::UnknownProject(project_id))?
             }
         };
@@ -733,7 +752,7 @@ impl Storage for ProjectDB {
             &config_description,
             &config])
             .await
-            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(e, project_id))?;
+            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(EitherError::Tokio(e), project_id))?;
         let config_id = ConfigId(row.get(0));
 
         if let Some(connectors) = connectors {
@@ -762,7 +781,12 @@ impl Storage for ProjectDB {
                 &[&pipeline_id.0, &config_id.0],
             )
             .await
-            .map_err(|e| ProjectDB::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))?;
+            .map_err(|e| {
+                ProjectDB::maybe_pipeline_id_foreign_key_constraint_err(
+                    EitherError::Tokio(e),
+                    pipeline_id,
+                )
+            })?;
         if rows > 0 {
             Ok(())
         } else {
@@ -825,7 +849,7 @@ impl Storage for ProjectDB {
         let row = txn.query_opt("UPDATE project_config SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), project_id = $4 WHERE id = $5 RETURNING version",
             &[&config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
             .await
-            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(e, project_id))?;
+            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(EitherError::Tokio(e), project_id))?;
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
@@ -874,7 +898,7 @@ impl Storage for ProjectDB {
                 "INSERT INTO pipeline (config_id, config_version, shutdown, created) VALUES($1, $2, false, extract(epoch from now())) RETURNING id",
             &[&config_id.0, &config_version.0])
             .await
-            .map_err(|e| ProjectDB::maybe_config_id_foreign_key_constraint_err(e, config_id))?;
+            .map_err(|e| ProjectDB::maybe_config_id_foreign_key_constraint_err(EitherError::Tokio(e), config_id))?;
 
         Ok(PipelineId(row.get(0)))
     }
@@ -1270,26 +1294,10 @@ impl ProjectDB {
         let row = txn.query_one(
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
             &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
-            .await;
-        match row {
-            Ok(row) => Ok(AttachedConnectorId(row.get(0))),
-            Err(e) => {
-                let db_err = e.as_db_error();
-                if let Some(db_err) = db_err {
-                    if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
-                        if db_err.constraint() == Some("attached_connector_config_id_fkey") {
-                            return Err(anyhow!(DBError::UnknownConfig(config_id)));
-                        }
-                        if db_err.constraint() == Some("attached_connector_connector_id_fkey") {
-                            return Err(anyhow!(DBError::UnknownConnector(ConnectorId(
-                                ac.connector_id.0
-                            ))));
-                        }
-                    }
-                }
-                Err(anyhow!(e))
-            }
-        }
+            .map_err(|e| Self::maybe_config_id_foreign_key_constraint_err(EitherError::Tokio(e), config_id))
+            .map_err(|e| Self::maybe_connector_id_foreign_key_constraint_err(e, ac.connector_id))
+            .await?;
+        Ok(AttachedConnectorId(row.get(0)))
     }
 
     async fn json_to_attached_connectors(
@@ -1319,71 +1327,97 @@ impl ProjectDB {
 
     /// Helper to convert postgres error into a `DBError::DuplicateProjectName`
     /// if the underlying low-level error thrown by the database matches.
-    fn maybe_duplicate_project_name_err(e: tokio_postgres::Error, _project_name: &str) -> AnyError {
-        if let Some(code) = e.code() {
-            if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
-                return anyhow!(DBError::DuplicateProjectName(_project_name.to_string()));
+    fn maybe_duplicate_project_name_err(err: EitherError, _project_name: &str) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            if let Some(code) = e.code() {
+                if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
+                    return EitherError::Any(anyhow!(DBError::DuplicateProjectName(
+                        _project_name.to_string()
+                    )));
+                }
             }
         }
-
-        anyhow!(e)
+        err
     }
 
     /// Helper to convert project_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_project_id_foreign_key_constraint_err(
-        e: tokio_postgres::Error,
+        err: EitherError,
         project_id: Option<ProjectId>,
-    ) -> AnyError {
-        let db_err = e.as_db_error();
-        if let Some(db_err) = db_err {
-            if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                && db_err.constraint() == Some("project_config_project_id_fkey")
-            {
-                if let Some(project_id) = project_id {
-                    return anyhow!(DBError::UnknownProject(project_id));
-                } else {
-                    log::error!("A `project_config_project_id_fkey` error, but the project_id was None? This should not happen.");
-                    return anyhow!(e);
+    ) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            let db_err = e.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && db_err.constraint() == Some("project_config_project_id_fkey")
+                {
+                    if let Some(project_id) = project_id {
+                        return EitherError::Any(anyhow!(DBError::UnknownProject(project_id)));
+                    } else {
+                        unreachable!("project_id cannot be none");
+                    }
                 }
             }
         }
-        anyhow!(e)
+        err
     }
 
     /// Helper to convert config_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_config_id_foreign_key_constraint_err(
-        e: tokio_postgres::Error,
+        err: EitherError,
         config_id: ConfigId,
-    ) -> AnyError {
-        let db_err = e.as_db_error();
-        if let Some(db_err) = db_err {
-            if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                && (db_err.constraint() == Some("pipeline_config_id_fkey")
-                    || db_err.constraint() == Some("attached_connector_config_id_fkey"))
-            {
-                return anyhow!(DBError::UnknownConfig(config_id));
+    ) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            let db_err = e.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && (db_err.constraint() == Some("pipeline_config_id_fkey")
+                        || db_err.constraint() == Some("attached_connector_config_id_fkey"))
+                {
+                    return EitherError::Any(anyhow!(DBError::UnknownConfig(config_id)));
+                }
             }
         }
-        anyhow!(e)
+        err
     }
 
     /// Helper to convert pipeline_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_pipeline_id_foreign_key_constraint_err(
-        e: tokio_postgres::Error,
+        err: EitherError,
         pipeline_id: PipelineId,
-    ) -> AnyError {
-        let db_err = e.as_db_error();
-        if let Some(db_err) = db_err {
-            if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                && db_err.constraint() == Some("project_config_pipeline_id_fkey")
-            {
-                return anyhow!(DBError::UnknownPipeline(pipeline_id));
+    ) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            let db_err = e.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && db_err.constraint() == Some("project_config_pipeline_id_fkey")
+                {
+                    return EitherError::Any(anyhow!(DBError::UnknownPipeline(pipeline_id)));
+                }
             }
         }
+        err
+    }
 
-        anyhow!(e)
+    /// Helper to convert connector_id foreign key constraint error into an
+    /// user-friendly error message.
+    fn maybe_connector_id_foreign_key_constraint_err(
+        err: EitherError,
+        connector_id: ConnectorId,
+    ) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            let db_err = e.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && db_err.constraint() == Some("attached_connector_connector_id_fkey")
+                {
+                    return EitherError::Any(anyhow!(DBError::UnknownConnector(connector_id)));
+                }
+            }
+        }
+        err
     }
 }
