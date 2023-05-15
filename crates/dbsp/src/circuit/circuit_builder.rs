@@ -5,8 +5,9 @@
 //! streams:
 //!
 //!   * Circuits are represented by the [`Circuit`] trait, which has a single
-//!     implementation [`ChildCircuit<P>`].  For a root circuit, `P` is `()`, so
-//!     the API provide [`RootCircuit`] as a synonym for `ChildCircuit<()>`).
+//!     implementation [`ChildCircuit<P>`], where `P` is the type of the parent
+//!     circuit.  For a root circuit, `P` is `()`, so the API provides
+//!     [`RootCircuit`] as a synonym for `ChildCircuit<()>`).
 //!
 //!     Use [`RootCircuit::build`] to create a new root circuit.  It takes a
 //!     user-provided callback, which it calls to set up operators and streams
@@ -140,9 +141,11 @@ impl<D> StreamValue<D> {
 ///
 /// `Stream` refers to operators specifically for streams of data as
 /// "nonincremental".  These operators, which have `stream` in their name,
-/// e.g. `stream_join`, take streams of data as input and produces one as
-/// output.  Each output independently applies the operator to the individual
-/// inputs received in the current step:
+/// e.g. `stream_join`, take streams of data as input and produce one as output.
+/// They act as "lifted scalar operators" that don't maintain state across
+/// invocations and only act on their immediate inputs, that is, each output is
+/// produced by independently applying the operator to the individual inputs
+/// received in the current step:
 ///
 /// ```text
 ///       ┌─────────────┐
@@ -217,10 +220,11 @@ impl<D> StreamValue<D> {
 ///   * A `Stream` that can be attached as input to operators in the circuit
 ///     (within the constructor function passed to `RootCircuit::build` only).
 ///
-///   * An input handle that can be used to add input to the stream. Different
-///     function return different kinds of input handles.  The constructor
-///     function should return the input handle so that the client code can feed
-///     in input before each step.
+///   * An input handle that can be used to add input to the stream from outside
+///     the circuit.  In a typical scenario, the closure passed to build will
+///     return all of its input handles, which are used at runtime to feed new
+///     inputs to the circuit at each step.  Different functions return
+///     different kinds of input handles.
 ///
 /// Use [`RootCircuit::add_input_indexed_zset`] or
 /// [`RootCircuit::add_input_zset`] to crate an (indexed) Z-set input stream.
@@ -235,9 +239,8 @@ impl<D> StreamValue<D> {
 /// data to, which makes it harder to use.  It might be useful for feeding
 /// non-relational data to the circuit, such as the current physical time.  DBSP
 /// does not know how to automatically distribute such values across workers,
-/// since they don't have a built-in partitioning function, so the caller must
-/// decide whether to send the value to one specific worker or to broadcast it
-/// to everyone.
+/// so the caller must decide whether to send the value to one specific worker
+/// or to broadcast it to everyone.
 ///
 /// It's common to pass explicit type arguments to the functions that
 /// create input streams, e.g.:
@@ -251,9 +254,10 @@ impl<D> StreamValue<D> {
 /// There's not much value in computations whose output can't be seen in the
 /// outside world.  Use [`Stream::output`] to obtain an [`OutputHandle`] that
 /// exports a stream's data.  The constructor function passed to
-/// [`RootCircuit::build`] should return the `OutputHandle`.  After each step,
-/// the client code should take the new data from the `OutputHandle`, typically
-/// by calling [`OutputHandle::consolidate`].
+/// [`RootCircuit::build`] should return the `OutputHandle` (in addition to all
+/// the input handles as described above).  After each step, the client code
+/// should take the new data from the `OutputHandle`, typically by calling
+/// [`OutputHandle::consolidate`].
 ///
 /// Use [`Stream::inspect`] to apply a callback function to each data item in a
 /// stream.  The callback function has no return value and is executed only for
@@ -283,7 +287,8 @@ impl<D> StreamValue<D> {
 ///
 ///   * Use [`FilterMap::flat_map`] to output a Z-set that maps each input
 ///     record to any number of records, or [`FilterMap::flat_map_index`] for
-///     indexed Z-set output.
+///     indexed Z-set output.  These methods also work as a `filter_map`
+///     equivalent.
 ///
 /// `Stream` also has [`Stream::index`] to transform a batch with `(k, v)` keys
 /// into an indexed Z-set, and [`Stream::index_with`] for transforming a batch
@@ -322,6 +327,11 @@ impl<D> StreamValue<D> {
 ///
 /// ## Stream type conversion operators
 ///
+/// These operators convert among streams of deltas, streams of data, and
+/// streams of "upserts".  Client code can use them, but they're more often
+/// useful for testing (for example, for checking that incremental operators are
+/// equivalent to non-incremental ones) or for building other operators.
+///
 /// Use [`Stream::integrate`] to sum up the values within an input stream.  The
 /// first output value is the first input value, the second output value is the
 /// sum of the first two inputs, and so on.  This effectively converts a stream
@@ -342,7 +352,8 @@ impl<D> StreamValue<D> {
 /// Use [`Stream::upsert`] to convert a stream of "upserts" into a stream of
 /// deltas.  The input stream carries "upserts", or assignments of values to
 /// keys such that a subsequent assignment to a key assigned earlier replaces
-/// the earlier value.  `upsert` statefully turns these into a stream of deltas.
+/// the earlier value.  `upsert` turns these into a stream of deltas by
+/// internally tracking upserts that have already been seen.
 ///
 /// ## Weight operators
 ///
@@ -352,13 +363,18 @@ impl<D> StreamValue<D> {
 /// just the keys from the input, discarding the values, which also means that
 /// weights will be added together in the case of equal input keys.
 ///
-/// Use [`Stream::distinct`] to process a stream of deltas, such that the
-/// integration of the output stream would only contain records with weight 1.
-/// This operator internally integrates the stream of deltas, which means its
-/// memory consumption is proportional to the integrated data size.
+/// The "distinct" operator on a Z-set maps positive weights to 1 and all other
+/// weights to 0.  `Stream` has two implementations:
 ///
-/// Use [`Stream::stream_distinct`] to process a stream of data.  It sets each
-/// record's weight to 1 if it is positive and drops the others.
+///   * Use [`Stream::distinct`] to incrementally process a stream of deltas.
+///     If the output stream were to be integrated, it only contain records with
+///     weight 0 or 1.  This operator internally integrates the stream of
+///     deltas, which means its memory consumption is proportional to the
+///     integrated data size.
+///
+///   * Use [`Stream::stream_distinct`] to non-incremntally process a stream of
+///     data.  It sets each record's weight to 1 if it is positive and drops the
+///     others.
 ///
 /// ## Join on equal keys
 ///
@@ -384,6 +400,10 @@ impl<D> StreamValue<D> {
 ///     tuples are fed to it in lexicographic order, then
 ///     [`Stream::monotonic_stream_join`] is more efficient.  One such monotonic
 ///     function is a join function that returns `(k, v1, v2)` itself.
+///
+/// One way to implement a Cartesian product is to map unindexed Z-set inputs
+/// into indexed Z-sets with a unit key type, e.g. `input.index_with(|k| ((),
+/// k))`, and then use `join` or `stream_join`, as appropriate.
 ///
 /// ## Other kinds of joins
 ///
@@ -412,13 +432,13 @@ impl<D> StreamValue<D> {
 ///
 /// Aggregation applies a function (the "aggregation function") to all of the
 /// values for a given key in an input stream, and outputs an indexed Z-set with
-/// the same keys as output and the function's output as value.
+/// the same keys as the input and the function's output as values.
 ///
 /// DBSP implements two kinds of aggregation:
 ///
-///   * [`Stream::aggregate`] aggregates delta streams.  It takes an instance of
-///     [`Aggregator`] to specify the aggregation function.  DBSP supplies
-///     aggregators [`Min`], [`Max`], and [`Fold`].
+///   * [`Stream::aggregate`] aggregates delta streams.  It takes an aggregation
+///     function as an [`Aggregator`], e.g. [`Min`], [`Max`], [`Fold`], or one
+///     written by the client.
 ///
 ///     [`Stream::aggregate_linear`] is cheaper for linear aggregation
 ///     functions.  It's also a little easier to use with a custom aggregation
@@ -431,10 +451,10 @@ impl<D> StreamValue<D> {
 ///   * [`Stream::stream_aggregate`] aggregates data streams.  Each batch from
 ///     the input is separately aggregated and written to the output stream.
 ///
-/// These aggregation functions all partition the aggregation by key.  To
-/// aggregate across every record in a non-indexed Z-set without partitioning,
-/// map to an indexed Z-set with a nullary key before aggregating, then map
-/// again to remove the index if necessary, e.g.:
+/// These aggregation functions all partition the aggregation by key, like GROUP
+/// BY in SQL.  To aggregate all records in a non-indexed Z-set, map to an
+/// indexed Z-set with a unit key `()` before aggregating, then map again to
+/// remove the index if necessary, e.g.:
 ///
 /// ```
 /// let max_auction_count = auction_counts
@@ -443,31 +463,28 @@ impl<D> StreamValue<D> {
 ///     .map(|((), max_count)| *max_count);
 /// ```
 ///
-/// ## Windowing
+/// ## Rolling aggregates
 ///
-/// DBSP supports aggregation of time series data over a time window.  The
-/// notion of time here is distinct from the DBSP logical time and can be
-/// modeled using any type that implements `Ord`.
+/// DBSP supports rolling aggregation of time series data over a
+/// client-specified "rolling window" range.  Any type that implements `Ord` may
+/// be used to model time, with larger values corresponding to later times.
+/// (DBSP logical time is an unrelated concept.)
 ///
-/// DBSP windows are "rolling windows" that span a client-specified interval
-/// around an event.  (The window does not have to include the event itself,
-/// that is, it can be entirely before or entirely after the event.)
+/// Rolling aggregation takes place within a "partition", which is any
+/// convenient division of the data.  It might correspond to a tenant ID, for
+/// example, if each tenant's data is to be separately aggregated.  To represent
+/// partitioning, rolling aggregation introduces a [`PartitionedIndexedZSet`]
+/// trait, which is an `IndexedZSet` with an arbitrary key type that specifies
+/// the partition (it may be `()` if all data is to be within a single
+/// partition) and a value type of the form `(TS, V)` where `TS` is the type
+/// used for time and `V` is the client's value type.
 ///
-/// Windowing takes place within a "partition", which might correspond to a user
-/// ID or tenant ID.
-///
-/// Windowed aggregation introduces a [`PartitionedIndexedZSet`] trait, which is
-/// an `IndexedZSet` with an arbitrary key type that specifies the partition (it
-/// may be `()` if no partitioning is needed) and a value type of the form `(TS,
-/// V)` where `TS` is the type for the event time and `V` is the client's value
-/// type.
-///
-/// DBSP has two kinds of windowed aggregation functions that differ based on
+/// DBSP has two kinds of rolling aggregation functions that differ based on
 /// their tolerance for updating aggregation results when new data arrives for
 /// an old moment in time:
 ///
-///   * If data arriving entirely out-of-order must be tolerated, use
-///     [`Stream::partitioned_rolling_aggregate`].  It operates on a
+///   * If the application must tolerate data arriving entirely out-of-order,
+///     use [`Stream::partitioned_rolling_aggregate`].  It operates on a
 ///     `PartitionedIndexedZSet` and takes an [`Aggregator`] and a [`RelRange`]
 ///     that specifies the span of the window.  It returns another
 ///     `PartitionedIndexedZSet` with the results.  This operator must buffer
@@ -476,26 +493,25 @@ impl<D> StreamValue<D> {
 ///     [`Stream::partitioned_rolling_aggregate_linear`] is cheaper for linear
 ///     aggregation functions.
 ///
-///   * If data can be discarded if it arrives too out-of-order, use
-///     [`Stream::partitioned_rolling_aggregate_with_watermark`].  It operates
-///     on an `IndexedZSet` and, in addition to the aggregator and range
-///     expected by the functions already described, it takes a function to map
-///     a record to a partition and a "watermark" stream.  The watermark stream
-///     is a stream of event times (scalars, not batches or Z sets) that reports
-///     the earliest event time that can be accepted.  The function discards
-///     input that is before the watermark, partitions it, aggregates according
-///     to the window, and returns the result as a `PartitionedIndexedZSet`.
+///   * If the application can discard data that arrives too out-of-order, use
+///     [`Stream::partitioned_rolling_aggregate_with_watermark`], which can be
+///     more memory-efficient.  This form of rolling aggregation requires a
+///     "watermark" stream, which is a stream of times (scalars, not batches or
+///     Z sets) that reports the earliest time that can be updated.  Use
+///     [`Stream::watermark_monotonic`] to conveniently produce the watermark
+///     stream.
 ///
-///     Aggregation with a watermark can discard data no longer subject to
-///     revision according to the watermark, making it memory-efficient.
+///     [`Stream::partitioned_rolling_aggregate_with_watermark`] operates on an
+///     `IndexedZSet` and, in addition to the aggregrator, range, and watermark
+///     stream, it takes a function to map a record to a partition. It discards
+///     input before the watermark, partitions it, aggregates it, and returns
+///     the result as a `PartitionedIndexedZSet`.
 ///
-///     Use [`Stream::watermark_monotonic`] to conveniently produce the
-///     watermark stream input to
-///     [`Stream::partitioned_rolling_aggregate_with_watermark`].
+/// ## Windowing
 ///
 /// Use [`Stream::window`] to extract a stream of deltas to windows from a
 /// stream of deltas.  This can be useful for windowing outside the context of
-/// one of the above operators.
+/// rolling aggregation.
 pub struct Stream<C, D> {
     /// Id of the operator within the local circuit that writes to the stream.
     local_node_id: NodeId,
@@ -984,7 +1000,8 @@ circuit_cache_key!(ExportId<C, D>(GlobalNodeId => Stream<C, D>));
 /// Trait for an object that has a clock associated with it.
 /// This is implemented trivially for root circuits.
 pub trait WithClock {
-    /// `()` for a trivial zero-dimensional clock that never ticks.
+    /// `()` for a trivial zero-dimensional clock that doesn't need to count
+    /// ticks.
     type Time: Timestamp;
 
     /// Nesting depth of the circuit running this clock.
@@ -1036,7 +1053,7 @@ where
 ///
 /// A circuit has a clock represented by the `Time` associated type obtained via
 /// the `WithClock` supertrait.  For a root circuit, this is a trivial
-/// zero-dimensional clock that never ticks.
+/// zero-dimensional clock that doesn't need to count ticks.
 ///
 /// There is only one implementation, [`ChildCircuit<P>`], whose `Parent` type
 /// is `P`.  [`RootCircuit`] is a synonym for `ChildCircuit<()>`.
@@ -1773,7 +1790,8 @@ where
 ///
 /// `RootCircuit` is a specialization of [`ChildCircuit<P>`] with `P = ()`.  It
 /// forms the top level of a possibly nested DBSP circuit.  Every use of DBSP
-/// needs a top-level circuit and simple uses only need a top-level circuit.
+/// needs a top-level circuit and non-recursive queries, including all of
+/// standard SQL, only needs a top-level circuit.
 ///
 /// Input enters a circuit through the top level circuit only.  `RootCircuit`
 /// has `add_input_*` methods for setting up input operators, which can only be
@@ -1820,7 +1838,7 @@ impl RootCircuit {
     /// [`Stream`]s.  It can also use [`Stream::output`] to obtain an output
     /// handle.
     ///
-    /// Returns a [`CircuitHandle`] which which the caller can control the
+    /// Returns a [`CircuitHandle`] with which the caller can control the
     /// circuit, plus a user-defined value returned by the constructor.  The
     /// `constructor` should use the latter to return the input and output
     /// handles it obtains, because these allow the caller to feed input into
@@ -4113,11 +4131,10 @@ impl CircuitHandle {
     /// Function that drives the execution of the circuit.
     ///
     /// Every call to `step()` corresponds to one tick of the global logical
-    /// clock and causes each operator in the circuit to get evaluated once.
-    /// Each call consumes one value from each input stream so, before calling,
-    /// store the desired value in each input stream using its input handle.
-    /// Each call stores a value in each output stream so, after calling, the
-    /// client may obtain these values using their output handles.
+    /// clock and evaluates each operator in the circuit once.  Before calling,
+    /// store the desired input value in each input stream using its input
+    /// handle.  Each call stores a value in each output stream so, after
+    /// calling, the client may obtain these values using their output handles.
     pub fn step(&self) -> Result<(), SchedulerError> {
         // TODO: Add a runtime check to prevent re-entering this method from an
         // operator.

@@ -3,7 +3,8 @@
 //! A circuit consists of [operators](`operator_traits::Operator`) connected by
 //! [streams](`circuit_builder::Stream`). At every clock cycle, each operator
 //! consumes a single value from each of its input streams and emits a single
-//! value to the output stream.
+//! value to the output stream (except that nested circuits can execute multiple
+//! operations for each outer clock tick).
 //!
 //! Use `RootCircuit::build` to create and populate an circuit that executes in
 //! the calling thread, or `Runtime::init_circuit` to create a multi-circuit,

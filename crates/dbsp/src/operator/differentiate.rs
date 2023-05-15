@@ -25,7 +25,7 @@ where
     /// second input value minus the first input value, and so on.
     ///
     /// You shouldn't ordinarily need this operator, at least not for streams of
-    /// Z-sets, because DBSP operators are fully incremental.
+    /// Z-sets, because most DBSP operators are fully incremental.
     pub fn differentiate(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {

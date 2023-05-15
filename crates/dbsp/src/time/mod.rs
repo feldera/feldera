@@ -170,7 +170,7 @@ pub trait Timestamp:
     fn epoch_end(&self, scope: Scope) -> Self;
 }
 
-/// Zero-dimensional clock that never ticks.
+/// Zero-dimensional clock that doesn't need to count ticks.
 ///
 /// This type is only used to bootstrap the recursive definition of
 /// the `WithClock` trait.

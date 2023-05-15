@@ -2,7 +2,7 @@
 mod zset_macro;
 
 #[cfg(doc)]
-use crate::trace::{ord::OrdIndexedZSet, ord::OrdZSet, BatchReader};
+use crate::trace::{ord::OrdIndexedZSet, ord::OrdZSet, BatchReader, DBWeight, Trace};
 use crate::{
     algebra::{GroupValue, HasOne, HasZero, ZRingValue},
     trace::{cursor::Cursor, Batch, Builder},
@@ -17,12 +17,17 @@ use crate::{
 /// Each pair has a weight drawn from a ring, ordinarily the ring of
 /// integers ℤ (hence the name "Z-set").  Weights are often
 /// interpreted as the number of times that the pair appears in the
-/// set, and for this reason **a weight of 0 is disallowed** and must
-/// not appear in an indexed Z-set.  Negative weights are allowed,
-/// however, because of an important secondary interpretation as an
-/// "update" or "delta" to be added to some other Z-set: for this use,
-/// a positive weight represents adding copies of a pair and a
+/// set.  Negative weights are allowed, because of an important secondary
+/// interpretation as an "update" or "delta" to be added to some other Z-set:
+/// for this use, a positive weight represents adding copies of a pair and a
 /// negative weight represents removing them.
+///
+/// A weight of zero should ideally not appear in a Z-set (or batch), although
+/// in another sense every pair not explicitly present is implicitly present
+/// with a zero weight.  However, a [`Trace`], which also implements
+/// `IndexedZSet`, can have multiple entries for a pair that add up to zero.
+/// Thus, code that processes an arbitrary `IndexedZSet` must not assume nonzero
+/// weights.
 ///
 /// `IndexedZSet` has supertrait [`Batch`], which has supertrait
 /// [`BatchReader`].  These supertraits have all of the interesting
@@ -33,12 +38,13 @@ use crate::{
 ///  * The `Val` associated type, which is the type of `value`.
 ///
 ///  * The `R` associated type, which is the type of `weight`.  The client
-///    specifies this type.  `i32` and `i64` are common choices.
+///    specifies this type.  `i32` and `i64` are common choices.  See
+///    [`DBWeight`] for details.
 ///
 /// The "index" in `IndexedZSet` refers to how it contains key-value
 /// pairs: an `IndexedZSet` is often regarded as mapping from keys to
 /// values.  For a simpler Z-set, without the index, use `()` for
-/// `Val`, and indeed the [`ZSet`] trait simply contrains
+/// `Val`, and indeed the [`ZSet`] trait simply constrains
 /// `IndexedZSet` with `Val = ()`.
 ///
 /// `IndexedZSet` has no requirements for implementors beyond its
@@ -142,12 +148,12 @@ where
 
 /// The Z-set trait.
 ///
-/// A Z-set is a set of unique keys, each associated with a nonzero weight.
+/// A Z-set is a set of unique keys, each associated with a weight.
 /// A `ZSet` is merely an `IndexedZSet` with its value type set to `()`.
 pub trait ZSet: IndexedZSet<Val = ()> {
-    /// Sum of the weights of the elements in the Z-set.  Weights can
-    /// be negative, so the result can be zero even if the Z-set is
-    /// nonempty.
+    /// Sum of the weights of the elements in the Z-set.  Weights can be
+    /// negative, so the result can be zero even if the Z-set contains nonzero
+    /// weights.
     fn weighted_count(&self) -> Self::R;
 }
 
