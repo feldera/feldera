@@ -169,7 +169,7 @@ where
     /// to each such Z-set and adds it to the output indexed Z-set with
     /// weight `+1`.
     ///
-    /// [`Min`], [`Max`], and [`Fold`] are useful for `A`.
+    /// [`Min`], [`Max`], and [`Fold`] are provided as example `Aggregator`s.
     #[allow(clippy::type_complexity)]
     pub fn stream_aggregate<A>(
         &self,
@@ -203,7 +203,7 @@ where
     /// changes to its aggregate computed by applying `aggregator` to each
     /// key in the input.
     ///
-    /// [`Min`], [`Max`], and [`Fold`] are useful for `A`.
+    /// [`Min`], [`Max`], and [`Fold`] are provided as example `Aggregator`s.
     #[allow(clippy::type_complexity)]
     pub fn aggregate<A>(&self, aggregator: A) -> Stream<C, OrdIndexedZSet<Z::Key, A::Output, Z::R>>
     where

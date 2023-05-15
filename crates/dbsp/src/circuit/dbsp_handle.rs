@@ -19,13 +19,12 @@ impl Runtime {
     ///
     /// Creates a multithreaded runtime with `nworkers` worker threads and
     /// instantiates an identical circuit in each worker, by calling
-    /// `constructor` once per worker.  `init_circuit` passes each call to
+    /// `constructor` once per worker.  `init_circuit` passes each call of
     /// `constructor` a new [`RootCircuit`], in which it should create input
     /// operators by calling [`RootCircuit::add_input_zset`] and related
     /// methods.  Each of these calls returns an input handle and a `Stream`.
-    /// The `constructor` can call
-    /// [`Stream`] methods to do
-    /// computation, each of which yields further `Stream`s.  It can also use
+    /// The `constructor` can call [`Stream`] methods to construct more
+    /// operators, each of which yields further `Stream`s.  It can also use
     /// [`Stream::output`] to obtain an output handle.
     ///
     /// Returns a [`DBSPHandle`] that the caller can use to control the circuit

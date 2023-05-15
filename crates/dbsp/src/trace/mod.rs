@@ -69,6 +69,15 @@ impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 
 /// as a monoid, i.e., a set with an associative `+` operation and a neutral
 /// element (zero).
 ///
+/// Some applications use a weight as a ring, that is, require it to support
+/// multiplication too.
+///
+/// Finally, some applications require it to have `<` and `>` operations, in
+/// particular to distinguish whether something is an insertion or deletion.
+///
+/// Signed integer types such as `i32` and `i64` are suitable as weights,
+/// although if there is overflow then the results will be wrong.
+///
 /// When writing code generic over any weight type, it is sufficient to impose
 /// `DBWeight` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::R: DBWeight`.

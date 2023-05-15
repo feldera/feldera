@@ -30,8 +30,7 @@ macro_rules! indexed_zset {
 /// This macro is used in unit tests to create reference inputs and outputs.
 /// It generates a Z-set of type [`OrdZSet`](crate::trace::ord::OrdZSet)s.
 ///
-/// If all the elements in the Z-set will have weight 1, [`zset_set!`] is a
-/// little easier.
+/// If all the elements in the Z-set will have weight 1, consider [`zset_set!`].
 ///
 /// # Example
 ///
