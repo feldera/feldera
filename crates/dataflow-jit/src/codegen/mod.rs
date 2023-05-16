@@ -502,8 +502,6 @@ impl Codegen {
                 }
 
                 ctx.terminator(block_contents.terminator(), &mut stack, &mut builder);
-
-                builder.seal_current();
             }
 
             // Seal any unfinished blocks
