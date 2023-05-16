@@ -265,7 +265,7 @@ where
             value.hash(hasher);
         }
 
-        unsafe extern "C" fn default<T>(_place: *mut u8) {
+        unsafe extern "C" fn default(_place: *mut u8) {
             unimplemented!()
         }
 
@@ -287,7 +287,7 @@ where
             type_id: TypeId::of::<Self>,
             type_name: type_name::<Self>,
             hash: hash::<Self>,
-            default: default::<Self>,
+            default,
         }
     };
 }
