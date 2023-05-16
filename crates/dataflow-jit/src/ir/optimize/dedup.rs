@@ -103,8 +103,8 @@ mod tests {
         );
 
         let source = graph.source(u32);
-        let distinct2 = graph.distinct(source);
-        let distinct3 = graph.distinct(source);
+        let distinct2 = graph.distinct(source, StreamLayout::Set(u32));
+        let distinct3 = graph.distinct(source, StreamLayout::Set(u32));
         let sink1 = graph.sink(distinct2);
         let sink2 = graph.sink(distinct3);
 

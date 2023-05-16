@@ -48,6 +48,10 @@ impl IndexWith {
     pub const fn value_layout(&self) -> LayoutId {
         self.value_layout
     }
+
+    pub const fn output_layout(&self) -> StreamLayout {
+        StreamLayout::Map(self.key_layout, self.value_layout)
+    }
 }
 
 impl DataflowNode for IndexWith {
@@ -66,7 +70,7 @@ impl DataflowNode for IndexWith {
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(StreamLayout::Map(self.key_layout, self.value_layout))
+        Some(self.output_layout())
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {

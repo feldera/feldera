@@ -9,6 +9,7 @@ mod join;
 mod subgraph;
 mod sum;
 
+pub use crate::ir::NodeId;
 pub use aggregate::{Fold, Max, Min, PartitionedRollingFold};
 pub use constant::ConstantStream;
 pub use differentiate::{Differentiate, Integrate};
@@ -20,7 +21,7 @@ pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
 
-use crate::ir::{function::Function, layout_cache::RowLayoutCache, LayoutId, NodeId};
+use crate::ir::{function::Function, layout_cache::RowLayoutCache, LayoutId};
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
 use schemars::JsonSchema;
@@ -203,15 +204,20 @@ pub enum StreamKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct Distinct {
     input: NodeId,
+    layout: StreamLayout,
 }
 
 impl Distinct {
-    pub const fn new(input: NodeId) -> Self {
-        Self { input }
+    pub const fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
     }
 }
 
@@ -230,23 +236,27 @@ impl DataflowNode for Distinct {
         map(&mut self.input);
     }
 
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        // There's no particular constraints on distinct nodes
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
     }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn map_layouts<F>(&self, _map: &mut F)
+    fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId),
     {
+        self.layout.map_layouts(map);
     }
 
-    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
 }
 
 // FIXME: DelayedFeedback with maps
