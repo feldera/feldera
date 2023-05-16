@@ -1018,7 +1018,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn remove_pipeline_from_config(&self, config_id: super::ConfigId) -> anyhow::Result<()> {
         let mut s = self.lock().await;
-        if let Some(mut config) = s.configs.get_mut(&config_id) {
+        if let Some(config) = s.configs.get_mut(&config_id) {
             config.pipeline = None;
             Ok(())
         } else {
@@ -1043,7 +1043,7 @@ impl Storage for Mutex<DbModel> {
         let db_connectors = s.connectors.clone();
         let db_projects = s.projects.clone();
 
-        let mut c = s
+        let c = s
             .configs
             .get_mut(&config_id)
             .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))?;

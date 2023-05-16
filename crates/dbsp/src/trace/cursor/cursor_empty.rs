@@ -2,8 +2,15 @@ use crate::trace::cursor::Cursor;
 use std::marker::PhantomData;
 
 /// Cursor that contains no data.
+
 pub struct CursorEmpty<K, V, T, R> {
     phantom: PhantomData<(K, V, T, R)>,
+}
+
+impl<K, V, T, R> Default for CursorEmpty<K, V, T, R> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<K, V, T, R> CursorEmpty<K, V, T, R> {
