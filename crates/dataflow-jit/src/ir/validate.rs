@@ -2,12 +2,22 @@ use crate::{
     codegen::TRIG_INTRINSICS,
     ir::{
         exprs::ArgType,
+        exprs::{
+            BinaryOp, BinaryOpKind, Cast, Constant, Expr, ExprId, IsNull, Load, NullRow, RValue,
+            SetNull, Store, UnaryOpKind, UninitRow,
+        },
         exprs::{Call, Select},
         graph::GraphExt,
-        nodes::{DataflowNode, Node, StreamKind, StreamLayout},
-        BinaryOp, BinaryOpKind, BlockId, Cast, ColumnType, Constant, Expr, ExprId, Function, Graph,
-        InputFlags, IsNull, LayoutId, Load, NodeId, NullRow, RValue, RowLayoutBuilder,
-        RowLayoutCache, SetNull, Store, UnaryOpKind, UninitRow,
+        nodes::{
+            Antijoin, ConstantStream, DataflowNode, DelayedFeedback, Delta0, Differentiate,
+            Distinct, Export, ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn,
+            IndexWith, Integrate, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, NodeId,
+            PartitionedRollingFold, Sink, Source, SourceMap, StreamKind, StreamLayout, Subgraph,
+            Sum, UnitMapToSet,
+        },
+        visit::NodeVisitor,
+        BlockId, ColumnType, Function, Graph, InputFlags, LayoutId, RowLayoutBuilder,
+        RowLayoutCache,
     },
 };
 use derive_more::Display;
@@ -57,108 +67,20 @@ impl Validator {
     pub fn validate_graph(&mut self, graph: &Graph) -> ValidationResult {
         self.clear();
 
-        // Collect all nodes and the layouts of their outputs
-        for (&node_id, node) in graph.nodes() {
-            // If the graph already contained a node with this id
-            if !self.nodes.insert(node_id) {
-                panic!("graph contained duplicate node id: {node_id}")
-            }
+        {
+            // Collect all nodes and the layouts of their outputs
+            let layout_cache = self.layout_cache().clone();
+            let mut meta_collector = MetaCollector::new(
+                &mut self.nodes,
+                &mut self.node_inputs,
+                &mut self.node_outputs,
+                layout_cache,
+            );
+            graph.accept(&mut meta_collector);
 
-            // FIXME: Factor a lot of this querying into the `DataflowNode` trait
-            match node {
-                Node::Map(map) => {
-                    self.node_inputs.insert(node_id, vec![map.input()]);
-                    self.node_outputs.insert(node_id, map.output_layout());
-                }
-
-                Node::Filter(filter) => {
-                    self.node_inputs.insert(node_id, vec![filter.input()]);
-                    self.node_outputs
-                        .insert(node_id, self.node_outputs[&filter.input()]);
-                }
-
-                Node::Neg(neg) => {
-                    self.node_inputs.insert(node_id, vec![neg.input()]);
-                    self.node_outputs.insert(node_id, neg.layout());
-                }
-
-                Node::Sum(sum) => {
-                    self.node_inputs.insert(node_id, sum.inputs().to_vec());
-                }
-
-                Node::Sink(sink) => {
-                    self.node_inputs.insert(node_id, vec![sink.input()]);
-                }
-
-                Node::Source(source) => {
-                    self.node_outputs
-                        .insert(node_id, StreamLayout::Set(source.layout()));
-                }
-
-                Node::SourceMap(source) => {
-                    self.node_outputs
-                        .insert(node_id, StreamLayout::Map(source.key(), source.value()));
-                }
-
-                Node::IndexWith(index_with) => {
-                    self.node_inputs.insert(node_id, vec![index_with.input()]);
-                    self.node_outputs.insert(
-                        node_id,
-                        StreamLayout::Map(index_with.key_layout(), index_with.value_layout()),
-                    );
-                }
-
-                Node::JoinCore(join) => {
-                    self.node_inputs
-                        .insert(node_id, vec![join.lhs(), join.rhs()]);
-
-                    let output = match join.result_kind() {
-                        StreamKind::Set => {
-                            if join.value_layout() != self.function_validator.layout_cache.unit() {
-                                return Err(ValidationError::JoinSetValueNotUnit {
-                                    join: node_id,
-                                    value_layout: join.value_layout(),
-                                    layout: self
-                                        .function_validator
-                                        .layout_cache
-                                        .get(join.value_layout())
-                                        .to_string(),
-                                });
-                            }
-
-                            StreamLayout::Set(join.key_layout())
-                        }
-                        StreamKind::Map => {
-                            StreamLayout::Map(join.key_layout(), join.value_layout())
-                        }
-                    };
-                    self.node_outputs.insert(node_id, output);
-                }
-
-                Node::ConstantStream(constant) => {
-                    // TODO: Verify that the layout of the row matches its literal value
-                    self.node_outputs.insert(node_id, constant.layout());
-                }
-
-                Node::Distinct(distinct) => {
-                    self.node_inputs.insert(node_id, vec![distinct.input()]);
-                }
-
-                Node::IndexByColumn(index_by) => {
-                    self.node_inputs.insert(node_id, vec![index_by.input()]);
-                    self.node_outputs.insert(
-                        node_id,
-                        StreamLayout::Map(index_by.key_layout(), index_by.value_layout()),
-                    );
-                }
-
-                Node::UnitMapToSet(map_to_set) => {
-                    self.node_inputs.insert(node_id, vec![map_to_set.input()]);
-                    self.node_outputs
-                        .insert(node_id, StreamLayout::Set(map_to_set.value_layout()));
-                }
-
-                _ => todo!(),
+            if !meta_collector.errors.is_empty() {
+                // TODO: Return multiple errors
+                return Err(meta_collector.errors.remove(0));
             }
         }
 
@@ -249,8 +171,22 @@ impl Validator {
                     assert_eq!(join.join_fn().return_type(), ColumnType::Unit);
 
                     // TODO: Validate function arguments
-
                     self.function_validator.validate_function(join.join_fn())?;
+                }
+
+                Node::MonotonicJoin(join) => {
+                    let _lhs_layout = self.get_expected_input(node_id, join.lhs());
+                    let _rhs_layout = self.get_expected_input(node_id, join.rhs());
+                    assert_eq!(join.join_fn().return_type(), ColumnType::Unit);
+
+                    // TODO: Validate function arguments
+                    self.function_validator.validate_function(join.join_fn())?;
+                }
+
+                Node::Fold(fold) => {
+                    self.function_validator.validate_function(fold.step_fn())?;
+                    self.function_validator
+                        .validate_function(fold.finish_fn())?;
                 }
 
                 _ => {}
@@ -267,6 +203,241 @@ impl Validator {
         } else {
             panic!("node {node}'s input {input} does not exist");
         }
+    }
+}
+
+struct MetaCollector<'a> {
+    /// A set of all nodes that exist
+    nodes: &'a mut BTreeSet<NodeId>,
+    /// A map of nodes to their inputs (if they accept inputs)
+    // TODO: TinyVec<[LayoutId; 5]>
+    node_inputs: &'a mut BTreeMap<NodeId, Vec<NodeId>>,
+    /// A map of nodes to their output layout (if they produce an output)
+    node_outputs: &'a mut BTreeMap<NodeId, StreamLayout>,
+    layout_cache: RowLayoutCache,
+    errors: Vec<ValidationError>,
+}
+
+impl<'a> MetaCollector<'a> {
+    fn new(
+        nodes: &'a mut BTreeSet<NodeId>,
+        node_inputs: &'a mut BTreeMap<NodeId, Vec<NodeId>>,
+        node_outputs: &'a mut BTreeMap<NodeId, StreamLayout>,
+        layout_cache: RowLayoutCache,
+    ) -> Self {
+        Self {
+            nodes,
+            node_inputs,
+            node_outputs,
+            layout_cache,
+            errors: Vec::new(),
+        }
+    }
+
+    fn add_node(&mut self, node_id: NodeId) {
+        // If the graph already contained a node with this id
+        if !self.nodes.insert(node_id) {
+            self.errors.push(ValidationError::DuplicateNode { node_id });
+        }
+    }
+
+    fn add_simple(&mut self, node_id: NodeId, input: NodeId, output_layout: StreamLayout) {
+        self.add_node(node_id);
+        self.node_inputs.insert(node_id, vec![input]);
+        self.node_outputs.insert(node_id, output_layout);
+    }
+}
+
+impl NodeVisitor for MetaCollector<'_> {
+    fn visit_map(&mut self, node_id: NodeId, map: &Map) {
+        self.add_simple(node_id, map.input(), map.output_layout());
+    }
+
+    fn visit_min(&mut self, node_id: NodeId, min: &Min) {
+        self.add_simple(node_id, min.input(), min.layout());
+    }
+
+    fn visit_max(&mut self, node_id: NodeId, max: &Max) {
+        self.add_simple(node_id, max.input(), max.layout());
+    }
+
+    fn visit_neg(&mut self, node_id: NodeId, neg: &Neg) {
+        self.add_simple(node_id, neg.input(), neg.layout());
+    }
+
+    fn visit_sum(&mut self, node_id: NodeId, sum: &Sum) {
+        self.add_node(node_id);
+        self.node_inputs.insert(node_id, sum.inputs().to_vec());
+        self.node_outputs.insert(node_id, sum.layout());
+    }
+
+    fn visit_fold(&mut self, node_id: NodeId, fold: &Fold) {
+        let output = StreamLayout::Map(
+            self.node_outputs[&fold.input()].unwrap_map().0,
+            fold.output_layout(),
+        );
+        self.add_simple(node_id, fold.input(), output);
+    }
+
+    fn visit_partitioned_rolling_fold(
+        &mut self,
+        node_id: NodeId,
+        rolling_fold: &PartitionedRollingFold,
+    ) {
+        let output = StreamLayout::Map(
+            self.node_outputs[&rolling_fold.input()].unwrap_map().0,
+            rolling_fold.output_layout(),
+        );
+        self.add_simple(node_id, rolling_fold.input(), output);
+    }
+
+    fn visit_sink(&mut self, node_id: NodeId, sink: &Sink) {
+        self.node_inputs.insert(node_id, vec![sink.input()]);
+    }
+
+    fn visit_minus(&mut self, node_id: NodeId, minus: &Minus) {
+        self.add_node(node_id);
+        self.node_inputs
+            .insert(node_id, vec![minus.lhs(), minus.rhs()]);
+        // TODO: Ensure lhs and rhs have the same types
+        self.node_outputs
+            .insert(node_id, self.node_outputs[&minus.lhs()]);
+    }
+
+    fn visit_filter(&mut self, node_id: NodeId, filter: &Filter) {
+        self.add_simple(node_id, filter.input(), self.node_outputs[&filter.input()]);
+    }
+
+    fn visit_filter_map(&mut self, node_id: NodeId, filter_map: &FilterMap) {
+        self.add_simple(
+            node_id,
+            filter_map.input(),
+            self.node_outputs[&filter_map.input()],
+        );
+    }
+
+    fn visit_source(&mut self, node_id: NodeId, source: &Source) {
+        self.add_node(node_id);
+        self.node_outputs
+            .insert(node_id, StreamLayout::Set(source.layout()));
+    }
+
+    fn visit_source_map(&mut self, node_id: NodeId, source_map: &SourceMap) {
+        self.add_node(node_id);
+        self.node_outputs
+            .insert(node_id, source_map.output_layout());
+    }
+
+    fn visit_index_with(&mut self, node_id: NodeId, index_with: &IndexWith) {
+        self.add_simple(node_id, index_with.input(), index_with.output_layout())
+    }
+
+    fn visit_differentiate(&mut self, node_id: NodeId, differentiate: &Differentiate) {
+        self.add_simple(node_id, differentiate.input(), differentiate.layout());
+    }
+
+    fn visit_integrate(&mut self, node_id: NodeId, integrate: &Integrate) {
+        self.add_simple(node_id, integrate.input(), integrate.layout());
+    }
+
+    fn visit_delta0(&mut self, node_id: NodeId, delta0: &Delta0) {
+        self.add_simple(node_id, delta0.input(), self.node_outputs[&delta0.input()]);
+    }
+
+    fn visit_delayed_feedback(&mut self, node_id: NodeId, delayed_feedback: &DelayedFeedback) {
+        self.add_node(node_id);
+        self.node_outputs
+            .insert(node_id, StreamLayout::Set(delayed_feedback.layout()));
+        // TODO: Delayed feedback inputs?
+    }
+
+    fn visit_distinct(&mut self, node_id: NodeId, distinct: &Distinct) {
+        self.add_simple(node_id, distinct.input(), distinct.layout());
+    }
+
+    fn visit_join_core(&mut self, node_id: NodeId, join: &super::nodes::JoinCore) {
+        self.add_node(node_id);
+        self.node_inputs
+            .insert(node_id, vec![join.lhs(), join.rhs()]);
+
+        let output = match join.result_kind() {
+            StreamKind::Set => {
+                if join.value_layout() != self.layout_cache.unit() {
+                    self.errors.push(ValidationError::JoinSetValueNotUnit {
+                        join: node_id,
+                        value_layout: join.value_layout(),
+                        layout: self.layout_cache.get(join.value_layout()).to_string(),
+                    });
+                }
+
+                StreamLayout::Set(join.key_layout())
+            }
+            StreamKind::Map => StreamLayout::Map(join.key_layout(), join.value_layout()),
+        };
+        self.node_outputs.insert(node_id, output);
+    }
+
+    fn visit_monotonic_join(&mut self, node_id: NodeId, join: &MonotonicJoin) {
+        self.add_node(node_id);
+        self.node_inputs
+            .insert(node_id, vec![join.lhs(), join.rhs()]);
+        self.node_outputs
+            .insert(node_id, StreamLayout::Set(join.key_layout()));
+    }
+
+    fn visit_antijoin(&mut self, node_id: NodeId, antijoin: &Antijoin) {
+        self.add_node(node_id);
+        self.node_inputs
+            .insert(node_id, vec![antijoin.lhs(), antijoin.rhs()]);
+        self.node_outputs.insert(node_id, antijoin.layout());
+    }
+
+    fn visit_constant(&mut self, node_id: NodeId, constant: &ConstantStream) {
+        self.add_node(node_id);
+        // TODO: Verify that the layout of the row matches its literal value
+        self.node_outputs.insert(node_id, constant.layout());
+    }
+
+    fn visit_flat_map(&mut self, node_id: NodeId, flat_map: &FlatMap) {
+        self.add_simple(node_id, flat_map.input(), flat_map.output_layout());
+    }
+
+    fn visit_index_by_column(&mut self, node_id: NodeId, index_by: &IndexByColumn) {
+        self.add_simple(
+            node_id,
+            index_by.input(),
+            StreamLayout::Map(index_by.key_layout(), index_by.value_layout()),
+        );
+    }
+
+    fn visit_unit_map_to_set(&mut self, node_id: NodeId, map_to_set: &UnitMapToSet) {
+        self.add_simple(
+            node_id,
+            map_to_set.input(),
+            StreamLayout::Set(map_to_set.value_layout()),
+        );
+    }
+
+    fn visit_subgraph(&mut self, node_id: NodeId, subgraph: &Subgraph) {
+        self.add_node(node_id);
+
+        // Only validate subgraphs when all above graphs are valid
+        if self.errors.is_empty() {
+            self.enter_subgraph(node_id, subgraph);
+            for (&node_id, node) in subgraph.nodes() {
+                node.accept(node_id, self);
+            }
+            self.leave_subgraph(node_id, subgraph);
+        }
+    }
+
+    // TODO: Do exports need any special handling?
+    fn visit_export(&mut self, node_id: NodeId, export: &Export) {
+        self.add_simple(node_id, export.input(), export.layout());
+    }
+
+    fn visit_exported_node(&mut self, node_id: NodeId, exported_node: &ExportedNode) {
+        self.add_simple(node_id, exported_node.input(), exported_node.layout());
     }
 }
 
@@ -1130,9 +1301,19 @@ impl FunctionValidator {
     }
 
     fn binop(&mut self, expr_id: ExprId, binop: &BinaryOp) -> ValidationResult {
-        let lhs_ty = self.expr_types.get(&binop.lhs()).unwrap().unwrap();
-        let rhs_ty = self.expr_types.get(&binop.rhs()).unwrap().unwrap();
-        assert_eq!(lhs_ty, rhs_ty, "mismatched binop types in {expr_id}");
+        let lhs_ty = self.expr_type(binop.lhs())?.unwrap();
+        let rhs_ty = self.expr_type(binop.rhs())?.unwrap();
+
+        if lhs_ty != rhs_ty {
+            return Err(ValidationError::MismatchedBinaryOperands {
+                expr_id,
+                binop: binop.kind(),
+                lhs: binop.lhs(),
+                lhs_ty,
+                rhs: binop.rhs(),
+                rhs_ty,
+            });
+        }
 
         match binop.kind() {
             BinaryOpKind::Eq
@@ -1179,6 +1360,9 @@ impl FunctionValidator {
 
 #[derive(Debug, Display)]
 pub enum ValidationError {
+    #[display(fmt = "declared node {node_id} multiple times")]
+    DuplicateNode { node_id: NodeId },
+
     #[display(fmt = "attempted to use block that doesn't exist: {block}")]
     MissingBlock { block: BlockId },
 
@@ -1302,6 +1486,19 @@ pub enum ValidationError {
         function: String,
         expected_args: usize,
         args: usize,
+    },
+
+    #[display(
+        fmt = "mismatched binary op types in {expr_id}, `{binop:?}(lhs: {lhs}, rhs: {rhs})` is not valid \
+        ({lhs} has the type {lhs_ty} and {rhs} has the type {rhs_ty})"
+    )]
+    MismatchedBinaryOperands {
+        expr_id: ExprId,
+        binop: BinaryOpKind,
+        lhs: ExprId,
+        lhs_ty: ColumnType,
+        rhs: ExprId,
+        rhs_ty: ColumnType,
     },
 }
 

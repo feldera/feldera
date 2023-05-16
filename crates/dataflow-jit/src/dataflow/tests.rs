@@ -243,7 +243,10 @@ fn bfs() {
             StreamKind::Set,
         );
 
-        let joined_plus_roots = subgraph.add_node(Sum::new(vec![nodes_join_edges, roots]));
+        let joined_plus_roots = subgraph.add_node(Sum::new(
+            vec![nodes_join_edges, roots],
+            StreamLayout::Set(u64x2),
+        ));
         let joined_plus_roots = subgraph.index_with(joined_plus_roots, u64x1, u64x1, {
             let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
             let input = func.add_input(u64x2);
@@ -279,7 +282,7 @@ fn bfs() {
                 func.build()
             },
         );
-        let min_set_distinct = subgraph.distinct(min_set);
+        let min_set_distinct = subgraph.distinct(min_set, StreamLayout::Set(u64x2));
         subgraph.connect_feedback(min_set_distinct, nodes);
         subgraph.export(min_set_distinct, StreamLayout::Set(u64x2))
     });
@@ -340,7 +343,10 @@ fn bfs() {
         },
     );
 
-    let distances = graph.add_node(Sum::new(vec![distances, unreachable_nodes]));
+    let distances = graph.add_node(Sum::new(
+        vec![distances, unreachable_nodes],
+        StreamLayout::Set(u64x2),
+    ));
     let sink = graph.sink(distances);
 
     let (dataflow, jit_handle, layout_cache) =

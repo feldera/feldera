@@ -10,15 +10,20 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sum {
     inputs: Vec<NodeId>,
+    layout: StreamLayout,
 }
 
 impl Sum {
-    pub fn new(inputs: Vec<NodeId>) -> Self {
-        Self { inputs }
+    pub fn new(inputs: Vec<NodeId>, layout: StreamLayout) -> Self {
+        Self { inputs, layout }
     }
 
     pub fn inputs(&self) -> &[NodeId] {
         &self.inputs
+    }
+
+    pub fn layout(&self) -> StreamLayout {
+        self.layout
     }
 }
 
@@ -37,25 +42,26 @@ impl DataflowNode for Sum {
         self.inputs.iter_mut().for_each(map);
     }
 
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
     }
 
     fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        assert!(inputs
-            .iter()
-            .all(|layout1| inputs.iter().all(|layout2| layout1 == layout2)));
+        assert!(inputs.iter().all(|&layout| layout == self.layout));
     }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn map_layouts<F>(&self, _map: &mut F)
+    fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId),
     {
+        self.layout.map_layouts(map);
     }
 
-    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

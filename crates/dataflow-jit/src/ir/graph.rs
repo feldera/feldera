@@ -146,8 +146,8 @@ pub trait GraphExt {
         self.add_node(Map::new(input, map_fn, input_layout, output_layout))
     }
 
-    fn distinct(&mut self, input: NodeId) -> NodeId {
-        self.add_node(Distinct::new(input))
+    fn distinct(&mut self, input: NodeId, layout: StreamLayout) -> NodeId {
+        self.add_node(Distinct::new(input, layout))
     }
 
     fn index_with(
@@ -160,12 +160,12 @@ pub trait GraphExt {
         self.add_node(IndexWith::new(input, index_fn, key_layout, value_layout))
     }
 
-    fn differentiate(&mut self, input: NodeId) -> NodeId {
-        self.add_node(Differentiate::new(input))
+    fn differentiate(&mut self, input: NodeId, layout: StreamLayout) -> NodeId {
+        self.add_node(Differentiate::new(input, layout))
     }
 
-    fn integrate(&mut self, input: NodeId) -> NodeId {
-        self.add_node(Integrate::new(input))
+    fn integrate(&mut self, input: NodeId, layout: StreamLayout) -> NodeId {
+        self.add_node(Integrate::new(input, layout))
     }
 
     fn join_core(
@@ -718,13 +718,19 @@ mod tests {
         // ```
         // let stream7883: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7130.differentiate();
         // ```
-        let stream7883 = graph.add_node(Differentiate::new(stream7130));
+        let stream7883 = graph.add_node(Differentiate::new(
+            stream7130,
+            StreamLayout::Set(nullable_i32),
+        ));
 
         // ```
         // let stream7887: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> =
         //     stream7883.sum([&stream7879, &stream7866]);
         // ```
-        let stream7887 = graph.add_node(Sum::new(vec![stream7883, stream7879, stream7866]));
+        let stream7887 = graph.add_node(Sum::new(
+            vec![stream7883, stream7879, stream7866],
+            StreamLayout::Set(nullable_i32),
+        ));
 
         // ```
         // let stream7892: Stream<_, OrdIndexedZSet<(), Tuple6<i32, F64, bool, String, Option<i32>, Option<F64>>, Weight>> =
