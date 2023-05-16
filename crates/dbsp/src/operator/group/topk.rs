@@ -12,6 +12,7 @@ where
     /// Pick `k` smallest values in each group.
     ///
     /// For each key in the input stream, removes all but `k` smallest values.
+    #[allow(clippy::type_complexity)]
     pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
     where
         B::R: ZRingValue,
@@ -22,6 +23,7 @@ where
     /// Pick `k` largest values in each group.
     ///
     /// For each key in the input stream, removes all but `k` largest values.
+    #[allow(clippy::type_complexity)]
     pub fn topk_desc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
     where
         B::R: ZRingValue,

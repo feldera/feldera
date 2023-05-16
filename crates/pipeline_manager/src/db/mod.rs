@@ -1308,7 +1308,7 @@ impl ProjectDB {
         #[cfg(feature = "pg-embed")]
         return Ok(Self { pool, pg_inst });
         #[cfg(not(feature = "pg-embed"))]
-        return Ok(Self { pool: pool });
+        return Ok(Self { pool });
     }
 
     /// Attach connector to the config.

@@ -24,6 +24,7 @@ where
     ///
     /// * `offset` - offset to the previous value.
     /// * `project` - projection function to apply to the delayed row.
+    #[allow(clippy::type_complexity)]
     pub fn lag<OV, PF>(
         &self,
         offset: usize,
@@ -56,6 +57,7 @@ where
     /// * `offset` - offset to the subsequent value.
     /// * `project` - projection function to apply to the subsequent row. The
     ///   argument is `None` for out-of-range values.
+    #[allow(clippy::type_complexity)]
     pub fn lead<OV, PF>(
         &self,
         offset: usize,

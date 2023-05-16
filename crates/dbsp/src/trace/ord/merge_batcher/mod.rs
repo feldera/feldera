@@ -90,6 +90,12 @@ struct MergeSorter<D: Ord, R: MonoidValue> {
     stash: Vec<Vec<(D, R)>>,
 }
 
+impl<D: Ord, R: MonoidValue> Default for MergeSorter<D, R> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<D: Ord, R: MonoidValue> MergeSorter<D, R> {
     /// The maximum number of bytes we'd like our buffers to contain
     ///
