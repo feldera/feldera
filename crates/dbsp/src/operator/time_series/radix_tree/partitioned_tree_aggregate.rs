@@ -112,7 +112,9 @@ where
 {
     /// Given a batch of updates to a partitioned time series stream, computes a
     /// stream of updates to its partitioned radix tree.
-    #[doc(hidden)]
+    ///
+    /// This is a building block for higher-level operators such as
+    /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate<TS, V, Agg>(
         &self,
         aggregator: Agg,
@@ -131,7 +133,9 @@ where
 
     /// Like [`Self::partitioned_tree_aggregate`], but can return any
     /// partitioned batch type.
-    #[doc(hidden)]
+    ///
+    /// This is a building block for higher-level operators such as
+    /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate_generic<TS, V, Agg, O>(
         &self,
         aggregator: Agg,
