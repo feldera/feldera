@@ -1,5 +1,6 @@
 use change_detection::ChangeDetection;
 use static_files::NpmBuild;
+use std::env;
 use std::path::Path;
 
 // These are touched during the build, so it would re-build every time if we
@@ -30,9 +31,9 @@ fn main() {
         .expect("Could not run `yarn install`. Follow set-up instructions in web-ui/README.md")
         .run("build")
         .expect("Could not run `yarn build`. Run it manually in web-ui/ to debug.")
-        .run("export")
-        .expect("Could not run `yarn export`. Run it manually in web-ui/ to debug.")
-        .target("../../web-ui/out")
+        .run("export-to-out")
+        .expect("Could not run `yarn export-to-out`. Run it manually in web-ui/ to debug.")
+        .target(env::var("OUT_DIR").unwrap())
         .to_resource_dir()
         .build()
         .unwrap();

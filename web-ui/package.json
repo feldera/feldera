@@ -20,6 +20,7 @@
     "build": "next build",
     "start": "next start",
     "export": "next export",
+    "export-to-out": "next export -o $OUT_DIR",
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
