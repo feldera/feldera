@@ -6,13 +6,14 @@ mod constant;
 mod select;
 mod unary;
 
+pub use crate::ir::ExprId;
 pub use binary::{BinaryOp, BinaryOpKind};
 pub use call::{ArgType, Call};
 pub use constant::Constant;
 pub use select::Select;
 pub use unary::{UnaryOp, UnaryOpKind};
 
-use crate::ir::{exprs::visit::MapLayouts, ColumnType, ExprId, LayoutId};
+use crate::ir::{exprs::visit::MapLayouts, ColumnType, LayoutId};
 use derive_more::From;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

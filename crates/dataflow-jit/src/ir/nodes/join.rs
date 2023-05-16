@@ -58,6 +58,13 @@ impl JoinCore {
         self.value_layout
     }
 
+    pub const fn output_layout(&self) -> StreamLayout {
+        match self.output_kind {
+            StreamKind::Set => StreamLayout::Set(self.key_layout),
+            StreamKind::Map => StreamLayout::Map(self.key_layout, self.value_layout),
+        }
+    }
+
     pub(crate) fn result_kind(&self) -> StreamKind {
         self.output_kind
     }
@@ -81,10 +88,7 @@ impl DataflowNode for JoinCore {
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(match self.output_kind {
-            StreamKind::Set => StreamLayout::Set(self.key_layout),
-            StreamKind::Map => StreamLayout::Map(self.key_layout, self.value_layout),
-        })
+        Some(self.output_layout())
     }
 
     fn validate(&self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
