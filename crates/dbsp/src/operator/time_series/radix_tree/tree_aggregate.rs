@@ -47,12 +47,13 @@ where
     /// Given a batch of updates to a time series stream, computes a stream of
     /// updates to its radix tree.
     ///
+    /// This is intended as a building block for higher-level operators.
+    ///
     /// # Limitations
     ///
     /// Unlike `Stream::partitioned_tree_aggregate()`, this operator is
     /// currently not parallelized, performing all work in a single worker
     /// thread.
-    #[doc(hidden)]
     pub fn tree_aggregate<Agg>(
         &self,
         aggregator: Agg,
@@ -69,7 +70,6 @@ where
     }
 
     /// Like [`Self::tree_aggregate`], but can return any batch type.
-    #[doc(hidden)]
     pub fn tree_aggregate_generic<Agg, O>(&self, aggregator: Agg) -> Stream<C, O>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
