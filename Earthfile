@@ -13,8 +13,15 @@ install-deps:
     RUN apt-get update
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
-                              hub numactl cmake openjdk-19-jre-headless maven netcat jq \
+                              hub numactl openjdk-19-jre-headless maven netcat jq \
                               libsasl2-dev docker.io
+    RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash -
+    RUN apt-get install --yes nodejs
+    RUN npm install --global yarn
+    RUN npm install --global openapi-typescript-codegen
+    COPY demo/demo_notebooks/requirements.txt demo/demo_notebooks/requirements.txt
+    RUN pip3 install -r demo/demo_notebooks/requirements.txt
+    RUN pip3 install openapi-python-client
 
 install-rust:
     FROM +install-deps
@@ -25,18 +32,14 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN chmod -R a+w $RUSTUP_HOME $CARGO_HOME
+    RUN rustup toolchain install nightly \
+        --component clippy \
+        --component rustfmt \
+        --component llvm-tools-preview
+    RUN cargo install --force cargo-make
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
-
-install-nextjs:
-    RUN sudo apt-get update
-    RUN sudo apt-get install git sudo curl
-    RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - &&\
-    RUN sudo apt-get install -y nodejs
-    RUN npm install --global yarn
-    RUN npm install --global openapi-typescript-codegen
 
 install-chef:
     FROM +install-rust
@@ -63,6 +66,7 @@ prepare-cache:
     COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
     COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
     COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
+    COPY --keep-ts web-ui web-ui
     #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
 
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/lib.rs
@@ -83,9 +87,12 @@ prepare-cache:
     SAVE ARTIFACT --keep-ts --keep-own recipe.json
 
 build-cache:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
     FROM +install-chef
     COPY --keep-ts +prepare-cache/recipe.json ./
-    RUN cargo chef cook --workspace --all-targets
+    RUN cargo +$RUST_TOOLCHAIN chef cook --workspace --all-targets
+    RUN cargo +$RUST_TOOLCHAIN chef cook --release --package dbsp_pipeline_manager --all-targets
+    RUN cargo +$RUST_TOOLCHAIN chef cook --clippy --workspace
     # I have no clue why we need all these commands below to build all
     # dependencies (since we just did a build --workspace --all-targets). But if
     # we don't run all of them, it will go and compile dependencies during
@@ -99,24 +106,35 @@ build-cache:
     #
     # When using `RUST_LOG=cargo::ops::cargo_rustc::fingerprint=info` to debug,
     # it looks like the hash for the crates changes.
-    RUN cargo build
-    RUN cargo test --no-run
-    RUN cargo build --package dbsp
-    RUN cargo test --package dbsp --no-run
-    RUN cargo build --package dbsp_adapters
-    RUN cargo test --package dbsp_adapters --no-run
-    RUN cargo build --package dbsp_pipeline_manager
-    RUN cargo test --package dbsp_pipeline_manager --no-run
-    RUN cargo build --package dataflow-jit
-    RUN cargo test --package dataflow-jit --no-run
-    RUN cargo build --package dbsp_nexmark
-    RUN cargo test --package dbsp_nexmark --no-run
+    RUN cargo +$RUST_TOOLCHAIN build
+    RUN cargo +$RUST_TOOLCHAIN test --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_adapters
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_adapters --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_adapters
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_pipeline_manager
+    # Pipeline manager is the only one we compile in release mode from
+    # `start_manager.sh`.  As we add benchmarks and other targets that
+    # require release builds, we may want to make build profile an ARG.
+    RUN cargo +$RUST_TOOLCHAIN build --release --package dbsp_pipeline_manager
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_pipeline_manager --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_pipeline_manager
+    RUN cargo +$RUST_TOOLCHAIN build --package dataflow-jit
+    RUN cargo +$RUST_TOOLCHAIN test --package dataflow-jit --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dataflow-jit
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_nexmark
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_nexmark --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_nexmark
 
     SAVE ARTIFACT --keep-ts --keep-own $CARGO_HOME
     SAVE ARTIFACT --keep-ts --keep-own ./target
 
 build-dbsp:
-    FROM +build-cache
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-cache --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
 
     # Remove the skeleton created in build-cache
     RUN rm -rf crates/dbsp
@@ -124,8 +142,9 @@ build-dbsp:
     COPY --keep-ts --dir crates/dbsp crates/dbsp
     COPY --keep-ts README.md README.md
 
-    RUN cargo build --package dbsp
-    RUN cargo test --package dbsp --no-run
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp -- -D warnings
     # Update target folder for future tasks, the whole --keep-ts, --keep-own
     # args were an attempt in fixing the dependency problem (see build-cache)
     # but it doesn't seem to make a difference.
@@ -133,64 +152,89 @@ build-dbsp:
 
 
 build-adapters:
-    FROM +build-dbsp
-
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
     RUN rm -rf crates/adapters
     COPY --keep-ts --dir crates/adapters crates/adapters
 
-    RUN cargo build --package dbsp_adapters
-    RUN cargo test --package dbsp_adapters --no-run
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_adapters
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_adapters --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_adapters -- -D warnings
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 build-manager:
-    FROM +build-adapters
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
 
     RUN rm -rf crates/pipeline_manager
     COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
+    COPY --keep-ts --dir web-ui web-ui
+    COPY --keep-ts python python
 
-    RUN cargo build --package dbsp_pipeline_manager
-    RUN cargo test --package dbsp_pipeline_manager --no-run
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_pipeline_manager
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_pipeline_manager --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_pipeline_manager -- -D warnings
+    RUN cargo make --cwd crates/pipeline_manager/ openapi_python
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
+build-sql:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
+
 build-dataflow-jit:
-    FROM +build-dbsp
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
 
     RUN rm -rf crates/dataflow-jit
     COPY --keep-ts --dir crates/dataflow-jit crates/dataflow-jit
 
-    RUN cargo build --package dataflow-jit
-    RUN cargo test --package dataflow-jit --no-run
+    RUN cargo +$RUST_TOOLCHAIN build --package dataflow-jit
+    RUN cargo +$RUST_TOOLCHAIN test --package dataflow-jit --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dataflow-jit -- -D warnings
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 build-nexmark:
-    FROM +build-dbsp
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
 
     RUN rm -rf crates/nexmark
     COPY --keep-ts --dir crates/nexmark crates/nexmark
 
-    RUN cargo build --package dbsp_nexmark
-    RUN cargo test --package dbsp_nexmark --no-run
+    RUN cargo +$RUST_TOOLCHAIN build --package dbsp_nexmark
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_nexmark --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_nexmark -- -D warnings
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 test-dbsp:
-    FROM +build-dbsp
-    RUN cargo test --package dbsp
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp
+
+test-nexmark:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    RUN cargo +$RUST_TOOLCHAIN test --package dbsp_nexmark
 
 test-dataflow-jit:
-    FROM +build-dataflow-jit
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
     # Tests use this demo directory
     COPY --keep-ts demo/project_demo01-TimeSeriesEnrich demo/project_demo01-TimeSeriesEnrich
-    RUN cargo test --package dataflow-jit
+    RUN cargo +$RUST_TOOLCHAIN test --package dataflow-jit
 
 test-adapters:
-    FROM +build-adapters
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v22.3.11
         RUN docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v22.3.11 && \
-            cargo test --package dbsp_adapters
+            cargo +$RUST_TOOLCHAIN test --package dbsp_adapters
     END
 
 test-manager:
-    FROM +build-manager
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
     ENV PGHOST=localhost
     ENV PGUSER=postgres
     ENV PGCLIENTENCODING=UTF8
@@ -202,5 +246,38 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo test --package dbsp_pipeline_manager
+            cargo +$RUST_TOOLCHAIN test --package dbsp_pipeline_manager
     END
+
+test-python:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    COPY --keep-ts scripts scripts
+    COPY --keep-ts demo/demo_notebooks demo/demo_notebooks
+    ENV PGHOST=localhost
+    ENV PGUSER=postgres
+    ENV PGCLIENTENCODING=UTF8
+    ENV PGPORT=5432
+    ENV RUST_LOG=error
+    ENV WITH_POSTGRES=1
+    WITH DOCKER --pull postgres
+        # We just put the PGDATA in /dev/shm because the docker fs seems very slow (test time goes to 2min vs. shm 40s)
+        RUN docker run --shm-size=256MB -p 5432:5432 --name postgres -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
+            sleep 3 && \
+            cargo make --cwd crates/pipeline_manager/ python_test
+    END
+
+test-rust:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    BUILD +test-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    BUILD +test-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    BUILD +test-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+    BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
+
+test-rust-nightly:
+    BUILD +test-rust --RUST_TOOLCHAIN=nightly
+
+all-tests:
+    BUILD +test-rust
+    BUILD +test-python
