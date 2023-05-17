@@ -11,6 +11,7 @@ pub(crate) mod upsert;
 mod aggregate;
 mod condition;
 mod consolidate;
+mod count;
 #[cfg(feature = "with-csv")]
 mod csv;
 mod delta0;

@@ -86,16 +86,16 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
     });
 
     let count_total_bids: Stream<_, OrdIndexedZSet<(u64, OrdinalDate), isize, _>> =
-        bids_indexed.aggregate_linear(|_, _| -> isize { 1 });
+        bids_indexed.weighted_count();
     let count_rank1_bids = bids_indexed
         .filter(|(_auction_day, price)| *price < 10_000)
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let count_rank2_bids = bids_indexed
         .filter(|(_auction_day, price)| *price >= 10_000 && *price < 1_000_000)
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let count_rank3_bids = bids_indexed
         .filter(|(_auction_day, price)| *price >= 1_000_000)
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let min_price = bids_indexed.aggregate(Min);
     let max_price = bids_indexed.aggregate(Max);
     let sum_price =
