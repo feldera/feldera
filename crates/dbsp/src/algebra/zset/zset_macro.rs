@@ -9,11 +9,17 @@ use crate::zset_set;
 ///
 /// # Example
 ///
-/// The following macro invocation yields an indexed Z-set with `(key, value,
-/// weight)` tuples `(1, 3, -1), (1, 2, 1), (2, 2, 1)`:
+/// The following example shows how to construct an indexed Z-set with `(key,
+/// value, weight)` tuples `(1, 3, -1), (1, 2, 1), (2, 2, 1)`:
 ///
 /// ```
-/// indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}}
+/// use dbsp::{indexed_zset, IndexedZSet};
+///
+/// let zset = indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}};
+/// assert_eq!(
+///     zset.iter().collect::<Vec<_>>(),
+///     vec![(1, 2, 1), (1, 3, -1), (2, 2, 1)]
+/// );
 /// ```
 #[macro_export]
 macro_rules! indexed_zset {
@@ -34,11 +40,17 @@ macro_rules! indexed_zset {
 ///
 /// # Example
 ///
-/// The following macro invocation yields an Z-set with `(key, weight)` tuples
-/// `(1, -1), (2, 1)`:
+/// The following example shows how to construct a Z-set with `(key, weight)`
+/// tuples `(1, -1), (2, 1)`:
 ///
 /// ```
-/// zset! {1 => -1, 2 => 1}
+/// use dbsp::{zset, IndexedZSet};
+///
+/// let zset = zset! {1 => -1, 2 => 1};
+/// assert_eq!(
+///     zset.iter().collect::<Vec<_>>(),
+///     vec![(1, (), -1), (2, (), 1)]
+/// );
 /// ```
 #[macro_export]
 macro_rules! zset {
@@ -58,11 +70,17 @@ macro_rules! zset {
 ///
 /// # Example
 ///
-/// The following macro invocation yields an Z-set with `(key, weight)` tuples
-/// `(1, 1), (2, 1), (-3, 1)`:
+/// The following examples shows how to construct a Z-set with `(key, weight)`
+/// tuples `(1, 1), (2, 1), (-3, 1)`:
 ///
 /// ```
-/// zset_set! {1, 2, -3}
+/// use dbsp::{zset_set, IndexedZSet};
+///
+/// let zset = zset_set! {1, 2, -3};
+/// assert_eq!(
+///     zset.iter().collect::<Vec<_>>(),
+///     vec![(-3, (), 1), (1, (), 1), (2, (), 1)]
+/// );
 /// ```
 #[macro_export]
 macro_rules! zset_set {
