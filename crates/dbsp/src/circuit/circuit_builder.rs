@@ -355,7 +355,7 @@ impl<D> StreamValue<D> {
 /// the earlier value.  `upsert` turns these into a stream of deltas by
 /// internally tracking upserts that have already been seen.
 ///
-/// ## Weight operators
+/// ## Weighting and counting operators
 ///
 /// Use [`Stream::weigh`] to multiply the weights in an indexed Z-set by a
 /// user-provided function of the key and value.  This is equally appropriate
@@ -363,11 +363,22 @@ impl<D> StreamValue<D> {
 /// just the keys from the input, discarding the values, which also means that
 /// weights will be added together in the case of equal input keys.
 ///
+/// `Stream` provides methods to count the number of values per key in an
+/// indexed Z-set:
+///
+///   * To sum the weights for each value within a key, use
+///     [`Stream::weighted_count`] for streams of deltas or
+///     [`Stream::stream_weighted_count`] for streams of data.
+///
+///   * To count each value only once even for a weight greater than one, use
+///     [`Stream::distinct_count`] for streams of deltas or
+///     [`Stream::stream_distinct_count`] for streams of data.
+///
 /// The "distinct" operator on a Z-set maps positive weights to 1 and all other
 /// weights to 0.  `Stream` has two implementations:
 ///
-///   * Use [`Stream::distinct`] to incrementally process a stream of deltas.
-///     If the output stream were to be integrated, it only contain records with
+///   * Use [`Stream::distinct`] to incrementally process a stream of deltas. If
+///     the output stream were to be integrated, it only contain records with
 ///     weight 0 or 1.  This operator internally integrates the stream of
 ///     deltas, which means its memory consumption is proportional to the
 ///     integrated data size.
@@ -443,8 +454,7 @@ impl<D> StreamValue<D> {
 ///     [`Stream::aggregate_linear`] is cheaper for linear aggregation
 ///     functions.  It's also a little easier to use with a custom aggregation
 ///     function, because it only takes a function rather than an [`Aggregator`]
-///     object.  It's common to pass `|_, _| 1` as the function, which yields a
-///     weighted count.
+///     object.
 ///
 ///     [`Stream::average`] performs a specialized "quasi-linear" aggregation.
 ///

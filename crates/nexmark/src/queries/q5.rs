@@ -99,7 +99,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     let windowed_bids = bids_by_time.window(&window_bounds).map(|(_time, auction)| *auction);
 
     // Count the number of bids per auction.
-    let auction_counts = windowed_bids.aggregate_linear(|&_key, &()| -> isize { 1 });
+    let auction_counts = windowed_bids.weighted_count();
 
     // Find the largest number of bids across all auctions.
     let max_auction_count = auction_counts
