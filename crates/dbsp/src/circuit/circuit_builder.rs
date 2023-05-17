@@ -372,7 +372,7 @@ impl<D> StreamValue<D> {
 ///     deltas, which means its memory consumption is proportional to the
 ///     integrated data size.
 ///
-///   * Use [`Stream::stream_distinct`] to non-incremntally process a stream of
+///   * Use [`Stream::stream_distinct`] to non-incrementally process a stream of
 ///     data.  It sets each record's weight to 1 if it is positive and drops the
 ///     others.
 ///
