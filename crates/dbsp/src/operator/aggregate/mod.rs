@@ -196,6 +196,35 @@ where
             .mark_sharded()
     }
 
+    /// A version of [`Self::stream_aggregate`] optimized for linear aggregation
+    /// functions.
+    ///
+    /// This method only works for linear aggregation functions `f`, i.e.,
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
+    /// incorrect results if `f` is not linear.  Linearity means that
+    /// `f` can be defined per `(key, value)` tuple.
+    pub fn stream_aggregate_linear<F, A>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A, Z::R>>
+    where
+        Z: IndexedZSet + Send,
+        A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
+        Z::R: ZRingValue,
+        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+    {
+        self.stream_aggregate_linear_generic(f)
+    }
+
+    /// Like [`Self::stream_aggregate_linear`], but can return any batch type.
+    pub fn stream_aggregate_linear_generic<F, A, O>(&self, f: F) -> Stream<C, O>
+    where
+        Z: IndexedZSet + Send,
+        A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
+        O: IndexedZSet<Key = Z::Key, Val = A>,
+        O::R: ZRingValue,
+        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+    {
+        self.weigh(f).stream_aggregate_generic(WeightedCount)
+    }
+
     /// Incremental aggregation operator.
     ///
     /// This operator is an incremental version of [`Self::stream_aggregate`].
@@ -749,8 +778,15 @@ mod test {
                     .differentiate()
                     .differentiate_nested()
                     .gather(0);
+                let sum_noninc_linear = input
+                    .integrate_nested()
+                    .integrate()
+                    .stream_aggregate_linear(sum_linear)
+                    .differentiate()
+                    .differentiate_nested()
+                    .gather(0);
 
-                // Compare outputs of all three implementations.
+                // Compare outputs of all four implementations.
                 sum_inc
                     .apply2(
                         &sum_noninc,
@@ -800,6 +836,20 @@ mod test {
                         assert!(!cursor2.key_valid());
                     },
                 );
+
+                sum_inc_linear
+                    .apply2(
+                        &sum_noninc_linear,
+                        |d1: &OrdIndexedZSet<usize, isize, isize>,
+                         d2: &OrdIndexedZSet<usize, isize, isize>| {
+                            (d1.clone(), d2.clone())
+                        },
+                    )
+                    .inspect(|(d1, d2)| {
+                        //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
+                        //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
+                        assert_eq!(d1, d2);
+                    });
 
                 let min_inc = input.aggregate(Min).gather(0);
                 let min_noninc = input
@@ -899,7 +949,7 @@ mod test {
         let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset();
             input_stream
-                .aggregate_linear(|_key, _value: &usize| 1isize)
+                .weighted_count()
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {

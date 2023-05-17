@@ -451,6 +451,9 @@ impl<D> StreamValue<D> {
 ///   * [`Stream::stream_aggregate`] aggregates data streams.  Each batch from
 ///     the input is separately aggregated and written to the output stream.
 ///
+///     [`Stream::stream_aggregate_linear`] applies a linear aggregation
+///     function to a data stream.
+///
 /// These aggregation functions all partition the aggregation by key, like GROUP
 /// BY in SQL.  To aggregate all records in a non-indexed Z-set, map to an
 /// indexed Z-set with a unit key `()` before aggregating, then map again to
