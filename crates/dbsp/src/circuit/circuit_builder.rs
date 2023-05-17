@@ -245,7 +245,7 @@ impl<D> StreamValue<D> {
 /// It's common to pass explicit type arguments to the functions that
 /// create input streams, e.g.:
 ///
-/// ```
+/// ```ignore
 /// circuit.add_input_indexed_zset::<KeyType, ValueType, WeightType>()
 /// ```
 ///
@@ -456,7 +456,7 @@ impl<D> StreamValue<D> {
 /// indexed Z-set with a unit key `()` before aggregating, then map again to
 /// remove the index if necessary, e.g.:
 ///
-/// ```
+/// ```ignore
 /// let max_auction_count = auction_counts
 ///     .map_index(|(_auction, count)| ((), *count))
 ///     .aggregate(Max)
