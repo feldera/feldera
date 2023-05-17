@@ -69,11 +69,11 @@ pub use min::{Min, MinSemigroup};
 /// to the final value of the accumulator.
 ///
 /// This is a low-level trait that is mostly used to build libraries of
-/// aggregators.  Users will typicaly work with ready-made implementations
+/// aggregators.  Users will typically work with ready-made implementations
 /// like [`Min`] and [`Fold`].
 // TODO: Owned aggregation using `Consumer`
 pub trait Aggregator<K, T, R>: Clone + 'static {
-    /// Accumulator type returned by
+    /// Accumulator type returned by [`Self::finalize`].
     type Accumulator: DBData;
 
     /// Semigroup structure over aggregate values.
