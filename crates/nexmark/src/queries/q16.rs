@@ -249,7 +249,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
     // Compute bids per channel per day.
     let count_total_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = bids
         .index()
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let max_minutes = bids
         .map_index(|((channel, day), (_auction, _price, _bidder, mins))| {
             ((channel.clone(), *day), *mins)
@@ -257,33 +257,33 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
         .aggregate(Max);
     let count_rank1_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank1_bids
         .index()
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let count_rank2_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank2_bids
         .index()
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
     let count_rank3_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank3_bids
         .index()
-        .aggregate_linear(|_, _| -> isize { 1 });
+        .weighted_count();
 
     // Count unique bidders per channel per day.
     let count_total_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        distinct_bidder.aggregate_linear(|_, _| -> isize { 1 });
+        distinct_bidder.weighted_count();
     let count_rank1_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank1_distinct_bidder.aggregate_linear(|_, _| -> isize { 1 });
+        rank1_distinct_bidder.weighted_count();
     let count_rank2_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank2_distinct_bidder.aggregate_linear(|_, _| -> isize { 1 });
+        rank2_distinct_bidder.weighted_count();
     let count_rank3_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank3_distinct_bidder.aggregate_linear(|_, _| -> isize { 1 });
+        rank3_distinct_bidder.weighted_count();
 
     // Count unique auctions per channel per day.
     let count_total_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        distinct_auction.aggregate_linear(|_, _| -> isize { 1 });
+        distinct_auction.weighted_count();
     let count_rank1_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank1_distinct_auction.aggregate_linear(|_, _| -> isize { 1 });
+        rank1_distinct_auction.weighted_count();
     let count_rank2_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank2_distinct_auction.aggregate_linear(|_, _| -> isize { 1 });
+        rank2_distinct_auction.weighted_count();
     let count_rank3_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
-        rank3_distinct_auction.aggregate_linear(|_, _| -> isize { 1 });
+        rank3_distinct_auction.weighted_count();
 
     // The following abomination simply joins all aggregates computed above into a
     // single output stream.

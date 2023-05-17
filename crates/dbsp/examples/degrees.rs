@@ -59,12 +59,10 @@ fn main() -> Result<()> {
 
         // Count the number of edges with each node as its source (each node's
         // out-degree).
-        let degrees = edges.map(|(src, _dst)| *src).aggregate_linear(|_k, _v| 1);
+        let degrees = edges.map(|(src, _dst)| *src).weighted_count();
 
         // Count the number of nodes with each out-degree.
-        let distribution = degrees
-            .map(|(_src, count)| *count)
-            .aggregate_linear(|_k, _v| 1);
+        let distribution = degrees.map(|(_src, count)| *count).weighted_count();
 
         (hedges, degrees.output(), distribution.output())
     })

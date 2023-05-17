@@ -55,7 +55,7 @@ where
     });
 
     bids_by_bidder_window
-        .aggregate_linear(|&_key, &()| -> isize { 1 })
+        .weighted_count()
         .map(|(&(bidder, starttime, endtime), &count)| (bidder, count as u64, starttime, endtime))
 }
 
