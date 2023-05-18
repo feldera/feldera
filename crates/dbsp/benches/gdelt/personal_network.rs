@@ -695,6 +695,20 @@ impl<'a, K, V, R, O> Cursor<K, V, (), R> for HashedKVCursor<'a, K, V, R, O> {
         todo!()
     }
 
+    fn seek_key_with<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        todo!()
+    }
+
+    fn seek_key_with_reverse<P>(&mut self, _predicate: P)
+    where
+        P: Fn(&K) -> bool + Clone,
+    {
+        todo!()
+    }
+
     fn step_val(&mut self) {
         todo!()
     }
