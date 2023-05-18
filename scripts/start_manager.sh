@@ -10,12 +10,7 @@ MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
 #    exit 1
 # fi
 
-if [[ ! -e ${SQL_COMPILER_DIR}/.git || -z $(cd ${SQL_COMPILER_DIR} && git branch --show-current) ]]
-then
-    git submodule update --init
-fi
 cd "${SQL_COMPILER_DIR}/SQL-compiler" && mvn -DskipTests package
-
 
 WORKING_DIR="${1:-${HOME}/.dbsp}"
 
@@ -31,13 +26,22 @@ pkill dbsp_pipeline_
 # Wait for manager process to exit.
 while ps -p $(pgrep dbsp_pipeline_) > /dev/null; do sleep 1; done
 
-set -e
+set -ex
 
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release --features pg-embed
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release --features pg-embed -- \
+# If $WITH_POSTGRES is defined, manager should use a real Postgres server
+# instead of pg-embed.
+if [ -z "$WITH_POSTGRES" ]; then
+    PG_EMBED="--features pg-embed"
+    DB_CONNECTION_STRING="--db-connection-string=postgres-embed"
+else
+    DB_CONNECTION_STRING="--db-connection-string=postgresql://${PGUSER}@localhost"
+fi
+
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release $PG_EMBED
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
     --working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
     --unix-daemon \
-    --db-connection-string="postgres-embed"
+    ${DB_CONNECTION_STRING}
