@@ -46,9 +46,8 @@ tokio = { version = "1.25.0", features = ["sync", "macros"] }
 prometheus = "0.13.3"
 utoipa = { version = "3.0.1" }
 actix-codec = { version = "0.5.0", optional = true }
-chrono = "0.4.24"
+chrono = { version = "0.4.24", features = ["clock"], default-features = false }
 colored = "2.0.0"
-
 
 [dev-dependencies]
 serde_json = "1.0.89"
