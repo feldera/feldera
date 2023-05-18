@@ -116,7 +116,7 @@ where
     })?;
 
     // Create env logger.
-    let pipeline_name = format!("[{}]", config.name).cyan();
+    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format(move |buf, record| {
             let t = chrono::Utc::now();
