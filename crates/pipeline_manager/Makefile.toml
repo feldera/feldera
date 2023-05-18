@@ -1,9 +1,13 @@
+[tasks.build-release]
+command = "cargo"
+args = ["build", "--release"]
+
 [tasks.openapi_json]
 description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
 dependencies = ["build-release"]
 script = '''
 cd ../../
-cargo run --release --bin=dbsp_pipeline_manager -- --dump-openapi
+cargo run --release --package dbsp_pipeline_manager -- --dump-openapi
 '''
 
 [tasks.openapi_python]
