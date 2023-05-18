@@ -66,7 +66,6 @@ prepare-cache:
     COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
     COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
     COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
-    COPY --keep-ts web-ui web-ui
     #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
 
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/lib.rs
@@ -228,7 +227,8 @@ test-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v22.3.11
-        RUN docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v22.3.11 && \
+        RUN docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v22.3.11 \
+            redpanda start --smp 2 && \
             cargo +$RUST_TOOLCHAIN test --package dbsp_adapters
     END
 
