@@ -36,6 +36,8 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
+    RUN cargo install --force cargo-udeps
+    RUN cargo install --force cargo-audit
     RUN cargo install --force cargo-make
     RUN rustup --version
     RUN cargo --version
@@ -206,6 +208,17 @@ build-nexmark:
     RUN cargo +$RUST_TOOLCHAIN clippy --package dbsp_nexmark -- -D warnings
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
+audit:
+    FROM +install-rust
+    COPY --keep-ts Cargo.toml .
+    COPY --keep-ts Cargo.lock .
+    COPY --keep-ts README.md .
+    COPY --keep-ts --dir crates crates
+    COPY --keep-ts --dir web-ui web-ui
+    # cargo udeps requires nightly Rust.
+    RUN cargo +nightly udeps --workspace --all-features --all-targets
+    RUN cargo audit
+
 test-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN
@@ -281,3 +294,4 @@ test-rust-nightly:
 all-tests:
     BUILD +test-rust
     BUILD +test-python
+    BUILD +audit
