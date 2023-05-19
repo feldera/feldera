@@ -22,7 +22,12 @@ use utoipa::ToSchema;
 static OUTPUT_HTTP_ENDPOINTS: Lazy<RwLock<BTreeMap<String, HttpOutputEndpoint>>> =
     Lazy::new(|| RwLock::new(BTreeMap::new()));
 
-/// `OutputTransport` implementation that sends data to websockets.
+/// [`OutputTransport`] implementation that writes data to a websocket.
+///
+/// This output transport is only available if the crate is configured with the
+/// `server` feature.
+///
+/// The output transport factory gives this transport the name `http`.
 pub struct HttpOutputTransport;
 
 impl OutputTransport for HttpOutputTransport {
@@ -30,6 +35,13 @@ impl OutputTransport for HttpOutputTransport {
         Cow::Borrowed("http")
     }
 
+    /// Creates a new [`OutputEndpoint`] for sending data to a websocket.  There
+    /// is no configuration (`_config` is ignored).  Rather, the client
+    /// connects a websocket by issuing a GET request to the
+    /// `/output_endpoint/<name>` endpoint, where `name` is the argument passed
+    /// here.
+    ///
+    /// See [`OutputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         name: &str,
@@ -66,6 +78,10 @@ impl HttpOutputTransport {
     }
 }
 
+/// Configuration for writing data to a websocket with `HttpOutputTransport`.
+///
+/// This is an empty struct because this kind of transport doesn't accept any
+/// configuration.
 #[derive(Clone, Deserialize, ToSchema)]
 pub struct HttpOutputConfig;
 

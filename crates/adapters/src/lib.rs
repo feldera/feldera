@@ -9,6 +9,11 @@
 //! formats (CSV, bincode, JSON, etc.) into the DBSP input and output
 //! pipelines.
 //!
+//! This crate is primarily for use in general-purpose applications to
+//! support users plugging in a variety of inputs and outputs in a flexible
+//! way.  It is likely to be more than needed for simple applications that
+//! support specific inputs and outputs.
+//!
 //! ## Overview
 //!
 //! The data ingestion pipeline consists of two kinds of adapters: **data
