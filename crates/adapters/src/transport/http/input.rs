@@ -29,8 +29,12 @@ use utoipa::ToSchema;
 static INPUT_HTTP_ENDPOINTS: Lazy<RwLock<BTreeMap<String, HttpInputEndpoint>>> =
     Lazy::new(|| RwLock::new(BTreeMap::new()));
 
-/// `InputTransport` implementation that receives data from an HTTP endpoint
-/// via a websocket.
+/// [`InputTransport`] implementation that reads data from a websocket.
+///
+/// This input transport is only available if the crate is configured with the
+/// `server` feature.
+///
+/// The input transport factory gives this transport the name `http`.
 pub struct HttpInputTransport;
 
 impl InputTransport for HttpInputTransport {
@@ -38,6 +42,13 @@ impl InputTransport for HttpInputTransport {
         Cow::Borrowed("http")
     }
 
+    /// Creates a new [`InputEndpoint`] for receiving data from a websocket.
+    /// There is no configuration (`_config` is ignored).  Rather, the
+    /// client connects a websocket by issuing a GET request to the
+    /// `/input_endpoint/<name>` endpoint, where `name` is the argument passed
+    /// here.
+    ///
+    /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         name: &str,
@@ -74,6 +85,10 @@ impl HttpInputTransport {
     }
 }
 
+/// Configuration for reading data from a websocket with `HttpOutputTransport`.
+///
+/// This is an empty struct because this kind of transport doesn't accept any
+/// configuration.
 #[derive(Clone, Deserialize, ToSchema)]
 pub struct HttpInputConfig;
 

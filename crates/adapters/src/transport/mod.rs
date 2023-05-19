@@ -1,3 +1,38 @@
+//! Data transports.
+//!
+//! Data transport adapters implement support for a specific streaming
+//! technology like Kafka.  A transport adapter carries data without
+//! interpreting it (data interpretation is the job of **data format** adapters
+//! found in [dbsp_adapters::format](crate::format)).
+//!
+//! Both input and output data transport adapters exist.  Every current form of
+//! transport has both an input and an output adapter, but transports added in
+//! the future might only be suitable for input or for output.
+//!
+//! Data transports are created and configured through Yaml, with a string name
+//! that designates a transport and a transport-specific Yaml object to
+//! configure it.  Transport configuration is encapsulated in
+//! [`dbsp_adapters::TransportConfig`](crate::TransportConfig).
+//!
+//! The following transports are currently supported:
+//!
+//!   * `file`, for input from a file via [`FileInputTransport`] or output to a
+//!     file via [`FileOutputTransport`].
+//!
+//!   * `http`, for input from a websocket via [`HttpInputTransport`] or output
+//!     to a websocket via [`HttpOutputTransport`], if the `server` feature is
+//!     enabled.
+//!
+//!   * `kafka`, for input from [Kafka](https://kafka.apache.org/) via
+//!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
+//!     if the `with-kafka` feature is enabled.
+//!
+//! To obtain a transport and create an endpoint with it:
+//!
+//! ```ignore
+//! let transport = <dyn InputTransport>::get_transport(transport_name).unwrap();
+//! let endpoint = transport.new_endpoint(endpoint_name, &config, consumer);
+//! ```
 use anyhow::{Error as AnyError, Result as AnyResult};
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
@@ -100,7 +135,8 @@ pub trait InputTransport: Send + Sync {
 }
 
 impl dyn InputTransport {
-    /// Lookup input transport by name.
+    /// Lookup input transport by `name`, which should be e.g. `file` for a file
+    /// transport.
     pub fn get_transport(name: &str) -> Option<&'static dyn InputTransport> {
         INPUT_TRANSPORT.get(name).map(|f| &**f)
     }
