@@ -38,8 +38,13 @@ const fn default_group_join_timeout_secs() -> u32 {
     10
 }
 
-/// `InputTransport` implementation that reads data from one or more
+/// [`InputTransport`] implementation that reads data from one or more
 /// Kafka topics.
+///
+/// This input transport is only available if the crate is configured with
+/// `with-kafka` feature.
+///
+/// The input transport factory gives this transport the name `kafka`.
 pub struct KafkaInputTransport;
 
 impl InputTransport for KafkaInputTransport {
@@ -47,6 +52,10 @@ impl InputTransport for KafkaInputTransport {
         Cow::Borrowed("kafka")
     }
 
+    /// Creates a new [`InputEndpoint`] for reading from Kafka topics,
+    /// interpreting `config` as a [`KafkaInputConfig`].
+    ///
+    /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         _name: &str,
@@ -59,7 +68,7 @@ impl InputTransport for KafkaInputTransport {
     }
 }
 
-/// Input endpoint configuration.
+/// Configuration for reading data from Kafka topics with [`InputTransport`].
 #[derive(Deserialize, Debug)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
@@ -71,21 +80,21 @@ pub struct KafkaInputConfig {
     /// * "enable.auto.commit", if present, must be set to "false",
     /// * "enable.auto.offset.store", if present, must be set to "false"
     #[serde(flatten)]
-    kafka_options: BTreeMap<String, String>,
+    pub kafka_options: BTreeMap<String, String>,
 
     /// List of topics to subscribe to.
-    topics: Vec<String>,
+    pub topics: Vec<String>,
 
     /// The log level of the client.
     ///
     /// If not specified, the log level will be calculated based on the global
     /// log level of the `log` crate.
-    log_level: Option<KafkaLogLevel>,
+    pub log_level: Option<KafkaLogLevel>,
 
     /// Maximum timeout in seconds to wait for the endpoint to join the Kafka
     /// consumer group during initialization.
     #[serde(default = "default_group_join_timeout_secs")]
-    group_join_timeout_secs: u32,
+    pub group_join_timeout_secs: u32,
 }
 
 // The auto-derived implementation gets confused by the flattened

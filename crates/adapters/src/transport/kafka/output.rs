@@ -21,7 +21,12 @@ use utoipa::{
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
-/// `OutputTransport` implementation that writes to a Kafka topic.
+/// [`OutputTransport`] implementation that writes data to a Kafka topic.
+///
+/// This output transport is only available if the crate is configured with
+/// `with-kafka` feature.
+///
+/// The output transport factory gives this transport the name `kafka`.
 pub struct KafkaOutputTransport;
 
 impl OutputTransport for KafkaOutputTransport {
@@ -29,6 +34,10 @@ impl OutputTransport for KafkaOutputTransport {
         Cow::Borrowed("kafka")
     }
 
+    /// Creates a new [`OutputEndpoint`] fpor writing to a Kafka topic,
+    /// interpreting `config` as a [`KafkaOutputConfig`].
+    ///
+    /// See [`OutputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         _name: &str,
@@ -46,7 +55,7 @@ const fn default_max_inflight_messages() -> u32 {
     1000
 }
 
-/// Output endpoint configuration.
+/// Configuration for writing data to a Kafka topic with [`OutputTransport`].
 #[derive(Deserialize, Debug)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
@@ -54,16 +63,16 @@ pub struct KafkaOutputConfig {
     /// See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
     /// used to configure the Kafka producer.
     #[serde(flatten)]
-    kafka_options: BTreeMap<String, String>,
+    pub kafka_options: BTreeMap<String, String>,
 
     /// Topic to write to.
-    topic: String,
+    pub topic: String,
 
     /// The log level of the client.
     ///
     /// If not specified, the log level will be calculated based on the global
     /// log level of the `log` crate.
-    log_level: Option<KafkaLogLevel>,
+    pub log_level: Option<KafkaLogLevel>,
 
     /// Maximum number of unacknowledged messages buffered by the Kafka
     /// producer.
@@ -76,7 +85,7 @@ pub struct KafkaOutputConfig {
     ///
     /// Defaults to 1000.
     #[serde(default = "default_max_inflight_messages")]
-    max_inflight_messages: u32,
+    pub max_inflight_messages: u32,
 }
 
 impl KafkaOutputConfig {

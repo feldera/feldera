@@ -20,7 +20,9 @@ use utoipa::ToSchema;
 
 const SLEEP_MS: u64 = 200;
 
-/// `InputTransport` implementation that reads data from file.
+/// [`InputTransport`] implementation that reads data from a file.
+///
+/// The input transport factory gives this transport the name `file`.
 pub struct FileInputTransport;
 
 impl InputTransport for FileInputTransport {
@@ -28,6 +30,10 @@ impl InputTransport for FileInputTransport {
         Cow::Borrowed("file")
     }
 
+    /// Creates a new [`InputEndpoint`] for reading a file, interpreting
+    /// `config` as a [`FileInputConfig`].
+    ///
+    /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         _name: &str,
@@ -41,16 +47,17 @@ impl InputTransport for FileInputTransport {
     }
 }
 
+/// Configuration for reading data from a file with [`FileInputTransport`].
 #[derive(Deserialize, ToSchema)]
 pub struct FileInputConfig {
     /// File path.
-    path: String,
+    pub path: String,
 
     /// Read buffer size.
     ///
     /// Default: when this parameter is not specified, a platform-specific
     /// default is used.
-    buffer_size_bytes: Option<usize>,
+    pub buffer_size_bytes: Option<usize>,
 
     /// Enable file following.
     ///
@@ -59,7 +66,7 @@ pub struct FileInputConfig {
     /// endpoint will keep watching the file and outputting any new content
     /// appended to it.
     #[serde(default)]
-    follow: bool,
+    pub follow: bool,
 }
 
 struct FileInputEndpoint {
@@ -176,7 +183,9 @@ impl Drop for FileInputEndpoint {
     }
 }
 
-/// `OutputTransport` implementation that writes data to file.
+/// [`OutputTransport`] implementation that writes data to a file.
+///
+/// The output transport factory gives this transport the name `file`.
 pub struct FileOutputTransport;
 
 impl OutputTransport for FileOutputTransport {
@@ -184,6 +193,10 @@ impl OutputTransport for FileOutputTransport {
         Cow::Borrowed("file")
     }
 
+    /// Creates a new [`OutputEndpoint`] for writing a file, interpreting
+    /// `config` as a [`FileOutputConfig`].
+    ///
+    /// See [`OutputTransport::new_endpoint()`] for more information.
     fn new_endpoint(
         &self,
         _name: &str,
@@ -197,10 +210,11 @@ impl OutputTransport for FileOutputTransport {
     }
 }
 
+/// Configuration for writing data to a file with [`FileOutputTransport`].
 #[derive(Deserialize, ToSchema)]
 pub struct FileOutputConfig {
     /// File path.
-    path: String,
+    pub path: String,
 }
 
 struct FileOutputEndpoint {
