@@ -1,7 +1,6 @@
 use change_detection::ChangeDetection;
 use static_files::NpmBuild;
-use std::env;
-use std::path::Path;
+use std::{env, path::Path};
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:

@@ -40,6 +40,7 @@ use actix_web::{
     web::Data as WebData,
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
@@ -47,9 +48,11 @@ use colored::Colorize;
 #[cfg(unix)]
 use daemonize::Daemonize;
 use env_logger::Env;
+
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+
+use std::{env, io::Write};
 use std::{
     fs::{read, write},
     net::TcpListener,
@@ -59,6 +62,7 @@ use tokio::sync::Mutex;
 use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
+mod auth;
 mod compiler;
 mod config;
 mod db;
@@ -298,6 +302,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
     }
 
     let dev_mode = config.dev_mode;
+    let use_auth = config.use_auth;
     rt::System::new().block_on(async {
         let db = ProjectDB::connect(&config).await?;
         let db = Arc::new(Mutex::new(db));
@@ -311,14 +316,29 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 
         let state = WebData::new(ServerState::new(config, db, compiler).await?);
 
-        let server = HttpServer::new(move || {
-            let app = App::new()
-                .wrap(Logger::default())
-                .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()));
+        if use_auth {
+            let server = HttpServer::new(move || {
+                let closure = |req, bearer_auth| {
+                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth)
+                };
+                let auth_middleware = HttpAuthentication::bearer(closure);
+                let app = App::new()
+                    .wrap(Logger::default())
+                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
+                    .wrap(auth_middleware);
 
-            build_app(app, state.clone(), openapi.clone())
-        });
-        server.listen(listener)?.run().await?;
+                build_app(app, state.clone(), openapi.clone())
+            });
+            server.listen(listener)?.run().await?;
+        } else {
+            let server = HttpServer::new(move || {
+                let app = App::new()
+                    .wrap(Logger::default())
+                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()));
+                build_app(app, state.clone(), openapi.clone())
+            });
+            server.listen(listener)?.run().await?;
+        }
         Ok(())
     })
 }
