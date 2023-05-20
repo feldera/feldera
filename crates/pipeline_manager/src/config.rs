@@ -89,6 +89,19 @@ pub(crate) struct ManagerConfig {
     #[arg(long)]
     pub unix_daemon: bool,
 
+    /// Enable bearer-token based authorization.
+    ///
+    /// Usage depends on three environment variables to be set
+    ///
+    /// OAUTH_CLIENT_ID, the client-id or application
+    /// OAUTH_ISSUER, the issuing service
+    /// OAUTH_JWK_URI, the URI to get JWK signing keys from
+    ///
+    /// The default is `false`.
+    #[serde(default)]
+    #[arg(long)]
+    pub use_auth: bool,
+
     /// Point to a relational database to use for state management. Accepted
     /// values are `postgres://<host>:<port>` or `postgres-embed`. For
     /// postgres-embed we create a DB in the current working directory. For
