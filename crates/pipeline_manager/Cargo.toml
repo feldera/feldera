@@ -42,7 +42,6 @@ deadpool-postgres = "0.10.5"
 jsonwebtoken = "8"
 actix-web-httpauth = "0.8.0"
 cached = { version="0.43.0", features = ["async"]}
-openssl = "0.10.52"
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true }
 
@@ -60,3 +59,4 @@ pretty_assertions = "1.3.0"
 pg-client-config = "0.1.1"
 rand = "0.8.5"
 base64 = "0.21.0"
+openssl = "0.10.52"
