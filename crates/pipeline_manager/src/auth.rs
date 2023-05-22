@@ -1,3 +1,23 @@
+//! Support HTTP bearer authentication to the pipeline manager API. The plan is to support
+//! different providers down the line, but for now, we've tested against client claims made via AWS
+//! Cognito.
+//!
+//! The expected workflow is for users to login via a browser to receive a JWT access token.
+//! Clients then issue pipeline manager APIs using an HTTP authorization header for bearer tokens
+//! (Authorization: Bearer <token>).
+//!
+//! This file implements an actix-web middleware to validate these tokens. Token validation checks
+//! for many things, including signing algorithm, expiry (exp), whether the client_id and issuers
+//! (iss) line up, whether the signature is valid and whether the token was modified after being
+//! signed. For signature verification, we fetch the provider's JWK keys from a well known URL and
+//! cache them locally. We don't yet refresh JWK keys (e.g., when the clients report using a
+//! different kid), but for now, a restart of the pipeline manager suffices.
+//!
+//! To support this workflow, we introduce three environment variables that the pipeline manager
+//! needs for the OAuth protocol: the client ID, the issuer ID, and the well known URL for fetching
+//! JWK keys.
+//!
+
 use std::{collections::HashMap, env};
 
 use actix_web::dev::ServiceRequest;
@@ -5,13 +25,13 @@ use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
     AuthenticationError,
 };
-use cached::SizedCache;
+use cached::{proc_macro::cached, SizedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// Authorization using a bearer token. This is strictly used for authorizing
-// users, not machines.
+/// Authorization using a bearer token. This is strictly used for authorizing
+/// users, not machines.
 pub(crate) async fn auth_validator(
     configuration: AuthConfiguration,
     req: ServiceRequest,
@@ -66,89 +86,134 @@ pub(crate) struct AuthConfiguration {
     pub validation: Validation,
 }
 
-// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
+///
+/// The shape of a claim provided to clients by AwsCognito, following
+/// the guide below:
+///
+/// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct AwsCognitoClaim {
-    // The user pool app client that authenticated the client
+    /// The user pool app client that authenticated the client
     client_id: String,
 
-    // The expiration time in Unix time format
+    /// The expiration time in Unix time format
     exp: i64,
 
-    // The issued-at-time in Unix time format
+    /// The issued-at-time in Unix time format
     iat: i64,
 
-    // The identity provider that issued the token
+    /// The identity provider that issued the token
     iss: String,
 
-    // A UUID or "subject" for the authenticated user
+    /// A UUID or "subject" for the authenticated user
     sub: String,
 
-    // Unique identifier for the JWT
+    /// Unique identifier for the JWT
     jti: String,
 
-    // Token revocation identifier associated with the user's refresh token
+    /// Token revocation identifier associated with the user's refresh token
     origin_jti: String,
 
-    // OAuth 2.0 scopes
+    /// OAuth 2.0 scopes
     scope: String,
 
-    // Purpose of the token. For the purpose of bearer authentication,
-    // this value should always be "access"
+    /// Purpose of the token. For the purpose of bearer authentication,
+    /// this value should always be "access"
     token_use: String,
 
-    // The username. Note: this may not be unique within a user pool.
-    // The sub claim is the appropriate identifier for a user.
+    /// The username. Note: this may not be unique within a user pool.
+    /// The sub claim is the appropriate identifier for a user.
     username: String,
 }
 
-//
-// Follows the guidelines in the following links, except that JWK refreshes are not
-// yet implemented
-//
-// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
-// JWT claims: https://datatracker.ietf.org/doc/html/rfc7519#section-4
-async fn decode_aws_cognito_token(
-    token: &str,
-    configuration: AuthConfiguration,
-) -> Result<Claim, jsonwebtoken::errors::Error> {
-    let header = decode_header(token).unwrap();
-    match header.alg {
-        // AWS Cognito user pools use RS256
-        Algorithm::RS256 => {
-            let keymap = fetch_jwk_keys(&configuration).await;
-            let jwk = match keymap.get(&header.kid.unwrap()) {
-                Some(jwk) => jwk,
-                None => todo!("Implement key refresh"),
-            };
-            let token_data = decode::<AwsCognitoClaim>(token, jwk, &configuration.validation);
-            if let Ok(t) = &token_data {
-                // TODO: aud and client_id may not be the same when using a resource server
-                if !&configuration
-                    .validation
-                    .aud
-                    .unwrap()
-                    .iter()
-                    .any(|aud| *aud == t.claims.client_id)
-                {
-                    return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
-                }
-            }
-            match token_data {
-                Ok(data) => {
-                    if data.claims.token_use != "access" {
-                        return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
-                    }
-                    Ok(Claim::AwsCognito(data))
-                }
-                Err(jwt_error) => Err(jwt_error),
-            }
+#[derive(Debug)]
+enum AuthError {
+    JwtDecodingError(jsonwebtoken::errors::Error),
+    JwkFetchError(reqwest::Error),
+}
+
+impl std::fmt::Display for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthError::JwtDecodingError(err) => err.fmt(f),
+            AuthError::JwkFetchError(err) => err.fmt(f),
         }
-        _ => Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
     }
 }
 
-async fn fetch_jwk_keys(configuration: &AuthConfiguration) -> HashMap<String, DecodingKey> {
+impl From<reqwest::Error> for AuthError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::JwkFetchError(value)
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AuthError {
+    fn from(value: jsonwebtoken::errors::Error) -> Self {
+        Self::JwtDecodingError(value)
+    }
+}
+
+impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
+    fn from(value: jsonwebtoken::errors::ErrorKind) -> Self {
+        Self::JwtDecodingError(value.into())
+    }
+}
+
+///
+/// Follows the guidelines in the following links, except that JWK refreshes are not
+/// yet implemented
+///
+/// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
+/// JWT claims: https://datatracker.ietf.org/doc/html/rfc7519#section-4
+async fn decode_aws_cognito_token(
+    token: &str,
+    configuration: AuthConfiguration,
+) -> Result<Claim, AuthError> {
+    let header = decode_header(token);
+    match header {
+        Ok(header) => match header.alg {
+            // AWS Cognito user pools use RS256
+            Algorithm::RS256 => {
+                if header.kid.is_none() {
+                    return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+                }
+                let keymap = fetch_jwk_keys(&configuration).await?;
+                let jwk = match keymap.get(&header.kid.unwrap()) {
+                    Some(jwk) => jwk,
+                    None => todo!("Implement key refresh"),
+                };
+                let token_data = decode::<AwsCognitoClaim>(token, jwk, &configuration.validation);
+                if let Ok(t) = &token_data {
+                    // TODO: aud and client_id may not be the same when using a resource server
+                    if !&configuration
+                        .validation
+                        .aud
+                        .unwrap() // We create the validation object, so it's an error to not have aud set
+                        .iter()
+                        .any(|aud| *aud == t.claims.client_id)
+                    {
+                        return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
+                    }
+                }
+                match token_data {
+                    Ok(data) => {
+                        if data.claims.token_use != "access" {
+                            return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+                        }
+                        Ok(Claim::AwsCognito(data))
+                    }
+                    Err(jwt_error) => Err(jwt_error.into()),
+                }
+            }
+            _ => Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
+        },
+        Err(e) => Err(e.into()),
+    }
+}
+
+async fn fetch_jwk_keys(
+    configuration: &AuthConfiguration,
+) -> Result<HashMap<String, DecodingKey>, AuthError> {
     match &configuration.provider {
         Provider::AwsCognito(url) => fetch_jwk_aws_cognito_keys(url).await,
     }
@@ -156,39 +221,48 @@ async fn fetch_jwk_keys(configuration: &AuthConfiguration) -> HashMap<String, De
 
 // We don't want to fetch keys on every authentication attempt, so cache the results.
 // TODO: implement periodic refresh
-cached::cached! {
-    KEYS: SizedCache<String, HashMap<String, DecodingKey>> = SizedCache::with_size(5);
-    async fn fetch_jwk_aws_cognito_keys(url: &String) -> HashMap<String, DecodingKey> = {
-        let res = reqwest::get(url)
-                    .await
-                    .unwrap()
-                    .text()
-                    .await
-                    .unwrap();
-        let keys_as_json: Value = serde_json::from_str(&res).unwrap();
-        keys_as_json
-            .get("keys")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            // While the AWS Cognito JWK endpoint shouldn't return keys
-            // that aren't based on RS256 or meant for verifying signatures,
-            // this guard should warn us when used with other auth providers later
-            .filter(|val| val.get("alg").unwrap().as_str().unwrap() == "RS256")
-            .filter(|val| val.get("use").unwrap().as_str().unwrap() == "sig")
-            .map(|val| {
-                (
-                    val.get("kid").unwrap().as_str().unwrap().to_string(),
-                    DecodingKey::from_rsa_components(
-                        val.get("n").unwrap().as_str().unwrap(),
-                        val.get("e").unwrap().as_str().unwrap())
-                        .unwrap()
+// cached::cached_result! {
+// KEYS: SizedCache<String, HashMap<String, DecodingKey>> = SizedCache::with_size(5);
+#[cached(
+    result = true,
+    name = "KEYS",
+    type = r#"SizedCache<String, HashMap<String, DecodingKey>>"#,
+    create = r#"{ SizedCache::with_size(5) }"#
+)]
+async fn fetch_jwk_aws_cognito_keys(
+    url: &String,
+) -> Result<HashMap<String, DecodingKey>, AuthError> {
+    let res = reqwest::get(url).await;
+    let res = res?.text().await?;
+    let keys_as_json: Value = serde_json::from_str(&res).unwrap();
+
+    // We use unwrap() here because we do not expect the Cognito JWK
+    // to change shape
+    let map = keys_as_json
+        .get("keys")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        // While the AWS Cognito JWK endpoint shouldn't return keys
+        // that aren't based on RS256 or meant for verifying signatures,
+        // this guard should warn us when used with other auth providers later
+        .filter(|val| val.get("alg").unwrap().as_str().unwrap() == "RS256")
+        .filter(|val| val.get("use").unwrap().as_str().unwrap() == "sig")
+        .map(|val| {
+            (
+                val.get("kid").unwrap().as_str().unwrap().to_string(),
+                DecodingKey::from_rsa_components(
+                    val.get("n").unwrap().as_str().unwrap(),
+                    val.get("e").unwrap().as_str().unwrap(),
                 )
-            })
-            .collect()
-    }
+                .unwrap(),
+            )
+        })
+        .collect();
+    Ok(map)
 }
+// }
 
 #[cfg(test)]
 mod test {
@@ -199,11 +273,14 @@ mod test {
     use chrono::Utc;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
-    use crate::auth::{decode_aws_cognito_token, AuthConfiguration, AwsCognitoClaim, Provider};
+    use crate::auth::{
+        decode_aws_cognito_token, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim,
+        Provider,
+    };
 
-    use super::Claim;
+    use super::{AuthError, Claim};
 
-    fn setup(claim: AwsCognitoClaim) -> String {
+    async fn setup(claim: AwsCognitoClaim) -> String {
         let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
         let header = Header {
             typ: Some("JWT".to_owned()),
@@ -230,10 +307,10 @@ mod test {
         // Override the fetch_jwk_keys() cache directly so we don't need to mock anything
         let mut keys: HashMap<String, DecodingKey> = HashMap::new();
         keys.insert("rsa01".to_owned(), decoding_key);
-        crate::auth::KEYS.lock().unwrap().cache_clear();
+        crate::auth::KEYS.lock().await.cache_clear();
         crate::auth::KEYS
             .lock()
-            .unwrap()
+            .await
             .cache_set("some-url".to_string(), keys);
         token.to_owned()
     }
@@ -260,10 +337,7 @@ mod test {
         }
     }
 
-    async fn run_test(
-        token: String,
-        validation: Validation,
-    ) -> Result<Claim, jsonwebtoken::errors::Error> {
+    async fn run_test(token: String, validation: Validation) -> Result<Claim, AuthError> {
         let config = AuthConfiguration {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
@@ -272,10 +346,17 @@ mod test {
     }
 
     #[tokio::test]
+    async fn invalid_url() {
+        let url = "http://localhost/doesnotexist".to_owned();
+        let res = fetch_jwk_aws_cognito_keys(&url).await;
+        assert!(matches!(res.err().unwrap(), AuthError::JwkFetchError(_)));
+    }
+
+    #[tokio::test]
     async fn valid_token() {
         let claim = default_claim();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
         let res = run_test(token, validation).await;
         assert!(res.is_ok());
     }
@@ -285,12 +366,12 @@ mod test {
         let mut claim = default_claim();
         claim.exp = Utc::now().timestamp() - 10000;
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
         let res = run_test(token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::ExpiredSignature
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::ExpiredSignature
+        ));
     }
 
     #[tokio::test]
@@ -298,56 +379,56 @@ mod test {
         let mut claim = default_claim();
         claim.token_use = "sig".to_owned();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
         let res = run_test(token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::InvalidToken
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidToken
+        ));
     }
 
     #[tokio::test]
     async fn different_key() {
         let claim = default_claim();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim.clone());
-        let _ = setup(claim); // force a key change
+        let token = setup(claim.clone()).await;
+        let _ = setup(claim).await; // force a key change
         let res = run_test(token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::InvalidSignature
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
+        ));
     }
 
     #[tokio::test]
     async fn different_client() {
         let claim = default_claim();
         let validation = validation("some-other-client", "some-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
         let res = run_test(token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::InvalidAudience
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidAudience
+        ));
     }
 
     #[tokio::test]
     async fn different_iss() {
         let claim = default_claim();
         let validation = validation("some-client", "some-other-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
         let res = run_test(token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::InvalidIssuer
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidIssuer
+        ));
     }
 
     #[tokio::test]
     async fn modified_token() {
         let claim = default_claim();
         let validation = validation("some-client", "some-other-iss");
-        let token = setup(claim);
+        let token = setup(claim).await;
 
         // Modify the claim
         let base64_parts: Vec<&str> = token.split(".").collect();
@@ -360,9 +441,9 @@ mod test {
             base64::engine::general_purpose::STANDARD_NO_PAD.encode(claim_str_modified);
         let new_token = token.replace(base64_parts.get(1).unwrap(), modified_base64_claim.as_str());
         let res = run_test(new_token, validation).await;
-        assert_eq!(
-            res.err().unwrap().kind(),
-            &jsonwebtoken::errors::ErrorKind::InvalidSignature
-        );
+        assert!(matches!(
+            res.err().unwrap(),
+            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
+        ));
     }
 }
