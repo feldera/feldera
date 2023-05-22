@@ -1,22 +1,23 @@
-//! Support HTTP bearer authentication to the pipeline manager API. The plan is to support
-//! different providers down the line, but for now, we've tested against client claims made via AWS
-//! Cognito.
+//! Support HTTP bearer authentication to the pipeline manager API. The plan is
+//! to support different providers down the line, but for now, we've tested
+//! against client claims made via AWS Cognito.
 //!
-//! The expected workflow is for users to login via a browser to receive a JWT access token.
-//! Clients then issue pipeline manager APIs using an HTTP authorization header for bearer tokens
-//! (Authorization: Bearer <token>).
+//! The expected workflow is for users to login via a browser to receive a JWT
+//! access token. Clients then issue pipeline manager APIs using an HTTP
+//! authorization header for bearer tokens (Authorization: Bearer <token>).
 //!
-//! This file implements an actix-web middleware to validate these tokens. Token validation checks
-//! for many things, including signing algorithm, expiry (exp), whether the client_id and issuers
-//! (iss) line up, whether the signature is valid and whether the token was modified after being
-//! signed. For signature verification, we fetch the provider's JWK keys from a well known URL and
-//! cache them locally. We don't yet refresh JWK keys (e.g., when the clients report using a
-//! different kid), but for now, a restart of the pipeline manager suffices.
+//! This file implements an actix-web middleware to validate these tokens. Token
+//! validation checks for many things, including signing algorithm, expiry
+//! (exp), whether the client_id and issuers (iss) line up, whether the
+//! signature is valid and whether the token was modified after being
+//! signed. For signature verification, we fetch the provider's JWK keys from a
+//! well known URL and cache them locally. We don't yet refresh JWK keys (e.g.,
+//! when the clients report using a different kid), but for now, a restart of
+//! the pipeline manager suffices.
 //!
-//! To support this workflow, we introduce three environment variables that the pipeline manager
-//! needs for the OAuth protocol: the client ID, the issuer ID, and the well known URL for fetching
-//! JWK keys.
-//!
+//! To support this workflow, we introduce three environment variables that the
+//! pipeline manager needs for the OAuth protocol: the client ID, the issuer ID,
+//! and the well known URL for fetching JWK keys.
 
 use std::{collections::HashMap, env};
 
@@ -48,11 +49,15 @@ pub(crate) async fn auth_validator(
             let descr = match error {
                 AuthError::JwkFetch(e) => {
                     error!("JwkFetch: {:?}", e);
-                    "Authentication failed".to_owned() // Do not bubble up internal errors to the user
+                    "Authentication failed".to_owned() // Do not bubble up
+                                                       // internal errors to the
+                                                       // user
                 }
                 AuthError::JwkShape(e) => {
                     error!("JwkShapeError: {:?}", e);
-                    "Authentication failed".to_owned() // Do not bubble up internal errors to the user
+                    "Authentication failed".to_owned() // Do not bubble up
+                                                       // internal errors to the
+                                                       // user
                 }
                 _ => error.to_string(),
             };
@@ -174,8 +179,8 @@ impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
 }
 
 ///
-/// Follows the guidelines in the following links, except that JWK refreshes are not
-/// yet implemented
+/// Follows the guidelines in the following links, except that JWK refreshes are
+/// not yet implemented
 ///
 /// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
 /// JWT claims: https://datatracker.ietf.org/doc/html/rfc7519#section-4
@@ -233,8 +238,8 @@ async fn fetch_jwk_keys(
     }
 }
 
-// We don't want to fetch keys on every authentication attempt, so cache the results.
-// TODO: implement periodic refresh
+// We don't want to fetch keys on every authentication attempt, so cache the
+// results. TODO: implement periodic refresh
 #[cached(
     result = true,
     name = "KEYS",
@@ -348,7 +353,8 @@ mod test {
         let decoding_key = DecodingKey::from_rsa_pem(&rsa.public_key_to_pem().unwrap()).unwrap();
         let token = token_encoded.as_str();
 
-        // Override the fetch_jwk_keys() cache directly so we don't need to mock anything
+        // Override the fetch_jwk_keys() cache directly so we don't need to mock
+        // anything
         let mut keys: HashMap<String, DecodingKey> = HashMap::new();
         keys.insert("rsa01".to_owned(), decoding_key);
         crate::auth::KEYS.lock().await.cache_clear();
