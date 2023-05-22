@@ -42,6 +42,14 @@ impl NativeLayoutCache {
         &self.layout_cache
     }
 
+    pub fn requires_nontrivial_clone(&self, layout_id: LayoutId) -> bool {
+        self.row_layout(layout_id).requires_nontrivial_clone()
+    }
+
+    pub fn is_zero_sized(&self, layout_id: LayoutId) -> bool {
+        self.row_layout(layout_id).is_zero_sized()
+    }
+
     /// Get both the [`NativeLayout`] and [`RowLayout`] for the given
     /// [`LayoutId`]
     pub fn get_layouts(&self, layout_id: LayoutId) -> (Ref<'_, NativeLayout>, Ref<'_, RowLayout>) {

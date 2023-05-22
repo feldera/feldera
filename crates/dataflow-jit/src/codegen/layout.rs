@@ -200,7 +200,16 @@ pub enum BitSetType {
 }
 
 impl BitSetType {
-    pub const fn native_type(self) -> ClifType {
+    pub const fn native_type(self) -> NativeType {
+        match self {
+            Self::U8 => NativeType::U8,
+            Self::U16 => NativeType::U16,
+            Self::U32 => NativeType::U32,
+            Self::U64 => NativeType::U64,
+        }
+    }
+
+    pub const fn clif_type(self) -> ClifType {
         match self {
             Self::U8 => types::I8,
             Self::U16 => types::I16,
@@ -240,7 +249,7 @@ impl BitSetType {
             Self::U32 => !0u32 as i64,
             Self::U64 => !0u64 as i64,
         };
-        builder.ins().iconst(self.native_type(), value)
+        builder.ins().iconst(self.clif_type(), value)
     }
 }
 

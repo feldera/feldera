@@ -49,6 +49,11 @@ pub struct ThinStr {
 }
 
 impl ThinStr {
+    /// The alignment of the allocation pointed to by the `ThinStr`
+    ///
+    /// Note that this is different than `align_of::<ThinStr>()`
+    pub const ALIGN: usize = 16;
+
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -264,7 +269,7 @@ impl ThinStr {
 
         let header = Layout::new::<StrHeader>();
 
-        let bytes = Layout::from_size_align(capacity, 16)
+        let bytes = Layout::from_size_align(capacity, Self::ALIGN)
             .unwrap_or_else(|_| failed_thinstr_layout(capacity));
 
         let (layout, _) = header
@@ -292,7 +297,7 @@ impl ThinStr {
 
         let align = align_of::<usize>();
         debug_assert!(Layout::from_size_align(capacity, align).is_ok());
-        let bytes = Layout::from_size_align_unchecked(capacity, 16);
+        let bytes = Layout::from_size_align_unchecked(capacity, Self::ALIGN);
         let (layout, _) = header.extend(bytes).unwrap_unchecked();
 
         // Pad out the layout
@@ -329,7 +334,7 @@ impl ThinStr {
         );
         // We align our strings to 16 bytes, so we can always take advantage of that
         // "extra" capacity we'll allocate
-        let capacity = next_multiple_of(capacity, 16);
+        let capacity = next_multiple_of(capacity, Self::ALIGN);
 
         // For sigil values, allocate
         if self.capacity() == 0 {
