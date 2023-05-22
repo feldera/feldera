@@ -535,6 +535,19 @@ intrinsics! {
     csv_get_nullable_bool = fn(ptr, usize, ptr) -> bool,
     csv_get_nullable_date = fn(ptr, usize, ptr, ptr, ptr) -> bool,
     csv_get_nullable_timestamp = fn(ptr, usize, ptr, ptr, ptr) -> bool,
+
+    // String parsing
+    parse_u8_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_i8_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_u16_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_i16_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_u32_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_i32_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_u64_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_i64_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_f32_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_f64_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_bool_from_str = fn(ptr, usize, ptr) -> bool,
 }
 
 /// Allocates memory with the given size and alignment
@@ -1178,4 +1191,38 @@ unsafe extern "C" fn csv_get_nullable_timestamp(
     } else {
         true
     }
+}
+
+macro_rules! parse_from_str {
+    ($($ty:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                // Returns `true` if an error occurs
+                unsafe extern "C" fn [<parse_ $ty _from_str>](ptr: *const u8, len: usize, output: &mut MaybeUninit<$ty>) -> bool {
+                    let string = unsafe { str_from_raw_parts(ptr, len) };
+                    match string.parse::<$ty>() {
+                        Ok(value) => {
+                            output.write(value);
+                            false
+                        }
+
+                        Err(error) => {
+                            tracing::error!("error parsing {}: {error}", stringify!($ty));
+                            true
+                        }
+                    }
+                }
+            )+
+        }
+    }
+}
+
+// TODO: Use lexical to parse floats
+parse_from_str! {
+    u8, i8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
+    f32, f64,
+    bool,
 }

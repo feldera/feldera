@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
         intrinsics::TRIG_INTRINSICS, utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT,
-        TRAP_ASSERT_EQ,
+        TRAP_ASSERT_EQ, TRAP_FAILED_PARSE,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
@@ -38,6 +38,8 @@ impl CodegenCtx<'_> {
             "dbsp.str.byte_length" => self.string_byte_length(expr_id, call, builder),
 
             "dbsp.str.write" => self.string_write(expr_id, call, builder),
+
+            "dbsp.str.parse" => self.string_parse(expr_id, call, builder),
 
             function @ ("dbsp.str.is_nfc"
             | "dbsp.str.is_nfd"
@@ -1172,6 +1174,103 @@ impl CodegenCtx<'_> {
         };
 
         self.add_expr(expr_id, is_negative, ColumnType::Bool, None);
+    }
+
+    fn string_parse(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        match call.ret_ty() {
+            // TODO: Bool "parsing" can be inlined
+            ColumnType::Bool => {
+                self.parse_scalar_from_string("parse_bool_from_str", expr_id, call, builder);
+            }
+
+            // TODO: Integer parsing can be fairly easily inlined which also brings support
+            // for parsing radix (radices?) other than base 10
+            // See <https://github.com/Alexhuszagh/rust-lexical/blob/main/lexical-parse-integer/src/algorithm.rs>
+            ColumnType::U8 => {
+                self.parse_scalar_from_string("parse_u8_from_str", expr_id, call, builder);
+            }
+            ColumnType::I8 => {
+                self.parse_scalar_from_string("parse_i8_from_str", expr_id, call, builder);
+            }
+            ColumnType::U16 => {
+                self.parse_scalar_from_string("parse_u16_from_str", expr_id, call, builder);
+            }
+            ColumnType::I16 => {
+                self.parse_scalar_from_string("parse_i16_from_str", expr_id, call, builder);
+            }
+            ColumnType::U32 => {
+                self.parse_scalar_from_string("parse_u32_from_str", expr_id, call, builder);
+            }
+            ColumnType::I32 => {
+                self.parse_scalar_from_string("parse_i32_from_str", expr_id, call, builder);
+            }
+            ColumnType::U64 => {
+                self.parse_scalar_from_string("parse_u64_from_str", expr_id, call, builder);
+            }
+            ColumnType::I64 => {
+                self.parse_scalar_from_string("parse_i64_from_str", expr_id, call, builder);
+            }
+
+            ColumnType::Usize => {
+                if self.usize_is_u64() {
+                    self.parse_scalar_from_string("parse_u64_from_str", expr_id, call, builder);
+                } else {
+                    self.parse_scalar_from_string("parse_u32_from_str", expr_id, call, builder);
+                }
+            }
+            ColumnType::Isize => {
+                if self.isize_is_i64() {
+                    self.parse_scalar_from_string("parse_i64_from_str", expr_id, call, builder);
+                } else {
+                    self.parse_scalar_from_string("parse_i32_from_str", expr_id, call, builder);
+                }
+            }
+
+            ColumnType::F32 => {
+                self.parse_scalar_from_string("parse_f32_from_str", expr_id, call, builder);
+            }
+            ColumnType::F64 => {
+                self.parse_scalar_from_string("parse_f64_from_str", expr_id, call, builder);
+            }
+
+            ColumnType::Date
+            | ColumnType::Timestamp
+            | ColumnType::String
+            | ColumnType::Unit
+            | ColumnType::Ptr => todo!(),
+        }
+    }
+
+    fn parse_scalar_from_string(
+        &mut self,
+        intrinsic: &str,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string = self.value(call.args()[0]);
+        let length = self.string_length(string, self.is_readonly(call.args()[0]), builder);
+        let ptr = self.string_ptr(string, builder);
+
+        let ret_ty = call.ret_ty().native_type().unwrap();
+
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            ret_ty.size(&self.frontend_config()),
+        ));
+        let slot_ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+        let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+        let errored = builder.call_fn(intrinsic, &[ptr, length, slot_ptr]);
+
+        // FIXME: We should return a two-valued struct to allow users to handle
+        // failed parsing, which is super expected
+        builder.ins().trapnz(errored, TRAP_FAILED_PARSE);
+
+        let value = builder
+            .ins()
+            .stack_load(ret_ty.native_type(&self.frontend_config()), slot, 0);
+        self.add_expr(expr_id, value, Some(call.ret_ty()), None);
     }
 }
 
