@@ -43,7 +43,7 @@ macro_rules! create_ids {
                     };
 
                     #[inline]
-                    pub(crate) const fn new(id: u32) -> Self {
+                    pub const fn new(id: u32) -> Self {
                         match NonZeroU32::new(id) {
                             Some(id) => Self(id),
                             None => panic!(concat!(
