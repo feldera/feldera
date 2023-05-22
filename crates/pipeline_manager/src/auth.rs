@@ -27,6 +27,7 @@ use actix_web_httpauth::extractors::{
 };
 use cached::{proc_macro::cached, SizedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -43,11 +44,22 @@ pub(crate) async fn auth_validator(
     };
     match token {
         Ok(_) => Ok(req),
-        Err(e) => {
+        Err(error) => {
+            let descr = match error {
+                AuthError::JwkFetch(e) => {
+                    error!("JwkFetch: {:?}", e);
+                    "Authentication failed".to_owned() // Do not bubble up internal errors to the user
+                }
+                AuthError::JwkShape(e) => {
+                    error!("JwkShapeError: {:?}", e);
+                    "Authentication failed".to_owned() // Do not bubble up internal errors to the user
+                }
+                _ => error.to_string(),
+            };
             let config = req.app_data::<Config>().cloned().unwrap_or_default();
             Err((
                 AuthenticationError::from(config)
-                    .with_error_description(e.to_string())
+                    .with_error_description(descr)
                     .into(),
                 req,
             ))
@@ -128,34 +140,36 @@ struct AwsCognitoClaim {
 
 #[derive(Debug)]
 enum AuthError {
-    JwtDecodingError(jsonwebtoken::errors::Error),
-    JwkFetchError(reqwest::Error),
+    JwtDecoding(jsonwebtoken::errors::Error),
+    JwkFetch(reqwest::Error),
+    JwkShape(String),
 }
 
 impl std::fmt::Display for AuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AuthError::JwtDecodingError(err) => err.fmt(f),
-            AuthError::JwkFetchError(err) => err.fmt(f),
+            AuthError::JwtDecoding(err) => err.fmt(f),
+            AuthError::JwkFetch(err) => err.fmt(f),
+            AuthError::JwkShape(err) => err.fmt(f),
         }
     }
 }
 
 impl From<reqwest::Error> for AuthError {
     fn from(value: reqwest::Error) -> Self {
-        Self::JwkFetchError(value)
+        Self::JwkFetch(value)
     }
 }
 
 impl From<jsonwebtoken::errors::Error> for AuthError {
     fn from(value: jsonwebtoken::errors::Error) -> Self {
-        Self::JwtDecodingError(value)
+        Self::JwtDecoding(value)
     }
 }
 
 impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
     fn from(value: jsonwebtoken::errors::ErrorKind) -> Self {
-        Self::JwtDecodingError(value.into())
+        Self::JwtDecoding(value.into())
     }
 }
 
@@ -221,8 +235,6 @@ async fn fetch_jwk_keys(
 
 // We don't want to fetch keys on every authentication attempt, so cache the results.
 // TODO: implement periodic refresh
-// cached::cached_result! {
-// KEYS: SizedCache<String, HashMap<String, DecodingKey>> = SizedCache::with_size(5);
 #[cached(
     result = true,
     name = "KEYS",
@@ -234,35 +246,67 @@ async fn fetch_jwk_aws_cognito_keys(
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     let res = reqwest::get(url).await;
     let res = res?.text().await?;
-    let keys_as_json: Value = serde_json::from_str(&res).unwrap();
+    let keys_as_json: Result<Value, serde_json::Error> = serde_json::from_str(&res);
 
-    // We use unwrap() here because we do not expect the Cognito JWK
-    // to change shape
-    let map = keys_as_json
-        .get("keys")
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .iter()
-        // While the AWS Cognito JWK endpoint shouldn't return keys
-        // that aren't based on RS256 or meant for verifying signatures,
-        // this guard should warn us when used with other auth providers later
-        .filter(|val| val.get("alg").unwrap().as_str().unwrap() == "RS256")
-        .filter(|val| val.get("use").unwrap().as_str().unwrap() == "sig")
-        .map(|val| {
-            (
-                val.get("kid").unwrap().as_str().unwrap().to_string(),
-                DecodingKey::from_rsa_components(
-                    val.get("n").unwrap().as_str().unwrap(),
-                    val.get("e").unwrap().as_str().unwrap(),
-                )
-                .unwrap(),
-            )
-        })
-        .collect();
-    Ok(map)
+    match keys_as_json {
+        Ok(value) => {
+            let filtered = value
+                .get("keys")
+                .ok_or(AuthError::JwkShape("Missing keys field".to_owned()))?
+                .as_array()
+                .ok_or(AuthError::JwkShape(
+                    "keys field was not an array".to_owned(),
+                ))?
+                .iter()
+                // While the AWS Cognito JWK endpoint shouldn't return keys
+                // that aren't based on RS256 or meant for verifying signatures,
+                // this guard should warn us when used with other auth providers later
+                .filter_map(|val| check_key_as_str("alg", "RS256", val))
+                .filter_map(|val| check_key_as_str("use", "sig", val));
+
+            let mut ret = HashMap::new();
+            for json_value in filtered {
+                let kid = validate_field_is_str("kid", json_value).ok_or(AuthError::JwkShape(
+                    "Could not extract 'kid' field".to_owned(),
+                ))?;
+                let n = validate_field_is_str("n", json_value).ok_or(AuthError::JwkShape(
+                    "Could not extract 'n' field".to_owned(),
+                ))?;
+                let e = validate_field_is_str("e", json_value).ok_or(AuthError::JwkShape(
+                    "Could not extract 'e' field".to_owned(),
+                ))?;
+                let decoding_key = DecodingKey::from_rsa_components(n, e)
+                    .map_err(|e| AuthError::JwkShape(format!("Invalid JWK decoding key: {}", e)))?;
+                ret.insert(kid.to_owned(), decoding_key);
+            }
+            Ok(ret)
+        }
+        Err(e) => Err(AuthError::JwkShape(e.to_string())),
+    }
 }
-// }
+
+fn check_key_as_str<'a>(key: &str, check: &str, json: &'a Value) -> Option<&'a Value> {
+    if let Some(value) = validate_field_is_str(key, json) {
+        if value == check {
+            return Some(json);
+        }
+    }
+    info!(
+        "Skipping JWK key because it did not match the required shape {} {}",
+        key, json
+    );
+    None
+}
+
+fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
+    let value = json.get(key);
+    if let Some(value) = value {
+        if let Some(value) = value.as_str() {
+            return Some(value);
+        }
+    }
+    None
+}
 
 #[cfg(test)]
 mod test {
@@ -349,7 +393,7 @@ mod test {
     async fn invalid_url() {
         let url = "http://localhost/doesnotexist".to_owned();
         let res = fetch_jwk_aws_cognito_keys(&url).await;
-        assert!(matches!(res.err().unwrap(), AuthError::JwkFetchError(_)));
+        assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
     }
 
     #[tokio::test]
@@ -370,7 +414,7 @@ mod test {
         let res = run_test(token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::ExpiredSignature
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::ExpiredSignature
         ));
     }
 
@@ -383,7 +427,7 @@ mod test {
         let res = run_test(token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidToken
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidToken
         ));
     }
 
@@ -396,7 +440,7 @@ mod test {
         let res = run_test(token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
         ));
     }
 
@@ -408,7 +452,7 @@ mod test {
         let res = run_test(token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidAudience
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidAudience
         ));
     }
 
@@ -420,7 +464,7 @@ mod test {
         let res = run_test(token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidIssuer
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidIssuer
         ));
     }
 
@@ -443,7 +487,7 @@ mod test {
         let res = run_test(new_token, validation).await;
         assert!(matches!(
             res.err().unwrap(),
-            AuthError::JwtDecodingError(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
+            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
         ));
     }
 }
