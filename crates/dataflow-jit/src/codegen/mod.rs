@@ -53,6 +53,7 @@ use std::{
     cell::{Ref, RefCell},
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap},
+    mem::size_of,
     rc::Rc,
     sync::Arc,
 };
@@ -65,6 +66,7 @@ const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 // const TRAP_CAPACITY_OVERFLOW: TrapCode = TrapCode::User(4);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 const TRAP_ABORT: TrapCode = TrapCode::User(6);
+const TRAP_FAILED_PARSE: TrapCode = TrapCode::User(7);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -2386,5 +2388,15 @@ impl<'a> CodegenCtx<'a> {
                 unreachable!("tried to cast {value_ty} to pointer-sized {ptr_ty}")
             }
         }
+    }
+
+    #[inline]
+    fn usize_is_u64(&self) -> bool {
+        self.frontend_config().pointer_bytes() as usize == size_of::<u64>()
+    }
+
+    #[inline]
+    fn isize_is_i64(&self) -> bool {
+        self.usize_is_u64()
     }
 }
