@@ -339,7 +339,7 @@ fn clone_layout(
 
                 // If the value is null, set the cloned value to null
                 let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(idx);
-                let bitset_ty = bitset_ty.native_type();
+                let bitset_ty = bitset_ty.clif_type();
 
                 let bitset = if layout.bitset_occupants(idx) == 1 {
                     let null_ty = builder.func.dfg.value_type(value_non_null);

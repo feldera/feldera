@@ -38,41 +38,27 @@ pub enum Expr {
     Constant(Constant),
     CopyRowTo(CopyRowTo),
     UninitRow(UninitRow),
+    Uninit(Uninit),
+    // Drop(Drop),
 }
 
 impl Expr {
-    pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        match self {
-            Self::Load(load) => load.source_layout = mappings[&load.source_layout],
-            Self::Store(store) => store.target_layout = mappings[&store.target_layout],
-            Self::IsNull(is_null) => is_null.target_layout = mappings[&is_null.target_layout],
-            Self::SetNull(set_null) => set_null.target_layout = mappings[&set_null.target_layout],
-            Self::CopyRowTo(copy_row) => copy_row.layout = mappings[&copy_row.layout],
-            Self::NullRow(null_row) => null_row.layout = mappings[&null_row.layout],
-            Self::UninitRow(uninit_row) => uninit_row.layout = mappings[&uninit_row.layout],
-            Self::Call(call) => {
-                for arg in call.arg_types_mut() {
-                    if let ArgType::Row(layout) = arg {
-                        *layout = mappings[layout];
-                    }
-                }
-            }
-
-            // These expressions don't contain `LayoutId`s
-            Self::Cast(_)
-            | Self::BinOp(_)
-            | Self::Select(_)
-            | Self::Copy(_)
-            | Self::UnaryOp(_)
-            | Self::Constant(_) => {}
-        }
-    }
-
-    pub(crate) fn map_layouts<F>(&self, map: &mut F)
+    pub fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId),
     {
         self.apply(&mut MapLayouts::new(map));
+    }
+
+    pub fn map_layouts_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut LayoutId),
+    {
+        self.apply_mut(&mut MapLayouts::new(map));
+    }
+
+    pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.map_layouts_mut(&mut |layout| *layout = mappings[layout]);
     }
 }
 
@@ -529,5 +515,89 @@ impl NullRow {
     /// Returns the layout of the produced row
     pub const fn layout(&self) -> LayoutId {
         self.layout
+    }
+}
+
+/// Creates an uninitialized scalar or row value
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Uninit {
+    value: ArgType,
+}
+
+impl Uninit {
+    /// Create a new null row
+    pub fn new(value: ArgType) -> Self {
+        Self { value }
+    }
+
+    pub const fn value(&self) -> ArgType {
+        self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut ArgType {
+        &mut self.value
+    }
+
+    pub const fn is_scalar(&self) -> bool {
+        self.value.is_scalar()
+    }
+
+    pub const fn is_row(&self) -> bool {
+        self.value.is_row()
+    }
+
+    pub const fn as_scalar(&self) -> Option<ColumnType> {
+        self.value.as_scalar()
+    }
+
+    pub const fn as_row(&self) -> Option<LayoutId> {
+        self.value.as_row()
+    }
+}
+
+/// Drops the given scalar or row value
+#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[allow(dead_code)]
+pub struct Drop {
+    value: ExprId,
+    ty: ArgType,
+}
+
+impl Drop {
+    /// Create a new drop
+    pub fn new(value: ExprId, ty: ArgType) -> Self {
+        Self { value, ty }
+    }
+
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut ExprId {
+        &mut self.value
+    }
+
+    pub const fn ty(&self) -> ArgType {
+        self.ty
+    }
+
+    pub fn ty_mut(&mut self) -> &mut ArgType {
+        &mut self.ty
+    }
+
+    pub const fn is_scalar(&self) -> bool {
+        self.ty.is_scalar()
+    }
+
+    pub const fn is_row(&self) -> bool {
+        self.ty.is_row()
+    }
+
+    pub const fn as_scalar(&self) -> Option<ColumnType> {
+        self.ty.as_scalar()
+    }
+
+    pub const fn as_row(&self) -> Option<LayoutId> {
+        self.ty.as_row()
     }
 }

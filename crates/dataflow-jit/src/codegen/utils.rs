@@ -196,7 +196,7 @@ pub(super) fn column_non_null(
         builder.ins().icmp_imm(IntCC::Equal, string, 0)
     } else {
         let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
-        let bitset_ty = bitset_ty.native_type();
+        let bitset_ty = bitset_ty.clif_type();
 
         // Load the bitset containing the given column's nullability
         let bitset = builder
@@ -226,7 +226,7 @@ pub(super) fn set_column_null(
 ) {
     // If the value is null, set the cloned value to null
     let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
-    let bitset_ty = bitset_ty.native_type();
+    let bitset_ty = bitset_ty.clif_type();
 
     let bitset = if layout.bitset_occupants(column) == 1 {
         let null_ty = builder.value_type(is_null);

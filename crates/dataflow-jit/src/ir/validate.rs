@@ -4,7 +4,7 @@ use crate::{
         exprs::ArgType,
         exprs::{
             BinaryOp, BinaryOpKind, Cast, Constant, Expr, ExprId, IsNull, Load, NullRow, RValue,
-            SetNull, Store, UnaryOpKind, UninitRow,
+            SetNull, Store, UnaryOpKind, Uninit, UninitRow,
         },
         exprs::{Call, Select},
         graph::GraphExt,
@@ -530,6 +530,7 @@ impl FunctionValidator {
                     Expr::SetNull(set_null) => self.set_null(expr_id, set_null)?,
                     Expr::NullRow(null_row) => self.null_row(expr_id, null_row)?,
                     Expr::UninitRow(uninit_row) => self.uninit_row(expr_id, uninit_row)?,
+                    Expr::Uninit(uninit) => self.uninit(expr_id, uninit)?,
                     Expr::BinOp(binop) => self.binop(expr_id, binop)?,
 
                     Expr::UnaryOp(unary) => {
@@ -835,6 +836,19 @@ impl FunctionValidator {
     fn uninit_row(&mut self, expr_id: ExprId, uninit_row: &UninitRow) -> ValidationResult {
         self.expr_row_mutability.insert(expr_id, true);
         self.expr_types.insert(expr_id, Err(uninit_row.layout()));
+        Ok(())
+    }
+
+    fn uninit(&mut self, expr_id: ExprId, uninit: &Uninit) -> ValidationResult {
+        match uninit.value() {
+            ArgType::Row(layout) => {
+                self.expr_row_mutability.insert(expr_id, true);
+                self.expr_types.insert(expr_id, Err(layout));
+            }
+
+            ArgType::Scalar(scalar_ty) => self.add_column_expr(expr_id, scalar_ty),
+        }
+
         Ok(())
     }
 

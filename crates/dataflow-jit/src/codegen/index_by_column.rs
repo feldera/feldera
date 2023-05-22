@@ -388,11 +388,6 @@ impl CodegenCtx<'_> {
             .store(MemFlags::trusted(), output_value, dest_ptr, dest_offset);
     }
 
-    fn clone_string(&mut self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        let clone_str = self.imports.get("string_clone", self.module, builder.func);
-        builder.call_fn(clone_str, &[string])
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn load_and_store_scalar(
         &mut self,
