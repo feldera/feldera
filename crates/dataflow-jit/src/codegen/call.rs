@@ -239,7 +239,7 @@ impl CodegenCtx<'_> {
 
         if self.debug_assertions() {
             // Assert that the string pointer is a valid pointer
-            self.assert_ptr_valid(string, align_of::<ThinStr>() as u32, builder);
+            self.assert_ptr_valid(string, ThinStr::ALIGN as u32, builder);
 
             // Assert that `truncated_length` is less than or equal to `isize::MAX`
             let less_than_max = builder.ins().icmp_imm(
@@ -427,7 +427,7 @@ impl CodegenCtx<'_> {
         builder.switch_to_block(set_string_length);
 
         // Assert that the string pointer is a valid pointer
-        self.debug_assert_ptr_valid(string, align_of::<ThinStr>() as u32, builder);
+        self.debug_assert_ptr_valid(string, ThinStr::ALIGN as u32, builder);
 
         // The string's length will be set to zero
         let new_length = builder.ins().iconst(self.pointer_type(), 0);

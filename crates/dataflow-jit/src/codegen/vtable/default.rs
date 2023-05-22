@@ -113,7 +113,7 @@ impl Codegen {
                             // Set all bitsets to null
                             MemoryEntry::BitSet { offset, ty, .. } => {
                                 let all_ones = builder.ins().iconst(
-                                    ty.native_type(),
+                                    ty.clif_type(),
                                     match ty {
                                         BitSetType::U8 => u8::MAX as i64,
                                         BitSetType::U16 => u16::MAX as i64,

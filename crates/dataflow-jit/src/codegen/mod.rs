@@ -25,9 +25,13 @@ use crate::{
         utils::FunctionBuilderExt,
     },
     ir::{
-        block::ParamType, BinaryOp, BinaryOpKind, BlockId, Branch, Cast, ColumnType, Constant,
-        Expr, ExprId, Function, InputFlags, IsNull, LayoutId, Load, NullRow, RValue,
-        RowLayoutCache, Select, SetNull, Signature, Terminator, UnaryOp, UnaryOpKind,
+        block::ParamType,
+        exprs::{
+            ArgType, BinaryOp, BinaryOpKind, Constant, CopyRowTo, Expr, ExprId, IsNull, Load,
+            NullRow, RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, Uninit,
+        },
+        BlockId, Branch, Cast, ColumnType, Copy, Function, InputFlags, LayoutId, RowLayoutCache,
+        Signature, Terminator, UninitRow,
     },
     ThinStr,
 };
@@ -362,142 +366,18 @@ impl Codegen {
                         Expr::BinOp(binop) => ctx.binary_op(expr_id, binop, &mut builder),
                         Expr::UnaryOp(unary) => ctx.unary_op(expr_id, unary, &mut builder),
                         Expr::Select(select) => ctx.select(expr_id, select, &mut builder),
-
-                        Expr::Store(store) => {
-                            debug_assert!(!ctx.is_readonly(store.target()));
-
-                            let layout_id = ctx.layout_id(store.target());
-                            let layout = layout_cache.layout_of(layout_id);
-                            let offset = layout.offset_of(store.column());
-
-                            let value = match store.value() {
-                                RValue::Expr(expr) => ctx.exprs[expr],
-                                RValue::Imm(imm) => ctx.constant(imm, &mut builder),
-                            };
-
-                            if let Some(&slot) = ctx.stack_slots.get(&store.target()) {
-                                let inst = builder.ins().stack_store(value, slot, offset as i32);
-
-                                if let Some(writer) = self.comment_writer.as_deref() {
-                                    writer.borrow_mut().add_comment(
-                                        inst,
-                                        format!(
-                                            "store {value} to {slot} at col {} (offset {offset}) of {:?}",
-                                            store.column(),
-                                            ctx.layout_cache.row_layout(layout_id),
-                                        ),
-                                    );
-                                }
-
-                            // If it's not a stack slot it must be a pointer via
-                            // function parameter
-                            } else {
-                                let addr = ctx.exprs[&store.target()];
-                                let flags = MemFlags::trusted();
-                                let inst = builder.ins().store(flags, value, addr, offset as i32);
-
-                                if let Some(writer) = self.comment_writer.as_deref() {
-                                    writer.borrow_mut().add_comment(
-                                        inst,
-                                        format!(
-                                            "store {value} to {addr} at col {} (offset {offset}) of {:?}",
-                                            store.column(),
-                                            ctx.layout_cache.row_layout(layout_id),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-
+                        Expr::Store(store) => ctx.store(store, &mut builder),
                         Expr::Load(load) => ctx.load(expr_id, load, &layout_cache, &mut builder),
                         Expr::IsNull(is_null) => ctx.is_null(expr_id, is_null, &mut builder),
                         Expr::SetNull(set_null) => ctx.set_null(expr_id, set_null, &mut builder),
-
-                        // FIXME: Doesn't perform cloning where needed
-                        Expr::CopyRowTo(copy_row) => {
-                            debug_assert_eq!(
-                                ctx.layout_id(copy_row.src()),
-                                ctx.layout_id(copy_row.dest()),
-                            );
-                            debug_assert_eq!(ctx.layout_id(copy_row.src()), copy_row.layout());
-                            debug_assert!(!ctx.is_readonly(copy_row.dest()));
-
-                            // Ignore noop copies
-                            if copy_row.src() == copy_row.dest() {
-                                continue;
-                            }
-
-                            let src = if let Some(&slot) = ctx.stack_slots.get(&copy_row.src()) {
-                                builder
-                                    .ins()
-                                    .stack_addr(ctx.module.isa().pointer_type(), slot, 0)
-                            } else {
-                                ctx.exprs[&copy_row.src()]
-                            };
-
-                            let dest = if let Some(&slot) = ctx.stack_slots.get(&copy_row.dest()) {
-                                builder
-                                    .ins()
-                                    .stack_addr(ctx.module.isa().pointer_type(), slot, 0)
-                            } else {
-                                ctx.exprs[&copy_row.dest()]
-                            };
-
-                            let layout = ctx.layout_cache.layout_of(copy_row.layout());
-
-                            // FIXME: We probably want to replace this with our own impl, it
-                            // currently just emits a memcpy call on
-                            // sizes greater than 4 when an inlined impl
-                            // would perform much better
-                            builder.emit_small_memory_copy(
-                                ctx.module.isa().frontend_config(),
-                                dest,
-                                src,
-                                layout.size() as u64,
-                                layout.align() as u8,
-                                layout.align() as u8,
-                                true,
-                                MemFlags::trusted(),
-                            );
-                        }
-
-                        Expr::Copy(copy_val) => {
-                            let value = ctx.exprs[&copy_val.value()];
-                            let ty = ctx.expr_types.get(&copy_val.value()).copied();
-                            let layout = ctx.expr_layouts.get(&copy_val.value()).copied();
-
-                            let value = if copy_val.value_ty() == ColumnType::String {
-                                let clone_string =
-                                    ctx.imports.get("string_clone", ctx.module, builder.func);
-                                builder.call_fn(clone_string, &[value])
-                            } else {
-                                value
-                            };
-
-                            ctx.add_expr(expr_id, value, ty, layout);
-                        }
-
+                        Expr::CopyRowTo(copy_row) => ctx.copy_row_to(copy_row, &mut builder),
+                        Expr::Copy(copy) => ctx.copy_val(expr_id, copy, &mut builder),
                         Expr::NullRow(null) => ctx.null_row(expr_id, null, &mut builder),
-
-                        Expr::UninitRow(uninit) => {
-                            let slot =
-                                ctx.stack_slot_for_layout(expr_id, uninit.layout(), &mut builder);
-
-                            if let Some(writer) = self.comment_writer.as_deref() {
-                                writer.borrow_mut().add_comment(
-                                    slot,
-                                    format!(
-                                        "uninit row of layout {:?}",
-                                        ctx.layout_cache.row_layout(uninit.layout()),
-                                    ),
-                                );
-                            }
-                        }
-
+                        Expr::UninitRow(uninit) => ctx.uninit_row(expr_id, uninit, &mut builder),
                         Expr::Constant(constant) => {
-                            let value = ctx.constant(constant, &mut builder);
-                            ctx.add_expr(expr_id, value, constant.column_type(), None);
+                            ctx.constant_expr(expr_id, constant, &mut builder);
                         }
+                        Expr::Uninit(uninit) => ctx.uninit(expr_id, uninit, &mut builder),
                     }
                 }
 
@@ -1014,7 +894,7 @@ impl<'a> CodegenCtx<'a> {
         builder: &mut FunctionBuilder<'_>,
     ) {
         // Ensure that `buffer` is a pointer
-        debug_assert_eq!(builder.func.dfg.value_type(buffer), self.pointer_type());
+        debug_assert_eq!(builder.value_type(buffer), self.pointer_type());
 
         let layout = self.layout_cache.layout_of(layout);
 
@@ -1050,7 +930,7 @@ impl<'a> CodegenCtx<'a> {
 
     /// Traps if the given pointer is null
     fn assert_ptr_non_null(&self, ptr: Value, builder: &mut FunctionBuilder<'_>) {
-        debug_assert_eq!(builder.func.dfg.value_type(ptr), self.pointer_type());
+        debug_assert_eq!(builder.value_type(ptr), self.pointer_type());
 
         // Trap if `ptr` is null
         let trap = builder.ins().trapz(ptr, TRAP_NULL_PTR);
@@ -1064,7 +944,7 @@ impl<'a> CodegenCtx<'a> {
 
     /// Traps if the given pointer is not aligned to `align`
     fn assert_ptr_aligned(&self, ptr: Value, align: u32, builder: &mut FunctionBuilder<'_>) {
-        debug_assert_eq!(builder.func.dfg.value_type(ptr), self.pointer_type());
+        debug_assert_eq!(builder.value_type(ptr), self.pointer_type());
         debug_assert_ne!(align, 0);
         debug_assert!(align.is_power_of_two());
 
@@ -1092,7 +972,7 @@ impl<'a> CodegenCtx<'a> {
 
     /// Traps if the given boolean value is not `true` or `false`
     fn assert_bool_is_valid(&self, boolean: Value, builder: &mut FunctionBuilder<'_>) {
-        debug_assert!(builder.func.dfg.value_type(boolean).is_int());
+        debug_assert!(builder.value_type(boolean).is_int());
 
         let is_true = builder.ins().icmp_imm(IntCC::Equal, boolean, true as i64);
         let is_false = builder.ins().icmp_imm(IntCC::Equal, boolean, false as i64);
@@ -1101,7 +981,7 @@ impl<'a> CodegenCtx<'a> {
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
-                builder.func.dfg.value_def(is_true).unwrap_inst(),
+                builder.value_def(is_true),
                 format!(
                     "trap if {boolean} is not true ({}) or false ({})",
                     true as u8, false as u8,
@@ -1237,6 +1117,54 @@ impl<'a> CodegenCtx<'a> {
         };
 
         self.add_expr(expr_id, value, row_layout.column_type(load.column()), None);
+    }
+
+    fn store(&mut self, store: &Store, builder: &mut FunctionBuilder<'_>) {
+        debug_assert!(!self.is_readonly(store.target()));
+
+        let layout_cache = self.layout_cache.clone();
+
+        let layout_id = self.layout_id(store.target());
+        let layout = layout_cache.layout_of(layout_id);
+        let offset = layout.offset_of(store.column());
+
+        let value = match store.value() {
+            RValue::Expr(expr) => self.exprs[expr],
+            RValue::Imm(imm) => self.constant(imm, builder),
+        };
+
+        if let Some(&slot) = self.stack_slots.get(&store.target()) {
+            let inst = builder.ins().stack_store(value, slot, offset as i32);
+
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    inst,
+                    format!(
+                        "store {value} to {slot} at col {} (offset {offset}) of {:?}",
+                        store.column(),
+                        self.layout_cache.row_layout(layout_id),
+                    ),
+                );
+            }
+
+        // If it's not a stack slot it must be a pointer via
+        // function parameter
+        } else {
+            let addr = self.exprs[&store.target()];
+            let flags = MemFlags::trusted();
+            let inst = builder.ins().store(flags, value, addr, offset as i32);
+
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    inst,
+                    format!(
+                        "store {value} to {addr} at col {} (offset {offset}) of {:?}",
+                        store.column(),
+                        self.layout_cache.row_layout(layout_id),
+                    ),
+                );
+            }
+        }
     }
 
     fn is_null(&mut self, expr_id: ExprId, is_null: &IsNull, builder: &mut FunctionBuilder<'_>) {
@@ -1379,7 +1307,7 @@ impl<'a> CodegenCtx<'a> {
         }
 
         let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(set_null.column());
-        let bitset_ty = bitset_ty.native_type();
+        let bitset_ty = bitset_ty.clif_type();
 
         let mut first_expr = None;
 
@@ -1546,7 +1474,7 @@ impl<'a> CodegenCtx<'a> {
                 {
                     // If there's only one occupant of the bitset, set it to 1
                     let value = if columns.len() == 1 {
-                        builder.ins().iconst(ty.native_type(), 1)
+                        builder.ins().iconst(ty.clif_type(), 1)
 
                     // Otherwise just set all bits high
                     } else {
@@ -1559,6 +1487,20 @@ impl<'a> CodegenCtx<'a> {
                         .store(MemFlags::trusted(), value, addr, offset as i32);
                 }
             }
+        }
+    }
+
+    fn uninit_row(&mut self, expr_id: ExprId, uninit: &UninitRow, builder: &mut FunctionBuilder) {
+        let slot = self.stack_slot_for_layout(expr_id, uninit.layout(), builder);
+
+        if let Some(writer) = self.comment_writer.as_deref() {
+            writer.borrow_mut().add_comment(
+                slot,
+                format!(
+                    "uninit row of layout {:?}",
+                    self.layout_cache.row_layout(uninit.layout()),
+                ),
+            );
         }
     }
 
@@ -2111,6 +2053,221 @@ impl<'a> CodegenCtx<'a> {
         );
     }
 
+    fn copy_val(&mut self, expr_id: ExprId, copy: &Copy, builder: &mut FunctionBuilder<'_>) {
+        let value: Value = self.exprs[&copy.value()];
+        let ty = self.expr_types.get(&copy.value()).copied();
+        let layout = self.expr_layouts.get(&copy.value()).copied();
+
+        let value = if copy.value_ty() == ColumnType::String {
+            self.clone_string(value, builder)
+        } else {
+            value
+        };
+
+        self.add_expr(expr_id, value, ty, layout);
+    }
+
+    fn copy_row_to(&mut self, copy_row: &CopyRowTo, builder: &mut FunctionBuilder<'_>) {
+        debug_assert_eq!(
+            self.layout_id(copy_row.src()),
+            self.layout_id(copy_row.dest()),
+        );
+        debug_assert_eq!(self.layout_id(copy_row.src()), copy_row.layout());
+        debug_assert!(!self.is_readonly(copy_row.dest()));
+
+        // Ignore noop copies
+        if copy_row.src() == copy_row.dest() || self.layout_cache.is_zero_sized(copy_row.layout()) {
+            return;
+        }
+
+        let ptr_ty = self.pointer_type();
+
+        // Clone things that require it
+        if self
+            .layout_cache
+            .requires_nontrivial_clone(copy_row.layout())
+        {
+            let mut load_flags = MemFlags::trusted();
+            if self.is_readonly(copy_row.src()) {
+                load_flags.set_readonly();
+            }
+
+            let layout_cache = self.layout_cache.clone();
+            let (layout, row_layout) = layout_cache.get_layouts(copy_row.layout());
+
+            let mut loaded_values = Vec::with_capacity(row_layout.len());
+            let mut needs_clone = Vec::new();
+
+            // Load all columns
+            for entry in layout.memory_order() {
+                match *entry {
+                    MemoryEntry::Column {
+                        offset,
+                        ty,
+                        column,
+                        nullable,
+                    } => {
+                        let column_ty = row_layout.column_type(column as usize);
+                        if column_ty.is_string() {
+                            needs_clone.push((loaded_values.len(), nullable));
+                        } else {
+                            debug_assert!(!column_ty.requires_nontrivial_clone());
+                        }
+
+                        loaded_values.push((
+                            self.load_from_row(copy_row.src(), load_flags, ty, offset, builder),
+                            offset,
+                        ));
+                    }
+
+                    MemoryEntry::BitSet { offset, ty, .. } => {
+                        loaded_values.push((
+                            self.load_from_row(
+                                copy_row.src(),
+                                load_flags,
+                                ty.native_type(),
+                                offset,
+                                builder,
+                            ),
+                            offset,
+                        ));
+                    }
+
+                    MemoryEntry::Padding { .. } => {}
+                }
+            }
+
+            // Clone all strings
+            for (index, nullable) in needs_clone {
+                let value = loaded_values[index].0;
+
+                // Conditionally clone nullable strings
+                let cloned = if nullable {
+                    let after = builder.create_block();
+                    builder.append_block_param(after, ptr_ty);
+                    let clone_string = builder.create_block();
+
+                    builder
+                        .ins()
+                        .brif(value, clone_string, &[], after, &[value]);
+
+                    builder.switch_to_block(clone_string);
+                    let cloned = self.clone_string(value, builder);
+                    builder.ins().jump(after, &[cloned]);
+
+                    builder.switch_to_block(after);
+                    builder.block_params(after)[0]
+
+                // If the string isn't nullable we can unconditionally
+                // clone it
+                } else {
+                    self.clone_string(value, builder)
+                };
+
+                loaded_values[index].0 = cloned;
+            }
+
+            // Store all columns
+            for (value, offset) in loaded_values {
+                self.store_to_row(copy_row.dest(), value, MemFlags::trusted(), offset, builder);
+            }
+
+        // If the layout is entirely scalars we can use a straight up memcopy
+        } else {
+            let src = if let Some(&slot) = self.stack_slots.get(&copy_row.src()) {
+                builder.ins().stack_addr(ptr_ty, slot, 0)
+            } else {
+                self.exprs[&copy_row.src()]
+            };
+
+            let dest = if let Some(&slot) = self.stack_slots.get(&copy_row.dest()) {
+                builder.ins().stack_addr(ptr_ty, slot, 0)
+            } else {
+                self.exprs[&copy_row.dest()]
+            };
+
+            let layout = self.layout_cache.layout_of(copy_row.layout());
+
+            // FIXME: We probably want to replace this with our own impl, it currently just
+            // emits a memcpy call on sizes greater than (u64 * 4) when an inlined impl
+            // would perform much better
+            builder.emit_small_memory_copy(
+                self.frontend_config(),
+                dest,
+                src,
+                layout.size() as u64,
+                layout.align() as u8,
+                layout.align() as u8,
+                true,
+                MemFlags::trusted(),
+            );
+        }
+    }
+
+    fn constant_expr(
+        &mut self,
+        expr_id: ExprId,
+        constant: &Constant,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let value = self.constant(constant, builder);
+        self.add_expr(expr_id, value, constant.column_type(), None);
+    }
+
+    fn uninit(&mut self, expr_id: ExprId, uninit: &Uninit, builder: &mut FunctionBuilder<'_>) {
+        match uninit.value() {
+            // Create an uninit stack slot for row values
+            ArgType::Row(layout) => {
+                let slot = self.stack_slot_for_layout(expr_id, layout, builder);
+
+                if let Some(writer) = self.comment_writer.as_deref() {
+                    writer.borrow_mut().add_comment(
+                        slot,
+                        format!(
+                            "uninit row of layout {:?}",
+                            self.layout_cache.row_layout(layout),
+                        ),
+                    );
+                }
+            }
+
+            // Create a "default" value for scalars
+            ArgType::Scalar(scalar_ty) => {
+                let ty = scalar_ty
+                    .native_type()
+                    .unwrap()
+                    .native_type(&self.frontend_config());
+
+                let default = match scalar_ty {
+                    ColumnType::Bool
+                    | ColumnType::U8
+                    | ColumnType::I8
+                    | ColumnType::U16
+                    | ColumnType::I16
+                    | ColumnType::U32
+                    | ColumnType::I32
+                    | ColumnType::U64
+                    | ColumnType::I64
+                    | ColumnType::Usize
+                    | ColumnType::Isize
+                    | ColumnType::Ptr
+                    | ColumnType::Date
+                    | ColumnType::Timestamp
+                    | ColumnType::String => builder.ins().iconst(ty, 0),
+                    ColumnType::F32 => builder.ins().f32const(0.0),
+                    ColumnType::F64 => builder.ins().f64const(0.0),
+                    // Unit types shouldn't reach codegen
+                    ColumnType::Unit => unreachable!(),
+                };
+
+                self.add_expr(expr_id, default, scalar_ty, None);
+                self.comment(builder.value_def(default), || {
+                    format!("uninit value of type {scalar_ty}")
+                });
+            }
+        }
+    }
+
     fn string_length(
         &self,
         string: Value,
@@ -2193,6 +2350,13 @@ impl<'a> CodegenCtx<'a> {
         pointer
     }
 
+    fn clone_string(&mut self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        self.debug_assert_ptr_valid(string, ThinStr::ALIGN as u32, builder);
+
+        let clone_str = self.imports.get("string_clone", self.module, builder.func);
+        builder.call_fn(clone_str, &[string])
+    }
+
     fn comment<F, S>(&self, inst: Inst, make_comment: F)
     where
         F: FnOnce() -> S,
@@ -2204,7 +2368,7 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn cast_to_ptr_size(&self, int: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        let value_ty = builder.func.dfg.value_type(int);
+        let value_ty = builder.value_type(int);
         debug_assert!(value_ty.is_int());
 
         match (value_ty, self.pointer_type()) {

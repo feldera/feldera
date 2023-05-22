@@ -341,8 +341,8 @@ impl std::convert::From<EitherError> for AnyError {
     }
 }
 
-// The goal for these methods is to avoid multiple DB interactions as much as possible
-// and if not, use transactions
+// The goal for these methods is to avoid multiple DB interactions as much as
+// possible and if not, use transactions
 #[async_trait]
 impl Storage for ProjectDB {
     async fn reset_project_status(&self) -> AnyResult<()> {

@@ -421,8 +421,8 @@ struct Retraction<K, R> {
     ///
     /// * `None` - key hasn't been encountered yet
     /// * `Some(None)` - key does not occur in the input trace.
-    /// * `Some(Some(n))` - key is `n` steps away from the previous key
-    ///   from `retractions` that is present in the input trace.
+    /// * `Some(Some(n))` - key is `n` steps away from the previous key from
+    ///   `retractions` that is present in the input trace.
     offset: Option<Option<usize>>,
 }
 

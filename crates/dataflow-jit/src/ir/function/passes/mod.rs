@@ -1,9 +1,10 @@
+mod unit_ops;
+
 use crate::ir::{
-    block::ParamType,
     exprs::{ArgType, Call},
     function::FuncArg,
     layout_cache::RowLayoutCache,
-    ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Return, Terminator,
+    ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Terminator,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -213,7 +214,10 @@ impl Function {
                         }
 
                         // These contain no expressions
-                        Expr::NullRow(_) | Expr::Constant(_) | Expr::UninitRow(_) => {}
+                        Expr::NullRow(_)
+                        | Expr::Constant(_)
+                        | Expr::UninitRow(_)
+                        | Expr::Uninit(_) => {}
                     }
                 }
 
@@ -328,7 +332,10 @@ impl Function {
                     Expr::Constant(_) => {}
 
                     // These expressions operate exclusively on rows
-                    Expr::CopyRowTo(_) | Expr::NullRow(_) | Expr::UninitRow(_) => {}
+                    Expr::CopyRowTo(_)
+                    | Expr::NullRow(_)
+                    | Expr::UninitRow(_)
+                    | Expr::Uninit(_) => {}
                 }
             }
         }
@@ -479,6 +486,7 @@ impl Function {
                         Expr::UninitRow(_) => todo!(),
                         Expr::Cast(_) => todo!(),
                         Expr::Select(_) => todo!(),
+                        Expr::Uninit(_) => todo!(),
                     }
                 }
 
@@ -521,95 +529,6 @@ impl Function {
 
                     Terminator::Unreachable => {}
                 }
-            }
-        }
-    }
-
-    // TODO: Eliminate unit basic block args
-    fn remove_unit_memory_operations(&mut self, layout_cache: &RowLayoutCache) {
-        let mut unit_exprs = BTreeSet::new();
-        let mut row_exprs = BTreeMap::new();
-        for arg in &self.args {
-            row_exprs.insert(arg.id, arg.layout);
-        }
-
-        // FIXME: Doesn't work for back edges/loops
-        let mut stack = vec![self.entry_block];
-        while let Some(block_id) = stack.pop() {
-            let block = self.blocks.get_mut(&block_id).unwrap();
-
-            // Add all of the block's parameters
-            for &(param_id, ty) in block.params() {
-                match ty {
-                    ParamType::Row(layout) => {
-                        row_exprs.insert(param_id, layout);
-                    }
-                    ParamType::Column(ColumnType::Unit) => {
-                        unit_exprs.insert(param_id);
-                    }
-                    ParamType::Column(_) => {}
-                }
-            }
-
-            block.retain(|expr_id, expr| match expr {
-                Expr::UninitRow(uninit) => {
-                    row_exprs.insert(expr_id, uninit.layout());
-                    true
-                }
-
-                Expr::NullRow(null) => {
-                    row_exprs.insert(expr_id, null.layout());
-                    true
-                }
-
-                Expr::Constant(Constant::Unit) => {
-                    unit_exprs.insert(expr_id);
-                    false
-                }
-
-                Expr::Load(load) => {
-                    let row_layout = row_exprs[&load.source()];
-                    let layout = layout_cache.get(row_layout);
-
-                    if layout.columns()[load.column()].is_unit() {
-                        unit_exprs.insert(expr_id);
-                        false
-                    } else {
-                        true
-                    }
-                }
-
-                Expr::Store(store) => {
-                    let row_layout = row_exprs[&store.target()];
-                    let layout = layout_cache.get(row_layout);
-                    !layout.columns()[store.column()].is_unit()
-                }
-
-                Expr::Copy(copy) => {
-                    if unit_exprs.contains(&copy.value()) {
-                        unit_exprs.insert(expr_id);
-                        false
-                    } else {
-                        true
-                    }
-                }
-
-                _ => true,
-            });
-
-            match block.terminator_mut() {
-                // Normalize unit returns to return unit contents
-                Terminator::Return(ret) => {
-                    if let &RValue::Expr(expr) = ret.value() {
-                        if unit_exprs.contains(&expr) {
-                            *ret = Return::new(RValue::Imm(Constant::Unit));
-                        }
-                    }
-                }
-
-                Terminator::Jump(jump) => stack.push(jump.target()),
-                Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
-                Terminator::Unreachable => {}
             }
         }
     }

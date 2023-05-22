@@ -1,7 +1,7 @@
 use crate::ir::{
     exprs::{
         ArgType, BinaryOp, Call, Cast, Constant, Copy, CopyRowTo, Expr, IsNull, Load, NullRow,
-        Select, SetNull, Store, UnaryOp, UninitRow,
+        Select, SetNull, Store, UnaryOp, Uninit, UninitRow,
     },
     LayoutId,
 };
@@ -21,6 +21,7 @@ pub trait ExprVisitor {
     fn visit_constant(&mut self, _constant: &Constant) {}
     fn visit_copy_row_to(&mut self, _copy_row_to: &CopyRowTo) {}
     fn visit_uninit_row(&mut self, _uninit_row: &UninitRow) {}
+    fn visit_uninit(&mut self, _uninit: &Uninit) {}
 }
 
 pub trait MutExprVisitor {
@@ -38,6 +39,7 @@ pub trait MutExprVisitor {
     fn visit_constant(&mut self, _constant: &mut Constant) {}
     fn visit_copy_row_to(&mut self, _copy_row_to: &mut CopyRowTo) {}
     fn visit_uninit_row(&mut self, _uninit_row: &mut UninitRow) {}
+    fn visit_uninit(&mut self, _uninit: &mut Uninit) {}
 }
 
 impl Expr {
@@ -60,6 +62,7 @@ impl Expr {
             Self::Constant(constant) => visitor.visit_constant(constant),
             Self::CopyRowTo(copy_row_to) => visitor.visit_copy_row_to(copy_row_to),
             Self::UninitRow(uninit_row) => visitor.visit_uninit_row(uninit_row),
+            Self::Uninit(uninit) => visitor.visit_uninit(uninit),
         }
     }
 
@@ -82,6 +85,7 @@ impl Expr {
             Self::Constant(constant) => visitor.visit_constant(constant),
             Self::CopyRowTo(copy_row_to) => visitor.visit_copy_row_to(copy_row_to),
             Self::UninitRow(uninit_row) => visitor.visit_uninit_row(uninit_row),
+            Self::Uninit(uninit) => visitor.visit_uninit(uninit),
         }
     }
 }
@@ -133,6 +137,53 @@ where
             if let ArgType::Row(layout) = *arg {
                 (self.map_layout)(layout);
             }
+        }
+    }
+}
+
+impl<F> MutExprVisitor for MapLayouts<F>
+where
+    F: FnMut(&mut LayoutId),
+{
+    fn visit_load(&mut self, load: &mut Load) {
+        (self.map_layout)(&mut load.source_layout);
+    }
+
+    fn visit_store(&mut self, store: &mut Store) {
+        (self.map_layout)(&mut store.target_layout);
+    }
+
+    fn visit_is_null(&mut self, is_null: &mut IsNull) {
+        (self.map_layout)(&mut is_null.target_layout);
+    }
+
+    fn visit_set_null(&mut self, set_null: &mut SetNull) {
+        (self.map_layout)(&mut set_null.target_layout);
+    }
+
+    fn visit_copy_row_to(&mut self, copy_row_to: &mut CopyRowTo) {
+        (self.map_layout)(&mut copy_row_to.layout);
+    }
+
+    fn visit_null_row(&mut self, null_row: &mut NullRow) {
+        (self.map_layout)(&mut null_row.layout);
+    }
+
+    fn visit_uninit_row(&mut self, uninit_row: &mut UninitRow) {
+        (self.map_layout)(&mut uninit_row.layout);
+    }
+
+    fn visit_call(&mut self, call: &mut Call) {
+        for arg in call.arg_types_mut() {
+            if let ArgType::Row(layout) = arg {
+                (self.map_layout)(layout);
+            }
+        }
+    }
+
+    fn visit_uninit(&mut self, uninit: &mut Uninit) {
+        if let ArgType::Row(layout) = uninit.value_mut() {
+            (self.map_layout)(layout);
         }
     }
 }
