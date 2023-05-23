@@ -49,6 +49,7 @@ rand = "0.8.5"
     features = ["hashbrown", "time-std", "xxhash-xxh3"]
 
 [dev-dependencies]
+csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
 zip = "0.6.2"
 tar = "0.4.38"
 rand_chacha = "0.3.1"
@@ -104,3 +105,39 @@ name = "orgchart"
 
 [[example]]
 name = "degrees"
+
+[[example]]
+name = "tutorial1"
+path = "examples/tutorial/tutorial1.rs"
+
+[[example]]
+name = "tutorial2"
+path = "examples/tutorial/tutorial2.rs"
+
+[[example]]
+name = "tutorial3"
+path = "examples/tutorial/tutorial3.rs"
+
+[[example]]
+name = "tutorial4"
+path = "examples/tutorial/tutorial4.rs"
+
+[[example]]
+name = "tutorial5"
+path = "examples/tutorial/tutorial5.rs"
+
+[[example]]
+name = "tutorial6"
+path = "examples/tutorial/tutorial6.rs"
+
+[[example]]
+name = "tutorial7"
+path = "examples/tutorial/tutorial7.rs"
+
+[[example]]
+name = "tutorial8"
+path = "examples/tutorial/tutorial8.rs"
+
+[[example]]
+name = "tutorial9"
+path = "examples/tutorial/tutorial9.rs"
