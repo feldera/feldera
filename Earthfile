@@ -37,11 +37,11 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN cargo install --force cargo-machete
-    RUN cargo install --force cargo-audit
-    RUN cargo install --force cargo-make
-    RUN cargo install --force cargo-llvm-cov
-    RUN cargo install --force cargo-chef
+    RUN cargo install --force --version 0.5.0 cargo-machete
+    RUN cargo install --force --version 0.17.6 cargo-audit
+    RUN cargo install --force --version 0.36.7 cargo-make
+    RUN cargo install --force --version 0.5.19 cargo-llvm-cov
+    RUN cargo install --force  --version 0.1.61 cargo-chef
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
@@ -97,12 +97,20 @@ prepare-cache:
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/lib.rs
     RUN mkdir -p crates/nexmark/src && touch crates/nexmark/src/lib.rs
     RUN mkdir -p crates/dbsp/src && touch crates/dbsp/src/lib.rs
+    RUN mkdir -p crates/dbsp/examples && touch crates/dbsp/examples/degrees.rs && touch crates/dbsp/examples/orgchart.rs
     RUN mkdir -p crates/adapters/src && touch crates/adapters/src/lib.rs
+    RUN mkdir -p crates/adapters/examples && touch crates/adapters/examples/server.rs
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/main.rs
     RUN mkdir -p crates/nexmark/benches/nexmark-gen && touch crates/nexmark/benches/nexmark-gen/main.rs
     RUN mkdir -p crates/nexmark/benches/nexmark && touch crates/nexmark/benches/nexmark/main.rs
     RUN mkdir -p crates/dbsp/benches/gdelt && touch crates/dbsp/benches/gdelt/main.rs
     RUN mkdir -p crates/dbsp/benches/ldbc-graphalytics && touch crates/dbsp/benches/ldbc-graphalytics/main.rs
+    RUN mkdir -p crates/dbsp/benches
+    RUN touch crates/dbsp/benches/galen.rs
+    RUN touch crates/dbsp/benches/fraud.rs
+    RUN touch crates/dbsp/benches/path.rs
+    RUN touch crates/dbsp/benches/consolidation.rs
+    RUN touch crates/dbsp/benches/column_layer.rs
     RUN mkdir -p crates/pipeline_manager/src && touch crates/pipeline_manager/src/main.rs
     #RUN mkdir -p crates/webui-tester/src && touch crates/webui-tester/src/lib.rs
 
