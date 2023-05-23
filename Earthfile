@@ -214,6 +214,8 @@ build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
+    # TODO: does not need to depend on build-manager, instead save and copy
+    # build artefacts in downstream targets
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
@@ -249,12 +251,7 @@ build-nexmark:
     SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 audit:
-    FROM +install-rust
-    COPY --keep-ts Cargo.toml .
-    COPY --keep-ts Cargo.lock .
-    COPY --keep-ts README.md .
-    COPY --keep-ts --dir crates crates
-    COPY --keep-ts --dir web-ui web-ui
+    FROM +build-cache
     RUN cargo audit
 
 test-dbsp:

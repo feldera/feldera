@@ -42,3 +42,4 @@ manager.db
 manager.pid
 config.yaml
 cargo_workspace
+openapi.json
