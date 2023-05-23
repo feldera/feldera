@@ -157,10 +157,10 @@ https://github.com/feldera/dbsp, click on the green `<> Code` button,
 then select Codespaces and click on "Create codespace on main".
 
 To learn about using DBSP as a Rust programmer, start by reading the
-[`circuit_builder`](`circuit::circuit_builder`) module documentation.
-The examples folder also has some simple places to start.  For more
-sophisticated examples, try looking at the `nexmark` benchmark in the
-`benches` directory.
+[tutorial].  Another good place to start is the
+[`circuit_builder`](`circuit::circuit_builder`) module documentation,
+or the examples folder.  For more sophisticated examples, try looking
+at the `nexmark` benchmark in the `benches` directory.
 
 # Contributing
 
