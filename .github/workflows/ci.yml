@@ -1,6 +1,6 @@
 # .github/workflows/ci.yml
 
-name: Run Earthly CI
+name: Build & Tests
 
 on: [push, pull_request]
 
