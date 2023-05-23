@@ -774,7 +774,7 @@ mod test {
                 assert_eq!(expected, actual)
             });
 
-            input_handle
+            Ok(input_handle)
         })
         .unwrap()
     }

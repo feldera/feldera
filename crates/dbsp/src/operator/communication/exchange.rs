@@ -361,6 +361,7 @@ where
 ///             assert_eq!(&vec![round; WORKERS], v);
 ///             round += 1;
 ///         });
+///         Ok(())
 ///     })
 ///     .unwrap()
 ///     .0;
@@ -713,6 +714,7 @@ mod tests {
                             assert_eq!(&vec![round; workers], v);
                             round += 1;
                         });
+                    Ok(())
                 })
                 .unwrap()
                 .0;

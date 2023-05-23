@@ -863,6 +863,7 @@ mod test {
             i_sqr_pos_indexed.inspect(move |n| {
                 assert_eq!(*n, i_sqr_pos_indexed_output.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 

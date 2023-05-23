@@ -262,6 +262,7 @@ mod test {
                    .index()
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
+            Ok(())
         })
         .unwrap().0;
 
@@ -295,6 +296,7 @@ mod test {
                    .index_with(|&(k, v)| (k, v))
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
+            Ok(())
         })
         .unwrap().0;
 

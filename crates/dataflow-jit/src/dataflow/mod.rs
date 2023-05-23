@@ -17,6 +17,7 @@ use crate::{
     },
     row::{row_from_literal, Row, UninitRow},
 };
+use anyhow::Result as AnyResult;
 use cranelift_jit::JITModule;
 use cranelift_module::FuncId;
 use dbsp::{
@@ -1019,7 +1020,7 @@ impl CompiledDataflow {
         )
     }
 
-    pub fn construct(mut self, circuit: &mut RootCircuit) -> (Inputs, Outputs) {
+    pub fn construct(mut self, circuit: &mut RootCircuit) -> AnyResult<(Inputs, Outputs)> {
         let mut streams = BTreeMap::<NodeId, RowStream<RootCircuit>>::new();
 
         let mut inputs = BTreeMap::new();
@@ -1457,7 +1458,7 @@ impl CompiledDataflow {
             }
         }
 
-        (inputs, outputs)
+        Ok((inputs, outputs))
     }
 
     fn subgraph(

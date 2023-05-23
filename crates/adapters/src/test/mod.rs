@@ -102,7 +102,7 @@ pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
         let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
 
         let houtput = input.output();
-        (hinput, houtput)
+        Ok((hinput, houtput))
     })
     .unwrap();
 

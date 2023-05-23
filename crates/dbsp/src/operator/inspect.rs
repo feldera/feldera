@@ -30,6 +30,7 @@ where
     ///     }));
     ///     // Print all values in `stream`.
     ///     stream.inspect(|n| println!("inspect: {}", n));
+    ///     Ok(())
     /// })
     /// .unwrap();
     /// ```

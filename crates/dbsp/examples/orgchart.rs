@@ -76,7 +76,7 @@ fn main() -> Result<()> {
                 employee: m2.employee,
             });
 
-        (hmanages, skiplevels.output())
+        Ok((hmanages, skiplevels.output()))
     })
     .unwrap();
 

@@ -120,6 +120,7 @@ impl Runtime {
     ///
     ///     let root = RootCircuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
+    ///         Ok(())
     ///     })
     ///     .unwrap()
     ///     .0;
@@ -382,6 +383,7 @@ mod tests {
                         runtime.sequence_next(Runtime::worker_index())
                     }))
                     .inspect(move |n: &usize| data_clone.borrow_mut().push(*n));
+                Ok(())
             })
             .unwrap()
             .0;
@@ -428,6 +430,7 @@ mod tests {
                         Ok((|| Ok(false), ()))
                     })
                     .unwrap();
+                Ok(())
             })
             .unwrap()
             .0;

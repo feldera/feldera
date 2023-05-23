@@ -721,6 +721,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use anyhow::Result as AnyResult;
+
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -738,7 +740,10 @@ mod test {
 
     type TestZSet = OrdZSet<(usize, isize), isize>;
 
-    fn aggregate_test_circuit(circuit: &mut RootCircuit, inputs: Vec<Vec<TestZSet>>) {
+    fn aggregate_test_circuit(
+        circuit: &mut RootCircuit,
+        inputs: Vec<Vec<TestZSet>>,
+    ) -> AnyResult<()> {
         let mut inputs = inputs.into_iter();
 
         circuit
@@ -881,6 +886,7 @@ mod test {
                 ))
             })
             .unwrap();
+        Ok(())
     }
 
     use proptest::{collection, prelude::*};
@@ -989,7 +995,7 @@ mod test {
                         *sum_distinct_output.lock().unwrap() = batch.clone();
                     }
                 });
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 

@@ -161,6 +161,7 @@ mod test {
             source1
                 .apply2(&source2, |x, y| *x + *y)
                 .inspect(|z| assert_eq!(*z, 0));
+            Ok(())
         })
         .unwrap()
         .0;

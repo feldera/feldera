@@ -74,7 +74,7 @@ macro_rules! run_queries {
             // handle like the other queries.
             side_input_handle.append(&mut q13_side_input());
 
-            input_handle
+            Ok(input_handle)
         }
     };
     (@circuit $query:ident) => {
@@ -85,7 +85,7 @@ macro_rules! run_queries {
 
             output.inspect(move |_zs| ());
 
-            input_handle
+            Ok(input_handle)
         }
     };
 

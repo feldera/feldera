@@ -2,6 +2,7 @@ use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DBSPError, RootCircuit, Runtime,
     RuntimeError, SchedulerError,
 };
+use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
 use std::{
     fs,
@@ -47,7 +48,7 @@ impl Runtime {
     /// thread-safe.
     pub fn init_circuit<F, T>(nworkers: usize, constructor: F) -> Result<(DBSPHandle, T), DBSPError>
     where
-        F: FnOnce(&mut RootCircuit) -> T + Clone + Send + 'static,
+        F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
         T: Clone + Send + 'static,
     {
         // When a worker finishes building the circuit, it sends completion status back
@@ -75,8 +76,7 @@ impl Runtime {
 
             let (circuit, profiler) = match RootCircuit::build(|circuit| {
                 let profiler = Profiler::new(circuit);
-                let res = constructor(circuit);
-                (res, profiler)
+                constructor(circuit).map(|res| (res, profiler))
             }) {
                 Ok((circuit, (res, profiler))) => {
                     if init_sender.send(Ok(res)).is_err() {
@@ -142,9 +142,7 @@ impl Runtime {
 
         for (worker, receiver) in init_receivers.iter().enumerate() {
             match receiver.recv() {
-                Ok(Err(scheduler_error)) => {
-                    init_status.push(Err(DBSPError::Scheduler(scheduler_error)))
-                }
+                Ok(Err(error)) => init_status.push(Err(error)),
                 Ok(Ok(ret)) => init_status.push(Ok(ret)),
                 Err(_) => {
                     init_status.push(Err(DBSPError::Runtime(RuntimeError::WorkerPanic(worker))))
@@ -325,6 +323,7 @@ impl Drop for DBSPHandle {
 #[cfg(test)]
 mod tests {
     use crate::{operator::Generator, Circuit, Error as DBSPError, Runtime, RuntimeError};
+    use anyhow::anyhow;
 
     // Panic during initialization in worker thread.
     #[test]
@@ -344,6 +343,7 @@ mod tests {
             }
 
             circuit.add_source(Generator::new(|| 5usize));
+            Ok(())
         });
 
         if let DBSPError::Runtime(err) = res.unwrap_err() {
@@ -377,6 +377,7 @@ mod tests {
                     5usize
                 }
             }));
+            Ok(())
         })
         .unwrap();
 
@@ -401,6 +402,7 @@ mod tests {
     fn test_kill(nworkers: usize) {
         let (mut handle, _) = Runtime::init_circuit(nworkers, |circuit| {
             circuit.add_source(Generator::new(|| 5usize));
+            Ok(())
         })
         .unwrap();
 
@@ -426,9 +428,18 @@ mod tests {
     fn test_drop(nworkers: usize) {
         let (mut handle, _) = Runtime::init_circuit(nworkers, |circuit| {
             circuit.add_source(Generator::new(|| 5usize));
+            Ok(())
         })
         .unwrap();
 
         handle.step().unwrap();
+    }
+
+    #[test]
+    fn test_failing_constructor() {
+        match Runtime::init_circuit(4, |_circuit| Err::<(), _>(anyhow!("constructor failed"))) {
+            Err(DBSPError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
+            _ => panic!(),
+        }
     }
 }

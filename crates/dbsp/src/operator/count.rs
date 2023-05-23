@@ -139,11 +139,11 @@ mod test {
                 let expected_twos = expected_ones.map_index(|(&_k, &v)| (2, v)).delay();
                 let expected_counts = expected_ones.plus(&expected_twos);
 
-                (
+                Ok((
                     counts.output(),
                     stream_counts.output(),
                     expected_counts.output(),
-                )
+                ))
             })
             .unwrap();
 
@@ -206,7 +206,7 @@ mod test {
                 circuit.add_source(Generator::new(move || iter.next().unwrap_or_default()));
             let counts = source.differentiate().distinct_count().integrate();
             let stream_counts = source.stream_distinct_count();
-            (counts.output(), stream_counts.output())
+            Ok((counts.output(), stream_counts.output()))
         })
         .unwrap();
 

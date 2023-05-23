@@ -1014,6 +1014,7 @@ mod test {
                         assert_eq!(fm, &inc_outputs2.next().unwrap())
                     }
                 });
+            Ok(())
         })
         .unwrap()
         .0;
@@ -1110,6 +1111,7 @@ mod test {
             paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 
@@ -1243,6 +1245,7 @@ mod test {
             propagate(circuit, &edges, &labels).inspect(move |labeled| {
                 assert_eq!(*labeled, outputs.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 
@@ -1329,6 +1332,7 @@ mod test {
             result.consolidate().inspect(move |res: &OrdZSet<Label, isize>| {
                 assert_eq!(*res, outputs.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 
@@ -1353,7 +1357,7 @@ mod test {
                 }
             });
 
-            (input_handle1, input_handle2)
+            Ok((input_handle1, input_handle2))
         })
         .unwrap();
 
