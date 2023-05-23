@@ -10,7 +10,7 @@ description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
 dependencies = ["build"]
 script = '''
 cd ../../
-cargo run @@remove-empty(RUST_BUILD_PROFILE) --package dbsp_pipeline_manager -- --dump-openapi
+cargo run --package dbsp_pipeline_manager -- --dump-openapi
 '''
 
 [tasks.openapi_python]
