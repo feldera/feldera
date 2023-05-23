@@ -32,12 +32,15 @@ use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::{db::ProjectDB, ServerState};
+
 /// Authorization using a bearer token. This is strictly used for authorizing
 /// users, not machines.
 pub(crate) async fn auth_validator(
     configuration: AuthConfiguration,
     req: ServiceRequest,
     credentials: Option<BearerAuth>,
+    state: crate::WebData<ServerState>,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // First check if we have a bearer token. If not, we expect an API key.
     match credentials {
@@ -74,8 +77,8 @@ pub(crate) async fn auth_validator(
         }
         None => {
             let api_key = req.headers().get("x-api-key");
-            let config = req.app_data::<Config>().cloned().unwrap_or_default();
             if api_key.is_none() {
+                let config = req.app_data::<Config>().cloned().unwrap_or_default();
                 return Err((
                     AuthenticationError::from(config)
                         .with_error_description("Missing bearer token or API key")
@@ -83,7 +86,20 @@ pub(crate) async fn auth_validator(
                     req,
                 ));
             }
-            todo!("Unimplemented")
+            let api_key_str = api_key.unwrap().to_str().unwrap();
+            let db = state.db.lock().await;
+            let validate = validate_api_keys(&db, api_key_str).await;
+            if validate {
+                Ok(req)
+            } else {
+                let config = req.app_data::<Config>().cloned().unwrap_or_default();
+                Err((
+                    AuthenticationError::from(config)
+                        .with_error_description("Unauthorized API key")
+                        .into(),
+                    req,
+                ))
+            }
         }
     }
 }
@@ -329,10 +345,17 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
     None
 }
 
+// Fetch keys on every authentication attempt, so cache the
+// results. TODO: implement periodic refresh
+async fn validate_api_keys(db: &ProjectDB, api_key: &str) -> bool {
+    true
+}
+
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, str::FromStr};
 
+    use actix_http::header::HeaderName;
     use actix_web::{
         body::{BoxBody, EitherBody},
         dev::ServiceResponse,
@@ -417,7 +440,19 @@ mod test {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
         };
+        let ManagerConfig = ManagerConfig {};
         let config_copy = config.clone();
+        let db = ProjectDB::connect(&config).await?;
+        let db = Arc::new(Mutex::new(db));
+        let compiler = Compiler::new(&config, db.clone()).await?;
+
+        // Since we don't trust any file system state after restart,
+        // reset all projects to `ProjectStatus::None`, which will force
+        // us to recompile projects before running them.
+        db.lock().await.reset_project_status().await?;
+        let openapi = ApiDoc::openapi();
+
+        let state = WebData::new(ServerState::new(config, db, compiler).await?);
         let closure =
             move |req, bearer_auth| auth::auth_validator(config_copy.clone(), req, bearer_auth);
         let auth_middleware = HttpAuthentication::with_fn(closure);
@@ -447,7 +482,6 @@ mod test {
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
         let res = run_test(req, validation).await;
-        println!("{:?}", res);
         assert_eq!(200, res.status());
     }
 
@@ -565,5 +599,18 @@ mod test {
             "Bearer error_description=\"InvalidSignature\"",
             res.headers().get("www-authenticate").unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn valid_api_key() {
+        let claim = default_claim();
+        let validation = validation("some-client", "some-iss");
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((HeaderName::from_str("x-api-key").unwrap(), "foo"))
+            .to_request();
+        let res = run_test(req, validation).await;
+        println!("{:?}", res);
+        assert_eq!(401, res.status());
     }
 }

@@ -319,7 +319,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         if use_auth {
             let server = HttpServer::new(move || {
                 let closure = |req, bearer_auth| {
-                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth)
+                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth, state.clone())
                 };
                 let auth_middleware = HttpAuthentication::with_fn(closure);
                 let app = App::new()
