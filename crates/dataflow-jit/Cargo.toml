@@ -15,7 +15,6 @@ required-features = ["binary"]
 csv = "1.2.1"
 libm = "0.2.6"
 paste = "1.0.9"
-cfg-if = "1.0.0"
 # pretty = "0.11.3"
 size-of = "0.1.4"
 tracing = "0.1.37"
@@ -24,7 +23,6 @@ enum_dispatch = "0.3.8"
 cranelift-jit = "0.95.1"
 target-lexicon = "0.12.5"
 cranelift-module = "0.95.1"
-cranelift-native = "0.95.1"
 unicode-normalization = "0.1.22"
 dbsp = { path = "../dbsp", features = ["serde"] }
 bitvec = { version = "1.0.1", features = ["serde"] }

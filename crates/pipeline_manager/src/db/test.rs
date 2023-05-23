@@ -342,6 +342,33 @@ async fn update_status() {
     assert_eq!(ProjectStatus::CompilingRust, desc.status);
 }
 
+#[tokio::test]
+async fn duplicate_attached_conn_name() {
+    let handle = test_setup().await;
+    let connector_id = handle
+        .db
+        .new_connector("a", "b", ConnectorType::KafkaIn, "c")
+        .await
+        .unwrap();
+    let ac = AttachedConnector {
+        uuid: "foo".to_string(),
+        direction: Direction::Input,
+        connector_id: connector_id,
+        config: "".to_string(),
+    };
+    let ac2 = AttachedConnector {
+        uuid: "foo".to_string(),
+        direction: Direction::Input,
+        connector_id: connector_id,
+        config: "".to_string(),
+    };
+    let _ = handle
+        .db
+        .new_config(None, "1", "2", "3", &Some(vec![ac, ac2]))
+        .await
+        .expect_err("duplicate attached connector name");
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
@@ -964,7 +991,23 @@ impl Storage for Mutex<DbModel> {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
             }
+
+            // We also need to make sure that the attached connectors all have
+            // unique names, to model the UNIQUE constraint.
+            // Clone it because we sort and don't want to change input
+            // collection
+            let connectors = connectors.clone();
+            let mut connectors = connectors
+                .iter()
+                .map(|ac| ac.uuid.clone())
+                .collect::<Vec<_>>();
+            connectors.sort();
+            connectors.dedup();
+            if connectors.len() != connectors.len() {
+                return Err(anyhow::anyhow!(DBError::DuplicateName));
+            }
         }
+
         let config_id = ConfigId(s.next_config_id);
         let version = Version(1);
         s.configs.insert(
@@ -1048,9 +1091,6 @@ impl Storage for Mutex<DbModel> {
             .get_mut(&config_id)
             .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))?;
 
-        // TODO: The db does currently not use transactions; so we mimic the
-        // same behavior as the current implementation which means we insert
-        // attached_connectors until we encouter one that doesn't exist
         if let Some(connectors) = connectors {
             c.attached_connectors.clear();
             for ac in connectors {
@@ -1059,6 +1099,21 @@ impl Storage for Mutex<DbModel> {
                 } else {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
+            }
+
+            // We also need to make sure that the attached connectors all have
+            // unique names, to model the UNIQUE constraint.
+            // Clone it because we sort and don't want to change input
+            // collection
+            let connectors = connectors.clone();
+            let mut connectors = connectors
+                .iter()
+                .map(|ac| ac.uuid.clone())
+                .collect::<Vec<_>>();
+            connectors.sort();
+            connectors.dedup();
+            if connectors.len() != connectors.len() {
+                return Err(anyhow::anyhow!(DBError::DuplicateName));
             }
         }
         // Foreign key constraint on `project_id`

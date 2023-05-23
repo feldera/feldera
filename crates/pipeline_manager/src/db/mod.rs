@@ -119,6 +119,7 @@ pub(crate) enum DBError {
     UnknownConfig(ConfigId),
     UnknownPipeline(PipelineId),
     UnknownConnector(ConnectorId),
+    DuplicateName,
 }
 
 impl Display for DBError {
@@ -139,6 +140,9 @@ impl Display for DBError {
             }
             DBError::UnknownConnector(connector_id) => {
                 write!(f, "Unknown connector id '{connector_id}'")
+            }
+            DBError::DuplicateName => {
+                write!(f, "An entity with this name already exists")
             }
         }
     }
@@ -757,7 +761,6 @@ impl Storage for ProjectDB {
 
         if let Some(connectors) = connectors {
             // Add the connectors.
-            // TODO: This should be done in a transaction with the query above.
             for ac in connectors {
                 self.attach_connector(&txn, config_id, ac).await?;
             }
@@ -842,7 +845,6 @@ impl Storage for ProjectDB {
 
             // Rewrite the new set of connectors.
             for ac in connectors {
-                // TODO: This should be done in a transaction with the query above.
                 self.attach_connector(&txn, config_id, ac).await?;
             }
         }
@@ -1326,6 +1328,7 @@ impl ProjectDB {
             "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
             &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
             .map_err(|e| Self::maybe_config_id_foreign_key_constraint_err(EitherError::Tokio(e), config_id))
+            .map_err(Self::maybe_duplicate_attached_connector_name_err)
             .map_err(|e| Self::maybe_connector_id_foreign_key_constraint_err(e, ac.connector_id))
             .await?;
         Ok(AttachedConnectorId(row.get(0)))
@@ -1365,6 +1368,19 @@ impl ProjectDB {
                     return EitherError::Any(anyhow!(DBError::DuplicateProjectName(
                         _project_name.to_string()
                     )));
+                }
+            }
+        }
+        err
+    }
+
+    /// Helper to convert postgres error into a `DBError::DuplicateName`
+    /// if the underlying low-level error thrown by the database matches.
+    fn maybe_duplicate_attached_connector_name_err(err: EitherError) -> EitherError {
+        if let EitherError::Tokio(e) = &err {
+            if let Some(code) = e.code() {
+                if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
+                    return EitherError::Any(anyhow!(DBError::DuplicateName));
                 }
             }
         }
