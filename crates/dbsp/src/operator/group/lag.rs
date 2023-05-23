@@ -1,7 +1,7 @@
 use super::{GroupTransformer, Monotonicity};
 use crate::{
     algebra::{HasZero, ZRingValue},
-    trace::{cursor::CursorPair, Cursor},
+    trace::{cursor::{CursorPair, ReverseKeyCursor}, Cursor},
     DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
 use std::{cmp::Ordering, marker::PhantomData};
@@ -514,11 +514,11 @@ where
             self.compute_updates(&mut CursorPair::new(input_delta, input_trace), output_cb);
         } else {
             self.compute_retractions(
-                &mut ReverseCursor::new(input_delta),
-                &mut ReverseCursor::new(output_trace),
+                &mut ReverseKeyCursor::new(input_delta),
+                &mut ReverseKeyCursor::new(output_trace),
             );
             self.compute_updates(
-                &mut ReverseCursor::new(&mut CursorPair::new(input_delta, input_trace)),
+                &mut ReverseKeyCursor::new(&mut CursorPair::new(input_delta, input_trace)),
                 output_cb,
             );
         }
@@ -560,172 +560,5 @@ where
 {
     while cursor.key_valid() && cursor.weight().is_zero() {
         cursor.step_key_reverse();
-    }
-}
-
-/// Cursor that reverses the direction of the underlying
-/// cursor.
-///
-/// Enables a single implementation for `lag` and `lead`.
-/// This is not a clean abstraction, as DBSP normally assumes
-/// that keys grow monotonically, therefore we keep it
-/// private to this module.
-struct ReverseCursor<'a, C, K, R> {
-    cursor: &'a mut C,
-    _phantom: PhantomData<(K, R)>,
-}
-
-impl<'a, C, K, R> ReverseCursor<'a, C, K, R>
-where
-    C: Cursor<K, (), (), R>,
-{
-    fn new(cursor: &'a mut C) -> Self {
-        cursor.fast_forward_keys();
-
-        Self {
-            cursor,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, C, K, R> Cursor<K, (), (), R> for ReverseCursor<'a, C, K, R>
-where
-    C: Cursor<K, (), (), R>,
-{
-    fn key_valid(&self) -> bool {
-        self.cursor.key_valid()
-    }
-
-    fn val_valid(&self) -> bool {
-        self.cursor.val_valid()
-    }
-
-    fn key(&self) -> &K {
-        self.cursor.key()
-    }
-
-    fn val(&self) -> &() {
-        self.cursor.val()
-    }
-
-    fn get_key(&self) -> Option<&K> {
-        self.cursor.get_key()
-    }
-
-    fn get_val(&self) -> Option<&()> {
-        self.cursor.get_val()
-    }
-
-    fn map_times<L>(&mut self, logic: L)
-    where
-        L: FnMut(&(), &R),
-    {
-        self.cursor.map_times(logic)
-    }
-
-    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        self.cursor.fold_times(init, fold)
-    }
-
-    fn map_times_through<L>(&mut self, upper: &(), logic: L)
-    where
-        L: FnMut(&(), &R),
-    {
-        self.cursor.map_times_through(upper, logic);
-    }
-
-    fn fold_times_through<F, U>(&mut self, upper: &(), init: U, fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        self.cursor.fold_times_through(upper, init, fold)
-    }
-
-    fn weight(&mut self) -> R {
-        self.cursor.weight()
-    }
-
-    fn map_values<L: FnMut(&(), &R)>(&mut self, logic: L) {
-        self.cursor.map_values(logic)
-    }
-
-    fn step_key(&mut self) {
-        self.cursor.step_key_reverse()
-    }
-
-    fn step_key_reverse(&mut self) {
-        self.cursor.step_key()
-    }
-
-    fn seek_key(&mut self, key: &K) {
-        self.cursor.seek_key_reverse(key)
-    }
-
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-        self.cursor.seek_key_with_reverse(predicate)
-    }
-
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-        self.cursor.seek_key_with(predicate)
-    }
-
-    fn seek_key_reverse(&mut self, key: &K) {
-        self.cursor.seek_key(key)
-    }
-
-    fn step_val(&mut self) {
-        self.cursor.step_val()
-    }
-
-    fn step_val_reverse(&mut self) {
-        self.cursor.step_val_reverse()
-    }
-
-    fn seek_val(&mut self, val: &()) {
-        self.cursor.seek_val(val)
-    }
-
-    fn seek_val_reverse(&mut self, val: &()) {
-        self.cursor.seek_val_reverse(val)
-    }
-
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
-        self.cursor.seek_val_with(predicate)
-    }
-
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
-        self.cursor.seek_val_with_reverse(predicate)
-    }
-
-    fn rewind_keys(&mut self) {
-        self.cursor.fast_forward_keys()
-    }
-
-    fn fast_forward_keys(&mut self) {
-        self.cursor.rewind_keys()
-    }
-
-    fn rewind_vals(&mut self) {
-        self.cursor.rewind_vals()
-    }
-
-    fn fast_forward_vals(&mut self) {
-        self.cursor.fast_forward_vals()
     }
 }
