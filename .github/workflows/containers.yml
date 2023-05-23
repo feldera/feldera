@@ -1,5 +1,6 @@
 on:
-  push:
+  schedule:
+    - cron: '0 0 * * *'
   release:
       types: [published]
 
@@ -42,8 +43,8 @@ jobs:
           skipClusterCreation: "true"
 
       - name: Set up kind
-        run: cd deploy/kind && ./setup.sh && ./setup.sh 
-        
+        run: cd deploy/kind && ./setup.sh && ./setup.sh
+
       - name: Deploy DBSP
         run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
 
