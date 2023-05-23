@@ -4,7 +4,7 @@ Database Stream Processor (DBSP) is a framework for computing over data streams
 that aims to be more expressive and performant than existing streaming engines.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![CI workflow](https://github.com/feldera/dbsp/actions/workflows/main.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
+[![CI workflow](https://github.com/feldera/dbsp/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
 [![codecov](https://codecov.io/gh/feldera/dbsp/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/dbsp)
 
 ## DBSP Mission Statement
