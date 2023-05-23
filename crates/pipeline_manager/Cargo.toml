@@ -57,6 +57,7 @@ pg-client-config = "0.1.1"
 rand = "0.8.5"
 base64 = "0.21.0"
 openssl = "0.10.52"
+actix-http = "3.3.1"
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]

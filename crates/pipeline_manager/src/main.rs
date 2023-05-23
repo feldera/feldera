@@ -321,7 +321,7 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
                 let closure = |req, bearer_auth| {
                     auth::auth_validator(auth::aws_auth_config(), req, bearer_auth)
                 };
-                let auth_middleware = HttpAuthentication::bearer(closure);
+                let auth_middleware = HttpAuthentication::with_fn(closure);
                 let app = App::new()
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))

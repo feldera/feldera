@@ -37,37 +37,53 @@ use serde_json::Value;
 pub(crate) async fn auth_validator(
     configuration: AuthConfiguration,
     req: ServiceRequest,
-    credentials: BearerAuth,
+    credentials: Option<BearerAuth>,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
-    let token = credentials.token();
-    let token = match configuration.provider {
-        Provider::AwsCognito(_) => decode_aws_cognito_token(token, configuration).await,
-    };
-    match token {
-        Ok(_) => Ok(req),
-        Err(error) => {
-            let descr = match error {
-                AuthError::JwkFetch(e) => {
-                    error!("JwkFetch: {:?}", e);
-                    "Authentication failed".to_owned() // Do not bubble up
-                                                       // internal errors to the
-                                                       // user
-                }
-                AuthError::JwkShape(e) => {
-                    error!("JwkShapeError: {:?}", e);
-                    "Authentication failed".to_owned() // Do not bubble up
-                                                       // internal errors to the
-                                                       // user
-                }
-                _ => error.to_string(),
+    // First check if we have a bearer token. If not, we expect an API key.
+    match credentials {
+        Some(credentials) => {
+            let token = credentials.token();
+            let token = match configuration.provider {
+                Provider::AwsCognito(_) => decode_aws_cognito_token(token, configuration).await,
             };
+            match token {
+                Ok(_) => Ok(req),
+                Err(error) => {
+                    let descr = match error {
+                        // Do not bubble up internal errors to the user
+                        AuthError::JwkFetch(e) => {
+                            error!("JwkFetch: {:?}", e);
+                            "Authentication failed".to_owned()
+                        }
+                        // Do not bubble up internal errors to the user
+                        AuthError::JwkShape(e) => {
+                            error!("JwkShapeError: {:?}", e);
+                            "Authentication failed".to_owned()
+                        }
+                        _ => error.to_string(),
+                    };
+                    let config = req.app_data::<Config>().cloned().unwrap_or_default();
+                    Err((
+                        AuthenticationError::from(config)
+                            .with_error_description(descr)
+                            .into(),
+                        req,
+                    ))
+                }
+            }
+        }
+        None => {
+            let api_key = req.headers().get("x-api-key");
             let config = req.app_data::<Config>().cloned().unwrap_or_default();
-            Err((
-                AuthenticationError::from(config)
-                    .with_error_description(descr)
-                    .into(),
-                req,
-            ))
+            if api_key.is_none() {
+                return Err((
+                    AuthenticationError::from(config)
+                        .with_error_description("Missing bearer token or API key")
+                        .into(),
+                    req,
+                ));
+            }
+            todo!("Unimplemented")
         }
     }
 }
@@ -317,17 +333,23 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 mod test {
     use std::collections::HashMap;
 
+    use actix_web::{
+        body::{BoxBody, EitherBody},
+        dev::ServiceResponse,
+        http::{self},
+        test, web, App,
+    };
+    use actix_web_httpauth::middleware::HttpAuthentication;
     use base64::Engine;
     use cached::Cached;
     use chrono::Utc;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
     use crate::auth::{
-        decode_aws_cognito_token, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim,
-        Provider,
+        self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider,
     };
 
-    use super::{AuthError, Claim};
+    use super::AuthError;
 
     async fn setup(claim: AwsCognitoClaim) -> String {
         let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
@@ -387,12 +409,25 @@ mod test {
         }
     }
 
-    async fn run_test(token: String, validation: Validation) -> Result<Claim, AuthError> {
+    async fn run_test(
+        req: actix_http::Request,
+        validation: Validation,
+    ) -> ServiceResponse<EitherBody<BoxBody>> {
         let config = AuthConfiguration {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
         };
-        decode_aws_cognito_token(token.as_str(), config).await
+        let config_copy = config.clone();
+        let closure =
+            move |req, bearer_auth| auth::auth_validator(config_copy.clone(), req, bearer_auth);
+        let auth_middleware = HttpAuthentication::with_fn(closure);
+
+        let app = App::new()
+            .wrap(auth_middleware)
+            .route("/", web::get().to(|| async { "OK" }));
+        let app = test::init_service(app).await;
+        let resp = test::call_service(&app, req).await;
+        resp
     }
 
     #[tokio::test]
@@ -407,8 +442,13 @@ mod test {
         let claim = default_claim();
         let validation = validation("some-client", "some-iss");
         let token = setup(claim).await;
-        let res = run_test(token, validation).await;
-        assert!(res.is_ok());
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        println!("{:?}", res);
+        assert_eq!(200, res.status());
     }
 
     #[tokio::test]
@@ -417,11 +457,16 @@ mod test {
         claim.exp = Utc::now().timestamp() - 10000;
         let validation = validation("some-client", "some-iss");
         let token = setup(claim).await;
-        let res = run_test(token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::ExpiredSignature
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"ExpiredSignature\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -430,11 +475,16 @@ mod test {
         claim.token_use = "sig".to_owned();
         let validation = validation("some-client", "some-iss");
         let token = setup(claim).await;
-        let res = run_test(token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidToken
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"InvalidToken\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -443,11 +493,16 @@ mod test {
         let validation = validation("some-client", "some-iss");
         let token = setup(claim.clone()).await;
         let _ = setup(claim).await; // force a key change
-        let res = run_test(token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"InvalidSignature\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -455,11 +510,16 @@ mod test {
         let claim = default_claim();
         let validation = validation("some-other-client", "some-iss");
         let token = setup(claim).await;
-        let res = run_test(token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidAudience
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"InvalidAudience\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -467,11 +527,16 @@ mod test {
         let claim = default_claim();
         let validation = validation("some-client", "some-other-iss");
         let token = setup(claim).await;
-        let res = run_test(token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidIssuer
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"InvalidIssuer\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -490,10 +555,15 @@ mod test {
         let modified_base64_claim =
             base64::engine::general_purpose::STANDARD_NO_PAD.encode(claim_str_modified);
         let new_token = token.replace(base64_parts.get(1).unwrap(), modified_base64_claim.as_str());
-        let res = run_test(new_token, validation).await;
-        assert!(matches!(
-            res.err().unwrap(),
-            AuthError::JwtDecoding(e) if *e.kind() == jsonwebtoken::errors::ErrorKind::InvalidSignature
-        ));
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", new_token)))
+            .to_request();
+        let res = run_test(req, validation).await;
+        assert_eq!(401, res.status());
+        assert_eq!(
+            "Bearer error_description=\"InvalidSignature\"",
+            res.headers().get("www-authenticate").unwrap()
+        );
     }
 }
