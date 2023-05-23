@@ -633,10 +633,10 @@ impl Storage for ProjectDB {
 
     async fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
         // Find the oldest pending project.
-        let res = self.pool.get().await?.query_one("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
-            .await;
+        let res = self.pool.get().await?.query("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
+            .await?;
 
-        if let Ok(row) = res {
+        if let Some(row) = res.get(0) {
             let project_id: ProjectId = ProjectId(row.get(0));
             let version: Version = Version(row.get(1));
             Ok(Some((project_id, version)))
