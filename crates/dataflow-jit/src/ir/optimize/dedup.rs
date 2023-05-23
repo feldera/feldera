@@ -105,8 +105,8 @@ mod tests {
         let source = graph.source(u32);
         let distinct2 = graph.distinct(source, StreamLayout::Set(u32));
         let distinct3 = graph.distinct(source, StreamLayout::Set(u32));
-        let sink1 = graph.sink(distinct2);
-        let sink2 = graph.sink(distinct3);
+        let sink1 = graph.sink(distinct2, StreamLayout::Set(u32));
+        let sink2 = graph.sink(distinct3, StreamLayout::Set(u32));
 
         let constant = StreamLiteral::new(
             StreamLayout::Set(u32),
@@ -120,8 +120,8 @@ mod tests {
             StreamLayout::Set(u32),
         ));
         let empty2 = graph.add_node(ConstantStream::new(constant, StreamLayout::Set(u32)));
-        let sink3 = graph.sink(empty1);
-        let sink4 = graph.sink(empty2);
+        let sink3 = graph.sink(empty1, StreamLayout::Set(u32));
+        let sink4 = graph.sink(empty2, StreamLayout::Set(u32));
 
         graph.optimize();
 

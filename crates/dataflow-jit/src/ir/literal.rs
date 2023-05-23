@@ -57,6 +57,17 @@ impl StreamLiteral {
     pub fn is_empty(&self) -> bool {
         self.value.is_empty()
     }
+
+    pub fn consolidate(&mut self) {
+        self.value.consolidate();
+    }
+
+    pub fn to_consolidated(&self) -> Self {
+        Self {
+            layout: self.layout,
+            value: self.value.to_consolidated(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
@@ -73,8 +84,75 @@ impl StreamCollection {
         }
     }
 
+    pub const fn empty(layout: StreamLayout) -> StreamCollection {
+        match layout {
+            StreamLayout::Set(_) => Self::Set(Vec::new()),
+            StreamLayout::Map(..) => Self::Map(Vec::new()),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn consolidate(&mut self) {
+        match self {
+            Self::Set(set) => {
+                // FIXME: We really should be sorting by the criteria that the
+                // runtime rows will be sorted by so we have less work to do at
+                // runtime, but technically any sorting criteria works as long
+                // as it's consistent and allows us to deduplicate the stream
+                set.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+                // Deduplicate rows and combine their weights
+                set.dedup_by(|(a, weight_a), (b, weight_b)| {
+                    if a == b {
+                        *weight_b = weight_b
+                            .checked_add(*weight_a)
+                            .expect("weight overflow in constant stream");
+
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                // Remove all zero weights
+                set.retain(|&(_, weight)| weight != 0);
+            }
+
+            Self::Map(map) => {
+                // FIXME: We really should be sorting by the criteria that the
+                // runtime rows will be sorted by so we have less work to do at
+                // runtime, but technically any sorting criteria works as long
+                // as it's consistent and allows us to deduplicate the stream
+                map.sort_by(|(key_a, value_a, _), (key_b, value_b, _)| {
+                    key_a.cmp(key_b).then_with(|| value_a.cmp(value_b))
+                });
+
+                // Deduplicate rows and combine their weights
+                map.dedup_by(|(key_a, value_a, weight_a), (key_b, value_b, weight_b)| {
+                    if key_a == key_b && value_a == value_b {
+                        *weight_b = weight_b
+                            .checked_add(*weight_a)
+                            .expect("weight overflow in constant stream");
+
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                // Remove all zero weights
+                map.retain(|&(_, _, weight)| weight != 0);
+            }
+        }
+    }
+
+    pub fn to_consolidated(&self) -> Self {
+        let mut this = self.clone();
+        this.consolidate();
+        this
     }
 }
 

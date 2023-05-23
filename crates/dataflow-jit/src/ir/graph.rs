@@ -128,8 +128,8 @@ pub trait GraphExt {
         self.add_node(SourceMap::new(key_layout, value_layout))
     }
 
-    fn sink(&mut self, input: NodeId) -> NodeId {
-        self.add_node(Sink::new(input))
+    fn sink(&mut self, input: NodeId, input_layout: StreamLayout) -> NodeId {
+        self.add_node(Sink::new(input, input_layout))
     }
 
     fn filter(&mut self, input: NodeId, filter_fn: Function) -> NodeId {
@@ -220,6 +220,29 @@ impl Graph {
 
     pub fn graph_mut(&mut self) -> &mut Subgraph {
         &mut self.graph
+    }
+
+    /// Returns the node ids of every [`Source`] or [`SourceMap`] within the
+    /// graph
+    pub fn source_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
+        self.nodes()
+            .iter()
+            .filter_map(|(&node_id, node)| match node {
+                Node::Source(source) => Some((node_id, source.output_layout())),
+                Node::SourceMap(source_map) => Some((node_id, source_map.output_layout())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Returns the node ids of every [`Sink`] within the graph
+    pub fn sink_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
+        self.nodes()
+            .iter()
+            .filter_map(|(&node_id, node)| {
+                node.as_sink().map(|sink| (node_id, sink.input_layout()))
+            })
+            .collect()
     }
 }
 
@@ -436,7 +459,7 @@ mod tests {
             function::FunctionBuilder,
             graph::{Graph, GraphExt},
             literal::{NullableConstant, RowLiteral},
-            nodes::{Differentiate, Fold, IndexWith, Neg, Sink, Source, StreamLayout, Sum},
+            nodes::{Differentiate, Fold, IndexWith, Neg, Source, StreamLayout, Sum},
             types::{ColumnType, RowLayout, RowLayoutBuilder},
             validate::Validator,
         },
@@ -831,7 +854,7 @@ mod tests {
             },
         );
 
-        let sink = graph.add_node(Sink::new(map));
+        let sink = graph.sink(map, StreamLayout::Set(x_layout));
 
         let mut validator = Validator::new(graph.layout_cache().clone());
         validator.validate_graph(&graph).unwrap();

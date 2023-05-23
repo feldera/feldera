@@ -143,6 +143,10 @@ impl Source {
     pub const fn layout(&self) -> LayoutId {
         self.layout
     }
+
+    pub const fn output_layout(&self) -> StreamLayout {
+        StreamLayout::Set(self.layout)
+    }
 }
 
 impl DataflowNode for Source {
@@ -245,15 +249,23 @@ impl DataflowNode for SourceMap {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sink {
     input: NodeId,
+    input_layout: StreamLayout,
 }
 
 impl Sink {
-    pub fn new(input: NodeId) -> Self {
-        Self { input }
+    pub fn new(input: NodeId, input_layout: StreamLayout) -> Self {
+        Self {
+            input,
+            input_layout,
+        }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub const fn input_layout(&self) -> StreamLayout {
+        self.input_layout
     }
 }
 
@@ -276,15 +288,21 @@ impl DataflowNode for Sink {
         None
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(self.input_layout, inputs[0]);
+    }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn map_layouts<F>(&self, _map: &mut F)
+    fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId),
     {
+        self.input_layout.map_layouts(map);
     }
 
-    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.input_layout.remap_layouts(mappings);
+    }
 }

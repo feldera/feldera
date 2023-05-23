@@ -155,7 +155,7 @@ impl Subgraph {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ir::{ColumnType, Graph, GraphExt, RowLayoutBuilder},
+        ir::{nodes::StreamLayout, ColumnType, Graph, GraphExt, RowLayoutBuilder},
         utils,
     };
 
@@ -173,7 +173,7 @@ mod tests {
         graph.source(value);
 
         let empty = graph.empty_set(value);
-        graph.sink(empty);
+        graph.sink(empty, StreamLayout::Set(value));
 
         graph.optimize();
 
