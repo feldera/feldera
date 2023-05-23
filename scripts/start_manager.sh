@@ -4,6 +4,9 @@ THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/sql-to-dbsp-compiler"
 MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
+if [[ -z "${RUST_BUILD_PROFILE+set}" ]]; then
+    RUST_BUILD_PROFILE='--release'
+fi
 
 # if [ "$#" -lt 1 ]; then
 #    echo "Usage '$0 <working_directory_path> <bind address (optional)>'"
@@ -37,8 +40,8 @@ else
     DB_CONNECTION_STRING="--db-connection-string=postgresql://${PGUSER}@localhost"
 fi
 
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build --release $PG_EMBED
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --release $PG_EMBED -- \
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
     --working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
