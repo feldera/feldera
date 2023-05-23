@@ -18,7 +18,6 @@ regex = { version = "1.6.0" }
 time = { version = "0.3.14", features = ["formatting"] }
 paste = { version = "1.0.9" }
 bincode = { version = "2.0.0-rc.2" }
-arc-swap = "1.5.1"
 
 rand = { version = "0.8", features = ["small_rng"] }
 clap = { version = "3.2.8", features = ["derive", "env"] }

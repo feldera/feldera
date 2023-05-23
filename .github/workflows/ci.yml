@@ -1,0 +1,50 @@
+# .github/workflows/ci.yml
+
+name: Run Earthly CI
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: "same_content_newer"
+          skip_after_successful_duplicate: "true"
+          do_not_skip: '["workflow_dispatch", "schedule"]'
+  build:
+    runs-on: [self-hosted, skylake40]
+    needs: [pre_job]
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions/setup-earthly@v1
+        with:
+          version: v0.7.0
+      - uses: actions/checkout@v3
+        # By default a merge commit is checked out. If you look at the SHA that
+        # is checked out, it doesn't match your local commit SHA. Rather it's
+        # the SHA of a merge commit (your branch + base branch). So for
+        # pull_request actions it won't match the commit ID on the branch. This
+        # is confusing for storing benchmark results because the commit ID we
+        # find during `git rev-parse` exists nowhere in the history. Since we
+        # don't do merge commits anyways, we make sure we check out the head
+        # commit (which will exist in the history).
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
+      - name: Earthly version
+        run: earthly --version
+      - name: Run CI
+        run: earthly -P +all-tests

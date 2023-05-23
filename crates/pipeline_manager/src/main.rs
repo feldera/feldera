@@ -406,6 +406,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
         match db_error {
             DBError::UnknownProject(_) => HttpResponse::NotFound(),
             DBError::DuplicateProjectName(_) => HttpResponse::Conflict(),
+            DBError::DuplicateName => HttpResponse::Conflict(),
             DBError::OutdatedProjectVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownConfig(_) => HttpResponse::NotFound(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
