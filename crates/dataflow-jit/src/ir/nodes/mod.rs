@@ -79,6 +79,14 @@ impl Node {
             None
         }
     }
+
+    pub const fn as_sink(&self) -> Option<&Sink> {
+        if let Self::Sink(sink) = self {
+            Some(sink)
+        } else {
+            None
+        }
+    }
 }
 
 // TODO: Fully flesh this out, make it useful

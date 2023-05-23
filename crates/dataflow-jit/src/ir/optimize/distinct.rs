@@ -272,7 +272,7 @@ mod tests {
             builder.build()
         });
         let distinct_2 = graph.distinct(filtered, StreamLayout::Set(u32));
-        let sink = graph.sink(distinct_2);
+        let sink = graph.sink(distinct_2, StreamLayout::Set(u32));
 
         graph.optimize();
 
