@@ -31,3 +31,6 @@ pub use circuit::{
 pub use operator::{CollectionHandle, InputHandle, OutputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};
 pub use trace::{DBData, DBTimestamp, DBWeight};
+
+#[cfg(doc)]
+pub mod tutorial;
