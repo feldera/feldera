@@ -32,10 +32,6 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=dbsp_pipeline_manager --no-default-features
 COPY . .
-RUN rm /app/crates/dbsp/benches/ldbc-graphalytics.rs \
-    && rm /app/crates/dbsp/benches/gdelt.rs \
-    && rm /app/crates/nexmark/benches/nexmark.rs \
-    && rm /app/crates/nexmark/benches/nexmark-gen.rs
 RUN /root/.cargo/bin/cargo build --release --bin=dbsp_pipeline_manager --no-default-features
 
 # Java build can be performed in parallel

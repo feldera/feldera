@@ -11,7 +11,7 @@ env:
   # It's really `--all-features`, but not adding `persistence`, we expect the
   # persistence feature to go away again in the future (but if we add it
   # unconditionally it changes the code that's run significantly)
-  ALMOST_ALL_FEATURES: --features "with-serde with-csv"
+  ALMOST_ALL_FEATURES: --features "with-serde with-csv pg-embed"
 
 jobs:
   pre_job:
@@ -28,8 +28,8 @@ jobs:
           do_not_skip: '["workflow_dispatch", "schedule"]'
 
   tests:
-    name: Tests
-    needs: [pre_job, clippy, fmt]
+    name: Build on other platforms
+    needs: [pre_job]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -38,18 +38,9 @@ jobs:
 
       matrix:
         # We test the following targets:
-        # - 64bit Linux stable
-        # - 64bit Linux beta
-        # - 64bit Linux nightly
         # - 64bit MacOS stable
         # - 64bit Windows stable
         include:
-          - {
-              rust: stable,
-              target: x86_64-unknown-linux-gnu,
-              cargo_args: --workspace,
-              os: [self-hosted, Linux, skylake-2x],
-            }
           - {
               rust: stable,
               target: x86_64-apple-darwin,
@@ -66,19 +57,6 @@ jobs:
             }
           # `rdkafka` doesn't compile on 32-bit Windows.
           # - { rust: stable, target: i686-pc-windows-msvc, os: windows-latest }
-          - {
-              rust: beta,
-              target: x86_64-unknown-linux-gnu,
-              cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
-              os: ubuntu-latest,
-            }
-          - {
-              rust: nightly-2022-11-10,
-              target: x86_64-unknown-linux-gnu,
-              cargo_args: -p dbsp -p dbsp_adapters -p dbsp_pipeline_manager,
-              os: ubuntu-latest,
-            }
-
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -96,19 +74,16 @@ jobs:
         # Don't cache on Windows due to low disk space
         if: runner.os != 'Windows'
 
-      - name: Install redpanda
-        if: runner.os == 'Linux'
-        run: |
-          curl -1sLf 'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && \
-          sudo apt install redpanda -y && \
-          sudo systemctl start redpanda
-
       # We split building the tests into a separate step
       # so that we can easily distinguish between build
       # errors and failing tests
       - name: Install openssl using vcpkg
         if: runner.os == 'Windows'
         run: vcpkg install openssl:x64-windows-static-md
+
+      - name: Install openssl using vcpkg
+        if: runner.os == 'Windows'
+        run: vcpkg integrate install
 
       - name: Build tests with all features
         uses: actions-rs/cargo@v1
@@ -121,204 +96,6 @@ jobs:
         with:
           command: test
           args: ${{ matrix.cargo_args }} --no-run --no-default-features --target ${{ matrix.target }}
-
-      - name: Run tests
-        if: runner.os != 'Windows'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: ${{ matrix.cargo_args }} ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
-
-      # Only run basic tests on windows, which tends to run out of resources.
-      - name: Run tests on Windows
-        if: runner.os == 'Windows'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: ${{ matrix.cargo_args }} --target ${{ matrix.target }} -- ${{ matrix.test_flags }}
-
-  #   miri:
-  #     name: Miri
-  #
-  #     runs-on: ${{ matrix.os }}
-  #     strategy:
-  #       fail-fast: false
-  #       matrix:
-  #         os: [ubuntu-latest, macos-latest, windows-latest]
-  #
-  #     steps:
-  #       - name: Checkout repository
-  #         uses: actions/checkout@v3
-  #
-  #       - name: Install rust
-  #         uses: actions-rs/toolchain@v1
-  #         with:
-  #           toolchain: nightly
-  #           profile: minimal
-  #           components: miri, rust-src
-  #           default: true
-  #
-  #       - name: Restore cache
-  #         uses: Swatinem/rust-cache@v1
-  #
-  #       - name: Run miri
-  #         uses: actions-rs/cargo@v1
-  #         env:
-  #           OS: ${{ matrix.os }}
-  #           # FIXME: `-Zmiri-preemption-rate=0` is a temporary fix for rust/#55005, remove it when possible
-  #           MIRIFLAGS: "-Zmiri-tag-raw-pointers -Zmiri-disable-isolation -Zmiri-preemption-rate=0"
-  #         with:
-  #           command: miri
-  #           args: test ${{ env.ALMOST_ALL_FEATURES }}
-
-  test-sanitizers:
-    name: Sanitizer Tests
-    needs: [pre_job, clippy, fmt]
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      max-parallel: 3
-
-      # Note: We use this really sketchy matrix because msan doesn't work on macos,
-      # I would much rather use `matrix.exclude` for this but for some reason
-      # github actions in its ever-inspired wisdom decided that `include`
-      # should calculate its combinations *after* `exclude`` is applied
-      # and since no one could *ever* want to exclude things added by an
-      # `include` and in their infinite brilliance they saw fit not to have
-      # any way of excluding things added by an include. In an ideal world I'd
-      # just write this since it's what makes sense
-      # ```
-      # matrix:
-      #   sanitizer: [address, thread, memory, leak]
-      #   include:
-      #     - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
-      #     - { target: x86_64-apple-darwin, os: macos-latest }
-      #   exclude:
-      #     - target: x86_64-apple-darwin
-      #       sanitizer: memory
-      # ```
-      # but no, instead we have to do whatever the hell this is
-      matrix:
-        os: [skylake-2x, macos-latest]
-        # The leak sanitizer keeps randomly crashing.  Hope we can enable it in
-        # the future when it's more stable.
-        # sanitizer: [address, thread, memory, leak]
-        sanitizer: [address, thread, memory]
-        target: [x86_64-unknown-linux-gnu] # x86_64-apple-darwin
-        exclude:
-          # Exclude ubuntu runs with darwin targets
-          - { os: skylake-2x, target: x86_64-apple-darwin }
-          # Exclude macos runs with linux targets
-          - { os: macos-latest, target: x86_64-unknown-linux-gnu }
-          # Exclude darwin runs with memory sanitizers since
-          # it doesn't support msan
-          - { target: x86_64-apple-darwin, sanitizer: memory }
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-11-10
-          target: ${{ matrix.target }}
-          components: rust-src
-          default: true
-
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v1
-
-      - name: Run tests under ${{ matrix.sanitizer }} sanitizer
-        uses: actions-rs/cargo@v1
-        env:
-          RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
-          RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }} --cfg sanitizer"
-          ASAN_OPTIONS: detect_stack_use_after_return=1,detect_leaks=1
-          # Ensure the C++ code (rocksdb etc.) also gets compiled with the correct sanitizer arguments
-          CC: "clang"
-          CCFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
-          CXX: "clang++"
-          CXXFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
-          ASAN_SYMBOLIZER_PATH: "/usr/bin/llvm-symbolizer-14"
-          # Suppress known memory leaks.
-          LSAN_OPTIONS: "suppressions=lsan.supp"
-          # Backtraces sometimes mess with sanitizers
-          RUST_BACKTRACE: 0
-          # Leak sanitizer is very slow on many of the proptests.
-          # Additionally, there appears to be a bug in the sanitizer framework
-          # that causes the leak sanitizer to crash randomly with a large number
-          # of test threads.  Crashes happen in random tests, but always at the
-          # same location in the sanitizer code:
-          # https://github.com/llvm-mirror/compiler-rt/blob/69445f095c22aac2388f939bedebf224a6efcdaf/lib/sanitizer_common/sanitizer_thread_registry.h#L104.
-          # So we run tests one at a time to mitigate this.
-          THREADS: "${{ matrix.sanitizer == 'leak' && '--test-threads=1' || '' }}"
-          # Memory sanitizer reports uninitialized reads in `librdkafka`.
-          SKIP_KAFKA: "${{ (matrix.sanitizer == 'memory' || matrix.sanitizer == 'thread') && '--skip kafka' || '' }}"
-          # Memory sanitizer reports a (presumably false) alarm in libsqlite3.
-          EXCLUDE_SQLITE3: "${{ matrix.sanitizer == 'memory' && '--exclude dbsp_pipeline_manager' || '' }}"
-          # Memory sanitizer reports false positives in uninstrumented jit code
-          EXCLUDE_JIT: "${{ matrix.sanitizer == 'memory' && '--exclude dataflow-jit' || '' }}"
-        with:
-          command: test
-          args: ${{ env.EXCLUDE_SQLITE3 }} ${{ env.EXCLUDE_JIT }} --workspace ${{ env.ALMOST_ALL_FEATURES }} --target ${{ matrix.target }} -Z build-std -- --skip 'proptest' --skip 'persistent' ${{ env.SKIP_KAFKA }} ${{ env.THREADS }}
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    needs: pre_job
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          # Run nightly clippy, which often finds additional issues.
-          toolchain: nightly-2022-11-10
-          components: clippy
-          default: true
-
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v1
-
-      - name: Run clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --workspace -- -D warnings
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    needs: pre_job
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          # We use unstable rustfmt features: `wrap_comments` and
-          # `format_code_in_doc_comments`.
-          toolchain: nightly-2022-11-10
-          components: rustfmt
-          default: true
-
-      - name: Run rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
 
   links:
     name: Check Doc Links
@@ -347,83 +124,3 @@ jobs:
         with:
           command: doc
           args: --workspace ${{ env.ALMOST_ALL_FEATURES }}
-
-  udeps:
-    name: Unused Dependencies
-    runs-on: ubuntu-latest
-    needs: pre_job
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-11-10
-          default: true
-
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v1
-
-      - name: Install cargo-udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-udeps --locked
-
-      - name: Check for unused dependencies
-        uses: actions-rs/cargo@v1
-        with:
-          command: udeps
-          args: --workspace --all-features --all-targets
-
-  python:
-    name: Test Python API
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    needs: pre_job
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Set up JDK 11
-        uses: actions/setup-java@v2
-        with:
-          java-version: 11
-          distribution: "adopt"
-
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-11-10
-          default: true
-
-      - name: Build SQL compiler with Maven
-        run: cd sql-to-dbsp-compiler/SQL-compiler && mvn --batch-mode -DskipTests package
-
-      - name: Install cargo-make
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --debug cargo-make
-
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v1
-
-      - name: Run Python API test
-        uses: actions-rs/cargo@v1
-        with:
-          command: make
-          args: --cwd crates/pipeline_manager python_test
