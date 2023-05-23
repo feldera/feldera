@@ -255,6 +255,7 @@ fn main() -> Result<()> {
                     assert_eq!(zs.len(), 16595494);
                 }
             });
+            Ok(())
         })
         .unwrap()
         .0;

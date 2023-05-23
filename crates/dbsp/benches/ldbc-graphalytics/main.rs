@@ -203,6 +203,7 @@ fn main() {
 
                 Args::ListDatasets { .. } | Args::ListDownloaded { .. } => unreachable!(),
             }
+            Ok(())
         })
         .unwrap().0;
 

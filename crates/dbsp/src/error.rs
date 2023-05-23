@@ -1,4 +1,5 @@
 use crate::{RuntimeError, SchedulerError};
+use anyhow::Error as AnyError;
 use std::{
     fmt::{Display, Error as FmtError, Formatter},
     io::Error as IOError,
@@ -9,6 +10,7 @@ pub enum Error {
     Scheduler(SchedulerError),
     Runtime(RuntimeError),
     IO(IOError),
+    Constructor(AnyError),
     Custom(String),
 }
 
@@ -23,6 +25,9 @@ impl Display for Error {
             }
             Self::IO(error) => {
                 write!(f, "IO error: '{error}'")
+            }
+            Self::Constructor(error) => {
+                write!(f, "construction error: '{error}'")
             }
             Self::Custom(error) => f.write_str(error),
         }

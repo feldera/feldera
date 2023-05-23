@@ -287,6 +287,7 @@ mod test {
             output1
                 .index()
                 .apply2(&output2, |o1, o2| assert_eq!(o1, o2));
+            Ok(())
         })
         .unwrap()
         .0;

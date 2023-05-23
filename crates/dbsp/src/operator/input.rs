@@ -952,6 +952,7 @@ mod test {
         zset, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime,
         UpsertHandle,
     };
+    use anyhow::Result as AnyResult;
     use std::iter::once;
 
     fn input_batches() -> Vec<OrdZSet<usize, isize>> {
@@ -981,7 +982,7 @@ mod test {
     fn input_test_circuit(
         circuit: &RootCircuit,
         nworkers: usize,
-    ) -> InputHandle<OrdZSet<usize, isize>> {
+    ) -> AnyResult<InputHandle<OrdZSet<usize, isize>>> {
         let (stream, handle) = circuit.add_input_stream::<OrdZSet<usize, isize>>();
 
         let mut expected_batches = input_batches()
@@ -1000,7 +1001,7 @@ mod test {
             }
         });
 
-        handle
+        Ok(handle)
     }
 
     #[test]
@@ -1057,7 +1058,7 @@ mod test {
         input_test_mt(4);
     }
 
-    fn zset_test_circuit(circuit: &RootCircuit) -> CollectionHandle<usize, isize> {
+    fn zset_test_circuit(circuit: &RootCircuit) -> AnyResult<CollectionHandle<usize, isize>> {
         let (stream, handle) = circuit.add_input_zset::<usize, isize>();
 
         let mut expected_batches = input_batches()
@@ -1070,7 +1071,7 @@ mod test {
             }
         });
 
-        handle
+        Ok(handle)
     }
 
     #[test]
@@ -1163,7 +1164,9 @@ mod test {
             .collect()
     }
 
-    fn indexed_zset_test_circuit(circuit: &RootCircuit) -> CollectionHandle<usize, (usize, isize)> {
+    fn indexed_zset_test_circuit(
+        circuit: &RootCircuit,
+    ) -> AnyResult<CollectionHandle<usize, (usize, isize)>> {
         let (stream, handle) = circuit.add_input_indexed_zset::<usize, usize, isize>();
 
         let mut expected_batches = input_indexed_batches()
@@ -1175,7 +1178,7 @@ mod test {
             }
         });
 
-        handle
+        Ok(handle)
     }
 
     #[test]
@@ -1245,7 +1248,7 @@ mod test {
         ]
     }
 
-    fn set_test_circuit(circuit: &RootCircuit) -> UpsertHandle<usize, bool> {
+    fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, bool>> {
         let (stream, handle) = circuit.add_input_set::<usize, isize>();
 
         let mut expected_batches = output_set_updates().into_iter();
@@ -1256,7 +1259,7 @@ mod test {
             }
         });
 
-        handle
+        Ok(handle)
     }
 
     #[test]
@@ -1338,7 +1341,7 @@ mod test {
         ]
     }
 
-    fn map_test_circuit(circuit: &RootCircuit) -> UpsertHandle<usize, Option<usize>> {
+    fn map_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, Option<usize>>> {
         let (stream, handle) = circuit.add_input_map::<usize, usize, isize>();
 
         let mut expected_batches = output_map_updates().into_iter();
@@ -1349,7 +1352,7 @@ mod test {
             }
         });
 
-        handle
+        Ok(handle)
     }
 
     #[test]

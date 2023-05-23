@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         // Count the number of nodes with each out-degree.
         let distribution = degrees.map(|(_src, count)| *count).weighted_count();
 
-        (hedges, degrees.output(), distribution.output())
+        Ok((hedges, degrees.output(), distribution.output()))
     })
     .unwrap();
 

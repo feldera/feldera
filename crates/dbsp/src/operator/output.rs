@@ -288,7 +288,7 @@ mod test {
             let (zset, zset_handle) = circuit.add_input_zset::<u64, isize>();
             let zset_output = zset.output();
 
-            (zset_handle, zset_output)
+            Ok((zset_handle, zset_output))
         })
         .unwrap();
 
