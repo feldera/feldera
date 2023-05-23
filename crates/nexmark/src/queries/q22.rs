@@ -115,7 +115,7 @@ mod tests {
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 

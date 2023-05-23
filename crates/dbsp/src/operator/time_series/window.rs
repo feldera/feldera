@@ -300,6 +300,7 @@ mod test {
             index1
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+            Ok(())
         })
         .unwrap()
         .0;
@@ -363,6 +364,7 @@ mod test {
             index1
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+            Ok(())
         })
         .unwrap().0;
 
@@ -442,6 +444,7 @@ mod test {
             index1
                 .window(&bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+            Ok(())
         })
         .unwrap().0;
 
@@ -470,7 +473,7 @@ mod test {
                     ()
                 });
 
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 

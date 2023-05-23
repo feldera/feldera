@@ -309,7 +309,7 @@ pub mod tests {
             stream.inspect(move |data: &OrdZSet<Event, isize>| {
                 assert_eq!(data, &expected_zset);
             });
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 

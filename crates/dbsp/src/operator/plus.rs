@@ -45,6 +45,7 @@ where
     ///     }));
     ///     // Compute pairwise sums of values in the stream; the output stream will contain zeros.
     ///     source1.plus(&source2).inspect(|n| assert_eq!(*n, 0));
+    ///     Ok(())
     /// })
     /// .unwrap()
     /// .0;
@@ -238,6 +239,7 @@ mod test {
                 res
             }));
             source1.plus(&source2).inspect(|n| assert_eq!(*n, 100));
+            Ok(())
         })
         .unwrap()
         .0;
@@ -291,6 +293,7 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             build_plus_circuit(circuit);
             build_minus_circuit(circuit);
+            Ok(())
         })
         .unwrap()
         .0;
@@ -313,6 +316,7 @@ mod test {
                 &source3,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
+            Ok(())
         })
         .unwrap()
         .0;
@@ -336,6 +340,7 @@ mod test {
                 &source4,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
+            Ok(())
         })
         .unwrap()
         .0;
@@ -369,6 +374,7 @@ mod test {
                 &source4,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
+            Ok(())
         })
         .unwrap()
         .0;

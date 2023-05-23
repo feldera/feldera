@@ -97,14 +97,12 @@ mod test {
                 .neg()
                 .plus(&source)
                 .inspect(|s| assert_eq!(s, &<OrdZSet<_, _> as HasZero>::zero()));
-            source
+            Ok(source)
         };
 
-        let circuit = RootCircuit::build(move |circuit| {
-            build_circuit(circuit);
-        })
-        .unwrap()
-        .0;
+        let circuit = RootCircuit::build(move |circuit| build_circuit(circuit))
+            .unwrap()
+            .0;
 
         for _ in 0..100 {
             circuit.step().unwrap();

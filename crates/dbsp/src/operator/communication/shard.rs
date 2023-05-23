@@ -294,6 +294,7 @@ mod tests {
                             assert_eq!(batch.len(), 0);
                         }
                     });
+                Ok(())
             })
             .unwrap()
             .0;

@@ -49,8 +49,9 @@ use crate::{
     circuit_cache_key,
     operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
-    Runtime,
+    Error as DBSPError, Runtime,
 };
+use anyhow::Error as AnyError;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell, RefMut, UnsafeCell},
@@ -1455,6 +1456,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// let plus = source.apply2(&z1_output, |n1: &usize, n2: &usize| n1 + n2);
     /// // Connect the output of `+` as input to `z1`.
     /// z1_feedback.connect(&plus);
+    /// Ok(())
     /// # });
     /// ```
     fn add_feedback<I, O, Op>(
@@ -1574,6 +1576,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     ///         })
     ///         .unwrap();
     ///     fact.inspect(|n| eprintln!("Output: {}", n));
+    ///     Ok(())
     /// });
     /// ```
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
@@ -1883,12 +1886,12 @@ impl RootCircuit {
     ///         Inspect::new(|n| println!("New output: {}", n)),
     ///         &source_stream,
     ///     );
+    ///     Ok(())
     /// });
     /// ```
-    // TODO: Allow `constructor` to fail.
-    pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), SchedulerError>
+    pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), DBSPError>
     where
-        F: FnOnce(&mut RootCircuit) -> T,
+        F: FnOnce(&mut RootCircuit) -> Result<T, AnyError>,
     {
         Self::build_with_scheduler::<F, T, DynamicScheduler>(constructor)
     }
@@ -1898,15 +1901,13 @@ impl RootCircuit {
     /// Similar to [`build`](`Self::build`), but with a user-specified
     /// [`Scheduler`] implementation that decides the order in which to evaluate
     /// operators.  (This scheduler does not schedule processes or threads.)
-    pub fn build_with_scheduler<F, T, S>(
-        constructor: F,
-    ) -> Result<(CircuitHandle, T), SchedulerError>
+    pub fn build_with_scheduler<F, T, S>(constructor: F) -> Result<(CircuitHandle, T), DBSPError>
     where
-        F: FnOnce(&mut RootCircuit) -> T,
+        F: FnOnce(&mut RootCircuit) -> Result<T, AnyError>,
         S: Scheduler + 'static,
     {
         let mut circuit = RootCircuit::new();
-        let res = constructor(&mut circuit);
+        let res = constructor(&mut circuit).map_err(DBSPError::Constructor)?;
         let executor =
             Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<RootCircuit>>;
 
@@ -4187,8 +4188,9 @@ mod tests {
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
-        Circuit, RootCircuit,
+        Circuit, Error as DBSPError, RootCircuit,
     };
+    use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
 
     // Compute the sum of numbers from 0 to 99.
@@ -4220,6 +4222,7 @@ mod tests {
             let integrator = source.integrate();
             integrator.inspect(|n| println!("{}", n));
             integrator.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
+            Ok(())
         })
         .unwrap()
         .0;
@@ -4269,6 +4272,7 @@ mod tests {
                 .apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2)
                 .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
             z1_feedback.connect(&plus);
+            Ok(())
         })
         .unwrap()
         .0;
@@ -4334,6 +4338,7 @@ mod tests {
                 })
                 .unwrap();
             fact.inspect(move |n| actual_output_clone.borrow_mut().push(*n));
+            Ok(())
         })
         .unwrap()
         .0;
@@ -4354,6 +4359,14 @@ mod tests {
             1
         } else {
             n * my_factorial(n - 1)
+        }
+    }
+
+    #[test]
+    fn init_circuit_constructor_error() {
+        match RootCircuit::build(|_circuit| Err::<(), _>(anyhow!("constructor failed"))) {
+            Err(DBSPError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
+            _ => panic!(),
         }
     }
 }

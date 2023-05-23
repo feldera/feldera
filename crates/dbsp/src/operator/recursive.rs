@@ -245,6 +245,7 @@ where
     ///     labels.inspect(move |ls| {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());
     ///     });
+    ///     Ok(())
     /// })
     /// .unwrap().0;
     ///
@@ -351,6 +352,7 @@ mod test {
             paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 
@@ -423,6 +425,7 @@ mod test {
             reverse_paths.map(|(x, y)| (*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_,_>| {
                 assert_eq!(*ps, outputs2.next().unwrap());
             });
+            Ok(())
         })
         .unwrap().0;
 

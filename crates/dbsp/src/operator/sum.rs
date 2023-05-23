@@ -170,6 +170,7 @@ mod test {
         // Allow `Sum` to consume all streams by value.
         let circuit = RootCircuit::build(move |circuit| {
             build_circuit(circuit);
+            Ok(())
         })
         .unwrap()
         .0;
@@ -186,6 +187,7 @@ mod test {
                 &source1,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
+            Ok(())
         })
         .unwrap()
         .0;
@@ -212,6 +214,7 @@ mod test {
                 &source3,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             );
+            Ok(())
         })
         .unwrap()
         .0;

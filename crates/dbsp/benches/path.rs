@@ -116,6 +116,7 @@ fn main() {
                     println!("paths: {}", zs.len())
                 }
             });
+            Ok(())
         })
         .unwrap()
         .0;

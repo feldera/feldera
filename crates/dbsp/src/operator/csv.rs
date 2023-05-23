@@ -129,6 +129,7 @@ mod test {
                 .inspect(move |data: &OrdZSet<(usize, usize, usize), isize>| {
                     assert_eq!(data, &expected)
                 });
+            Ok(())
         })
         .unwrap()
         .0;

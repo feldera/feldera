@@ -92,7 +92,7 @@ mod tests {
                         assert_eq!(watermark, &expected_watermarks.next().unwrap());
                     }
                 });
-            handle
+            Ok(handle)
         })
         .unwrap();
 

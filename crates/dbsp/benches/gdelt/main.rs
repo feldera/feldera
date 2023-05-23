@@ -125,7 +125,7 @@ fn main() {
                 }
             });
 
-        handle
+        Ok(handle)
     })
     .unwrap();
 

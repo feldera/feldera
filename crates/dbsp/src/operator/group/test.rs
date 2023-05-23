@@ -7,6 +7,7 @@ use crate::{
     },
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
 };
+use anyhow::Result as AnyResult;
 use proptest::{collection::vec, prelude::*};
 
 fn input_trace(
@@ -127,43 +128,43 @@ where
 
 fn topk_test_circuit(
     circuit: &mut RootCircuit,
-) -> (
+) -> AnyResult<(
     CollectionHandle<i32, (i32, i32)>,
     OutputHandle<OrdIndexedZSet<i32, i32, i32>>,
     OutputHandle<OrdIndexedZSet<i32, i32, i32>>,
-) {
+)> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
 
     let topk_asc_handle = input_stream.topk_asc(5).integrate().output();
     let topk_desc_handle = input_stream.topk_desc(5).integrate().output();
 
-    (input_handle, topk_asc_handle, topk_desc_handle)
+    Ok((input_handle, topk_asc_handle, topk_desc_handle))
 }
 
 fn lag_test_circuit(
     circuit: &mut RootCircuit,
-) -> (
+) -> AnyResult<(
     CollectionHandle<i32, (i32, i32)>,
     OutputHandle<OrdIndexedZSet<i32, (i32, Option<i32>), i32>>,
-) {
+)> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
 
     let lag_handle = input_stream.lag(3, |v| v.cloned()).integrate().output();
 
-    (input_handle, lag_handle)
+    Ok((input_handle, lag_handle))
 }
 
 fn lead_test_circuit(
     circuit: &mut RootCircuit,
-) -> (
+) -> AnyResult<(
     CollectionHandle<i32, (i32, i32)>,
     OutputHandle<OrdIndexedZSet<i32, (i32, Option<i32>), i32>>,
-) {
+)> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
 
     let lead_handle = input_stream.lead(3, |v| v.cloned()).integrate().output();
 
-    (input_handle, lead_handle)
+    Ok((input_handle, lead_handle))
 }
 
 proptest! {

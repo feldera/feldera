@@ -459,7 +459,7 @@ mod test {
             let (input, input_handle) = circuit.add_input_stream::<TestStruct>();
             let output_handle = input.output();
 
-            (input_handle, output_handle)
+            Ok((input_handle, output_handle))
         })
         .unwrap();
 
@@ -536,11 +536,11 @@ mod test {
                 let set_output = set.output();
                 let map_output = map.output();
 
-                (
+                Ok((
                     (zset_handle, zset_output),
                     (set_handle, set_output),
                     (map_handle, map_output),
-                )
+                ))
             })
             .unwrap();
 

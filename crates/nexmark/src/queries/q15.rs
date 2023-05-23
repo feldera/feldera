@@ -644,7 +644,7 @@ mod tests {
                 }
             });
 
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 

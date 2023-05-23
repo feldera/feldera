@@ -294,8 +294,7 @@ impl FraudBenchmark {
                         is_fraud: tran.is_fraud,
                     },
                 );
-
-            (hdemographics, htransactions)
+            Ok((hdemographics, htransactions))
         })
         .unwrap();
 

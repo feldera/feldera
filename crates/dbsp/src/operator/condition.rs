@@ -238,6 +238,7 @@ mod test {
                 assert_eq!(r, &zset! { 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1})
             });
             reachable2.inspect(|r| assert_eq!(r, &zset! { 1 => 1, 2 => 1, 4 => 1, 5 => 1, 6 => 1}));
+            Ok(())
         })
         .unwrap()
         .0;

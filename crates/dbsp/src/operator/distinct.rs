@@ -727,6 +727,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use anyhow::Result as AnyResult;
+
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -813,6 +815,7 @@ mod test {
                     ))
                 })
                 .unwrap();
+            Ok(())
         })
         .unwrap()
         .0;
@@ -853,7 +856,7 @@ mod test {
                     }
                 });
 
-            input_handle
+            Ok(input_handle)
         })
         .unwrap();
 
@@ -931,7 +934,7 @@ mod test {
     fn distinct_test_circuit(
         circuit: &mut RootCircuit,
         inputs: Vec<TestZSet>,
-    ) -> (OutputHandle<TestZSet>, OutputHandle<TestZSet>) {
+    ) -> AnyResult<(OutputHandle<TestZSet>, OutputHandle<TestZSet>)> {
         let mut inputs = inputs.into_iter();
 
         let input = circuit.add_source(Generator::new(Box::new(move || {
@@ -945,13 +948,13 @@ mod test {
         let distinct_inc = input.distinct().output();
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
-        (distinct_inc, distinct_noninc)
+        Ok((distinct_inc, distinct_noninc))
     }
 
     fn distinct_indexed_test_circuit(
         circuit: &mut RootCircuit,
         inputs: Vec<TestIndexedZSet>,
-    ) -> (OutputHandle<TestIndexedZSet>, OutputHandle<TestIndexedZSet>) {
+    ) -> AnyResult<(OutputHandle<TestIndexedZSet>, OutputHandle<TestIndexedZSet>)> {
         let mut inputs = inputs.into_iter();
 
         let input = circuit.add_source(Generator::new(Box::new(move || {
@@ -965,13 +968,13 @@ mod test {
         let distinct_inc = input.distinct().output();
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
-        (distinct_inc, distinct_noninc)
+        Ok((distinct_inc, distinct_noninc))
     }
 
     fn distinct_indexed_nested_test_circuit(
         circuit: &mut RootCircuit,
         inputs: Vec<Vec<TestIndexedZSet>>,
-    ) {
+    ) -> AnyResult<()> {
         let mut inputs = inputs.into_iter();
 
         circuit
@@ -1021,6 +1024,7 @@ mod test {
                 ))
             })
             .unwrap();
+        Ok(())
     }
 
     proptest! {

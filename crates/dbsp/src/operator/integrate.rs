@@ -60,6 +60,7 @@ where
     ///         assert_eq!(*n, counter2);
     ///         counter2 += 1;
     ///     });
+    ///     Ok(())
     /// })
     /// .unwrap()
     /// .0;
@@ -184,6 +185,7 @@ mod test {
                 counter += 1;
                 assert_eq!(*n, counter);
             });
+            Ok(())
         })
         .unwrap()
         .0;
@@ -224,6 +226,7 @@ mod test {
                 assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
                 counter3 += 1;
             });
+            Ok(())
         })
         .unwrap()
         .0;
@@ -280,6 +283,7 @@ mod test {
                 })
                 .unwrap();
             integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()));
+            Ok(())
         })
         .unwrap()
         .0;
