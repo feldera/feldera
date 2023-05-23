@@ -1,6 +1,8 @@
 name: Rust
 
-on: [push, pull_request]
+on:
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   CARGO_TERM_COLOR: always
