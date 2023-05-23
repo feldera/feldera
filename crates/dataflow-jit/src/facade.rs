@@ -48,8 +48,12 @@ impl<'a> Demands<'a> {
 pub struct DbspCircuit {
     jit: JitHandle,
     runtime: DBSPHandle,
-    inputs: BTreeMap<NodeId, (RowInput, StreamLayout)>,
-    outputs: BTreeMap<NodeId, (RowOutput, StreamLayout)>,
+    /// The input handles of all source nodes, will be `None` if the source is
+    /// unused
+    inputs: BTreeMap<NodeId, (Option<RowInput>, StreamLayout)>,
+    /// The output handles of all sink nodes, will be `None` if the sink is
+    /// unreachable
+    outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
     csv_demands: BTreeMap<LayoutId, FuncId>,
     layout_cache: NativeLayoutCache,
 }
@@ -62,6 +66,9 @@ impl DbspCircuit {
         config: CodegenConfig,
         demands: Demands,
     ) -> Self {
+        let sources = graph.source_nodes();
+        let sinks = graph.sink_nodes();
+
         {
             let mut validator = Validator::new(graph.layout_cache().clone());
             validator
@@ -91,6 +98,24 @@ impl DbspCircuit {
         let (runtime, (inputs, outputs)) =
             Runtime::init_circuit(workers, move |circuit| dataflow.construct(circuit))
                 .expect("failed to construct runtime");
+
+        // Account for unused sources
+        let mut inputs: BTreeMap<_, _> = inputs
+            .into_iter()
+            .map(|(id, (input, layout))| (id, (Some(input), layout)))
+            .collect();
+        for (source, layout) in sources {
+            inputs.entry(source).or_insert((None, layout));
+        }
+
+        // Account for unreachable sinks
+        let mut outputs: BTreeMap<_, _> = outputs
+            .into_iter()
+            .map(|(id, (output, layout))| (id, (Some(output), layout)))
+            .collect();
+        for (sink, layout) in sinks {
+            outputs.entry(sink).or_insert((None, layout));
+        }
 
         Self {
             jit,
@@ -129,159 +154,188 @@ impl DbspCircuit {
     }
 
     pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap();
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
 
-        match data {
-            StreamCollection::Set(set) => {
-                tracing::trace!("appending a set with {} values to {target}", set.len());
+        if let Some(input) = input {
+            match data {
+                StreamCollection::Set(set) => {
+                    tracing::trace!("appending a set with {} values to {target}", set.len());
 
-                let key_layout = layout.unwrap_set();
-                let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
-                let key_layout = self.layout_cache.layout_of(key_layout);
+                    let key_layout = layout.unwrap_set();
+                    let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
+                    let key_layout = self.layout_cache.layout_of(key_layout);
 
-                let mut batch = Vec::with_capacity(set.len());
-                for (literal, diff) in set {
-                    let key = unsafe { row_from_literal(literal, key_vtable, &key_layout) };
-                    batch.push((key, *diff));
+                    let mut batch = Vec::with_capacity(set.len());
+                    for (literal, diff) in set {
+                        let key = unsafe { row_from_literal(literal, key_vtable, &key_layout) };
+                        batch.push((key, *diff));
+                    }
+
+                    input.as_set_mut().unwrap().append(&mut batch);
                 }
 
-                input.as_set_mut().unwrap().append(&mut batch);
-            }
+                StreamCollection::Map(map) => {
+                    tracing::trace!("appending a map with {} values to {target}", map.len());
 
-            StreamCollection::Map(map) => {
-                tracing::trace!("appending a map with {} values to {target}", map.len());
+                    let (key_layout, value_layout) = layout.unwrap_map();
+                    let (key_vtable, value_vtable) = unsafe {
+                        (
+                            &*self.jit.vtables()[&key_layout],
+                            &*self.jit.vtables()[&value_layout],
+                        )
+                    };
+                    let (key_layout, value_layout) = (
+                        self.layout_cache.layout_of(key_layout),
+                        self.layout_cache.layout_of(value_layout),
+                    );
 
-                let (key_layout, value_layout) = layout.unwrap_map();
-                let (key_vtable, value_vtable) = unsafe {
-                    (
-                        &*self.jit.vtables()[&key_layout],
-                        &*self.jit.vtables()[&value_layout],
-                    )
-                };
-                let (key_layout, value_layout) = (
-                    self.layout_cache.layout_of(key_layout),
-                    self.layout_cache.layout_of(value_layout),
-                );
+                    let mut batch = Vec::with_capacity(map.len());
+                    for (key_literal, value_literal, diff) in map {
+                        let key = unsafe { row_from_literal(key_literal, key_vtable, &key_layout) };
+                        let value =
+                            unsafe { row_from_literal(value_literal, value_vtable, &value_layout) };
+                        batch.push((key, (value, *diff)));
+                    }
 
-                let mut batch = Vec::with_capacity(map.len());
-                for (key_literal, value_literal, diff) in map {
-                    let key = unsafe { row_from_literal(key_literal, key_vtable, &key_layout) };
-                    let value =
-                        unsafe { row_from_literal(value_literal, value_vtable, &value_layout) };
-                    batch.push((key, (value, *diff)));
+                    input.as_map_mut().unwrap().append(&mut batch);
                 }
-
-                input.as_map_mut().unwrap().append(&mut batch);
             }
+
+        // If the source is unused, do nothing
+        } else {
+            tracing::info!("appended csv file to source {target} which is unused, doing nothing");
         }
     }
 
     pub fn append_csv_input(&mut self, target: NodeId, path: &Path) {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap();
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
 
-        let mut csv = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_path(path)
-            .unwrap();
+        if let Some(input) = input {
+            let mut csv = csv::ReaderBuilder::new()
+                .has_headers(false)
+                .from_path(path)
+                .unwrap();
 
-        let start = Instant::now();
+            let start = Instant::now();
 
-        let records = match *layout {
-            StreamLayout::Set(key_layout) => {
-                let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
-                let marshall_csv = unsafe {
-                    transmute::<_, unsafe extern "C" fn(*mut u8, *const StringRecord)>(
-                        self.jit
-                            .jit
-                            .get_finalized_function(self.csv_demands[&key_layout]),
-                    )
-                };
+            let records = match *layout {
+                StreamLayout::Set(key_layout) => {
+                    let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
+                    let marshall_csv = unsafe {
+                        transmute::<_, unsafe extern "C" fn(*mut u8, *const StringRecord)>(
+                            self.jit
+                                .jit
+                                .get_finalized_function(self.csv_demands[&key_layout]),
+                        )
+                    };
 
-                let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
-                while csv.read_record(&mut buf).unwrap() {
-                    let mut row = UninitRow::new(key_vtable);
-                    unsafe { marshall_csv(row.as_mut_ptr(), &buf as *const StringRecord) };
-                    batch.push((unsafe { row.assume_init() }, 1));
+                    let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
+                    while csv.read_record(&mut buf).unwrap() {
+                        let mut row = UninitRow::new(key_vtable);
+                        unsafe { marshall_csv(row.as_mut_ptr(), &buf as *const StringRecord) };
+                        batch.push((unsafe { row.assume_init() }, 1));
+                    }
+
+                    let records = batch.len();
+                    input.as_set_mut().unwrap().append(&mut batch);
+                    records
                 }
 
-                let records = batch.len();
-                input.as_set_mut().unwrap().append(&mut batch);
-                records
-            }
+                StreamLayout::Map(..) => todo!(),
+            };
 
-            StreamLayout::Map(..) => todo!(),
-        };
+            let elapsed = start.elapsed();
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
 
-        let elapsed = start.elapsed();
-        tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+        // If the source is unused, do nothing
+        } else {
+            tracing::info!("appended csv file to source {target} which is unused, doing nothing");
+        }
     }
 
     pub fn consolidate_output(&mut self, output: NodeId) -> StreamCollection {
-        let (output, layout) = &self.outputs[&output];
+        let (output, layout) = self.outputs.get(&output).unwrap_or_else(|| {
+            panic!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist");
+        });
 
-        match output {
-            RowOutput::Set(output) => {
-                let key_layout = layout.unwrap_set();
-                let (native_key_layout, key_layout) = self.layout_cache.get_layouts(key_layout);
+        if let Some(output) = output {
+            match output {
+                RowOutput::Set(output) => {
+                    let key_layout = layout.unwrap_set();
+                    let (native_key_layout, key_layout) = self.layout_cache.get_layouts(key_layout);
 
-                let set = output.consolidate();
-                // println!("{set}");
-                let mut contents = Vec::with_capacity(set.len());
+                    let set = output.consolidate();
+                    // println!("{set}");
+                    let mut contents = Vec::with_capacity(set.len());
 
-                let mut cursor = set.cursor();
-                while cursor.key_valid() {
-                    let diff = cursor.weight();
-                    let key = cursor.key();
+                    let mut cursor = set.cursor();
+                    while cursor.key_valid() {
+                        let diff = cursor.weight();
+                        let key = cursor.key();
 
-                    let key = unsafe { row_literal_from_row(key, &native_key_layout, &key_layout) };
-                    contents.push((key, diff));
+                        let key =
+                            unsafe { row_literal_from_row(key, &native_key_layout, &key_layout) };
+                        contents.push((key, diff));
 
-                    cursor.step_key();
-                }
-
-                StreamCollection::Set(contents)
-            }
-
-            RowOutput::Map(output) => {
-                let (key_layout, value_layout) = layout.unwrap_map();
-                let (native_key_layout, key_layout) = self.layout_cache.get_layouts(key_layout);
-                let (native_value_layout, value_layout) =
-                    self.layout_cache.get_layouts(value_layout);
-
-                let map = output.consolidate();
-                let mut contents = Vec::with_capacity(map.len());
-
-                let mut cursor = map.cursor();
-                while cursor.key_valid() {
-                    let diff = cursor.weight();
-                    let key = cursor.key();
-
-                    let key_literal =
-                        unsafe { row_literal_from_row(key, &native_key_layout, &key_layout) };
-
-                    while cursor.val_valid() {
-                        let value = cursor.val();
-                        let value_literal = unsafe {
-                            row_literal_from_row(value, &native_value_layout, &value_layout)
-                        };
-
-                        cursor.step_val();
-
-                        if cursor.val_valid() {
-                            contents.push((key_literal.clone(), value_literal, diff));
-
-                        // Don't clone the key value if this is the last value
-                        } else {
-                            contents.push((key_literal, value_literal, diff));
-                            break;
-                        }
+                        cursor.step_key();
                     }
 
-                    cursor.step_key();
+                    StreamCollection::Set(contents)
                 }
 
-                StreamCollection::Map(contents)
+                RowOutput::Map(output) => {
+                    let (key_layout, value_layout) = layout.unwrap_map();
+                    let (native_key_layout, key_layout) = self.layout_cache.get_layouts(key_layout);
+                    let (native_value_layout, value_layout) =
+                        self.layout_cache.get_layouts(value_layout);
+
+                    let map = output.consolidate();
+                    let mut contents = Vec::with_capacity(map.len());
+
+                    let mut cursor = map.cursor();
+                    while cursor.key_valid() {
+                        let diff = cursor.weight();
+                        let key = cursor.key();
+
+                        let key_literal =
+                            unsafe { row_literal_from_row(key, &native_key_layout, &key_layout) };
+
+                        while cursor.val_valid() {
+                            let value = cursor.val();
+                            let value_literal = unsafe {
+                                row_literal_from_row(value, &native_value_layout, &value_layout)
+                            };
+
+                            cursor.step_val();
+
+                            if cursor.val_valid() {
+                                contents.push((key_literal.clone(), value_literal, diff));
+
+                            // Don't clone the key value if this is the last
+                            // value
+                            } else {
+                                contents.push((key_literal, value_literal, diff));
+                                break;
+                            }
+                        }
+
+                        cursor.step_key();
+                    }
+
+                    StreamCollection::Map(contents)
+                }
             }
+
+        // The output is unreachable so we always return an empty stream
+        } else {
+            tracing::info!(
+                "consolidating output from an unreachable sink, returning an empty stream",
+            );
+            StreamCollection::empty(*layout)
         }
     }
 }
@@ -345,7 +399,7 @@ mod tests {
         facade::Demands,
         ir::{
             literal::{NullableConstant, RowLiteral, StreamCollection},
-            nodes::{IndexByColumn, StreamKind},
+            nodes::{IndexByColumn, StreamKind, StreamLayout},
             ColumnType, Constant, Graph, GraphExt, NodeId, RowLayoutBuilder,
         },
         sql_graph::SqlGraph,
@@ -537,7 +591,10 @@ mod tests {
             StreamKind::Set,
         );
 
-        let sink = graph.sink(transactions_join_demographics);
+        let sink = graph.sink(
+            transactions_join_demographics,
+            StreamLayout::Set(output_layout),
+        );
 
         let mut demands = Demands::new();
         demands.add_csv_demand(transactions_layout, transaction_mappings());
@@ -3145,6 +3202,9 @@ mod tests {
         "273": {
             "Sink": {
                 "input": 271,
+                "input_layout": {
+                    "Set": 9
+                },
                 "query": "CREATE VIEW `TRANSACTIONS_WITH_DEMOGRAPHICS` AS\r\nSELECT `TRANSACTIONS`.`TRANS_DATE_TRANS_TIME`, `TRANSACTIONS`.`CC_NUM`, `DEMOGRAPHICS`.`FIRST`, `DEMOGRAPHICS`.`CITY`\r\nFROM `TRANSACTIONS`\r\nINNER JOIN `DEMOGRAPHICS` ON `TRANSACTIONS`.`CC_NUM` = `DEMOGRAPHICS`.`CC_NUM`"
             }
         }
@@ -3606,7 +3666,10 @@ mod tests {
         },
         "2": {
             "Sink": {
-                "input": 1
+                "input": 1,
+                "input_layout": {
+                    "Set": 1
+                }
             }
         }
     },
@@ -3647,6 +3710,138 @@ mod tests {
         // Ensure the output is correct
         let expected = StreamCollection::Set(vec![(
             RowLiteral::new(vec![NullableConstant::NonNull(Constant::U32(1))]),
+            1,
+        )]);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn append_unused_source() {
+        const GRAPH: &str = r#"{
+  "nodes": {
+    "1": {
+      "Source": {
+        "layout": 1,
+        "table": "T"
+      }
+    },
+    "2": {
+      "ConstantStream": {
+        "comment": "{ Tuple1::new(0i32) => 1}",
+        "layout": {
+          "Set": 2
+        },
+        "value": {
+          "layout": {
+            "Set": 2
+          },
+          "value": {
+            "Set": [
+              [
+                {
+                  "rows": [
+                    {
+                      "NonNull": {
+                        "I32": 0
+                      }
+                    }
+                  ]
+                },
+                1
+              ]
+            ]
+          }
+        },
+        "consolidated": false
+      }
+    },
+    "3": {
+      "Sink": {
+        "input": 2,
+        "input_layout": {
+            "Set": 2
+        },
+        "comment": "CREATE VIEW V AS SELECT 0"
+      }
+    }
+  },
+  "layouts": {
+    "1": {
+      "columns": [
+        {
+          "nullable": false,
+          "ty": "I32"
+        },
+        {
+          "nullable": false,
+          "ty": "F64"
+        },
+        {
+          "nullable": false,
+          "ty": "Bool"
+        },
+        {
+          "nullable": false,
+          "ty": "String"
+        },
+        {
+          "nullable": true,
+          "ty": "I32"
+        },
+        {
+          "nullable": true,
+          "ty": "F64"
+        }
+      ]
+    },
+    "2": {
+      "columns": [
+        {
+          "nullable": false,
+          "ty": "I32"
+        }
+      ]
+    }
+  }
+}"#;
+
+        utils::test_logger();
+
+        // Deserialize the graph from json
+        let graph = serde_json::from_str::<SqlGraph>(GRAPH)
+            .unwrap()
+            .rematerialize();
+
+        // Create the circuit
+        let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+
+        // Feed data to our unused input
+        circuit.append_input(
+            NodeId::new(1),
+            &StreamCollection::Set(vec![(
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::I32(1)),
+                    NullableConstant::NonNull(Constant::F64(1.0)),
+                    NullableConstant::NonNull(Constant::Bool(true)),
+                    NullableConstant::NonNull(Constant::String("foobar".into())),
+                    NullableConstant::Nullable(Some(Constant::I32(1))),
+                    NullableConstant::Nullable(Some(Constant::F64(1.0))),
+                ]),
+                1,
+            )]),
+        );
+
+        // Step the circuit
+        circuit.step().unwrap();
+
+        let output = circuit.consolidate_output(NodeId::new(3));
+
+        // Kill the circuit
+        circuit.kill().unwrap();
+
+        // Ensure the output is correct
+        let expected = StreamCollection::Set(vec![(
+            RowLiteral::new(vec![NullableConstant::NonNull(Constant::I32(0))]),
             1,
         )]);
         assert_eq!(output, expected);
