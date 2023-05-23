@@ -20,7 +20,9 @@ const EXCLUDE_LIST: [&str; 3] = [
 /// doesn't get built many times due to changing rustc flags.
 fn main() {
     if let Ok(webui_out_folder) = env::var("WEBUI_BUILD_DIR") {
-        ChangeDetection::path(&webui_out_folder).path("build.rs").generate();
+        ChangeDetection::path(&webui_out_folder)
+            .path("build.rs")
+            .generate();
         println!("cargo:rerun-if-changed=build.rs");
         resource_dir(webui_out_folder)
             .build()

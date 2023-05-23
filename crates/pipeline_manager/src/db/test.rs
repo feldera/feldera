@@ -314,6 +314,38 @@ async fn project_config() {
 }
 
 #[tokio::test]
+async fn project_pending() {
+    let handle = test_setup().await;
+    let _res = handle
+        .db
+        .new_project("test1", "project desc", "ignored")
+        .await
+        .unwrap();
+    let _res = handle
+        .db
+        .new_project("test2", "project desc", "ignored")
+        .await
+        .unwrap();
+
+    handle
+        .db
+        .set_project_status(ProjectId(2), ProjectStatus::Pending)
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_project_status(ProjectId(1), ProjectStatus::Pending)
+        .await
+        .unwrap();
+    let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
+    assert_eq!(id, ProjectId(2));
+    let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
+    assert_eq!(id, ProjectId(2));
+    // Maybe next job should set the status to something else
+    // so it won't get picked up twice?
+}
+
+#[tokio::test]
 async fn update_status() {
     let handle = test_setup().await;
     let (project_id, _) = handle
