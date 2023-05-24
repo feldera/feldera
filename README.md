@@ -148,6 +148,13 @@ multiple nodes for high availability and throughput.
 
 ## Getting started
 
+DBSP is implemented in Rust and uses Rust's `cargo` build system.  You
+can build everything with `cargo build` at the top level of this tree.
+If you want to do development without installing the Rust toolchain
+locally, you can use Github Codespaces: from
+https://github.com/feldera/dbsp, click on the green `<> Code` button,
+then select Codespaces and click on "Create codespace on main".
+
 To learn about using DBSP as a Rust programmer, start by reading the
 [`circuit_builder`](`circuit::circuit_builder`) module documentation.
 The examples folder also has some simple places to start.  For more
