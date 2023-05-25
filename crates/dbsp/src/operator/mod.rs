@@ -1,6 +1,7 @@
-//! Some basic operators.
+//! DBSP stream operators.
 
 pub mod apply2;
+pub mod apply3;
 pub mod communication;
 pub mod recursive;
 
@@ -26,6 +27,7 @@ mod integrate;
 mod join;
 pub mod join_range;
 mod neg;
+mod neighborhood;
 mod output;
 mod plus;
 mod semijoin;
