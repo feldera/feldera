@@ -43,6 +43,7 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
+use auth::JwkCache;
 use clap::Parser;
 use colored::Colorize;
 #[cfg(unix)]
@@ -245,16 +246,17 @@ struct ServerState {
     // for a long time to avoid blocking concurrent requests.
     db: Arc<Mutex<ProjectDB>>,
     // Dropping this handle kills the compiler task.
-    _compiler: Compiler,
+    _compiler: Option<Compiler>,
     runner: Runner,
     _config: ManagerConfig,
+    pub jwk_cache: Arc<Mutex<JwkCache>>,
 }
 
 impl ServerState {
     async fn new(
         config: ManagerConfig,
         db: Arc<Mutex<ProjectDB>>,
-        compiler: Compiler,
+        compiler: Option<Compiler>,
     ) -> AnyResult<Self> {
         let runner = Runner::Local(LocalRunner::new(db.clone(), &config)?);
 
@@ -263,6 +265,7 @@ impl ServerState {
             _compiler: compiler,
             runner,
             _config: config,
+            jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
         })
     }
 }
@@ -314,28 +317,30 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         db.lock().await.reset_project_status().await?;
         let openapi = ApiDoc::openapi();
 
-        let state = WebData::new(ServerState::new(config, db, compiler).await?);
+        let state = WebData::new(ServerState::new(config, db, Some(compiler)).await?);
 
         if use_auth {
             let server = HttpServer::new(move || {
                 let closure = |req, bearer_auth| {
-                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth, state.clone())
+                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth)
                 };
                 let auth_middleware = HttpAuthentication::with_fn(closure);
                 let app = App::new()
+                    .app_data(state.clone())
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
                     .wrap(auth_middleware);
 
-                build_app(app, state.clone(), openapi.clone())
+                build_app(app, openapi.clone())
             });
             server.listen(listener)?.run().await?;
         } else {
             let server = HttpServer::new(move || {
                 let app = App::new()
+                    .app_data(state.clone())
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()));
-                build_app(app, state.clone(), openapi.clone())
+                build_app(app, openapi.clone())
             });
             server.listen(listener)?.run().await?;
         }
@@ -346,15 +351,14 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn build_app<T>(app: App<T>, state: WebData<ServerState>, openapi: OpenApiDoc) -> App<T>
+fn build_app<T>(app: App<T>, openapi: OpenApiDoc) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = ActixError, InitError = ()>,
 {
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    app.app_data(state)
-        .service(list_projects)
+    app.service(list_projects)
         .service(project_code)
         .service(project_status)
         .service(new_project)
@@ -411,6 +415,9 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
             DBError::UnknownConfig(_) => HttpResponse::NotFound(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
             DBError::UnknownConnector(_) => HttpResponse::NotFound(),
+            // This error should never bubble up till here
+            DBError::DuplicateKey => HttpResponse::InternalServerError(),
+            DBError::InvalidKey => HttpResponse::Unauthorized(),
         }
         .json(ErrorResponse::new(&message))
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {

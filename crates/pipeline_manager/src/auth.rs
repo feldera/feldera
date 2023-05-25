@@ -21,18 +21,22 @@
 
 use std::{collections::HashMap, env};
 
-use actix_web::dev::ServiceRequest;
+use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
     AuthenticationError,
 };
-use cached::{proc_macro::cached, SizedCache};
+use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use log::{error, info};
+use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{db::ProjectDB, ServerState};
+use crate::{
+    db::{storage::Storage, ProjectDB, Scopes},
+    ServerState,
+};
 
 /// Authorization using a bearer token. This is strictly used for authorizing
 /// users, not machines.
@@ -40,14 +44,15 @@ pub(crate) async fn auth_validator(
     configuration: AuthConfiguration,
     req: ServiceRequest,
     credentials: Option<BearerAuth>,
-    state: crate::WebData<ServerState>,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // First check if we have a bearer token. If not, we expect an API key.
     match credentials {
         Some(credentials) => {
             let token = credentials.token();
             let token = match configuration.provider {
-                Provider::AwsCognito(_) => decode_aws_cognito_token(token, configuration).await,
+                Provider::AwsCognito(_) => {
+                    decode_aws_cognito_token(token, &req, configuration).await
+                }
             };
             match token {
                 Ok(_) => Ok(req),
@@ -77,28 +82,37 @@ pub(crate) async fn auth_validator(
         }
         None => {
             let api_key = req.headers().get("x-api-key");
-            if api_key.is_none() {
-                let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                return Err((
-                    AuthenticationError::from(config)
-                        .with_error_description("Missing bearer token or API key")
-                        .into(),
-                    req,
-                ));
-            }
-            let api_key_str = api_key.unwrap().to_str().unwrap();
-            let db = state.db.lock().await;
-            let validate = validate_api_keys(&db, api_key_str).await;
-            if validate {
-                Ok(req)
-            } else {
-                let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                Err((
-                    AuthenticationError::from(config)
-                        .with_error_description("Unauthorized API key")
-                        .into(),
-                    req,
-                ))
+            match api_key {
+                Some(api_key) if api_key.to_str().is_ok() => {
+                    let api_key_str = api_key.to_str().unwrap();
+                    let ad = req.app_data::<Data<ServerState>>();
+                    let validate = {
+                        let db = &ad.unwrap().db.lock().await;
+                        validate_api_keys(db, api_key_str).await
+                    };
+                    // TODO: set scopes on request
+                    match validate {
+                        Ok(_) => Ok(req),
+                        Err(_) => {
+                            let config = req.app_data::<Config>().cloned().unwrap_or_default();
+                            Err((
+                                AuthenticationError::from(config)
+                                    .with_error_description("Unauthorized API key")
+                                    .into(),
+                                req,
+                            ))
+                        }
+                    }
+                }
+                _ => {
+                    let config = req.app_data::<Config>().cloned().unwrap_or_default();
+                    return Err((
+                        AuthenticationError::from(config)
+                            .with_error_description("Missing bearer token or API key")
+                            .into(),
+                        req,
+                    ));
+                }
             }
         }
     }
@@ -218,6 +232,7 @@ impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
 /// JWT claims: https://datatracker.ietf.org/doc/html/rfc7519#section-4
 async fn decode_aws_cognito_token(
     token: &str,
+    req: &ServiceRequest,
     configuration: AuthConfiguration,
 ) -> Result<Claim, AuthError> {
     let header = decode_header(token);
@@ -228,12 +243,10 @@ async fn decode_aws_cognito_token(
                 if header.kid.is_none() {
                     return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
                 }
-                let keymap = fetch_jwk_keys(&configuration).await?;
-                let jwk = match keymap.get(&header.kid.unwrap()) {
-                    Some(jwk) => jwk,
-                    None => todo!("Implement key refresh"),
-                };
-                let token_data = decode::<AwsCognitoClaim>(token, jwk, &configuration.validation);
+                let state = req.app_data::<Data<ServerState>>().unwrap();
+                let cache = &mut state.jwk_cache.lock().await;
+                let jwk = cache.get(&header.kid.unwrap(), &configuration).await?;
+                let token_data = decode::<AwsCognitoClaim>(token, &jwk, &configuration.validation);
                 if let Ok(t) = &token_data {
                     // TODO: aud and client_id may not be the same when using a resource server
                     if !&configuration
@@ -262,6 +275,49 @@ async fn decode_aws_cognito_token(
     }
 }
 
+pub struct JwkCache {
+    cache: TimedCache<String, DecodingKey>,
+}
+
+impl JwkCache {
+    pub(crate) fn new() -> JwkCache {
+        Self {
+            cache: TimedCache::with_lifespan_and_capacity(120, 10),
+        }
+    }
+
+    async fn get(
+        &mut self,
+        key: &String,
+        configuration: &AuthConfiguration,
+    ) -> Result<DecodingKey, AuthError> {
+        let cache = &mut self.cache;
+        let val = &cache.cache_get(key);
+        match val {
+            Some(dk) => Ok((*dk).clone()),
+            None => {
+                // TODO: Introduce a minimum delay between refreshes
+                let fetched = fetch_jwk_keys(configuration).await;
+                match fetched {
+                    Ok(map) => {
+                        for i in map {
+                            cache.cache_set(i.0, i.1);
+                        }
+                        let val_retry = cache.cache_get(key);
+                        return match val_retry {
+                            Some(val_retry) => Ok(val_retry.clone()),
+                            None => Err(AuthError::JwkShape("Invalid kid".to_owned())),
+                        };
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }; // refresh cache
+            }
+        }
+    }
+}
+
 async fn fetch_jwk_keys(
     configuration: &AuthConfiguration,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
@@ -272,12 +328,6 @@ async fn fetch_jwk_keys(
 
 // We don't want to fetch keys on every authentication attempt, so cache the
 // results. TODO: implement periodic refresh
-#[cached(
-    result = true,
-    name = "KEYS",
-    type = r#"SizedCache<String, HashMap<String, DecodingKey>>"#,
-    create = r#"{ SizedCache::with_size(5) }"#
-)]
 async fn fetch_jwk_aws_cognito_keys(
     url: &String,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
@@ -347,13 +397,22 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 
 // Fetch keys on every authentication attempt, so cache the
 // results. TODO: implement periodic refresh
-async fn validate_api_keys(db: &ProjectDB, api_key: &str) -> bool {
-    true
+async fn validate_api_keys(db: &ProjectDB, api_key: &str) -> Result<Vec<Scopes>, anyhow::Error> {
+    db.validate_api_key(api_key.to_owned()).await
+}
+
+/// Generates a random 128 character API key
+pub(crate) fn generate_api_key() -> String {
+    rand::thread_rng()
+        .sample_iter(Alphanumeric)
+        .take(128)
+        .map(char::from)
+        .collect()
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, str::FromStr};
+    use std::{str::FromStr, sync::Arc};
 
     use actix_http::header::HeaderName;
     use actix_web::{
@@ -367,14 +426,18 @@ mod test {
     use cached::Cached;
     use chrono::Utc;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+    use tokio::sync::Mutex;
 
-    use crate::auth::{
-        self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider,
+    use crate::{
+        auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
+        config::ManagerConfig,
+        db::{storage::Storage, Scopes},
+        ServerState,
     };
 
     use super::AuthError;
 
-    async fn setup(claim: AwsCognitoClaim) -> String {
+    async fn setup(claim: AwsCognitoClaim) -> (String, DecodingKey) {
         let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
         let header = Header {
             typ: Some("JWT".to_owned()),
@@ -397,17 +460,7 @@ mod test {
         .unwrap();
         let decoding_key = DecodingKey::from_rsa_pem(&rsa.public_key_to_pem().unwrap()).unwrap();
         let token = token_encoded.as_str();
-
-        // Override the fetch_jwk_keys() cache directly so we don't need to mock
-        // anything
-        let mut keys: HashMap<String, DecodingKey> = HashMap::new();
-        keys.insert("rsa01".to_owned(), decoding_key);
-        crate::auth::KEYS.lock().await.cache_clear();
-        crate::auth::KEYS
-            .lock()
-            .await
-            .cache_set("some-url".to_string(), keys);
-        token.to_owned()
+        (token.to_owned(), decoding_key)
     }
 
     fn validation(aud: &str, iss: &str) -> Validation {
@@ -434,30 +487,53 @@ mod test {
 
     async fn run_test(
         req: actix_http::Request,
+        decoding_key: Option<DecodingKey>,
+        api_key: Option<String>,
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
         let config = AuthConfiguration {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
         };
-        let ManagerConfig = ManagerConfig {};
         let config_copy = config.clone();
-        let db = ProjectDB::connect(&config).await?;
-        let db = Arc::new(Mutex::new(db));
-        let compiler = Compiler::new(&config, db.clone()).await?;
-
-        // Since we don't trust any file system state after restart,
-        // reset all projects to `ProjectStatus::None`, which will force
-        // us to recompile projects before running them.
-        db.lock().await.reset_project_status().await?;
-        let openapi = ApiDoc::openapi();
-
-        let state = WebData::new(ServerState::new(config, db, compiler).await?);
         let closure =
             move |req, bearer_auth| auth::auth_validator(config_copy.clone(), req, bearer_auth);
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
+        let manager_config = ManagerConfig {
+            port: 0,
+            bind_address: "0.0.0.0".to_owned(),
+            logfile: None,
+            working_directory: "".to_owned(),
+            sql_compiler_home: "".to_owned(),
+            dbsp_override_path: None,
+            debug: false,
+            unix_daemon: false,
+            use_auth: true,
+            db_connection_string: "postgres-embed".to_owned(),
+            dump_openapi: false,
+            config_file: None,
+            initial_sql: None,
+            dev_mode: false,
+        };
+        let (conn, _temp_dir) = crate::db::test::setup_embedded_pg().await;
+        if api_key.is_some() {
+            conn.store_api_key_hash(api_key.unwrap(), vec![Scopes::Read, Scopes::Write])
+                .await
+                .unwrap();
+        }
+        let db = Arc::new(Mutex::new(conn));
+        let state = crate::WebData::new(ServerState::new(manager_config, db, None).await.unwrap());
+        if decoding_key.is_some() {
+            state
+                .jwk_cache
+                .lock()
+                .await
+                .cache
+                .cache_set("rsa01".to_owned(), decoding_key.unwrap());
+        }
         let app = App::new()
+            .app_data(state)
             .wrap(auth_middleware)
             .route("/", web::get().to(|| async { "OK" }));
         let app = test::init_service(app).await;
@@ -476,12 +552,12 @@ mod test {
     async fn valid_token() {
         let claim = default_claim();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(200, res.status());
     }
 
@@ -490,12 +566,12 @@ mod test {
         let mut claim = default_claim();
         claim.exp = Utc::now().timestamp() - 10000;
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"ExpiredSignature\"",
@@ -508,12 +584,12 @@ mod test {
         let mut claim = default_claim();
         claim.token_use = "sig".to_owned();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"InvalidToken\"",
@@ -525,13 +601,13 @@ mod test {
     async fn different_key() {
         let claim = default_claim();
         let validation = validation("some-client", "some-iss");
-        let token = setup(claim.clone()).await;
-        let _ = setup(claim).await; // force a key change
+        let (token, _) = setup(claim.clone()).await;
+        let (_, decoding_key) = setup(claim).await; // force a key change
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"InvalidSignature\"",
@@ -543,12 +619,12 @@ mod test {
     async fn different_client() {
         let claim = default_claim();
         let validation = validation("some-other-client", "some-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"InvalidAudience\"",
@@ -560,12 +636,12 @@ mod test {
     async fn different_iss() {
         let claim = default_claim();
         let validation = validation("some-client", "some-other-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"InvalidIssuer\"",
@@ -577,7 +653,7 @@ mod test {
     async fn modified_token() {
         let claim = default_claim();
         let validation = validation("some-client", "some-other-iss");
-        let token = setup(claim).await;
+        let (token, decoding_key) = setup(claim).await;
 
         // Modify the claim
         let base64_parts: Vec<&str> = token.split(".").collect();
@@ -593,7 +669,7 @@ mod test {
             .uri("/")
             .insert_header((http::header::AUTHORIZATION, format!("Bearer {}", new_token)))
             .to_request();
-        let res = run_test(req, validation).await;
+        let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(401, res.status());
         assert_eq!(
             "Bearer error_description=\"InvalidSignature\"",
@@ -603,14 +679,13 @@ mod test {
 
     #[tokio::test]
     async fn valid_api_key() {
-        let claim = default_claim();
         let validation = validation("some-client", "some-iss");
+        let api_key = auth::generate_api_key();
         let req = test::TestRequest::get()
             .uri("/")
-            .insert_header((HeaderName::from_str("x-api-key").unwrap(), "foo"))
+            .insert_header((HeaderName::from_str("x-api-key").unwrap(), api_key.clone()))
             .to_request();
-        let res = run_test(req, validation).await;
-        println!("{:?}", res);
-        assert_eq!(401, res.status());
+        let res = run_test(req, None, Some(api_key), validation).await;
+        assert_eq!(200, res.status());
     }
 }

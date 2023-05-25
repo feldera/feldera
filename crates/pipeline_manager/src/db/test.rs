@@ -1,12 +1,13 @@
-use super::PipelineDescr;
 use super::{
     storage::Storage, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
     ConnectorType, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
 };
-use crate::Direction;
+use super::{PipelineDescr, Scopes};
+use crate::{auth, Direction};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use chrono::DateTime;
+use openssl::sha::{self};
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -16,9 +17,6 @@ use std::fmt::Debug;
 use std::time::SystemTime;
 use std::vec;
 use tokio::sync::Mutex;
-
-#[cfg(feature = "pg-embed")]
-use crate::db::pg_setup;
 
 struct DbHandle {
     db: ProjectDB,
@@ -75,11 +73,18 @@ impl Version {
 
 #[cfg(feature = "pg-embed")]
 async fn test_setup() -> DbHandle {
+    let (conn, _temp_dir) = setup_embedded_pg().await;
+
+    DbHandle {
+        db: conn,
+        _temp_dir,
+    }
+}
+
+#[cfg(feature = "pg-embed")]
+pub(crate) async fn setup_embedded_pg() -> (ProjectDB, tempfile::TempDir) {
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicU16, Ordering};
-
-    let _temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = _temp_dir.path();
 
     // Find a free port to use for running the test database.
     let port = {
@@ -94,18 +99,17 @@ async fn test_setup() -> DbHandle {
             .map(|l| l.port())
             .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
     };
-    let pg = pg_setup::install(temp_path.into(), false, Some(port))
+
+    let _temp_dir = tempfile::tempdir().unwrap();
+    let temp_path = _temp_dir.path();
+    let pg = crate::db::pg_setup::install(temp_path.into(), false, Some(port))
         .await
         .unwrap();
     let db_uri = pg.db_uri.clone();
     let conn = ProjectDB::connect_inner(&db_uri, &Some("".to_string()), Some(pg))
         .await
         .unwrap();
-
-    DbHandle {
-        db: conn,
-        _temp_dir,
-    }
+    (conn, _temp_dir)
 }
 
 #[cfg(not(feature = "pg-embed"))]
@@ -399,6 +403,28 @@ async fn duplicate_attached_conn_name() {
         .new_config(None, "1", "2", "3", &Some(vec![ac, ac2]))
         .await
         .expect_err("duplicate attached connector name");
+}
+
+#[tokio::test]
+async fn save_api_key() {
+    let handle = test_setup().await;
+    // Attempt several key generations and validations
+    for _ in 1..10 {
+        let api_key = auth::generate_api_key();
+        handle
+            .db
+            .store_api_key_hash(api_key.clone(), vec![Scopes::Read, Scopes::Write])
+            .await
+            .unwrap();
+        let scopes = handle.db.validate_api_key(api_key.clone()).await.unwrap();
+        assert_eq!(&Scopes::Read, scopes.get(0).unwrap());
+        assert_eq!(&Scopes::Write, scopes.get(1).unwrap());
+
+        let api_key_2 = auth::generate_api_key();
+        let failure = handle.db.validate_api_key(api_key_2).await.unwrap_err();
+        let err = failure.downcast_ref::<DBError>();
+        assert!(matches!(err, Some(DBError::InvalidKey)));
+    }
 }
 
 /// Actions we can do on the Storage trait.
@@ -761,6 +787,7 @@ struct DbModel {
     pub configs: BTreeMap<ConfigId, ConfigDescr>,
     pub connectors: BTreeMap<ConnectorId, ConnectorDescr>,
     pub pipelines: BTreeMap<PipelineId, PipelineDescr>,
+    pub api_keys: BTreeMap<String, Vec<Scopes>>,
 }
 
 #[async_trait]
@@ -1361,5 +1388,27 @@ impl Storage for Mutex<DbModel> {
                 .retain(|c| c.connector_id != connector_id);
         });
         Ok(())
+    }
+
+    async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()> {
+        let mut s = self.lock().await;
+        let mut hasher = sha::Sha256::new();
+        hasher.update(key.as_bytes());
+        let hash = openssl::base64::encode_block(&hasher.finish());
+        if s.api_keys.contains_key(&hash) {
+            Err(anyhow::anyhow!(DBError::DuplicateKey))
+        } else {
+            s.api_keys.insert(hash, scopes);
+            Ok(())
+        }
+    }
+
+    async fn validate_api_key(&self, key_hash: String) -> AnyResult<Vec<Scopes>> {
+        let s = self.lock().await;
+        let record = s.api_keys.get(&key_hash);
+        match record {
+            Some(record) => Ok(record.clone()),
+            None => Err(anyhow::anyhow!(DBError::InvalidKey)),
+        }
     }
 }

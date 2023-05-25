@@ -1,6 +1,6 @@
 use super::{
     AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId, ConnectorType, DBError,
-    PipelineDescr, PipelineId, ProjectDescr, ProjectId, Version,
+    PipelineDescr, PipelineId, ProjectDescr, ProjectId, Scopes, Version,
 };
 use crate::{Direction, ProjectStatus};
 use anyhow::{anyhow, Result as AnyResult};
@@ -264,4 +264,10 @@ pub(crate) trait Storage {
     ///
     /// This will delete all connector configs and pipelines.
     async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()>;
+
+    /// Persist a hash of API key in the database
+    async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()>;
+
+    /// Validate whether an existing API key is
+    async fn validate_api_key(&self, key_hash: String) -> AnyResult<Vec<Scopes>>;
 }
