@@ -1,7 +1,10 @@
 use super::{GroupTransformer, Monotonicity};
 use crate::{
     algebra::{HasZero, ZRingValue},
-    trace::{cursor::{CursorPair, ReverseKeyCursor}, Cursor},
+    trace::{
+        cursor::{CursorPair, ReverseKeyCursor},
+        Cursor,
+    },
     DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
 use std::{cmp::Ordering, marker::PhantomData};

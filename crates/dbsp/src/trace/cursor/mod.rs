@@ -177,6 +177,81 @@ pub trait Cursor<K, V, T, R> {
 
     /// Move the cursor to the last value for the current key.
     fn fast_forward_vals(&mut self);
+
+
+
+    /// Indicates that the current `(key, value)` pair is valid.
+    ///
+    /// A value of `false` indicates that the cursor has exhausted all pairs.
+    fn keyval_valid(&self) -> bool {
+        self.key_valid() && self.val_valid()
+    }
+
+    /// Returns current `(key, value)` pair.  Undefined behavior if invalid.
+    fn keyval(&self) -> (&K, &V) {
+        (self.key(), self.val())
+    }
+
+    /// Moves the cursor to the next `(key, value)` pair.
+    fn step_keyval(&mut self) {
+        self.step_val();
+        while self.key_valid() && !self.val_valid() {
+            self.step_key();
+        }
+    }
+
+    /// Moves the cursor to the previous `(key, value)` pair.
+    fn step_keyval_reverse(&mut self) {
+        self.step_val_reverse();
+        while self.key_valid() && !self.val_valid() {
+            self.step_key_reverse();
+            if self.key_valid() {
+                self.fast_forward_vals();
+            }
+        }
+    }
+
+    /// Advance the cursor to the specified `(key, value)` pair.
+    fn seek_keyval(&mut self, key: &K, val: &V)
+    where
+        K: PartialEq,
+    {
+        if self.get_key() != Some(key) {
+            self.seek_key(key);
+        }
+
+        if self.get_key() == Some(key) {
+            self.seek_val(val);
+        }
+
+        while self.key_valid() && !self.val_valid() {
+            self.step_key();
+        }
+    }
+
+    /// Moves the cursor back to the specified `(key, value)` pair.
+    fn seek_keyval_reverse(&mut self, key: &K, val: &V)
+    where
+        K: PartialEq,
+    {
+        if self.get_key() != Some(key) {
+            self.seek_key_reverse(key);
+            if self.key_valid() {
+                self.fast_forward_vals();
+            }
+        }
+
+        if self.get_key() == Some(key) {
+            self.seek_val_reverse(val);
+        }
+
+        while self.key_valid() && !self.val_valid() {
+            self.step_key_reverse();
+            if self.key_valid() {
+                self.fast_forward_vals();
+            }
+        }
+    }
 }
 
 /// A cursor for taking ownership of ordered `(K, V, R, T)` tuples
