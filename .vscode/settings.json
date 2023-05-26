@@ -5,4 +5,7 @@
     "cSpell.words": [
         "avaliable"
     ],
+    "rust-analyzer.cargo.features": [
+        "pg-embed"
+    ]
 }

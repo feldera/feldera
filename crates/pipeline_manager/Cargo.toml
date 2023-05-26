@@ -41,6 +41,9 @@ actix-web-httpauth = "0.8.0"
 cached = { version="0.43.0", features = ["async"]}
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true }
+rand = "0.8.5"
+openssl = "0.10.52"
+static_assertions = "1.1.0"
 
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.4.1" }
@@ -54,9 +57,8 @@ proptest = "1.0.0"
 proptest-derive = "0.3.0"
 pretty_assertions = "1.3.0"
 pg-client-config = "0.1.1"
-rand = "0.8.5"
 base64 = "0.21.0"
-openssl = "0.10.52"
+actix-http = "3.3.1"
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]
