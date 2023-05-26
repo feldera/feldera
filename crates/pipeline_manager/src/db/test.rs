@@ -1403,9 +1403,12 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
-    async fn validate_api_key(&self, key_hash: String) -> AnyResult<Vec<Scopes>> {
+    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<Scopes>> {
         let s = self.lock().await;
-        let record = s.api_keys.get(&key_hash);
+        let mut hasher = sha::Sha256::new();
+        hasher.update(key.as_bytes());
+        let hash = openssl::base64::encode_block(&hasher.finish());
+        let record = s.api_keys.get(&hash);
         match record {
             Some(record) => Ok(record.clone()),
             None => Err(anyhow::anyhow!(DBError::InvalidKey)),
