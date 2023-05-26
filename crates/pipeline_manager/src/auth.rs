@@ -544,7 +544,7 @@ mod test {
             initial_sql: None,
             dev_mode: false,
         };
-        let (conn, _temp_dir) = crate::db::test::setup_embedded_pg().await;
+        let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
             conn.store_api_key_hash(api_key.unwrap(), vec![Scopes::Read, Scopes::Write])
                 .await

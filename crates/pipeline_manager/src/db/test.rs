@@ -73,7 +73,7 @@ impl Version {
 
 #[cfg(feature = "pg-embed")]
 async fn test_setup() -> DbHandle {
-    let (conn, _temp_dir) = setup_embedded_pg().await;
+    let (conn, _temp_dir) = setup_pg().await;
 
     DbHandle {
         db: conn,
@@ -82,7 +82,7 @@ async fn test_setup() -> DbHandle {
 }
 
 #[cfg(feature = "pg-embed")]
-pub(crate) async fn setup_embedded_pg() -> (ProjectDB, tempfile::TempDir) {
+pub(crate) async fn setup_pg() -> (ProjectDB, tempfile::TempDir) {
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -114,6 +114,15 @@ pub(crate) async fn setup_embedded_pg() -> (ProjectDB, tempfile::TempDir) {
 
 #[cfg(not(feature = "pg-embed"))]
 async fn test_setup() -> DbHandle {
+    let (conn, config) = setup_pg().await;
+    DbHandle {
+        db: conn,
+        config: config,
+    }
+}
+
+#[cfg(not(feature = "pg-embed"))]
+pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
     use pg_client_config::load_config;
 
     let mut config = load_config(None).unwrap();
@@ -140,10 +149,7 @@ async fn test_setup() -> DbHandle {
         .await
         .unwrap();
 
-    DbHandle {
-        db: conn,
-        config: config,
-    }
+    (conn, config)
 }
 
 #[tokio::test]
