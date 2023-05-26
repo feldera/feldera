@@ -43,6 +43,7 @@ cached = { version="0.43.0", features = ["async"]}
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true }
 rand = "0.8.5"
 openssl = "0.10.52"
+static_assertions = "1.1.0"
 
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.4.1" }

@@ -338,8 +338,10 @@ pub(crate) struct ConnectorDescr {
     pub direction: Direction,
 }
 
+/// Permission types for invoking pipeline manager APIs
 #[derive(Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
-pub(crate) enum Scopes {
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) enum ApiPermission {
     Read,
     Write,
 }
@@ -1132,7 +1134,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()> {
+    async fn store_api_key_hash(&self, key: String, scopes: Vec<ApiPermission>) -> AnyResult<()> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1147,8 +1149,8 @@ impl Storage for ProjectDB {
                     &scopes
                         .iter()
                         .map(|scope| match scope {
-                            Scopes::Read => "read",
-                            Scopes::Write => "write",
+                            ApiPermission::Read => "read",
+                            ApiPermission::Write => "write",
                         })
                         .collect::<Vec<&str>>(),
                 ],
@@ -1161,7 +1163,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn validate_api_key(&self, api_key: String) -> AnyResult<Vec<Scopes>> {
+    async fn validate_api_key(&self, api_key: String) -> AnyResult<Vec<ApiPermission>> {
         let mut hasher = sha::Sha256::new();
         hasher.update(api_key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1177,9 +1179,9 @@ impl Storage for ProjectDB {
             .iter()
             .map(|s| {
                 if s == "read" {
-                    Scopes::Read
+                    ApiPermission::Read
                 } else {
-                    Scopes::Write
+                    ApiPermission::Write
                 }
             })
             .collect();

@@ -28,14 +28,14 @@
 //!
 //! For programmatic access, a user authenticated via a Bearer token may generate
 //! API keys. These API keys can then be used in the REST API along with an "x-api-key"
-//! header to authorize access. For now, we simply have two scopes: Read and Write. Later,
+//! header to authorize access. For now, we simply have two permission types: Read and Write. Later,
 //! we will expand to have fine-grained access to specific API resources.
 //!
 //! API keys are randomly generated 128 character sequences that are never stored in
 //! the pipeline manager or in the database. It is the responsibility of the end-user
 //! or client to securely save them and consume them in their programs via environment variables or secret
 //! stores as appropriate. On the pipeline manager side, we store a hash of the API key
-//! in the database along with the scopes.
+//! in the database along with the permissions.
 //!
 
 use std::{collections::HashMap, env};
@@ -49,12 +49,14 @@ use actix_web_httpauth::extractors::{
 use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use log::{error, info};
+use rand::rngs::ThreadRng;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use static_assertions::assert_impl_any;
 
 use crate::{
-    db::{storage::Storage, ProjectDB, Scopes},
+    db::{storage::Storage, ApiPermission, ProjectDB},
     ServerState,
 };
 
@@ -67,82 +69,89 @@ pub(crate) async fn auth_validator(
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // First check if we have a bearer token. If not, we expect an API key.
     match credentials {
-        Some(credentials) => {
-            // Validate bearer token
-            let token = credentials.token();
-            let token = match configuration.provider {
-                Provider::AwsCognito(_) => {
-                    decode_aws_cognito_token(token, &req, configuration).await
+        Some(credentials) => bearer_auth(configuration, req, credentials).await,
+        None => api_key_auth(req).await,
+    }
+}
+
+async fn bearer_auth(
+    configuration: AuthConfiguration,
+    req: ServiceRequest,
+    credentials: BearerAuth,
+) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
+    // Validate bearer token
+    let token = credentials.token();
+    let token = match configuration.provider {
+        Provider::AwsCognito(_) => decode_aws_cognito_token(token, &req, configuration).await,
+    };
+    match token {
+        Ok(_) => {
+            req.extensions_mut()
+                .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+            Ok(req)
+        }
+        Err(error) => {
+            let descr = match error {
+                // Do not bubble up internal errors to the user
+                AuthError::JwkFetch(e) => {
+                    error!("JwkFetch: {:?}", e);
+                    "Authentication failed".to_owned()
                 }
+                // Do not bubble up internal errors to the user
+                AuthError::JwkShape(e) => {
+                    error!("JwkShapeError: {:?}", e);
+                    "Authentication failed".to_owned()
+                }
+                _ => error.to_string(),
             };
-            match token {
-                Ok(_) => {
-                    req.extensions_mut()
-                        .insert(vec![Scopes::Read, Scopes::Write]);
+            let config = req.app_data::<Config>().cloned().unwrap_or_default();
+            Err((
+                AuthenticationError::from(config)
+                    .with_error_description(descr)
+                    .into(),
+                req,
+            ))
+        }
+    }
+}
+
+async fn api_key_auth(
+    req: ServiceRequest,
+) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
+    // Check for an API-key
+    let api_key = req.headers().get("x-api-key");
+    match api_key {
+        Some(api_key) if api_key.to_str().is_ok() => {
+            let api_key_str = api_key.to_str().unwrap();
+            let ad = req.app_data::<Data<ServerState>>();
+            let validate = {
+                let db = &ad.unwrap().db.lock().await;
+                validate_api_keys(db, api_key_str).await
+            };
+            match validate {
+                Ok(permissions) => {
+                    req.extensions_mut().insert(permissions);
                     Ok(req)
                 }
-                Err(error) => {
-                    let descr = match error {
-                        // Do not bubble up internal errors to the user
-                        AuthError::JwkFetch(e) => {
-                            error!("JwkFetch: {:?}", e);
-                            "Authentication failed".to_owned()
-                        }
-                        // Do not bubble up internal errors to the user
-                        AuthError::JwkShape(e) => {
-                            error!("JwkShapeError: {:?}", e);
-                            "Authentication failed".to_owned()
-                        }
-                        _ => error.to_string(),
-                    };
+                Err(_) => {
                     let config = req.app_data::<Config>().cloned().unwrap_or_default();
                     Err((
                         AuthenticationError::from(config)
-                            .with_error_description(descr)
+                            .with_error_description("Unauthorized API key")
                             .into(),
                         req,
                     ))
                 }
             }
         }
-        None => {
-            // Check for an API-key
-            let api_key = req.headers().get("x-api-key");
-            match api_key {
-                Some(api_key) if api_key.to_str().is_ok() => {
-                    let api_key_str = api_key.to_str().unwrap();
-                    let ad = req.app_data::<Data<ServerState>>();
-                    let validate = {
-                        let db = &ad.unwrap().db.lock().await;
-                        validate_api_keys(db, api_key_str).await
-                    };
-                    // TODO: set scopes on request
-                    match validate {
-                        Ok(scopes) => {
-                            req.extensions_mut().insert(scopes);
-                            Ok(req)
-                        }
-                        Err(_) => {
-                            let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                            Err((
-                                AuthenticationError::from(config)
-                                    .with_error_description("Unauthorized API key")
-                                    .into(),
-                                req,
-                            ))
-                        }
-                    }
-                }
-                _ => {
-                    let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                    Err((
-                        AuthenticationError::from(config)
-                            .with_error_description("Missing bearer token or API key")
-                            .into(),
-                        req,
-                    ))
-                }
-            }
+        _ => {
+            let config = req.app_data::<Config>().cloned().unwrap_or_default();
+            Err((
+                AuthenticationError::from(config)
+                    .with_error_description("Missing bearer token or API key")
+                    .into(),
+                req,
+            ))
         }
     }
 }
@@ -308,10 +317,16 @@ pub struct JwkCache {
     cache: TimedCache<String, DecodingKey>,
 }
 
+const DEFAULT_JWK_CACHE_LIFETIME_SECONDS: u64 = 120;
+const DEFAULT_JWK_CACHE_CAPACITY: usize = 10;
+
 impl JwkCache {
     pub(crate) fn new() -> JwkCache {
         Self {
-            cache: TimedCache::with_lifespan_and_capacity(120, 10),
+            cache: TimedCache::with_lifespan_and_capacity(
+                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
+                DEFAULT_JWK_CACHE_CAPACITY,
+            ),
         }
     }
 
@@ -329,8 +344,8 @@ impl JwkCache {
                 let fetched = fetch_jwk_keys(configuration).await;
                 match fetched {
                     Ok(map) => {
-                        for i in map {
-                            cache.cache_set(i.0, i.1);
+                        for (key_id, decoding_key) in map {
+                            cache.cache_set(key_id, decoding_key);
                         }
                         let val_retry = cache.cache_get(key);
                         match val_retry {
@@ -424,16 +439,22 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 
 // Fetch keys on every authentication attempt, so cache the
 // results. TODO: implement periodic refresh
-async fn validate_api_keys(db: &ProjectDB, api_key: &str) -> Result<Vec<Scopes>, anyhow::Error> {
+async fn validate_api_keys(
+    db: &ProjectDB,
+    api_key: &str,
+) -> Result<Vec<ApiPermission>, anyhow::Error> {
     db.validate_api_key(api_key.to_owned()).await
 }
+
+const API_KEY_LENGTH: usize = 128;
 
 /// Generates a random 128 character API key
 #[allow(dead_code)]
 pub(crate) fn generate_api_key() -> String {
+    assert_impl_any!(ThreadRng: rand::CryptoRng);
     rand::thread_rng()
         .sample_iter(Alphanumeric)
-        .take(128)
+        .take(API_KEY_LENGTH)
         .map(char::from)
         .collect()
 }
@@ -459,7 +480,7 @@ mod test {
     use crate::{
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
         config::ManagerConfig,
-        db::{storage::Storage, Scopes},
+        db::{storage::Storage, ApiPermission},
         ServerState,
     };
 
@@ -546,9 +567,12 @@ mod test {
         };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
-            conn.store_api_key_hash(api_key.unwrap(), vec![Scopes::Read, Scopes::Write])
-                .await
-                .unwrap();
+            conn.store_api_key_hash(
+                api_key.unwrap(),
+                vec![ApiPermission::Read, ApiPermission::Write],
+            )
+            .await
+            .unwrap();
         }
         let db = Arc::new(Mutex::new(conn));
         let state = crate::WebData::new(ServerState::new(manager_config, db, None).await.unwrap());
@@ -565,8 +589,11 @@ mod test {
             web::get().to(|req: HttpRequest| async move {
                 {
                     let ext = req.extensions();
-                    let scopes = ext.get::<Vec<Scopes>>().unwrap();
-                    assert_eq!(*scopes, vec![Scopes::Read, Scopes::Write]);
+                    let permissions = ext.get::<Vec<ApiPermission>>().unwrap();
+                    assert_eq!(
+                        *permissions,
+                        vec![ApiPermission::Read, ApiPermission::Write]
+                    );
                 }
                 HttpResponse::build(StatusCode::OK)
             }),

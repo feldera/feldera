@@ -2,7 +2,7 @@ use super::{
     storage::Storage, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
     ConnectorType, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
 };
-use super::{PipelineDescr, Scopes};
+use super::{ApiPermission, PipelineDescr};
 use crate::{auth, Direction};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
@@ -419,12 +419,15 @@ async fn save_api_key() {
         let api_key = auth::generate_api_key();
         handle
             .db
-            .store_api_key_hash(api_key.clone(), vec![Scopes::Read, Scopes::Write])
+            .store_api_key_hash(
+                api_key.clone(),
+                vec![ApiPermission::Read, ApiPermission::Write],
+            )
             .await
             .unwrap();
         let scopes = handle.db.validate_api_key(api_key.clone()).await.unwrap();
-        assert_eq!(&Scopes::Read, scopes.get(0).unwrap());
-        assert_eq!(&Scopes::Write, scopes.get(1).unwrap());
+        assert_eq!(&ApiPermission::Read, scopes.get(0).unwrap());
+        assert_eq!(&ApiPermission::Write, scopes.get(1).unwrap());
 
         let api_key_2 = auth::generate_api_key();
         let failure = handle.db.validate_api_key(api_key_2).await.unwrap_err();
@@ -479,6 +482,8 @@ enum StorageAction {
     GetConnector(ConnectorId),
     UpdateConnector(ConnectorId, String, String, Option<String>),
     DeleteConnector(ConnectorId),
+    StoreApiKeyHash(String, Vec<ApiPermission>),
+    ValidateApiKey(String),
 }
 
 fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_: AnyResult<T>) {
@@ -768,6 +773,16 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_connector(connector_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::StoreApiKeyHash(key, permissions) => {
+                                let model_response = model.store_api_key_hash(key.clone(), permissions.clone()).await;
+                                let impl_response = handle.db.store_api_key_hash(key.clone(), permissions.clone()).await;
+                                check_responses(i, model_response, impl_response);
+                            },
+                            StorageAction::ValidateApiKey(key) => {
+                                let model_response = model.validate_api_key(key.clone()).await;
+                                let impl_response = handle.db.validate_api_key(key.clone()).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
@@ -793,7 +808,7 @@ struct DbModel {
     pub configs: BTreeMap<ConfigId, ConfigDescr>,
     pub connectors: BTreeMap<ConnectorId, ConnectorDescr>,
     pub pipelines: BTreeMap<PipelineId, PipelineDescr>,
-    pub api_keys: BTreeMap<String, Vec<Scopes>>,
+    pub api_keys: BTreeMap<String, Vec<ApiPermission>>,
 }
 
 #[async_trait]
@@ -1396,7 +1411,11 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()> {
+    async fn store_api_key_hash(
+        &self,
+        key: String,
+        permissions: Vec<ApiPermission>,
+    ) -> AnyResult<()> {
         let mut s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
@@ -1404,12 +1423,12 @@ impl Storage for Mutex<DbModel> {
         if s.api_keys.contains_key(&hash) {
             Err(anyhow::anyhow!(DBError::DuplicateKey))
         } else {
-            s.api_keys.insert(hash, scopes);
+            s.api_keys.insert(hash, permissions);
             Ok(())
         }
     }
 
-    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<Scopes>> {
+    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<ApiPermission>> {
         let s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());

@@ -1,6 +1,6 @@
 use super::{
-    AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId, ConnectorType, DBError,
-    PipelineDescr, PipelineId, ProjectDescr, ProjectId, Scopes, Version,
+    ApiPermission, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
+    ConnectorType, DBError, PipelineDescr, PipelineId, ProjectDescr, ProjectId, Version,
 };
 use crate::{Direction, ProjectStatus};
 use anyhow::{anyhow, Result as AnyResult};
@@ -266,8 +266,12 @@ pub(crate) trait Storage {
     async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()>;
 
     /// Persist a hash of API key in the database
-    async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()>;
+    async fn store_api_key_hash(
+        &self,
+        key: String,
+        permissions: Vec<ApiPermission>,
+    ) -> AnyResult<()>;
 
     /// Validate an API key against the database
-    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<Scopes>>;
+    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<ApiPermission>>;
 }
