@@ -408,6 +408,7 @@ async fn validate_api_keys(db: &ProjectDB, api_key: &str) -> Result<Vec<Scopes>,
 }
 
 /// Generates a random 128 character API key
+#[allow(dead_code)]
 pub(crate) fn generate_api_key() -> String {
     rand::thread_rng()
         .sample_iter(Alphanumeric)
@@ -423,7 +424,7 @@ mod test {
     use actix_http::{header::HeaderName, HttpMessage, StatusCode};
     use actix_web::{
         body::{BoxBody, EitherBody},
-        dev::{ServiceRequest, ServiceResponse},
+        dev::ServiceResponse,
         http::{self},
         test, web, App, HttpRequest, HttpResponse,
     };
