@@ -268,6 +268,6 @@ pub(crate) trait Storage {
     /// Persist a hash of API key in the database
     async fn store_api_key_hash(&self, key: String, scopes: Vec<Scopes>) -> AnyResult<()>;
 
-    /// Validate whether an existing API key is
-    async fn validate_api_key(&self, key_hash: String) -> AnyResult<Vec<Scopes>>;
+    /// Validate an API key against the database
+    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<Scopes>>;
 }
