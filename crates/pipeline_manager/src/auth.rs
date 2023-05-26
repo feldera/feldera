@@ -21,6 +21,7 @@
 
 use std::{collections::HashMap, env};
 
+use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
@@ -55,7 +56,11 @@ pub(crate) async fn auth_validator(
                 }
             };
             match token {
-                Ok(_) => Ok(req),
+                Ok(_) => {
+                    req.extensions_mut()
+                        .insert(vec![Scopes::Read, Scopes::Write]);
+                    Ok(req)
+                }
                 Err(error) => {
                     let descr = match error {
                         // Do not bubble up internal errors to the user
@@ -92,7 +97,10 @@ pub(crate) async fn auth_validator(
                     };
                     // TODO: set scopes on request
                     match validate {
-                        Ok(_) => Ok(req),
+                        Ok(scopes) => {
+                            req.extensions_mut().insert(scopes);
+                            Ok(req)
+                        }
                         Err(_) => {
                             let config = req.app_data::<Config>().cloned().unwrap_or_default();
                             Err((
@@ -106,12 +114,12 @@ pub(crate) async fn auth_validator(
                 }
                 _ => {
                     let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                    return Err((
+                    Err((
                         AuthenticationError::from(config)
                             .with_error_description("Missing bearer token or API key")
                             .into(),
                         req,
-                    ));
+                    ))
                 }
             }
         }
@@ -304,15 +312,13 @@ impl JwkCache {
                             cache.cache_set(i.0, i.1);
                         }
                         let val_retry = cache.cache_get(key);
-                        return match val_retry {
+                        match val_retry {
                             Some(val_retry) => Ok(val_retry.clone()),
                             None => Err(AuthError::JwkShape("Invalid kid".to_owned())),
-                        };
+                        }
                     }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }; // refresh cache
+                    Err(e) => Err(e),
+                }
             }
         }
     }
@@ -414,12 +420,12 @@ pub(crate) fn generate_api_key() -> String {
 mod test {
     use std::{str::FromStr, sync::Arc};
 
-    use actix_http::header::HeaderName;
+    use actix_http::{header::HeaderName, HttpMessage, StatusCode};
     use actix_web::{
         body::{BoxBody, EitherBody},
-        dev::ServiceResponse,
+        dev::{ServiceRequest, ServiceResponse},
         http::{self},
-        test, web, App,
+        test, web, App, HttpRequest, HttpResponse,
     };
     use actix_web_httpauth::middleware::HttpAuthentication;
     use base64::Engine;
@@ -532,10 +538,17 @@ mod test {
                 .cache
                 .cache_set("rsa01".to_owned(), decoding_key.unwrap());
         }
-        let app = App::new()
-            .app_data(state)
-            .wrap(auth_middleware)
-            .route("/", web::get().to(|| async { "OK" }));
+        let app = App::new().app_data(state).wrap(auth_middleware).route(
+            "/",
+            web::get().to(|req: HttpRequest| async move {
+                {
+                    let ext = req.extensions();
+                    let scopes = ext.get::<Vec<Scopes>>().unwrap();
+                    assert_eq!(*scopes, vec![Scopes::Read, Scopes::Write]);
+                }
+                HttpResponse::build(StatusCode::OK)
+            }),
+        );
         let app = test::init_service(app).await;
         let resp = test::call_service(&app, req).await;
         resp
