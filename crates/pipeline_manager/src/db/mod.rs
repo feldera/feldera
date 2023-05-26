@@ -5,6 +5,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
+use openssl::sha;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{error::Error as StdError, fmt, fmt::Display};
@@ -13,7 +14,7 @@ use tokio_postgres::NoTls;
 use utoipa::ToSchema;
 
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 #[cfg(feature = "pg-embed")]
 mod pg_setup;
@@ -120,6 +121,8 @@ pub(crate) enum DBError {
     UnknownPipeline(PipelineId),
     UnknownConnector(ConnectorId),
     DuplicateName,
+    DuplicateKey,
+    InvalidKey,
 }
 
 impl Display for DBError {
@@ -143,6 +146,12 @@ impl Display for DBError {
             }
             DBError::DuplicateName => {
                 write!(f, "An entity with this name already exists")
+            }
+            DBError::DuplicateKey => {
+                write!(f, "A key with the same hash already exists")
+            }
+            DBError::InvalidKey => {
+                write!(f, "Could not validate API")
             }
         }
     }
@@ -327,6 +336,14 @@ pub(crate) struct ConnectorDescr {
     pub typ: ConnectorType,
     pub config: String,
     pub direction: Direction,
+}
+
+/// Permission types for invoking pipeline manager APIs
+#[derive(Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) enum ApiPermission {
+    Read,
+    Write,
 }
 
 // Helper type for composable error handling when dealing
@@ -1116,6 +1133,60 @@ impl Storage for ProjectDB {
             Err(anyhow!(DBError::UnknownConnector(connector_id)))
         }
     }
+
+    async fn store_api_key_hash(&self, key: String, scopes: Vec<ApiPermission>) -> AnyResult<()> {
+        let mut hasher = sha::Sha256::new();
+        hasher.update(key.as_bytes());
+        let hash = openssl::base64::encode_block(&hasher.finish());
+        let res = self
+            .pool
+            .get()
+            .await?
+            .execute(
+                "INSERT INTO api_key VALUES ($1, $2)",
+                &[
+                    &hash,
+                    &scopes
+                        .iter()
+                        .map(|scope| match scope {
+                            ApiPermission::Read => "read",
+                            ApiPermission::Write => "write",
+                        })
+                        .collect::<Vec<&str>>(),
+                ],
+            )
+            .await?;
+        if res > 0 {
+            Ok(())
+        } else {
+            Err(anyhow!(DBError::DuplicateKey))
+        }
+    }
+
+    async fn validate_api_key(&self, api_key: String) -> AnyResult<Vec<ApiPermission>> {
+        let mut hasher = sha::Sha256::new();
+        hasher.update(api_key.as_bytes());
+        let hash = openssl::base64::encode_block(&hasher.finish());
+        let res = self
+            .pool
+            .get()
+            .await?
+            .query_one("SELECT scopes FROM api_key WHERE hash = $1", &[&hash])
+            .await
+            .map_err(|_| anyhow!(DBError::InvalidKey))?;
+        let vec: Vec<String> = res.get(0);
+        let vec = vec
+            .iter()
+            .map(|s| {
+                if s == "read" {
+                    ApiPermission::Read
+                } else {
+                    ApiPermission::Write
+                }
+            })
+            .collect();
+        Ok(vec)
+    }
 }
 
 impl ProjectDB {
@@ -1299,6 +1370,16 @@ impl ProjectDB {
             )
             .await?;
 
+        // Add user and tenant info after API hardening pass
+        client
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS api_key (
+                hash varchar PRIMARY KEY,
+                scopes text[] NOT NULL)",
+                &[],
+            )
+            .await?;
         if let Some(initial_sql_file) = &initial_sql {
             if let Ok(initial_sql) = std::fs::read_to_string(initial_sql_file) {
                 client.execute(&initial_sql, &[]).await?;
