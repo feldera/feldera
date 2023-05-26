@@ -1,0 +1,7 @@
+[package]
+name = "genlib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dbsp = { path = "../../../crates/dbsp" }

@@ -1,0 +1,11 @@
+TINYINT
+VARCHAR
+toolset
+virtualenv
+nullable
+nullability
+datatype
+unary
+underspecified
+customizable
+datatypes

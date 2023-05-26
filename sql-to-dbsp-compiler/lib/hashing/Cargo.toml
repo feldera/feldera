@@ -1,0 +1,12 @@
+[package]
+name = "hashing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+md5 = { version = "0.7.0" }
+sqlvalue = { path = "../sqlvalue" }
+num = { version = "0.4.0" }
+dbsp = { path = "../../../crates/dbsp" }
+dataflow-jit = { path = "../../../crates/dataflow-jit", default-features = false }
+size-of = { version = "0.1.5", features = ["rust_decimal"] }
