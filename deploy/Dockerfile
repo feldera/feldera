@@ -39,12 +39,6 @@ FROM base as javabuild
 RUN mkdir sql
 COPY .git /sql/.git
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
-# Update SQL compiler submodule to the version specified in the repo, unless
-# the submodule is _not_ in detached head state, which indicates that the user
-# is working on the submodule and wants to build a container with their modified
-# SQL compiler version.
-RUN bash -c "if [[ ! -e /sql/sql-to-dbsp-compiler/.git ]] ; \
-   then cd /sql && git submodule update --init; fi"
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
 # Minimal image for running the pipeline manager

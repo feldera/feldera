@@ -134,7 +134,7 @@ The DBSP core engine is written in Rust and provides a Rust API for building
 data-parallel dataflow programs by instantiating and connecting streaming
 operators.  Developers can use this API directly to implement complex
 streaming queries.  We are also developing a
-[compiler from SQL to DBSP](https://github.com/feldera/sql2dbsp) that
+[compiler from SQL to DBSP](sql-to-dbsp-compiler) that
 enables engineers and data scientists to use the engine via a familiar
 query language.  In the future, we will add DBSP bindings for languages
 like Python and Scala.

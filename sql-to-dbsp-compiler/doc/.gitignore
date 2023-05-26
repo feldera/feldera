@@ -1,0 +1,12 @@
+_book/
+*.pdf
+*.tex
+.DS_Store
+*/.DS_Store
+*.sh
+private/
+scripts/
+systemsapproach.github.io/
+_build/
+venv-docs/
+cover.docx

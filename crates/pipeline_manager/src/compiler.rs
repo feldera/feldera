@@ -380,13 +380,19 @@ impl CompilationJob {
                 ))
             })?;
         let project_name = format!("name = \"{}\"", ManagerConfig::crate_name(project_id));
-        let project_toml_code = template_toml
+        let mut project_toml_code = template_toml
             .replace("name = \"temp\"", &project_name)
             .replace(", default-features = false", "")
             .replace(
                 "[lib]\npath = \"src/lib.rs\"",
                 &format!("\n\n[[bin]]\n{project_name}\npath = \"src/main.rs\""),
             );
+        if let Some(p) = &config.dbsp_override_path {
+            project_toml_code = project_toml_code
+                .replace("../../crates", &format!("{p}/crates"))
+                .replace("../lib", &format!("{p}/sql-to-dbsp-compiler/lib"));
+        };
+        eprintln!("TOML:\n{project_toml_code}");
 
         fs::write(&config.project_toml_path(project_id), project_toml_code)
             .await
@@ -399,21 +405,10 @@ impl CompilationJob {
 
         // Write workspace `Cargo.toml`.  The workspace contains SQL libs and the
         // generated project crate.
-        let mut workspace_toml_code = format!(
-            "[workspace]\nmembers = [ \"lib/*\", \"{}\"]\n",
+        let workspace_toml_code = format!(
+            "[workspace]\nmembers = [ \"{}\" ]\n",
             ManagerConfig::crate_name(project_id),
         );
-
-        // Generate the `[patch]` section to point to the local DBSP source tree.
-        if let Some(dbsp_override_path) = &config.dbsp_override_path {
-            let patch = format!(
-                "[patch.'https://github.com/vmware/database-stream-processor']\n\
-                dbsp = {{ path = \"{dbsp_override_path}/crates/dbsp\" }}\n\
-                dbsp_adapters = {{ path = \"{dbsp_override_path}/crates/adapters\" }}"
-            );
-            workspace_toml_code.push_str(&patch);
-        }
-
         fs::write(&config.workspace_toml_path(), workspace_toml_code)
             .await
             .map_err(|e| {

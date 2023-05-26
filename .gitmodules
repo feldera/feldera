@@ -1,3 +1,0 @@
-[submodule "sql-to-dbsp-compiler"]
-	path = sql-to-dbsp-compiler
-	url = https://github.com/feldera/sql2dbsp.git

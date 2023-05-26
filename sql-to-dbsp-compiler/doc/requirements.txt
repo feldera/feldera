@@ -1,0 +1,7 @@
+Sphinx~=4.4.0
+doc8~=0.10.1
+docutils~=0.17.1
+reuse~=0.14.0
+sphinx-rtd-theme~=1.0.0
+sphinxcontrib-spelling~=7.3.2
+sphinx-multiversion~=0.2.4
