@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
 
 
 def prepare():
-    cmd = ["cargo", "run", "--release"]
+    cmd = ["cargo", "run", "--release", "--", "10000"]
     # Override --release if RUST_BUILD_PROFILE is set
     if "RUST_BUILD_PROFILE" in os.environ:
         cmd[-1] = os.environ["RUST_BUILD_PROFILE"]

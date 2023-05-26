@@ -39,7 +39,10 @@ impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {
         let mut admin_config = ClientConfig::new();
         admin_config
-            .set("bootstrap.servers", "localhost")
+            .set(
+                "bootstrap.servers",
+                std::env::var("REDPANDA_BROKERS").unwrap_or("localhost".to_string()),
+            )
             .set_log_level(RDKafkaLogLevel::Debug);
         let admin_client = AdminClient::from_config(&admin_config).unwrap();
 
@@ -83,7 +86,10 @@ impl KafkaProducer {
     pub fn new() -> Self {
         let mut producer_config = ClientConfig::new();
         producer_config
-            .set("bootstrap.servers", "localhost")
+            .set(
+                "bootstrap.servers",
+                std::env::var("REDPANDA_BROKERS").unwrap_or("localhost".to_string()),
+            )
             .set("message.timeout.ms", "0") // infinite timeout
             .set_log_level(RDKafkaLogLevel::Debug);
         let producer = ThreadedProducer::from_config(&producer_config).unwrap();
@@ -317,7 +323,6 @@ fn generate_clusters(num_clusters: u64) -> Vec<K8sCluster> {
         .collect()
 }
 
-
 // create table pipeline (
 //    pipeline_id bigint not null,
 //    create_date timestamp not null,
@@ -395,13 +400,18 @@ struct K8sObject {
     checksum_type: String,
     deployed_id: u64,
     deployment_type: String,
-    k8snamespace: String
+    k8snamespace: String,
 }
 
 fn generate_pipelines(
     id_from: u64,
     id_to: u64,
-) -> (Vec<Pipeline>, Vec<PipelineSource>, Vec<Artifact>, Vec<K8sObject>) {
+) -> (
+    Vec<Pipeline>,
+    Vec<PipelineSource>,
+    Vec<Artifact>,
+    Vec<K8sObject>,
+) {
     let mut pipelines = Vec::with_capacity((id_to - id_from) as usize);
     let mut sources = Vec::with_capacity(((id_to - id_from) * NUM_SOURCES_PER_PIPELINE) as usize);
     let mut artifacts = Vec::with_capacity(((id_to - id_from) * NUM_SOURCES_PER_PIPELINE) as usize);
@@ -481,18 +491,32 @@ fn generate_pipelines(
 }
 
 fn main() {
-    println!("Creating topics");
-    let _kafka_resources =
-        KafkaResources::create_topics(
-            &[(TOPIC_REPOSITORY, 1),
-              (TOPIC_GIT_COMMIT, 1),
-              (TOPIC_VULNERABILITY, 1),
-              (TOPIC_CLUSTER, 1),
-              (TOPIC_PIPELINE, 1),
-              (TOPIC_PIPELINE_SOURCES, 1),
-              (TOPIC_ARTIFACT, 1),
-              (TOPIC_K8SOBJECT, 1),
-            ]);
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 2 {
+        println!("Usage: secops_simulator <num_pipelines>");
+        std::process::exit(1);
+    }
+    let num_pipelines = if args.len() == 2 {
+        args.get(1)
+            .unwrap()
+            .parse()
+            .expect("Num pipelines should be an integer")
+    } else {
+        NUM_PIPELINES
+    };
+
+    println!("Creating topics. Num piplines: {}", num_pipelines);
+    let _kafka_resources = KafkaResources::create_topics(&[
+        (TOPIC_REPOSITORY, 1),
+        (TOPIC_GIT_COMMIT, 1),
+        (TOPIC_VULNERABILITY, 1),
+        (TOPIC_CLUSTER, 1),
+        (TOPIC_PIPELINE, 1),
+        (TOPIC_PIPELINE_SOURCES, 1),
+        (TOPIC_ARTIFACT, 1),
+        (TOPIC_K8SOBJECT, 1),
+    ]);
 
     let producer = KafkaProducer::new();
 
@@ -520,7 +544,7 @@ fn main() {
 
     println!("Generating pipelines");
     let mut generated_pipelines = 0;
-    while generated_pipelines < NUM_PIPELINES {
+    while generated_pipelines < num_pipelines {
         let (pipelines, pipeline_sources, artifacts, k8sobjects) =
             generate_pipelines(generated_pipelines, generated_pipelines + 300);
 

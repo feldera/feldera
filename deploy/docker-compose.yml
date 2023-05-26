@@ -3,7 +3,7 @@ volumes:
 
 services:
   dbsp:
-    image: ghcr.io/vmware/dbspmanager:latest
+    image: ghcr.io/feldera/dbspmanager:latest
     ports:
       - "8085:8080"
     stop_grace_period: 0s

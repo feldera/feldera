@@ -18,5 +18,5 @@ for project_dir in "${project_prefix}"*
 do
     project_name=${project_dir#$project_prefix}
     printf "Creating demo '${project_name}'... "
-    python3 "${project_dir}/run.py" compile create
+    python3 "${project_dir}/run.py" --dbsp_url ${DBSP_MANAGER} --actions compile create
 done
