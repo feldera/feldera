@@ -1,20 +1,17 @@
 //! Support for SQL Timestamp and Date data types.
 
-use std::{
-    fmt::{self, Debug},
-    ops::Add
-};
-use size_of::SizeOf;
+use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDateTime, TimeZone, Timelike, Utc};
 use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-use crate::interval::{
-    ShortInterval,
-    LongInterval,
+use size_of::SizeOf;
+use std::{
+    fmt::{self, Debug},
+    ops::Add,
 };
 
-/// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and the current time.
-/// The supported range is limited (e.g., up to 2038 in MySQL).
-/// We use milliseconds to represent the interval.
+/// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
+/// the current time. The supported range is limited (e.g., up to 2038 in
+/// MySQL). We use milliseconds to represent the interval.
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
 pub struct Timestamp {
     // since unix epoch
@@ -24,9 +21,7 @@ pub struct Timestamp {
 impl Debug for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let datetime =
-            NaiveDateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
-                fmt::Error
-            })?;
+            NaiveDateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| fmt::Error)?;
 
         f.write_str(&datetime.format("%F %T%.f").to_string())
     }
@@ -55,12 +50,13 @@ impl Serialize for Timestamp {
 ///
 /// # Caveats
 ///
-/// * The format does not include a time zone, because the `TIMESTAMP` type is supposed to be
-///   timezone-agnostic.
-/// * Different databases may use different default export formats for timestamps.  Moreover,
-///   I suspect that binary serialization formats represent timestamps as numbers (which is how
-///   they are stored inside the DB), so in the future we may need a smarter implementation that
-///   supports all these variants.
+/// * The format does not include a time zone, because the `TIMESTAMP` type is
+///   supposed to be timezone-agnostic.
+/// * Different databases may use different default export formats for
+///   timestamps.  Moreover, I suspect that binary serialization formats
+///   represent timestamps as numbers (which is how they are stored inside the
+///   DB), so in the future we may need a smarter implementation that supports
+///   all these variants.
 impl<'de> Deserialize<'de> for Timestamp {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -76,10 +72,11 @@ impl<'de> Deserialize<'de> for Timestamp {
     }
 }
 
-
 impl Timestamp {
     pub const fn new(milliseconds: i64) -> Self {
-        Self { milliseconds: milliseconds }
+        Self {
+            milliseconds: milliseconds,
+        }
     }
 
     pub fn milliseconds(&self) -> i64 {
@@ -87,19 +84,29 @@ impl Timestamp {
     }
 
     pub fn to_dateTime(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.milliseconds / 1000, ((self.milliseconds % 1000i64) as u32) * 1_000_000).single().unwrap()
+        Utc.timestamp_opt(
+            self.milliseconds / 1000,
+            ((self.milliseconds % 1000i64) as u32) * 1_000_000,
+        )
+        .single()
+        .unwrap()
     }
 
     pub fn from_dateTime(date: DateTime<Utc>) -> Self {
-        Self { milliseconds: date.timestamp_millis() }
+        Self {
+            milliseconds: date.timestamp_millis(),
+        }
     }
 }
 
 impl<T> From<T> for Timestamp
-where i64: From<T>
+where
+    i64: From<T>,
 {
     fn from(value: T) -> Self {
-        Self { milliseconds: i64::from(value) }
+        Self {
+            milliseconds: i64::from(value),
+        }
     }
 }
 
@@ -107,7 +114,9 @@ impl Add<i64> for Timestamp {
     type Output = Self;
 
     fn add(self, value: i64) -> Self {
-        Self { milliseconds: self.milliseconds + value }
+        Self {
+            milliseconds: self.milliseconds + value,
+        }
     }
 }
 
@@ -119,7 +128,10 @@ pub fn minus_Timestamp_Timestamp_ShortInterval(left: Timestamp, right: Timestamp
     ShortInterval::from(left.milliseconds() - right.milliseconds())
 }
 
-pub fn minus_TimestampN_Timestamp_ShortIntervalN(left: Option<Timestamp>, right: Timestamp) -> Option<ShortInterval> {
+pub fn minus_TimestampN_Timestamp_ShortIntervalN(
+    left: Option<Timestamp>,
+    right: Timestamp,
+) -> Option<ShortInterval> {
     left.map(|l| minus_Timestamp_Timestamp_ShortInterval(l, right))
 }
 
@@ -127,7 +139,10 @@ pub fn minus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInte
     Timestamp::new(left.milliseconds() - right.milliseconds())
 }
 
-pub fn minus_Timestamp_TimestampN_ShortIntervalN(left: Timestamp, right: Option<Timestamp>) -> Option<ShortInterval> {
+pub fn minus_Timestamp_TimestampN_ShortIntervalN(
+    left: Timestamp,
+    right: Option<Timestamp>,
+) -> Option<ShortInterval> {
     right.map(|r| ShortInterval::from(left.milliseconds() - r.milliseconds()))
 }
 
@@ -150,8 +165,10 @@ pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp)
     LongInterval::from((ly - ry) * 12 + lm - rm)
 }
 
-pub fn minus_TimestampN_Timestamp_LongIntervalN(left: Option<Timestamp>, right: Timestamp) -> Option<LongInterval>
-{
+pub fn minus_TimestampN_Timestamp_LongIntervalN(
+    left: Option<Timestamp>,
+    right: Timestamp,
+) -> Option<LongInterval> {
     left.map(|l| minus_Timestamp_Timestamp_LongInterval(l, right))
 }
 
@@ -412,7 +429,10 @@ pub fn neq_Timestamp_TimestampN(left: Timestamp, right: Option<Timestamp>) -> Op
     }
 }
 
-pub fn neq_TimestampN_TimestampN(left: Option<Timestamp>, right: Option<Timestamp>) -> Option<bool> {
+pub fn neq_TimestampN_TimestampN(
+    left: Option<Timestamp>,
+    right: Option<Timestamp>,
+) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -438,7 +458,10 @@ pub fn gte_Timestamp_TimestampN(left: Timestamp, right: Option<Timestamp>) -> Op
     }
 }
 
-pub fn gte_TimestampN_TimestampN(left: Option<Timestamp>, right: Option<Timestamp>) -> Option<bool> {
+pub fn gte_TimestampN_TimestampN(
+    left: Option<Timestamp>,
+    right: Option<Timestamp>,
+) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -464,7 +487,10 @@ pub fn lte_Timestamp_TimestampN(left: Timestamp, right: Option<Timestamp>) -> Op
     }
 }
 
-pub fn lte_TimestampN_TimestampN(left: Option<Timestamp>, right: Option<Timestamp>) -> Option<bool> {
+pub fn lte_TimestampN_TimestampN(
+    left: Option<Timestamp>,
+    right: Option<Timestamp>,
+) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -475,10 +501,15 @@ pub fn lte_TimestampN_TimestampN(left: Option<Timestamp>, right: Option<Timestam
 pub fn floor_Timestamp_week(value: Timestamp) -> Timestamp {
     let wd = extract_Timestamp_dow(value) - Date::first_day_of_week();
     let ts = value.to_dateTime();
-    let notime = ts.with_hour(0).unwrap()
-        .with_minute(0).unwrap()
-        .with_second(0).unwrap()
-        .with_nanosecond(0).unwrap();
+    let notime = ts
+        .with_hour(0)
+        .unwrap()
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap();
     let notimeTs = Timestamp::from_dateTime(notime);
     let interval = ShortInterval::new(wd * 86400 * 1000);
     let result = minus_Timestamp_ShortInterval_Timestamp(notimeTs, interval);
@@ -511,7 +542,9 @@ impl Date {
     }
 
     pub fn to_dateTime(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.days() as i64 * 86400, 0).single().unwrap()
+        Utc.timestamp_opt(self.days() as i64 * 86400, 0)
+            .single()
+            .unwrap()
     }
 
     pub fn first_day_of_week() -> i64 {
@@ -523,10 +556,12 @@ impl Date {
 
 impl<T> From<T> for Date
 where
-    i32: From<T>
+    i32: From<T>,
 {
     fn from(value: T) -> Self {
-        Self { days: i32::from(value) }
+        Self {
+            days: i32::from(value),
+        }
     }
 }
 
@@ -537,13 +572,8 @@ impl Serialize for Date {
         S: Serializer,
     {
         let millis = (self.days as i64) * 86400 * 1000;
-        let datetime =
-            NaiveDateTime::from_timestamp_millis(millis).ok_or_else(|| {
-                S::Error::custom(format!(
-                    "date value '{}' out of range",
-                    self.days
-                ))
-            })?;
+        let datetime = NaiveDateTime::from_timestamp_millis(millis)
+            .ok_or_else(|| S::Error::custom(format!("date value '{}' out of range", self.days)))?;
 
         serializer.serialize_str(&datetime.format("%F").to_string())
     }
@@ -556,9 +586,8 @@ impl<'de> Deserialize<'de> for Date {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let timestamp = NaiveDateTime::parse_from_str(&str, "%Y-%m-%d").map_err(|e| {
-            D::Error::custom(format!("invalid date string '{str}': {e}"))
-        })?;
+        let timestamp = NaiveDateTime::parse_from_str(&str, "%Y-%m-%d")
+            .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
         Ok(Self::new((timestamp.timestamp() / 86400) as i32))
     }
 }
@@ -743,7 +772,10 @@ pub fn minus_date_dateN_LongInterval(left: Date, right: Option<Date>) -> Option<
     }
 }
 
-pub fn minus_dateN_dateN_LongIntervalN(left: Option<Date>, right: Option<Date>) -> Option<LongInterval> {
+pub fn minus_dateN_dateN_LongIntervalN(
+    left: Option<Date>,
+    right: Option<Date>,
+) -> Option<LongInterval> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -771,7 +803,10 @@ pub fn minus_date_dateN_ShortIntervalN(left: Date, right: Option<Date>) -> Optio
     }
 }
 
-pub fn minus_dateN_dateN_ShortIntervalN(left: Option<Date>, right: Option<Date>) -> Option<ShortInterval> {
+pub fn minus_dateN_dateN_ShortIntervalN(
+    left: Option<Date>,
+    right: Option<Date>,
+) -> Option<ShortInterval> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
