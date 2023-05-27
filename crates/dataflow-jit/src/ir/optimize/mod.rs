@@ -1,6 +1,7 @@
 mod antijoin_self;
 mod dedup;
 mod distinct;
+mod passthrough_sums;
 mod shake;
 
 use crate::ir::{Graph, GraphExt};
@@ -16,9 +17,13 @@ use crate::ir::{Graph, GraphExt};
 pub(super) fn optimize_graph(graph: &mut Graph) {
     let graph = graph.graph_mut();
 
-    graph.optimize();
-    graph.remove_redundant_distinct();
-    graph.remove_self_antijoins();
-    graph.dedup_nodes();
-    graph.shake_dead_nodes();
+    for _ in 0..5 {
+        graph.optimize();
+        graph.remove_redundant_distinct();
+        graph.remove_self_antijoins();
+        graph.dedup_nodes();
+        graph.shake_dead_nodes();
+        graph.passthrough_sums();
+        graph.shake_dead_nodes();
+    }
 }

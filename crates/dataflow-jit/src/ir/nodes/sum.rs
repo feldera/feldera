@@ -22,7 +22,11 @@ impl Sum {
         &self.inputs
     }
 
-    pub fn layout(&self) -> StreamLayout {
+    pub fn inputs_mut(&mut self) -> &mut Vec<NodeId> {
+        &mut self.inputs
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
         self.layout
     }
 }
