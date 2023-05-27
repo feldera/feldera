@@ -5,8 +5,8 @@
 //! to SqlRow objects when they need to be displayed.
 
 use dbsp::algebra::{F32, F64};
-use sqllib::casts::*;
 use rust_decimal::Decimal;
+use sqllib::casts::*;
 
 #[derive(Debug)]
 pub enum SqlValue {
@@ -151,7 +151,9 @@ pub trait ToSqlRow {
 
 impl SqlRow {
     pub fn new() -> Self {
-        SqlRow { values: Vec::default() }
+        SqlRow {
+            values: Vec::default(),
+        }
     }
 
     /// Output the SqlRow value in the format expected by the tests
@@ -163,7 +165,11 @@ impl SqlRow {
     /// if format.let() != self.values.len()
     pub fn to_slt_strings(self, format: &String) -> Vec<String> {
         if self.values.len() != format.len() {
-            panic!("Mismatched format {} vs len {}", format.len(), self.values.len())
+            panic!(
+                "Mismatched format {} vs len {}",
+                format.len(),
+                self.values.len()
+            )
         }
         let mut result = Vec::<String>::with_capacity(format.len());
         for elem in self.values.iter().zip(format.chars()) {
@@ -181,7 +187,9 @@ impl SqlRow {
 
 impl Default for SqlRow {
     fn default() -> Self {
-        SqlRow { values: Vec::default() }
+        SqlRow {
+            values: Vec::default(),
+        }
     }
 }
 
@@ -194,7 +202,7 @@ pub trait SqlLogicTestFormat {
 /// non-printable (ASCII) characters are turned into @
 fn slt_translate_string(s: &String) -> String {
     if s == "" {
-        return String::from("(empty)")
+        return String::from("(empty)");
     }
     let mut result = String::with_capacity(s.len());
     for mut c in s.chars() {

@@ -1,37 +1,16 @@
+use core::{cmp::Ordering, fmt::Debug};
+use dataflow_jit::ir::literal::{
+    RowLiteral, StreamCollection,
+    StreamCollection::{Map, Set},
+};
 use dbsp::{
-    trace::{
-        ord::OrdZSet,
-        BatchReader,
-        cursor::Cursor,
-    },
-    algebra::{
-        ZRingValue,
-        ZSet,
-        MulByRef,
-        AddByRef,
-        NegByRef,
-        HasZero,
-    },
-    DBData,
-    DBWeight,
-    zset,
+    algebra::{AddByRef, HasZero, MulByRef, NegByRef, ZRingValue, ZSet},
+    trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
+    zset, DBData, DBWeight,
 };
-use std::collections::BTreeMap;
-use dataflow_jit::{
-    ir::{
-        literal::{
-            StreamCollection,
-            StreamCollection::{Set,Map},
-            RowLiteral,
-        },
-    },
-};
-use core::{
-    cmp::Ordering,
-    fmt::Debug,
-};
-use sqlvalue::*;
 use md5;
+use sqlvalue::*;
+use std::collections::BTreeMap;
 
 #[derive(Eq, PartialEq)]
 pub enum SortOrder {
@@ -42,7 +21,7 @@ pub enum SortOrder {
 
 fn compare<T>(left: &Vec<T>, right: &Vec<T>) -> Ordering
 where
-    T: Ord
+    T: Ord,
 {
     let llen = left.len();
     let rlen = right.len();
@@ -58,7 +37,7 @@ where
             return cmp;
         }
     }
-    return llen.cmp(&rlen)
+    return llen.cmp(&rlen);
 }
 
 /// Convert a zset to a vector of SqlRow.
@@ -91,14 +70,12 @@ where
 
 /// Adds tuples of zsets.  Used to handle the outputs
 /// of circuits that compute each a single view.
-pub fn add_zset_tuple<K, W>(
-    left: (OrdZSet<K, W>, ),
-    right: (OrdZSet<K, W>, )) -> (OrdZSet<K, W>, )
+pub fn add_zset_tuple<K, W>(left: (OrdZSet<K, W>,), right: (OrdZSet<K, W>,)) -> (OrdZSet<K, W>,)
 where
     K: DBData,
     W: DBWeight,
 {
-    (left.0.add_by_ref(&right.0), )
+    (left.0.add_by_ref(&right.0),)
 }
 
 struct DataRows<'a> {
@@ -128,7 +105,7 @@ impl<'a> DataRows<'a> {
             self.rows.push(row_vec);
         } else if *self.order == SortOrder::VALUE {
             for r in row_vec {
-                self.rows.push(vec!(r))
+                self.rows.push(vec![r])
             }
         }
     }
@@ -142,7 +119,11 @@ impl<'a> DataRows<'a> {
 }
 
 /// The format is from the SqlLogicTest query output string format
-pub fn zset_to_strings<K, W>(set: &OrdZSet<K, W>, format: String, order: SortOrder) -> Vec<Vec<String>>
+pub fn zset_to_strings<K, W>(
+    set: &OrdZSet<K, W>,
+    format: String,
+    order: SortOrder,
+) -> Vec<Vec<String>>
 where
     K: DBData + ToSqlRow,
     W: DBWeight + ZRingValue,
@@ -159,7 +140,11 @@ where
 
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
-pub fn zset_of_vectors_to_strings<K, W>(set: &OrdZSet<Vec<K>, W>, format: String, order: SortOrder) -> Vec<Vec<String>>
+pub fn zset_of_vectors_to_strings<K, W>(
+    set: &OrdZSet<Vec<K>, W>,
+    format: String,
+    order: SortOrder,
+) -> Vec<Vec<String>>
 where
     K: DBData + ToSqlRow,
     W: DBWeight + ZRingValue,
@@ -216,7 +201,7 @@ where
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    return format!("{:x}", digest)
+    return format!("{:x}", digest);
 }
 
 /// Version of hash that takes the result of orderby: a zset that is expected
@@ -249,7 +234,7 @@ where
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    return format!("{:x}", digest)
+    return format!("{:x}", digest);
 }
 
 // The count of elements in a zset that contains a vector is
@@ -305,14 +290,16 @@ fn jitset_to_map(data: &Vec<(RowLiteral, i32)>) -> BTreeMap<RowLiteral, i32> {
     result
 }
 
-fn subtract(left: &BTreeMap<RowLiteral, i32>, right: &BTreeMap<RowLiteral, i32>) -> BTreeMap<RowLiteral, i32>
-{
+fn subtract(
+    left: &BTreeMap<RowLiteral, i32>,
+    right: &BTreeMap<RowLiteral, i32>,
+) -> BTreeMap<RowLiteral, i32> {
     let mut result = left.clone();
     for (r, v) in right.iter() {
         match result.get(r) {
             None => {
                 result.insert(r.clone(), -*v);
-            },
+            }
             Some(lv) => {
                 let diff = lv - v;
                 if diff == 0 {
@@ -328,9 +315,9 @@ fn subtract(left: &BTreeMap<RowLiteral, i32>, right: &BTreeMap<RowLiteral, i32>)
 
 // Check that two StreamCollections are equal.  If yes, returns true.
 // If not, print a diff and returns false.
-// Assumes that the literals are canonical and positive (all weights are positive).
-pub fn must_equal_sc(left: &StreamCollection, right: &StreamCollection) -> bool
-{
+// Assumes that the literals are canonical and positive (all weights are
+// positive).
+pub fn must_equal_sc(left: &StreamCollection, right: &StreamCollection) -> bool {
     // println!("L: {:?}", left);
     // println!("R: {:?}", right);
     match (left, right) {
@@ -346,14 +333,13 @@ pub fn must_equal_sc(left: &StreamCollection, right: &StreamCollection) -> bool
                 }
             }
             diff.is_empty()
-        },
+        }
         (Map(_left_rows), Map(_right_rows)) => {
             todo!()
-        },
+        }
         _ => {
             println!("Collections of different types");
             false
         }
     }
 }
-
