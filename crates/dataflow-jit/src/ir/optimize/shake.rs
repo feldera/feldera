@@ -52,7 +52,7 @@ impl Subgraph {
         let mut redundant_antijoins = BTreeMap::new();
 
         for &node_id in order {
-            let node = &self.nodes()[&node_id];
+            let node = self.nodes_mut().get_mut(&node_id).unwrap();
 
             // An antijoin against an empty stream yields the input stream, e.g.
             // `R ▷ empty ≡ R`
@@ -68,6 +68,20 @@ impl Subgraph {
 
                     continue;
                 }
+
+            // We can remove unreachable streams from the sum nodes, but the sum as a whole
+            // is only unreachable when it has no reachable inputs (or no inputs at all)
+            } else if let Node::Sum(sum) = node {
+                // Remove all unreachable inputs
+                sum.inputs_mut()
+                    .retain(|input| source_reachable.contains(input));
+
+                // If the sum node no longer has any inputs, it is unreachable
+                if !sum.inputs().is_empty() {
+                    source_reachable.insert(node_id);
+                }
+
+                continue;
             }
 
             if node
@@ -155,7 +169,11 @@ impl Subgraph {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ir::{nodes::StreamLayout, ColumnType, Graph, GraphExt, RowLayoutBuilder},
+        ir::{
+            literal::{NullableConstant, RowLiteral, StreamCollection, StreamLiteral},
+            nodes::{ConstantStream, StreamLayout, Sum},
+            ColumnType, Graph, GraphExt, RowLayoutBuilder,
+        },
         utils,
     };
 
@@ -178,5 +196,34 @@ mod tests {
         graph.optimize();
 
         println!("{graph:?}");
+    }
+
+    #[test]
+    fn shake_null_sum() {
+        utils::test_logger();
+
+        let mut graph = Graph::new();
+        let layout = graph.layout_cache().add(
+            RowLayoutBuilder::new()
+                .with_column(ColumnType::I32, true)
+                .build(),
+        );
+
+        let empty = graph.empty_set(layout);
+        let null = graph.add_node(ConstantStream::new(
+            StreamLiteral::new(
+                StreamLayout::Set(layout),
+                StreamCollection::Set(vec![(RowLiteral::new(vec![NullableConstant::null()]), 1)]),
+            ),
+            StreamLayout::Set(layout),
+        ));
+
+        let sum = graph.add_node(Sum::new(vec![empty, null], StreamLayout::Set(layout)));
+        let sink = graph.sink(sum, StreamLayout::Set(layout));
+
+        graph.optimize();
+
+        println!("{graph:#?}");
+        assert!(graph.nodes().contains_key(&sink));
     }
 }
