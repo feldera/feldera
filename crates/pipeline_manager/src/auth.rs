@@ -1,15 +1,17 @@
-//! Support HTTP bearer and API-key authorization to the pipeline manager API. The plan is
-//! to support different providers down the line, but for now, we've tested
-//! against client claims made via AWS Cognito.
+//! Support HTTP bearer and API-key authorization to the pipeline manager API.
+//! The plan is to support different providers down the line, but for now, we've
+//! tested against client claims made via AWS Cognito.
 
-//! This file implements an actix-web middleware to validate bearer tokens and API keys.
+//! This file implements an actix-web middleware to validate bearer tokens and
+//! API keys.
 //!
 //! 1) Bearer tokens:
 //!
 //! The expected workflow is for users to login via a browser to receive a JWT
 //! access token. Clients then issue pipeline manager APIs using an HTTP
-//! authorization header for bearer tokens (Authorization: Bearer <token>). With a bearer token,
-//! users may generate API keys that can be used for programmatic access (see below).
+//! authorization header for bearer tokens (Authorization: Bearer <token>). With
+//! a bearer token, users may generate API keys that can be used for
+//! programmatic access (see below).
 //!
 //! Bearer token
 //! validation checks for many things, including signing algorithm, expiry
@@ -20,23 +22,24 @@
 //! when the clients report using a different kid), but for now, a restart of
 //! the pipeline manager suffices.
 //!
-//! To support bearer token workflows, we introduce three environment variables that the
-//! pipeline manager needs for the OAuth protocol: the client ID, the issuer ID,
-//! and the well known URL for fetching JWK keys.
+//! To support bearer token workflows, we introduce three environment variables
+//! that the pipeline manager needs for the OAuth protocol: the client ID, the
+//! issuer ID, and the well known URL for fetching JWK keys.
 //!
 //! 2) API-keys
 //!
-//! For programmatic access, a user authenticated via a Bearer token may generate
-//! API keys. These API keys can then be used in the REST API along with an "x-api-key"
-//! header to authorize access. For now, we simply have two permission types: Read and Write. Later,
-//! we will expand to have fine-grained access to specific API resources.
+//! For programmatic access, a user authenticated via a Bearer token may
+//! generate API keys. These API keys can then be used in the REST API along
+//! with an "x-api-key" header to authorize access. For now, we simply have two
+//! permission types: Read and Write. Later, we will expand to have fine-grained
+//! access to specific API resources.
 //!
-//! API keys are randomly generated 128 character sequences that are never stored in
-//! the pipeline manager or in the database. It is the responsibility of the end-user
-//! or client to securely save them and consume them in their programs via environment variables or secret
-//! stores as appropriate. On the pipeline manager side, we store a hash of the API key
-//! in the database along with the permissions.
-//!
+//! API keys are randomly generated 128 character sequences that are never
+//! stored in the pipeline manager or in the database. It is the responsibility
+//! of the end-user or client to securely save them and consume them in their
+//! programs via environment variables or secret stores as appropriate. On the
+//! pipeline manager side, we store a hash of the API key in the database along
+//! with the permissions.
 
 use std::{collections::HashMap, env};
 
