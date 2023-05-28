@@ -801,7 +801,7 @@ impl Storage for ProjectDB {
     }
 
     // XXX: Multiple statements
-    async fn pipeline_update(
+    async fn update_pipeline(
         &self,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,

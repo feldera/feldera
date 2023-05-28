@@ -744,11 +744,11 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::UpdatePipeline(pipeline_id, program_id, name, description, config, connectors) => {
                                 let model_response = model
-                                    .pipeline_update(pipeline_id, program_id, &name, &description, &config, &connectors.clone())
+                                    .update_pipeline(pipeline_id, program_id, &name, &description, &config, &connectors.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .pipeline_update(pipeline_id, program_id, &name, &description, &config, &connectors)
+                                    .update_pipeline(pipeline_id, program_id, &name, &description, &config, &connectors)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1129,7 +1129,7 @@ impl Storage for Mutex<DbModel> {
         Ok((pipeline_id, version))
     }
 
-    async fn pipeline_update(
+    async fn update_pipeline(
         &self,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,

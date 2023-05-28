@@ -196,7 +196,7 @@ pub(crate) trait Storage {
     /// Update existing config.
     ///
     /// Update config name and, optionally, YAML.
-    async fn pipeline_update(
+    async fn update_pipeline(
         &self,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,

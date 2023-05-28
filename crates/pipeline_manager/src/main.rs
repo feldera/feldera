@@ -121,10 +121,10 @@ observed by the user is outdated, so the request is rejected."
         cancel_program,
         delete_program,
         new_pipeline,
-        pipeline_update,
+        update_pipeline,
         list_pipelines,
         pipeline_stats,
-        pipeline_metadata,
+        pipeline_status,
         pipeline_action,
         pipeline_delete,
         list_connectors,
@@ -353,10 +353,10 @@ where
         .service(compile_program)
         .service(delete_program)
         .service(new_pipeline)
-        .service(pipeline_update)
+        .service(update_pipeline)
         .service(list_pipelines)
         .service(pipeline_stats)
-        .service(pipeline_metadata)
+        .service(pipeline_status)
         .service(pipeline_action)
         .service(pipeline_delete)
         .service(list_connectors)
@@ -971,7 +971,7 @@ struct UpdatePipelineResponse {
     tag = "Pipeline"
 )]
 #[patch("/v0/pipelines")]
-async fn pipeline_update(
+async fn update_pipeline(
     state: WebData<ServerState>,
     request: web::Json<UpdatePipelineRequest>,
 ) -> impl Responder {
@@ -979,7 +979,7 @@ async fn pipeline_update(
         .db
         .lock()
         .await
-        .pipeline_update(
+        .update_pipeline(
             request.pipeline_id,
             request.program_id,
             &request.name,
@@ -1075,7 +1075,7 @@ async fn pipeline_stats(state: WebData<ServerState>, req: HttpRequest) -> impl R
     tag = "Pipeline"
 )]
 #[get("/v0/pipeline")]
-async fn pipeline_metadata(
+async fn pipeline_status(
     state: WebData<ServerState>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
