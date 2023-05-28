@@ -20,10 +20,10 @@ import TabKafkaNameAndDesc from 'src/connectors/dialogs/tabs/TabKafkaNameAndDesc
 import TabKafkaInputDetails from 'src/connectors/dialogs/tabs/TabKafkaInputDetails'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
-import { connectorTypeToConfig, parseKafkaInputSchema } from 'src/types/connectors'
+import { connectorTypeToConfig, parseKafkaInputSchema, ConnectorType } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 
@@ -81,12 +81,11 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   // Define what should happen when the form is submitted
   const genericRequest = (
     data: KafkaInputSchema,
-    connector_id?: number
+    connector_id?: string
   ): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.KAFKA_IN,
       config: YAML.stringify({
         transport: {
           name: connectorTypeToConfig(ConnectorType.KAFKA_IN),

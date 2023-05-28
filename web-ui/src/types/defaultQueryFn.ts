@@ -11,29 +11,28 @@
 import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 import {
-  ConfigService,
   ConnectorService,
   PipelineService,
-  ProjectCodeResponse,
-  ProjectDescr,
-  ProjectService,
-  UpdateProjectRequest
+  ProgramCodeResponse,
+  ProgramDescr,
+  ProgramService,
+  UpdateProgramRequest
 } from './manager'
 
-// Updates the query cache for a `UpdateProjectRequest` response.
-export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: UpdateProjectRequest) => {
+// Updates the query cache for a `UpdateProgramRequest` response.
+export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: UpdateProgramRequest) => {
   queryClient.setQueryData(
-    ['projectCode', { project_id: newData.project_id }],
-    (oldData: ProjectCodeResponse | undefined) => {
+    ['projectCode', { program_id: newData.program_id }],
+    (oldData: ProgramCodeResponse | undefined) => {
       if (oldData) {
         const newd = {
           ...oldData,
           ...{
             project: {
-              ...oldData.project,
+              ...oldData.program,
               ...{
                 name: newData.name,
-                description: newData.description ? newData.description : oldData.project.description
+                description: newData.description ? newData.description : oldData.program.description
               }
             },
             code: newData.code ? newData.code : oldData.code
@@ -49,20 +48,20 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
   )
 
   queryClient.setQueryData(
-    ['projectStatus', { project_id: newData.project_id }],
-    (oldData: ProjectDescr | undefined) => {
+    ['programStatus', { program_id: newData.program_id }],
+    (oldData: ProgramDescr | undefined) => {
       return oldData
         ? {
-            ...oldData,
-            ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
-          }
+          ...oldData,
+          ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
+        }
         : oldData
     }
   )
 
-  queryClient.setQueryData(['project'], (oldData: ProjectDescr[] | undefined) =>
-    oldData?.map((project: ProjectDescr) => {
-      if (project.project_id === newData.project_id) {
+  queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) =>
+    oldData?.map((project: ProgramDescr) => {
+      if (project.program_id === newData.program_id) {
         const projectDescUpdates = {
           name: newData.name,
           description: newData.description ? newData.description : project.description
@@ -77,44 +76,36 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
 
 export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
-    .with(['projectCode', { project_id: P.select() }], project_id => {
-      if (typeof project_id == 'number') {
-        return ProjectService.projectCode(project_id)
+    .with(['projectCode', { program_id: P.select() }], program_id => {
+      if (typeof program_id == 'string') {
+        return ProgramService.programCode(program_id)
       } else {
-        throw new Error('Invalid query key, project_id should be a number')
+        throw new Error('Invalid query key, program_id should be a number')
       }
     })
-    .with(['projectStatus', { project_id: P.select() }], project_id => {
-      if (typeof project_id == 'number') {
-        return ProjectService.projectStatus(project_id)
+    .with(['programStatus', { program_id: P.select() }], program_id => {
+      if (typeof program_id == 'string') {
+        return ProgramService.programStatus(program_id)
       } else {
-        throw new Error('Invalid query key, project_id should be a number')
-      }
-    })
-    .with(['configStatus', { config_id: P.select() }], config_id => {
-      if (typeof config_id == 'number') {
-        return ConfigService.configStatus(config_id)
-      } else {
-        throw new Error('Invalid query key, config_id should be a number')
+        throw new Error('Invalid query key, program_id should be a number')
       }
     })
     .with(['pipelineStatus', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'number') {
-        return PipelineService.pipelineStatus(pipeline_id)
+      if (typeof pipeline_id == 'string') {
+        return PipelineService.pipelineMetadata(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a number')
       }
     })
     .with(['connectorStatus', { connector_id: P.select() }], connector_id => {
-      if (typeof connector_id == 'number') {
+      if (typeof connector_id == 'string') {
         return ConnectorService.connectorStatus(connector_id)
       } else {
         throw new Error('Invalid query key, connector_id should be a number')
       }
     })
-    .with(['project'], () => ProjectService.listProjects())
+    .with(['program'], () => ProgramService.listPrograms())
     .with(['connector'], () => ConnectorService.listConnectors())
-    .with(['configs'], () => ConfigService.listConfigs())
     .otherwise(() => {
       throw new Error('Invalid query key, maybe you need to update defaultQueryFn.ts')
     })

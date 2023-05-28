@@ -2,16 +2,24 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ConfigId } from './ConfigId'
-import type { PipelineId } from './PipelineId'
+import type { AttachedConnector } from './AttachedConnector';
+import type { PipelineId } from './PipelineId';
+import type { ProgramId } from './ProgramId';
+import type { Version } from './Version';
 
 /**
  * Pipeline descriptor.
  */
 export type PipelineDescr = {
-  config_id: ConfigId
-  created: string
-  killed: boolean
-  pipeline_id: PipelineId
-  port: number
-}
+    attached_connectors: Array<AttachedConnector>;
+    config: string;
+    created: string;
+    description: string;
+    name: string;
+    pipeline_id: PipelineId;
+    port: number;
+    program_id?: ProgramId;
+    shutdown: boolean;
+    version: Version;
+};
+

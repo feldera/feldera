@@ -12,9 +12,9 @@ import { Icon } from '@iconify/react'
 import useDrawerState from 'src/streaming/builder/hooks/useDrawerState'
 import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
 import { useState, Dispatch, useEffect } from 'react'
-import { AttachedConnector, ConnectorDescr, ConnectorType, Direction } from 'src/types/manager'
+import { AttachedConnector, ConnectorDescr } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
-import { connectorTypeToDirection, connectorTypeToTitle } from 'src/types/connectors'
+import { Direction, ConnectorType, connectorTypeToDirection, connectorTypeToTitle, connectorDescrToType } from 'src/types/connectors'
 import { randomString } from 'src/utils'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
@@ -103,19 +103,20 @@ const SideBarAddIo = () => {
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]: number }>({
     [ConnectorType.KAFKA_IN]: 0,
     [ConnectorType.KAFKA_OUT]: 0,
-    [ConnectorType.FILE]: 0
+    [ConnectorType.FILE]: 0,
+    [ConnectorType.UNKNOWN]: 0
   })
   const { data, isLoading, isError } = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
   useEffect(() => {
     if (!isLoading && !isError) {
       const counts = data
-        .map(s => s.typ)
+        .map(s => connectorDescrToType(s))
         .reduce(
           (acc: { [Key in ConnectorType]: number }, typ: ConnectorType) => {
             acc[typ] += 1
             return acc
           },
-          { [ConnectorType.KAFKA_IN]: 0, [ConnectorType.KAFKA_OUT]: 0, [ConnectorType.FILE]: 0 }
+          { [ConnectorType.KAFKA_IN]: 0, [ConnectorType.KAFKA_OUT]: 0, [ConnectorType.FILE]: 0, [ConnectorType.UNKNOWN]: 0 }
         )
 
       setSourceCounts(counts)
@@ -134,10 +135,10 @@ const SideBarAddIo = () => {
   const onAddClick = (connector: ConnectorDescr) => {
     closeDrawer()
     const ac: AttachedConnector = {
-      uuid: randomString(),
+      name: randomString(),
       connector_id: connector.connector_id,
       config: '',
-      direction: forNodes === 'inputNode' ? Direction.INPUT : Direction.OUTPUT
+      is_input: forNodes === 'inputNode'
     }
     addConnector(connector, ac)
   }

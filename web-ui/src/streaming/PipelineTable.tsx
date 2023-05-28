@@ -31,7 +31,7 @@ import {
   NewPipelineRequest,
   NewPipelineResponse,
   PipelineService,
-  ProjectDescr,
+  ProgramDescr,
   ShutdownPipelineRequest
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -52,8 +52,8 @@ interface ConnectorData {
 const DetailPanelContent = (props: { row: ConfigDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
-  const projectQuery = useQuery<ProjectDescr>(['projectStatus', { project_id: props.row.project_id }], {
-    enabled: props.row.project_id !== undefined
+  const projectQuery = useQuery<ProgramDescr>(['programStatus', { program_id: props.row.program_id }], {
+    enabled: props.row.program_id !== undefined
   })
 
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])

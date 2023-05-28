@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PlaceholderNode } from '../NodeTypes'
 import { parseProjectSchema, ProjectWithSchema } from 'src/types/program'
 import useSqlPlaceholderClick from '../hooks/useSqlPlaceholderClick'
-import { ProjectDescr } from 'src/types/manager'
+import { ProgramDescr } from 'src/types/manager'
 
 const SqlPlaceHolderNode = (props: NodeProps) => {
   const [programs, setPrograms] = useState<ProjectWithSchema[]>([])
@@ -21,7 +21,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
     }
   }
 
-  const { isLoading, isError, data } = useQuery<ProjectDescr[]>(['project'])
+  const { isLoading, isError, data } = useQuery<ProgramDescr[]>(['program'])
   useEffect(() => {
     if (!isLoading && !isError) {
       setPrograms(data.filter(p => p.schema).map(parseProjectSchema))

@@ -19,7 +19,7 @@ import {
   Direction,
   NewConfigRequest,
   NewConfigResponse,
-  ProjectDescr,
+  ProgramDescr,
   UpdateConfigRequest,
   UpdateConfigResponse
 } from 'src/types/manager'
@@ -87,7 +87,7 @@ export const PipelineWithProvider = (props: {
   const addConnector = useAddConnector()
 
   const { pushMessage } = useStatusNotification()
-  const projects = useQuery<ProjectDescr[]>(['project'])
+  const projects = useQuery<ProgramDescr[]>(['program'])
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
   const configQuery = useQuery<ConfigDescr>(['configStatus', { config_id: configId }], {
     enabled:
@@ -118,8 +118,8 @@ export const PipelineWithProvider = (props: {
         // the saveState every time the backend returns some result. Because it
         // could cancel potentially in-progress saves (started by client action).
 
-        if (configQuery.data.project_id) {
-          const foundProject = projects.data.find(p => p.project_id === configQuery.data.project_id)
+        if (configQuery.data.program_id) {
+          const foundProject = projects.data.find(p => p.program_id === configQuery.data.program_id)
           if (foundProject) {
             if (foundProject.schema == null) {
               setMissingSchemaDialog(true)
@@ -146,9 +146,8 @@ export const PipelineWithProvider = (props: {
           pushMessage({
             key: new Date().getTime(),
             color: 'warning',
-            message: `Could not attach ${
-              invalidConnections.length
-            } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
+            message: `Could not attach ${invalidConnections.length
+              } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
           })
         }
 
@@ -214,7 +213,7 @@ export const PipelineWithProvider = (props: {
         newConfigMutate(
           {
             name,
-            project_id: project?.project_id,
+            program_id: project?.program_id,
             description,
             config
           },
@@ -255,7 +254,7 @@ export const PipelineWithProvider = (props: {
           config_id: configId,
           name,
           description,
-          project_id: project?.project_id,
+          program_id: project?.program_id,
           config,
           connectors
         }
@@ -276,13 +275,13 @@ export const PipelineWithProvider = (props: {
             queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
               return oldData
                 ? {
-                    ...oldData,
-                    name,
-                    description,
-                    project_id: project?.project_id,
-                    config,
-                    attached_connectors: connectors
-                  }
+                  ...oldData,
+                  name,
+                  description,
+                  program_id: project?.program_id,
+                  config,
+                  attached_connectors: connectors
+                }
                 : oldData
             })
             setSaveState('isUpToDate')
@@ -337,7 +336,7 @@ export const PipelineWithProvider = (props: {
       <MissingSchemaDialog
         open={missingSchemaDialog}
         setOpen={setMissingSchemaDialog}
-        project_id={project?.project_id}
+        program_id={project?.program_id}
       />
     </>
   )

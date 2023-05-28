@@ -3,6 +3,6 @@
 /* eslint-disable */
 
 /**
- * Unique project id.
+ * Unique program id.
  */
-export type ProjectId = number
+export type ProgramId = string;

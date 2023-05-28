@@ -20,9 +20,9 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { Controller, useForm } from 'react-hook-form'
 
 import Transition from './tabs/Transition'
-import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorTypeToConfig, parseCsvFileSchema } from 'src/types/connectors'
+import { connectorTypeToConfig, parseCsvFileSchema, ConnectorType } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
@@ -77,11 +77,10 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   // Define what should happen when the form is submitted
-  const genericRequest = (data: CsvFileSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {
+  const genericRequest = (data: CsvFileSchema, connector_id?: string): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.FILE,
       config: YAML.stringify({
         transport: {
           name: connectorTypeToConfig(ConnectorType.FILE),

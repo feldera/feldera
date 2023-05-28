@@ -75,7 +75,7 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       if (configId) {
         // TODO: figure out if it's better to optimistically update query here?
         queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
-          return oldData ? { ...oldData, project_id: project.project_id } : oldData
+          return oldData ? { ...oldData, program_id: project.program_id } : oldData
         })
       }
       replacePlaceholder(project)

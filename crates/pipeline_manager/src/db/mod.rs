@@ -750,7 +750,7 @@ impl Storage for ProjectDB {
                 pipeline_id,
                 program_id,
                 version: Version(row.get(1)),
-                name: name,
+                name,
                 description: row.get(2),
                 config: row.get(3),
                 attached_connectors: self.json_to_attached_connectors(row.get(8)).await?,

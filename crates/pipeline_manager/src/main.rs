@@ -442,7 +442,7 @@ fn parse_pipeline_id_param(req: &HttpRequest) -> Result<PipelineId, HttpResponse
 fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, HttpResponse> {
     match req.match_info().get("action") {
         None => Err(HttpResponse::BadRequest().body("missing action id argument")),
-        Some(action) => Ok(action.into()),
+        Some(action) => Ok(action),
     }
 }
 

@@ -16,7 +16,7 @@ import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { CancelError, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { ConnectorDialog, getStatusObj } from 'src/types/connectors'
+import { ConnectorDialog, getStatusObj, connectorDescrToType } from 'src/types/connectors'
 
 const DataSourceTable = () => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
@@ -57,7 +57,7 @@ const DataSourceTable = () => {
   )
 
   // Delete a connector entry
-  const deleteMutation = useMutation<void, CancelError, number>(ConnectorService.deleteConnector)
+  const deleteMutation = useMutation<void, CancelError, string>(ConnectorService.deleteConnector)
   const deleteSource = useCallback(
     (cur_row: ConnectorDescr) => {
       setTimeout(() => {
@@ -127,7 +127,7 @@ const DataSourceTable = () => {
       headerName: 'Type',
       renderCell: (params: GridRenderCellParams) => {
         // Shows the connector type in a chip
-        const status = getStatusObj(params.row.typ)
+        const status = getStatusObj(connectorDescrToType(params.row))
         return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
       }
     }

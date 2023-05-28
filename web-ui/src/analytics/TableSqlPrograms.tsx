@@ -13,14 +13,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 
 import CustomChip from 'src/@core/components/mui/chip'
-import { ProjectService } from 'src/types/manager/services/ProjectService'
-import { ProjectDescr } from 'src/types/manager/models/ProjectDescr'
-import { ProjectStatus } from 'src/types/manager/models/ProjectStatus'
-import { CancelError, UpdateProjectRequest, UpdateProjectResponse } from 'src/types/manager'
+import { ProgramService } from 'src/types/manager/services/ProgramService'
+import { ProgramDescr } from 'src/types/manager/models/ProgramDescr'
+import { ProgramStatus } from 'src/types/manager/models/ProgramStatus'
+import { CancelError, UpdateProgramRequest, UpdateProgramResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
-const getStatusObj = (status: ProjectStatus) =>
+const getStatusObj = (status: ProgramStatus) =>
   match(status)
     .with({ SqlError: P._ }, () => {
       return { title: 'SQL Error', color: 'error' as const }
@@ -51,8 +51,8 @@ const getStatusObj = (status: ProjectStatus) =>
 const TableSqlPrograms = () => {
   const router = useRouter()
 
-  const [rows, setRows] = useState<ProjectDescr[]>([])
-  const fetchQuery = useQuery<ProjectDescr[]>({ queryKey: ['project'] })
+  const [rows, setRows] = useState<ProgramDescr[]>([])
+  const fetchQuery = useQuery<ProgramDescr[]>({ queryKey: ['program'] })
   const { pushMessage } = useStatusNotification()
 
   const apiRef = useGridApiRef()
@@ -63,7 +63,7 @@ const TableSqlPrograms = () => {
     {
       flex: 0.05,
       minWidth: 50,
-      field: 'project_id',
+      field: 'program_id',
       headerName: 'ID',
       renderCell: (params: GridRenderCellParams) => {
         const { row } = params
@@ -72,7 +72,7 @@ const TableSqlPrograms = () => {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
               <Typography noWrap variant='body2' sx={{ color: 'text.primary', fontWeight: 600 }}>
-                {row.project_id}
+                {row.program_id}
               </Typography>
             </Box>
           </Box>
@@ -112,18 +112,18 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation<UpdateProjectResponse, CancelError, UpdateProjectRequest>(ProjectService.updateProject)
-  const processRowUpdate = (newRow: ProjectDescr, oldRow: ProjectDescr) => {
+  const mutation = useMutation<UpdateProgramResponse, CancelError, UpdateProgramRequest>(ProgramService.updateProgram)
+  const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
       {
-        project_id: newRow.project_id,
+        program_id: newRow.program_id,
         description: newRow.description,
         name: newRow.name
       },
       {
         onError: (error: CancelError) => {
-          queryClient.invalidateQueries(['project'])
-          queryClient.invalidateQueries(['projectStatus', { project_id: newRow.project_id }])
+          queryClient.invalidateQueries(['program'])
+          queryClient.invalidateQueries(['programStatus', { program_id: newRow.program_id }])
           pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -134,19 +134,19 @@ const TableSqlPrograms = () => {
   }
 
   // Deleting a row
-  const deleteMutation = useMutation<void, CancelError, number>(ProjectService.deleteProject)
+  const deleteMutation = useMutation<void, CancelError, string>(ProgramService.deleteProgram)
   const deleteProject = useCallback(
-    (curRow: ProjectDescr) => {
+    (curRow: ProgramDescr) => {
       setTimeout(() => {
-        const oldRow = rows.find(row => row.project_id === curRow.project_id)
+        const oldRow = rows.find(row => row.program_id === curRow.program_id)
         if (oldRow !== undefined) {
-          deleteMutation.mutate(curRow.project_id, {
+          deleteMutation.mutate(curRow.program_id, {
             onSuccess: () => {
-              setRows(prevRows => prevRows.filter(row => row.project_id !== curRow.project_id))
+              setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries(['project'])
+              queryClient.invalidateQueries(['program'])
             }
           })
         }
@@ -157,8 +157,8 @@ const TableSqlPrograms = () => {
 
   // Table properties, passed to the underlying grid-table
   const tableProps = {
-    getRowId: (row: ProjectDescr) => row.project_id,
-    columnVisibilityModel: { project_id: false },
+    getRowId: (row: ProgramDescr) => row.program_id,
+    columnVisibilityModel: { program_id: false },
     columns: columns,
     rows: rows
   }
@@ -174,7 +174,7 @@ const TableSqlPrograms = () => {
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={deleteProject}
-        onEditClicked={row => router.push('/analytics/editor/' + row.project_id)}
+        onEditClicked={row => router.push('/analytics/editor/' + row.program_id)}
         apiRef={apiRef}
       />
     </Card>

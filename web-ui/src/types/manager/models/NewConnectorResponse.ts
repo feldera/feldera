@@ -2,11 +2,12 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ConnectorId } from './ConnectorId'
+import type { ConnectorId } from './ConnectorId';
 
 /**
  * Response to a connector creation request.
  */
 export type NewConnectorResponse = {
-  connector_id: ConnectorId
-}
+    connector_id: ConnectorId;
+};
+
