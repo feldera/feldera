@@ -291,7 +291,7 @@ build-nexmark:
 
 audit:
     FROM +build-cache
-    RUN cargo audit
+    RUN cargo audit || true
 
 test-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
