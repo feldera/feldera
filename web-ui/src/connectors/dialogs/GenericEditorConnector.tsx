@@ -23,12 +23,12 @@ import { useTheme } from '@mui/material'
 import { Editor } from '@monaco-editor/react'
 
 import Transition from './tabs/Transition'
-import { ConnectorDescr, ConnectorType, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
-import { parseEditorSchema } from 'src/types/connectors'
+import { parseEditorSchema, ConnectorType } from 'src/types/connectors'
 
 const schema = yup
   .object({
@@ -89,11 +89,10 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   }
 
   // Define what should happen when the form is submitted
-  const genericRequest = (data: EditorSchema, connector_id?: number): NewConnectorRequest | UpdateConnectorRequest => {
+  const genericRequest = (data: EditorSchema, connector_id?: string): NewConnectorRequest | UpdateConnectorRequest => {
     return {
       name: data.name,
       description: data.description,
-      typ: ConnectorType.FILE, // TODO this will go away
       config: data.config,
       ...(connector_id && { connector_id: connector_id })
     }

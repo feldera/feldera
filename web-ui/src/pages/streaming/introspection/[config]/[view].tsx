@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { ConfigDescr, ConfigId, Direction, ProjectDescr } from 'src/types/manager'
+import { ConfigDescr, ConfigId, Direction, ProgramDescr } from 'src/types/manager'
 import { parse } from 'csv-parse'
 import { parseProjectSchema } from 'src/types/program'
 
@@ -23,8 +23,8 @@ const IntrospectInputOutput = () => {
   const router = useRouter()
   const { config, view } = router.query
 
-  const projectQuery = useQuery<ProjectDescr>(['projectStatus', { project_id: configDescr?.project_id }], {
-    enabled: configDescr !== undefined && configDescr.project_id !== undefined
+  const projectQuery = useQuery<ProgramDescr>(['programStatus', { program_id: configDescr?.program_id }], {
+    enabled: configDescr !== undefined && configDescr.program_id !== undefined
   })
   useEffect(() => {
     if (!projectQuery.isLoading && !projectQuery.isError && viewName) {

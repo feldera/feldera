@@ -10,17 +10,17 @@ import DialogContentText from '@mui/material/DialogContentText'
 const MissingSchemaDialog = (props: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
-  project_id: number | undefined
+  program_id: number | undefined
 }) => {
   const router = useRouter()
   const handleClose = () => {
     props.setOpen(false)
-    router.push(`/analytics/editor/${props.project_id}`)
+    router.push(`/analytics/editor/${props.program_id}`)
   }
 
   return (
     <Dialog
-      open={props.open && props.project_id !== undefined}
+      open={props.open && props.program_id !== undefined}
       disableEscapeKeyDown
       aria-labelledby='alert-dialog-title'
       aria-describedby='alert-dialog-description'

@@ -4,7 +4,7 @@
 // more information.
 
 import { CircularProgress, Tooltip } from '@mui/material'
-import { ProjectStatus } from 'src/types/manager'
+import { ProgramStatus } from 'src/types/manager'
 import DoneIcon from '@mui/icons-material/Done'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import { ThemeColor } from 'src/@core/layouts/types'
@@ -13,7 +13,7 @@ import CustomChip from 'src/@core/components/mui/chip'
 
 export interface CompileIndicatorProps {
   id?: string
-  state: ProjectStatus
+  state: ProgramStatus
 }
 
 export const CompileIndicator = (props: CompileIndicatorProps) => {

@@ -2,15 +2,14 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { PipelineId } from './PipelineId'
+import type { PipelineId } from './PipelineId';
+import type { Version } from './Version';
 
 /**
- * Response to a pipeline creation request.
+ * Response to a config creation request.
  */
 export type NewPipelineResponse = {
-  pipeline_id: PipelineId
-  /**
-   * TCP port that the pipeline process listens on.
-   */
-  port: number
-}
+    pipeline_id: PipelineId;
+    version: Version;
+};
+

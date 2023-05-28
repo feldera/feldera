@@ -1,4 +1,4 @@
-import { ProjectDescr } from './manager'
+import { ProgramDescr } from './manager'
 
 export interface Schema {
   inputs: [{ name: string; fields: [{ name: string; type: string; nullable: boolean }] }]
@@ -6,15 +6,15 @@ export interface Schema {
 }
 
 export interface ProjectWithSchema {
-  project_id: number
+  program_id: number
   name: string
   schema: Schema
 }
 
-export function parseProjectSchema(project: ProjectDescr): ProjectWithSchema {
+export function parseProjectSchema(project: ProgramDescr): ProjectWithSchema {
   return {
     name: project.name,
-    project_id: project.project_id,
+    program_id: project.program_id,
     schema: JSON.parse(project.schema || '{ "inputs": [], "outputs": [] }')
   }
 }

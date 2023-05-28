@@ -14,7 +14,7 @@ import {
   ConnectorDescr
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { connectorTypeToDirection } from 'src/types/connectors'
+import { connectorTypeToDirection, connectorDescrToType } from 'src/types/connectors'
 
 // Sends the request to create a new connector.
 //
@@ -41,11 +41,6 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
     if (!newIsLoading) {
       newConnector(source_desc, {
         onSuccess: resp => {
-          console.log('onSuccess')
-
-          console.log(source_desc)
-          console.log(data)
-
           queryClient.invalidateQueries(['connector'])
           pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
           onFormSubmitted({
@@ -53,8 +48,6 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
             name: source_desc.name,
             description: source_desc.description,
             config: source_desc.config,
-            direction: connectorTypeToDirection(source_desc.typ),
-            typ: source_desc.typ
           })
         },
         onError: error => {
@@ -98,9 +91,6 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
             name: source_desc.name,
             config: data.config,
             description: data.description,
-            // @ts-ignore
-            direction: connectorTypeToDirection(source_desc.typ),
-            typ: data.typ
           })
         },
         onError: error => {

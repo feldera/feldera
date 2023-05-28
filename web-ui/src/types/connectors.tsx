@@ -3,7 +3,7 @@ import { match, P } from 'ts-pattern'
 import YAML from 'yaml'
 import assert from 'assert'
 
-import { Direction, ConnectorDescr } from './manager'
+import { ConnectorDescr } from './manager'
 import {
   ConfigEditorDialog,
   CsvFileConnectorDialog,
@@ -20,6 +20,12 @@ export enum ConnectorType {
   KAFKA_OUT = 'KafkaOut',
   FILE = 'File',
   UNKNOWN = 'Unknown'
+}
+
+export enum Direction {
+  INPUT,
+  OUTPUT,
+  INPUT_OUTPUT,
 }
 
 // Determine the type of a connector from its config entries.

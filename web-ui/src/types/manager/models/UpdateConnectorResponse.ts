@@ -5,4 +5,4 @@
 /**
  * Response to a config update request.
  */
-export type UpdateConnectorResponse = {}
+export type UpdateConnectorResponse = Record<string, any>;

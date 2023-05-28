@@ -5,7 +5,7 @@ const Editor = () => {
   return (
     <Editors
       program={{
-        project_id: null,
+        program_id: null,
         name: '',
         description: '',
         status: 'None',

@@ -2,13 +2,29 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ConfigId } from './ConfigId'
-import type { Version } from './Version'
+import type { AttachedConnector } from './AttachedConnector';
+import type { ProgramId } from './ProgramId';
 
 /**
- * Request to create a new pipeline.
+ * Request to create a new program configuration.
  */
 export type NewPipelineRequest = {
-  config_id: ConfigId
-  config_version: Version
-}
+    /**
+     * YAML code for the config.
+     */
+    config: string;
+    /**
+     * Attached connectors.
+     */
+    connectors?: Array<AttachedConnector>;
+    /**
+     * Config description.
+     */
+    description: string;
+    /**
+     * Config name.
+     */
+    name: string;
+    program_id?: ProgramId;
+};
+
