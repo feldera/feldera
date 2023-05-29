@@ -1042,6 +1042,7 @@ impl CompiledDataflow {
                 DataflowNode::UnitMapToSet(map_to_set) => {
                     self.unit_map_to_set(node_id, map_to_set, &mut streams);
                 }
+                DataflowNode::Fold(fold) => self.fold(node_id, fold, &mut streams),
 
                 DataflowNode::FilterMap(map) => {
                     let input = &streams[&map.input];
@@ -1281,43 +1282,6 @@ impl CompiledDataflow {
                     streams.insert(node_id, max);
                 }
 
-                DataflowNode::Fold(fold) => {
-                    let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
-                    let (acc_vtable, step_vtable, output_vtable) =
-                        (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
-
-                    let folded = match &streams[&fold.input] {
-                        RowStream::Set(_) => todo!(),
-
-                        RowStream::Map(input) => input.aggregate(dbsp::operator::Fold::<
-                            _,
-                            UnimplementedSemigroup<Row>,
-                            _,
-                            _,
-                        >::with_output(
-                            fold.init,
-                            move |acc: &mut Row, step: &Row, weight| unsafe {
-                                debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-                                debug_assert_eq!(step.vtable().layout_id, step_vtable.layout_id);
-
-                                step_fn(
-                                    acc.as_mut_ptr(),
-                                    step.as_ptr(),
-                                    &weight as *const i32 as *const u8,
-                                );
-                            },
-                            move |mut acc: Row| unsafe {
-                                debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
-
-                                let mut row = UninitRow::new(output_vtable);
-                                finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
-                                row.assume_init()
-                            },
-                        )),
-                    };
-                    streams.insert(node_id, RowStream::Map(folded));
-                }
-
                 DataflowNode::PartitionedRollingFold(_fold) => {
                     /*
                     let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
@@ -1498,6 +1462,7 @@ impl CompiledDataflow {
                         DataflowNode::UnitMapToSet(map_to_set) => {
                             self.unit_map_to_set(node_id, map_to_set, &mut substreams);
                         }
+                        DataflowNode::Fold(fold) => self.fold(node_id, fold, &mut substreams),
 
                         DataflowNode::FilterMap(map) => {
                             let input = &substreams[&map.input];
@@ -1677,52 +1642,6 @@ impl CompiledDataflow {
                                 }
                             };
                             substreams.insert(node_id, max);
-                        }
-
-                        DataflowNode::Fold(fold) => {
-                            let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
-                            let (acc_vtable, step_vtable, output_vtable) =
-                                (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
-
-                            let folded = match &substreams[&fold.input] {
-                                RowStream::Set(_) => todo!(),
-
-                                RowStream::Map(input) => input.aggregate(dbsp::operator::Fold::<
-                                    _,
-                                    UnimplementedSemigroup<Row>,
-                                    _,
-                                    _,
-                                >::with_output(
-                                    fold.init,
-                                    move |acc: &mut Row, step: &Row, weight| unsafe {
-                                        debug_assert_eq!(
-                                            acc.vtable().layout_id,
-                                            acc_vtable.layout_id
-                                        );
-                                        debug_assert_eq!(
-                                            step.vtable().layout_id,
-                                            step_vtable.layout_id
-                                        );
-
-                                        step_fn(
-                                            acc.as_mut_ptr(),
-                                            step.as_ptr(),
-                                            &weight as *const i32 as *const u8,
-                                        );
-                                    },
-                                    move |mut acc: Row| unsafe {
-                                        debug_assert_eq!(
-                                            acc.vtable().layout_id,
-                                            acc_vtable.layout_id
-                                        );
-
-                                        let mut row = UninitRow::new(output_vtable);
-                                        finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
-                                        row.assume_init()
-                                    },
-                                )),
-                            };
-                            substreams.insert(node_id, RowStream::Map(folded));
                         }
 
                         DataflowNode::PartitionedRollingFold(_fold) => {
@@ -2313,6 +2232,47 @@ impl CompiledDataflow {
         );
 
         streams.insert(node_id, RowStream::Set(set));
+    }
+
+    fn fold<C>(&self, node_id: NodeId, fold: Fold, streams: &mut BTreeMap<NodeId, RowStream<C>>)
+    where
+        C: Circuit,
+        C::Time: DBTimestamp,
+    {
+        let (step_fn, finish_fn) = (fold.step_fn, fold.finish_fn);
+        let (acc_vtable, step_vtable, output_vtable) =
+            (fold.acc_vtable, fold.step_vtable, fold.output_vtable);
+
+        let folded = match &streams[&fold.input] {
+            RowStream::Set(_) => todo!(),
+
+            RowStream::Map(input) => {
+                input.aggregate(
+                    dbsp::operator::Fold::<_, UnimplementedSemigroup<Row>, _, _>::with_output(
+                        fold.init,
+                        move |acc: &mut Row, step: &Row, weight| unsafe {
+                            debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+                            debug_assert_eq!(step.vtable().layout_id, step_vtable.layout_id);
+
+                            step_fn(
+                                acc.as_mut_ptr(),
+                                step.as_ptr(),
+                                &weight as *const i32 as *const u8,
+                            );
+                        },
+                        move |mut acc: Row| unsafe {
+                            debug_assert_eq!(acc.vtable().layout_id, acc_vtable.layout_id);
+
+                            let mut row = UninitRow::new(output_vtable);
+                            finish_fn(acc.as_mut_ptr(), row.as_mut_ptr());
+                            row.assume_init()
+                        },
+                    ),
+                )
+            }
+        };
+
+        streams.insert(node_id, RowStream::Map(folded));
     }
 }
 

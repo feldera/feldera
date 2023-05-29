@@ -5,6 +5,7 @@ pub mod ir;
 pub mod row;
 pub mod sql_graph;
 
+mod tests;
 mod thin_str;
 mod utils;
 
