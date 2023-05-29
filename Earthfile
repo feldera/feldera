@@ -16,13 +16,10 @@ install-deps:
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
                               libsasl2-dev docker.io
-    RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash -
-    RUN apt-get install --yes nodejs
+    RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
+    RUN apt-get install -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
-    COPY demo/demo_notebooks/requirements.txt demo/demo_notebooks/requirements.txt
-    RUN pip3 install -r demo/demo_notebooks/requirements.txt
-    RUN pip3 install openapi-python-client
 
 install-rust:
     FROM +install-deps
@@ -78,6 +75,7 @@ prepare-cache:
     # https://hackmd.io/@kobzol/S17NS71bh
     FROM +install-rust
 
+    RUN mkdir -p .cargo
     RUN mkdir -p crates/dataflow-jit
     RUN mkdir -p crates/nexmark
     RUN mkdir -p crates/dbsp
@@ -91,6 +89,7 @@ prepare-cache:
     RUN mkdir -p sql-to-dbsp-compiler/lib/tuple
     #RUN mkdir -p crates/webui-tester
 
+    COPY --keep-ts .cargo/config .cargo/config
     COPY --keep-ts Cargo.toml .
     COPY --keep-ts Cargo.lock .
     COPY --keep-ts crates/dataflow-jit/Cargo.toml crates/dataflow-jit/

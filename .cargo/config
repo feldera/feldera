@@ -1,0 +1,17 @@
+# We are using UUID v7 which is in final comment period (ends June 9):
+#
+# https://github.com/uuid6/prototypes/issues/42#issuecomment-1542619709
+# https://github.com/uuid-rs/uuid/issues/523
+#
+# Why do we use v7:
+#
+# The summary seems to be that uuids as primary keys were a bad idea in the past because of the
+# format, so some people advocated for using TSIDs. It seems that UUIDv7 fixes most of
+# those shortcomings (by being similar to TSIDs) so the general consus
+# is to use UUIDv7 for databases now.
+#
+# - https://blog.devgenius.io/analyzing-new-unique-identifier-formats-uuidv6-uuidv7-and-uuidv8-d6cc5cd7391a
+# - https://vladmihalcea.com/uuid-database-primary-key/
+# - https://brandur.org/nanoglyphs/026-ids
+[build]
+rustflags = ["--cfg", "uuid_unstable"]

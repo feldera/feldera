@@ -248,7 +248,7 @@ where
         .service(start)
         .service(pause)
         .service(shutdown)
-        .service(status)
+        .service(stats)
         .service(metrics)
         .service(metadata)
         .service(dump_profile)
@@ -282,8 +282,8 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
-#[get("/status")]
-async fn status(state: WebData<ServerState>) -> impl Responder {
+#[get("/stats")]
+async fn stats(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             let json_string = serde_json::to_string(controller.status()).unwrap();
@@ -523,8 +523,8 @@ outputs:
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
 
-        println!("/status");
-        let resp = server.get("/status").send().await.unwrap();
+        println!("/stats");
+        let resp = server.get("/stats").send().await.unwrap();
         assert!(resp.status().is_success());
 
         println!("/metadata");

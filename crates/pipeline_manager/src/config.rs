@@ -1,4 +1,4 @@
-use crate::{PipelineId, ProjectId};
+use crate::{PipelineId, ProgramId};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
@@ -217,10 +217,10 @@ impl ManagerConfig {
 
     /// Crate name for a project.
     ///
-    /// Note: we rely on the project id and not name, so projects can
+    /// Note: we rely on the program id and not name, so projects can
     /// be renamed without recompiling.
-    pub(crate) fn crate_name(project_id: ProjectId) -> String {
-        format!("project{project_id}")
+    pub(crate) fn crate_name(program_id: ProgramId) -> String {
+        format!("project{program_id}")
     }
 
     /// Directory where the manager maintains the generated cargo workspace.
@@ -251,13 +251,13 @@ impl ManagerConfig {
     }
 
     /// Directory where the manager generates Rust crate for the project.
-    pub(crate) fn project_dir(&self, project_id: ProjectId) -> PathBuf {
-        self.workspace_dir().join(Self::crate_name(project_id))
+    pub(crate) fn project_dir(&self, program_id: ProgramId) -> PathBuf {
+        self.workspace_dir().join(Self::crate_name(program_id))
     }
 
     /// File name where the manager stores the SQL code of the project.
-    pub(crate) fn sql_file_path(&self, project_id: ProjectId) -> PathBuf {
-        self.project_dir(project_id).join("project.sql")
+    pub(crate) fn sql_file_path(&self, program_id: ProgramId) -> PathBuf {
+        self.project_dir(program_id).join("project.sql")
     }
 
     /// SQL compiler executable.
@@ -273,18 +273,18 @@ impl ManagerConfig {
     }
 
     /// File to redirect compiler's stderr stream.
-    pub(crate) fn compiler_stderr_path(&self, project_id: ProjectId) -> PathBuf {
-        self.project_dir(project_id).join("err.log")
+    pub(crate) fn compiler_stderr_path(&self, program_id: ProgramId) -> PathBuf {
+        self.project_dir(program_id).join("err.log")
     }
 
     /// File to redirect compiler's stdout stream.
-    pub(crate) fn compiler_stdout_path(&self, project_id: ProjectId) -> PathBuf {
-        self.project_dir(project_id).join("out.log")
+    pub(crate) fn compiler_stdout_path(&self, program_id: ProgramId) -> PathBuf {
+        self.project_dir(program_id).join("out.log")
     }
 
     /// Path to the generated `main.rs` for the project.
-    pub(crate) fn rust_program_path(&self, project_id: ProjectId) -> PathBuf {
-        self.project_dir(project_id).join("src").join("main.rs")
+    pub(crate) fn rust_program_path(&self, program_id: ProgramId) -> PathBuf {
+        self.project_dir(program_id).join("src").join("main.rs")
     }
 
     /// Location of the template `Cargo.toml` file that ships with the SQL
@@ -296,8 +296,8 @@ impl ManagerConfig {
     }
 
     /// Path to the generated `Cargo.toml` file for the project.
-    pub(crate) fn project_toml_path(&self, project_id: ProjectId) -> PathBuf {
-        self.project_dir(project_id).join("Cargo.toml")
+    pub(crate) fn project_toml_path(&self, program_id: ProgramId) -> PathBuf {
+        self.project_dir(program_id).join("Cargo.toml")
     }
 
     /// Top-level `Cargo.toml` file for the generated Rust workspace.
@@ -306,11 +306,11 @@ impl ManagerConfig {
     }
 
     /// Location of the compiled executable for the project.
-    pub(crate) fn project_executable(&self, project_id: ProjectId) -> PathBuf {
+    pub(crate) fn project_executable(&self, program_id: ProgramId) -> PathBuf {
         Path::new(&self.workspace_dir())
             .join("target")
             .join(if self.debug { "debug" } else { "release" })
-            .join(Self::crate_name(project_id))
+            .join(Self::crate_name(program_id))
     }
 
     /// Location to store pipeline files at runtime.
@@ -338,9 +338,9 @@ impl ManagerConfig {
 
     /// The path to `schema.json` that contains a JSON description of input and
     /// output tables.
-    pub(crate) fn schema_path(&self, project_id: ProjectId) -> PathBuf {
+    pub(crate) fn schema_path(&self, program_id: ProgramId) -> PathBuf {
         const SCHEMA_FILE_NAME: &str = "schema.json";
-        let sql_file_path = self.sql_file_path(project_id);
+        let sql_file_path = self.sql_file_path(program_id);
         let project_directory = sql_file_path.parent().unwrap();
 
         PathBuf::from(project_directory).join(SCHEMA_FILE_NAME)

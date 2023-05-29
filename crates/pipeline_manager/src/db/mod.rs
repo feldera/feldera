@@ -1,4 +1,4 @@
-use crate::{config::ManagerConfig, Direction, ProjectStatus};
+use crate::{config::ManagerConfig, ProgramStatus};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -12,6 +12,7 @@ use std::{error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
 use tokio_postgres::NoTls;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[cfg(test)]
 pub(crate) mod test;
@@ -28,9 +29,9 @@ pub(crate) mod storage;
 /// # Compilation queue
 ///
 /// We use the `status` and `status_since` columns to maintain the compilation
-/// queue.  A project is enqueued for compilation by setting its status to
-/// [`ProjectStatus::Pending`].  The `status_since` column is set to the current
-/// time, which determines the position of the project in the queue.
+/// queue.  A program is enqueued for compilation by setting its status to
+/// [`ProgramStatus::Pending`].  The `status_since` column is set to the current
+/// time, which determines the position of the program in the queue.
 pub(crate) struct ProjectDB {
     pool: Pool,
     // Used in dev mode for having an embedded Postgres DB live through the
@@ -40,25 +41,15 @@ pub(crate) struct ProjectDB {
     pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
-/// Unique project id.
+/// Unique program id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct ProjectId(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
-impl Display for ProjectId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// Unique configuration id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-#[repr(transparent)]
-#[serde(transparent)]
-pub(crate) struct ConfigId(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
-impl Display for ConfigId {
+pub(crate) struct ProgramId(
+    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
+);
+impl Display for ProgramId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -69,7 +60,9 @@ impl Display for ConfigId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct PipelineId(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
+pub(crate) struct PipelineId(
+    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
+);
 impl Display for PipelineId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -81,7 +74,9 @@ impl Display for PipelineId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct ConnectorId(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
+pub(crate) struct ConnectorId(
+    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
+);
 impl Display for ConnectorId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -93,7 +88,9 @@ impl Display for ConnectorId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct AttachedConnectorId(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
+pub(crate) struct AttachedConnectorId(
+    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
+);
 impl Display for AttachedConnectorId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -114,29 +111,23 @@ impl Display for Version {
 
 #[derive(Debug)]
 pub(crate) enum DBError {
-    UnknownProject(ProjectId),
-    DuplicateProjectName(String),
-    OutdatedProjectVersion(Version),
-    UnknownConfig(ConfigId),
+    UnknownProgram(ProgramId),
+    OutdatedProgramVersion(Version),
     UnknownPipeline(PipelineId),
     UnknownConnector(ConnectorId),
+    UnknownName(String),
     DuplicateName,
     DuplicateKey,
     InvalidKey,
+    UniqueKeyViolation(&'static str),
 }
 
 impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DBError::UnknownProject(project_id) => write!(f, "Unknown project id '{project_id}'"),
-            DBError::DuplicateProjectName(name) => {
-                write!(f, "A project named '{name}' already exists")
-            }
-            DBError::OutdatedProjectVersion(version) => {
-                write!(f, "Outdated project version '{version}'")
-            }
-            DBError::UnknownConfig(config_id) => {
-                write!(f, "Unknown project config id '{config_id}'")
+            DBError::UnknownProgram(program_id) => write!(f, "Unknown program id '{program_id}'"),
+            DBError::OutdatedProgramVersion(version) => {
+                write!(f, "Outdated program version '{version}'")
             }
             DBError::UnknownPipeline(pipeline_id) => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
@@ -153,17 +144,21 @@ impl Display for DBError {
             DBError::InvalidKey => {
                 write!(f, "Could not validate API")
             }
+            DBError::UnknownName(name) => {
+                write!(f, "An entity with name {name} was not found")
+            }
+            DBError::UniqueKeyViolation(id) => write!(f, "Unique key violation for '{id}'"),
         }
     }
 }
 
 impl StdError for DBError {}
 
-/// The database encodes project status using two columns: `status`, which has
+/// The database encodes program status using two columns: `status`, which has
 /// type `string`, but acts as an enum, and `error`, only used if `status` is
 /// one of `"sql_error"` or `"rust_error"`.
-impl ProjectStatus {
-    /// Decode `ProjectStatus` from the values of `error` and `status` columns.
+impl ProgramStatus {
+    /// Decode `ProgramStatus` from the values of `error` and `status` columns.
     fn from_columns(status_string: Option<&str>, error_string: Option<String>) -> AnyResult<Self> {
         match status_string {
             None => Ok(Self::None),
@@ -187,12 +182,12 @@ impl ProjectStatus {
     }
     fn to_columns(&self) -> (Option<String>, Option<String>) {
         match self {
-            ProjectStatus::None => (None, None),
-            ProjectStatus::Success => (Some("success".to_string()), None),
-            ProjectStatus::Pending => (Some("pending".to_string()), None),
-            ProjectStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
-            ProjectStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
-            ProjectStatus::SqlError(error) => {
+            ProgramStatus::None => (None, None),
+            ProgramStatus::Success => (Some("success".to_string()), None),
+            ProgramStatus::Pending => (Some("pending".to_string()), None),
+            ProgramStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
+            ProgramStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
+            ProgramStatus::SqlError(error) => {
                 if let Ok(error_string) = serde_json::to_string(&error) {
                     (Some("sql_error".to_string()), Some(error_string))
                 } else {
@@ -200,34 +195,34 @@ impl ProjectStatus {
                     (Some("sql_error".to_string()), None)
                 }
             }
-            ProjectStatus::RustError(error) => {
+            ProgramStatus::RustError(error) => {
                 (Some("rust_error".to_string()), Some(error.clone()))
             }
-            ProjectStatus::SystemError(error) => {
+            ProgramStatus::SystemError(error) => {
                 (Some("system_error".to_string()), Some(error.clone()))
             }
         }
     }
 }
 
-/// Project descriptor.
+/// Program descriptor.
 #[derive(Serialize, ToSchema, Debug, Eq, PartialEq, Clone)]
-pub(crate) struct ProjectDescr {
-    /// Unique project id.
-    pub project_id: ProjectId,
-    /// Project name (doesn't have to be unique).
+pub(crate) struct ProgramDescr {
+    /// Unique program id.
+    pub program_id: ProgramId,
+    /// Program name (doesn't have to be unique).
     pub name: String,
-    /// Project description.
+    /// Program description.
     pub description: String,
-    /// Project version, incremented every time project code is modified.
+    /// Program version, incremented every time program code is modified.
     pub version: Version,
-    /// Project compilation status.
-    pub status: ProjectStatus,
+    /// Program compilation status.
+    pub status: ProgramStatus,
     /// A JSON description of the SQL tables and view declarations including
     /// field names and types.
     ///
     /// The schema is set/updated whenever the `status` field reaches >=
-    /// `ProjectStatus::CompilingRust`.
+    /// `ProgramStatus::CompilingRust`.
     ///
     /// # Example
     ///
@@ -255,17 +250,19 @@ pub(crate) struct ProjectDescr {
     pub schema: Option<String>,
 }
 
-/// Project configuration descriptor.
+/// Pipeline descriptor.
 #[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub(crate) struct ConfigDescr {
-    pub config_id: ConfigId,
-    pub project_id: Option<ProjectId>,
-    pub pipeline: Option<PipelineDescr>,
+pub(crate) struct PipelineDescr {
+    pub pipeline_id: PipelineId,
+    pub program_id: Option<ProgramId>,
     pub version: Version,
     pub name: String,
     pub description: String,
     pub config: String,
     pub attached_connectors: Vec<AttachedConnector>,
+    pub port: u16,
+    pub shutdown: bool,
+    pub created: DateTime<Utc>,
 }
 
 /// Format to add attached connectors during a config update.
@@ -273,58 +270,13 @@ pub(crate) struct ConfigDescr {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) struct AttachedConnector {
     /// A unique identifier for this attachement.
-    pub uuid: String,
+    pub name: String,
     /// Is this an input or an output?
-    pub direction: Direction,
+    pub is_input: bool,
     /// The id of the connector to attach.
     pub connector_id: ConnectorId,
     /// The YAML config for this attached connector.
     pub config: String,
-}
-
-/// Pipeline descriptor.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub(crate) struct PipelineDescr {
-    pub pipeline_id: PipelineId,
-    pub config_id: Option<ConfigId>,
-    pub port: u16,
-    pub shutdown: bool,
-    pub created: DateTime<Utc>,
-}
-
-/// Type of new data connector.
-#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Copy, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub enum ConnectorType {
-    KafkaIn = 0,
-    KafkaOut = 1,
-    File = 2,
-    HttpIn = 3,
-    HttpOut = 4,
-}
-
-impl From<i64> for ConnectorType {
-    fn from(val: i64) -> Self {
-        match val {
-            0 => ConnectorType::KafkaIn,
-            1 => ConnectorType::KafkaOut,
-            2 => ConnectorType::File,
-            3 => ConnectorType::HttpIn,
-            4 => ConnectorType::HttpOut,
-            _ => panic!("invalid connector type"),
-        }
-    }
-}
-
-#[allow(clippy::from_over_into)]
-impl Into<Direction> for ConnectorType {
-    fn into(self) -> Direction {
-        match self {
-            ConnectorType::KafkaIn | ConnectorType::HttpIn => Direction::Input,
-            ConnectorType::KafkaOut | ConnectorType::HttpOut => Direction::Output,
-            ConnectorType::File => Direction::InputOutput,
-        }
-    }
 }
 
 /// Connector descriptor.
@@ -333,9 +285,7 @@ pub(crate) struct ConnectorDescr {
     pub connector_id: ConnectorId,
     pub name: String,
     pub description: String,
-    pub typ: ConnectorType,
     pub config: String,
-    pub direction: Direction,
 }
 
 /// Permission types for invoking pipeline manager APIs
@@ -362,29 +312,40 @@ impl std::convert::From<EitherError> for AnyError {
     }
 }
 
+fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, AnyError> {
+    let created_naive =
+        NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
+            AnyError::msg(format!(
+                "Invalid timestamp in 'pipeline.created' column: {created_secs}"
+            ))
+        })?;
+
+    Ok(DateTime::<Utc>::from_utc(created_naive, Utc))
+}
+
 // The goal for these methods is to avoid multiple DB interactions as much as
 // possible and if not, use transactions
 #[async_trait]
 impl Storage for ProjectDB {
-    async fn reset_project_status(&self) -> AnyResult<()> {
+    async fn reset_program_status(&self) -> AnyResult<()> {
         self.pool
             .get()
             .await?
             .execute(
-                "UPDATE project SET status = NULL, error = NULL, schema = NULL",
+                "UPDATE program SET status = NULL, error = NULL, schema = NULL",
                 &[],
             )
             .await?;
         Ok(())
     }
 
-    async fn list_projects(&self) -> AnyResult<Vec<ProjectDescr>> {
+    async fn list_programs(&self) -> AnyResult<Vec<ProgramDescr>> {
         let rows = self
             .pool
             .get()
             .await?
             .query(
-                r#"SELECT id, name, description, version, status, error, schema FROM project"#,
+                r#"SELECT id, name, description, version, status, error, schema FROM program"#,
                 &[],
             )
             .await?;
@@ -393,11 +354,11 @@ impl Storage for ProjectDB {
         for row in rows {
             let status: Option<String> = row.get(4);
             let error: Option<String> = row.get(5);
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             let schema: Option<String> = row.get(6);
 
-            result.push(ProjectDescr {
-                project_id: ProjectId(row.get(0)),
+            result.push(ProgramDescr {
+                program_id: ProgramId(row.get(0)),
                 name: row.get(1),
                 description: row.get(2),
                 version: Version(row.get(3)),
@@ -409,12 +370,12 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    async fn project_code(&self, project_id: ProjectId) -> AnyResult<(ProjectDescr, String)> {
+    async fn program_code(&self, program_id: ProgramId) -> AnyResult<(ProgramDescr, String)> {
         let row = self.pool.get().await?.query_opt(
-            "SELECT name, description, version, status, error, code, schema FROM project WHERE id = $1", &[&project_id.0]
+            "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1", &[&program_id.0]
         )
         .await?
-        .ok_or(DBError::UnknownProject(project_id))?;
+        .ok_or(DBError::UnknownProgram(program_id))?;
 
         let name: String = row.get(0);
         let description: String = row.get(1);
@@ -424,11 +385,11 @@ impl Storage for ProjectDB {
         let code: String = row.get(5);
         let schema: Option<String> = row.get(6);
 
-        let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+        let status = ProgramStatus::from_columns(status.as_deref(), error)?;
 
         Ok((
-            ProjectDescr {
-                project_id,
+            ProgramDescr {
+                program_id,
                 name,
                 description,
                 version,
@@ -439,41 +400,41 @@ impl Storage for ProjectDB {
         ))
     }
 
-    async fn new_project(
+    async fn new_program(
         &self,
-        project_name: &str,
-        project_description: &str,
-        project_code: &str,
-    ) -> AnyResult<(ProjectId, Version)> {
-        debug!("new_project {project_name} {project_description} {project_code}");
-        let row = self.pool.get().await?.query_one(
-                    "INSERT INTO project (version, name, description, code, schema, status, error, status_since)
-                        VALUES(1, $1, $2, $3, NULL, NULL, NULL, extract(epoch from now())) RETURNING id;",
-                &[&project_name, &project_description, &project_code]
+        id: Uuid,
+        program_name: &str,
+        program_description: &str,
+        program_code: &str,
+    ) -> AnyResult<(ProgramId, Version)> {
+        debug!("new_program {program_name} {program_description} {program_code}");
+        self.pool.get().await?.execute(
+                    "INSERT INTO program (id, version, name, description, code, schema, status, error, status_since)
+                        VALUES($1, 1, $2, $3, $4, NULL, NULL, NULL, extract(epoch from now()));",
+                &[&id, &program_name, &program_description, &program_code]
             )
             .await
-            .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))?;
-        let id = row.get(0);
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?;
 
-        Ok((ProjectId(id), Version(1)))
+        Ok((ProgramId(id), Version(1)))
     }
 
-    /// Update project name, description and, optionally, code.
+    /// Update program name, description and, optionally, code.
     /// XXX: Description should be optional too
-    async fn update_project(
+    async fn update_program(
         &self,
-        project_id: ProjectId,
-        project_name: &str,
-        project_description: &str,
-        project_code: &Option<String>,
+        program_id: ProgramId,
+        program_name: &str,
+        program_description: &str,
+        program_code: &Option<String>,
     ) -> AnyResult<Version> {
-        let row = match project_code {
+        let row = match program_code {
             Some(code) => {
                 // Only increment `version` if new code actually differs from the
                 // current version.
                 self.pool.get().await?
-                    .query_one(
-                        "UPDATE project
+                    .query_opt(
+                        "UPDATE program
                             SET
                                 version = (CASE WHEN code = $3 THEN version ELSE version + 1 END),
                                 name = $1,
@@ -486,40 +447,43 @@ impl Storage for ProjectDB {
                         RETURNING version
                     ",
                         &[
-                            &project_name,
-                            &project_description,
+                            &program_name,
+                            &program_description,
                             &code,
-                            &project_id.0,
+                            &program_id.0,
                         ],
                     )
                     .await
-                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))
-                    .map_err(|_| DBError::UnknownProject(project_id))?
+                    .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?
             }
             _ => {
                 self.pool.get().await?
-                    .query_one(
-                        "UPDATE project SET name = $1, description = $2 WHERE id = $3 RETURNING version",
-                        &[&project_name, &project_description, &project_id.0],
+                    .query_opt(
+                        "UPDATE program SET name = $1, description = $2 WHERE id = $3 RETURNING version",
+                        &[&program_name, &program_description, &program_id.0],
                     )
                     .await
-                    .map_err(|e| ProjectDB::maybe_duplicate_project_name_err(EitherError::Tokio(e), project_name))
-                    .map_err(|_| DBError::UnknownProject(project_id))?
+                    .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?
             }
         };
-        Ok(Version(row.get(0)))
+
+        if let Some(row) = row {
+            Ok(Version(row.get(0)))
+        } else {
+            Err(DBError::UnknownProgram(program_id).into())
+        }
     }
 
-    /// Retrieve project descriptor.
+    /// Retrieve program descriptor.
     ///
-    /// Returns `None` if `project_id` is not found in the database.
-    async fn get_project_if_exists(
+    /// Returns `None` if `program_id` is not found in the database.
+    async fn get_program_if_exists(
         &self,
-        project_id: ProjectId,
-    ) -> AnyResult<Option<ProjectDescr>> {
+        program_id: ProgramId,
+    ) -> AnyResult<Option<ProgramDescr>> {
         let row = self.pool.get().await?.query_opt(
-                "SELECT name, description, version, status, error, schema FROM project WHERE id = $1",
-                &[&project_id.0],
+                "SELECT name, description, version, status, error, schema FROM program WHERE id = $1",
+                &[&program_id.0],
             )
             .await?;
 
@@ -530,10 +494,10 @@ impl Storage for ProjectDB {
             let status: Option<String> = row.get(3);
             let error: Option<String> = row.get(4);
             let schema: Option<String> = row.get(5);
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
 
-            Ok(Some(ProjectDescr {
-                project_id,
+            Ok(Some(ProgramDescr {
+                program_id,
                 name,
                 description,
                 version,
@@ -545,26 +509,26 @@ impl Storage for ProjectDB {
         }
     }
 
-    /// Lookup project by name.
-    async fn lookup_project(&self, project_name: &str) -> AnyResult<Option<ProjectDescr>> {
+    /// Lookup program by name.
+    async fn lookup_program(&self, program_name: &str) -> AnyResult<Option<ProgramDescr>> {
         let row = self.pool.get().await?.query_opt(
-                "SELECT id, description, version, status, error, schema FROM project WHERE name = $1",
-                &[&project_name],
+                "SELECT id, description, version, status, error, schema FROM program WHERE name = $1",
+                &[&program_name],
             )
             .await?;
 
         if let Some(row) = row {
-            let project_id: ProjectId = ProjectId(row.get(0));
+            let program_id: ProgramId = ProgramId(row.get(0));
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
             let status: Option<String> = row.get(3);
             let error: Option<String> = row.get(4);
             let schema: Option<String> = row.get(5);
-            let status = ProjectStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
 
-            Ok(Some(ProjectDescr {
-                project_id,
-                name: project_name.to_string(),
+            Ok(Some(ProgramDescr {
+                program_id,
+                name: program_name.to_string(),
                 description,
                 version,
                 status,
@@ -575,25 +539,25 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn set_project_status(
+    async fn set_program_status(
         &self,
-        project_id: ProjectId,
-        status: ProjectStatus,
+        program_id: ProgramId,
+        status: ProgramStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         self.pool.get().await?.execute(
-                "UPDATE project SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
-            &[&status, &error, &project_id.0])
+                "UPDATE program SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
+            &[&status, &error, &program_id.0])
             .await?;
 
         Ok(())
     }
 
-    async fn set_project_status_guarded(
+    async fn set_program_status_guarded(
         &self,
-        project_id: ProjectId,
+        program_id: ProgramId,
         expected_version: Version,
-        status: ProjectStatus,
+        status: ProgramStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         // We could perform the guard in the WHERE clause, but that does not
@@ -604,249 +568,256 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .query_opt(
-                "UPDATE project SET
+                "UPDATE program SET
                  status = (CASE WHEN version = $4 THEN $1 ELSE status END),
                  error = (CASE WHEN version = $4 THEN $2 ELSE error END),
                  status_since = (CASE WHEN version = $4 THEN extract(epoch from now())
                                  ELSE status_since END)
                  WHERE id = $3 RETURNING id",
-                &[&status, &error, &project_id.0, &expected_version.0],
+                &[&status, &error, &program_id.0, &expected_version.0],
             )
             .await?;
         if row.is_none() {
-            Err(anyhow!(DBError::UnknownProject(project_id)))
+            Err(anyhow!(DBError::UnknownProgram(program_id)))
         } else {
             Ok(())
         }
     }
 
-    async fn set_project_schema(&self, project_id: ProjectId, schema: String) -> AnyResult<()> {
+    async fn set_program_schema(&self, program_id: ProgramId, schema: String) -> AnyResult<()> {
         self.pool
             .get()
             .await?
             .execute(
-                "UPDATE project SET schema = $1 WHERE id = $2",
-                &[&schema, &project_id.0],
+                "UPDATE program SET schema = $1 WHERE id = $2",
+                &[&schema, &program_id.0],
             )
             .await?;
 
         Ok(())
     }
 
-    async fn delete_project(&self, project_id: ProjectId) -> AnyResult<()> {
+    async fn delete_program(&self, program_id: ProgramId) -> AnyResult<()> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM project WHERE id = $1", &[&project_id.0])
+            .execute("DELETE FROM program WHERE id = $1", &[&program_id.0])
             .await?;
 
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownProject(project_id)))
+            Err(anyhow!(DBError::UnknownProgram(program_id)))
         }
     }
 
-    async fn next_job(&self) -> AnyResult<Option<(ProjectId, Version)>> {
+    async fn next_job(&self) -> AnyResult<Option<(ProgramId, Version)>> {
         // Find the oldest pending project.
-        let res = self.pool.get().await?.query("SELECT id, version FROM project WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM project WHERE status = 'pending')", &[])
+        let res = self.pool.get().await?.query("SELECT id, version FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')", &[])
             .await?;
 
         if let Some(row) = res.get(0) {
-            let project_id: ProjectId = ProjectId(row.get(0));
+            let program_id: ProgramId = ProgramId(row.get(0));
             let version: Version = Version(row.get(1));
-            Ok(Some((project_id, version)))
+            Ok(Some((program_id, version)))
         } else {
             Ok(None)
         }
     }
 
-    async fn list_configs(&self) -> AnyResult<Vec<ConfigDescr>> {
+    async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>> {
         let rows = self
             .pool
             .get()
             .await?
-            // For every pipeline config, produce a JSON representation of all connectors
+            // For every pipeline, produce a JSON representation of all connectors
             .query(
-                "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
-                COALESCE(json_agg(json_build_object('uuid', uuid,
+                "SELECT p.id, version, p.name, description, p.config, program_id,
+                        created, port, shutdown,
+                COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
                                                     'is_input', is_input))
-                                FILTER (WHERE uuid IS NOT NULL),
+                                FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
-                FROM project_config p
-                LEFT JOIN attached_connector ac on p.id = ac.config_id
+
+                FROM pipeline p
+                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 GROUP BY p.id;",
                 &[],
             )
             .await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let config_id = ConfigId(row.get(0));
-            let project_id = row.get::<_, Option<i64>>(6).map(ProjectId);
-            let attached_connectors = self.json_to_attached_connectors(row.get(7)).await?;
-            let pipeline = if let Some(pipeline_id) = row.get::<_, Option<i64>>(5).map(PipelineId) {
-                Some(self.get_pipeline(pipeline_id).await?)
-            } else {
-                None
-            };
+            let pipeline_id = PipelineId(row.get(0));
+            let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+            let created = convert_bigint_to_time(row.get(6))?;
+            let attached_connectors = self.json_to_attached_connectors(row.get(9)).await?;
 
-            result.push(ConfigDescr {
-                config_id,
+            result.push(PipelineDescr {
+                pipeline_id,
                 version: Version(row.get(1)),
                 name: row.get(2),
                 description: row.get(3),
                 config: row.get(4),
-                pipeline,
-                project_id,
+                program_id,
                 attached_connectors,
+                created,
+                port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
+                shutdown: row.get(8),
             });
         }
 
         Ok(result)
     }
 
-    async fn get_config(&self, config_id: ConfigId) -> AnyResult<ConfigDescr> {
+    async fn get_pipeline_by_id(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr> {
         let row = self
             .pool
             .get()
             .await?
             .query_opt(
-                "SELECT p.id, version, name, description, p.config, pipeline_id, project_id,
-                COALESCE(json_agg(json_build_object('uuid', uuid,
+                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                        created, port, shutdown,
+                COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
                                                     'is_input', is_input))
-                                FILTER (WHERE uuid IS NOT NULL),
+                                FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
-                FROM project_config p
-                LEFT JOIN attached_connector ac on p.id = ac.config_id
+                FROM pipeline p
+                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 WHERE p.id = $1
                 GROUP BY p.id
                 ",
-                &[&config_id.0],
+                &[&pipeline_id.0],
             )
             .await?;
 
         if let Some(row) = row {
-            let pipeline_id: Option<PipelineId> = row.get::<_, Option<i64>>(5).map(PipelineId);
-            let project_id = row.get::<_, Option<i64>>(6).map(ProjectId);
-            let mut descr = ConfigDescr {
-                config_id,
-                project_id,
+            let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+            let created = convert_bigint_to_time(row.get(6))?;
+
+            let descr = PipelineDescr {
+                pipeline_id,
+                program_id,
                 version: Version(row.get(1)),
                 name: row.get(2),
                 description: row.get(3),
                 config: row.get(4),
-                pipeline: None,
-                attached_connectors: Vec::new(),
+                attached_connectors: self.json_to_attached_connectors(row.get(9)).await?,
+                created,
+                port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
+                shutdown: row.get(8),
             };
-
-            descr.attached_connectors = self.json_to_attached_connectors(row.get(7)).await?;
-            if let Some(pipeline_id) = pipeline_id {
-                descr.pipeline = Some(self.get_pipeline(pipeline_id).await?);
-            }
 
             Ok(descr)
         } else {
-            Err(DBError::UnknownConfig(config_id).into())
+            Err(DBError::UnknownPipeline(pipeline_id).into())
+        }
+    }
+
+    async fn get_pipeline_by_name(&self, name: String) -> AnyResult<PipelineDescr> {
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT p.id, version, description, p.config, program_id,
+                        created, port, shutdown,
+                COALESCE(json_agg(json_build_object('name', ac.name,
+                                                    'connector_id', connector_id,
+                                                    'config', ac.config,
+                                                    'is_input', is_input))
+                                FILTER (WHERE ac.name IS NOT NULL),
+                        '[]')
+                FROM pipeline p
+                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                WHERE p.name = $1
+                GROUP BY p.id
+                ",
+                &[&name],
+            )
+            .await?;
+
+        if let Some(row) = row {
+            let pipeline_id = PipelineId(row.get(0));
+            let program_id = row.get::<_, Option<Uuid>>(4).map(ProgramId);
+            let created = convert_bigint_to_time(row.get(5))?;
+
+            let descr = PipelineDescr {
+                pipeline_id,
+                program_id,
+                version: Version(row.get(1)),
+                name: name,
+                description: row.get(2),
+                config: row.get(3),
+                attached_connectors: self.json_to_attached_connectors(row.get(8)).await?,
+                created,
+                port: row.get::<_, Option<i16>>(6).unwrap_or(0) as u16,
+                shutdown: row.get(7),
+            };
+
+            Ok(descr)
+        } else {
+            Err(DBError::UnknownName(name).into())
         }
     }
 
     // XXX: Multiple statements
-    async fn new_config(
+    async fn new_pipeline(
         &self,
-        project_id: Option<ProjectId>,
-        config_name: &str,
-        config_description: &str,
+        id: Uuid,
+        program_id: Option<ProgramId>,
+        pipline_name: &str,
+        pipeline_description: &str,
         config: &str,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> AnyResult<(ConfigId, Version)> {
+    ) -> AnyResult<(PipelineId, Version)> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let row = txn.query_one(
-            "INSERT INTO project_config (project_id, version, name, description, config) VALUES($1, 1, $2, $3, $4) RETURNING id",
-            &[&project_id.map(|id| id.0),
-            &config_name,
-            &config_description,
+        // TODO: created should be NULL here and only be set on deploy_pipeline
+        txn.execute(
+            "INSERT INTO pipeline (id, program_id, version, name, description, config, shutdown, created) VALUES($1, $2, 1, $3, $4, $5, false, extract(epoch from now()))",
+            &[&id, &program_id.map(|id| id.0),
+            &pipline_name,
+            &pipeline_description,
             &config])
             .await
-            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(EitherError::Tokio(e), project_id))?;
-        let config_id = ConfigId(row.get(0));
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
+        let pipeline_id = PipelineId(id);
 
         if let Some(connectors) = connectors {
             // Add the connectors.
             for ac in connectors {
-                self.attach_connector(&txn, config_id, ac).await?;
+                self.attach_connector(&txn, pipeline_id, ac).await?;
             }
         }
         txn.commit().await?;
 
-        Ok((config_id, Version(1)))
-    }
-
-    async fn add_pipeline_to_config(
-        &self,
-        config_id: ConfigId,
-        pipeline_id: PipelineId,
-    ) -> AnyResult<()> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE project_config SET pipeline_id = $1 WHERE id = $2",
-                &[&pipeline_id.0, &config_id.0],
-            )
-            .await
-            .map_err(|e| {
-                ProjectDB::maybe_pipeline_id_foreign_key_constraint_err(
-                    EitherError::Tokio(e),
-                    pipeline_id,
-                )
-            })?;
-        if rows > 0 {
-            Ok(())
-        } else {
-            return Err(DBError::UnknownConfig(config_id).into());
-        }
-    }
-
-    async fn remove_pipeline_from_config(&self, config_id: ConfigId) -> AnyResult<()> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE project_config SET pipeline_id = NULL WHERE id = $1",
-                &[&config_id.0],
-            )
-            .await?;
-        if rows > 0 {
-            Ok(())
-        } else {
-            return Err(DBError::UnknownConfig(config_id).into());
-        }
+        Ok((pipeline_id, Version(1)))
     }
 
     // XXX: Multiple statements
-    async fn update_config(
+    async fn pipeline_update(
         &self,
-        config_id: ConfigId,
-        project_id: Option<ProjectId>,
-        config_name: &str,
-        config_description: &str,
+        pipeline_id: PipelineId,
+        program_id: Option<ProgramId>,
+        pipline_name: &str,
+        pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> AnyResult<Version> {
         log::trace!(
             "Updating config {} {} {} {} {:?} {:?}",
-            config_id.0,
-            project_id.map(|pid| pid.0).unwrap_or(-1),
-            config_name,
-            config_description,
+            pipeline_id.0,
+            program_id
+                .map(|pid| pid.0.to_string())
+                .unwrap_or("<not set>".into()),
+            pipline_name,
+            pipeline_description,
             config,
             connectors
         );
@@ -855,84 +826,73 @@ impl Storage for ProjectDB {
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             txn.execute(
-                "DELETE FROM attached_connector WHERE config_id = $1",
-                &[&config_id.0],
+                "DELETE FROM attached_connector WHERE pipeline_id = $1",
+                &[&pipeline_id.0],
             )
             .await?;
 
             // Rewrite the new set of connectors.
             for ac in connectors {
-                self.attach_connector(&txn, config_id, ac).await?;
+                self.attach_connector(&txn, pipeline_id, ac).await?;
             }
         }
-        let row = txn.query_opt("UPDATE project_config SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), project_id = $4 WHERE id = $5 RETURNING version",
-            &[&config_name, &config_description, &config, &project_id.map(|id| id.0), &config_id.0])
+        let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 RETURNING version",
+            &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0])
             .await
-            .map_err(|e| ProjectDB::maybe_project_id_foreign_key_constraint_err(EitherError::Tokio(e), project_id))?;
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
-            None => Err(DBError::UnknownConfig(config_id).into()),
+            None => Err(DBError::UnknownPipeline(pipeline_id).into()),
         }
     }
 
-    async fn delete_config(&self, config_id: ConfigId) -> AnyResult<()> {
+    async fn delete_config(&self, pipeline_id: PipelineId) -> AnyResult<()> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM project_config WHERE id = $1", &[&config_id.0])
+            .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id.0])
             .await?;
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownConfig(config_id)))
+            Err(anyhow!(DBError::UnknownPipeline(pipeline_id)))
         }
     }
 
-    async fn get_attached_connector_direction(&self, uuid: &str) -> AnyResult<Direction> {
+    /// Returns true if the connector of a given name is an input connector.
+    async fn attached_connector_is_input(&self, name: &str) -> AnyResult<bool> {
         let row = self
             .pool
             .get()
             .await?
             .query_one(
-                "SELECT is_input FROM attached_connector WHERE uuid = $1",
-                &[&uuid],
+                "SELECT is_input FROM attached_connector WHERE name = $1",
+                &[&name],
             )
             .await?;
 
-        if row.get(0) {
-            Ok(Direction::Input)
-        } else {
-            Ok(Direction::Output)
-        }
+        Ok(row.get(0))
     }
 
-    async fn new_pipeline(
-        &self,
-        config_id: ConfigId,
-        config_version: Version,
-    ) -> AnyResult<PipelineId> {
-        let row = self.pool.get().await?.query_one(
-                "INSERT INTO pipeline (config_id, config_version, shutdown, created) VALUES($1, $2, false, extract(epoch from now())) RETURNING id",
-            &[&config_id.0, &config_version.0])
-            .await
-            .map_err(|e| ProjectDB::maybe_config_id_foreign_key_constraint_err(EitherError::Tokio(e), config_id))?;
-
-        Ok(PipelineId(row.get(0)))
-    }
-
-    async fn pipeline_set_port(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
-        let _ = self
+    async fn set_pipeline_deploy(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
+        let res = self
             .pool
             .get()
             .await?
             .execute(
-                "UPDATE pipeline SET port = $1 where id = $2",
+                "UPDATE pipeline SET shutdown = false, port = $1, created = extract(epoch from now()) where id = $2",
                 &[&(port as i16), &pipeline_id.0],
             )
             .await?;
-        Ok(())
+
+        if res > 0 {
+            Ok(())
+        } else {
+            Err(DBError::UnknownPipeline(pipeline_id).into())
+        }
     }
 
     async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
@@ -958,80 +918,24 @@ impl Storage for ProjectDB {
         Ok(res > 0)
     }
 
-    async fn get_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_one(
-                "SELECT id, config_id, port, shutdown, created FROM pipeline WHERE id = $1",
-                &[&pipeline_id.0],
-            )
-            .await
-            .map_err(|_| DBError::UnknownPipeline(pipeline_id))?;
-
-        let created_secs: i64 = row.get(4);
-        let created_naive =
-            NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-                AnyError::msg(format!(
-                    "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-                ))
-            })?;
-
-        Ok(PipelineDescr {
-            pipeline_id: PipelineId(row.get(0)),
-            config_id: row.get::<_, Option<i64>>(1).map(ConfigId),
-            port: row.get::<_, Option<i16>>(2).unwrap_or(0) as u16,
-            shutdown: row.get(3),
-            created: DateTime::<Utc>::from_utc(created_naive, Utc),
-        })
-    }
-
-    async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
-                "SELECT id, config_id, port, shutdown, created FROM pipeline",
-                &[],
-            )
-            .await?;
-
-        let mut result = Vec::with_capacity(rows.len());
-        for row in rows {
-            let created_secs: i64 = row.get(4);
-            let created_naive = NaiveDateTime::from_timestamp_millis(created_secs * 1000)
-                .ok_or_else(|| {
-                    AnyError::msg(format!(
-                        "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-                    ))
-                })?;
-
-            result.push(PipelineDescr {
-                pipeline_id: PipelineId(row.get(0)),
-                config_id: row.get::<_, Option<i64>>(1).map(ConfigId),
-                port: row.get::<_, Option<i16>>(2).unwrap_or(0) as u16,
-                shutdown: row.get(3),
-                created: DateTime::<Utc>::from_utc(created_naive, Utc),
-            });
-        }
-
-        Ok(result)
-    }
-
     async fn new_connector(
         &self,
+        id: Uuid,
         name: &str,
         description: &str,
-        typ: ConnectorType,
         config: &str,
     ) -> AnyResult<ConnectorId> {
         debug!("new_connector {name} {description} {config}");
-        let row = self.pool.get().await?.query_one("INSERT INTO connector (name, description, typ, config) VALUES($1, $2, $3, $4) RETURNING id",
-            &[&name, &description, &(typ as i64), &config])
-            .await?;
-        Ok(ConnectorId(row.get(0)))
+        self.pool
+            .get()
+            .await?
+            .execute(
+                "INSERT INTO connector (id, name, description, config) VALUES($1, $2, $3, $4)",
+                &[&id, &name, &description, &config],
+            )
+            .await
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?;
+        Ok(ConnectorId(id))
     }
 
     async fn list_connectors(&self) -> AnyResult<Vec<ConnectorDescr>> {
@@ -1039,36 +943,57 @@ impl Storage for ProjectDB {
             .pool
             .get()
             .await?
-            .query(
-                "SELECT id, name, description, typ, config FROM connector",
-                &[],
-            )
+            .query("SELECT id, name, description, config FROM connector", &[])
             .await?;
 
         let mut result = Vec::with_capacity(rows.len());
 
         for row in rows {
-            let typ = row.get::<_, i64>(3).into();
             result.push(ConnectorDescr {
                 connector_id: ConnectorId(row.get(0)),
                 name: row.get(1),
                 description: row.get(2),
-                typ,
-                direction: typ.into(),
-                config: row.get(4),
+                config: row.get(3),
             });
         }
 
         Ok(result)
     }
 
-    async fn get_connector(&self, connector_id: ConnectorId) -> AnyResult<ConnectorDescr> {
+    async fn get_connector_by_name(&self, name: String) -> AnyResult<ConnectorDescr> {
         let row = self
             .pool
             .get()
             .await?
             .query_opt(
-                "SELECT name, description, typ, config FROM connector WHERE id = $1",
+                "SELECT id, description, config FROM connector WHERE name = $1",
+                &[&name],
+            )
+            .await?;
+
+        if let Some(row) = row {
+            let connector_id: ConnectorId = ConnectorId(row.get(0));
+            let description: String = row.get(1);
+            let config: String = row.get(2);
+
+            Ok(ConnectorDescr {
+                connector_id,
+                name,
+                description,
+                config,
+            })
+        } else {
+            Err(DBError::UnknownName(name).into())
+        }
+    }
+
+    async fn get_connector_by_id(&self, connector_id: ConnectorId) -> AnyResult<ConnectorDescr> {
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT name, description, config FROM connector WHERE id = $1",
                 &[&connector_id.0],
             )
             .await?;
@@ -1076,15 +1001,12 @@ impl Storage for ProjectDB {
         if let Some(row) = row {
             let name: String = row.get(0);
             let description: String = row.get(1);
-            let typ: ConnectorType = row.get::<_, i64>(2).into();
-            let config: String = row.get(3);
+            let config: String = row.get(2);
 
             Ok(ConnectorDescr {
                 connector_id,
                 name,
                 description,
-                typ,
-                direction: typ.into(),
                 config,
             })
         } else {
@@ -1099,7 +1021,7 @@ impl Storage for ProjectDB {
         description: &str,
         config: &Option<String>,
     ) -> AnyResult<()> {
-        let descr = self.get_connector(connector_id).await?;
+        let descr = self.get_connector_by_id(connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
 
         self.pool
@@ -1114,7 +1036,9 @@ impl Storage for ProjectDB {
                     &connector_id.0,
                 ],
             )
-            .await?;
+            .await
+            .map_err(EitherError::Tokio)
+            .map_err(Self::maybe_unique_violation)?;
 
         Ok(())
     }
@@ -1155,7 +1079,8 @@ impl Storage for ProjectDB {
                         .collect::<Vec<&str>>(),
                 ],
             )
-            .await?;
+            .await
+            .map_err(|_| anyhow!(DBError::DuplicateKey))?;
         if res > 0 {
             Ok(())
         } else {
@@ -1275,8 +1200,8 @@ impl ProjectDB {
         client
             .execute(
                 "
-        CREATE TABLE IF NOT EXISTS project (
-            id bigserial PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS program (
+            id uuid PRIMARY KEY,
             version bigint NOT NULL,
             name varchar UNIQUE NOT NULL,
             description varchar NOT NULL,
@@ -1293,50 +1218,17 @@ impl ProjectDB {
             .execute(
                 "
         CREATE TABLE IF NOT EXISTS pipeline (
-            id bigserial PRIMARY KEY,
-            config_id bigint,
-            config_version bigint NOT NULL,
+            id uuid PRIMARY KEY,
+            program_id uuid,
+            version bigint NOT NULL,
+            name varchar UNIQUE NOT NULL,
+            description varchar NOT NULL,
+            config varchar NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port smallint,
             shutdown bool NOT NULL,
-            created bigint NOT NULL)",
-                &[],
-            )
-            .await?;
-
-        client
-            .execute(
-                "
-        CREATE TABLE IF NOT EXISTS project_config (
-            id bigserial PRIMARY KEY,
-            pipeline_id bigint,
-            project_id bigint,
-            version bigint NOT NULL,
-            name varchar NOT NULL,
-            description varchar NOT NULL,
-            config varchar NOT NULL,
-            FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE,
-            FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE SET NULL);",
-                &[],
-            )
-            .await?;
-
-        client
-            .execute(
-                "ALTER TABLE pipeline DROP CONSTRAINT IF EXISTS pipeline_config_id_fkey CASCADE;
-            ",
-                &[],
-            )
-            .await?;
-        client
-            .execute(
-                "
-                -- We can't add this in the create statement due to the circular dependency
-                ALTER TABLE pipeline
-                ADD CONSTRAINT pipeline_config_id_fkey
-                FOREIGN KEY (config_id)
-                REFERENCES project_config(id)
-                ON DELETE SET NULL;",
+            created bigint NOT NULL,
+            FOREIGN KEY (program_id) REFERENCES program(id) ON DELETE CASCADE);",
                 &[],
             )
             .await?;
@@ -1345,10 +1237,9 @@ impl ProjectDB {
             .execute(
                 "
         CREATE TABLE IF NOT EXISTS connector (
-            id bigserial PRIMARY KEY,
-            name varchar NOT NULL,
+            id uuid PRIMARY KEY,
+            name varchar UNIQUE NOT NULL,
             description varchar NOT NULL,
-            typ bigint NOT NULL,
             config varchar NOT NULL)",
                 &[],
             )
@@ -1358,13 +1249,13 @@ impl ProjectDB {
             .execute(
                 "
         CREATE TABLE IF NOT EXISTS attached_connector (
-            id bigserial PRIMARY KEY,
-            uuid varchar UNIQUE NOT NULL,
-            config_id bigint NOT NULL,
-            connector_id bigint NOT NULL,
+            pipeline_id uuid NOT NULL,
+            connector_id uuid NOT NULL,
+            name varchar,
             config varchar,
             is_input bool NOT NULL,
-            FOREIGN KEY (config_id) REFERENCES project_config(id) ON DELETE CASCADE,
+            PRIMARY KEY (pipeline_id, name),
+            FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE,
             FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE)",
                 &[],
             )
@@ -1394,25 +1285,25 @@ impl ProjectDB {
         return Ok(Self { pool });
     }
 
-    /// Attach connector to the config.
+    /// Attach connector to the pipeline.
     ///
     /// # Precondition
-    /// - A valid config for `config_id` must exist.
+    /// - A valid pipeline for `pipeline_id` must exist.
     async fn attach_connector(
         &self,
         txn: &Transaction<'_>,
-        config_id: ConfigId,
+        pipeline_id: PipelineId,
         ac: &AttachedConnector,
-    ) -> AnyResult<AttachedConnectorId> {
-        let is_input = ac.direction == Direction::Input;
-        let row = txn.query_one(
-            "INSERT INTO attached_connector (uuid, config_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5) RETURNING id",
-            &[&ac.uuid, &config_id.0, &ac.connector_id.0, &is_input, &ac.config])
-            .map_err(|e| Self::maybe_config_id_foreign_key_constraint_err(EitherError::Tokio(e), config_id))
-            .map_err(Self::maybe_duplicate_attached_connector_name_err)
+    ) -> AnyResult<()> {
+        txn.execute(
+            "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5)",
+            &[&ac.name, &pipeline_id.0, &ac.connector_id.0, &ac.is_input, &ac.config])
+            .map_err(EitherError::Tokio)
             .map_err(|e| Self::maybe_connector_id_foreign_key_constraint_err(e, ac.connector_id))
+            .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
+            .map_err(Self::maybe_unique_violation)
             .await?;
-        Ok(AttachedConnectorId(row.get(0)))
+        Ok(())
     }
 
     async fn json_to_attached_connectors(
@@ -1424,66 +1315,48 @@ impl ProjectDB {
         for connector in connector_arr {
             let obj = connector.as_object().unwrap();
             let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
-            let direction = if is_input {
-                Direction::Input
-            } else {
-                Direction::Output
-            };
+
+            let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
+            let connector_id = ConnectorId(Uuid::parse_str(uuid_str)?);
 
             attached_connectors.push(AttachedConnector {
-                uuid: obj.get("uuid").unwrap().as_str().unwrap().to_owned(),
-                connector_id: ConnectorId(obj.get("connector_id").unwrap().as_i64().unwrap()),
+                name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
+                connector_id,
                 config: obj.get("config").unwrap().as_str().unwrap().to_owned(),
-                direction,
+                is_input,
             });
         }
         Ok(attached_connectors)
     }
 
-    /// Helper to convert postgres error into a `DBError::DuplicateProjectName`
-    /// if the underlying low-level error thrown by the database matches.
-    fn maybe_duplicate_project_name_err(err: EitherError, _project_name: &str) -> EitherError {
+    /// Helper to convert postgres error into a `DBError` if the underlying
+    /// low-level error thrown by the database matches.
+    fn maybe_unique_violation(err: EitherError) -> EitherError {
         if let EitherError::Tokio(e) = &err {
-            if let Some(code) = e.code() {
-                if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
-                    return EitherError::Any(anyhow!(DBError::DuplicateProjectName(
-                        _project_name.to_string()
-                    )));
-                }
-            }
-        }
-        err
-    }
-
-    /// Helper to convert postgres error into a `DBError::DuplicateName`
-    /// if the underlying low-level error thrown by the database matches.
-    fn maybe_duplicate_attached_connector_name_err(err: EitherError) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            if let Some(code) = e.code() {
-                if code == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
-                    return EitherError::Any(anyhow!(DBError::DuplicateName));
-                }
-            }
-        }
-        err
-    }
-
-    /// Helper to convert project_id foreign key constraint error into an
-    /// user-friendly error message.
-    fn maybe_project_id_foreign_key_constraint_err(
-        err: EitherError,
-        project_id: Option<ProjectId>,
-    ) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            let db_err = e.as_db_error();
-            if let Some(db_err) = db_err {
-                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                    && db_err.constraint() == Some("project_config_project_id_fkey")
-                {
-                    if let Some(project_id) = project_id {
-                        return EitherError::Any(anyhow!(DBError::UnknownProject(project_id)));
-                    } else {
-                        unreachable!("project_id cannot be none");
+            if let Some(dberr) = e.as_db_error() {
+                if dberr.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
+                    match dberr.constraint() {
+                        Some("program_pkey") => {
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
+                                "program_pkey"
+                            )))
+                        }
+                        Some("connector_pkey") => {
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
+                                "connector_pkey"
+                            )))
+                        }
+                        Some("pipeline_pkey") => {
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
+                                "pipeline_pkey"
+                            )))
+                        }
+                        Some(_constraint) => {
+                            return EitherError::Any(anyhow!(DBError::DuplicateName));
+                        }
+                        None => {
+                            return EitherError::Any(anyhow!(DBError::DuplicateName));
+                        }
                     }
                 }
             }
@@ -1491,20 +1364,23 @@ impl ProjectDB {
         err
     }
 
-    /// Helper to convert config_id foreign key constraint error into an
+    /// Helper to convert program_id foreign key constraint error into an
     /// user-friendly error message.
-    fn maybe_config_id_foreign_key_constraint_err(
+    fn maybe_program_id_foreign_key_constraint_err(
         err: EitherError,
-        config_id: ConfigId,
+        program_id: Option<ProgramId>,
     ) -> EitherError {
         if let EitherError::Tokio(e) = &err {
             let db_err = e.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                    && (db_err.constraint() == Some("pipeline_config_id_fkey")
-                        || db_err.constraint() == Some("attached_connector_config_id_fkey"))
+                    && db_err.constraint() == Some("pipeline_program_id_fkey")
                 {
-                    return EitherError::Any(anyhow!(DBError::UnknownConfig(config_id)));
+                    if let Some(program_id) = program_id {
+                        return EitherError::Any(anyhow!(DBError::UnknownProgram(program_id)));
+                    } else {
+                        unreachable!("program_id cannot be none");
+                    }
                 }
             }
         }
@@ -1521,7 +1397,8 @@ impl ProjectDB {
             let db_err = e.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                    && db_err.constraint() == Some("project_config_pipeline_id_fkey")
+                    && (db_err.constraint() == Some("pipeline_pipeline_id_fkey")
+                        || db_err.constraint() == Some("attached_connector_pipeline_id_fkey"))
                 {
                     return EitherError::Any(anyhow!(DBError::UnknownPipeline(pipeline_id)));
                 }

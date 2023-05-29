@@ -1,5 +1,5 @@
 use crate::db::storage::Storage;
-use crate::{ManagerConfig, ProjectDB, ProjectId, Version};
+use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use fs_extra::{dir, dir::CopyOptions};
 use log::{debug, error, trace};
@@ -53,14 +53,14 @@ pub(crate) struct SqlCompilerMessage {
     message: String,
 }
 
-/// Project compilation status.
+/// Program compilation status.
 #[derive(Debug, Serialize, Eq, PartialEq, ToSchema, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub(crate) enum ProjectStatus {
-    /// Initial state: project has been created or modified, but the user
-    /// hasn't yet started compiling the project.
+pub(crate) enum ProgramStatus {
+    /// Initial state: program has been created or modified, but the user
+    /// hasn't yet started compiling the program.
     None,
-    /// Compilation request received from the user; project has been placed
+    /// Compilation request received from the user; program has been placed
     /// in the queue.
     Pending,
     /// Compilation of SQL -> Rust in progress.
@@ -77,10 +77,10 @@ pub(crate) enum ProjectStatus {
     SystemError(String),
 }
 
-impl ProjectStatus {
-    /// Return true if project is currently compiling.
+impl ProgramStatus {
+    /// Return true if program is currently compiling.
     pub(crate) fn is_compiling(&self) -> bool {
-        *self == ProjectStatus::CompilingRust || *self == ProjectStatus::CompilingSql
+        *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
     }
 }
 
@@ -148,9 +148,9 @@ impl Compiler {
                 _ = sleep(COMPILER_POLL_INTERVAL) => {
                     let mut cancel = false;
                     if let Some(job) = &job {
-                        // Project was deleted, updated or the user changed its status
+                        // Program was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_project_if_exists(job.project_id).await?;
+                        let descr = db.lock().await.get_program_if_exists(job.program_id).await?;
                         if let Some(descr) = descr {
                             if descr.version != job.version || !descr.status.is_compiling() {
                                 cancel = true;
@@ -165,7 +165,7 @@ impl Compiler {
                     }
                 }
                 // Compilation job finished - start the next stage of the compilation
-                // (i.e. run the Rust compiler after SQL) or update project status in the
+                // (i.e. run the Rust compiler after SQL) or update program status in the
                 // database.
                 Some(exit_status) = async {
                     if let Some(job) = &mut job {
@@ -174,17 +174,17 @@ impl Compiler {
                         None
                     }
                 }, if job.is_some() => {
-                    let project_id = job.as_ref().unwrap().project_id;
+                    let program_id = job.as_ref().unwrap().program_id;
                     let version = job.as_ref().unwrap().version;
                     let db = db.lock().await;
 
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
                             // SQL compiler succeeded -- start the Rust job.
-                            db.set_project_status_guarded(
-                                project_id,
+                            db.set_program_status_guarded(
+                                program_id,
                                 version,
-                                ProjectStatus::CompilingRust,
+                                ProgramStatus::CompilingRust,
                             ).await?;
 
                             // Read the schema so we can store it in the DB.
@@ -192,71 +192,71 @@ impl Compiler {
                             // - We trust the compiler that it put the file
                             // there if it succeeded.
                             // - We hold the db lock so we are executing this
-                            // update in the same transaction as the project
+                            // update in the same transaction as the program
                             // status above.
-                            let schema_json = fs::read_to_string(config.schema_path(project_id)).await?;
-                            db.set_project_schema(project_id, schema_json).await?;
+                            let schema_json = fs::read_to_string(config.schema_path(program_id)).await?;
+                            db.set_program_schema(program_id, schema_json).await?;
 
-                            debug!("Set ProjectStatus::CompilingRust '{project_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(&config, project_id, version).await?);
+                            debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
+                            job = Some(CompilationJob::rust(&config, program_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
-                            db.set_project_status_guarded(project_id, version, ProjectStatus::Success).await?;
-                            debug!("Set ProjectStatus::Success '{project_id}', version '{version}'");
+                            db.set_program_status_guarded(program_id, version, ProgramStatus::Success).await?;
+                            debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
                             job = None;
                         }
                         Ok(status) => {
-                            // Compilation failed - update project status with the compiler
+                            // Compilation failed - update program status with the compiler
                             // error message.
                             let output = job.as_ref().unwrap().error_output(&config).await?;
                             let status = if job.as_ref().unwrap().is_rust() {
-                                ProjectStatus::RustError(format!("{output}\nexit code: {status}"))
+                                ProgramStatus::RustError(format!("{output}\nexit code: {status}"))
                             } else if let Ok(messages) = serde_json::from_str(&output) {
                                     // If we can parse the SqlCompilerMessages
                                     // as JSON, we assume the compiler worked:
-                                    ProjectStatus::SqlError(messages)
+                                    ProgramStatus::SqlError(messages)
                             } else {
                                     // Otherwise something unexpected happened
                                     // and we return a system error:
-                                    ProjectStatus::SystemError(format!("{output}\nexit code: {status}"))
+                                    ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status).await?;
+                            db.set_program_status_guarded(program_id, version, status).await?;
                             job = None;
                         }
                         Err(e) => {
                             let status = if job.unwrap().is_rust() {
-                                ProjectStatus::SystemError(format!("I/O error with rustc: {e}"))
+                                ProgramStatus::SystemError(format!("I/O error with rustc: {e}"))
                             } else {
-                                ProjectStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
+                                ProgramStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
-                            db.set_project_status_guarded(project_id, version, status).await?;
+                            db.set_program_status_guarded(program_id, version, status).await?;
                             job = None;
                         }
                     }
                 }
             }
-            // Pick the next project from the queue.
+            // Pick the next program from the queue.
             if job.is_none() {
-                let project = {
+                let program = {
                     let db = db.lock().await;
-                    if let Some((project_id, version)) = db.next_job().await? {
-                        trace!("Next project in the queue: '{project_id}', version '{version}'");
-                        let (_version, code) = db.project_code(project_id).await?;
-                        Some((project_id, version, code))
+                    if let Some((program_id, version)) = db.next_job().await? {
+                        trace!("Next program in the queue: '{program_id}', version '{version}'");
+                        let (_version, code) = db.program_code(program_id).await?;
+                        Some((program_id, version, code))
                     } else {
                         None
                     }
                 };
 
-                if let Some((project_id, version, code)) = project {
-                    job = Some(CompilationJob::sql(&config, &code, project_id, version).await?);
+                if let Some((program_id, version, code)) = program {
+                    job = Some(CompilationJob::sql(&config, &code, program_id, version).await?);
                     db.lock()
                         .await
-                        .set_project_status_guarded(
-                            project_id,
+                        .set_program_status_guarded(
+                            program_id,
                             version,
-                            ProjectStatus::CompilingSql,
+                            ProgramStatus::CompilingSql,
                         )
                         .await?;
                 }
@@ -273,7 +273,7 @@ enum Stage {
 
 struct CompilationJob {
     stage: Stage,
-    project_id: ProjectId,
+    program_id: ProgramId,
     version: Version,
     compiler_process: Child,
 }
@@ -291,13 +291,13 @@ impl CompilationJob {
     async fn sql(
         config: &ManagerConfig,
         code: &str,
-        project_id: ProjectId,
+        program_id: ProgramId,
         version: Version,
     ) -> AnyResult<Self> {
-        debug!("Running SQL compiler on project '{project_id}', version '{version}'");
+        debug!("Running SQL compiler on program '{program_id}', version '{version}'");
 
         // Create project directory.
-        let sql_file_path = config.sql_file_path(project_id);
+        let sql_file_path = config.sql_file_path(program_id);
         let project_directory = sql_file_path.parent().unwrap();
         fs::create_dir_all(&project_directory).await.map_err(|e| {
             AnyError::msg(format!(
@@ -309,10 +309,10 @@ impl CompilationJob {
         // Write SQL code to file.
         fs::write(&sql_file_path, code).await?;
 
-        let rust_file_path = config.rust_program_path(project_id);
+        let rust_file_path = config.rust_program_path(program_id);
         fs::create_dir_all(rust_file_path.parent().unwrap()).await?;
 
-        let stderr_path = config.compiler_stderr_path(project_id);
+        let stderr_path = config.compiler_stderr_path(program_id);
         let err_file = File::create(&stderr_path).await.map_err(|e| {
             AnyError::msg(format!(
                 "failed to create error log '{}': '{e}'",
@@ -329,7 +329,7 @@ impl CompilationJob {
         })?;
 
         // Run compiler, direct output to `main.rs`.
-        let schema_path = config.schema_path(project_id);
+        let schema_path = config.schema_path(program_id);
         let compiler_process = Command::new(config.sql_compiler_path())
             .arg("-js")
             .arg(schema_path)
@@ -349,7 +349,7 @@ impl CompilationJob {
 
         Ok(Self {
             stage: Stage::Sql,
-            project_id,
+            program_id,
             version,
             compiler_process,
         })
@@ -358,14 +358,14 @@ impl CompilationJob {
     // Run `cargo` on the generated Rust workspace.
     async fn rust(
         config: &ManagerConfig,
-        project_id: ProjectId,
+        program_id: ProgramId,
         version: Version,
     ) -> AnyResult<Self> {
-        debug!("Running Rust compiler on project '{project_id}', version '{version}'");
+        debug!("Running Rust compiler on program '{program_id}', version '{version}'");
 
         let mut main_rs = OpenOptions::new()
             .append(true)
-            .open(&config.rust_program_path(project_id))
+            .open(&config.rust_program_path(program_id))
             .await?;
         main_rs.write_all(MAIN_FUNCTION.as_bytes()).await?;
         drop(main_rs);
@@ -379,13 +379,13 @@ impl CompilationJob {
                     config.project_toml_template_path().display()
                 ))
             })?;
-        let project_name = format!("name = \"{}\"", ManagerConfig::crate_name(project_id));
+        let program_name = format!("name = \"{}\"", ManagerConfig::crate_name(program_id));
         let mut project_toml_code = template_toml
-            .replace("name = \"temp\"", &project_name)
+            .replace("name = \"temp\"", &program_name)
             .replace(", default-features = false", "")
             .replace(
                 "[lib]\npath = \"src/lib.rs\"",
-                &format!("\n\n[[bin]]\n{project_name}\npath = \"src/main.rs\""),
+                &format!("\n\n[[bin]]\n{program_name}\npath = \"src/main.rs\""),
             );
         if let Some(p) = &config.dbsp_override_path {
             project_toml_code = project_toml_code
@@ -394,12 +394,12 @@ impl CompilationJob {
         };
         eprintln!("TOML:\n{project_toml_code}");
 
-        fs::write(&config.project_toml_path(project_id), project_toml_code)
+        fs::write(&config.project_toml_path(program_id), project_toml_code)
             .await
             .map_err(|e| {
                 AnyError::msg(format!(
                     "failed to write '{}': '{e}'",
-                    config.project_toml_path(project_id).display()
+                    config.project_toml_path(program_id).display()
                 ))
             })?;
 
@@ -407,7 +407,7 @@ impl CompilationJob {
         // generated project crate.
         let workspace_toml_code = format!(
             "[workspace]\nmembers = [ \"{}\" ]\n",
-            ManagerConfig::crate_name(project_id),
+            ManagerConfig::crate_name(program_id),
         );
         fs::write(&config.workspace_toml_path(), workspace_toml_code)
             .await
@@ -418,20 +418,20 @@ impl CompilationJob {
                 ))
             })?;
 
-        let err_file = File::create(&config.compiler_stderr_path(project_id))
+        let err_file = File::create(&config.compiler_stderr_path(program_id))
             .await
             .map_err(|e| {
                 AnyError::msg(format!(
                     "failed to create '{}': '{e}'",
-                    config.compiler_stderr_path(project_id).display()
+                    config.compiler_stderr_path(program_id).display()
                 ))
             })?;
-        let out_file = File::create(&config.compiler_stdout_path(project_id))
+        let out_file = File::create(&config.compiler_stdout_path(program_id))
             .await
             .map_err(|e| {
                 AnyError::msg(format!(
                     "failed to create '{}': '{e}'",
-                    config.compiler_stdout_path(project_id).display()
+                    config.compiler_stdout_path(program_id).display()
                 ))
             })?;
 
@@ -456,7 +456,7 @@ impl CompilationJob {
 
         Ok(Self {
             stage: Stage::Rust,
-            project_id,
+            program_id,
             version,
             compiler_process,
         })
@@ -472,12 +472,12 @@ impl CompilationJob {
     /// Read error output of (Rust or SQL) compiler.
     async fn error_output(&self, config: &ManagerConfig) -> AnyResult<String> {
         let output = match self.stage {
-            Stage::Sql => fs::read_to_string(config.compiler_stderr_path(self.project_id)).await?,
+            Stage::Sql => fs::read_to_string(config.compiler_stderr_path(self.program_id)).await?,
             Stage::Rust => {
                 let stdout =
-                    fs::read_to_string(config.compiler_stdout_path(self.project_id)).await?;
+                    fs::read_to_string(config.compiler_stdout_path(self.program_id)).await?;
                 let stderr =
-                    fs::read_to_string(config.compiler_stderr_path(self.project_id)).await?;
+                    fs::read_to_string(config.compiler_stderr_path(self.program_id)).await?;
                 format!("stdout:\n{stdout}\nstderr:\n{stderr}")
             }
         };
