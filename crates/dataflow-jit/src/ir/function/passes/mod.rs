@@ -14,6 +14,8 @@ use std::{
 impl Function {
     #[tracing::instrument(skip_all)]
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
+        self.warn_string_load_store_sequences();
+
         // self.remove_redundant_casts();
         self.dce();
         self.remove_unit_memory_operations(layout_cache);
@@ -26,6 +28,34 @@ impl Function {
         // TODO: Tree shaking to remove unreachable nodes
         // TODO: Eliminate unused block parameters
         // TODO: Promote conditional writes to rows to block params
+    }
+
+    fn warn_string_load_store_sequences(&self) {
+        let (mut string_loads, mut string_stores) = (BTreeSet::new(), BTreeMap::new());
+
+        // Find all string loads and stores
+        for block in self.blocks.values() {
+            for (expr_id, expr) in block.body() {
+                if let Expr::Store(store) = expr {
+                    if let Some(&value) = store.value().as_expr() {
+                        if store.value_type().is_string() {
+                            string_stores.insert(*expr_id, value);
+                        }
+                    }
+                } else if let Expr::Load(load) = expr {
+                    if load.column_type().is_string() {
+                        string_loads.insert(*expr_id);
+                    }
+                }
+            }
+        }
+
+        // Find the stores whose direct value is a string load
+        for (store_id, store_value) in string_stores {
+            if string_loads.contains(&store_value) {
+                tracing::warn!("store {store_id} stores string directly from the load {store_value}, the string is not properly cloned");
+            }
+        }
     }
 
     fn concat_empty_strings(&mut self) {

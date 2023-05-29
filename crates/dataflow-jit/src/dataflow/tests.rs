@@ -103,7 +103,7 @@ fn compiled_dataflow() {
         CompiledDataflow::new(&graph, CodegenConfig::debug(), |_| ());
 
     let (mut runtime, (mut inputs, outputs)) =
-        Runtime::init_circuit(1, move |circuit| dbg!(dataflow).construct(circuit)).unwrap();
+        Runtime::init_circuit(1, move |circuit| dataflow.construct(circuit)).unwrap();
 
     let mut values = Vec::new();
     let layout = layout_cache.layout_of(xy_layout);
