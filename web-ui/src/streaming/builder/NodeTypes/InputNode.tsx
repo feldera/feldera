@@ -9,7 +9,7 @@ import { Icon } from '@iconify/react'
 
 import useNodeDelete from '../hooks/useNodeDelete'
 import { Handle, Node } from '../NodeTypes'
-import { connectorTypeToIcon } from 'src/types/connectors'
+import { connectorTypeToIcon, connectorDescrToType } from 'src/types/connectors'
 
 const InputNode = ({ id, data }: NodeProps) => {
   const { getNode, getEdges, deleteElements } = useReactFlow()
@@ -51,7 +51,7 @@ const InputNode = ({ id, data }: NodeProps) => {
         subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
         avatar={
           <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
-            <Icon icon={connectorTypeToIcon(data.connector.typ)} />
+            <Icon icon={connectorTypeToIcon(connectorDescrToType(data.connector))} />
           </Avatar>
         }
         action={

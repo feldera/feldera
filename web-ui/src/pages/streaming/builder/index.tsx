@@ -12,16 +12,15 @@ import { useBuilderState } from 'src/streaming/builder/useBuilderState'
 import {
   AttachedConnector,
   CancelError,
-  ConfigDescr,
-  ConfigId,
-  ConfigService,
+  PipelineDescr,
+  PipelineId,
+  PipelineService,
   ConnectorDescr,
-  Direction,
-  NewConfigRequest,
-  NewConfigResponse,
+  NewPipelineRequest,
+  NewPipelineResponse,
   ProgramDescr,
-  UpdateConfigRequest,
-  UpdateConfigResponse
+  UpdatePipelineRequest,
+  UpdatePipelineResponse
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
@@ -53,13 +52,13 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
     .exhaustive()
 
 export const PipelineWithProvider = (props: {
-  configId: ConfigId | undefined
-  setConfigId: Dispatch<SetStateAction<ConfigId | undefined>>
+  pipelineId: PipelineId | undefined
+  setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
 }) => {
   const queryClient = useQueryClient()
   const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
 
-  const { configId, setConfigId } = props
+  const { pipelineId, setPipelineId } = props
   const setSaveState = useBuilderState(state => state.setSaveState)
   const saveState = useBuilderState(state => state.saveState)
 
@@ -77,11 +76,11 @@ export const PipelineWithProvider = (props: {
 
   const { getNode, getEdges } = useReactFlow()
 
-  const { mutate: newConfigMutate } = useMutation<NewConfigResponse, CancelError, NewConfigRequest>(
-    ConfigService.newConfig
+  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, CancelError, NewPipelineRequest>(
+    PipelineService.newPipeline
   )
-  const { mutate: updateConfigMutate } = useMutation<UpdateConfigResponse, CancelError, UpdateConfigRequest>(
-    ConfigService.updateConfig
+  const { mutate: updatePipelineMutate } = useMutation<UpdatePipelineResponse, CancelError, UpdatePipelineRequest>(
+    PipelineService.updatePipeline
   )
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
@@ -89,27 +88,27 @@ export const PipelineWithProvider = (props: {
   const { pushMessage } = useStatusNotification()
   const projects = useQuery<ProgramDescr[]>(['program'])
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
-  const configQuery = useQuery<ConfigDescr>(['configStatus', { config_id: configId }], {
+  const pipelineQuery = useQuery<PipelineDescr>(['pipelineStatus', { pipeline_id: pipelineId }], {
     enabled:
-      configId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
+      pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
     if (saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing') {
       if (
-        !configQuery.isLoading &&
-        !configQuery.isError &&
+        !pipelineQuery.isLoading &&
+        !pipelineQuery.isError &&
         !projects.isLoading &&
         !projects.isError &&
         !connectorQuery.isLoading &&
         !connectorQuery.isError
       ) {
-        setConfigId(() => configQuery.data.config_id)
-        setName(configQuery.data.name)
-        setDescription(configQuery.data.description)
-        setConfig(configQuery.data.config)
+        setPipelineId(() => pipelineQuery.data.pipeline_id)
+        setName(pipelineQuery.data.name)
+        setDescription(pipelineQuery.data.description)
+        setConfig(pipelineQuery.data.config)
         setSaveState('isUpToDate')
 
-        const attachedConnectors = configQuery.data.attached_connectors
+        const attachedConnectors = pipelineQuery.data.attached_connectors
         let invalidConnections: AttachedConnector[] = []
         let validConnections: AttachedConnector[] = attachedConnectors
         console.log(attachedConnectors)
@@ -118,8 +117,8 @@ export const PipelineWithProvider = (props: {
         // the saveState every time the backend returns some result. Because it
         // could cancel potentially in-progress saves (started by client action).
 
-        if (configQuery.data.program_id) {
-          const foundProject = projects.data.find(p => p.program_id === configQuery.data.program_id)
+        if (pipelineQuery.data.program_id) {
+          const foundProject = projects.data.find(p => p.program_id === pipelineQuery.data.program_id)
           if (foundProject) {
             if (foundProject.schema == null) {
               setMissingSchemaDialog(true)
@@ -146,8 +145,9 @@ export const PipelineWithProvider = (props: {
           pushMessage({
             key: new Date().getTime(),
             color: 'warning',
-            message: `Could not attach ${invalidConnections.length
-              } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
+            message: `Could not attach ${
+              invalidConnections.length
+            } connector(s): No tables/views named ${invalidConnections.map(c => c.config).join(', ')} found.`
           })
         }
 
@@ -161,7 +161,7 @@ export const PipelineWithProvider = (props: {
             }
           })
         }
-      } else if (configId === undefined) {
+      } else if (pipelineId === undefined) {
         setProject(undefined)
         setSaveState('isNew')
         setName('')
@@ -174,13 +174,13 @@ export const PipelineWithProvider = (props: {
     connectorQuery.isLoading,
     connectorQuery.isError,
     connectorQuery.data,
-    configQuery.isLoading,
-    configQuery.isError,
-    configQuery.data,
+    pipelineQuery.isLoading,
+    pipelineQuery.isError,
+    pipelineQuery.data,
     projects.isLoading,
     projects.isError,
     projects.data,
-    setConfigId,
+    setPipelineId,
     setName,
     setDescription,
     setConfig,
@@ -188,7 +188,7 @@ export const PipelineWithProvider = (props: {
     setProject,
     replacePlaceholder,
     addConnector,
-    configId,
+    pipelineId,
     pushMessage,
     saveState
   ])
@@ -208,9 +208,9 @@ export const PipelineWithProvider = (props: {
       setSaveState('isSaving')
       console.log('update existing config')
 
-      // Create a new config
-      if (configId === undefined) {
-        newConfigMutate(
+      // Create a new pipeline
+      if (pipelineId === undefined) {
+        newPipelineMutate(
           {
             name,
             program_id: project?.program_id,
@@ -223,14 +223,14 @@ export const PipelineWithProvider = (props: {
               setSaveState('isUpToDate')
               console.log('error', error)
             },
-            onSuccess: (data: NewConfigResponse) => {
-              setConfigId(data.config_id)
+            onSuccess: (data: NewPipelineResponse) => {
+              setPipelineId(data.pipeline_id)
               setSaveState('isUpToDate')
             }
           }
         )
       } else {
-        // Update an existing config
+        // Update an existing pipeline
         const connectors: Array<AttachedConnector> = getEdges().map(edge => {
           const source = getNode(edge.source)
           const target = getNode(edge.target)
@@ -241,17 +241,16 @@ export const PipelineWithProvider = (props: {
           if (ac == undefined) {
             throw new Error('data.ac in an edge was undefined')
           }
-          const tableOrView =
-            ac.direction === Direction.INPUT
-              ? removePrefix(edge.targetHandle || '', 'table-')
-              : removePrefix(edge.sourceHandle || '', 'view-')
+          const tableOrView = ac.is_input
+            ? removePrefix(edge.targetHandle || '', 'table-')
+            : removePrefix(edge.sourceHandle || '', 'view-')
           ac.config = tableOrView
 
           return ac
         })
 
         const updateRequest = {
-          config_id: configId,
+          pipeline_id: pipelineId,
           name,
           description,
           program_id: project?.program_id,
@@ -259,10 +258,10 @@ export const PipelineWithProvider = (props: {
           connectors
         }
 
-        updateConfigMutate(updateRequest, {
+        updatePipelineMutate(updateRequest, {
           onSettled: () => {
-            assert(configId !== undefined)
-            queryClient.invalidateQueries(['configStatus', { config_id: configId }])
+            assert(pipelineId !== undefined)
+            queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: pipelineId }])
           },
           onError: (error: CancelError) => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
@@ -272,18 +271,21 @@ export const PipelineWithProvider = (props: {
             // It's important to update the query cache here because otherwise
             // sometimes the query cache will be out of date and the UI will
             // show the old connectors again after deletion.
-            queryClient.setQueryData(['configStatus', { config_id: configId }], (oldData: ConfigDescr | undefined) => {
-              return oldData
-                ? {
-                  ...oldData,
-                  name,
-                  description,
-                  program_id: project?.program_id,
-                  config,
-                  attached_connectors: connectors
-                }
-                : oldData
-            })
+            queryClient.setQueryData(
+              ['pipelineStatus', { pipeline_id: pipelineId }],
+              (oldData: PipelineDescr | undefined) => {
+                return oldData
+                  ? {
+                      ...oldData,
+                      name,
+                      description,
+                      program_id: project?.program_id,
+                      config,
+                      attached_connectors: connectors
+                    }
+                  : oldData
+              }
+            )
             setSaveState('isUpToDate')
           }
         })
@@ -293,10 +295,10 @@ export const PipelineWithProvider = (props: {
     saveState,
     debouncedSave,
     setSaveState,
-    setConfigId,
-    updateConfigMutate,
-    newConfigMutate,
-    configId,
+    setPipelineId,
+    updatePipelineMutate,
+    newPipelineMutate,
+    pipelineId,
     project,
     name,
     description,
@@ -343,11 +345,11 @@ export const PipelineWithProvider = (props: {
 }
 
 const Pipeline = () => {
-  const [configId, setConfigId] = useState<ConfigId | undefined>(undefined)
+  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
 
   return (
     <ReactFlowProvider>
-      <PipelineWithProvider configId={configId} setConfigId={setConfigId} />
+      <PipelineWithProvider pipelineId={pipelineId} setPipelineId={setPipelineId} />
     </ReactFlowProvider>
   )
 }

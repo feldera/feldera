@@ -10,7 +10,7 @@ import DialogContentText from '@mui/material/DialogContentText'
 const MissingSchemaDialog = (props: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
-  program_id: number | undefined
+  program_id: string | undefined
 }) => {
   const router = useRouter()
   const handleClose = () => {

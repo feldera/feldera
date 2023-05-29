@@ -1,24 +1,24 @@
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 import { ReactFlowProvider } from 'reactflow'
-import { ConfigId } from 'src/types/manager'
+import { PipelineId } from 'src/types/manager'
 import { PipelineWithProvider } from '.'
 
 const PipelineWithId = () => {
-  const [configId, setConfigId] = useState<ConfigId | undefined>(undefined)
+  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
   const router = useRouter()
   const { id } = router.query
 
   useEffect(() => {
-    if (typeof id === 'string' && parseInt(id) != configId) {
-      setConfigId(parseInt(id))
+    if (typeof id === 'string') {
+      setPipelineId(id)
     }
-  }, [configId, setConfigId, id])
+  }, [pipelineId, setPipelineId, id])
 
   return (
-    configId !== null && (
+    pipelineId !== null && (
       <ReactFlowProvider>
-        <PipelineWithProvider configId={configId} setConfigId={setConfigId} />
+        <PipelineWithProvider pipelineId={pipelineId} setPipelineId={setPipelineId} />
       </ReactFlowProvider>
     )
   )

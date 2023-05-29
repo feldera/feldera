@@ -10,15 +10,15 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { ConfigDescr, ConfigId, Direction, ProgramDescr } from 'src/types/manager'
+import { PipelineDescr, PipelineId, ProgramDescr, PipelineStatus } from 'src/types/manager'
 import { parse } from 'csv-parse'
 import { parseProjectSchema } from 'src/types/program'
 
 const IntrospectInputOutput = () => {
   const apiRef = useGridApiRef()
-  const [configDescr, setConfig] = useState<ConfigDescr | undefined>(undefined)
+  const [configDescr, setConfig] = useState<PipelineDescr | undefined>(undefined)
   const [headers, setHeaders] = useState<GridColumns | undefined>(undefined)
-  const [configId, setConfigId] = useState<ConfigId | undefined>(undefined)
+  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
   const [viewName, setViewName] = useState<string | undefined>(undefined)
   const router = useRouter()
   const { config, view } = router.query
@@ -48,16 +48,16 @@ const IntrospectInputOutput = () => {
   }, [projectQuery.isLoading, projectQuery.isError, projectQuery.data, setHeaders, viewName])
 
   useEffect(() => {
-    if (typeof config === 'string' && parseInt(config) != configId) {
-      setConfigId(parseInt(config))
+    if (typeof config === 'string') {
+      setPipelineId(config)
     }
     if (typeof view === 'string') {
       setViewName(view)
     }
-  }, [configId, setConfigId, config, view, setViewName])
+  }, [pipelineId, setPipelineId, config, view, setViewName])
 
-  const configQuery = useQuery<ConfigDescr>(['configStatus', { config_id: configId }], {
-    enabled: configId !== undefined
+  const configQuery = useQuery<PipelineDescr>(['configStatus', { config_id: pipelineId }], {
+    enabled: pipelineId !== undefined
   })
   useEffect(() => {
     if (!configQuery.isLoading && !configQuery.isError) {
@@ -67,12 +67,16 @@ const IntrospectInputOutput = () => {
 
   const ws = useRef<WebSocket | null>(null)
   useEffect(() => {
-    if (configDescr && configDescr.pipeline && view !== undefined && headers !== undefined && apiRef.current) {
+    if (
+      configDescr &&
+      configDescr.status == PipelineStatus.RUNNING &&
+      view !== undefined &&
+      headers !== undefined &&
+      apiRef.current
+    ) {
       const endpoint = configDescr.attached_connectors.find(ac => ac.config == view)
-      const direction = endpoint?.direction === Direction.INPUT ? '/input_endpoint/' : '/output_endpoint/'
-      const socket = new WebSocket(
-        'ws://localhost:' + configDescr.pipeline.port + direction + 'debug-' + endpoint?.uuid
-      )
+      const direction = endpoint?.is_input ? '/input_endpoint/' : '/output_endpoint/'
+      const socket = new WebSocket('ws://localhost:' + configDescr.port + direction + 'debug-' + endpoint?.name)
 
       socket.onopen = () => {
         console.log('opened')

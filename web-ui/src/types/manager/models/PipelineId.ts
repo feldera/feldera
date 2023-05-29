@@ -5,4 +5,4 @@
 /**
  * Unique pipeline id.
  */
-export type PipelineId = string;
+export type PipelineId = string

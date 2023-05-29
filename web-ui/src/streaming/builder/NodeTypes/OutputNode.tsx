@@ -10,7 +10,7 @@ import IconButton from '@mui/material/IconButton'
 import { Icon } from '@iconify/react'
 import { Handle, Node } from '../NodeTypes'
 import useNodeDelete from '../hooks/useNodeDelete'
-import { connectorTypeToIcon } from 'src/types/connectors'
+import { connectorTypeToIcon, connectorDescrToType } from 'src/types/connectors'
 
 const OutputNode = ({ id, data }: NodeProps) => {
   const { getNode } = useReactFlow()
@@ -42,7 +42,7 @@ const OutputNode = ({ id, data }: NodeProps) => {
         subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
         avatar={
           <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
-            <Icon icon={connectorTypeToIcon(data.connector.typ)} />
+            <Icon icon={connectorTypeToIcon(connectorDescrToType(data.connector))} />
           </Avatar>
         }
         action={

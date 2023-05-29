@@ -6,6 +6,5 @@
  * Pipeline manager error response.
  */
 export type ErrorResponse = {
-    message: string;
-};
-
+  message: string
+}

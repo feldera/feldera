@@ -10,7 +10,7 @@ import { GridColumns, GridRenderCellParams } from '@mui/x-data-grid-pro'
 import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
 import { ConnectorDescr } from 'src/types/manager'
-import { Direction, ConnectorType, connectorDescrToType, connectorTypeToDirection } from 'src/types/connectors'
+import { Direction, ConnectorType, connectorDescrToType } from 'src/types/connectors'
 
 const SelectSourceTable = (props: {
   direction: Direction
@@ -34,12 +34,6 @@ const SelectSourceTable = (props: {
       field: 'name'
     },
     {
-      flex: 0.15,
-      minWidth: 140,
-      field: 'typ',
-      headerName: 'Type'
-    },
-    {
       flex: 0.1,
       minWidth: 90,
       sortable: false,
@@ -58,28 +52,12 @@ const SelectSourceTable = (props: {
   const tableProps = {
     density: 'compact' as const,
     getRowId: (row: ConnectorDescr) => row.connector_id,
-    columnVisibilityModel: { connector_id: false, typ: false },
+    columnVisibilityModel: { connector_id: false },
     columns: columns,
     rows: rows.filter(row => {
-      const typ = connectorDescrToType(row)
-      const direction = connectorTypeToDirection(typ)
-      direction === props.direction || direction === Direction.INPUT_OUTPUT
+      return connectorDescrToType(row) == props.typ
     }),
-    hideFooter: true,
-    initialState: {
-      filter: {
-        filterModel: {
-          items: [
-            {
-              id: 1,
-              columnField: 'typ',
-              operatorValue: 'equals',
-              value: props.typ
-            }
-          ]
-        }
-      }
-    }
+    hideFooter: true
   }
 
   return (

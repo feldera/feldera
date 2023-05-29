@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { useReactFlow, getConnectedEdges } from 'reactflow'
-import { AttachedConnector, Direction } from 'src/types/manager'
+import { AttachedConnector } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
 import { Schema } from 'src/types/program'
 import { randomString } from 'src/utils'
@@ -13,7 +13,7 @@ const HEIGHT_OFFSET = 120
 // Checks if the connector can connect to a give schema
 export function connectorConnects(ac: AttachedConnector, schema: Schema): boolean {
   console.log('connectorConnects', ac, schema)
-  if (ac.direction === Direction.INPUT) {
+  if (ac.is_input) {
     return schema.inputs.some(table => table.name === ac.config)
   } else {
     return schema.outputs.some(view => view.name === ac.config)
@@ -27,15 +27,15 @@ export function useAddConnector() {
   const addNewConnector = useCallback(
     (connector: ConnectorDescr, ac: AttachedConnector) => {
       // Input or Output?
-      const newNodeType = ac.direction === Direction.INPUT ? 'inputNode' : 'outputNode'
-      const placeholderId = ac.direction === Direction.INPUT ? 'inputPlaceholder' : 'outputPlaceholder'
+      const newNodeType = ac.is_input ? 'inputNode' : 'outputNode'
+      const placeholderId = ac.is_input ? 'inputPlaceholder' : 'outputPlaceholder'
       const placeholder = getNode(placeholderId)
       if (!placeholder) {
         return
       }
 
       // If this node already exists, don't add it again
-      const existingNode = getNodes().find(node => node.id === ac.uuid)
+      const existingNode = getNodes().find(node => node.id === ac.name)
       if (existingNode) {
         return
       } else {
@@ -58,7 +58,7 @@ export function useAddConnector() {
         // Add the new nodes
         addNodes({
           position: { x: placeholder.position.x, y: placeholder.position.y },
-          id: ac.uuid,
+          id: ac.name,
           type: newNodeType,
           deletable: true,
           data: { connector, ac }
@@ -68,9 +68,9 @@ export function useAddConnector() {
 
       // Now that we have the node, we need to add a connector if we have one
       const sqlNode = getNode('sql')
-      const ourNode = getNode(ac.uuid)
+      const ourNode = getNode(ac.name)
       const tableOrView = ac.config
-      const sqlPrefix = ac.direction === Direction.INPUT ? 'table-' : 'view-'
+      const sqlPrefix = ac.is_input ? 'table-' : 'view-'
       const connectorHandle = sqlPrefix + tableOrView
       const hasAnEdge = ac.config != ''
 
@@ -80,10 +80,10 @@ export function useAddConnector() {
         )
 
         if (!existingEdge) {
-          const sourceId = ac.direction === Direction.INPUT ? ac.uuid : 'sql'
-          const targetId = ac.direction === Direction.INPUT ? 'sql' : ac.uuid
-          const sourceHandle = ac.direction === Direction.INPUT ? null : connectorHandle
-          const targetHandle = ac.direction === Direction.INPUT ? connectorHandle : null
+          const sourceId = ac.is_input ? ac.name : 'sql'
+          const targetId = ac.is_input ? 'sql' : ac.name
+          const sourceHandle = ac.is_input ? null : connectorHandle
+          const targetHandle = ac.is_input ? connectorHandle : null
 
           addEdges({
             id: randomString(),

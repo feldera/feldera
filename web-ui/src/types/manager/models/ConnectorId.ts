@@ -5,4 +5,4 @@
 /**
  * Unique connector id.
  */
-export type ConnectorId = string;
+export type ConnectorId = string
