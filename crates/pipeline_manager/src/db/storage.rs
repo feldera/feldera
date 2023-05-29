@@ -1,6 +1,6 @@
 use super::{
     ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, PipelineDescr,
-    PipelineId, ProgramDescr, ProgramId, Version,
+    PipelineId, PipelineStatus, ProgramDescr, ProgramId, Version,
 };
 use crate::ProgramStatus;
 use anyhow::{anyhow, Result as AnyResult};
@@ -212,10 +212,14 @@ pub(crate) trait Storage {
     /// Get input/output status for an attached connector.
     async fn attached_connector_is_input(&self, name: &str) -> AnyResult<bool>;
 
-    async fn set_pipeline_deploy(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()>;
+    async fn set_pipeline_deployed(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()>;
 
     /// Set `shutdown` flag to `true`.
-    async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool>;
+    async fn set_pipeline_status(
+        &self,
+        pipeline_id: PipelineId,
+        status: PipelineStatus,
+    ) -> AnyResult<bool>;
 
     /// Delete `pipeline` from the DB.
     async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool>;

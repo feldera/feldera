@@ -1,12 +1,11 @@
 use super::{
     storage::Storage, AttachedConnector, ConnectorDescr, ConnectorId, DBError, PipelineId,
-    ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Version,
+    PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use super::{ApiPermission, PipelineDescr};
 use crate::auth;
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
-use chrono::DateTime;
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
@@ -516,8 +515,8 @@ enum StorageAction {
         Option<String>,
         Option<Vec<AttachedConnector>>,
     ),
-    PipelineSetDeploy(PipelineId, u16),
-    SetPipelineShutdown(PipelineId),
+    PipelineSetDeployed(PipelineId, u16),
+    SetPipelineStatus(PipelineId, PipelineStatus),
     DeletePipeline(PipelineId),
     GetPipelineById(PipelineId),
     GetPipelineByName(String),
@@ -560,8 +559,8 @@ fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_
 fn compare_pipeline(step: usize, model: AnyResult<PipelineDescr>, impl_: AnyResult<PipelineDescr>) {
     match (model, impl_) {
         (Ok(mut mr), Ok(mut ir)) => {
-            mr.created = DateTime::default();
-            ir.created = DateTime::default();
+            mr.created = None;
+            ir.created = None;
             assert_eq!(mr, ir);
         }
         (Err(me), Ok(ir)) => {
@@ -588,11 +587,11 @@ fn compare_pipelines(
     assert_eq!(
         model_response
             .iter_mut()
-            .map(|p| p.created = DateTime::default())
+            .map(|p| p.created = None)
             .collect::<Vec<_>>(),
         impl_response
             .iter_mut()
-            .map(|p| p.created = DateTime::default())
+            .map(|p| p.created = None)
             .collect::<Vec<_>>()
     );
 }
@@ -752,14 +751,14 @@ fn db_impl_behaves_like_model() {
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::PipelineSetDeploy(pipeline_id, port) => {
-                                let model_response = model.set_pipeline_deploy(pipeline_id, port).await;
-                                let impl_response = handle.db.set_pipeline_deploy(pipeline_id, port).await;
+                            StorageAction::PipelineSetDeployed(pipeline_id, port) => {
+                                let model_response = model.set_pipeline_deployed(pipeline_id, port).await;
+                                let impl_response = handle.db.set_pipeline_deployed(pipeline_id, port).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetPipelineShutdown(pipeline_id) => {
-                                let model_response = model.set_pipeline_shutdown(pipeline_id).await;
-                                let impl_response = handle.db.set_pipeline_shutdown(pipeline_id).await;
+                            StorageAction::SetPipelineStatus(pipeline_id, status) => {
+                                let model_response = model.set_pipeline_status(pipeline_id, status).await;
+                                let impl_response = handle.db.set_pipeline_status(pipeline_id, status).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(pipeline_id) => {
@@ -1121,8 +1120,8 @@ impl Storage for Mutex<DbModel> {
                 attached_connectors: new_acs,
                 version: Version(1),
                 port: 0,
-                created: DateTime::default(),
-                shutdown: false,
+                created: None,
+                status: PipelineStatus::Shutdown,
             },
         );
 
@@ -1234,7 +1233,7 @@ impl Storage for Mutex<DbModel> {
         todo!()
     }
 
-    async fn set_pipeline_deploy(
+    async fn set_pipeline_deployed(
         &self,
         pipeline_id: super::PipelineId,
         port: u16,
@@ -1246,24 +1245,23 @@ impl Storage for Mutex<DbModel> {
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
         p.port = port;
-        p.shutdown = false;
+        p.status = PipelineStatus::Deployed;
 
         Ok(())
     }
 
-    async fn set_pipeline_shutdown(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
+    async fn set_pipeline_status(
+        &self,
+        pipeline_id: super::PipelineId,
+        status: PipelineStatus,
+    ) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
-        s.pipelines.values_mut().for_each(|p| {
-            if p.pipeline_id == pipeline_id {
-                p.shutdown = true;
-            }
-        });
 
         Ok(s.pipelines
             .get_mut(&pipeline_id)
             .map(|p| {
-                p.shutdown = true;
-                p.shutdown
+                p.status = status;
+                true
             })
             .unwrap_or(false))
     }
@@ -1271,8 +1269,8 @@ impl Storage for Mutex<DbModel> {
     async fn delete_pipeline(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
 
-        // TODO: Our APIs sometimes are not consistent we return a bool here but other
-        // calls fail silently on delete/lookups
+        // TODO: Our APIs sometimes are not consistent we return a bool here but
+        // other calls fail silently on delete/lookups
         Ok(s.pipelines
             .remove(&pipeline_id)
             .map(|_| true)
