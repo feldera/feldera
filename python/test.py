@@ -135,17 +135,17 @@ async def do(connector_endpoints):
 
 def main():
     url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
-    dbsp = DBSPConnection(url) 
+    dbsp = DBSPConnection(url)
     connector_type = "file" if len(sys.argv) <= 2 else "http"
     print("Connection established")
 
-    project = dbsp.create_or_replace_project(name="foo", sql_code=sql_code)
+    program = dbsp.create_or_replace_program(name="foo", sql_code=sql_code)
     print("Project created")
 
-    status = project.status()
+    status = program.status()
     print("Project status: " + status)
 
-    config = DBSPPipelineConfig(project, 6)
+    pipeline = DBSPPipelineConfig(program, 6)
 
     if (connector_type == "file"):
         demfd, dempath = tempfile.mkstemp(
@@ -162,35 +162,32 @@ def main():
         outfd, outpath = tempfile.mkstemp(
             suffix='.csv', prefix='output', text=True)
         os.close(outfd)
-        config.add_file_input(stream='DEMOGRAPHICS',
+        pipeline.add_file_input(stream='DEMOGRAPHICS',
                             filepath=dempath, format=CsvInputFormatConfig())
-        config.add_file_input(stream='TRANSACTIONS',
+        pipeline.add_file_input(stream='TRANSACTIONS',
                             filepath=transpath, format=CsvInputFormatConfig())
-        config.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
+        pipeline.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
                             filepath=outpath, format=CsvOutputFormatConfig())
     else:
-        config.add_http_input(stream = 'DEMOGRAPHICS', name = "DEMOGRAPHICS", format = CsvInputFormatConfig())
-        config.add_http_input(stream = 'TRANSACTIONS', name = "TRANSACTIONS", format = CsvInputFormatConfig())
-        config.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', name = "TRANSACTIONS_WITH_DEMOGRAPHICS", format = CsvOutputFormatConfig())
-        
-    project.compile()
+        pipeline.add_http_input(stream = 'DEMOGRAPHICS', name = "DEMOGRAPHICS", format = CsvInputFormatConfig())
+        pipeline.add_http_input(stream = 'TRANSACTIONS', name = "TRANSACTIONS", format = CsvInputFormatConfig())
+        pipeline.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', name = "TRANSACTIONS_WITH_DEMOGRAPHICS", format = CsvOutputFormatConfig())
+
+    program.compile()
     print("Project compiled")
 
-    status = project.status()
+    status = program.status()
     print("Project status: " + status)
 
-    pipeline = config.run()
+    pipeline.run()
     print("Pipeline is running")
 
     if (connector_type == "http"):
-        connector_endpoint = (url + "/pipelines/" + str(pipeline.pipeline_id) + "/connector/").replace("http://", "ws://") 
-        connector_endpoints = {i.config : connector_endpoint + i.uuid for i in config.attached_connectors}
+        connector_endpoint = (url + "/pipelines/" + str(pipeline.pipeline_id) + "/connector/").replace("http://", "ws://")
+        connector_endpoints = {i.config : connector_endpoint + i.name for i in pipeline.attached_connectors}
         asyncio.run(do(connector_endpoints))
 
-    print(pipeline.metadata)
-
-    print("Pipeline status: " + str(pipeline.status()))
-    print("Pipeline metadata: " + str(pipeline.metadata()))
+    print("Pipeline status: " + str(pipeline.descriptor().status))
 
     pipeline.pause()
     print("Pipeline paused")
@@ -214,6 +211,6 @@ def main():
     else:
         pipeline.delete()
         print("Pipeline deleted")
-    
+
 if __name__ == "__main__":
     main()
