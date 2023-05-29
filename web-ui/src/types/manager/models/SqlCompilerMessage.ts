@@ -10,23 +10,22 @@
  *
  * ```no_run
  * [ {
-     * "startLineNumber" : 14,
-     * "startColumn" : 13,
-     * "endLineNumber" : 14,
-     * "endColumn" : 13,
-     * "warning" : false,
-     * "errorType" : "Error parsing SQL",
-     * "message" : "Encountered \"<EOF>\" at line 14, column 13."
-     * } ]
-     * ```
-     */
-    export type SqlCompilerMessage = {
-        endColumn: number;
-        endLineNumber: number;
-        errorType: string;
-        message: string;
-        startColumn: number;
-        startLineNumber: number;
-        warning: boolean;
-    };
-
+ * "startLineNumber" : 14,
+ * "startColumn" : 13,
+ * "endLineNumber" : 14,
+ * "endColumn" : 13,
+ * "warning" : false,
+ * "errorType" : "Error parsing SQL",
+ * "message" : "Encountered \"<EOF>\" at line 14, column 13."
+ * } ]
+ * ```
+ */
+export type SqlCompilerMessage = {
+  endColumn: number
+  endLineNumber: number
+  errorType: string
+  message: string
+  startColumn: number
+  startLineNumber: number
+  warning: boolean
+}

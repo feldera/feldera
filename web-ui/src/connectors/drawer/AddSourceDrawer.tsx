@@ -14,7 +14,13 @@ import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } 
 import { useState, Dispatch, useEffect } from 'react'
 import { AttachedConnector, ConnectorDescr } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
-import { Direction, ConnectorType, connectorTypeToDirection, connectorTypeToTitle, connectorDescrToType } from 'src/types/connectors'
+import {
+  Direction,
+  ConnectorType,
+  connectorTypeToDirection,
+  connectorTypeToTitle,
+  connectorDescrToType
+} from 'src/types/connectors'
 import { randomString } from 'src/utils'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
@@ -116,7 +122,12 @@ const SideBarAddIo = () => {
             acc[typ] += 1
             return acc
           },
-          { [ConnectorType.KAFKA_IN]: 0, [ConnectorType.KAFKA_OUT]: 0, [ConnectorType.FILE]: 0, [ConnectorType.UNKNOWN]: 0 }
+          {
+            [ConnectorType.KAFKA_IN]: 0,
+            [ConnectorType.KAFKA_OUT]: 0,
+            [ConnectorType.FILE]: 0,
+            [ConnectorType.UNKNOWN]: 0
+          }
         )
 
       setSourceCounts(counts)

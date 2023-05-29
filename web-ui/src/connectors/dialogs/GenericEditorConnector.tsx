@@ -28,7 +28,7 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHan
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
-import { parseEditorSchema, ConnectorType } from 'src/types/connectors'
+import { parseEditorSchema } from 'src/types/connectors'
 
 const schema = yup
   .object({

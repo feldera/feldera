@@ -22,7 +22,7 @@ import {
 // Updates the query cache for a `UpdateProgramRequest` response.
 export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: UpdateProgramRequest) => {
   queryClient.setQueryData(
-    ['projectCode', { program_id: newData.program_id }],
+    ['programCode', { program_id: newData.program_id }],
     (oldData: ProgramCodeResponse | undefined) => {
       if (oldData) {
         const newd = {
@@ -52,9 +52,9 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
     (oldData: ProgramDescr | undefined) => {
       return oldData
         ? {
-          ...oldData,
-          ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
-        }
+            ...oldData,
+            ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
+          }
         : oldData
     }
   )
@@ -76,36 +76,44 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
 
 export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
-    .with(['projectCode', { program_id: P.select() }], program_id => {
+    .with(['programCode', { program_id: P.select() }], program_id => {
       if (typeof program_id == 'string') {
         return ProgramService.programCode(program_id)
       } else {
-        throw new Error('Invalid query key, program_id should be a number')
+        throw new Error('Invalid query key, program_id should be a string')
       }
     })
     .with(['programStatus', { program_id: P.select() }], program_id => {
       if (typeof program_id == 'string') {
         return ProgramService.programStatus(program_id)
       } else {
-        throw new Error('Invalid query key, program_id should be a number')
+        throw new Error('Invalid query key, program_id should be a string')
       }
     })
     .with(['pipelineStatus', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineMetadata(pipeline_id)
+        return PipelineService.pipelineStatus(pipeline_id)
       } else {
-        throw new Error('Invalid query key, pipeline_id should be a number')
+        throw new Error('Invalid query key, pipeline_id should be a string')
+      }
+    })
+    .with(['pipelineStats', { pipeline_id: P.select() }], pipeline_id => {
+      if (typeof pipeline_id == 'string') {
+        return PipelineService.pipelineStats(pipeline_id)
+      } else {
+        throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['connectorStatus', { connector_id: P.select() }], connector_id => {
       if (typeof connector_id == 'string') {
         return ConnectorService.connectorStatus(connector_id)
       } else {
-        throw new Error('Invalid query key, connector_id should be a number')
+        throw new Error('Invalid query key, connector_id should be a string')
       }
     })
     .with(['program'], () => ProgramService.listPrograms())
     .with(['connector'], () => ConnectorService.listConnectors())
+    .with(['pipeline'], () => PipelineService.listPipelines())
     .otherwise(() => {
       throw new Error('Invalid query key, maybe you need to update defaultQueryFn.ts')
     })

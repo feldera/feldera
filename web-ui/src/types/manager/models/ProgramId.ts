@@ -5,4 +5,4 @@
 /**
  * Unique program id.
  */
-export type ProgramId = string;
+export type ProgramId = string

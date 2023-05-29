@@ -6,7 +6,7 @@ export interface Schema {
 }
 
 export interface ProjectWithSchema {
-  program_id: number
+  program_id: string
   name: string
   schema: Schema
 }

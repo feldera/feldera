@@ -25,7 +25,7 @@ export enum ConnectorType {
 export enum Direction {
   INPUT,
   OUTPUT,
-  INPUT_OUTPUT,
+  INPUT_OUTPUT
 }
 
 // Determine the type of a connector from its config entries.

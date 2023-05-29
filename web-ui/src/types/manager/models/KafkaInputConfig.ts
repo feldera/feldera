@@ -2,4 +2,4 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export type KafkaInputConfig = Record<string, string>;
+export type KafkaInputConfig = Record<string, string>

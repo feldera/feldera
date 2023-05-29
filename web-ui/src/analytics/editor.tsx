@@ -204,7 +204,7 @@ const useFetchExistingProject = (
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
   const codeQuery = useQuery<number, CancelError, ProgramCodeResponse>(
-    ['projectCode', { program_id: project.program_id }],
+    ['programCode', { program_id: project.program_id }],
     { enabled: project.program_id != null }
   )
   useEffect(() => {
@@ -258,7 +258,7 @@ const useUpdateProjectIfChanged = (
       mutate(updateRequest, {
         onSettled: () => {
           queryClient.invalidateQueries(['program'])
-          queryClient.invalidateQueries(['projectCode', { program_id: project.program_id }])
+          queryClient.invalidateQueries(['programCode', { program_id: project.program_id }])
           queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
         },
         onSuccess: (data: UpdateProgramResponse) => {

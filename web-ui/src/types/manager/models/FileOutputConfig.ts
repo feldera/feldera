@@ -6,9 +6,8 @@
  * Configuration for writing data to a file with [`FileOutputTransport`].
  */
 export type FileOutputConfig = {
-    /**
-     * File path.
-     */
-    path: string;
-};
-
+  /**
+   * File path.
+   */
+  path: string
+}

@@ -14,7 +14,6 @@ import {
   ConnectorDescr
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { connectorTypeToDirection, connectorDescrToType } from 'src/types/connectors'
 
 // Sends the request to create a new connector.
 //
@@ -47,7 +46,7 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
             connector_id: resp.connector_id,
             name: source_desc.name,
             description: source_desc.description,
-            config: source_desc.config,
+            config: source_desc.config
           })
         },
         onError: error => {
@@ -90,7 +89,7 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
             connector_id: source_desc.connector_id,
             name: source_desc.name,
             config: data.config,
-            description: data.description,
+            description: data.description
           })
         },
         onError: error => {

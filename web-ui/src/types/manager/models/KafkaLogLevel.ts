@@ -6,12 +6,12 @@
  * Kafka logging levels.
  */
 export enum KafkaLogLevel {
-    EMERG = 'emerg',
-    ALERT = 'alert',
-    CRITICAL = 'critical',
-    ERROR = 'error',
-    WARNING = 'warning',
-    NOTICE = 'notice',
-    INFO = 'info',
-    DEBUG = 'debug',
+  EMERG = 'emerg',
+  ALERT = 'alert',
+  CRITICAL = 'critical',
+  ERROR = 'error',
+  WARNING = 'warning',
+  NOTICE = 'notice',
+  INFO = 'info',
+  DEBUG = 'debug'
 }
