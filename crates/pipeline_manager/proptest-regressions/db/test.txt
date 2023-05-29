@@ -1,0 +1,15 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc aa4596c83408a0badde2c46dd5680702c449463769d3c1d9131025e9b946973f # shrinks to [ResetProgramStatus, NewPipeline(0f000000-0000-0000-0000-000000000000, None, "", "", "", None), UpdatePipeline(PipelineId(0f000000-0000-0000-0000-000000000000), None, "", "", None, Some([AttachedConnector { name: "", is_input: false, connector_id: ConnectorId(01000000-0000-0000-0000-000000000000), config: "" }, AttachedConnector { name: "", is_input: false, connector_id: ConnectorId(01000000-0000-0000-0000-000000000000), config: "" }]))]
+cc e5622d7fe4822f85e1f6255f43be34bbd802f37f01e095ba83b836b164d345c2 # shrinks to [NewProgram(01000000-0000-0000-0000-000000000000, "", "", ""), NewProgram(09000000-0000-0000-0000-000000000000, " ", "", ""), UpdateProgram(ProgramId(09000000-0000-0000-0000-000000000000), "", "", None)]
+cc cb3af244d3dbb8b1db77d40b8da8faafd6e6d77da92aeba49516a9f44112c0bd # shrinks to [NewProgram(0b000000-0000-0000-0000-000000000000, "", "", ""), NewConnector(0b000000-0000-0000-0000-000000000000, "", "", ""), NewPipeline(01000000-0000-0000-0000-000000000000, None, "", "", "", Some([AttachedConnector { name: "", is_input: false, connector_id: ConnectorId(0b000000-0000-0000-0000-000000000000), config: "" }, AttachedConnector { name: "", is_input: false, connector_id: ConnectorId(01000000-0000-0000-0000-000000000000), config: "" }]))]
+cc 11f1bc98acab2e4a09afb5ae18e2d68ec8bee1cf10df1f26a7e04324d28c3465 # shrinks to [NewConnector(09000000-0000-0000-0000-000000000000, "", "", ""), NewConnector(01000000-0000-0000-0000-000000000000, "", "", "")]
+cc bcc4e5777ac79ac50eabd80caac7b58a0f2329e0a4f60a7fe038e8b8d4ca14e4 # shrinks to [NewConnector(05000000-0000-0000-0000-000000000000, "", "", ""), UpdateConnector(ConnectorId(01000000-0000-0000-0000-000000000000), "", "", None)]
+cc 603102971a3ac142fe70e319035f2a2b55df3ad7fe4569929c3af0995644697d # shrinks to [NewProgram(01000000-0000-0000-0000-000000000000, "", "", ""), NewPipeline(01000000-0000-0000-0000-000000000000, None, "", "", "", None), GetPipelineByName("")]
+cc 8f1dfd477b0d191f34596b2bbde0641121e92de73f90319973a50ee66080b968 # shrinks to [StoreApiKeyHash("", []), StoreApiKeyHash("", [])]
+cc 323bcae02d94472c5fe235799cbd20cbdbedb0131c2bf4fde3c195a96f6ae414 # shrinks to [NewPipeline(01000000-0000-0000-0000-000000000000, None, "", "", "", None), NewPipeline(03000000-0000-0000-0000-000000000000, Some(ProgramId(01000000-0000-0000-0000-000000000000)), "", "", "", None)]
+cc 3bb5e0cf6d9acc0c4c290e398f9e64c04ba927b04aa3c51cd17b69dc691d2fd1 # shrinks to [NewPipeline(01000000-0000-0000-0000-000000000000, None, "", "", "", None), GetPipelineByName("")]

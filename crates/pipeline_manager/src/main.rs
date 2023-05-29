@@ -9,15 +9,15 @@
 //!
 //! # Architecture
 //!
-//! * Project database.  Projects (including SQL source code), configs, and
+//! * Project database.  Programs (including SQL source code), configs, and
 //!   pipelines are stored in a Postgres database.  The database is the only
 //!   state that is expected to survive across server restarts.  Intermediate
 //!   artifacts stored in the file system (see below) can be safely deleted.
 //!
-//! * Compiler.  The compiler generates a binary crate for each project and adds
+//! * Compiler.  The compiler generates a binary crate for each program and adds
 //!   it to a cargo workspace that also includes libraries that come with the
 //!   SQL libraries.  This way, all precompiled dependencies of the main crate
-//!   are reused across projects, thus speeding up compilation.
+//!   are reused across programs, thus speeding up compilation.
 //!
 //! * Runner.  The runner component is responsible for starting and killing
 //!   compiled pipelines and for interacting with them at runtime.
@@ -62,6 +62,7 @@ use std::{
 use tokio::sync::Mutex;
 use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 mod auth;
 mod compiler;
@@ -69,11 +70,11 @@ mod config;
 mod db;
 mod runner;
 
-pub(crate) use compiler::{Compiler, ProjectStatus};
+pub(crate) use compiler::{Compiler, ProgramStatus};
 pub(crate) use config::ManagerConfig;
 use db::{
-    storage::Storage, AttachedConnector, AttachedConnectorId, ConfigId, ConnectorId, ConnectorType,
-    DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, Version,
+    storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
+    ProgramDescr, ProgramId, ProjectDB, Version,
 };
 use runner::{LocalRunner, Runner, RunnerError};
 
@@ -85,52 +86,46 @@ use runner::{LocalRunner, Runner, RunnerError};
 
 # API concepts
 
-* *Project*.  A project is a SQL script with a unique name and a unique ID
-  attached to it.  The client can add, remove, modify, and compile projects.
+* *Program*.  A program is a SQL script with a unique name and a unique ID
+  attached to it.  The client can add, remove, modify, and compile programs.
   Compilation includes running the SQL-to-DBSP compiler followed by the Rust
   compiler.
 
-* *Configuration*.  A project can have multiple configurations associated with
-  it.  Similar to projects, one can add, remove, and modify configs.
+* *Configuration*.  A program can have multiple configurations associated with
+  it.  Similar to programs, one can add, remove, and modify configs.
 
-* *Pipeline*.  A pipeline is a running instance of a compiled project based on
-  one of the configs.  Clients can start multiple pipelines for a project with
+* *Pipeline*.  A pipeline is a running instance of a compiled program based on
+  one of the configs.  Clients can start multiple pipelines for a program with
   the same or different configs.
 
 # Concurrency
 
 The API prevents race conditions due to multiple users accessing the same
-project or configuration concurrently.  An example is user 1 modifying the project,
-while user 2 is starting a pipeline for the same project.  The pipeline
+program or configuration concurrently.  An example is user 1 modifying the program,
+while user 2 is starting a pipeline for the same program.  The pipeline
 may end up running the old or the new version, potentially leading to
 unexpected behaviors.  The API prevents such situations by associating a
-monotonically increasing version number with each project and configuration.
-Every request to compile the project or start a pipeline must include project
+monotonically increasing version number with each program and configuration.
+Every request to compile the program or start a pipeline must include program
 id _and_ version number. If the version number isn't equal to the current
-version in the database, this means that the last version of the project
+version in the database, this means that the last version of the program
 observed by the user is outdated, so the request is rejected."
     ),
     paths(
-        list_projects,
-        project_code,
-        project_status,
-        new_project,
-        update_project,
-        compile_project,
-        cancel_project,
-        delete_project,
-        new_config,
-        update_config,
-        delete_config,
-        list_configs,
-        config_status,
+        list_programs,
+        program_code,
+        program_status,
+        new_program,
+        update_program,
+        compile_program,
+        cancel_program,
+        delete_program,
         new_pipeline,
+        pipeline_update,
         list_pipelines,
-        pipeline_status,
+        pipeline_stats,
         pipeline_metadata,
-        pipeline_start,
-        pipeline_pause,
-        pipeline_shutdown,
+        pipeline_action,
         pipeline_delete,
         list_connectors,
         new_connector,
@@ -142,10 +137,8 @@ observed by the user is outdated, so the request is rejected."
     components(schemas(
         compiler::SqlCompilerMessage,
         db::AttachedConnector,
-        db::ProjectDescr,
+        db::ProgramDescr,
         db::ConnectorDescr,
-        db::ConnectorType,
-        db::ConfigDescr,
         db::PipelineDescr,
         dbsp_adapters::PipelineConfig,
         dbsp_adapters::InputEndpointConfig,
@@ -160,38 +153,32 @@ observed by the user is outdated, so the request is rejected."
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::format::CsvEncoderConfig,
         dbsp_adapters::format::CsvParserConfig,
-        Direction,
-        ProjectId,
+        ProgramId,
         PipelineId,
-        ConfigId,
         ConnectorId,
         AttachedConnectorId,
         Version,
-        ProjectStatus,
+        ProgramStatus,
         ErrorResponse,
-        ProjectCodeResponse,
-        NewProjectRequest,
-        NewProjectResponse,
-        UpdateProjectRequest,
-        UpdateProjectResponse,
-        CompileProjectRequest,
-        CancelProjectRequest,
-        NewConfigRequest,
-        NewConfigResponse,
-        UpdateConfigRequest,
-        UpdateConfigResponse,
+        ProgramCodeResponse,
+        NewProgramRequest,
+        NewProgramResponse,
+        UpdateProgramRequest,
+        UpdateProgramResponse,
+        CompileProgramRequest,
+        CancelProgramRequest,
         NewPipelineRequest,
         NewPipelineResponse,
-        ShutdownPipelineRequest,
+        UpdatePipelineRequest,
+        UpdatePipelineResponse,
         NewConnectorRequest,
         NewConnectorResponse,
         UpdateConnectorRequest,
         UpdateConnectorResponse,
     ),),
     tags(
-        (name = "Project", description = "Manage projects"),
-        (name = "Config", description = "Manage project configurations"),
-        (name = "Pipeline", description = "Manage project pipelines"),
+        (name = "Program", description = "Manage programs"),
+        (name = "Pipeline", description = "Manage pipelines"),
         (name = "Connector", description = "Manage data connectors"),
     ),
 )]
@@ -312,9 +299,9 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         let compiler = Compiler::new(&config, db.clone()).await?;
 
         // Since we don't trust any file system state after restart,
-        // reset all projects to `ProjectStatus::None`, which will force
-        // us to recompile projects before running them.
-        db.lock().await.reset_project_status().await?;
+        // reset all programs to `ProgramStatus::None`, which will force
+        // us to recompile programs before running them.
+        db.lock().await.reset_program_status().await?;
         let openapi = ApiDoc::openapi();
 
         let state = WebData::new(ServerState::new(config, db, Some(compiler)).await?);
@@ -358,25 +345,19 @@ where
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    app.service(list_projects)
-        .service(project_code)
-        .service(project_status)
-        .service(new_project)
-        .service(update_project)
-        .service(compile_project)
-        .service(delete_project)
-        .service(new_config)
-        .service(update_config)
-        .service(delete_config)
-        .service(list_configs)
-        .service(config_status)
+    app.service(list_programs)
+        .service(program_code)
+        .service(program_status)
+        .service(new_program)
+        .service(update_program)
+        .service(compile_program)
+        .service(delete_program)
         .service(new_pipeline)
+        .service(pipeline_update)
         .service(list_pipelines)
-        .service(pipeline_status)
+        .service(pipeline_stats)
         .service(pipeline_metadata)
-        .service(pipeline_start)
-        .service(pipeline_pause)
-        .service(pipeline_shutdown)
+        .service(pipeline_action)
         .service(pipeline_delete)
         .service(list_connectors)
         .service(new_connector)
@@ -391,7 +372,7 @@ where
 /// Pipeline manager error response.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct ErrorResponse {
-    #[schema(example = "Unknown project id 42.")]
+    #[schema(example = "Unknown program id 42.")]
     message: String,
 }
 
@@ -408,16 +389,17 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     if let Some(db_error) = error.downcast_ref::<DBError>() {
         let message = db_error.to_string();
         match db_error {
-            DBError::UnknownProject(_) => HttpResponse::NotFound(),
-            DBError::DuplicateProjectName(_) => HttpResponse::Conflict(),
+            DBError::UnknownProgram(_) => HttpResponse::NotFound(),
             DBError::DuplicateName => HttpResponse::Conflict(),
-            DBError::OutdatedProjectVersion(_) => HttpResponse::Conflict(),
-            DBError::UnknownConfig(_) => HttpResponse::NotFound(),
+            DBError::OutdatedProgramVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
             DBError::UnknownConnector(_) => HttpResponse::NotFound(),
             // This error should never bubble up till here
             DBError::DuplicateKey => HttpResponse::InternalServerError(),
             DBError::InvalidKey => HttpResponse::Unauthorized(),
+            DBError::UnknownName(_) => HttpResponse::NotFound(),
+            // should in practice not happen, e.g., would mean a Uuid conflict:
+            DBError::UniqueKeyViolation(_) => HttpResponse::InternalServerError(),
         }
         .json(ErrorResponse::new(&message))
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
@@ -433,38 +415,34 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     }
 }
 
-fn parse_project_id_param(req: &HttpRequest) -> Result<ProjectId, HttpResponse> {
-    match req.match_info().get("project_id") {
-        None => Err(HttpResponse::BadRequest().body("missing project id argument")),
-        Some(project_id) => {
-            match project_id.parse::<i64>() {
+fn parse_program_id_param(req: &HttpRequest) -> Result<ProgramId, HttpResponse> {
+    match req.match_info().get("program_id") {
+        None => Err(HttpResponse::BadRequest().body("missing program id argument")),
+        Some(program_id) => {
+            match program_id.parse::<Uuid>() {
                 Err(e) => Err(HttpResponse::BadRequest()
-                    .body(format!("invalid project id '{project_id}': {e}"))),
-                Ok(project_id) => Ok(ProjectId(project_id)),
+                    .body(format!("invalid program id '{program_id}': {e}"))),
+                Ok(program_id) => Ok(ProgramId(program_id)),
             }
         }
-    }
-}
-
-fn parse_config_id_param(req: &HttpRequest) -> Result<ConfigId, HttpResponse> {
-    match req.match_info().get("config_id") {
-        None => Err(HttpResponse::BadRequest().body("missing config id argument")),
-        Some(config_id) => match config_id.parse::<i64>() {
-            Err(e) => Err(HttpResponse::BadRequest()
-                .body(format!("invalid configuration id '{config_id}': {e}"))),
-            Ok(config_id) => Ok(ConfigId(config_id)),
-        },
     }
 }
 
 fn parse_pipeline_id_param(req: &HttpRequest) -> Result<PipelineId, HttpResponse> {
     match req.match_info().get("pipeline_id") {
         None => Err(HttpResponse::BadRequest().body("missing pipeline id argument")),
-        Some(pipeline_id) => match pipeline_id.parse::<i64>() {
+        Some(pipeline_id) => match pipeline_id.parse::<Uuid>() {
             Err(e) => Err(HttpResponse::BadRequest()
                 .body(format!("invalid pipeline id '{pipeline_id}': {e}"))),
             Ok(pipeline_id) => Ok(PipelineId(pipeline_id)),
         },
+    }
+}
+
+fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, HttpResponse> {
+    match req.match_info().get("action") {
+        None => Err(HttpResponse::BadRequest().body("missing action id argument")),
+        Some(action) => Ok(action.into()),
     }
 }
 
@@ -479,188 +457,187 @@ fn parse_connector_name_param(req: &HttpRequest) -> Result<String, HttpResponse>
     }
 }
 
-/// Enumerate the project database.
+/// Enumerate the program database.
 #[utoipa::path(
     responses(
-        (status = OK, description = "List of projects retrieved successfully", body = [ProjectDescr]),
+        (status = OK, description = "List of programs retrieved successfully", body = [ProgramDescr]),
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[get("/projects")]
-async fn list_projects(state: WebData<ServerState>) -> impl Responder {
+#[get("/v0/programs")]
+async fn list_programs(state: WebData<ServerState>) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_projects()
+        .list_programs()
         .await
-        .map(|projects| {
+        .map(|programs| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(projects)
+                .json(programs)
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Response to a project code request.
+/// Response to a program code request.
 #[derive(Serialize, ToSchema)]
-struct ProjectCodeResponse {
-    /// Current project meta-data.
-    project: ProjectDescr,
-    /// Project code.
+struct ProgramCodeResponse {
+    /// Current program meta-data.
+    program: ProgramDescr,
+    /// Program code.
     code: String,
 }
 
-/// Returns the latest SQL source code of the project along with its meta-data.
+/// Returns the latest SQL source code of the program along with its meta-data.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project data and code retrieved successfully.", body = ProjectCodeResponse),
+        (status = OK, description = "Program data and code retrieved successfully.", body = ProgramCodeResponse),
         (status = BAD_REQUEST
-            , description = "Missing or invalid `project_id` parameter."
+            , description = "Missing or invalid `program_id` parameter."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Missing 'project_id' parameter."))),
+            , example = json!(ErrorResponse::new("Missing 'program_id' parameter."))),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
     ),
     params(
-        ("project_id" = i64, Path, description = "Unique project identifier")
+        ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[get("/projects/{project_id}/code")]
-async fn project_code(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match parse_project_id_param(&req) {
+#[get("/v0/program/{program_id}/code")]
+async fn program_code(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let program_id = match parse_program_id_param(&req) {
         Err(e) => {
             return e;
         }
-        Ok(project_id) => project_id,
+        Ok(program_id) => program_id,
     };
 
     state
         .db
         .lock()
         .await
-        .project_code(project_id)
+        .program_code(program_id)
         .await
-        .map(|(project, code)| {
+        .map(|(program, code)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&ProjectCodeResponse { project, code })
+                .json(&ProgramCodeResponse { program, code })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Returns project descriptor, including current project version and
+/// Returns program descriptor, including current program version and
 /// compilation status.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project status retrieved successfully.", body = ProjectDescr),
+        (status = OK, description = "Program status retrieved successfully.", body = ProgramDescr),
         (status = BAD_REQUEST
-            , description = "Missing or invalid `project_id` parameter."
+            , description = "Missing or invalid `program_id` parameter."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Missing 'project_id' parameter."))),
+            , example = json!(ErrorResponse::new("Missing 'program_id' parameter."))),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
     ),
     params(
-        ("project_id" = i64, Path, description = "Unique project identifier")
+        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
+        ("name" = Option<String>, Query, description = "Unique connector name")
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[get("/projects/{project_id}")]
-async fn project_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match parse_project_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(project_id) => project_id,
+#[get("/v0/program")]
+async fn program_status(
+    state: WebData<ServerState>,
+    req: web::Query<IdOrNameQuery>,
+) -> impl Responder {
+    let resp = if let Some(id) = req.id {
+        state.db.lock().await.get_program_by_id(ProgramId(id)).await
+    } else if let Some(name) = req.name.clone() {
+        state.db.lock().await.get_program_by_name(&name).await
+    } else {
+        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
     };
 
-    state
-        .db
-        .lock()
-        .await
-        .get_project(project_id)
-        .await
-        .map(|descr| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&descr)
-        })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+    resp.map(|descr| {
+        HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&descr)
+    })
+    .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Request to create a new DBSP project.
+/// Request to create a new DBSP program.
 #[derive(Debug, Deserialize, ToSchema)]
-struct NewProjectRequest {
-    /// Project name.
-    #[schema(example = "Example project")]
+struct NewProgramRequest {
+    /// Program name.
+    #[schema(example = "Example program")]
     name: String,
-    /// Overwrite existing project with the same name, if any.
+    /// Overwrite existing program with the same name, if any.
     #[serde(default)]
     overwrite_existing: bool,
-    /// Project description.
+    /// Program description.
     #[schema(example = "Example description")]
     description: String,
-    /// SQL code of the project.
+    /// SQL code of the program.
     #[schema(example = "CREATE TABLE Example(name varchar);")]
     code: String,
 }
 
-/// Response to a new project request.
+/// Response to a new program request.
 #[derive(Serialize, ToSchema)]
-struct NewProjectResponse {
-    /// Id of the newly created project.
+struct NewProgramResponse {
+    /// Id of the newly created program.
     #[schema(example = 42)]
-    project_id: ProjectId,
-    /// Initial project version (this field is always set to 1).
+    program_id: ProgramId,
+    /// Initial program version (this field is always set to 1).
     #[schema(example = 1)]
     version: Version,
 }
 
-/// Create a new project.
+/// Create a new program.
 ///
-/// If the `overwrite_existing` flag is set in the request and a project with
-/// the same name already exists, all pipelines associated with that project and
-/// the project itself will be deleted.
+/// If the `overwrite_existing` flag is set in the request and a program with
+/// the same name already exists, all pipelines associated with that program and
+/// the program itself will be deleted.
 #[utoipa::path(
-    request_body = NewProjectRequest,
+    request_body = NewProgramRequest,
     responses(
-        (status = CREATED, description = "Project created successfully", body = NewProjectResponse),
+        (status = CREATED, description = "Program created successfully", body = NewProgramResponse),
         (status = CONFLICT
-            , description = "A project with this name already exists in the database."
+            , description = "A program with this name already exists in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Duplicate project name 'p'."))),
+            , example = json!(ErrorResponse::new("Duplicate program name 'p'."))),
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[post("/projects")]
-async fn new_project(
+#[post("/v0/programs")]
+async fn new_program(
     state: WebData<ServerState>,
-    request: web::Json<NewProjectRequest>,
+    request: web::Json<NewProgramRequest>,
 ) -> impl Responder {
-    do_new_project(state, request)
+    do_new_program(state, request)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-async fn do_new_project(
+async fn do_new_program(
     state: WebData<ServerState>,
-    request: web::Json<NewProjectRequest>,
+    request: web::Json<NewProgramRequest>,
 ) -> AnyResult<HttpResponse> {
     if request.overwrite_existing {
         let descr = {
             let db = state.db.lock().await;
-            let descr = db.lookup_project(&request.name).await?;
+            let descr = db.lookup_program(&request.name).await?;
             drop(db);
             descr
         };
-        if let Some(project_descr) = descr {
-            do_delete_project(state.clone(), project_descr.project_id).await?;
+        if let Some(program_descr) = descr {
+            do_delete_program(state.clone(), program_descr.program_id).await?;
         }
     }
 
@@ -668,73 +645,78 @@ async fn do_new_project(
         .db
         .lock()
         .await
-        .new_project(&request.name, &request.description, &request.code)
+        .new_program(
+            Uuid::now_v7(),
+            &request.name,
+            &request.description,
+            &request.code,
+        )
         .await
-        .map(|(project_id, version)| {
+        .map(|(program_id, version)| {
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewProjectResponse {
-                    project_id,
+                .json(&NewProgramResponse {
+                    program_id,
                     version,
                 })
         })
 }
 
-/// Update project request.
+/// Update program request.
 #[derive(Deserialize, ToSchema)]
-struct UpdateProjectRequest {
-    /// Id of the project.
-    project_id: ProjectId,
-    /// New name for the project.
+struct UpdateProgramRequest {
+    /// Id of the program.
+    program_id: ProgramId,
+    /// New name for the program.
     name: String,
-    /// New description for the project.
+    /// New description for the program.
     #[serde(default)]
     description: String,
-    /// New SQL code for the project or `None` to keep existing project
+    /// New SQL code for the program or `None` to keep existing program
     /// code unmodified.
     code: Option<String>,
 }
 
-/// Response to a project update request.
+/// Response to a program update request.
 #[derive(Serialize, ToSchema)]
-struct UpdateProjectResponse {
-    /// New project version.  Equals the previous version if project code
+struct UpdateProgramResponse {
+    /// New program version.  Equals the previous version if program code
     /// doesn't change or previous version +1 if it does.
     version: Version,
 }
 
-/// Change project code and/or name.
+/// Change program code and/or name.
 ///
-/// If project code changes, any ongoing compilation gets cancelled,
-/// project status is reset to `None`, and project version
-/// is incremented by 1.  Changing project name only doesn't affect its
+/// If program code changes, any ongoing compilation gets cancelled,
+/// program status is reset to `None`, and program version
+/// is incremented by 1.  Changing program name only doesn't affect its
 /// version or the compilation process.
 #[utoipa::path(
-    request_body = UpdateProjectRequest,
+    request_body = UpdateProgramRequest,
     responses(
-        (status = OK, description = "Project updated successfully.", body = UpdateProjectResponse),
+        (status = OK, description = "Program updated successfully.", body = UpdateProgramResponse),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
         (status = CONFLICT
-            , description = "A project with this name already exists in the database."
+            , description = "A program with this name already exists in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Duplicate project name 'p'."))),
+            , example = json!(ErrorResponse::new("Duplicate program name 'p'."))),
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[patch("/projects")]
-async fn update_project(
+#[patch("/v0/programs")]
+async fn update_program(
     state: WebData<ServerState>,
-    request: web::Json<UpdateProjectRequest>,
+    request: web::Json<UpdateProgramRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .update_project(
-            request.project_id,
+        .update_program(
+            request.program_id,
             &request.name,
             &request.description,
             &request.code,
@@ -743,146 +725,146 @@ async fn update_project(
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&UpdateProjectResponse { version })
+                .json(&UpdateProgramResponse { version })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Request to queue a project for compilation.
+/// Request to queue a program for compilation.
 #[derive(Deserialize, ToSchema)]
-struct CompileProjectRequest {
-    /// Project id.
-    project_id: ProjectId,
-    /// Latest project version known to the client.
+struct CompileProgramRequest {
+    /// Program id.
+    program_id: ProgramId,
+    /// Latest program version known to the client.
     version: Version,
 }
 
-/// Queue project for compilation.
+/// Queue program for compilation.
 ///
-/// The client should poll the `/project_status` endpoint
+/// The client should poll the `/program_status` endpoint
 /// for compilation results.
 #[utoipa::path(
-    request_body = CompileProjectRequest,
+    request_body = CompileProgramRequest,
     responses(
         (status = ACCEPTED, description = "Compilation request submitted."),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
         (status = CONFLICT
-            , description = "Project version specified in the request doesn't match the latest project version in the database."
+            , description = "Program version specified in the request doesn't match the latest program version in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated project version '{version}'"))),
+            , example = json!(ErrorResponse::new("Outdated program version '{version}'"))),
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[post("/projects/compile")]
-async fn compile_project(
+#[post("/v0/programs/compile")]
+async fn compile_program(
     state: WebData<ServerState>,
-    request: web::Json<CompileProjectRequest>,
+    request: web::Json<CompileProgramRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .set_project_pending(request.project_id, request.version)
+        .set_program_pending(request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Request to cancel ongoing project compilation.
+/// Request to cancel ongoing program compilation.
 #[derive(Deserialize, ToSchema)]
-struct CancelProjectRequest {
-    /// Project id.
-    project_id: ProjectId,
-    /// Latest project version known to the client.
+struct CancelProgramRequest {
+    /// Program id.
+    program_id: ProgramId,
+    /// Latest program version known to the client.
     version: Version,
 }
 
 /// Cancel outstanding compilation request.
 ///
-/// The client should poll the `/project_status` endpoint
+/// The client should poll the `/program_status` endpoint
 /// to determine when the cancelation request completes.
 #[utoipa::path(
-    request_body = CancelProjectRequest,
+    request_body = CancelProgramRequest,
     responses(
         (status = ACCEPTED, description = "Cancelation request submitted."),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
         (status = CONFLICT
-            , description = "Project version specified in the request doesn't match the latest project version in the database."
+            , description = "Program version specified in the request doesn't match the latest program version in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated project version '{3}'"))),
+            , example = json!(ErrorResponse::new("Outdated program version '{3}'"))),
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[delete("/projects/compile")]
-async fn cancel_project(
+#[delete("/v0/programs/compile")]
+async fn cancel_program(
     state: WebData<ServerState>,
-    request: web::Json<CancelProjectRequest>,
+    request: web::Json<CancelProgramRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .cancel_project(request.project_id, request.version)
+        .cancel_program(request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Delete a project.
+/// Delete a program.
 ///
-/// Deletes all pipelines and configs associated with the project.
+/// Deletes all pipelines and configs associated with the program.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project successfully deleted."),
+        (status = OK, description = "Program successfully deleted."),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
     ),
     params(
-        ("project_id" = i64, Path, description = "Unique project identifier")
+        ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    tag = "Project"
+    tag = "Program"
 )]
-#[delete("/projects/{project_id}")]
-async fn delete_project(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let project_id = match parse_project_id_param(&req) {
+#[delete("/v0/programs/{program_id}")]
+async fn delete_program(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let program_id = match parse_program_id_param(&req) {
         Err(e) => {
             return e;
         }
-        Ok(project_id) => project_id,
+        Ok(program_id) => program_id,
     };
 
-    do_delete_project(state, project_id)
+    do_delete_program(state, program_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-async fn do_delete_project(
+async fn do_delete_program(
     state: WebData<ServerState>,
-    project_id: ProjectId,
+    program_id: ProgramId,
 ) -> AnyResult<HttpResponse> {
     let db = state.db.lock().await;
-    db.delete_project(project_id)
+    db.delete_program(program_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
 }
 
-/// Request to create a new project configuration.
+/// Request to create a new program configuration.
 #[derive(Deserialize, ToSchema)]
-struct NewConfigRequest {
+struct NewPipelineRequest {
     /// Config name.
     name: String,
     /// Config description.
     description: String,
-    /// Project to create config for.
-    project_id: Option<ProjectId>,
+    /// Program to create config for.
+    program_id: Option<ProgramId>,
     /// YAML code for the config.
     config: String,
     /// Attached connectors.
@@ -891,72 +873,66 @@ struct NewConfigRequest {
 
 /// Response to a config creation request.
 #[derive(Serialize, ToSchema)]
-struct NewConfigResponse {
+struct NewPipelineResponse {
     /// Id of the newly created config.
-    config_id: ConfigId,
+    pipeline_id: PipelineId,
     /// Initial config version (this field is always set to 1).
     version: Version,
 }
 
-/// Create a new project configuration.
+/// Create a new program configuration.
 #[utoipa::path(
-    request_body = NewConfigRequest,
+    request_body = NewPipelineRequest,
     responses(
-        (status = OK, description = "Configuration successfully created.", body = NewConfigResponse),
+        (status = OK, description = "Configuration successfully created.", body = NewPipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified `project_id` does not exist in the database."
+            , description = "Specified `program_id` does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown project id '42'"))),
+            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
     ),
-    tag = "Config"
+    tag = "Pipeline"
 )]
-#[post("/configs")]
-async fn new_config(
+#[post("/v0/pipelines")]
+async fn new_pipeline(
     state: WebData<ServerState>,
-    request: web::Json<NewConfigRequest>,
+    request: web::Json<NewPipelineRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .new_config(
-            request.project_id,
+        .new_pipeline(
+            Uuid::now_v7(),
+            request.program_id,
             &request.name,
             &request.description,
             &request.config,
             &request.connectors,
         )
         .await
-        .map(|(config_id, version)| {
+        .map(|(pipeline_id, version)| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewConfigResponse { config_id, version })
+                .json(&NewPipelineResponse {
+                    pipeline_id,
+                    version,
+                })
         })
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Is the attached connection an Input or an Output?
-#[derive(Deserialize, Eq, PartialEq, Serialize, ToSchema, Debug, Copy, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-enum Direction {
-    Input,
-    Output,
-    #[cfg_attr(test, proptest(skip))] // TODO: Direction will go away
-    InputOutput,
-}
-
-/// Request to update an existing project configuration.
+/// Request to update an existing program configuration.
 #[derive(Deserialize, ToSchema)]
-struct UpdateConfigRequest {
+struct UpdatePipelineRequest {
     /// Config id.
-    config_id: ConfigId,
+    pipeline_id: PipelineId,
     /// New config name.
     name: String,
     /// New config description.
     description: String,
-    /// New project to create config for. If absent, project will be set to
+    /// New program to create config for. If absent, program will be set to
     /// NULL.
-    project_id: Option<ProjectId>,
+    program_id: Option<ProgramId>,
     /// New config YAML. If absent, existing YAML will be kept unmodified.
     config: Option<String>,
     /// Attached connectors.
@@ -970,21 +946,21 @@ struct UpdateConfigRequest {
 
 /// Response to a config update request.
 #[derive(Serialize, ToSchema)]
-struct UpdateConfigResponse {
+struct UpdatePipelineResponse {
     /// New config version. Equals the previous version +1.
     version: Version,
 }
 
-/// Update existing project configuration.
+/// Update existing program configuration.
 ///
-/// Updates project config name, description and code and, optionally, config
+/// Updates program config name, description and code and, optionally, config
 /// and connectors. On success, increments config version by 1.
 #[utoipa::path(
-    request_body = UpdateConfigRequest,
+    request_body = UpdatePipelineRequest,
     responses(
-        (status = OK, description = "Configuration successfully updated.", body = UpdateConfigResponse),
+        (status = OK, description = "Configuration successfully updated.", body = UpdatePipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified `config_id` does not exist in the database."
+            , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown config id '5'"))),
         (status = NOT_FOUND
@@ -992,20 +968,20 @@ struct UpdateConfigResponse {
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
     ),
-    tag = "Config"
+    tag = "Pipeline"
 )]
-#[patch("/configs")]
-async fn update_config(
+#[patch("/v0/pipelines")]
+async fn pipeline_update(
     state: WebData<ServerState>,
-    request: web::Json<UpdateConfigRequest>,
+    request: web::Json<UpdatePipelineRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .update_config(
-            request.config_id,
-            request.project_id,
+        .pipeline_update(
+            request.pipeline_id,
+            request.program_id,
             &request.name,
             &request.description,
             &request.config,
@@ -1015,170 +991,19 @@ async fn update_config(
         .map(|version| {
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&UpdateConfigResponse { version })
+                .json(&UpdatePipelineResponse { version })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Delete existing project configuration.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "Configuration successfully deleted."),
-        (status = NOT_FOUND
-            , description = "Specified `config_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
-    ),
-    params(
-        ("config_id" = i64, Path, description = "Unique configuration identifier")
-    ),
-    tag = "Config"
-)]
-#[delete("/configs/{config_id}")]
-async fn delete_config(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let config_id = match parse_config_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(config_id) => config_id,
-    };
-
-    state
-        .db
-        .lock()
-        .await
-        .delete_config(config_id)
-        .await
-        .map(|_| HttpResponse::Ok().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// List configurations.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "Config list retrieved successfully.", body = [ConfigDescr]),
-    ),
-    tag = "Config"
-)]
-#[get("/configs")]
-async fn list_configs(state: WebData<ServerState>) -> impl Responder {
-    state
-        .db
-        .lock()
-        .await
-        .list_configs()
-        .await
-        .map(|configs| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(configs)
-        })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Retrieve an existing configuration.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "Config retrieved successfully.", body = ConfigDescr),
-        (status = NOT_FOUND
-            , description = "Specified `config_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
-    ),
-    params(
-        ("config_id" = i64, Path, description = "Unique configuration identifier")
-    ),
-    tag = "Config"
-)]
-#[get("/configs/{config_id}")]
-async fn config_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let config_id = match parse_config_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(config_id) => config_id,
-    };
-
-    state
-        .db
-        .lock()
-        .await
-        .get_config(config_id)
-        .await
-        .map(|configs| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(configs)
-        })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Request to create a new pipeline.
-#[derive(Deserialize, ToSchema)]
-pub(self) struct NewPipelineRequest {
-    /// Project config to run the pipeline with.
-    config_id: ConfigId,
-    /// Latest config version known to the client.
-    config_version: Version,
-}
-
-/// Response to a pipeline creation request.
-#[derive(Serialize, ToSchema)]
-struct NewPipelineResponse {
-    /// Unique id assigned to the new pipeline.
-    pipeline_id: PipelineId,
-    /// TCP port that the pipeline process listens on.
-    port: u16,
-}
-
-/// Launch a new pipeline.
-///
-/// Create a new pipeline for the specified project and configuration.
-/// This is a synchronous endpoint, which sends a response once
-/// the pipeline has been initialized.
-#[utoipa::path(
-    request_body = NewPipelineRequest,
-    responses(
-        (status = OK, description = "Pipeline successfully created.", body = NewPipelineResponse),
-        (status = NOT_FOUND
-            , description = "Specified `project_id` or `config_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
-        (status = CONFLICT
-            , description = "Project or config version in the request doesn't match the latest version in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated project version '{3}'"))),
-        (status = BAD_REQUEST
-            , description = "`config_id` refers to a config that does not belong to `project_id`."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Config '9' does not belong to project '15'"))),
-        (status = INTERNAL_SERVER_ERROR
-            , description = "Pipeline process failed to initialize."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Failed to run 'project42': permission denied"))),
-    ),
-    tag = "Pipeline"
-)]
-#[post("/pipelines")]
-async fn new_pipeline(
-    state: WebData<ServerState>,
-    request: web::Json<NewPipelineRequest>,
-) -> impl Responder {
-    state
-        .runner
-        .run_pipeline(&request)
-        .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// List pipelines.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Project pipeline list retrieved successfully.", body = [PipelineDescr])
+        (status = OK, description = "Pipeline list retrieved successfully.", body = [PipelineDescr])
     ),
     tag = "Pipeline"
 )]
-#[get("/pipelines")]
+#[get("/v0/pipelines")]
 async fn list_pipelines(state: WebData<ServerState>) -> impl Responder {
     state
         .db
@@ -1194,28 +1019,28 @@ async fn list_pipelines(state: WebData<ServerState>) -> impl Responder {
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Retrieve pipeline status and performance counters.
+/// Retrieve pipeline metrics and performance counters.
 #[utoipa::path(
     responses(
         // TODO: Implement `ToSchema` for `ControllerStatus`, which is the
         // actual type returned by this endpoint.
-        (status = OK, description = "Pipeline status retrieved successfully.", body = Object),
+        (status = OK, description = "Pipeline metrics retrieved successfully.", body = Object),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
         (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid integer."
+            , description = "Specified `pipeline_id` is not a valid uuid."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
     tag = "Pipeline"
 )]
-#[get("/pipelines/{pipeline_id}/status")]
-async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+#[get("/v0/pipelines/{pipeline_id}/stats")]
+async fn pipeline_stats(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
             return e;
@@ -1225,7 +1050,7 @@ async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl 
 
     state
         .runner
-        .forward_to_pipeline(pipeline_id, Method::GET, "status")
+        .forward_to_pipeline(pipeline_id, Method::GET, "stats")
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -1233,156 +1058,113 @@ async fn pipeline_status(state: WebData<ServerState>, req: HttpRequest) -> impl 
 /// Retrieve pipeline metadata.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline metadata retrieved successfully.", body = Object),
+        (status = OK, description = "Pipeline descriptor retrieved successfully.", body = PipelineDescr),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
         (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid integer."
+            , description = "Specified `pipeline_id` is not a valid uuid."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
     ),
     params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+        ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
+        ("name" = Option<String>, Query, description = "Unique pipeline name")
     ),
     tag = "Pipeline"
 )]
-#[get("/pipelines/{pipeline_id}/metadata")]
-async fn pipeline_metadata(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(pipeline_id) => pipeline_id,
-    };
-
-    state
-        .runner
-        .forward_to_pipeline(pipeline_id, Method::GET, "metadata")
-        .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Start pipeline.
-#[utoipa::path(
-    responses(
-        (status = OK
-            , description = "Pipeline started."
-            , content_type = "application/json"
-            , body = String),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
-        (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid integer."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
-    ),
-    params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
-    ),
-    tag = "Pipeline"
-)]
-#[post("/pipelines/{pipeline_id}/start")]
-async fn pipeline_start(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(pipeline_id) => pipeline_id,
-    };
-
-    state
-        .runner
-        .forward_to_pipeline(pipeline_id, Method::GET, "start")
-        .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Pause pipeline.
-#[utoipa::path(
-    responses(
-        (status = OK
-            , description = "Pipeline paused."
-            , content_type = "application/json"
-            , body = String),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
-        (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid integer."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
-    ),
-    params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
-    ),
-    tag = "Pipeline"
-)]
-#[post("/pipelines/{pipeline_id}/pause")]
-async fn pipeline_pause(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(pipeline_id) => pipeline_id,
-    };
-
-    state
-        .runner
-        .forward_to_pipeline(pipeline_id, Method::GET, "pause")
-        .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Request to terminate a running project pipeline.
-#[derive(Deserialize, ToSchema)]
-pub(self) struct ShutdownPipelineRequest {
-    /// Pipeline id to terminate.
-    pipeline_id: PipelineId,
-}
-
-/// Terminate the execution of a pipeline.
-///
-/// Sends a termination request to the pipeline process.
-/// Returns immediately, without waiting for the pipeline
-/// to terminate (which can take several seconds).
-///
-/// The pipeline is not deleted from the database, but its
-/// `killed` flag is set to `true`.
-#[utoipa::path(
-    request_body = ShutdownPipelineRequest,
-    responses(
-        (status = OK
-            , description = "Pipeline successfully terminated."
-            , content_type = "application/json"
-            , body = String
-            , example = json!("Pipeline successfully terminated")
-            , example = json!("Pipeline already shut down")),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
-        (status = INTERNAL_SERVER_ERROR
-            , description = "Request failed."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
-    ),
-    tag = "Pipeline"
-)]
-#[post("/pipelines/shutdown")]
-async fn pipeline_shutdown(
+#[get("/v0/pipeline")]
+async fn pipeline_metadata(
     state: WebData<ServerState>,
-    request: web::Json<ShutdownPipelineRequest>,
+    req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
-    state
-        .runner
-        .shutdown_pipeline(request.pipeline_id)
-        .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+    let resp: Result<db::PipelineDescr, AnyError> = if let Some(id) = req.id {
+        state
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_id(PipelineId(id))
+            .await
+    } else if let Some(name) = req.name.clone() {
+        state.db.lock().await.get_pipeline_by_name(name).await
+    } else {
+        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
+    };
+
+    resp.map(|descr| {
+        HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&descr)
+    })
+    .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Perform action on a pipeline.
+///
+/// - 'run': Run a new pipeline. Deploy a pipeline for the specified program and
+/// configuration. This is a synchronous endpoint, which sends a response once
+/// the pipeline has been initialized.
+/// - 'start': Start the pipeline.
+/// - 'pause': Pause the pipeline.
+/// - 'shutdown': Terminate the execution of a pipeline. Sends a termination
+/// request to the pipeline process. Returns immediately, without waiting for
+/// the pipeline to terminate (which can take several seconds). The pipeline is
+/// not deleted from the database, but its `killed` flag is set to `true`.
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "Performed a Pipeline action."
+            , content_type = "application/json"
+            , body = String),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
+        (status = BAD_REQUEST
+            , description = "Specified `pipeline_id` is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+        ("action" = String, Path, description = "Pipeline action [run, start, pause, shutdown]")
+    ),
+    tag = "Pipeline"
+)]
+#[post("/v0/pipelines/{pipeline_id}/{action}")]
+async fn pipeline_action(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+    let action = match parse_pipeline_action(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(action) => action,
+    };
+
+    match action {
+        "run" => state.runner.run_pipeline(pipeline_id).await,
+        "start" => {
+            state
+                .runner
+                .forward_to_pipeline(pipeline_id, Method::GET, "start")
+                .await
+        }
+        "pause" => {
+            state
+                .runner
+                .forward_to_pipeline(pipeline_id, Method::GET, "pause")
+                .await
+        }
+        "shutdown" => state.runner.shutdown_pipeline(pipeline_id).await,
+        _ => Ok(HttpResponse::BadRequest().body(format!("invalid action argument '{action}"))),
+    }
+    .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Terminate and delete a pipeline.
@@ -1406,11 +1188,11 @@ async fn pipeline_shutdown(
             , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
     ),
     params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier")
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
     tag = "Pipeline"
 )]
-#[delete("/pipelines/{pipeline_id}")]
+#[delete("/v0/pipelines/{pipeline_id}")]
 async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
@@ -1431,7 +1213,7 @@ async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl 
 fn parse_connector_id_param(req: &HttpRequest) -> Result<ConnectorId, HttpResponse> {
     match req.match_info().get("connector_id") {
         None => Err(HttpResponse::BadRequest().body("missing connector id argument")),
-        Some(connector_id) => match connector_id.parse::<i64>() {
+        Some(connector_id) => match connector_id.parse::<Uuid>() {
             Err(e) => Err(HttpResponse::BadRequest()
                 .body(format!("invalid connector id '{connector_id}': {e}"))),
             Ok(connector_id) => Ok(ConnectorId(connector_id)),
@@ -1446,7 +1228,7 @@ fn parse_connector_id_param(req: &HttpRequest) -> Result<ConnectorId, HttpRespon
     ),
     tag = "Connector"
 )]
-#[get("/connectors")]
+#[get("/v0/connectors")]
 async fn list_connectors(state: WebData<ServerState>) -> impl Responder {
     state
         .db
@@ -1469,8 +1251,6 @@ pub(self) struct NewConnectorRequest {
     name: String,
     /// connector description.
     description: String,
-    /// connector type.
-    typ: ConnectorType,
     /// connector config.
     config: String,
 }
@@ -1490,7 +1270,7 @@ struct NewConnectorResponse {
     ),
     tag = "Connector"
 )]
-#[post("/connector")]
+#[post("/v0/connectors")]
 async fn new_connector(
     state: WebData<ServerState>,
     request: web::Json<NewConnectorRequest>,
@@ -1500,9 +1280,9 @@ async fn new_connector(
         .lock()
         .await
         .new_connector(
+            Uuid::now_v7(),
             &request.name,
             &request.description,
-            request.typ,
             &request.config,
         )
         .await
@@ -1531,9 +1311,9 @@ struct UpdateConnectorRequest {
 #[derive(Serialize, ToSchema)]
 struct UpdateConnectorResponse {}
 
-/// Update existing project connector.
+/// Update existing connector.
 ///
-/// Updates project config name and, optionally, code.
+/// Updates config name and, optionally, code.
 /// On success, increments config version by 1.
 #[utoipa::path(
     request_body = UpdateConnectorRequest,
@@ -1546,7 +1326,7 @@ struct UpdateConnectorResponse {}
     ),
     tag = "Connector"
 )]
-#[patch("/connectors")]
+#[patch("/v0/connectors")]
 async fn update_connector(
     state: WebData<ServerState>,
     request: web::Json<UpdateConnectorRequest>,
@@ -1580,11 +1360,11 @@ async fn update_connector(
             , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
     ),
     params(
-        ("connector_id" = i64, Path, description = "Unique connector identifier")
+        ("connector_id" = Uuid, Path, description = "Unique connector identifier")
     ),
     tag = "Connector"
 )]
-#[delete("/connector/{connector_id}")]
+#[delete("/v0/connectors/{connector_id}")]
 async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
     let connector_id = match parse_connector_id_param(&req) {
         Err(e) => {
@@ -1603,6 +1383,12 @@ async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct IdOrNameQuery {
+    id: Option<Uuid>,
+    name: Option<String>,
+}
+
 /// Returns connector descriptor.
 #[utoipa::path(
     responses(
@@ -1617,31 +1403,35 @@ async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl
             , example = json!(ErrorResponse::new("Unknown connector id '42'"))),
     ),
     params(
-        ("connector_id" = i64, Path, description = "Unique connector identifier")
+        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
+        ("name" = Option<String>, Query, description = "Unique connector name")
     ),
     tag = "Connector"
 )]
-#[get("/connectors/{connector_id}")]
-async fn connector_status(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let connector_id = match parse_connector_id_param(&req) {
-        Err(e) => {
-            return e;
-        }
-        Ok(connector_id) => connector_id,
+#[get("/v0/connector")]
+async fn connector_status(
+    state: WebData<ServerState>,
+    req: web::Query<IdOrNameQuery>,
+) -> impl Responder {
+    let resp: Result<db::ConnectorDescr, AnyError> = if let Some(id) = req.id {
+        state
+            .db
+            .lock()
+            .await
+            .get_connector_by_id(ConnectorId(id))
+            .await
+    } else if let Some(name) = req.name.clone() {
+        state.db.lock().await.get_connector_by_name(name).await
+    } else {
+        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
     };
 
-    state
-        .db
-        .lock()
-        .await
-        .get_connector(connector_id)
-        .await
-        .map(|descr| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&descr)
-        })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+    resp.map(|descr| {
+        HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&descr)
+    })
+    .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Connect to an HTTP input/output websocket
@@ -1666,12 +1456,12 @@ async fn connector_status(state: WebData<ServerState>, req: HttpRequest) -> impl
             , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
     ),
     params(
-        ("pipeline_id" = i64, Path, description = "Unique pipeline identifier"),
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
         ("connector_name" = String, Path, description = "Connector name")
     ),
     tag = "Pipeline"
 )]
-#[get("/pipelines/{pipeline_id}/connector/{connector_name}")]
+#[get("/v0/pipelines/{pipeline_id}/connector/{connector_name}")]
 async fn http_input(
     state: WebData<ServerState>,
     req: HttpRequest,

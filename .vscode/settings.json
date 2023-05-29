@@ -7,5 +7,9 @@
     ],
     "rust-analyzer.cargo.features": [
         "pg-embed"
-    ]
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "python.formatting.provider": "none"
 }

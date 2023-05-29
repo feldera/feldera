@@ -1,9 +1,9 @@
 use super::{
-    storage::Storage, AttachedConnector, ConfigDescr, ConfigId, ConnectorDescr, ConnectorId,
-    ConnectorType, DBError, PipelineId, ProjectDB, ProjectDescr, ProjectId, ProjectStatus, Version,
+    storage::Storage, AttachedConnector, ConnectorDescr, ConnectorId, DBError, PipelineId,
+    ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use super::{ApiPermission, PipelineDescr};
-use crate::{auth, Direction};
+use crate::auth;
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use chrono::DateTime;
@@ -17,6 +17,7 @@ use std::fmt::Debug;
 use std::time::SystemTime;
 use std::vec;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 struct DbHandle {
     db: ProjectDB,
@@ -153,21 +154,21 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
 }
 
 #[tokio::test]
-async fn project_creation() {
+async fn program_creation() {
     let handle = test_setup().await;
     let res = handle
         .db
-        .new_project("test1", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
         .await
         .unwrap();
-    let rows = handle.db.list_projects().await.unwrap();
+    let rows = handle.db.list_programs().await.unwrap();
     assert_eq!(1, rows.len());
-    let expected = ProjectDescr {
-        project_id: res.0,
+    let expected = ProgramDescr {
+        program_id: res.0,
         name: "test1".to_string(),
-        description: "project desc".to_string(),
+        description: "program desc".to_string(),
         version: res.1,
-        status: ProjectStatus::None,
+        status: ProgramStatus::None,
         schema: None,
     };
     let actual = rows.get(0).unwrap();
@@ -175,38 +176,38 @@ async fn project_creation() {
 }
 
 #[tokio::test]
-async fn duplicate_project() {
+async fn duplicate_program() {
     let handle = test_setup().await;
     let _ = handle
         .db
-        .new_project("test1", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
         .await;
     let res = handle
         .db
-        .new_project("test1", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
         .await
         .expect_err("Expecting unique violation");
-    let expected = anyhow::anyhow!(DBError::DuplicateProjectName("test1".to_string()));
+    let expected = anyhow::anyhow!(DBError::DuplicateName);
     assert_eq!(format!("{}", res), format!("{}", expected));
 }
 
 #[tokio::test]
-async fn project_reset() {
+async fn program_reset() {
     let handle = test_setup().await;
     handle
         .db
-        .new_project("test1", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
         .await
         .unwrap();
     handle
         .db
-        .new_project("test2", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test2", "program desc", "ignored")
         .await
         .unwrap();
-    handle.db.reset_project_status().await.unwrap();
-    let results = handle.db.list_projects().await.unwrap();
+    handle.db.reset_program_status().await.unwrap();
+    let results = handle.db.list_programs().await.unwrap();
     for p in results {
-        assert_eq!(ProjectStatus::None, p.status);
+        assert_eq!(ProgramStatus::None, p.status);
         assert_eq!(None, p.schema); //can't check for error fields directly
     }
     let results = handle
@@ -216,7 +217,7 @@ async fn project_reset() {
         .await
         .unwrap()
         .query(
-            "SELECT * FROM project WHERE status != '' OR error != '' OR schema != ''",
+            "SELECT * FROM program WHERE status != '' OR error != '' OR schema != ''",
             &[],
         )
         .await;
@@ -224,46 +225,56 @@ async fn project_reset() {
 }
 
 #[tokio::test]
-async fn project_code() {
+async fn program_code() {
     let handle = test_setup().await;
-    let (project_id, _) = handle
+    let (program_id, _) = handle
         .db
-        .new_project("test1", "project desc", "create table t1(c1 integer);")
+        .new_program(
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "create table t1(c1 integer);",
+        )
         .await
         .unwrap();
-    let results = handle.db.project_code(project_id).await.unwrap();
+    let results = handle.db.program_code(program_id).await.unwrap();
     assert_eq!("test1", results.0.name);
-    assert_eq!("project desc", results.0.description);
+    assert_eq!("program desc", results.0.description);
     assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
 }
 
 #[tokio::test]
-async fn update_project() {
+async fn update_program() {
     let handle = test_setup().await;
-    let (project_id, _) = handle
+    let (program_id, _) = handle
         .db
-        .new_project("test1", "project desc", "create table t1(c1 integer);")
+        .new_program(
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "create table t1(c1 integer);",
+        )
         .await
         .unwrap();
     let _ = handle
         .db
-        .update_project(
-            project_id,
+        .update_program(
+            program_id,
             "test2",
             "different desc",
             &Some("create table t2(c2 integer);".to_string()),
         )
         .await;
-    let (descr, code) = handle.db.project_code(project_id).await.unwrap();
+    let (descr, code) = handle.db.program_code(program_id).await.unwrap();
     assert_eq!("test2", descr.name);
     assert_eq!("different desc", descr.description);
     assert_eq!("create table t2(c2 integer);", code);
 
     let _ = handle
         .db
-        .update_project(project_id, "updated_test1", "some new description", &None)
+        .update_program(program_id, "updated_test1", "some new description", &None)
         .await;
-    let results = handle.db.list_projects().await.unwrap();
+    let results = handle.db.list_programs().await.unwrap();
     assert_eq!(1, results.len());
     let row = results.get(0).unwrap();
     assert_eq!("updated_test1", row.name);
@@ -271,52 +282,57 @@ async fn update_project() {
 }
 
 #[tokio::test]
-async fn project_queries() {
+async fn program_queries() {
     let handle = test_setup().await;
-    let (project_id, _) = handle
+    let (program_id, _) = handle
         .db
-        .new_project("test1", "project desc", "create table t1(c1 integer);")
+        .new_program(
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "create table t1(c1 integer);",
+        )
         .await
         .unwrap();
     let desc = handle
         .db
-        .get_project_if_exists(project_id)
+        .get_program_if_exists(program_id)
         .await
         .unwrap()
         .unwrap();
     assert_eq!("test1", desc.name);
-    let desc = handle.db.lookup_project("test1").await.unwrap().unwrap();
+    let desc = handle.db.lookup_program("test1").await.unwrap().unwrap();
     assert_eq!("test1", desc.name);
-    let desc = handle.db.lookup_project("test2").await.unwrap();
+    let desc = handle.db.lookup_program("test2").await.unwrap();
     assert!(desc.is_none());
 }
 
 #[tokio::test]
-async fn project_config() {
+async fn program_config() {
     let handle = test_setup().await;
     let connector_id = handle
         .db
-        .new_connector("a", "b", ConnectorType::KafkaIn, "c")
+        .new_connector(Uuid::now_v7(), "a", "b", "c")
         .await
         .unwrap();
     let ac = AttachedConnector {
-        uuid: "foo".to_string(),
-        direction: Direction::Input,
+        name: "foo".to_string(),
+        is_input: true,
         connector_id: connector_id,
         config: "".to_string(),
     };
     let _ = handle
         .db
-        .new_config(None, "1", "2", "3", &Some(vec![ac.clone()]))
+        .new_pipeline(Uuid::now_v7(), None, "1", "2", "3", &Some(vec![ac.clone()]))
         .await
         .unwrap();
-    let res = handle.db.list_configs().await.unwrap();
+    let res = handle.db.list_pipelines().await.unwrap();
     assert_eq!(1, res.len());
     let config = res.get(0).unwrap();
     assert_eq!("1", config.name);
     assert_eq!("2", config.description);
     assert_eq!("3", config.config);
-    assert_eq!(None, config.project_id);
+    assert_eq!(None, config.program_id);
     let connectors = &config.attached_connectors;
     assert_eq!(1, connectors.len());
     let ac_ret = connectors.get(0).unwrap().clone();
@@ -326,31 +342,31 @@ async fn project_config() {
 #[tokio::test]
 async fn project_pending() {
     let handle = test_setup().await;
-    let _res = handle
+    let (uid1, _v) = handle
         .db
-        .new_project("test1", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test1", "project desc", "ignored")
         .await
         .unwrap();
-    let _res = handle
+    let (uid2, _v) = handle
         .db
-        .new_project("test2", "project desc", "ignored")
+        .new_program(Uuid::now_v7(), "test2", "project desc", "ignored")
         .await
         .unwrap();
 
     handle
         .db
-        .set_project_status(ProjectId(2), ProjectStatus::Pending)
+        .set_program_status(uid2, ProgramStatus::Pending)
         .await
         .unwrap();
     handle
         .db
-        .set_project_status(ProjectId(1), ProjectStatus::Pending)
+        .set_program_status(uid1, ProgramStatus::Pending)
         .await
         .unwrap();
     let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
-    assert_eq!(id, ProjectId(2));
+    assert_eq!(id, uid2);
     let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
-    assert_eq!(id, ProjectId(2));
+    assert_eq!(id, uid2);
     // Maybe next job should set the status to something else
     // so it won't get picked up twice?
 }
@@ -358,30 +374,35 @@ async fn project_pending() {
 #[tokio::test]
 async fn update_status() {
     let handle = test_setup().await;
-    let (project_id, _) = handle
+    let (program_id, _) = handle
         .db
-        .new_project("test1", "project desc", "create table t1(c1 integer);")
+        .new_program(
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "create table t1(c1 integer);",
+        )
         .await
         .unwrap();
     let desc = handle
         .db
-        .get_project_if_exists(project_id)
+        .get_program_if_exists(program_id)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(ProjectStatus::None, desc.status);
+    assert_eq!(ProgramStatus::None, desc.status);
     handle
         .db
-        .set_project_status(project_id, ProjectStatus::CompilingRust)
+        .set_program_status(program_id, ProgramStatus::CompilingRust)
         .await
         .unwrap();
     let desc = handle
         .db
-        .get_project_if_exists(project_id)
+        .get_program_if_exists(program_id)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(ProjectStatus::CompilingRust, desc.status);
+    assert_eq!(ProgramStatus::CompilingRust, desc.status);
 }
 
 #[tokio::test]
@@ -389,24 +410,24 @@ async fn duplicate_attached_conn_name() {
     let handle = test_setup().await;
     let connector_id = handle
         .db
-        .new_connector("a", "b", ConnectorType::KafkaIn, "c")
+        .new_connector(Uuid::now_v7(), "a", "b", "c")
         .await
         .unwrap();
     let ac = AttachedConnector {
-        uuid: "foo".to_string(),
-        direction: Direction::Input,
+        name: "foo".to_string(),
+        is_input: true,
         connector_id: connector_id,
         config: "".to_string(),
     };
     let ac2 = AttachedConnector {
-        uuid: "foo".to_string(),
-        direction: Direction::Input,
+        name: "foo".to_string(),
+        is_input: true,
         connector_id: connector_id,
         config: "".to_string(),
     };
     let _ = handle
         .db
-        .new_config(None, "1", "2", "3", &Some(vec![ac, ac2]))
+        .new_pipeline(Uuid::now_v7(), None, "1", "2", "3", &Some(vec![ac, ac2]))
         .await
         .expect_err("duplicate attached connector name");
 }
@@ -436,50 +457,80 @@ async fn save_api_key() {
     }
 }
 
+/// Generate uuids but limits the the randomess to the first 8 bytes.
+///
+/// This ensures that we have a good chance of generating a uuid that is already
+/// in the database -- useful for testing error conditions.
+pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
+    vec![any::<u8>()].prop_map(|mut bytes| {
+        // prepend a bunch of zero bytes so the buffer is big enough for
+        // building a uuid
+        bytes.resize(16, 0);
+        // restrict the any::<u8> (0..255) to 1..16 this enforces more
+        // interesting scenarios for testing (and we start at 1 because shaving
+        bytes[0] &= 0b1111;
+        // a uuid of 0 is invalid and postgres will treat it as NULL
+        bytes[0] |= 0b1;
+        Uuid::from_bytes(
+            bytes
+                .as_slice()
+                .try_into()
+                .expect("slice with incorrect length"),
+        )
+    })
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
-    ResetProjectStatus,
-    ListProjects,
-    ProjectCode(ProjectId),
-    NewProject(String, String, String),
-    UpdateProject(ProjectId, String, String, Option<String>),
-    GetProjectIfExists(ProjectId),
-    LookupProject(String),
-    SetProjectStatus(ProjectId, ProjectStatus),
-    SetProjectStatusGuarded(ProjectId, Version, ProjectStatus),
-    SetProjectSchema(ProjectId, String),
-    DeleteProject(ProjectId),
+    ResetProgramStatus,
+    ListPrograms,
+    ProgramCode(ProgramId),
+    NewProgram(
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        String,
+        String,
+        String,
+    ),
+    UpdateProgram(ProgramId, String, String, Option<String>),
+    GetProgramIfExists(ProgramId),
+    LookupProgram(String),
+    SetProgramStatus(ProgramId, ProgramStatus),
+    SetProgramStatusGuarded(ProgramId, Version, ProgramStatus),
+    SetProgramSchema(ProgramId, String),
+    DeleteProgram(ProgramId),
     NextJob,
-    ListConfigs,
-    GetConfig(ConfigId),
-    NewConfig(
-        Option<ProjectId>,
+    NewPipeline(
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        Option<ProgramId>,
         String,
         String,
         String,
         Option<Vec<AttachedConnector>>,
     ),
-    AddPipelineToConfig(ConfigId, PipelineId),
-    RemovePipelineFromConfig(ConfigId),
-    UpdateConfig(
-        ConfigId,
-        Option<ProjectId>,
+    UpdatePipeline(
+        PipelineId,
+        Option<ProgramId>,
         String,
         String,
         Option<String>,
         Option<Vec<AttachedConnector>>,
     ),
-    DeleteConfig(ConfigId),
-    NewPipeline(ConfigId, Version),
-    PipelineSetPort(PipelineId, u16),
+    PipelineSetDeploy(PipelineId, u16),
     SetPipelineShutdown(PipelineId),
     DeletePipeline(PipelineId),
-    GetPipeline(PipelineId),
+    GetPipelineById(PipelineId),
+    GetPipelineByName(String),
     ListPipelines,
-    NewConnector(String, String, ConnectorType, String),
+    NewConnector(
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        String,
+        String,
+        String,
+    ),
     ListConnectors,
-    GetConnector(ConnectorId),
+    GetConnectorById(ConnectorId),
+    GetConnectorByName(String),
     UpdateConnector(ConnectorId, String, String, Option<String>),
     DeleteConnector(ConnectorId),
     StoreApiKeyHash(String, Vec<ApiPermission>),
@@ -561,10 +612,11 @@ fn db_impl_behaves_like_model() {
     // ended which meant the DB would not shut-down after this test.
     let mut config = Config::default();
     config.max_shrink_iters = u32::MAX;
+    config.source_file = Some("src/db/test.rs");
     let mut runner = TestRunner::new(config);
     let res = runner
         .run(
-            &prop::collection::vec(any::<StorageAction>(), 0..100),
+            &prop::collection::vec(any::<StorageAction>(), 0..256),
             |actions| {
                 let model = Mutex::new(DbModel::default());
                 runtime.block_on(async {
@@ -587,78 +639,78 @@ fn db_impl_behaves_like_model() {
 
                     for (i, action) in actions.into_iter().enumerate() {
                         match action {
-                            StorageAction::ResetProjectStatus => {
-                                let model_response = model.reset_project_status().await;
-                                let impl_response = handle.db.reset_project_status().await;
+                            StorageAction::ResetProgramStatus => {
+                                let model_response = model.reset_program_status().await;
+                                let impl_response = handle.db.reset_program_status().await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::ListProjects => {
-                                let model_response = model.list_projects().await.unwrap();
-                                let mut impl_response = handle.db.list_projects().await.unwrap();
+                            StorageAction::ListPrograms => {
+                                let model_response = model.list_programs().await.unwrap();
+                                let mut impl_response = handle.db.list_programs().await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
-                                impl_response.sort_by(|a, b| a.project_id.cmp(&b.project_id));
+                                impl_response.sort_by(|a, b| a.program_id.cmp(&b.program_id));
                                 assert_eq!(model_response, impl_response);
                             }
-                            StorageAction::ProjectCode(project_id) => {
-                                let model_response = model.project_code(project_id).await;
-                                let impl_response = handle.db.project_code(project_id).await;
+                            StorageAction::ProgramCode(program_id) => {
+                                let model_response = model.program_code(program_id).await;
+                                let impl_response = handle.db.program_code(program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::NewProject(name, description, code) => {
+                            StorageAction::NewProgram(id, name, description, code) => {
                                 let model_response =
-                                    model.new_project(&name, &description, &code).await;
+                                    model.new_program(id, &name, &description, &code).await;
                                 let impl_response =
-                                    handle.db.new_project(&name, &description, &code).await;
+                                    handle.db.new_program(id, &name, &description, &code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateProject(project_id, name, description, code) => {
+                            StorageAction::UpdateProgram(program_id, name, description, code) => {
                                 let model_response = model
-                                    .update_project(project_id, &name, &description, &code)
+                                    .update_program(program_id, &name, &description, &code)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_project(project_id, &name, &description, &code)
+                                    .update_program(program_id, &name, &description, &code)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetProjectIfExists(project_id) => {
-                                let model_response = model.get_project_if_exists(project_id).await;
+                            StorageAction::GetProgramIfExists(program_id) => {
+                                let model_response = model.get_program_if_exists(program_id).await;
                                 let impl_response =
-                                    handle.db.get_project_if_exists(project_id).await;
+                                    handle.db.get_program_if_exists(program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::LookupProject(name) => {
-                                let model_response = model.lookup_project(&name).await;
-                                let impl_response = handle.db.lookup_project(&name).await;
+                            StorageAction::LookupProgram(name) => {
+                                let model_response = model.lookup_program(&name).await;
+                                let impl_response = handle.db.lookup_program(&name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProjectStatus(project_id, status) => {
+                            StorageAction::SetProgramStatus(program_id, status) => {
                                 let model_response =
-                                    model.set_project_status(project_id, status.clone()).await;
+                                    model.set_program_status(program_id, status.clone()).await;
                                 let impl_response =
-                                    handle.db.set_project_status(project_id, status.clone()).await;
+                                    handle.db.set_program_status(program_id, status.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProjectStatusGuarded(project_id, version, status) => {
+                            StorageAction::SetProgramStatusGuarded(program_id, version, status) => {
                                 let model_response = model
-                                    .set_project_status_guarded(project_id, version, status.clone())
+                                    .set_program_status_guarded(program_id, version, status.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .set_project_status_guarded(project_id, version, status.clone())
+                                    .set_program_status_guarded(program_id, version, status.clone())
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProjectSchema(project_id, schema) => {
+                            StorageAction::SetProgramSchema(program_id, schema) => {
                                 let model_response =
-                                    model.set_project_schema(project_id, schema.clone()).await;
+                                    model.set_program_schema(program_id, schema.clone()).await;
                                 let impl_response =
-                                    handle.db.set_project_schema(project_id, schema).await;
+                                    handle.db.set_program_schema(program_id, schema).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteProject(project_id) => {
-                                let model_response = model.delete_project(project_id).await;
-                                let impl_response = handle.db.delete_project(project_id).await;
+                            StorageAction::DeleteProgram(program_id) => {
+                                let model_response = model.delete_program(program_id).await;
+                                let impl_response = handle.db.delete_program(program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::NextJob => {
@@ -666,58 +718,43 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.next_job().await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetConfig(config_id) => {
-                                let model_response = model.get_config(config_id).await;
-                                let impl_response = handle.db.get_config(config_id).await;
-                                check_responses(i, model_response, impl_response);
+                            StorageAction::GetPipelineById(pipeline_id) => {
+                                let model_response = model.get_pipeline_by_id(pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_by_id(pipeline_id).await;
+                                compare_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::ListConfigs => {
-                                let model_response = model.list_configs().await.unwrap();
-                                let mut impl_response = handle.db.list_configs().await.unwrap();
+                            StorageAction::GetPipelineByName(name) => {
+                                let model_response = model.get_pipeline_by_name(name.clone()).await;
+                                let impl_response = handle.db.get_pipeline_by_name(name).await;
+                                compare_pipeline(i, model_response, impl_response);
+                            }
+                            StorageAction::ListPipelines => {
+                                let model_response = model.list_pipelines().await.unwrap();
+                                let mut impl_response = handle.db.list_pipelines().await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
-                                impl_response.sort_by(|a, b| a.config_id.cmp(&b.config_id));
-                                assert_eq!(model_response, impl_response);
+                                impl_response.sort_by(|a, b| a.pipeline_id.cmp(&b.pipeline_id));
+                                compare_pipelines(model_response, impl_response);
                             }
-                            StorageAction::NewConfig(project_id, name, description, config, connectors) => {
+                            StorageAction::NewPipeline(id, program_id, name, description, config, connectors) => {
                                 let model_response =
-                                    model.new_config(project_id, &name, &description, &config, &connectors.clone()).await;
+                                    model.new_pipeline(id, program_id, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
-                                    handle.db.new_config(project_id, &name, &description, &config, &connectors).await;
-                                check_responses(i, model_response, impl_response);
+                                    handle.db.new_pipeline(id, program_id, &name, &description, &config, &connectors).await;
+                                    check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::AddPipelineToConfig(config_id, pipeline_id) => {
-                                let model_response = model.add_pipeline_to_config(config_id, pipeline_id).await;
-                                let impl_response = handle.db.add_pipeline_to_config(config_id, pipeline_id).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::RemovePipelineFromConfig(config_id) => {
-                                let model_response = model.remove_pipeline_from_config(config_id).await;
-                                let impl_response = handle.db.remove_pipeline_from_config(config_id).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::UpdateConfig(config_id, project_id, name, description, config, connectors) => {
+                            StorageAction::UpdatePipeline(pipeline_id, program_id, name, description, config, connectors) => {
                                 let model_response = model
-                                    .update_config(config_id, project_id, &name, &description, &config, &connectors.clone())
+                                    .pipeline_update(pipeline_id, program_id, &name, &description, &config, &connectors.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_config(config_id, project_id, &name, &description, &config, &connectors)
+                                    .pipeline_update(pipeline_id, program_id, &name, &description, &config, &connectors)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteConfig(config_id) => {
-                                let model_response = model.delete_config(config_id).await;
-                                let impl_response = handle.db.delete_config(config_id).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::NewPipeline(config_id, expected_version) => {
-                                let model_response = model.new_pipeline(config_id, expected_version).await;
-                                let impl_response = handle.db.new_pipeline(config_id, expected_version).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::PipelineSetPort(pipeline_id, port) => {
-                                let model_response = model.pipeline_set_port(pipeline_id, port).await;
-                                let impl_response = handle.db.pipeline_set_port(pipeline_id, port).await;
+                            StorageAction::PipelineSetDeploy(pipeline_id, port) => {
+                                let model_response = model.set_pipeline_deploy(pipeline_id, port).await;
+                                let impl_response = handle.db.set_pipeline_deploy(pipeline_id, port).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetPipelineShutdown(pipeline_id) => {
@@ -730,18 +767,6 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_pipeline(pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetPipeline(pipeline_id) => {
-                                let model_response = model.get_pipeline(pipeline_id).await;
-                                let impl_response = handle.db.get_pipeline(pipeline_id).await;
-                                compare_pipeline(i, model_response, impl_response);
-                            }
-                            StorageAction::ListPipelines => {
-                                let model_response = model.list_pipelines().await.unwrap();
-                                let mut impl_response = handle.db.list_pipelines().await.unwrap();
-                                // Impl does not guarantee order of rows returned by SELECT
-                                impl_response.sort_by(|a, b| a.pipeline_id.cmp(&b.pipeline_id));
-                                compare_pipelines(model_response, impl_response);
-                            }
                             StorageAction::ListConnectors => {
                                 let model_response = model.list_connectors().await.unwrap();
                                 let mut impl_response = handle.db.list_connectors().await.unwrap();
@@ -749,16 +774,21 @@ fn db_impl_behaves_like_model() {
                                 impl_response.sort_by(|a, b| a.connector_id.cmp(&b.connector_id));
                                 assert_eq!(model_response, impl_response);
                             }
-                            StorageAction::NewConnector(name, description, typ, config) => {
+                            StorageAction::NewConnector(id, name, description, config) => {
                                 let model_response =
-                                    model.new_connector(&name, &description, typ, &config).await;
+                                    model.new_connector(id, &name, &description, &config).await;
                                 let impl_response =
-                                    handle.db.new_connector(&name, &description, typ, &config).await;
+                                    handle.db.new_connector(id, &name, &description, &config).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetConnector(connector_id) => {
-                                let model_response = model.get_connector(connector_id).await;
-                                let impl_response = handle.db.get_connector(connector_id).await;
+                            StorageAction::GetConnectorById(connector_id) => {
+                                let model_response = model.get_connector_by_id(connector_id).await;
+                                let impl_response = handle.db.get_connector_by_id(connector_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetConnectorByName(name) => {
+                                let model_response = model.get_connector_by_name(name.clone()).await;
+                                let impl_response = handle.db.get_connector_by_name(name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::UpdateConnector(connector_id, name, description, config) => {
@@ -798,166 +828,156 @@ fn db_impl_behaves_like_model() {
 /// Our model of the database (uses btrees for tables).
 #[derive(Debug, Default)]
 struct DbModel {
-    pub next_project_id: i64,
-    pub next_config_id: i64,
-    pub next_connector_id: i64,
-    pub next_pipeline_id: i64,
-
-    // `projects` Format is: (project, code, created)
-    pub projects: BTreeMap<ProjectId, (ProjectDescr, String, SystemTime)>,
-    pub configs: BTreeMap<ConfigId, ConfigDescr>,
-    pub connectors: BTreeMap<ConnectorId, ConnectorDescr>,
+    // `programs` Format is: (program, code, created)
+    pub programs: BTreeMap<ProgramId, (ProgramDescr, String, SystemTime)>,
     pub pipelines: BTreeMap<PipelineId, PipelineDescr>,
     pub api_keys: BTreeMap<String, Vec<ApiPermission>>,
+    pub connectors: BTreeMap<ConnectorId, ConnectorDescr>,
 }
 
 #[async_trait]
 impl Storage for Mutex<DbModel> {
-    async fn reset_project_status(&self) -> anyhow::Result<()> {
+    async fn reset_program_status(&self) -> anyhow::Result<()> {
         self.lock()
             .await
-            .projects
+            .programs
             .values_mut()
             .for_each(|(p, _, _e)| {
-                p.status = ProjectStatus::None;
+                p.status = ProgramStatus::None;
                 p.schema = None;
             });
 
         Ok(())
     }
 
-    async fn list_projects(&self) -> anyhow::Result<Vec<ProjectDescr>> {
+    async fn list_programs(&self) -> anyhow::Result<Vec<ProgramDescr>> {
         Ok(self
             .lock()
             .await
-            .projects
+            .programs
             .values()
             .map(|(p, _, _)| p.clone())
             .collect())
     }
 
-    async fn project_code(
+    async fn program_code(
         &self,
-        project_id: super::ProjectId,
-    ) -> anyhow::Result<(ProjectDescr, String)> {
+        program_id: super::ProgramId,
+    ) -> anyhow::Result<(ProgramDescr, String)> {
         self.lock()
             .await
-            .projects
-            .get(&project_id)
+            .programs
+            .get(&program_id)
             .map(|(p, c, _e)| (p.clone(), c.clone()))
-            .ok_or(anyhow::anyhow!(DBError::UnknownProject(project_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
     }
 
-    async fn new_project(
+    async fn new_program(
         &self,
-        project_name: &str,
-        project_description: &str,
-        project_code: &str,
-    ) -> anyhow::Result<(super::ProjectId, super::Version)> {
+        id: Uuid,
+        program_name: &str,
+        program_description: &str,
+        program_code: &str,
+    ) -> anyhow::Result<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
-        // This is a bit strange: PostgreSQL does increment the primary key even
-        // if the insert fails due to duplicate name conflict.
-        s.next_project_id += 1;
-
-        if s.projects.values().any(|(p, _, _)| p.name == project_name) {
-            return Err(anyhow::anyhow!(DBError::DuplicateProjectName(
-                project_name.to_string()
-            )));
+        if s.programs.keys().any(|k| k.0 == id) {
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation("program_pkey")));
+        }
+        if s.programs.values().any(|(p, _, _)| p.name == program_name) {
+            return Err(anyhow::anyhow!(DBError::DuplicateName));
         }
 
-        let project_id = ProjectId(s.next_project_id);
+        let program_id = ProgramId(id);
         let version = Version(1);
 
-        s.projects.insert(
-            project_id,
+        s.programs.insert(
+            program_id,
             (
-                ProjectDescr {
-                    project_id,
-                    name: project_name.to_owned(),
-                    description: project_description.to_owned(),
-                    status: ProjectStatus::None,
+                ProgramDescr {
+                    program_id,
+                    name: program_name.to_owned(),
+                    description: program_description.to_owned(),
+                    status: ProgramStatus::None,
                     schema: None,
                     version,
                 },
-                project_code.to_owned(),
+                program_code.to_owned(),
                 SystemTime::now(),
             ),
         );
 
-        Ok((project_id, version))
+        Ok((program_id, version))
     }
 
-    async fn update_project(
+    async fn update_program(
         &self,
-        project_id: super::ProjectId,
-        project_name: &str,
-        project_description: &str,
-        project_code: &Option<String>,
+        program_id: super::ProgramId,
+        program_name: &str,
+        program_description: &str,
+        program_code: &Option<String>,
     ) -> anyhow::Result<super::Version> {
         let mut s = self.lock().await;
-        if !s.projects.contains_key(&project_id) {
-            return Err(anyhow::anyhow!(DBError::UnknownProject(project_id)));
+        if !s.programs.contains_key(&program_id) {
+            return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
         }
 
-        if s.projects
+        if s.programs
             .values()
-            .any(|(p, _, _)| p.name == project_name && p.project_id != project_id)
+            .any(|(p, _, _)| p.name == program_name && p.program_id != program_id)
         {
-            return Err(anyhow::anyhow!(DBError::DuplicateProjectName(
-                project_name.to_string()
-            )));
+            return Err(anyhow::anyhow!(DBError::DuplicateName));
         }
 
-        s.projects
-            .get_mut(&project_id)
+        s.programs
+            .get_mut(&program_id)
             .map(|(p, cur_code, _e)| {
-                p.name = project_name.to_owned();
-                p.description = project_description.to_owned();
-                if let Some(code) = project_code {
+                p.name = program_name.to_owned();
+                p.description = program_description.to_owned();
+                if let Some(code) = program_code {
                     if code != cur_code {
                         *cur_code = code.to_owned();
                         p.version.0 += 1;
                         p.schema = None;
-                        p.status = ProjectStatus::None;
+                        p.status = ProgramStatus::None;
                     }
                 }
                 p.version
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProject(project_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
     }
 
-    async fn get_project_if_exists(
+    async fn get_program_if_exists(
         &self,
-        project_id: super::ProjectId,
-    ) -> anyhow::Result<Option<ProjectDescr>> {
+        program_id: super::ProgramId,
+    ) -> anyhow::Result<Option<ProgramDescr>> {
         Ok(self
             .lock()
             .await
-            .projects
-            .get(&project_id)
+            .programs
+            .get(&program_id)
             .map(|(p, _, _)| p.clone()))
     }
 
-    async fn lookup_project(&self, project_name: &str) -> anyhow::Result<Option<ProjectDescr>> {
+    async fn lookup_program(&self, program_name: &str) -> anyhow::Result<Option<ProgramDescr>> {
         Ok(self
             .lock()
             .await
-            .projects
+            .programs
             .values()
-            .find(|(p, _, _)| p.name == project_name)
+            .find(|(p, _, _)| p.name == program_name)
             .map(|(p, _, _)| p.clone()))
     }
 
-    async fn set_project_status(
+    async fn set_program_status(
         &self,
-        project_id: super::ProjectId,
-        status: ProjectStatus,
+        program_id: super::ProgramId,
+        status: ProgramStatus,
     ) -> anyhow::Result<()> {
         let _r = self
             .lock()
             .await
-            .projects
-            .get_mut(&project_id)
+            .programs
+            .get_mut(&program_id)
             .map(|(p, _, t)| {
                 p.status = status;
                 *t = SystemTime::now();
@@ -968,35 +988,35 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn set_project_status_guarded(
+    async fn set_program_status_guarded(
         &self,
-        project_id: super::ProjectId,
+        program_id: super::ProgramId,
         expected_version: super::Version,
-        status: ProjectStatus,
+        status: ProgramStatus,
     ) -> anyhow::Result<()> {
         self.lock()
             .await
-            .projects
-            .get_mut(&project_id)
+            .programs
+            .get_mut(&program_id)
             .map(|(p, _, t)| {
                 if p.version == expected_version {
                     p.status = status;
                     *t = SystemTime::now();
                 }
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProject(project_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
     }
 
-    async fn set_project_schema(
+    async fn set_program_schema(
         &self,
-        project_id: super::ProjectId,
+        program_id: super::ProgramId,
         schema: String,
     ) -> anyhow::Result<()> {
         let _r = self
             .lock()
             .await
-            .projects
-            .get_mut(&project_id)
+            .programs
+            .get_mut(&program_id)
             .map(|(p, _, _)| {
                 p.schema = Some(schema);
             });
@@ -1004,211 +1024,194 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn delete_project(&self, project_id: super::ProjectId) -> anyhow::Result<()> {
+    async fn delete_program(&self, program_id: super::ProgramId) -> anyhow::Result<()> {
         let mut s = self.lock().await;
 
-        s.projects
-            .remove(&project_id)
+        s.programs
+            .remove(&program_id)
             .map(|_| ())
-            .ok_or(anyhow::anyhow!(DBError::UnknownProject(project_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))?;
         // Foreign key delete:
-        s.configs.retain(|_, c| c.project_id != Some(project_id));
+        s.pipelines.retain(|_, c| c.program_id != Some(program_id));
 
         Ok(())
     }
 
-    async fn next_job(&self) -> anyhow::Result<Option<(super::ProjectId, super::Version)>> {
+    async fn next_job(&self) -> anyhow::Result<Option<(super::ProgramId, super::Version)>> {
         let s = self.lock().await;
-        let mut values = Vec::from_iter(s.projects.values());
+        let mut values = Vec::from_iter(s.programs.values());
         values.sort_by(|(_, _, t1), (_, _, t2)| t1.cmp(t2));
 
         values
             .iter()
-            .find(|(p, _, _)| p.status == ProjectStatus::Pending)
-            .map(|(p, _, _)| Ok(Some((p.project_id, p.version))))
+            .find(|(p, _, _)| p.status == ProgramStatus::Pending)
+            .map(|(p, _, _)| Ok(Some((p.program_id, p.version))))
             .unwrap_or(Ok(None))
     }
 
-    async fn list_configs(&self) -> anyhow::Result<Vec<ConfigDescr>> {
-        Ok(self.lock().await.configs.values().cloned().collect())
-    }
-
-    async fn get_config(&self, config_id: super::ConfigId) -> anyhow::Result<ConfigDescr> {
-        self.lock()
-            .await
-            .configs
-            .get(&config_id)
-            .cloned()
-            .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))
-    }
-
-    async fn new_config(
+    async fn new_pipeline(
         &self,
-        project_id: Option<super::ProjectId>,
-        config_name: &str,
-        config_description: &str,
+        id: Uuid,
+        program_id: Option<super::ProgramId>,
+        pipline_name: &str,
+        pipeline_description: &str,
         config: &str,
         // TODO: not clear why connectors is an option here
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> anyhow::Result<(super::ConfigId, super::Version)> {
+    ) -> anyhow::Result<(super::PipelineId, super::Version)> {
         let mut s = self.lock().await;
-        s.next_config_id += 1;
+        let db_connectors = s.connectors.clone();
 
-        // Model the foreign key constraint on `project_id`
-        if let Some(project_id) = project_id {
-            if !s.projects.contains_key(&project_id) {
-                return Err(anyhow::anyhow!(DBError::UnknownProject(project_id)));
+        if s.pipelines.keys().any(|k| k.0 == id) {
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
+                "pipeline_pkey"
+            )));
+        }
+        // UNIQUE constraint on name
+        if s.pipelines.values().any(|c| c.name == pipline_name) {
+            return Err(DBError::DuplicateName.into());
+        }
+        // Model the foreign key constraint on `program_id`
+        if let Some(program_id) = program_id {
+            if !s.programs.contains_key(&program_id) {
+                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
             }
         }
 
-        // To simulate transactions, we first check whether all the connectors
-        // can be inserted (i.e., no foreign key violations). Only if that
-        // succeeds will we insert the connectors and configurations.
-        // This is of course not robust to all failure modes.
+        let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
             for ac in connectors {
-                if !s.connectors.contains_key(&ac.connector_id) {
+                if new_acs.iter().any(|nac| nac.name == ac.name) {
+                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                }
+
+                // We ensure that in all pipelines there is no attached
+                // connector with this name UNIQUE constraint on table
+                let pipelines = s.pipelines.values().clone();
+                if pipelines
+                    .map(|p| p.attached_connectors.clone())
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .iter()
+                    .any(|eac| eac.name == ac.name)
+                {
+                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                }
+
+                // Check that all attached connectors point to a valid
+                // connector_id
+                if !db_connectors.contains_key(&ac.connector_id) {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
-            }
 
-            // We also need to make sure that the attached connectors all have
-            // unique names, to model the UNIQUE constraint.
-            // Clone it because we sort and don't want to change input
-            // collection
-            let connectors = connectors.clone();
-            let mut connectors = connectors
-                .iter()
-                .map(|ac| ac.uuid.clone())
-                .collect::<Vec<_>>();
-            connectors.sort();
-            connectors.dedup();
-            if connectors.len() != connectors.len() {
-                return Err(anyhow::anyhow!(DBError::DuplicateName));
+                new_acs.push(ac.clone());
             }
         }
 
-        let config_id = ConfigId(s.next_config_id);
+        let pipeline_id = PipelineId(id);
         let version = Version(1);
-        s.configs.insert(
-            config_id,
-            ConfigDescr {
-                config_id,
-                project_id,
-                pipeline: None,
-                name: config_name.to_owned(),
-                description: config_description.to_owned(),
+        s.pipelines.insert(
+            pipeline_id,
+            PipelineDescr {
+                pipeline_id,
+                program_id,
+                name: pipline_name.to_owned(),
+                description: pipeline_description.to_owned(),
                 config: config.to_owned(),
-                attached_connectors: Vec::new(),
+                attached_connectors: new_acs,
                 version: Version(1),
+                port: 0,
+                created: DateTime::default(),
+                shutdown: false,
             },
         );
-        if let Some(connectors) = connectors {
-            for ac in connectors {
-                if s.connectors.contains_key(&ac.connector_id) {
-                    s.configs
-                        .get_mut(&config_id)
-                        .unwrap() // we just inserted
-                        .attached_connectors
-                        .push(ac.clone());
-                }
-            }
-        }
 
-        Ok((config_id, version))
+        Ok((pipeline_id, version))
     }
 
-    async fn add_pipeline_to_config(
+    async fn pipeline_update(
         &self,
-        config_id: super::ConfigId,
-        pipeline_id: super::PipelineId,
-    ) -> anyhow::Result<()> {
-        let mut s = self.lock().await;
-        if !s.configs.contains_key(&config_id) {
-            return Err(anyhow::anyhow!(DBError::UnknownConfig(config_id)));
-        }
-        if let Some(pipeline) = s.pipelines.get(&pipeline_id) {
-            s.configs
-                .get_mut(&config_id)
-                .unwrap() // we just checked
-                .pipeline = Some(pipeline.clone());
-        } else {
-            return Err(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)));
-        }
-
-        Ok(())
-    }
-
-    async fn remove_pipeline_from_config(&self, config_id: super::ConfigId) -> anyhow::Result<()> {
-        let mut s = self.lock().await;
-        if let Some(config) = s.configs.get_mut(&config_id) {
-            config.pipeline = None;
-            Ok(())
-        } else {
-            return Err(anyhow::anyhow!(DBError::UnknownConfig(config_id)));
-        }
-    }
-
-    async fn update_config(
-        &self,
-        config_id: ConfigId,
-        project_id: Option<ProjectId>,
-        config_name: &str,
-        config_description: &str,
+        pipeline_id: PipelineId,
+        program_id: Option<ProgramId>,
+        pipline_name: &str,
+        pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> anyhow::Result<Version> {
-        // config must exist
         let mut s = self.lock().await;
-        if !s.configs.contains_key(&config_id) {
-            return Err(anyhow::anyhow!(DBError::UnknownConfig(config_id)));
-        }
         let db_connectors = s.connectors.clone();
-        let db_projects = s.projects.clone();
+        let db_programs = s.programs.clone();
 
-        let c = s
-            .configs
-            .get_mut(&config_id)
-            .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))?;
+        // pipeline must exist
+        s.pipelines
+            .get_mut(&pipeline_id)
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+        // UNIQUE constraint on name
+        if let Some(c) = s
+            .pipelines
+            .values()
+            .find(|c| c.name == pipline_name)
+            .cloned()
+        {
+            if c.pipeline_id != pipeline_id {
+                return Err(DBError::DuplicateName.into());
+            }
+        }
 
+        let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
-            c.attached_connectors.clear();
             for ac in connectors {
-                if db_connectors.contains_key(&ac.connector_id) {
-                    c.attached_connectors.push(ac.clone());
-                } else {
+                if new_acs.iter().any(|nac| nac.name == ac.name) {
+                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                }
+
+                // We ensure that in all pipelines there is no attached
+                // connector with this name UNIQUE constraint on table
+                let pipelines = s.pipelines.values().clone();
+                if pipelines
+                    .map(|p| p.attached_connectors.clone())
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .iter()
+                    .any(|eac| eac.name == ac.name)
+                {
+                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                }
+
+                // Check that all attached connectors point to a valid
+                // connector_id
+                if !db_connectors.contains_key(&ac.connector_id) {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
+
+                new_acs.push(ac.clone());
             }
 
-            // We also need to make sure that the attached connectors all have
-            // unique names, to model the UNIQUE constraint.
-            // Clone it because we sort and don't want to change input
-            // collection
-            let connectors = connectors.clone();
-            let mut connectors = connectors
-                .iter()
-                .map(|ac| ac.uuid.clone())
-                .collect::<Vec<_>>();
-            connectors.sort();
-            connectors.dedup();
-            if connectors.len() != connectors.len() {
-                return Err(anyhow::anyhow!(DBError::DuplicateName));
-            }
+            let mut c = s
+                .pipelines
+                .get_mut(&pipeline_id)
+                .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+            c.attached_connectors = new_acs;
         }
-        // Foreign key constraint on `project_id`
-        if let Some(project_id) = project_id {
-            if db_projects.contains_key(&project_id) {
-                c.project_id = Some(project_id);
+
+        let c = s
+            .pipelines
+            .get_mut(&pipeline_id)
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+
+        // Foreign key constraint on `program_id`
+        if let Some(program_id) = program_id {
+            if db_programs.contains_key(&program_id) {
+                c.program_id = Some(program_id);
             } else {
-                return Err(anyhow::anyhow!(DBError::UnknownProject(project_id)));
+                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
             }
         } else {
-            c.project_id = None;
+            c.program_id = None;
         }
 
-        c.name = config_name.to_owned();
-        c.description = config_description.to_owned();
+        c.name = pipline_name.to_owned();
+        c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
         if let Some(config) = config {
             c.config = config.clone();
@@ -1217,81 +1220,42 @@ impl Storage for Mutex<DbModel> {
         Ok(c.version)
     }
 
-    async fn delete_config(&self, config_id: super::ConfigId) -> anyhow::Result<()> {
+    async fn delete_config(&self, pipeline_id: super::PipelineId) -> anyhow::Result<()> {
         self.lock()
             .await
-            .configs
-            .remove(&config_id)
-            .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))?;
+            .pipelines
+            .remove(&pipeline_id)
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
         Ok(())
     }
 
-    async fn get_attached_connector_direction(
-        &self,
-        _uuid: &str,
-    ) -> anyhow::Result<crate::Direction> {
-        // TODO: This API doesn't make sense yet (uuid will change to name and/or
-        // connector_id)
+    async fn attached_connector_is_input(&self, _name: &str) -> anyhow::Result<bool> {
         todo!()
     }
 
-    async fn new_pipeline(
-        &self,
-        config_id: ConfigId,
-        _expected_config_version: Version,
-    ) -> anyhow::Result<PipelineId> {
-        let mut s = self.lock().await;
-        s.next_pipeline_id += 1;
-        let pipeline_id = PipelineId(s.next_pipeline_id);
-
-        // TODO: it's probably not ideal to have PipelineDescr twice, in config
-        // and a separate BTreeMap so we always need to update both.
-        let _config = s
-            .configs
-            .get(&config_id)
-            .ok_or(anyhow::anyhow!(DBError::UnknownConfig(config_id)))?;
-
-        s.pipelines.insert(
-            pipeline_id,
-            PipelineDescr {
-                pipeline_id,
-                config_id: Some(config_id),
-                port: 0,
-                shutdown: false,
-                created: DateTime::default(),
-            },
-        );
-
-        Ok(pipeline_id)
-    }
-
-    async fn pipeline_set_port(
+    async fn set_pipeline_deploy(
         &self,
         pipeline_id: super::PipelineId,
         port: u16,
     ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
+        let p = s
+            .pipelines
+            .get_mut(&pipeline_id)
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
-        s.pipelines.get_mut(&pipeline_id).map(|p| p.port = port);
-        s.configs.values_mut().for_each(|c| {
-            if let Some(pipeline) = &mut c.pipeline {
-                if pipeline.pipeline_id == pipeline_id {
-                    pipeline.port = port;
-                }
-            }
-        });
+        p.port = port;
+        p.shutdown = false;
 
         Ok(())
     }
 
     async fn set_pipeline_shutdown(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
-        s.configs.values_mut().for_each(|c| {
-            if let Some(pipeline) = &mut c.pipeline {
-                if pipeline.pipeline_id == pipeline_id {
-                    pipeline.shutdown = true;
-                }
+        s.pipelines.values_mut().for_each(|p| {
+            if p.pipeline_id == pipeline_id {
+                p.shutdown = true;
             }
         });
 
@@ -1307,14 +1271,6 @@ impl Storage for Mutex<DbModel> {
     async fn delete_pipeline(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
 
-        s.configs.values_mut().for_each(|c| {
-            if let Some(pipeline) = &mut c.pipeline {
-                if pipeline.pipeline_id == pipeline_id {
-                    c.pipeline = None;
-                }
-            }
-        });
-
         // TODO: Our APIs sometimes are not consistent we return a bool here but other
         // calls fail silently on delete/lookups
         Ok(s.pipelines
@@ -1323,7 +1279,7 @@ impl Storage for Mutex<DbModel> {
             .unwrap_or(false))
     }
 
-    async fn get_pipeline(
+    async fn get_pipeline_by_id(
         &self,
         pipeline_id: super::PipelineId,
     ) -> anyhow::Result<super::PipelineDescr> {
@@ -1335,28 +1291,44 @@ impl Storage for Mutex<DbModel> {
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))
     }
 
+    async fn get_pipeline_by_name(&self, name: String) -> anyhow::Result<super::PipelineDescr> {
+        self.lock()
+            .await
+            .pipelines
+            .values()
+            .find(|p| p.name == name)
+            .cloned()
+            .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
+    }
+
     async fn list_pipelines(&self) -> anyhow::Result<Vec<super::PipelineDescr>> {
         Ok(self.lock().await.pipelines.values().cloned().collect())
     }
 
     async fn new_connector(
         &self,
+        id: Uuid,
         name: &str,
         description: &str,
-        typ: super::ConnectorType,
         config: &str,
     ) -> anyhow::Result<super::ConnectorId> {
         let mut s = self.lock().await;
-        s.next_connector_id += 1;
-        let connector_id = super::ConnectorId(s.next_connector_id);
+        if s.connectors.keys().any(|k| k.0 == id) {
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
+                "connector_pkey"
+            )));
+        }
+        if s.connectors.values().any(|c| c.name == name) {
+            return Err(DBError::DuplicateName.into());
+        }
+
+        let connector_id = super::ConnectorId(id);
         s.connectors.insert(
             connector_id,
             ConnectorDescr {
                 connector_id,
                 name: name.to_owned(),
                 description: description.to_owned(),
-                direction: typ.into(),
-                typ,
                 config: config.to_owned(),
             },
         );
@@ -1367,7 +1339,7 @@ impl Storage for Mutex<DbModel> {
         Ok(self.lock().await.connectors.values().cloned().collect())
     }
 
-    async fn get_connector(
+    async fn get_connector_by_id(
         &self,
         connector_id: super::ConnectorId,
     ) -> anyhow::Result<ConnectorDescr> {
@@ -1379,6 +1351,16 @@ impl Storage for Mutex<DbModel> {
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))
     }
 
+    async fn get_connector_by_name(&self, name: String) -> anyhow::Result<ConnectorDescr> {
+        self.lock()
+            .await
+            .connectors
+            .values()
+            .find(|c| c.name == name)
+            .cloned()
+            .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
+    }
+
     async fn update_connector(
         &self,
         connector_id: super::ConnectorId,
@@ -1387,6 +1369,22 @@ impl Storage for Mutex<DbModel> {
         config: &Option<String>,
     ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
+        // `connector_id` needs to exist
+        if s.connectors.get(&connector_id).is_none() {
+            return Err(DBError::UnknownConnector(connector_id).into());
+        }
+        // UNIQUE constraint on name
+        if let Some(c) = s
+            .connectors
+            .values()
+            .find(|c| c.name == connector_name)
+            .cloned()
+        {
+            if c.connector_id != connector_id {
+                return Err(DBError::DuplicateName.into());
+            }
+        }
+
         let c = s
             .connectors
             .get_mut(&connector_id)
@@ -1404,7 +1402,7 @@ impl Storage for Mutex<DbModel> {
         s.connectors
             .remove(&connector_id)
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
-        s.configs.values_mut().for_each(|c| {
+        s.pipelines.values_mut().for_each(|c| {
             c.attached_connectors
                 .retain(|c| c.connector_id != connector_id);
         });

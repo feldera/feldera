@@ -1,7 +1,6 @@
 use crate::{
-    db::storage::Storage, db::AttachedConnector, db::ConfigDescr, Direction, ErrorResponse,
-    ManagerConfig, NewPipelineRequest, NewPipelineResponse, PipelineId, ProjectDB, ProjectId,
-    ProjectStatus, Version,
+    db::storage::Storage, db::AttachedConnector, db::PipelineDescr, ErrorResponse, ManagerConfig,
+    PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use actix_web::{
     http::{Error, Method},
@@ -79,11 +78,11 @@ pub struct LocalRunner {
 /// and UIs may.
 #[derive(Serialize)]
 struct PipelineMetadata {
-    /// Project id.
-    project_id: ProjectId,
-    /// Project version.
+    /// Program id.
+    program_id: ProgramId,
+    /// Program version.
     version: Version,
-    /// Project code.
+    /// Program code.
     code: String,
 }
 
@@ -92,12 +91,9 @@ impl Runner {
     ///
     /// Starts the pipeline executable and waits for the pipeline to initialize,
     /// returning pipeline id and port number.
-    pub(crate) async fn run_pipeline(
-        &self,
-        request: &NewPipelineRequest,
-    ) -> AnyResult<HttpResponse> {
+    pub(crate) async fn run_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.run_pipeline(request).await,
+            Self::Local(local) => local.run_pipeline(pipeline_id).await,
         }
     }
 
@@ -171,36 +167,27 @@ impl LocalRunner {
         })
     }
 
-    pub(crate) async fn run_pipeline(
-        &self,
-        request: &NewPipelineRequest,
-    ) -> AnyResult<HttpResponse> {
+    pub(crate) async fn run_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
 
-        // Read and validate project config.
-        let config_descr = db.get_config(request.config_id).await?;
-        if config_descr.project_id.is_none() {
+        // Read and validate config.
+        let pipeline_descr = db.get_pipeline_by_id(pipeline_id).await?;
+        if pipeline_descr.program_id.is_none() {
             return Ok(HttpResponse::BadRequest().body(format!(
-                "Config '{}' does not have a project set",
-                request.config_id
+                "Pipeline '{}' does not have a program set",
+                pipeline_id
             )));
         }
-        let project_version = config_descr.project_id.unwrap();
+        let program_version = pipeline_descr.program_id.unwrap();
 
-        // Check: project exists, version = current version, compilation completed.
-        let project_descr = db.get_project(project_version).await?;
-        if project_descr.status != ProjectStatus::Success {
-            return Ok(HttpResponse::Conflict().body("Project hasn't been compiled yet"));
+        // Check: program exists, version = current version, compilation completed.
+        let program_descr = db.get_program_by_id(program_version).await?;
+        if program_descr.status != ProgramStatus::Success {
+            return Ok(HttpResponse::Conflict().body("Program hasn't been compiled yet"));
         };
 
-        let pipeline_id = db
-            .new_pipeline(request.config_id, request.config_version)
-            .await?;
-        db.add_pipeline_to_config(config_descr.config_id, pipeline_id)
-            .await?;
-
         // Run the pipeline executable.
-        let mut pipeline_process = self.start(&db, request, &config_descr, pipeline_id).await?;
+        let mut pipeline_process = self.start(&db, &pipeline_descr).await?;
 
         // Unlock db -- the next part can be slow.
         drop(db);
@@ -212,18 +199,13 @@ impl LocalRunner {
                     .db
                     .lock()
                     .await
-                    .pipeline_set_port(pipeline_id, port)
+                    .set_pipeline_deploy(pipeline_id, port)
                     .await
                 {
                     let _ = pipeline_process.kill().await;
                     return Err(e);
                 };
-                let json_string =
-                    serde_json::to_string(&NewPipelineResponse { pipeline_id, port }).unwrap();
-
-                Ok(HttpResponse::Ok()
-                    .content_type(mime::APPLICATION_JSON)
-                    .body(json_string))
+                Ok(HttpResponse::Ok().finish())
             }
             Err(e) => {
                 let _ = pipeline_process.kill().await;
@@ -266,7 +248,7 @@ impl LocalRunner {
         method: Method,
         endpoint: &str,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
+        let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
 
         if pipeline_descr.shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
@@ -305,25 +287,28 @@ impl LocalRunner {
     pub(crate) async fn forward_to_pipeline_as_stream(
         &self,
         pipeline_id: PipelineId,
-        uuid: &str,
+        name: &str,
         req: HttpRequest,
         mut body: actix_web::web::Payload,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline(pipeline_id).await?;
+        let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
         if pipeline_descr.shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
         let port = pipeline_descr.port;
-        let direction = self
+        let is_input = self
             .db
             .lock()
             .await
-            .get_attached_connector_direction(uuid)
+            .attached_connector_is_input(name)
             .await?;
-        let url = if direction == Direction::Input {
-            format!("ws://localhost:{port}/input_endpoint/{uuid}")
+
+        // TODO: it might be better to have ?name={}, otherwise we have to
+        // restrict name format
+        let url = if is_input {
+            format!("ws://localhost:{port}/input_endpoint/{name}")
         } else {
-            format!("ws://localhost:{port}/output_endpoint/{uuid}")
+            format!("ws://localhost:{port}/output_endpoint/{name}")
         };
 
         let (_, socket) = awc::Client::new().ws(url).connect().await.unwrap();
@@ -354,18 +339,13 @@ impl LocalRunner {
         Ok(resp.streaming(rx))
     }
 
-    async fn start(
-        &self,
-        db: &ProjectDB,
-        request: &NewPipelineRequest,
-        config_descr: &ConfigDescr,
-        pipeline_id: PipelineId,
-    ) -> AnyResult<Child> {
+    async fn start(&self, db: &ProjectDB, pipeline_descr: &PipelineDescr) -> AnyResult<Child> {
         assert!(
-            config_descr.project_id.is_some(),
-            "pre-condition for start(): config.project_id is set"
+            pipeline_descr.program_id.is_some(),
+            "pre-condition for start(): config.program_id is set"
         );
-        let project_id = config_descr.project_id.unwrap();
+        let pipeline_id = pipeline_descr.pipeline_id;
+        let program_id = pipeline_descr.program_id.unwrap();
 
         // Assemble the final config by including all attached connectors.
         async fn generate_attached_connector_config(
@@ -374,10 +354,10 @@ impl LocalRunner {
             ac: &AttachedConnector,
         ) -> AnyResult<()> {
             let ident = 4;
-            config.push_str(format!("{:ident$}{}:\n", "", ac.uuid.as_str()).as_str());
+            config.push_str(format!("{:ident$}{}:\n", "", ac.name.as_str()).as_str());
             let ident = 8;
             config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
-            let connector = db.get_connector(ac.connector_id).await?;
+            let connector = db.get_connector_by_id(ac.connector_id).await?;
             for config_line in connector.config.lines() {
                 config.push_str(format!("{:ident$}{config_line}\n", "").as_str());
             }
@@ -385,7 +365,7 @@ impl LocalRunner {
         }
         async fn add_debug_websocket(config: &mut String, ac: &AttachedConnector) -> AnyResult<()> {
             let ident = 4;
-            config.push_str(format!("{:ident$}debug-{}:\n", "", ac.uuid.as_str()).as_str());
+            config.push_str(format!("{:ident$}debug-{}:\n", "", ac.name.as_str()).as_str());
             let ident = 8;
             config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
             for config_line in ["transport:", "     name: http", "format:", "    name: csv"].iter()
@@ -395,21 +375,21 @@ impl LocalRunner {
             Ok(())
         }
 
-        let mut config = config_descr.config.clone();
+        let mut config = pipeline_descr.config.clone();
         config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
         config.push_str("inputs:\n");
-        for ac in config_descr
+        for ac in pipeline_descr
             .attached_connectors
             .iter()
-            .filter(|ac| ac.direction == Direction::Input)
+            .filter(|ac| ac.is_input)
         {
             generate_attached_connector_config(db, &mut config, ac).await?;
         }
         config.push_str("outputs:\n");
-        for ac in config_descr
+        for ac in pipeline_descr
             .attached_connectors
             .iter()
-            .filter(|ac| ac.direction == Direction::Output)
+            .filter(|ac| !ac.is_input)
         {
             generate_attached_connector_config(db, &mut config, ac).await?;
             add_debug_websocket(&mut config, ac).await?;
@@ -423,11 +403,11 @@ impl LocalRunner {
         let config_file_path = self.config.config_file_path(pipeline_id);
         fs::write(&config_file_path, config.as_str()).await?;
 
-        let (_version, code) = db.project_code(project_id).await?;
+        let (_version, code) = db.program_code(program_id).await?;
 
         let metadata = PipelineMetadata {
-            project_id,
-            version: request.config_version,
+            program_id,
+            version: pipeline_descr.version,
             code,
         };
         let metadata_file_path = self.config.metadata_file_path(pipeline_id);
@@ -438,7 +418,7 @@ impl LocalRunner {
         .await?;
 
         // Locate project executable.
-        let executable = self.config.project_executable(project_id);
+        let executable = self.config.project_executable(program_id);
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
@@ -491,7 +471,7 @@ impl LocalRunner {
         db: &ProjectDB,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = db.get_pipeline(pipeline_id).await?;
+        let pipeline_descr = db.get_pipeline_by_id(pipeline_id).await?;
 
         if pipeline_descr.shutdown {
             return Ok(HttpResponse::Ok().json("Pipeline already shut down."));
@@ -501,9 +481,6 @@ impl LocalRunner {
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
-                if let Some(config_id) = pipeline_descr.config_id {
-                    db.remove_pipeline_from_config(config_id).await?;
-                }
                 db.set_pipeline_shutdown(pipeline_id).await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
@@ -514,9 +491,6 @@ impl LocalRunner {
         };
 
         if response.status().is_success() {
-            if let Some(config_id) = pipeline_descr.config_id {
-                db.remove_pipeline_from_config(config_id).await?;
-            }
             db.set_pipeline_shutdown(pipeline_id).await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
