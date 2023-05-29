@@ -14,27 +14,32 @@ from dbsp_api_client.models.kafka_output_config import KafkaOutputConfig
 from dbsp_api_client.models.file_input_config import FileInputConfig
 from dbsp_api_client.models.file_output_config import FileOutputConfig
 from dbsp_api_client.models.csv_parser_config import CsvParserConfig
-from dbsp_api_client.models.new_config_request import NewConfigRequest
 from dbsp_api_client.models.new_connector_request import NewConnectorRequest
 from dbsp_api_client.models.update_connector_request import UpdateConnectorRequest
-from dbsp_api_client.models.direction import Direction
-from dbsp_api_client.models.connector_type import ConnectorType
 from dbsp_api_client.models.csv_encoder_config import CsvEncoderConfig
 from dbsp_api_client.api.connector import new_connector
 from dbsp_api_client.api.connector import update_connector
 from dbsp_api_client.api.connector import delete_connector
+from dbsp_api_client.api.connector import connector_status
+from dbsp_api_client.models.connector_descr import ConnectorDescr
 
 
 class DBSPConnector:
     "A connector that can be attached to configs."
 
-    def __init__(self, api_client, name: str, typ: ConnectorType, transport: "TransportConfig", format: "FormatConfig", description: str = ''):
+    def __init__(self, api_client, name: str, transport: "TransportConfig", format: "FormatConfig", description: str = ''):
         self.api_client = api_client
+        # If the connector already exist we make sure to get its id so it will
+        # just update on save
+        response = connector_status.sync_detailed(
+            client=self.api_client, name=name)
+        if isinstance(response.parsed, ConnectorDescr):
+            self.connector_id = response.parsed.connector_id
+        else:
+            self.connector_id = None
 
-        self.connector_id = None
         self.name = name
         self.description = description
-        self.typ = typ
         self.transport = transport
         self.format = format
         self.config = self.to_dict()
@@ -59,7 +64,6 @@ class DBSPConnector:
             body = NewConnectorRequest(
                 name=self.name,
                 description=self.description,
-                typ=self.typ,
                 config=yaml.dump(self.config),
             )
             response = new_connector.sync_detailed(
@@ -70,7 +74,6 @@ class DBSPConnector:
                 connector_id=self.connector_id,
                 name=self.name,
                 description=self.description,
-                typ=self.typ,
                 config=yaml.dump(self.config),
             )
             response = update_connector.sync_detailed(

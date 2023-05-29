@@ -1,9 +1,9 @@
 import dbsp_api_client
 
-from dbsp_api_client.models.new_project_request import NewProjectRequest
-from dbsp_api_client.api.project import list_projects
-from dbsp_api_client.api.project import new_project
-from dbsp.project import DBSPProject
+from dbsp_api_client.models.new_program_request import NewProgramRequest
+from dbsp_api_client.api.program import list_programs
+from dbsp_api_client.api.program import new_program
+from dbsp.program import DBSPProgram
 
 class DBSPConnection:
     """DBSP server connection.
@@ -17,14 +17,14 @@ class DBSPConnection:
                 base_url = url,
                 timeout = 20.0)
 
-        list_projects.sync_detailed(client = self.api_client).unwrap("Failed to fetch project list from the DBSP server")
+        list_programs.sync_detailed(client = self.api_client).unwrap("Failed to fetch program list from the DBSP server")
 
-    def create_project(self, *, name: str, sql_code: str, description: str = '') -> DBSPProject:
-        """Create a new project.
+    def create_program(self, *, name: str, sql_code: str, description: str = '') -> DBSPProgram:
+        """Create a new program.
 
         Args:
             name (str): Project name
-            sql_code (str): SQL code for the project
+            sql_code (str): SQL code for the program
             description (str): Project description
 
         Raises:
@@ -32,20 +32,20 @@ class DBSPConnection:
             dbsp.DBSPServerError: If the DBSP server returns an error.
 
         Returns:
-            DBSPProject
+            DBSPProgram
         """
 
-        return self.create_project_inner(name = name, sql_code = sql_code, description = description, replace = False)
+        return self.create_program_inner(name = name, sql_code = sql_code, description = description, replace = False)
 
-    def create_or_replace_project(self, *, name: str, sql_code: str, description: str = '') -> DBSPProject:
-        """Create a new project overwriting existing project with the same name, if any.
+    def create_or_replace_program(self, *, name: str, sql_code: str, description: str = '') -> DBSPProgram:
+        """Create a new program overwriting existing program with the same name, if any.
 
-        If a project with the same name already exists, all pipelines associated
-        with that project and the project itself will be deleted.
+        If a program with the same name already exists, all pipelines associated
+        with that program and the program itself will be deleted.
 
         Args:
             name (str): Project name
-            sql_code (str): SQL code for the project
+            sql_code (str): SQL code for the program
             description (str): Project description
 
         Raises:
@@ -53,17 +53,17 @@ class DBSPConnection:
             dbsp.DBSPServerError: If the DBSP server returns an error.
 
         Returns:
-            DBSPProject
+            DBSPProgram
         """
 
-        return self.create_project_inner(name = name, sql_code = sql_code, description = description, replace = True)
+        return self.create_program_inner(name = name, sql_code = sql_code, description = description, replace = True)
 
-    def create_project_inner(self, *, name: str, sql_code: str, description: str, replace: bool):
-        request = NewProjectRequest(name=name, overwrite_existing = replace, code=sql_code, description='')
+    def create_program_inner(self, *, name: str, sql_code: str, description: str, replace: bool):
+        request = NewProgramRequest(name=name, overwrite_existing = replace, code=sql_code, description='')
 
-        new_project_response = new_project.sync_detailed(client = self.api_client, json_body=request).unwrap("Failed to create a project")
+        new_program_response = new_program.sync_detailed(client = self.api_client, json_body=request).unwrap("Failed to create a program")
 
-        return DBSPProject(
+        return DBSPProgram(
             api_client=self.api_client,
-            project_id=new_project_response.project_id,
-            project_version=new_project_response.version)
+            program_id=new_program_response.program_id,
+            program_version=new_program_response.version)

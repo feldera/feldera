@@ -3,28 +3,28 @@ import argparse
 from dbsp import DBSPConnection
 
 
-def execute(actions, name, code_file, make_config_fn, prepare_fn=None, verify_fn=None):
+def execute(actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
     sql_code = open(code_file, "r").read()
     dbsp = DBSPConnection()
-    project = dbsp.create_or_replace_project(
+    program = dbsp.create_or_replace_program(
         name=name, sql_code=sql_code)
-    config = make_config_fn(project)
+    pipeline = make_pipeline_fn(program)
 
     if 'compile' in actions:
-        project.compile()
+        program.compile()
         print("Project compiled")
-        status = project.status()
+        status = program.status()
         print("Project status: " + status)
 
     if prepare_fn and 'prepare' in actions:
+        print("Preparing...")
         prepare_fn()
 
-    pipeline = None
     try:
         if 'run' in actions:
-            pipeline = config.run()
-            print("Pipeline status: " + str(pipeline.status()))
-            print("Pipeline metadata: " + str(pipeline.metadata()))
+            pipeline.run()
+            print("Pipeline status: " + str(pipeline.descriptor().status))
+            #print("Pipeline stats: " + str(pipeline.stats()))
     finally:
         if pipeline:
             pipeline.delete()
@@ -34,7 +34,7 @@ def execute(actions, name, code_file, make_config_fn, prepare_fn=None, verify_fn
         verify_fn()
 
 
-def run_demo(name, code_file, make_config_fn, prepare_fn=None, verify_fn=None):
+def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
     parser = argparse.ArgumentParser(
         description='What do you want to do with the demo.')
     parser.add_argument('actions', nargs='*', default=['create'])
@@ -53,4 +53,4 @@ def run_demo(name, code_file, make_config_fn, prepare_fn=None, verify_fn=None):
         actions.add('run')
 
     execute(actions, name, code_file,
-            make_config_fn, prepare_fn, verify_fn)
+            make_pipeline_fn, prepare_fn, verify_fn)
