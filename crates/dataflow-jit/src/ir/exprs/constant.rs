@@ -113,8 +113,12 @@ impl PartialEq for Constant {
             (Self::I64(lhs), Self::I64(rhs)) => lhs == rhs,
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs == rhs,
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs == rhs,
-            (Self::F32(lhs), Self::F32(rhs)) => lhs.total_cmp(rhs).is_eq(),
-            (Self::F64(lhs), Self::F64(rhs)) => lhs.total_cmp(rhs).is_eq(),
+            (Self::F32(lhs), Self::F32(rhs)) => {
+                (lhs.is_nan() && rhs.is_nan()) || lhs.total_cmp(rhs).is_eq()
+            }
+            (Self::F64(lhs), Self::F64(rhs)) => {
+                (lhs.is_nan() && rhs.is_nan()) || lhs.total_cmp(rhs).is_eq()
+            }
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
 
@@ -141,8 +145,20 @@ impl PartialOrd for Constant {
             (Self::I64(lhs), Self::I64(rhs)) => lhs.cmp(rhs),
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs.cmp(rhs),
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs.cmp(rhs),
-            (Self::F32(lhs), Self::F32(rhs)) => lhs.total_cmp(rhs),
-            (Self::F64(lhs), Self::F64(rhs)) => lhs.total_cmp(rhs),
+            (Self::F32(lhs), Self::F32(rhs)) => {
+                if lhs.is_nan() && rhs.is_nan() {
+                    Ordering::Equal
+                } else {
+                    lhs.total_cmp(rhs)
+                }
+            }
+            (Self::F64(lhs), Self::F64(rhs)) => {
+                if lhs.is_nan() && rhs.is_nan() {
+                    Ordering::Equal
+                } else {
+                    lhs.total_cmp(rhs)
+                }
+            }
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
 
@@ -167,8 +183,20 @@ impl Ord for Constant {
             (Self::I64(lhs), Self::I64(rhs)) => lhs.cmp(rhs),
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs.cmp(rhs),
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs.cmp(rhs),
-            (Self::F32(lhs), Self::F32(rhs)) => lhs.total_cmp(rhs),
-            (Self::F64(lhs), Self::F64(rhs)) => lhs.total_cmp(rhs),
+            (Self::F32(lhs), Self::F32(rhs)) => {
+                if lhs.is_nan() && rhs.is_nan() {
+                    Ordering::Equal
+                } else {
+                    lhs.total_cmp(rhs)
+                }
+            }
+            (Self::F64(lhs), Self::F64(rhs)) => {
+                if lhs.is_nan() && rhs.is_nan() {
+                    Ordering::Equal
+                } else {
+                    lhs.total_cmp(rhs)
+                }
+            }
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
 

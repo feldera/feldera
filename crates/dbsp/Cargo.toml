@@ -65,12 +65,7 @@ arcstr = { version = "1.1.4", features = ["bincode"] }
 
 [dependencies.time]
 version = "0.3.20"
-features = [
-    "formatting",
-    "macros",
-    "serde",
-    "serde-human-readable",
-]
+features = ["formatting", "macros", "serde", "serde-human-readable"]
 
 [[bench]]
 name = "galen"

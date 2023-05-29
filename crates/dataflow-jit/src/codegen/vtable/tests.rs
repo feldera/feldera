@@ -296,7 +296,6 @@ fn dyn_vec() {
                         let mut column = 0;
 
                         $(
-                            dbg!(column);
                             place
                                 .as_mut_ptr()
                                 .add(layout.offset_of(column) as usize)
@@ -306,15 +305,12 @@ fn dyn_vec() {
 
                             place.set_column_null(column, &layout, $value.1.is_none());
 
-                            dbg!(column);
                             if let Some(val) = $value.1.clone() {
-                                dbg!(4);
                                 place
                                     .as_mut_ptr()
                                     .add(layout.offset_of(column) as usize)
                                     .cast::<$ty>()
                                     .write(val);
-                                dbg!(5);
                             }
 
                             #[allow(unused_assignments)]
@@ -325,7 +321,6 @@ fn dyn_vec() {
 
                 for (bools, u16s, u32s, u64s, i16s, i32s, i64s, f32s, f64s, units, strs) in data {
                     unsafe {
-                        dbg!("a");
                         // Fill `place` with our data
                         emplace! {
                             bools: bool,
@@ -340,16 +335,12 @@ fn dyn_vec() {
                             units: (),
                             strs: ThinStr,
                         }
-                        dbg!("b");
 
                         // Push the value we created to the vec
                         vec.push_raw(place.as_mut_ptr());
-                        dbg!("c");
                     }
                 }
             }
-
-            dbg!();
 
             let clone = vec.clone();
             assert_eq!(vec, clone);
