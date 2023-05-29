@@ -120,6 +120,7 @@ pub(crate) enum DBError {
     DuplicateKey,
     InvalidKey,
     UniqueKeyViolation(&'static str),
+    UnknownPipelineStatus,
 }
 
 impl Display for DBError {
@@ -148,6 +149,7 @@ impl Display for DBError {
                 write!(f, "An entity with name {name} was not found")
             }
             DBError::UniqueKeyViolation(id) => write!(f, "Unique key violation for '{id}'"),
+            DBError::UnknownPipelineStatus => write!(f, "Unknown pipeline status encountered"),
         }
     }
 }
@@ -250,6 +252,47 @@ pub(crate) struct ProgramDescr {
     pub schema: Option<String>,
 }
 
+/// Lifecycle of a pipeline.
+#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) enum PipelineStatus {
+    Shutdown,
+    Deployed,
+    FailedToDeploy,
+    Running,
+    Paused,
+    // Failure isn't in-use yet -- we don't have failure detection.
+    Failed,
+}
+
+impl TryFrom<String> for PipelineStatus {
+    type Error = DBError;
+    fn try_from(value: String) -> Result<Self, DBError> {
+        match value.as_str() {
+            "shutdown" => Ok(Self::Shutdown),
+            "deployed" => Ok(Self::Deployed),
+            "failedtodeploy" => Ok(Self::FailedToDeploy),
+            "running" => Ok(Self::Running),
+            "paused" => Ok(Self::Paused),
+            "failed" => Ok(Self::Failed),
+            _ => Err(DBError::UnknownPipelineStatus),
+        }
+    }
+}
+
+impl From<PipelineStatus> for &'static str {
+    fn from(val: PipelineStatus) -> Self {
+        match val {
+            PipelineStatus::Shutdown => "shutdown",
+            PipelineStatus::Deployed => "deployed",
+            PipelineStatus::FailedToDeploy => "failedtodeploy",
+            PipelineStatus::Running => "running",
+            PipelineStatus::Paused => "paused",
+            PipelineStatus::Failed => "failed",
+        }
+    }
+}
+
 /// Pipeline descriptor.
 #[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub(crate) struct PipelineDescr {
@@ -260,9 +303,9 @@ pub(crate) struct PipelineDescr {
     pub description: String,
     pub config: String,
     pub attached_connectors: Vec<AttachedConnector>,
+    pub status: PipelineStatus,
     pub port: u16,
-    pub shutdown: bool,
-    pub created: DateTime<Utc>,
+    pub created: Option<DateTime<Utc>>,
 }
 
 /// Format to add attached connectors during a config update.
@@ -312,15 +355,19 @@ impl std::convert::From<EitherError> for AnyError {
     }
 }
 
-fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, AnyError> {
-    let created_naive =
-        NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-            AnyError::msg(format!(
-                "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-            ))
-        })?;
+fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<Utc>>, AnyError> {
+    if let Some(created_secs) = created_secs {
+        let created_naive =
+            NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
+                AnyError::msg(format!(
+                    "Invalid timestamp in 'pipeline.created' column: {created_secs}"
+                ))
+            })?;
 
-    Ok(DateTime::<Utc>::from_utc(created_naive, Utc))
+        Ok(Some(DateTime::<Utc>::from_utc(created_naive, Utc)))
+    } else {
+        Ok(None)
+    }
 }
 
 // The goal for these methods is to avoid multiple DB interactions as much as
@@ -634,7 +681,7 @@ impl Storage for ProjectDB {
             // For every pipeline, produce a JSON representation of all connectors
             .query(
                 "SELECT p.id, version, p.name, description, p.config, program_id,
-                        created, port, shutdown,
+                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -665,7 +712,7 @@ impl Storage for ProjectDB {
                 attached_connectors,
                 created,
                 port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
-                shutdown: row.get(8),
+                status: row.get::<_, String>(8).try_into()?,
             });
         }
 
@@ -679,7 +726,7 @@ impl Storage for ProjectDB {
             .await?
             .query_opt(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
-                        created, port, shutdown,
+                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -709,7 +756,7 @@ impl Storage for ProjectDB {
                 attached_connectors: self.json_to_attached_connectors(row.get(9)).await?,
                 created,
                 port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
-                shutdown: row.get(8),
+                status: row.get::<_, String>(8).try_into()?,
             };
 
             Ok(descr)
@@ -725,7 +772,7 @@ impl Storage for ProjectDB {
             .await?
             .query_opt(
                 "SELECT p.id, version, description, p.config, program_id,
-                        created, port, shutdown,
+                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -756,7 +803,7 @@ impl Storage for ProjectDB {
                 attached_connectors: self.json_to_attached_connectors(row.get(8)).await?,
                 created,
                 port: row.get::<_, Option<i16>>(6).unwrap_or(0) as u16,
-                shutdown: row.get(7),
+                status: row.get::<_, String>(7).try_into()?,
             };
 
             Ok(descr)
@@ -777,9 +824,8 @@ impl Storage for ProjectDB {
     ) -> AnyResult<(PipelineId, Version)> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        // TODO: created should be NULL here and only be set on deploy_pipeline
         txn.execute(
-            "INSERT INTO pipeline (id, program_id, version, name, description, config, shutdown, created) VALUES($1, $2, 1, $3, $4, $5, false, extract(epoch from now()))",
+            "INSERT INTO pipeline (id, program_id, version, name, description, config, status) VALUES($1, $2, 1, $3, $4, $5, 'shutdown')",
             &[&id, &program_id.map(|id| id.0),
             &pipline_name,
             &pipeline_description,
@@ -877,14 +923,16 @@ impl Storage for ProjectDB {
         Ok(row.get(0))
     }
 
-    async fn set_pipeline_deploy(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
+    async fn set_pipeline_deployed(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
+        let status: &'static str = PipelineStatus::Deployed.into();
+
         let res = self
             .pool
             .get()
             .await?
             .execute(
-                "UPDATE pipeline SET shutdown = false, port = $1, created = extract(epoch from now()) where id = $2",
-                &[&(port as i16), &pipeline_id.0],
+                "UPDATE pipeline SET status = $3, port = $1, created = extract(epoch from now()) where id = $2",
+                &[&(port as i16), &pipeline_id.0, &status],
             )
             .await?;
 
@@ -895,14 +943,20 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn set_pipeline_shutdown(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+    async fn set_pipeline_status(
+        &self,
+        pipeline_id: PipelineId,
+        status: PipelineStatus,
+    ) -> AnyResult<bool> {
+        let status: &str = status.into();
+
         let res = self
             .pool
             .get()
             .await?
             .execute(
-                "UPDATE pipeline SET shutdown=true WHERE id = $1",
-                &[&pipeline_id.0],
+                "UPDATE pipeline SET status=$2 WHERE id = $1",
+                &[&pipeline_id.0, &status],
             )
             .await?;
         Ok(res > 0)
@@ -1226,8 +1280,8 @@ impl ProjectDB {
             config varchar NOT NULL,
             -- TODO: add 'host' field when we support remote pipelines.
             port smallint,
-            shutdown bool NOT NULL,
-            created bigint NOT NULL,
+            status varchar NOT NULL,
+            created bigint,
             FOREIGN KEY (program_id) REFERENCES program(id) ON DELETE CASCADE);",
                 &[],
             )

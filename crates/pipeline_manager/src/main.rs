@@ -140,6 +140,7 @@ observed by the user is outdated, so the request is rejected."
         db::ProgramDescr,
         db::ConnectorDescr,
         db::PipelineDescr,
+        db::PipelineStatus,
         dbsp_adapters::PipelineConfig,
         dbsp_adapters::InputEndpointConfig,
         dbsp_adapters::OutputEndpointConfig,
@@ -400,6 +401,8 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
             DBError::UnknownName(_) => HttpResponse::NotFound(),
             // should in practice not happen, e.g., would mean a Uuid conflict:
             DBError::UniqueKeyViolation(_) => HttpResponse::InternalServerError(),
+            // should in practice not happen, e.g., would mean invalid status in db:
+            DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
         }
         .json(ErrorResponse::new(&message))
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
@@ -1102,15 +1105,15 @@ async fn pipeline_status(
 
 /// Perform action on a pipeline.
 ///
-/// - 'run': Run a new pipeline. Deploy a pipeline for the specified program and
-/// configuration. This is a synchronous endpoint, which sends a response once
-/// the pipeline has been initialized.
-/// - 'start': Start the pipeline.
+/// - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
+/// and configuration. This is a synchronous endpoint, which sends a response
+/// once the pipeline has been initialized.
 /// - 'pause': Pause the pipeline.
+/// - 'start': Resume the paused pipeline.
 /// - 'shutdown': Terminate the execution of a pipeline. Sends a termination
 /// request to the pipeline process. Returns immediately, without waiting for
 /// the pipeline to terminate (which can take several seconds). The pipeline is
-/// not deleted from the database, but its `killed` flag is set to `true`.
+/// not deleted from the database, but its `status` is set to `shutdown`.
 #[utoipa::path(
     responses(
         (status = OK
@@ -1148,19 +1151,9 @@ async fn pipeline_action(state: WebData<ServerState>, req: HttpRequest) -> impl 
     };
 
     match action {
-        "run" => state.runner.run_pipeline(pipeline_id).await,
-        "start" => {
-            state
-                .runner
-                .forward_to_pipeline(pipeline_id, Method::GET, "start")
-                .await
-        }
-        "pause" => {
-            state
-                .runner
-                .forward_to_pipeline(pipeline_id, Method::GET, "pause")
-                .await
-        }
+        "deploy" => state.runner.deploy_pipeline(pipeline_id).await,
+        "start" => state.runner.start_pipeline(pipeline_id).await,
+        "pause" => state.runner.pause_pipeline(pipeline_id).await,
         "shutdown" => state.runner.shutdown_pipeline(pipeline_id).await,
         _ => Ok(HttpResponse::BadRequest().body(format!("invalid action argument '{action}"))),
     }

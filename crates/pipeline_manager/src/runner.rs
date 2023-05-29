@@ -1,6 +1,6 @@
 use crate::{
-    db::storage::Storage, db::AttachedConnector, db::PipelineDescr, ErrorResponse, ManagerConfig,
-    PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
+    db::storage::Storage, db::AttachedConnector, db::PipelineDescr, db::PipelineStatus,
+    ErrorResponse, ManagerConfig, PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use actix_web::{
     http::{Error, Method},
@@ -91,9 +91,9 @@ impl Runner {
     ///
     /// Starts the pipeline executable and waits for the pipeline to initialize,
     /// returning pipeline id and port number.
-    pub(crate) async fn run_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn deploy_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.run_pipeline(pipeline_id).await,
+            Self::Local(local) => local.deploy_pipeline(pipeline_id).await,
         }
     }
 
@@ -126,6 +126,22 @@ impl Runner {
         match self {
             Self::Local(local) => local.delete_pipeline(db, pipeline_id).await,
         }
+    }
+
+    pub(crate) async fn pause_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => local.pause_pipeline(pipeline_id).await?,
+        };
+        self.forward_to_pipeline(pipeline_id, Method::GET, "pause")
+            .await
+    }
+
+    pub(crate) async fn start_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+        match self {
+            Self::Local(local) => local.start_pipeline(pipeline_id).await?,
+        };
+        self.forward_to_pipeline(pipeline_id, Method::GET, "start")
+            .await
     }
 
     pub(crate) async fn forward_to_pipeline(
@@ -167,7 +183,7 @@ impl LocalRunner {
         })
     }
 
-    pub(crate) async fn run_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn deploy_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
 
         // Read and validate config.
@@ -199,17 +215,21 @@ impl LocalRunner {
                     .db
                     .lock()
                     .await
-                    .set_pipeline_deploy(pipeline_id, port)
+                    .set_pipeline_deployed(pipeline_id, port)
                     .await
                 {
                     let _ = pipeline_process.kill().await;
                     return Err(e);
                 };
-                Ok(HttpResponse::Ok().finish())
+                Ok(HttpResponse::Ok().json("Pipeline successfully deployed."))
             }
             Err(e) => {
                 let _ = pipeline_process.kill().await;
-                self.db.lock().await.delete_pipeline(pipeline_id).await?;
+                self.db
+                    .lock()
+                    .await
+                    .set_pipeline_status(pipeline_id, PipelineStatus::FailedToDeploy)
+                    .await?;
                 Err(e)
             }
         }
@@ -220,8 +240,19 @@ impl LocalRunner {
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
-
         self.do_shutdown_pipeline(&db, pipeline_id).await
+    }
+
+    pub(crate) async fn pause_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+        let db = self.db.lock().await;
+        db.set_pipeline_status(pipeline_id, PipelineStatus::Paused)
+            .await
+    }
+
+    pub(crate) async fn start_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+        let db = self.db.lock().await;
+        db.set_pipeline_status(pipeline_id, PipelineStatus::Running)
+            .await
     }
 
     pub(crate) async fn delete_pipeline(
@@ -236,7 +267,16 @@ impl LocalRunner {
         }
 
         // Delete pipeline directory.
-        remove_dir_all(self.config.pipeline_dir(pipeline_id)).await?;
+        match remove_dir_all(self.config.pipeline_dir(pipeline_id)).await {
+            Ok(_) => (),
+            Err(e) => {
+                log::warn!(
+                    "Failed to delete pipeline directory for pipeline {}: {}",
+                    pipeline_id,
+                    e
+                );
+            }
+        }
         db.delete_pipeline(pipeline_id).await?;
 
         Ok(HttpResponse::Ok().json("Pipeline successfully deleted."))
@@ -250,7 +290,7 @@ impl LocalRunner {
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
 
-        if pipeline_descr.shutdown {
+        if pipeline_descr.status == PipelineStatus::Shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
 
@@ -292,7 +332,7 @@ impl LocalRunner {
         mut body: actix_web::web::Payload,
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
-        if pipeline_descr.shutdown {
+        if pipeline_descr.status == PipelineStatus::Shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
         let port = pipeline_descr.port;
@@ -473,7 +513,7 @@ impl LocalRunner {
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = db.get_pipeline_by_id(pipeline_id).await?;
 
-        if pipeline_descr.shutdown {
+        if pipeline_descr.status == PipelineStatus::Shutdown {
             return Ok(HttpResponse::Ok().json("Pipeline already shut down."));
         };
 
@@ -481,7 +521,8 @@ impl LocalRunner {
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
-                db.set_pipeline_shutdown(pipeline_id).await?;
+                db.set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
+                    .await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
                 return Ok(
@@ -491,7 +532,8 @@ impl LocalRunner {
         };
 
         if response.status().is_success() {
-            db.set_pipeline_shutdown(pipeline_id).await?;
+            db.set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
+                .await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
             Ok(HttpResponse::InternalServerError().json(
