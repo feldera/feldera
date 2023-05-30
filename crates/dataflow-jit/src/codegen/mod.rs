@@ -42,7 +42,7 @@ use cranelift::{
     },
     prelude::{
         isa::{self, TargetFrontendConfig, TargetIsa},
-        settings, types, AbiParam, Block as ClifBlock, Configurable, FloatCC, FunctionBuilder,
+        settings, types, AbiParam, Block as ClifBlock, Configurable, FunctionBuilder,
         FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature as ClifSignature,
         StackSlotData, StackSlotKind, TrapCode, Type, Value,
     },
@@ -1619,15 +1619,7 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    // if self.config.total_float_comparisons {
-                    //     let (lhs, rhs) = (
-                    //         self.normalize_float(lhs, builder),
-                    //         self.normalize_float(rhs, builder),
-                    //     );
-                    //     builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
-                    // } else {
-                    builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
-                    // }
+                    self.float_le(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
                 } else {
@@ -1639,17 +1631,7 @@ impl<'a> CodegenCtx<'a> {
                 value_ty = ColumnType::Bool;
 
                 if lhs_ty.is_float() {
-                    // if self.config.total_float_comparisons {
-                    //     let (lhs, rhs) = (
-                    //         self.normalize_float(lhs, builder),
-                    //         self.normalize_float(rhs, builder),
-                    //     );
-                    //     builder
-                    //         .ins()
-                    //         .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs)
-                    // } else {
-                    builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
-                    // }
+                    self.float_ge(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder
                         .ins()
@@ -1664,15 +1646,7 @@ impl<'a> CodegenCtx<'a> {
             // FIXME: Strings
             BinaryOpKind::Min => {
                 if lhs_ty.is_float() {
-                    // if self.config.total_float_comparisons {
-                    //     let (lhs, rhs) = (
-                    //         self.normalize_float(lhs, builder),
-                    //         self.normalize_float(rhs, builder),
-                    //     );
-                    //     builder.ins().smin(lhs, rhs)
-                    // } else {
-                    builder.ins().fmin(lhs, rhs)
-                    // }
+                    self.float_min(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smin(lhs, rhs)
                 } else {
@@ -1682,15 +1656,7 @@ impl<'a> CodegenCtx<'a> {
             // FIXME: Strings
             BinaryOpKind::Max => {
                 if lhs_ty.is_float() {
-                    // if self.config.total_float_comparisons {
-                    //     let (lhs, rhs) = (
-                    //         self.normalize_float(lhs, builder),
-                    //         self.normalize_float(rhs, builder),
-                    //     );
-                    //     builder.ins().smax(lhs, rhs)
-                    // } else {
-                    builder.ins().fmax(lhs, rhs)
-                    // }
+                    self.float_max(lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smax(lhs, rhs)
                 } else {
@@ -1759,17 +1725,9 @@ impl<'a> CodegenCtx<'a> {
 
         // Floating point numbers
         } else if ty.is_float() {
-            // if self.config.total_float_comparisons {
-            //     let lhs_nan = builder.ins().fcmp(FloatCC::NotEqual, lhs, lhs);
-            //     let rhs_nan = builder.ins().fcmp(FloatCC::NotEqual, rhs, rhs);
-            //     let lhs_eq_rhs = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
-            //
-            //     builder.ins().select(lhs_nan, rhs_nan, lhs_eq_rhs)
-            // } else {
-            builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
-            // }
+            self.float_eq(lhs, rhs, builder)
 
-            // Other scalar types (integers, booleans, timestamps, etc.)
+        // Other scalar types (integers, booleans, timestamps, etc.)
         } else {
             builder.ins().icmp(IntCC::Equal, lhs, rhs)
         }
@@ -1824,18 +1782,9 @@ impl<'a> CodegenCtx<'a> {
 
         // Floating point numbers
         } else if ty.is_float() {
-            // if self.config.total_float_comparisons {
-            //     let lhs_nan = builder.ins().fcmp(FloatCC::NotEqual, lhs, lhs);
-            //     let rhs_nan = builder.ins().fcmp(FloatCC::NotEqual, rhs, rhs);
-            //     let lhs_neq_rhs = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
-            //
-            //     let eq = builder.ins().select(lhs_nan, rhs_nan, lhs_neq_rhs);
-            //     builder.ins().bnot(eq)
-            // } else {
-            builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
-            // }
+            self.float_neq(lhs, rhs, builder)
 
-            // Other scalar types (integers, booleans, timestamps, etc.)
+        // Other scalar types (integers, booleans, timestamps, etc.)
         } else {
             builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
         }
