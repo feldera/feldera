@@ -2,14 +2,38 @@ volumes:
   redpanda-0: null
 
 services:
-  dbsp:
-    image: ghcr.io/vmware/dbspmanager:latest
-    ports:
-      - "8085:8080"
-    stop_grace_period: 0s
-    container_name: dbsp
+  db:
+    image: postgres
+    container_name: dbsp-postgres
+    restart: always
     environment:
-      - REDPANDA_BROKERS=redpanda:9092
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dbsp:
+   image: dbspmanager
+   ports:
+     - "8085:8080"
+   depends_on:
+    db:
+      condition: service_healthy
+   stop_grace_period: 0s
+   container_name: dbsp
+   environment:
+     - RUST_BACKTRACE=1
+     - REDPANDA_BROKERS=redpanda:9092
+     - RUST_LOG=debug,tokio_postgres=info
+   command:
+     - ./dbsp_pipeline_manager 
+     - --bind-address=0.0.0.0 
+     - --working-directory=/working-dir 
+     - --sql-compiler-home=/sql-to-dbsp-compiler 
+     - --dbsp-override-path=/database-stream-processor
+     - --db-connection-string=postgresql://postgres:postgres@dbsp-postgres:5432
 
   redpanda:
     command:
@@ -46,3 +70,19 @@ services:
       - 18082:18082
       - 19092:19092
       - 19644:9644
+
+  demo:
+    profiles: ["demo"]
+    depends_on:
+      dbsp:
+        condition: service_started
+    image: demo-container
+    container_name: demo-container
+    environment:
+      - RUST_BACKTRACE=1
+      - REDPANDA_BROKERS=redpanda:9092
+    command:
+      - bash
+      - -c
+      # Run the SecOps demo
+      - "cd demo/project_demo04-SecOps && python3 run.py --dbsp_url http://dbsp:8080 --actions prepare create compile"

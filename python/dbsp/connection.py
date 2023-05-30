@@ -12,7 +12,7 @@ class DBSPConnection:
         url (str): URL of the DBSP server.
     """
 
-    def __init__(self, url="http://localhost:8080"):
+    def __init__(self, url):
         self.api_client = dbsp_api_client.Client(
                 base_url = url,
                 timeout = 20.0)
