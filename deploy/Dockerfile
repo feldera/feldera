@@ -57,7 +57,12 @@ RUN arch=`dpkg --print-architecture`; \
    && unzip rpk-linux-$arch.zip -d /bin/ \
    && rpk version \
    && rm rpk-linux-$arch.zip
-RUN cargo make --cwd crates/pipeline_manager openapi_python
+RUN target/release/dbsp_pipeline_manager --dump-openapi
+RUN pip3 install openapi-python-client websockets
+RUN cd python &&  \
+    openapi-python-client generate --path ../openapi.json && \
+    pip3 install ./dbsp-api-client && \ 
+    pip3 install .
 # TODO: only required for running the fraud detection demo. Remove when we clean that up.
 RUN pip3 install gdown
 CMD bash
