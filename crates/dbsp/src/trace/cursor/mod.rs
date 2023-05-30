@@ -178,8 +178,6 @@ pub trait Cursor<K, V, T, R> {
     /// Move the cursor to the last value for the current key.
     fn fast_forward_vals(&mut self);
 
-
-
     /// Indicates that the current `(key, value)` pair is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all pairs.

@@ -81,21 +81,233 @@ impl CodegenCtx<'_> {
         builder.ins().bxor(int, shifted)
     }
 
+    /// Canonicalize floating-point value representations
+    ///
+    /// Normalizes all NaNs to a single bitpattern and all zeroes to a single
+    /// bitpattern, other values are unchanged
+    ///
+    /// Equivalent to
+    /// ```rust,ignore
+    /// if x.is_nan() {
+    ///     CANON_NAN_VALUE
+    /// } else if x.is_zero() {
+    ///     CANON_ZERO_VALUE
+    /// } else {
+    ///     normalize_nan_values(x)
+    /// }
+    /// ```
+    pub(super) fn canonicalize_float(&self, x: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        let float_ty = builder.value_type(x);
+        let is_f32 = float_ty == types::F32;
+        debug_assert!(float_ty.is_float());
+
+        let nan = builder.float_nan(float_ty);
+        let zero = builder.float_zero(float_ty);
+
+        let is_zero = builder.ins().fcmp(FloatCC::Equal, x, zero);
+        let is_nan = self.is_nan(x, builder);
+
+        // ```
+        // fn raw_double_bits<F: Float>(f: &F) -> u64 {
+        //     let (man, exp, sign) = f.integer_decode();
+        //     let exp_u64 = exp as u16 as u64;
+        //     let sign_u64 = (sign > 0) as u64;
+        //     (man & MAN_MASK) | ((exp_u64 << 52) & EXP_MASK) | ((sign_u64 << 63) & SIGN_MASK)
+        // }
+        // ```
+        let normalized_x = {
+            let (sign, exponent, mantissa) = self.decode_float(x, builder);
+
+            let mantissa = builder.ins().band_imm(
+                mantissa,
+                if is_f32 {
+                    0x007F_FFFF
+                } else {
+                    0x000F_FFFF_FFFF_FFFF
+                },
+            );
+
+            let exponent = builder
+                .ins()
+                .ishl_imm(exponent, if is_f32 { 23 } else { 52 });
+            let exponent = builder.ins().band_imm(
+                exponent,
+                if is_f32 {
+                    0x7F80_0000
+                } else {
+                    0x7FF0_0000_0000_0000
+                },
+            );
+
+            let sign = builder.ins().ishl_imm(sign, if is_f32 { 31 } else { 63 });
+            let sign = builder.ins().bor_imm(
+                sign,
+                if is_f32 {
+                    0x8000_0000
+                } else {
+                    0x8000_0000_0000_0000u64 as i64
+                },
+            );
+
+            let mantissa_or_exponent = builder.ins().bor(mantissa, exponent);
+            let normalized = builder.ins().bor(mantissa_or_exponent, sign);
+            builder.ins().bitcast(float_ty, MemFlags::new(), normalized)
+        };
+
+        let canon = builder.ins().select(is_zero, zero, normalized_x);
+        builder.ins().select(is_nan, nan, canon)
+    }
+
+    fn decode_float(&self, x: Value, builder: &mut FunctionBuilder<'_>) -> (Value, Value, Value) {
+        // ```
+        // fn integer_decode_f32(f: f32) -> (u64, i16, i8) {
+        //     // Safety: this identical to the implementation of f32::to_bits(),
+        //     // which is only available starting at Rust 1.20
+        //     let bits: u32 = unsafe { mem::transmute(f) };
+        //     let sign: i8 = if bits >> 31 == 0 { 1 } else { -1 };
+        //     let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
+        //     let mantissa = if exponent == 0 {
+        //         (bits & 0x7fffff) << 1
+        //     } else {
+        //         (bits & 0x7fffff) | 0x800000
+        //     };
+        //     // Exponent bias + mantissa shift
+        //     exponent -= 127 + 23;
+        //     (mantissa as u64, exponent, sign)
+        // }
+        //
+        // fn integer_decode_f64(f: f64) -> (u64, i16, i8) {
+        //     // Safety: this identical to the implementation of f64::to_bits(),
+        //     // which is only available starting at Rust 1.20
+        //     let bits: u64 = unsafe { mem::transmute(f) };
+        //     let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
+        //     let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
+        //     let mantissa = if exponent == 0 {
+        //         (bits & 0xfffffffffffff) << 1
+        //     } else {
+        //         (bits & 0xfffffffffffff) | 0x10000000000000
+        //     };
+        //     // Exponent bias + mantissa shift
+        //     exponent -= 1023 + 52;
+        //     (mantissa, exponent, sign)
+        // }
+        // ```
+
+        let bits = self.float_to_bits(x, builder);
+        let bits_ty = builder.value_type(bits);
+        let is_f32 = bits_ty == types::I32;
+
+        let one = builder.ins().iconst(bits_ty, 1);
+        let neg_one = builder.ins().iconst(bits_ty, -1);
+
+        // if bits >> 31 == 0 { 1 } else { -1 };
+        let sign_bit = builder.ins().ushr_imm(bits, (bits_ty.bits() - 1) as i64);
+        let sign = builder.ins().select(sign_bit, one, neg_one);
+
+        // f32:
+        //   let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
+        //   exponent -= 127 + 23;
+        // f64:
+        //   let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
+        //   exponent -= 1023 + 52;
+        let exponent_bits = builder.ins().ushr_imm(bits, if is_f32 { 23 } else { 52 });
+        let mantissa_exponent = builder
+            .ins()
+            .band_imm(exponent_bits, if is_f32 { 0xFF } else { 0x7FF });
+        // Reduce the exponent to an i16, subtract and then widen it
+        let exponent = builder.ins().ireduce(types::I16, mantissa_exponent);
+        let exponent_sub = builder
+            .ins()
+            .iconst(types::I16, if is_f32 { 127 + 23 } else { 1023 + 52 });
+        let exponent = builder.ins().isub(exponent, exponent_sub);
+        let exponent = builder.ins().uextend(bits_ty, exponent);
+
+        let masked = builder
+            .ins()
+            .band_imm(bits, if is_f32 { 0x7FFFFF } else { 0xFFFFFFFFFFFFF });
+        let masked_shl1 = builder.ins().ishl_imm(masked, 1);
+        let masked_or = builder
+            .ins()
+            .bor_imm(masked, if is_f32 { 0x800000 } else { 0x10000000000000 });
+        let mantissa = builder
+            .ins()
+            .select(mantissa_exponent, masked_shl1, masked_or);
+
+        (sign, exponent, mantissa)
+    }
+
+    /// Returns the raw bits of the given float
+    pub(super) fn float_to_bits(&self, x: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        let ty = builder.value_type(x);
+        debug_assert!(ty.is_float());
+
+        let int_ty = types::Type::int(ty.bits() as u16).unwrap();
+        builder.ins().bitcast(int_ty, MemFlags::new(), x)
+    }
+
+    /// Checks if a floating point value is NaN, returns a boolean value
+    pub(super) fn is_nan(&self, x: Value, builder: &mut FunctionBuilder<'_>) -> Value {
+        debug_assert!(builder.value_type(x).is_float());
+        builder.ins().fcmp(FloatCC::NotEqual, x, x)
+    }
+
+    pub(super) fn float_eq(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+            let lhs_neq_rhs = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs_nan, lhs_neq_rhs)
+        } else {
+            builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+        }
+    }
+
+    pub(super) fn float_neq(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+            let lhs_neq_rhs = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
+
+            let eq = builder.ins().select(lhs_nan, rhs_nan, lhs_neq_rhs);
+            builder.ins().bnot(eq)
+        } else {
+            builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+        }
+    }
+
     pub(super) fn float_lt(
         &self,
         lhs: Value,
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        // if self.config.total_float_comparisons {
-        //     let (lhs, rhs) = (
-        //         self.normalize_float(lhs, builder),
-        //         self.normalize_float(rhs, builder),
-        //     );
-        //     builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+        // if lhs.is_nan() {
+        //     !rhs.is_nan()
         // } else {
-        builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+        //     lhs < rhs
         // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+            let rhs_not_nan = builder.ins().bnot(rhs_nan);
+
+            let lhs_lt_rhs = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs_not_nan, lhs_lt_rhs)
+        } else {
+            builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+        }
     }
 
     pub(super) fn float_gt(
@@ -104,15 +316,110 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        // if self.config.total_float_comparisons {
-        //     let (lhs, rhs) = (
-        //         self.normalize_float(lhs, builder),
-        //         self.normalize_float(rhs, builder),
-        //     );
-        //     builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
+        // if lhs.is_nan() {
+        //     !rhs.is_nan()
         // } else {
-        builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+        //     lhs > rhs
         // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+            let rhs_not_nan = builder.ins().bnot(rhs_nan);
+
+            let lhs_lt_rhs = builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs_not_nan, lhs_lt_rhs)
+        } else {
+            builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+        }
+    }
+
+    pub(super) fn float_le(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // if lhs.is_nan() {
+        //     rhs.is_nan()
+        // } else {
+        //     lhs <= rhs
+        // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+
+            let lhs_lt_rhs = builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs_nan, lhs_lt_rhs)
+        } else {
+            builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
+        }
+    }
+
+    pub(super) fn float_ge(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // if lhs.is_nan() {
+        //     rhs.is_nan()
+        // } else {
+        //     lhs >= rhs
+        // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let rhs_nan = self.is_nan(rhs, builder);
+
+            let lhs_lt_rhs = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs_nan, lhs_lt_rhs)
+        } else {
+            builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
+        }
+    }
+
+    pub(super) fn float_min(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // if lhs.is_nan() {
+        //     rhs // NaN is greater than all other values
+        // } else {
+        //     min(lhs, rhs)
+        // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let min = builder.ins().fmin(lhs, rhs);
+
+            builder.ins().select(lhs_nan, rhs, min)
+        } else {
+            builder.ins().fmin(lhs, rhs)
+        }
+    }
+
+    pub(super) fn float_max(
+        &self,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // if lhs.is_nan() {
+        //     lhs // NaN is greater than all other values
+        // } else {
+        //     max(lhs, rhs)
+        // }
+        if self.config.total_float_comparisons {
+            let lhs_nan = self.is_nan(lhs, builder);
+            let max = builder.ins().fmax(lhs, rhs);
+
+            builder.ins().select(lhs_nan, lhs, max)
+        } else {
+            builder.ins().fmax(lhs, rhs)
+        }
     }
 
     /// Simultaneous floored integer division and modulus

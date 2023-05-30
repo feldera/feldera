@@ -12,8 +12,8 @@ where
     C: Circuit,
     T1: Clone + 'static,
 {
-    /// Apply a user-provided ternary function to inputs from three streams at each
-    /// timestamp.
+    /// Apply a user-provided ternary function to inputs from three streams at
+    /// each timestamp.
     #[track_caller]
     pub fn apply3<F, T2, T3, T4>(
         &self,

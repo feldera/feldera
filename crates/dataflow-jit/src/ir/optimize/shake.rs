@@ -69,8 +69,9 @@ impl Subgraph {
                     continue;
                 }
 
-            // We can remove unreachable streams from the sum nodes, but the sum as a whole
-            // is only unreachable when it has no reachable inputs (or no inputs at all)
+            // We can remove unreachable streams from the sum nodes, but the sum
+            // as a whole is only unreachable when it has no
+            // reachable inputs (or no inputs at all)
             } else if let Node::Sum(sum) = node {
                 // Remove all unreachable inputs
                 sum.inputs_mut()
