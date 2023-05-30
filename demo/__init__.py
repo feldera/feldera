@@ -3,10 +3,10 @@ import argparse
 from dbsp import DBSPConnection
 
 
-def execute(dbsp_url, actions, name, code_file, make_config_fn, prepare_fn=None, verify_fn=None):
+def execute(dbsp_url, actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
     dbsp = DBSPConnection(dbsp_url)
     sql_code = open(code_file, "r").read()
-    project = dbsp.create_or_replace_program(
+    program = dbsp.create_or_replace_program(
         name=name, sql_code=sql_code)
     pipeline = make_pipeline_fn(program)
 
@@ -54,4 +54,4 @@ def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None)
         actions.add('create')
         actions.add('run')
     execute(dbsp_url, actions, name, code_file,
-            make_config_fn, prepare_fn, verify_fn)
+            make_pipeline_fn, prepare_fn, verify_fn)
