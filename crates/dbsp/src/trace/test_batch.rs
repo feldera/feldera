@@ -8,6 +8,8 @@ use super::{
 };
 use crate::{algebra::HasZero, utils::VecExt, DBData, DBTimestamp, DBWeight, NumEntries};
 use rand::seq::IteratorRandom;
+use rand::thread_rng;
+use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use size_of::SizeOf;
@@ -742,6 +744,13 @@ where
         self.lower_key_bound = Some(bound.clone());
         self.data.retain(|(k, _v, _t), _r| k >= &bound);
     }
+
+    fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut Vec<Self::Key>)
+    where
+        RG: Rng,
+    {
+        unimplemented!()
+    }
 }
 
 impl<K, V, T, R> Batch for TestBatch<K, V, T, R>
@@ -845,4 +854,94 @@ where
     fn lower_value_bound(&self) -> &Option<Self::Val> {
         &self.lower_val_bound
     }
+}
+
+/// Test random sampling methods.
+///
+/// Assumes that `B` is a simple batch, not a trace (i.e., no duplicate keys).
+pub fn test_batch_sampling<B: BatchReader<Time = ()>>(batch: &B) {
+    let mut sample = Vec::new();
+
+    let mut all_keys = Vec::new();
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        all_keys.push(cursor.key().clone());
+        cursor.step_key();
+    }
+    let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();
+
+    // Sample size 0 - return empty sample.
+    batch.sample_keys(&mut thread_rng(), 0, &mut sample);
+    assert!(sample.is_empty());
+    sample.clear();
+
+    // Sample size == batch size - must return all keys in the batch.
+    batch.sample_keys(&mut thread_rng(), batch.key_count(), &mut sample);
+    assert_eq!(sample, all_keys);
+    sample.clear();
+
+    // Sample size > batch size - must return all keys in the batch.
+    batch.sample_keys(&mut thread_rng(), batch.key_count() << 1, &mut sample);
+    assert_eq!(sample, all_keys);
+    sample.clear();
+
+    // Sample size < batch size - return the exact number of keys requested,
+    // no duplicates, all returned keys must belong to the batch.
+    let sample_size = batch.key_count() >> 1;
+    batch.sample_keys(&mut thread_rng(), sample_size, &mut sample);
+    assert_eq!(sample.len(), sample_size);
+    assert!(sample.is_sorted_by(|k1, k2| Some(k1.cmp(k2))));
+    let sample_set = sample.iter().cloned().collect::<BTreeSet<_>>();
+    assert_eq!(sample_set.len(), sample.len());
+    for key in sample.iter() {
+        assert!(all_keys_set.contains(key));
+    }
+    sample.clear();
+}
+
+/// Test random sampling methods.
+///
+/// Similar to `test_batch_sampling`, but allows the sample
+/// to contain fewer keys than requested (as keys in a trace
+/// can get canceled out).
+pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
+    let mut sample = Vec::new();
+
+    let batch = TestBatch::from_data(&batch_to_tuples(trace));
+
+    let mut all_keys = Vec::new();
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        all_keys.push(cursor.key().clone());
+        cursor.step_key();
+    }
+    let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();
+
+    // Sample size 0 - return empty sample.
+    trace.sample_keys(&mut thread_rng(), 0, &mut sample);
+    assert!(sample.is_empty());
+    sample.clear();
+
+    // Sample size == size - must return all keys in the batch.
+    trace.sample_keys(&mut thread_rng(), trace.key_count(), &mut sample);
+    assert_eq!(sample, all_keys);
+    sample.clear();
+
+    // Sample size > trace size - must return all keys in the trace.
+    trace.sample_keys(&mut thread_rng(), trace.key_count() << 1, &mut sample);
+    assert_eq!(sample, all_keys);
+    sample.clear();
+
+    // Sample size < trace size - return at most the number of keys requested,
+    // no duplicates, all returned keys must belong to the trace.
+    let sample_size = trace.key_count() >> 1;
+    trace.sample_keys(&mut thread_rng(), sample_size, &mut sample);
+    assert!(sample.len() <= sample_size);
+    assert!(sample.is_sorted_by(|k1, k2| Some(k1.cmp(k2))));
+    let sample_set = sample.iter().cloned().collect::<BTreeSet<_>>();
+    assert_eq!(sample_set.len(), sample.len());
+    for key in sample.iter() {
+        assert!(all_keys_set.contains(key));
+    }
+    sample.clear();
 }

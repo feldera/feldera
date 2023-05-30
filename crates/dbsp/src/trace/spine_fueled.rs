@@ -80,6 +80,7 @@
 //! layers by continuing to provide fuel as updates arrive.
 
 use crate::{
+    algebra::HasZero,
     circuit::Activator,
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
@@ -88,6 +89,7 @@ use crate::{
     },
     NumEntries,
 };
+use rand::Rng;
 use size_of::SizeOf;
 use std::{
     cmp::max,
@@ -230,6 +232,52 @@ where
         };
         self.lower_key_bound = Some(bound.clone());
         self.map_batches_mut(|batch| batch.truncate_keys_below(&bound));
+    }
+
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    where
+        RG: Rng,
+        Self::Time: PartialEq<()>,
+    {
+        let total_keys = self.key_count();
+
+        if sample_size == 0 || total_keys == 0 {
+            // Avoid division by zero.
+            return;
+        }
+
+        // Sample each batch, picking the number of keys proportional to
+        // batch size.
+        let mut intermediate = Vec::with_capacity(sample_size);
+
+        self.map_batches(|batch| {
+            batch.sample_keys(
+                rng,
+                ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
+                    as usize,
+                &mut intermediate,
+            );
+        });
+
+        // Drop duplicate keys and keys that appear with 0 weight, i.e.,
+        // get canceled out across multiple batches.
+        intermediate.sort_unstable();
+        intermediate.dedup();
+
+        let mut cursor = self.cursor();
+
+        for key in intermediate.into_iter() {
+            cursor.seek_key(&key);
+            if cursor.get_key() == Some(&key) {
+                while cursor.val_valid() {
+                    if !cursor.weight().is_zero() {
+                        sample.push(key);
+                        break;
+                    }
+                    cursor.step_val();
+                }
+            }
+        }
     }
 }
 
@@ -1225,7 +1273,10 @@ mod test {
         trace::{
             cursor::CursorPair,
             ord::{OrdKeyBatch, OrdValBatch},
-            test_batch::{assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, TestBatch},
+            test_batch::{
+                assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, test_batch_sampling,
+                test_trace_sampling, TestBatch,
+            },
             Batch, BatchReader, Spine, Trace,
         },
         OrdIndexedZSet, OrdZSet,
@@ -1302,6 +1353,8 @@ mod test {
             for (i, tuples) in batches.into_iter().enumerate() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
 
+                test_batch_sampling(&batch);
+
                 trace.insert(batch);
                 trace.truncate_values_below(&((i * 20) as i32));
                 // println!("trace.size_of: {:?}", trace.size_of());
@@ -1318,18 +1371,22 @@ mod test {
                 let batch = OrdZSet::from_tuples((), tuples.clone());
                 let ref_batch = TestBatch::from_keys((), tuples);
 
+                test_batch_sampling(&batch);
+
                 assert_batch_eq(&batch, &ref_batch);
 
                 ref_trace.insert(ref_batch);
                 assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
                 trace.insert(batch);
+                test_trace_sampling(&trace);
 
                 assert_batch_eq(&trace, &ref_trace);
 
                 trace.truncate_keys_below(&bound);
                 ref_trace.truncate_keys_below(&bound);
 
+                test_trace_sampling(&trace);
                 assert_batch_eq(&trace, &ref_trace);
             }
         }
@@ -1343,6 +1400,8 @@ mod test {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
                 let ref_batch = TestBatch::from_tuples((), tuples);
 
+                test_batch_sampling(&batch);
+
                 assert_batch_eq(&batch, &ref_batch);
                 assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
@@ -1350,15 +1409,18 @@ mod test {
                 assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
                 trace.insert(batch);
+                test_trace_sampling(&trace);
 
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
 
                 trace.truncate_keys_below(&key_bound);
                 ref_trace.truncate_keys_below(&key_bound);
+                test_trace_sampling(&trace);
 
                 trace.truncate_values_below(&val_bound);
                 ref_trace.truncate_values_below(&val_bound);
+                test_trace_sampling(&trace);
 
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);

@@ -13,9 +13,10 @@ pub use cursor::ColumnLayerCursor;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance, Trie},
-    utils::{assume, cast_uninit_vec},
+    utils::{assume, cast_uninit_vec, sample_slice},
     DBData, DBWeight, NumEntries,
 };
+use rand::Rng;
 use size_of::SizeOf;
 use std::{
     cmp::min,
@@ -304,6 +305,18 @@ impl<K, R> ColumnLayer<K, R> {
 
         // All item are processed. This can be optimized to `set_len` by LLVM.
         drop(shifter);
+    }
+
+    /// Compute a random sample of size `sample_size` of keys in `self.keys`.
+    ///
+    /// Pushes the random sample of keys to the `output` vector in ascending
+    /// order.
+    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut Vec<K>)
+    where
+        K: Clone,
+        RG: Rng,
+    {
+        sample_slice(&self.keys[self.lower_bound..], rng, sample_size, output);
     }
 }
 

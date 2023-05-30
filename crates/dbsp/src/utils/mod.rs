@@ -1,9 +1,11 @@
 mod dyn_vec;
+mod sample;
 pub(crate) mod tests;
 mod vec_ext;
 
 pub use dyn_vec::{DynIter, DynVec, DynVecVTable};
 
+pub use sample::sample_slice;
 pub(crate) use vec_ext::VecExt;
 
 use std::{
