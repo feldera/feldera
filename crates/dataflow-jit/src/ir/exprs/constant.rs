@@ -114,10 +114,18 @@ impl PartialEq for Constant {
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs == rhs,
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs == rhs,
             (Self::F32(lhs), Self::F32(rhs)) => {
-                (lhs.is_nan() && rhs.is_nan()) || lhs.total_cmp(rhs).is_eq()
+                if lhs.is_nan() {
+                    rhs.is_nan()
+                } else {
+                    lhs == rhs
+                }
             }
             (Self::F64(lhs), Self::F64(rhs)) => {
-                (lhs.is_nan() && rhs.is_nan()) || lhs.total_cmp(rhs).is_eq()
+                if lhs.is_nan() {
+                    rhs.is_nan()
+                } else {
+                    lhs == rhs
+                }
             }
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
@@ -145,20 +153,34 @@ impl PartialOrd for Constant {
             (Self::I64(lhs), Self::I64(rhs)) => lhs.cmp(rhs),
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs.cmp(rhs),
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs.cmp(rhs),
-            (Self::F32(lhs), Self::F32(rhs)) => {
-                if lhs.is_nan() && rhs.is_nan() {
-                    Ordering::Equal
-                } else {
-                    lhs.total_cmp(rhs)
+            (Self::F32(lhs), Self::F32(rhs)) => match lhs.partial_cmp(rhs) {
+                Some(ordering) => ordering,
+                None => {
+                    if lhs.is_nan() {
+                        if rhs.is_nan() {
+                            Ordering::Equal
+                        } else {
+                            Ordering::Greater
+                        }
+                    } else {
+                        Ordering::Less
+                    }
                 }
-            }
-            (Self::F64(lhs), Self::F64(rhs)) => {
-                if lhs.is_nan() && rhs.is_nan() {
-                    Ordering::Equal
-                } else {
-                    lhs.total_cmp(rhs)
+            },
+            (Self::F64(lhs), Self::F64(rhs)) => match lhs.partial_cmp(rhs) {
+                Some(ordering) => ordering,
+                None => {
+                    if lhs.is_nan() {
+                        if rhs.is_nan() {
+                            Ordering::Equal
+                        } else {
+                            Ordering::Greater
+                        }
+                    } else {
+                        Ordering::Less
+                    }
                 }
-            }
+            },
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
 
@@ -183,20 +205,34 @@ impl Ord for Constant {
             (Self::I64(lhs), Self::I64(rhs)) => lhs.cmp(rhs),
             (Self::Usize(lhs), Self::Usize(rhs)) => lhs.cmp(rhs),
             (Self::Isize(lhs), Self::Isize(rhs)) => lhs.cmp(rhs),
-            (Self::F32(lhs), Self::F32(rhs)) => {
-                if lhs.is_nan() && rhs.is_nan() {
-                    Ordering::Equal
-                } else {
-                    lhs.total_cmp(rhs)
+            (Self::F32(lhs), Self::F32(rhs)) => match lhs.partial_cmp(rhs) {
+                Some(ordering) => ordering,
+                None => {
+                    if lhs.is_nan() {
+                        if rhs.is_nan() {
+                            Ordering::Equal
+                        } else {
+                            Ordering::Greater
+                        }
+                    } else {
+                        Ordering::Less
+                    }
                 }
-            }
-            (Self::F64(lhs), Self::F64(rhs)) => {
-                if lhs.is_nan() && rhs.is_nan() {
-                    Ordering::Equal
-                } else {
-                    lhs.total_cmp(rhs)
+            },
+            (Self::F64(lhs), Self::F64(rhs)) => match lhs.partial_cmp(rhs) {
+                Some(ordering) => ordering,
+                None => {
+                    if lhs.is_nan() {
+                        if rhs.is_nan() {
+                            Ordering::Equal
+                        } else {
+                            Ordering::Greater
+                        }
+                    } else {
+                        Ordering::Less
+                    }
                 }
-            }
+            },
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
 

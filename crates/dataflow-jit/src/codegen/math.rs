@@ -50,6 +50,7 @@ impl CodegenCtx<'_> {
     ///
     /// [`f32::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
     /// [`f64::total_cmp()`]: https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
+    #[allow(dead_code)]
     pub(super) fn normalize_float(&self, float: Value, builder: &mut FunctionBuilder<'_>) -> Value {
         let ty = builder.value_type(float);
         let (int_ty, first_shift) = if ty == types::F32 {
@@ -86,15 +87,15 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        if self.config.total_float_comparisons {
-            let (lhs, rhs) = (
-                self.normalize_float(lhs, builder),
-                self.normalize_float(rhs, builder),
-            );
-            builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
-        } else {
-            builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
-        }
+        // if self.config.total_float_comparisons {
+        //     let (lhs, rhs) = (
+        //         self.normalize_float(lhs, builder),
+        //         self.normalize_float(rhs, builder),
+        //     );
+        //     builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+        // } else {
+        builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
+        // }
     }
 
     pub(super) fn float_gt(
@@ -103,15 +104,15 @@ impl CodegenCtx<'_> {
         rhs: Value,
         builder: &mut FunctionBuilder<'_>,
     ) -> Value {
-        if self.config.total_float_comparisons {
-            let (lhs, rhs) = (
-                self.normalize_float(lhs, builder),
-                self.normalize_float(rhs, builder),
-            );
-            builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
-        } else {
-            builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
-        }
+        // if self.config.total_float_comparisons {
+        //     let (lhs, rhs) = (
+        //         self.normalize_float(lhs, builder),
+        //         self.normalize_float(rhs, builder),
+        //     );
+        //     builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
+        // } else {
+        builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
+        // }
     }
 
     /// Simultaneous floored integer division and modulus
