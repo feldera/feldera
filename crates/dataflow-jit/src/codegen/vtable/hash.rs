@@ -5,7 +5,7 @@ use crate::{
     },
     ir::{ColumnType, LayoutId},
 };
-use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags};
+use cranelift::prelude::{types, FunctionBuilder, InstBuilder, IntCC, MemFlags};
 use cranelift_module::{FuncId, Module};
 
 impl Codegen {
@@ -99,19 +99,8 @@ impl Codegen {
                     // float before hashing it
                     } else if self.config.total_float_comparisons {
                         let float = builder.ins().load(native_ty, flags, ptr, offset);
-
-                        let nan = builder.float_nan(native_ty);
-                        let zero = builder.float_zero(native_ty);
-
-                        let is_zero = builder.ins().fcmp(FloatCC::Equal, float, zero);
-                        let is_nan = builder.ins().fcmp(FloatCC::Equal, float, float);
-
-                        let normalized = builder.ins().select(is_zero, zero, float);
-                        let normalized = builder.ins().select(is_nan, nan, normalized);
-
-                        let int_ty =
-                            types::Type::int(builder.value_type(float).bits() as u16).unwrap();
-                        builder.ins().bitcast(int_ty, MemFlags::new(), normalized)
+                        let canon = ctx.canonicalize_float(float, &mut builder);
+                        ctx.float_to_bits(canon, &mut builder)
 
                     // Otherwise we load the floating point value as its raw
                     // bits and then hash those raw bits

@@ -94,32 +94,33 @@ where
     /// table.
     ///
     /// This operator helps to visualize the contents of the input table in a
-    /// UI.  The UI client may not have enough throughput/memory to store the entire
-    /// table, and will instead limit its state to a small range of rows that fit
-    /// on the screen.  We specify such a range, or _neighborhood_, in terms of its
-    /// center (or "anchor"), and the number of rows preceding and following the
-    /// anchor (see [`NeighborhoodDescr`]).  The user may be interested in a static
+    /// UI.  The UI client may not have enough throughput/memory to store the
+    /// entire table, and will instead limit its state to a small range of
+    /// rows that fit on the screen.  We specify such a range, or
+    /// _neighborhood_, in terms of its center (or "anchor"), and the number
+    /// of rows preceding and following the anchor (see
+    /// [`NeighborhoodDescr`]).  The user may be interested in a static
     /// snapshot of the neighborhood or in a changing view.  Both modes are
-    /// supported by this operator (see the `reset` argument).  The output of the
-    /// operator is a stream of [`Neighborhood`]s.
+    /// supported by this operator (see the `reset` argument).  The output of
+    /// the operator is a stream of [`Neighborhood`]s.
     ///
-    /// NOTE: This operator assumes that the integral of the input stream does not
-    /// contain negative weights (which should normally be the case) and may
-    /// produce incorrect outputs otherwise.
+    /// NOTE: This operator assumes that the integral of the input stream does
+    /// not contain negative weights (which should normally be the case) and
+    /// may produce incorrect outputs otherwise.
     ///
     /// # Arguments
     ///
     /// * `self` - a stream of changes to an indexed Z-set.
     ///
     /// * `neighborhood_descr` - contains the neighborhood descriptor to
-    ///   evaluate at every clock tick.  Set to `None` to disable the
-    ///   operator (it will output an empty neighborhood).
+    ///   evaluate at every clock tick.  Set to `None` to disable the operator
+    ///   (it will output an empty neighborhood).
     ///
     /// * `reset` - controls whether the operator outputs the the entire
     ///   neighborhood or an incrmental change to the neighborhood.  Set to
-    ///   `true` to request the complete neighborhood to be output at the end
-    ///   of the current clock cycle or `false` to output the incremental
-    ///   change to the neighborhood relative to the previous clock cycle.
+    ///   `true` to request the complete neighborhood to be output at the end of
+    ///   the current clock cycle or `false` to output the incremental change to
+    ///   the neighborhood relative to the previous clock cycle.
     ///
     /// # Output
     ///
