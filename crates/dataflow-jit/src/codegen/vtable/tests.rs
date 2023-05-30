@@ -470,75 +470,75 @@ mod proptests {
             }
         }
 
-        unsafe fn write_to(self, ptr: *mut u8) -> TestCaseResult {
+        unsafe fn write_to(&self, ptr: *mut u8) -> TestCaseResult {
             prop_assert!(!ptr.is_null());
 
-            match self {
-                Column::Unit => {
+            match *self {
+                Self::Unit => {
                     prop_assert_eq!(ptr as usize % align_of::<()>(), 0);
                     ptr.cast::<()>().write(());
                 }
 
-                Column::U8(value) => {
+                Self::U8(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u8>(), 0);
                     ptr.cast::<u8>().write(value);
                 }
-                Column::I8(value) => {
+                Self::I8(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<i8>(), 0);
                     ptr.cast::<i8>().write(value);
                 }
 
-                Column::U16(value) => {
+                Self::U16(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u16>(), 0);
                     ptr.cast::<u16>().write(value);
                 }
-                Column::I16(value) => {
+                Self::I16(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<i16>(), 0);
                     ptr.cast::<i16>().write(value);
                 }
 
-                Column::U32(value) => {
+                Self::U32(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u32>(), 0);
                     ptr.cast::<u32>().write(value);
                 }
-                Column::I32(value) => {
+                Self::I32(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
                     ptr.cast::<i32>().write(value);
                 }
 
-                Column::U64(value) => {
+                Self::U64(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<u64>(), 0);
                     ptr.cast::<u64>().write(value);
                 }
-                Column::I64(value) => {
+                Self::I64(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
                     ptr.cast::<i64>().write(value);
                 }
 
-                Column::F32(value) => {
+                Self::F32(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<f32>(), 0);
                     ptr.cast::<f32>().write(value);
                 }
-                Column::F64(value) => {
+                Self::F64(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<f64>(), 0);
                     ptr.cast::<f64>().write(value);
                 }
 
-                Column::Bool(value) => {
+                Self::Bool(value) => {
                     prop_assert_eq!(ptr as usize % align_of::<bool>(), 0);
                     ptr.cast::<bool>().write(value);
                 }
 
-                Column::String(value) => {
+                Self::String(ref value) => {
                     prop_assert_eq!(ptr as usize % align_of::<ThinStr>(), 0);
-                    ptr.cast::<ThinStr>().write(ThinStr::from(&*value));
+                    ptr.cast::<ThinStr>().write(ThinStr::from(&**value));
                 }
 
-                Column::Date(date) => {
+                Self::Date(date) => {
                     prop_assert_eq!(ptr as usize % align_of::<i32>(), 0);
                     ptr.cast::<i32>().write(date);
                 }
-                Column::Timestamp(timestamp) => {
+                Self::Timestamp(timestamp) => {
                     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
                     ptr.cast::<i64>().write(timestamp);
                 }
@@ -559,8 +559,20 @@ mod proptests {
                 (Self::I32(l0), Self::I32(r0)) => l0 == r0,
                 (Self::U64(l0), Self::U64(r0)) => l0 == r0,
                 (Self::I64(l0), Self::I64(r0)) => l0 == r0,
-                (Self::F32(l0), Self::F32(r0)) => l0.total_cmp(r0).is_eq(),
-                (Self::F64(l0), Self::F64(r0)) => l0.total_cmp(r0).is_eq(),
+                (Self::F32(lhs), Self::F32(rhs)) => {
+                    if lhs.is_nan() {
+                        rhs.is_nan()
+                    } else {
+                        lhs == rhs
+                    }
+                }
+                (Self::F64(lhs), Self::F64(rhs)) => {
+                    if lhs.is_nan() {
+                        rhs.is_nan()
+                    } else {
+                        lhs == rhs
+                    }
+                }
                 (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
                 // (Self::Usize(l0), Self::Usize(r0)) => l0 == r0,
                 (Self::String(l0), Self::String(r0)) => l0 == r0,
@@ -590,8 +602,34 @@ mod proptests {
                 (Self::I32(l0), Self::I32(r0)) => l0.cmp(r0),
                 (Self::U64(l0), Self::U64(r0)) => l0.cmp(r0),
                 (Self::I64(l0), Self::I64(r0)) => l0.cmp(r0),
-                (Self::F32(l0), Self::F32(r0)) => l0.total_cmp(r0),
-                (Self::F64(l0), Self::F64(r0)) => l0.total_cmp(r0),
+                (Self::F32(lhs), Self::F32(rhs)) => match lhs.partial_cmp(rhs) {
+                    Some(ordering) => ordering,
+                    None => {
+                        if lhs.is_nan() {
+                            if rhs.is_nan() {
+                                Ordering::Equal
+                            } else {
+                                Ordering::Greater
+                            }
+                        } else {
+                            Ordering::Less
+                        }
+                    }
+                },
+                (Self::F64(lhs), Self::F64(rhs)) => match lhs.partial_cmp(rhs) {
+                    Some(ordering) => ordering,
+                    None => {
+                        if lhs.is_nan() {
+                            if rhs.is_nan() {
+                                Ordering::Equal
+                            } else {
+                                Ordering::Greater
+                            }
+                        } else {
+                            Ordering::Less
+                        }
+                    }
+                },
                 (Self::Bool(l0), Self::Bool(r0)) => l0.cmp(r0),
                 // (Self::Usize(l0), Self::Usize(r0)) => l0.cmp(r0),
                 (Self::String(l0), Self::String(r0)) => l0.cmp(r0),
@@ -640,7 +678,7 @@ mod proptests {
         }
     }
 
-    fn test_layout(value: PropLayout, debug: bool) -> TestCaseResult {
+    fn test_layout(value: &PropLayout, debug: bool) -> TestCaseResult {
         let cache = RowLayoutCache::new();
         let layout_id = cache.add(value.row_layout());
 
@@ -659,7 +697,7 @@ mod proptests {
         prop_assert!(layout.align().is_power_of_two());
 
         let mut row = UninitRow::new(unsafe { &*vtable });
-        for (idx, column) in value.columns.into_iter().enumerate() {
+        for (idx, column) in value.columns.iter().enumerate() {
             let offset = layout.offset_of(idx) as usize;
 
             unsafe {
@@ -738,8 +776,9 @@ mod proptests {
 
     proptest! {
         #[test]
-        fn vtables(value in any::<PropLayout>(), debug in any::<bool>()) {
-            test_layout(value, debug)?;
+        fn vtables(value in any::<PropLayout>()) {
+            test_layout(&value, true)?;
+            test_layout(&value, false)?;
         }
     }
 
@@ -754,10 +793,10 @@ mod proptests {
                         crate::utils::test_logger();
 
                         let layout = PropLayout::new(vec![$($column,)*]);
-                        test_layout(layout, true).unwrap();
+                        test_layout(&layout, true).unwrap();
 
                         let layout = PropLayout::new(vec![$($column,)*]);
-                        test_layout(layout, false).unwrap();
+                        test_layout(&layout, false).unwrap();
                     }
                 )+
             }
