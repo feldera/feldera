@@ -16,6 +16,7 @@ use crate::{
     },
     DBData, DBWeight, NumEntries,
 };
+use rand::Rng;
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
@@ -260,6 +261,13 @@ where
 
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
         self.layer.truncate_keys_below(lower_bound);
+    }
+
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    where
+        RG: Rng,
+    {
+        self.layer.sample_keys(rng, sample_size, sample);
     }
 }
 

@@ -35,6 +35,7 @@ use crate::{
 };
 #[cfg(feature = "persistence")]
 use bincode::{Decode, Encode};
+use rand::Rng;
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
@@ -240,6 +241,41 @@ where
     /// The removed tuples may not get deallocated instantly but they won't
     /// appear when iterating over the batch.
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key);
+
+    /// Returns a uniform random sample of distincts keys from the batch.
+    ///
+    /// Does not take into account the number values associated with each
+    /// key and their weights, i.e., a key that has few values is as likely
+    /// to appear in the output sample as a key with many values.
+    ///
+    /// # Arguments
+    ///
+    /// * `rng` - random number generator used to generate the sample.
+    ///
+    /// * `sample_size` - requested sample size.
+    ///
+    /// * `sample` - output
+    ///
+    /// # Invariants
+    ///
+    /// The actual sample computed by the method can be smaller than `sample_size`
+    /// even if `self` contains `>sample_size` keys.
+    ///
+    /// A correct implementation must enforce the following invariants:
+    ///
+    /// * The output sample size cannot exceed `sample_size`.
+    ///
+    /// * The output sample can only contain keys present in `self` (with non-zero weights).
+    ///
+    /// * If `sample_size` is greater than or equal to the number of keys present
+    ///   in `self` (with non-zero weights), the resulting sample must contain all
+    ///   such keys.
+    ///
+    /// * The output sample contains keys sorted in ascending order.
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+        RG: Rng;
 }
 
 /// An immutable collection of updates.

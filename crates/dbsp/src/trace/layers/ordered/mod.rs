@@ -11,9 +11,10 @@ use crate::{
         advance, column_layer::ColumnLayer, retreat, Builder, Cursor, MergeBuilder, OrdOffset,
         Trie, TupleBuilder,
     },
-    utils::{assume, cast_uninit_vec},
+    utils::{assume, cast_uninit_vec, sample_slice},
     DBData, NumEntries,
 };
+use rand::Rng;
 use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
@@ -32,7 +33,7 @@ use textwrap::indent;
 pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
     pub(crate) keys: Vec<K>,
-    /// The offsets associate with each key.
+    /// The offsets associated with each key.
     ///
     /// The bounds for `keys[i]` are `(offs[i], offs[i+1]`). The offset array is
     /// guaranteed to be one element longer than the keys array, ensuring
@@ -84,6 +85,18 @@ impl<K, L, O> OrderedLayer<K, L, O> {
     unsafe fn assume_invariants(&self) {
         assume(self.offs.len() == self.keys.len() + 1);
         assume(self.lower_bound <= self.keys.len());
+    }
+
+    /// Compute a random sample of size `sample_size` of keys in `self.keys`.
+    ///
+    /// Pushes the random sample of keys to the `output` vector in ascending
+    /// order.
+    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut Vec<K>)
+    where
+        K: Clone,
+        RG: Rng,
+    {
+        sample_slice(&self.keys[self.lower_bound..], rng, sample_size, output);
     }
 }
 

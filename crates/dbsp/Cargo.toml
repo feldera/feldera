@@ -42,6 +42,7 @@ bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
+rand = "0.8.5"
 
     [dependencies.size-of]
     version = "0.1.5"
@@ -50,7 +51,6 @@ mimalloc-rust-sys = "1.7.2"
 [dev-dependencies]
 zip = "0.6.2"
 tar = "0.4.38"
-rand = "0.8.5"
 rand_chacha = "0.3.1"
 zstd = "0.12.0"
 proptest = "1.0.0"
