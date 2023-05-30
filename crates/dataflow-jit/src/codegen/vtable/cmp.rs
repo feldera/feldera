@@ -1,6 +1,6 @@
 use crate::{
     codegen::{
-        utils::{column_non_null, normalize_float, FunctionBuilderExt},
+        utils::{column_non_null, FunctionBuilderExt},
         Codegen, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId},
@@ -163,12 +163,17 @@ impl Codegen {
 
                         // Compare floats
                         ColumnType::F32 | ColumnType::F64 => {
-                            // total comparison, see
-                            // `f32::total_cmp()`/`f64::total_cmp()`
+                            // if lhs.is_nan() {
+                            //     rhs.is_nan()
+                            // } else {
+                            //     lhs == rhs
+                            // }
                             if self.config.total_float_comparisons {
-                                let lhs = normalize_float(lhs, &mut builder);
-                                let rhs = normalize_float(rhs, &mut builder);
-                                builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                                let lhs_nan = builder.ins().fcmp(FloatCC::NotEqual, lhs, lhs);
+                                let rhs_nan = builder.ins().fcmp(FloatCC::NotEqual, rhs, rhs);
+                                let lhs_eq_rhs = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
+
+                                builder.ins().select(lhs_nan, rhs_nan, lhs_eq_rhs)
                             } else {
                                 builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
                             }
@@ -438,11 +443,20 @@ impl Codegen {
                         }
 
                         ColumnType::F32 | ColumnType::F64 => {
-                            // Uses total comparison, see `f32::total_cmp()`/`f64::total_cmp()`
+                            // if lhs.is_nan() {
+                            //     !rhs.is_nan()
+                            // } else {
+                            //     lhs < rhs
+                            // }
                             if self.config.total_float_comparisons {
-                                let lhs = normalize_float(lhs, &mut builder);
-                                let rhs = normalize_float(rhs, &mut builder);
-                                builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
+                                let lhs_nan = builder.ins().fcmp(FloatCC::NotEqual, lhs, lhs);
+
+                                let rhs_nan = builder.ins().fcmp(FloatCC::NotEqual, rhs, rhs);
+                                let rhs_not_nan = builder.ins().bnot(rhs_nan);
+
+                                let lhs_lt_rhs = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
+
+                                builder.ins().select(lhs_nan, rhs_not_nan, lhs_lt_rhs)
                             } else {
                                 builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
                             }
@@ -716,26 +730,93 @@ impl Codegen {
 
                         // Floats
                         ColumnType::F32 | ColumnType::F64 => {
-                            // Total comparison, see `f32::total_cmp()`/`f64::total_cmp()`
-                            let (eq, less) = if self.config.total_float_comparisons {
-                                let (lhs, rhs) = (
-                                    normalize_float(lhs, &mut builder),
-                                    normalize_float(rhs, &mut builder),
-                                );
+                            // if lhs <= rhs || lhs >= rhs {
+                            //     (lhs <= rhs) - (lhs >= rhs) as Ordering
+                            // } else {
+                            //     if lhs.is_nan() {
+                            //         if rhs.is_nan() {
+                            //             Ordering::Equal
+                            //         } else {
+                            //             Ordering::Greater
+                            //         }
+                            //     } else {
+                            //         Ordering::Less
+                            //     }
+                            // }
+                            if self.config.total_float_comparisons {
+                                let normal_cmp = builder.create_block();
+                                let nan_cmp = builder.create_block();
 
-                                let eq = builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                                let less = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
-                                (eq, less)
+                                let lhs_le_rhs =
+                                    builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs);
+                                let lhs_ge_rhs =
+                                    builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs);
+
+                                let either_true = builder.ins().bor(lhs_le_rhs, lhs_ge_rhs);
+                                builder
+                                    .ins()
+                                    .brif(either_true, normal_cmp, &[], nan_cmp, &[]);
+
+                                {
+                                    builder.switch_to_block(normal_cmp);
+
+                                    // false - true  =  1
+                                    // true  - false = -1
+                                    // true  - true  =  0
+                                    let ordering = builder.ins().isub(lhs_le_rhs, lhs_ge_rhs);
+                                    builder.ins().brif(
+                                        ordering,
+                                        next_compare,
+                                        &[],
+                                        return_block,
+                                        &[ordering],
+                                    );
+                                }
+
+                                // if lhs.is_nan() {
+                                //     if rhs.is_nan() {
+                                //         Ordering::Equal
+                                //     } else {
+                                //         Ordering::Greater
+                                //     }
+                                // } else {
+                                //     Ordering::Less
+                                // }
+                                //
+                                // (true,  true)  =  0
+                                // (true,  false) =  1
+                                // (false, true)  = -1
+                                // (false, false) = -1
+                                {
+                                    builder.switch_to_block(nan_cmp);
+
+                                    let lhs_nan = builder.ins().fcmp(FloatCC::NotEqual, lhs, lhs);
+                                    let rhs_nan = builder.ins().fcmp(FloatCC::NotEqual, rhs, rhs);
+                                    let less = builder.ins().iconst(types::I8, -1);
+                                    let ordering = builder.ins().select(lhs_nan, rhs_nan, less);
+                                    builder.ins().brif(
+                                        ordering,
+                                        next_compare,
+                                        &[],
+                                        return_block,
+                                        &[ordering],
+                                    );
+                                }
+
+                            // Non-total comparison
                             } else {
                                 let eq = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
                                 let less = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
-                                (eq, less)
-                            };
 
-                            let ordering = builder.ins().select(less, less_than, greater_than);
-                            builder
-                                .ins()
-                                .brif(eq, next_compare, &[], return_block, &[ordering]);
+                                let ordering = builder.ins().select(less, less_than, greater_than);
+                                builder.ins().brif(
+                                    eq,
+                                    next_compare,
+                                    &[],
+                                    return_block,
+                                    &[ordering],
+                                );
+                            }
                         }
 
                         ColumnType::Unit => {
