@@ -51,12 +51,20 @@ CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-
 
 # The dev target adds an rpk client and demo projects
 FROM builder as client
+ENV PATH="$PATH:/root/.cargo/bin"
 RUN arch=`dpkg --print-architecture`; \
    curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
    && unzip rpk-linux-$arch.zip -d /bin/ \
    && rpk version \
    && rm rpk-linux-$arch.zip
-RUN /root/.cargo/bin/cargo make --cwd crates/pipeline_manager openapi_python
+RUN target/release/dbsp_pipeline_manager --dump-openapi
+RUN pip3 install openapi-python-client websockets
+RUN cd python &&  \
+    openapi-python-client generate --path ../openapi.json && \
+    pip3 install ./dbsp-api-client && \ 
+    pip3 install .
+# TODO: only required for running the fraud detection demo. Remove when we clean that up.
+RUN pip3 install gdown
 CMD bash
 
 # By default, only build the release version

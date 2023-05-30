@@ -3,9 +3,9 @@ import argparse
 from dbsp import DBSPConnection
 
 
-def execute(actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
+def execute(dbsp_url, actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
+    dbsp = DBSPConnection(dbsp_url)
     sql_code = open(code_file, "r").read()
-    dbsp = DBSPConnection()
     program = dbsp.create_or_replace_program(
         name=name, sql_code=sql_code)
     pipeline = make_pipeline_fn(program)
@@ -37,10 +37,12 @@ def execute(actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_
 def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
     parser = argparse.ArgumentParser(
         description='What do you want to do with the demo.')
-    parser.add_argument('actions', nargs='*', default=['create'])
+    parser.add_argument('--dbsp_url', required=True)
+    parser.add_argument('--actions', nargs='*', default=['create'])
     args = parser.parse_args()
 
     # Add hard-coded dependencies
+    dbsp_url = args.dbsp_url
     actions = set(args.actions)
     if 'create' in actions:
         actions.add('compile')
@@ -51,6 +53,5 @@ def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None)
         actions.add('compile')
         actions.add('create')
         actions.add('run')
-
-    execute(actions, name, code_file,
+    execute(dbsp_url, actions, name, code_file,
             make_pipeline_fn, prepare_fn, verify_fn)

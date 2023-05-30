@@ -1,7 +1,5 @@
 # Ignore target and other large directories.
 **/target
-**/deploy
-**/Dockerfile
 **/pipeline_data
 **/ldbc-graphalytics-data
 **/.vscode
