@@ -27,7 +27,7 @@ mod integrate;
 mod join;
 pub mod join_range;
 mod neg;
-mod neighborhood;
+pub mod neighborhood;
 mod output;
 mod plus;
 pub mod sample;
