@@ -602,8 +602,8 @@ mod test {
             }),
         );
         let app = test::init_service(app).await;
-        let resp = test::call_service(&app, req).await;
-        resp
+
+        test::call_service(&app, req).await
     }
 
     #[tokio::test]
@@ -721,7 +721,7 @@ mod test {
         let (token, decoding_key) = setup(claim).await;
 
         // Modify the claim
-        let base64_parts: Vec<&str> = token.split(".").collect();
+        let base64_parts: Vec<&str> = token.split('.').collect();
         let claim_base64 = base64::engine::general_purpose::STANDARD_NO_PAD
             .decode(base64_parts.get(1).unwrap())
             .unwrap();
