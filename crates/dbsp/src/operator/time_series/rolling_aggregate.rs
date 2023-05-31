@@ -9,7 +9,7 @@ use crate::{
             radix_tree::{PartitionedRadixTreeReader, RadixTreeCursor},
             range::{Range, RangeCursor, Ranges, RelRange},
             OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
-            PartitionedIndexedZSet, RelOffset,
+            PartitionedIndexedZSet, RelOffset, UPrimInt,
         },
         trace::{TraceBound, TraceBounds, TraceFeedback},
         Aggregator, FilterMap,
@@ -17,7 +17,7 @@ use crate::{
     trace::{Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
-use num::{Bounded, PrimInt};
+use num::Bounded;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 // TODO: `Default` trait bounds in this module are due to an implementation
@@ -165,7 +165,7 @@ where
         PF: Fn(&B::Val) -> (PK, V) + Clone + 'static,
         Agg: Aggregator<V, (), B::R>,
         Agg::Accumulator: Default,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
     {
         self.circuit()
@@ -240,7 +240,7 @@ impl<B> Stream<RootCircuit, B> {
         B::R: ZRingValue,
         Agg: Aggregator<V, (), B::R>,
         Agg::Accumulator: Default,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
     {
         self.partitioned_rolling_aggregate_generic::<TS, V, Agg, _>(aggregator, range)
@@ -259,7 +259,7 @@ impl<B> Stream<RootCircuit, B> {
         Agg: Aggregator<V, (), B::R>,
         Agg::Accumulator: Default,
         O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
     {
         // ```
@@ -295,7 +295,7 @@ impl<B> Stream<RootCircuit, B> {
         Agg: Aggregator<V, (), B::R>,
         Agg::Accumulator: Default,
         O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
     {
         let circuit = self.circuit();
@@ -348,7 +348,7 @@ impl<B> Stream<RootCircuit, B> {
         A: DBData + MulByRef<B::R, Output = A> + GroupValue + Default,
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> O + Clone + 'static,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
         O: DBData,
     {
@@ -370,7 +370,7 @@ impl<B> Stream<RootCircuit, B> {
         A: DBData + MulByRef<B::R, Output = A> + GroupValue + Default,
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> O + Clone + 'static,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
         O: DBData,
         Out: PartitionedIndexedZSet<TS, Option<O>, Key = B::Key, R = B::R>,
@@ -408,7 +408,7 @@ impl<TS, V, Agg> PartitionedRollingAggregate<TS, V, Agg> {
     fn affected_ranges<R, C>(&self, delta_cursor: &mut C) -> Ranges<TS>
     where
         C: Cursor<TS, V, (), R>,
-        TS: PrimInt,
+        TS: UPrimInt,
     {
         let mut affected_ranges = Ranges::new();
         let mut delta_ranges = Ranges::new();
@@ -446,7 +446,7 @@ where
 impl<TS, V, Agg, B, T, RT, OT, O> QuaternaryOperator<B, T, RT, OT, O>
     for PartitionedRollingAggregate<TS, V, Agg>
 where
-    TS: DBData + PrimInt,
+    TS: DBData + UPrimInt,
     V: DBData,
     Agg: Aggregator<V, (), B::R>,
     B: PartitionedBatchReader<TS, V> + Clone,

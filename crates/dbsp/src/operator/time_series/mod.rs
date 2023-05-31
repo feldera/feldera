@@ -10,3 +10,4 @@ pub use partitioned::{
     PartitionedIndexedZSet,
 };
 pub use range::{Range, RelOffset, RelRange};
+pub use radix_tree::UPrimInt;

@@ -1,10 +1,9 @@
-use super::{ChildPtr, Prefix, RadixTreeCursor, TreeNode, RADIX_BITS};
+use super::{ChildPtr, Prefix, RadixTreeCursor, TreeNode, RADIX_BITS, UPrimInt};
 use crate::{
     algebra::{HasZero, MonoidValue, Semigroup},
     operator::Aggregator,
     trace::{cursor::CursorGroup, Cursor},
 };
-use num::PrimInt;
 use std::{fmt::Debug, marker::PhantomData, mem::size_of};
 
 /// Describes incremental update to a radix tree node.
@@ -91,7 +90,7 @@ where
 
 impl<'a, TS, A, R, S, TC> TreeUpdater<'a, TS, A, R, S, TC>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
     A: Clone + Default + Debug,
     S: Semigroup<A>,
     TC: RadixTreeCursor<TS, A, R>,
@@ -371,7 +370,7 @@ pub(super) fn radix_tree_update<'a, TS, V, R, Agg, UC, IC, TC, OR>(
     aggregator: &Agg,
     output_updates: &'a mut Vec<TreeNodeUpdate<TS, Agg::Accumulator>>,
 ) where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
     R: MonoidValue,
     Agg: Aggregator<V, (), R>,
     Agg::Accumulator: Clone + Default + Eq + Debug,

@@ -1,4 +1,4 @@
-use super::{radix_tree_update, Prefix, TreeNode};
+use super::{radix_tree_update, Prefix, TreeNode, UPrimInt};
 use crate::{
     algebra::{HasOne, IndexedZSet, ZRingValue},
     circuit::{
@@ -13,7 +13,6 @@ use crate::{
     trace::{Batch, BatchReader, Builder, Spine},
     Circuit, NumEntries, OrdIndexedZSet, Stream,
 };
-use num::PrimInt;
 use size_of::SizeOf;
 use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, ops::Neg};
 
@@ -60,7 +59,7 @@ where
     ) -> Stream<C, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
-        Z::Key: PrimInt,
+        Z::Key: UPrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
         Agg::Accumulator: Default,
     {
@@ -73,7 +72,7 @@ where
     pub fn tree_aggregate_generic<Agg, O>(&self, aggregator: Agg) -> Stream<C, O>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
-        Z::Key: PrimInt,
+        Z::Key: UPrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
         Agg::Accumulator: Default,
         O: RadixTreeBatch<Z::Key, Agg::Accumulator>,
@@ -170,7 +169,7 @@ where
 impl<Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O> for RadixTreeAggregate<Z, IT, OT, Agg, O>
 where
     Z: IndexedZSet,
-    Z::Key: PrimInt,
+    Z::Key: UPrimInt,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, Time = (), R = Z::R> + Clone,
     OT: RadixTreeReader<Z::Key, Agg::Accumulator, R = O::R> + Clone,
     Agg: Aggregator<Z::Val, (), Z::R>,

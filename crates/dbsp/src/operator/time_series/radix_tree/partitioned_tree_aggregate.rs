@@ -1,4 +1,4 @@
-use super::{radix_tree_update, Prefix, RadixTreeCursor, TreeNode};
+use super::{radix_tree_update, Prefix, RadixTreeCursor, TreeNode, UPrimInt};
 use crate::{
     algebra::{HasOne, HasZero, Semigroup, ZRingValue},
     circuit::{
@@ -16,7 +16,6 @@ use crate::{
     trace::{cursor::CursorEmpty, Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream,
 };
-use num::PrimInt;
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -63,7 +62,7 @@ pub trait PartitionedRadixTreeCursor<PK, TS, A, R>:
     fn format_tree<W>(&mut self, writer: &mut W) -> Result<(), fmt::Error>
     where
         PK: Debug,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         A: DBData,
         R: HasZero,
         W: Write,
@@ -83,7 +82,7 @@ pub trait PartitionedRadixTreeCursor<PK, TS, A, R>:
     fn validate<S>(&mut self, contents: &BTreeMap<PK, BTreeMap<TS, A>>)
     where
         PK: Ord,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         R: DBWeight + ZRingValue,
         A: DBData,
         S: Semigroup<A>,
@@ -121,7 +120,7 @@ where
     ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Accumulator, isize>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
         Agg: Aggregator<V, (), Z::R>,
         Agg::Accumulator: Default,
@@ -142,7 +141,7 @@ where
     ) -> Stream<RootCircuit, O>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         V: DBData,
         Agg: Aggregator<V, (), Z::R>,
         Agg::Accumulator: Default,
@@ -250,7 +249,7 @@ impl<TS, V, Z, IT, OT, Agg, O> TernaryOperator<Z, IT, OT, O>
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Agg, O>
 where
     Z: PartitionedBatchReader<TS, V> + Clone,
-    TS: DBData + PrimInt,
+    TS: DBData + UPrimInt,
     V: DBData,
     IT: PartitionedBatchReader<TS, V, Key = Z::Key, R = Z::R> + Clone,
     OT: PartitionedRadixTreeReader<TS, Agg::Accumulator, Key = Z::Key, R = O::R> + Clone,
@@ -372,14 +371,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::{super::test::test_aggregate_range, PartitionCursor, PartitionedRadixTreeCursor};
+    use super::{super::test::test_aggregate_range, PartitionCursor, PartitionedRadixTreeCursor, UPrimInt};
     use crate::{
         algebra::{DefaultSemigroup, HasZero, Semigroup},
         operator::Fold,
         trace::BatchReader,
         CollectionHandle, DBData, RootCircuit,
     };
-    use num::PrimInt;
     use std::{
         collections::{btree_map::Entry, BTreeMap},
         sync::{Arc, Mutex},
@@ -393,7 +391,7 @@ mod test {
     ) where
         C: PartitionedRadixTreeCursor<PK, TS, A, R>,
         PK: DBData,
-        TS: DBData + PrimInt,
+        TS: DBData + UPrimInt,
         A: DBData,
         R: DBData + HasZero,
         S: Semigroup<A>,

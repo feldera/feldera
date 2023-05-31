@@ -80,7 +80,7 @@ use crate::{
     operator::time_series::Range,
     trace::Cursor,
 };
-use num::PrimInt;
+use num::{PrimInt, Unsigned};
 use size_of::SizeOf;
 use std::{
     cmp::min,
@@ -105,6 +105,10 @@ const RADIX: usize = 16;
 // Number of bits in `RADIX`.
 const RADIX_BITS: u32 = RADIX.trailing_zeros();
 
+pub trait UPrimInt: PrimInt + Unsigned {}
+
+impl <T: PrimInt + Unsigned> UPrimInt for T {}
+
 /// Cursor over a radix tree.
 ///
 /// A radix tree is a set of nodes indexed by each node's unique prefix.
@@ -114,7 +118,7 @@ const RADIX_BITS: u32 = RADIX.trailing_zeros();
 /// starting from the root node.
 pub trait RadixTreeCursor<TS, A, R>: Cursor<Prefix<TS>, TreeNode<TS, A>, (), R>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
 {
     /// Helper function: skip values with zero weights.
     fn skip_zero_weights(&mut self)
@@ -336,7 +340,7 @@ where
 
 impl<TS, A, R, C> RadixTreeCursor<TS, A, R> for C
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
     C: Cursor<Prefix<TS>, TreeNode<TS, A>, (), R>,
 {
 }
@@ -379,7 +383,7 @@ where
 
 impl<TS> Display for Prefix<TS>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         if self.prefix_len == Self::KEY_BITS {
@@ -401,7 +405,7 @@ where
 
 impl<TS> Prefix<TS>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
 {
     const KEY_BITS: u32 = (size_of::<TS>() * 8) as u32;
 
@@ -556,7 +560,7 @@ where
 
 impl<TS, A> Display for ChildPtr<TS, A>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
     A: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
@@ -566,7 +570,7 @@ where
 
 impl<TS, A> ChildPtr<TS, A>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
 {
     fn from_timestamp(key: TS, child_agg: A) -> Self {
         Self {
@@ -620,7 +624,7 @@ where
 
 impl<TS, A> Display for TreeNode<TS, A>
 where
-    TS: PrimInt + Debug,
+    TS: UPrimInt + Debug,
     A: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
@@ -691,9 +695,8 @@ pub(super) mod test {
     use super::{ChildPtr, Prefix, RadixTreeCursor, TreeNode, RADIX_BITS};
     use crate::{
         algebra::{DefaultSemigroup, HasZero, Semigroup},
-        operator::time_series::Range,
+        operator::time_series::{Range, UPrimInt},
     };
-    use num::PrimInt;
     use std::{collections::BTreeMap, fmt::Debug, iter::once};
 
     // Checks that `aggregate_range` correctly computes aggregates for all
@@ -701,7 +704,7 @@ pub(super) mod test {
     pub(super) fn test_aggregate_range<TS, A, R, C, S>(cursor: &mut C, contents: &BTreeMap<TS, A>)
     where
         C: RadixTreeCursor<TS, A, R>,
-        TS: PrimInt + Debug,
+        TS: UPrimInt + Debug,
         A: Clone + Eq + Debug,
         R: HasZero,
         S: Semigroup<A>,
@@ -744,7 +747,7 @@ pub(super) mod test {
         assert_eq!(TestPrefix::full_range(), Prefix::new(0, 0));
         assert!(!TestPrefix::full_range().is_leaf());
         assert!(TestPrefix::from_timestamp(100).is_leaf());
-        assert!(!Prefix::new(100, RADIX_BITS * 2).is_leaf());
+        assert!(!Prefix::new(100u32, RADIX_BITS * 2).is_leaf());
         assert_eq!(TestPrefix::prefix_mask(0), 0);
         assert_eq!(TestPrefix::prefix_mask(4), 0xf000_0000_0000_0000);
         assert_eq!(TestPrefix::prefix_mask(32), 0xffff_ffff_0000_0000);
