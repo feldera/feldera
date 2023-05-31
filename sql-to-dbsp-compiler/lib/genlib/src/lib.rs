@@ -1,5 +1,4 @@
 // Automatically-generated file
-#![allow(clippy::all)]
 #![allow(unused_parens)]
 #![allow(non_snake_case)]
 use dbsp::algebra::{F32, F64};

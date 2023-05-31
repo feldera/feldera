@@ -137,8 +137,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         for (int i = 0; i < flatmap.outputElementType.size() - fieldsSkipped; i++) {
             // let xA: Vec<i32> = x.0.clone();
             // let xB: x.1.clone();
-            DBSPVariablePath fieldClone = new DBSPVariablePath("x" + i, rowVar.field(i).getNonVoidType());
-            DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, rowVar.field(i));
+            DBSPExpression field = rowVar.field(i).applyCloneIfNeeded();
+            DBSPVariablePath fieldClone = new DBSPVariablePath("x" + i, field.getNonVoidType());
+            DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
             clones.add(stat);
             resultColumns.add(fieldClone.applyClone());
         }
@@ -157,7 +158,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
                 .closure(elem.asParameter());
         DBSPExpression iter = new DBSPApplyMethodExpression("into_iter", DBSPTypeAny.INSTANCE,
-                rowVar.field(flatmap.collectionFieldIndex));
+                rowVar.field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
         if (flatmap.indexType != null) {
             iter = new DBSPApplyMethodExpression("enumerate", DBSPTypeAny.INSTANCE, iter);
         }

@@ -596,10 +596,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTupleExpression lr = DBSPTupleExpression.flatten(l, r);
         List<DBSPExpression> leftKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> l.field(c.leftColumn).cast(c.resultType));
+                c -> l.field(c.leftColumn).applyCloneIfNeeded().cast(c.resultType));
         List<DBSPExpression> rightKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> r.field(c.rightColumn).cast(c.resultType));
+                c -> r.field(c.rightColumn).applyCloneIfNeeded().cast(c.resultType));
         DBSPExpression leftKey = new DBSPRawTupleExpression(leftKeyFields);
         DBSPExpression rightKey = new DBSPRawTupleExpression(rightKeyFields);
 
@@ -955,12 +955,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression[] allFields = new DBSPExpression[
                     currentTupleType.size() + aggResultType.size()];
             for (int i = 0; i < currentTupleType.size(); i++)
-                allFields[i] = left.field(i);
+                allFields[i] = left.field(i).applyCloneIfNeeded();
             for (int i = 0; i < aggResultType.size(); i++) {
                 // Calcite is very smart and sometimes infers non-nullable result types
                 // for these aggregates.  So we have to cast the results to whatever
                 // Calcite says they will be.
-                allFields[i + currentTupleType.size()] = right.field(i).cast(
+                allFields[i + currentTupleType.size()] = right.field(i).applyCloneIfNeeded().cast(
                         windowResultType.getFieldType(windowFieldIndex));
                 windowFieldIndex++;
             }

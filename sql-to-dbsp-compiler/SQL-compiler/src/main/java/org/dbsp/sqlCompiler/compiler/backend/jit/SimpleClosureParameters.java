@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.SubstitutionContext;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
@@ -152,6 +153,11 @@ public class SimpleClosureParameters
                     .newline()
                     .append(result.toString());
         return result;
+    }
+
+    @Override
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        return this.rewriteClosure(node.to(DBSPClosureExpression.class));
     }
 
     @Override

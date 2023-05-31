@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITFunction;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameter;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameterMapping;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.cfg.JITBlock;
@@ -38,8 +39,11 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.backend.optimize.ExpandClone;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.Simplify;
+import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerPassesVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.PassesVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -93,6 +97,15 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         public JITFunction getFunction() { return Objects.requireNonNull(this.function); }
     }
 
+    public InnerRewriteVisitor normalizer() {
+        InnerPassesVisitor passes = new
+                InnerPassesVisitor(this.getCompiler());
+        passes.add(new ExpandClone(this.getCompiler()));
+        passes.add(new BetaReduction(this.getCompiler()));
+        passes.add(new SimpleClosureParameters(this.getCompiler()));
+        return passes;
+    }
+
     JITFunction convertFunction(DBSPClosureExpression function) {
         Logger.INSTANCE.from(this, 4)
                 .append("Canonicalizing")
@@ -100,10 +113,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
                 .append(function.toString())
                 .newline();
 
-        BetaReduction reducer = new BetaReduction(this.compiler);
-        function = reducer.apply(function).to(DBSPClosureExpression.class);
-        SimpleClosureParameters scp = new SimpleClosureParameters(this.getCompiler());
-        function = scp.rewriteClosure(function);
+        function = this.normalizer().apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
         Logger.INSTANCE.from(this, 4)
@@ -115,7 +125,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
 
         for (DBSPParameter param: function.parameters)
-            mapping.addInputParameter(param, this);
+            mapping.addParameter(param, JITParameter.Direction.IN, this);
 
         // If the result type is a scalar, it is marked as a result type.
         // Otherwise, we have to create a new parameter that is returned by reference.
@@ -123,7 +133,49 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
 
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
                 this.getCompiler(), this, mapping, function, this.getTypeCatalog());
-        JITFunction result = new JITFunction(mapping.allParameters, blocks, returnType);
+        JITFunction result = new JITFunction(mapping.parameters, blocks, returnType);
+        Logger.INSTANCE.from(this, 4)
+                .append(result.toAssembly())
+                .newline();
+        return result;
+    }
+
+    /**
+     * Slightly different version of 'convertFunction', which handles
+     * only step functions for the aggregate operation.  We need to
+     * handle these specially since they have an 'inout' parameter,
+     * which cannot be deduced from the signature we use for the function.
+     */
+    JITFunction convertStepFunction(DBSPClosureExpression function) {
+        Logger.INSTANCE.from(this, 4)
+                .append("Canonicalizing")
+                .newline()
+                .append(function.toString())
+                .newline();
+
+        function = this.normalizer().apply(function).to(DBSPClosureExpression.class);
+        function = this.tupleEachParameter(function);
+
+        Logger.INSTANCE.from(this, 4)
+                .append("Converting to JIT")
+                .newline()
+                .append(function.toString())
+                .newline();
+        JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
+        int index = 0;
+        for (DBSPParameter param: function.parameters) {
+            mapping.addParameter(param,
+                    index == 0 ? JITParameter.Direction.INOUT : JITParameter.Direction.IN,
+                    this);
+            index++;
+        }
+
+        if (index != 3)
+            throw new RuntimeException("Expected 3 parameters for step function, got " + index);
+
+        List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
+                this.getCompiler(), this, mapping, function, this.getTypeCatalog());
+        JITFunction result = new JITFunction(mapping.parameters, blocks, JITUnitType.INSTANCE);
         Logger.INSTANCE.from(this, 4)
                 .append(result.toAssembly())
                 .newline();
@@ -353,7 +405,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         JITTupleLiteral init = new JITTupleLiteral(elementValue, this);
 
         DBSPClosureExpression closure = aggregate.getIncrement();
-        JITFunction stepFn = this.convertFunction(closure);
+        JITFunction stepFn = this.convertStepFunction(closure);
 
         closure = aggregate.getPostprocessing();
         JITFunction finishFn = this.convertFunction(closure);

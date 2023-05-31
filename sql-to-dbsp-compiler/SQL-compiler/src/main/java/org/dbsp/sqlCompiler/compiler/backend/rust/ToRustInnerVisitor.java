@@ -733,9 +733,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.expression.accept(this);
         this.builder.append(".")
                 .append(expression.fieldNo);
-        DBSPType type = expression.getNonVoidType();
-        if (!type.hasCopy())
-            this.builder.append(".clone()");
         return false;
     }
 

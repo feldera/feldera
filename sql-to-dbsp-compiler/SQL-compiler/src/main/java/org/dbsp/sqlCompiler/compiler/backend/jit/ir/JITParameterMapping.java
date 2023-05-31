@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITUnitType;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
@@ -98,14 +99,15 @@ public class JITParameterMapping {
     }
 
     int parameterIndex = 1;
-    public final List<JITParameter> allParameters = new ArrayList<>();
-    public final List<DBSPParameter> outputParameters = new ArrayList<>();
+    public final List<JITParameter> parameters = new ArrayList<>();
 
-    public void addInputParameter(DBSPParameter param, ToJitVisitor jitVisitor) {
+    public void addParameter(DBSPParameter param, JITParameter.Direction direction, ToJitVisitor jitVisitor) {
         DBSPType paramType = param.getNonVoidType();
+        boolean mayBeNull = paramType.mayBeNull;
         JITRowType t = this.typeCatalog.convertTupleType(paramType, jitVisitor);
-        JITParameter p = new JITParameter(this.parameterIndex, true, t);
-        this.allParameters.add(p);
+        JITParameter p = new JITParameter(this.parameterIndex, param.pattern.to(DBSPIdentifierPattern.class).identifier,
+                direction, t, mayBeNull);
+        this.parameters.add(p);
         this.parameterIndex++;
     }
 
@@ -139,12 +141,10 @@ public class JITParameterMapping {
         List<DBSPTypeTuple> types = expandToTuples(returnType);
         for (DBSPTypeTuple type: types) {
             JITRowType t = this.typeCatalog.convertTupleType(type, jitVisitor);
-            JITParameter p = new JITParameter(this.parameterIndex, false, t);
+            String varName = RETURN_PARAMETER_PREFIX + "_" + this.parameters.size();
+            JITParameter p = new JITParameter(this.parameterIndex, varName, JITParameter.Direction.OUT, t, type.mayBeNull);
             this.parameterIndex++;
-            this.allParameters.add(p);
-
-            String varName = RETURN_PARAMETER_PREFIX + "_" + this.outputParameters.size();
-            this.outputParameters.add(new DBSPParameter(varName, type));
+            this.parameters.add(p);
         }
         return JITUnitType.INSTANCE;
     }
