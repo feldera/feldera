@@ -17,9 +17,7 @@ pub struct ShortInterval {
 
 impl ShortInterval {
     pub const fn new(milliseconds: i64) -> Self {
-        Self {
-            milliseconds: milliseconds,
-        }
+        Self { milliseconds }
     }
 
     pub fn milliseconds(&self) -> i64 {
@@ -61,7 +59,7 @@ pub struct LongInterval {
 
 impl LongInterval {
     pub const fn new(days: i32) -> Self {
-        Self { days: days }
+        Self { days }
     }
 
     pub fn days(&self) -> i32 {

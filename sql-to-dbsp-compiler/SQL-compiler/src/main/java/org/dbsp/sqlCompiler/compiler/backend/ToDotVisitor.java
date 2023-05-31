@@ -41,7 +41,7 @@ import java.io.PrintWriter;
 
 /**
  * This visitor dumps the circuit to a dot file, so it can be visualized.
- * A utility method can create a jpg.
+ * A utility method can create a jpg or png or other format supported by dot.
  */
 public class ToDotVisitor extends CircuitVisitor implements IModule {
     private final IndentStream stream;
@@ -125,7 +125,7 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
                 .newline();
     }
 
-    public static void toDot(DBSPCompiler compiler, String fileName, boolean toJpg, DBSPCircuit circuit) {
+    public static void toDot(DBSPCompiler compiler, String fileName, String outputFormat, DBSPCircuit circuit) {
         try {
             Logger.INSTANCE.from("ToDotVisitor", 1)
                     .append("Writing circuit to ")
@@ -136,8 +136,8 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
             IndentStream stream = new IndentStream(writer);
             circuit.accept(new ToDotVisitor(compiler, stream));
             writer.close();
-            if (toJpg)
-                Utilities.runProcess(".", "dot", "-T", "jpg",
+            if (outputFormat != null)
+                Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
             else
                 //noinspection ResultOfMethodCallIgnored

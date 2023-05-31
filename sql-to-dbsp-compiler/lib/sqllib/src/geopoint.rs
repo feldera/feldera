@@ -20,11 +20,11 @@ impl GeoPoint {
         Self(F64::from(left), F64::from(right))
     }
 
-    pub fn to_point(self: &Self) -> Point {
+    pub fn to_point(&self) -> Point {
         Point::new(self.0.into_inner(), self.1.into_inner())
     }
 
-    pub fn distance(self: &Self, other: &GeoPoint) -> F64 {
+    pub fn distance(&self, other: &GeoPoint) -> F64 {
         let left = self.to_point();
         let right = other.to_point();
         F64::from(left.euclidean_distance(&right))

@@ -154,8 +154,8 @@ Usage: sql-to-dbsp [options] Input file to compile
     -je
       Emit error messages as a JSON array to stderr
       Default: false
-    -jpg
-      Emit a jpg image of the circuit instead of Rust
+    -jpg, -png
+      Emit a JPG or PNG image of the circuit instead of Rust
       Default: false
     -o
       Output file; stdout if null

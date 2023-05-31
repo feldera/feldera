@@ -319,7 +319,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);
-        //ToDotVisitor.toDot("circuit.jpg", true, dbsp);
+        //ToDotVisitor.toDot("circuit.png", "png", dbsp);
         DBSPZSetLiteral expectedOutput = null;
         if (testQuery.outputDescription.getQueryResults() != null) {
             IDBSPContainer container;

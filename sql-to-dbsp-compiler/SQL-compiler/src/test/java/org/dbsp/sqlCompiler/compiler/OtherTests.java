@@ -377,7 +377,7 @@ public class OtherTests extends BaseSQLTests implements IModule {
     }
 
     @Test
-    public void testCompilerToJpeg() throws IOException {
+    public void testCompilerToPng() throws IOException {
         String[] statements = new String[]{
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
@@ -386,18 +386,18 @@ public class OtherTests extends BaseSQLTests implements IModule {
                 "CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5"
         };
         File file = this.createInputScript(statements);
-        File jpg = File.createTempFile("out", ".jpg", new File("."));
-        CompilerMessages message = CompilerMain.execute("-jpg", "-o", jpg.getPath(), file.getPath());
+        File png = File.createTempFile("out", ".png", new File("."));
+        CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
         try {
-            ImageIO.read(new File(jpg.getPath()));
+            ImageIO.read(new File(png.getPath()));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
         boolean success = file.delete();
         Assert.assertTrue(success);
-        success = jpg.delete();
+        success = png.delete();
         Assert.assertTrue(success);
     }
 

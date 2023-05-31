@@ -116,13 +116,16 @@ public class CompilerMain {
 
         compiler.optimize();
         DBSPCircuit dbsp = compiler.getFinalCircuit(this.options.ioOptions.functionName);
-        if (this.options.ioOptions.emitJpeg) {
+        String dotFormat = (this.options.ioOptions.emitJpeg ? "jpg"
+                            : this.options.ioOptions.emitPng ? "png"
+                            : null);
+        if (dotFormat != null) {
             if (this.options.ioOptions.outputFile == null) {
                 compiler.reportError(SourcePositionRange.INVALID, false, "Invalid output",
-                        "Must specify an output file when outputting jpeg");
+                        "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
-            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, true, dbsp);
+            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, dotFormat, dbsp);
             return compiler.messages;
         }
         try {
