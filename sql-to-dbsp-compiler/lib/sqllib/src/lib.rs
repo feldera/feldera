@@ -122,10 +122,7 @@ pub fn and_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool> {
 
 #[inline(always)]
 pub fn is_null<T>(value: Option<T>) -> bool {
-    match value {
-        Some(_) => false,
-        _ => true,
-    }
+    value.is_none()
 }
 
 #[inline(always)]
@@ -342,18 +339,12 @@ pub fn div_f_f(left: F32, right: F32) -> Option<F32> {
 
 #[inline(always)]
 pub fn div_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    match right {
-        None => None,
-        Some(right) => Some(F32::new(left.into_inner() / right.into_inner())),
-    }
+    right.map(|right| F32::new(left.into_inner() / right.into_inner()))
 }
 
 #[inline(always)]
 pub fn div_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    match left {
-        None => None,
-        Some(left) => Some(F32::new(left.into_inner() / right.into_inner())),
-    }
+    left.map(|left| F32::new(left.into_inner() / right.into_inner()))
 }
 
 #[inline(always)]
@@ -372,18 +363,12 @@ pub fn div_d_d(left: F64, right: F64) -> Option<F64> {
 
 #[inline(always)]
 pub fn div_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    match right {
-        None => None,
-        Some(right) => Some(F64::new(left.into_inner() / right.into_inner())),
-    }
+    right.map(|right| F64::new(left.into_inner() / right.into_inner()))
 }
 
 #[inline(always)]
 pub fn div_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    match left {
-        None => None,
-        Some(left) => Some(F64::new(left.into_inner() / right.into_inner())),
-    }
+    left.map(|left| F64::new(left.into_inner() / right.into_inner()))
 }
 
 #[inline(always)]
@@ -452,7 +437,7 @@ pub fn abs_decimal(left: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn abs_decimalN(left: Option<Decimal>) -> Option<Decimal> {
-    left.map(|l| abs_decimal(l))
+    left.map(abs_decimal)
 }
 
 #[inline(always)]
@@ -462,7 +447,7 @@ pub fn ln_decimal(left: Decimal) -> F64 {
 
 #[inline(always)]
 pub fn ln_decimalN(left: Option<Decimal>) -> Option<F64> {
-    left.map(|l| ln_decimal(l))
+    left.map(ln_decimal)
 }
 
 #[inline(always)]
@@ -472,7 +457,7 @@ pub fn log10_decimal(left: Decimal) -> F64 {
 
 #[inline(always)]
 pub fn log10_decimalN(left: Option<Decimal>) -> Option<F64> {
-    left.map(|l| log10_decimal(l))
+    left.map(log10_decimal)
 }
 
 #[inline(always)]
@@ -482,10 +467,7 @@ pub fn is_true_b_(left: bool) -> bool {
 
 #[inline(always)]
 pub fn is_true_bN_(left: Option<bool>) -> bool {
-    match left {
-        Some(true) => true,
-        _ => false,
-    }
+    left == Some(true)
 }
 
 #[inline(always)]
@@ -495,10 +477,7 @@ pub fn is_false_b_(left: bool) -> bool {
 
 #[inline(always)]
 pub fn is_false_bN_(left: Option<bool>) -> bool {
-    match left {
-        Some(false) => true,
-        _ => false,
-    }
+    left == Some(false)
 }
 
 #[inline(always)]
@@ -589,17 +568,11 @@ pub fn st_distance__(left: GeoPoint, right: GeoPoint) -> F64 {
 }
 
 pub fn st_distance_N_(left: Option<GeoPoint>, right: GeoPoint) -> Option<F64> {
-    match left {
-        None => None,
-        Some(x) => Some(st_distance__(x, right)),
-    }
+    left.map(|x| st_distance__(x, right))
 }
 
 pub fn st_distance__N(left: GeoPoint, right: Option<GeoPoint>) -> Option<F64> {
-    match right {
-        None => None,
-        Some(x) => Some(st_distance__(left, x)),
-    }
+    right.map(|x| st_distance__(left, x))
 }
 
 pub fn st_distance_N_N(left: Option<GeoPoint>, right: Option<GeoPoint>) -> Option<F64> {
@@ -615,17 +588,11 @@ pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval
 }
 
 pub fn times_ShortIntervalN_i64(left: Option<ShortInterval>, right: i64) -> Option<ShortInterval> {
-    match left {
-        None => None,
-        Some(x) => Some(x * right),
-    }
+    left.map(|x| x * right)
 }
 
 pub fn times_ShortInterval_i64N(left: ShortInterval, right: Option<i64>) -> Option<ShortInterval> {
-    match right {
-        None => None,
-        Some(x) => Some(left * x),
-    }
+    right.map(|x| left * x)
 }
 
 pub fn times_ShortIntervalN_i64N(
@@ -666,18 +633,12 @@ pub fn times_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn times_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    match left {
-        Some(l) => Some(l * right),
-        _ => None::<Decimal>,
-    }
+    left.map(|l| l * right)
 }
 
 #[inline(always)]
 pub fn times_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    match right {
-        Some(r) => Some(left * r),
-        _ => None::<Decimal>,
-    }
+    right.map(|r| left * r)
 }
 
 #[inline(always)]
@@ -728,18 +689,12 @@ pub fn plus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn plus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    match left {
-        Some(l) => Some(l + right),
-        _ => None::<Decimal>,
-    }
+    left.map(|l| l + right)
 }
 
 #[inline(always)]
 pub fn plus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    match right {
-        Some(r) => Some(left + r),
-        _ => None::<Decimal>,
-    }
+    right.map(|r| left + r)
 }
 
 #[inline(always)]
@@ -757,18 +712,12 @@ pub fn minus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn minus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    match left {
-        Some(l) => Some(l - right),
-        _ => None::<Decimal>,
-    }
+    left.map(|l| l - right)
 }
 
 #[inline(always)]
 pub fn minus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    match right {
-        Some(r) => Some(left - r),
-        _ => None::<Decimal>,
-    }
+    right.map(|r| left - r)
 }
 
 #[inline(always)]
@@ -786,18 +735,12 @@ pub fn mod_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn mod_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    match left {
-        Some(l) => Some(l % right),
-        _ => None::<Decimal>,
-    }
+    left.map(|l| l % right)
 }
 
 #[inline(always)]
 pub fn mod_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    match right {
-        Some(r) => Some(left % r),
-        _ => None::<Decimal>,
-    }
+    right.map(|r| left % r)
 }
 
 #[inline(always)]
@@ -815,18 +758,12 @@ pub fn lt_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn lt_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l < right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l < right)
 }
 
 #[inline(always)]
 pub fn lt_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left < r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left < r)
 }
 
 #[inline(always)]
@@ -844,18 +781,12 @@ pub fn eq_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn eq_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l == right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l == right)
 }
 
 #[inline(always)]
 pub fn eq_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left == r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left == r)
 }
 
 #[inline(always)]
@@ -873,18 +804,12 @@ pub fn gt_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn gt_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l > right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l > right)
 }
 
 #[inline(always)]
 pub fn gt_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left > r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left > r)
 }
 
 #[inline(always)]
@@ -902,18 +827,12 @@ pub fn gte_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn gte_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l >= right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l >= right)
 }
 
 #[inline(always)]
 pub fn gte_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left >= r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left >= r)
 }
 
 #[inline(always)]
@@ -931,18 +850,12 @@ pub fn neq_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn neq_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l != right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l != right)
 }
 
 #[inline(always)]
 pub fn neq_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left != r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left != r)
 }
 
 #[inline(always)]
@@ -960,18 +873,12 @@ pub fn lte_decimal_decimal(left: Decimal, right: Decimal) -> bool {
 
 #[inline(always)]
 pub fn lte_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    match left {
-        Some(l) => Some(l <= right),
-        _ => None::<bool>,
-    }
+    left.map(|l| l <= right)
 }
 
 #[inline(always)]
 pub fn lte_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    match right {
-        Some(r) => Some(left <= r),
-        _ => None::<bool>,
-    }
+    right.map(|r| left <= r)
 }
 
 #[inline(always)]

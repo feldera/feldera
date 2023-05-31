@@ -346,6 +346,7 @@ public class RustSqlRuntimeLibrary {
         File file = new File(filename);
         FileWriter writer = new FileWriter(file, false);
         writer.append("// Automatically-generated file\n");
+        writer.append("#![allow(clippy::all)]\n");
         writer.append("#![allow(unused_parens)]\n");
         writer.append("#![allow(non_snake_case)]\n");
         writer.append("use dbsp::algebra::{F32, F64};\n");

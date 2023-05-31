@@ -59,9 +59,9 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
         int count = 0;
         if (this.getDebugLevel() >= 3) {
             Logger.INSTANCE.from(this, 3)
-                    .append("Writing circuit to before.jpg")
+                    .append("Writing circuit to before.png")
                     .newline();
-            ToDotVisitor.toDot(this.compiler, "0before.jpg", true, circuit);
+            ToDotVisitor.toDot(this.compiler, "0before.png", "png", circuit);
         }
         ++count;
         for (CircuitVisitor pass: this.passes) {
@@ -71,12 +71,12 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
                     .newline();
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
-                String name = count + pass.toString().replace(" ", "_") + ".jpg";
+                String name = count + pass.toString().replace(" ", "_") + ".png";
                 Logger.INSTANCE.from(this, 3)
                         .append("Writing circuit to ")
                         .append(name)
                         .newline();
-                ToDotVisitor.toDot(this.compiler, name, true, circuit);
+                ToDotVisitor.toDot(this.compiler, name, "png", circuit);
             }
             ++count;
         }

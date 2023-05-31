@@ -70,18 +70,12 @@ pub fn cast_to_b_fN(value: Option<F32>) -> bool {
 
 #[inline]
 pub fn cast_to_b_s(value: String) -> bool {
-    match value.parse() {
-        Err(_) => false,
-        Ok(x) => x,
-    }
+    value.parse().unwrap_or(false)
 }
 
 #[inline]
 pub fn cast_to_b_sN(value: Option<String>) -> bool {
-    match value.unwrap().parse() {
-        Err(_) => false,
-        Ok(x) => x,
-    }
+    value.unwrap().parse().unwrap_or(false)
 }
 
 #[inline]
@@ -244,12 +238,8 @@ pub fn cast_to_dateN_nullN(_value: Option<()>) -> Option<Date> {
 #[inline]
 pub fn cast_to_dateN_s(value: String) -> Option<Date> {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
-    match dt.ok() {
-        None => None,
-        Some(value) => Some(Date::new(
-            (value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32,
-        )),
-    }
+    dt.ok()
+        .map(|value| Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32))
 }
 
 #[inline]
@@ -282,7 +272,7 @@ pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> De
 #[inline]
 pub fn cast_to_decimal_decimal(value: Decimal, _precision: u32, scale: i32) -> Decimal {
     //value.with_prec(precision as u64).with_scale(scale as i64)
-    let mut result = value.clone();
+    let mut result = value;
     result.rescale(scale as u32);
     result
 }
@@ -666,14 +656,14 @@ pub fn cast_to_dN_bN(value: Option<bool>) -> Option<F64> {
 
 #[inline]
 pub fn cast_to_dN_decimal(value: Decimal) -> Option<F64> {
-    value.to_f64().map(|x| F64::from(x))
+    value.to_f64().map(F64::from)
 }
 
 #[inline]
 pub fn cast_to_dN_decimalN(value: Option<Decimal>) -> Option<F64> {
     match value {
         None => None,
-        Some(x) => x.to_f64().map(|y| F64::from(y)),
+        Some(x) => x.to_f64().map(F64::from),
     }
 }
 
@@ -728,7 +718,7 @@ pub fn cast_to_dN_i16(value: i16) -> Option<F64> {
 
 #[inline]
 pub fn cast_to_dN_i16N(value: Option<i16>) -> Option<F64> {
-    value.map(|x| F64::from(x))
+    value.map(F64::from)
 }
 
 #[inline]
@@ -738,7 +728,7 @@ pub fn cast_to_dN_i32(value: i32) -> Option<F64> {
 
 #[inline]
 pub fn cast_to_dN_i32N(value: Option<i32>) -> Option<F64> {
-    value.map(|x| F64::from(x))
+    value.map(F64::from)
 }
 
 #[inline]
@@ -885,14 +875,14 @@ pub fn cast_to_fN_bN(value: Option<bool>) -> Option<F32> {
 
 #[inline]
 pub fn cast_to_fN_decimal(value: Decimal) -> Option<F32> {
-    value.to_f32().map(|x| F32::from(x))
+    value.to_f32().map(F32::from)
 }
 
 #[inline]
 pub fn cast_to_fN_decimalN(value: Option<Decimal>) -> Option<F32> {
     match value {
         None => None,
-        Some(x) => x.to_f32().map(|y| F32::from(y)),
+        Some(x) => x.to_f32().map(F32::from),
     }
 }
 
@@ -947,7 +937,7 @@ pub fn cast_to_fN_i16(value: i16) -> Option<F32> {
 
 #[inline]
 pub fn cast_to_fN_i16N(value: Option<i16>) -> Option<F32> {
-    value.map(|x| F32::from(x))
+    value.map(F32::from)
 }
 
 #[inline]
@@ -1257,18 +1247,12 @@ pub fn cast_to_i16_fN(value: Option<F32>) -> i16 {
 
 #[inline]
 pub fn cast_to_i16_s(value: String) -> i16 {
-    match value.parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.parse().unwrap_or(0)
 }
 
 #[inline]
 pub fn cast_to_i16_sN(value: Option<String>) -> i16 {
-    match value.unwrap().parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.unwrap().parse().unwrap_or(0)
 }
 
 #[inline]
@@ -1476,18 +1460,12 @@ pub fn cast_to_i32_fN(value: Option<F32>) -> i32 {
 
 #[inline]
 pub fn cast_to_i32_s(value: String) -> i32 {
-    match value.parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.parse().unwrap_or(0)
 }
 
 #[inline]
 pub fn cast_to_i32_sN(value: Option<String>) -> i32 {
-    match value.unwrap().parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.unwrap().parse().unwrap_or(0)
 }
 
 #[inline]
@@ -1626,7 +1604,7 @@ pub fn cast_to_i32N_i16N(value: Option<i16>) -> Option<i32> {
 
 #[inline]
 pub fn cast_to_i32N_i32(value: i32) -> Option<i32> {
-    Some(value as i32)
+    Some(value)
 }
 
 #[inline]
@@ -1701,18 +1679,12 @@ pub fn cast_to_i64_fN(value: Option<F32>) -> i64 {
 
 #[inline]
 pub fn cast_to_i64_s(value: String) -> i64 {
-    match value.parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.parse().unwrap_or(0)
 }
 
 #[inline]
 pub fn cast_to_i64_sN(value: Option<String>) -> i64 {
-    match value.unwrap().parse() {
-        Err(_) => 0,
-        Ok(x) => x,
-    }
+    value.unwrap().parse().unwrap_or(0)
 }
 
 #[inline]
@@ -1923,32 +1895,26 @@ pub fn cast_to_TimestampN_nullN(_value: Option<()>) -> Option<Timestamp> {
 
 #[inline]
 pub fn cast_to_TimestampN_s(value: String) -> Option<Timestamp> {
-    let r = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f");
-    match r {
-        Ok(v) => {
-            // round the number of milliseconds
-            let nanos = v.timestamp_subsec_nanos();
-            let nanos = (nanos + 500000) / 1000000;
-            let result = Timestamp::new(v.timestamp() * 1000 + (nanos as i64));
-            //println!("Parsed successfully {} using {} into {:?} ({})",
-            //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.milliseconds());
-            return Some(result);
-        }
-        _ => (),
+    if let Ok(v) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f") {
+        // round the number of milliseconds
+        let nanos = v.timestamp_subsec_nanos();
+        let nanos = (nanos + 500000) / 1000000;
+        let result = Timestamp::new(v.timestamp() * 1000 + (nanos as i64));
+        //println!("Parsed successfully {} using {} into {:?} ({})",
+        //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.milliseconds());
+        return Some(result);
     }
+
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
-    let r = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
-    match r {
-        Ok(v) => {
-            let dt = v.and_hms_opt(0, 0, 0).unwrap();
-            let result = Timestamp::new(dt.timestamp_millis());
-            //println!("Parsed successfully {} using {} into {:?} ({})",
-            //         value, "%Y-%m-%d", result, result.milliseconds());
-            return Some(result);
-        }
-        _ => (),
+    if let Ok(v) = NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
+        let dt = v.and_hms_opt(0, 0, 0).unwrap();
+        let result = Timestamp::new(dt.timestamp_millis());
+        //println!("Parsed successfully {} using {} into {:?} ({})",
+        //         value, "%Y-%m-%d", result, result.milliseconds());
+        return Some(result);
     }
+
     //println!("Failed to parse {}", value);
     None
 }
@@ -1968,7 +1934,7 @@ pub fn cast_to_TimestampN_Timestamp(value: Timestamp) -> Option<Timestamp> {
 
 #[inline]
 pub fn cast_to_TimestampN_dateN(value: Option<Date>) -> Option<Timestamp> {
-    value.map(|v| cast_to_Timestamp_date(v))
+    value.map(cast_to_Timestamp_date)
 }
 
 /////////// cast to u
