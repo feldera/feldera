@@ -28,7 +28,7 @@ where
 {
     let path = Path::new(source_file_path);
     let file =
-        BufReader::new(File::open(&path).unwrap_or_else(|error| {
+        BufReader::new(File::open(path).unwrap_or_else(|error| {
             panic!("failed to open file '{}': {}", source_file_path, error,)
         }));
 
@@ -56,10 +56,10 @@ where
         let mut conn = AnyConnection::connect(conn_str).await.unwrap();
         let mut query = "SELECT * FROM ".to_owned();
         query.push_str(table_name);
-        return sqlx::query(query.as_str())
+        sqlx::query(query.as_str())
             .fetch_all(&mut conn)
             .await
-            .unwrap();
+            .unwrap()
     });
     let vec = rows
         .iter()

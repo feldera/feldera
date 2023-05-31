@@ -141,6 +141,7 @@ impl From<Option<Decimal>> for SqlValue {
     }
 }
 
+#[derive(Default)]
 pub struct SqlRow {
     values: Vec<SqlValue>,
 }
@@ -180,16 +181,8 @@ impl SqlRow {
 }
 
 impl SqlRow {
-    pub fn push(self: &mut Self, value: SqlValue) {
+    pub fn push(&mut self, value: SqlValue) {
         self.values.push(value)
-    }
-}
-
-impl Default for SqlRow {
-    fn default() -> Self {
-        SqlRow {
-            values: Vec::default(),
-        }
     }
 }
 
@@ -201,12 +194,12 @@ pub trait SqlLogicTestFormat {
 /// empty strings are turned into (empty)
 /// non-printable (ASCII) characters are turned into @
 fn slt_translate_string(s: &String) -> String {
-    if s == "" {
+    if s.is_empty() {
         return String::from("(empty)");
     }
     let mut result = String::with_capacity(s.len());
     for mut c in s.chars() {
-        if c < ' ' || c > '~' {
+        if !(' '..='~').contains(&c) {
             c = '@';
         }
         result.push(c);
@@ -217,7 +210,7 @@ fn slt_translate_string(s: &String) -> String {
 /// Format a SqlValue according to SqlLogicTest rules
 /// the arg is one character of the form I - i32, R - f32, or T - String.
 impl SqlLogicTestFormat for SqlValue {
-    fn format_slt(self: &Self, arg: &char) -> String {
+    fn format_slt(&self, arg: &char) -> String {
         match (self, arg) {
             (SqlValue::Int(x), _) => format!("{}", x),
             (SqlValue::OptInt(None), _) => String::from("NULL"),

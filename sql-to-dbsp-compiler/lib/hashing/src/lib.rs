@@ -8,7 +8,7 @@ use dbsp::{
     trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
     zset, DBData, DBWeight,
 };
-use md5;
+
 use sqlvalue::*;
 use std::collections::BTreeMap;
 
@@ -25,19 +25,14 @@ where
 {
     let llen = left.len();
     let rlen = right.len();
-    let min;
-    if llen < rlen {
-        min = llen;
-    } else {
-        min = rlen;
-    }
+    let min = llen.min(rlen);
     for i in 0..min {
         let cmp = left[i].cmp(&right[i]);
         if cmp != Ordering::Equal {
             return cmp;
         }
     }
-    return llen.cmp(&rlen);
+    llen.cmp(&rlen)
 }
 
 /// Convert a zset to a vector of SqlRow.
@@ -88,19 +83,19 @@ impl<'a> DataRows<'a> {
     pub fn new(format: &'a String, order: &'a SortOrder) -> Self {
         Self {
             rows: Vec::new(),
-            order: order,
-            format: format,
+            order,
+            format,
         }
     }
     pub fn with_capacity(format: &'a String, order: &'a SortOrder, capacity: usize) -> Self {
         Self {
             rows: Vec::with_capacity(capacity),
-            order: order,
-            format: format,
+            order,
+            format,
         }
     }
-    pub fn push(self: &mut Self, sql_row: SqlRow) {
-        let row_vec = sql_row.to_slt_strings(&self.format);
+    pub fn push(&mut self, sql_row: SqlRow) {
+        let row_vec = sql_row.to_slt_strings(self.format);
         if *self.order == SortOrder::ROW || *self.order == SortOrder::NONE {
             self.rows.push(row_vec);
         } else if *self.order == SortOrder::VALUE {
@@ -110,7 +105,7 @@ impl<'a> DataRows<'a> {
         }
     }
 
-    pub fn get(mut self: Self) -> Vec<Vec<String>> {
+    pub fn get(mut self) -> Vec<Vec<String>> {
         if *self.order != SortOrder::NONE {
             self.rows.sort_unstable_by(&compare);
         }
@@ -201,7 +196,7 @@ where
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    return format!("{:x}", digest);
+    format!("{:x}", digest)
 }
 
 /// Version of hash that takes the result of orderby: a zset that is expected
@@ -234,7 +229,7 @@ where
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    return format!("{:x}", digest);
+    format!("{:x}", digest)
 }
 
 // The count of elements in a zset that contains a vector is
@@ -250,7 +245,7 @@ where
     let mut cursor = set.cursor();
     while cursor.key_valid() {
         let key = cursor.key();
-        sum = sum + (key.len() as isize).mul_by_ref(&cursor.weight());
+        sum += (key.len() as isize).mul_by_ref(&cursor.weight());
         cursor.step_key();
     }
     sum
@@ -282,6 +277,7 @@ where
     false
 }
 
+#[allow(clippy::ptr_arg)]
 fn jitset_to_map(data: &Vec<(RowLiteral, i32)>) -> BTreeMap<RowLiteral, i32> {
     let mut result = BTreeMap::new();
     for (r, w) in data.iter() {
