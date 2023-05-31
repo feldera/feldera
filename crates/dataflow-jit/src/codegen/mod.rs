@@ -478,6 +478,7 @@ struct CodegenCtx<'a> {
     imports: ImportIntrinsics,
     data_imports: BTreeMap<DataId, GlobalValue>,
     comment_writer: Option<Rc<RefCell<CommentWriter>>>,
+    static_strings: BTreeMap<Value, usize>,
 }
 
 impl<'a> CodegenCtx<'a> {
@@ -506,6 +507,7 @@ impl<'a> CodegenCtx<'a> {
             imports,
             data_imports: BTreeMap::new(),
             comment_writer,
+            static_strings: BTreeMap::new(),
         }
     }
 
@@ -678,9 +680,13 @@ impl<'a> CodegenCtx<'a> {
             let string_value = self.import_data(string_data, builder);
 
             // Get the value of the string
-            builder
+            let value = builder
                 .ins()
-                .symbol_value(self.pointer_type(), string_value)
+                .symbol_value(self.pointer_type(), string_value);
+
+            self.static_strings.insert(value, string.len());
+
+            value
         } else {
             unreachable!()
         }
@@ -2228,18 +2234,22 @@ impl<'a> CodegenCtx<'a> {
     ) -> Value {
         debug_assert_eq!(builder.value_type(string), self.pointer_type());
 
-        // Get the offset of the length field
-        let length_offset = ThinStr::length_offset();
+        let length = if let Some(&length) = self.static_strings.get(&string) {
+            builder.ins().iconst(self.pointer_type(), length as i64)
+        } else {
+            // Get the offset of the length field
+            let length_offset = ThinStr::length_offset();
 
-        let mut flags = MemFlags::trusted();
-        if readonly {
-            flags.set_readonly();
-        }
+            let mut flags = MemFlags::trusted();
+            if readonly {
+                flags.set_readonly();
+            }
 
-        // Load the length field
-        let length = builder
-            .ins()
-            .load(self.pointer_type(), flags, string, length_offset as i32);
+            // Load the length field
+            builder
+                .ins()
+                .load(self.pointer_type(), flags, string, length_offset as i32)
+        };
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
@@ -2286,11 +2296,15 @@ impl<'a> CodegenCtx<'a> {
     fn string_ptr(&self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
         debug_assert_eq!(builder.value_type(string), self.pointer_type());
 
-        // Get the offset of the pointer field
-        let pointer_offset = ThinStr::pointer_offset();
+        let pointer = if self.static_strings.contains_key(&string) {
+            string
+        } else {
+            // Get the offset of the pointer field
+            let pointer_offset = ThinStr::pointer_offset();
 
-        // Offset the thin string's pointer to the start of its data
-        let pointer = builder.ins().iadd_imm(string, pointer_offset as i64);
+            // Offset the thin string's pointer to the start of its data
+            builder.ins().iadd_imm(string, pointer_offset as i64)
+        };
 
         if let Some(writer) = self.comment_writer.as_deref() {
             writer.borrow_mut().add_comment(
@@ -2303,10 +2317,50 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn clone_string(&mut self, string: Value, builder: &mut FunctionBuilder<'_>) -> Value {
-        self.debug_assert_ptr_valid(string, ThinStr::ALIGN as u32, builder);
+        if let Some(&length) = self.static_strings.get(&string) {
+            // Allocate a string that'll hold the static string's contents
+            let with_capacity = self
+                .imports
+                .get("string_with_capacity", self.module, builder.func);
+            let capacity = builder.ins().iconst(self.pointer_type(), length as i64);
+            let allocated = builder.call_fn(with_capacity, &[capacity]);
 
-        let clone_str = self.imports.get("string_clone", self.module, builder.func);
-        builder.call_fn(clone_str, &[string])
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.value_def(allocated),
+                    format!("call @dbsp.str.clone({string}) // clone a static string"),
+                );
+            }
+
+            // Copy data from the static string into the allocated one
+            let allocated_ptr = self.string_ptr(allocated, builder);
+            builder.call_memmove(self.frontend_config(), allocated_ptr, string, capacity);
+
+            // Set the allocated string's length
+            let length_offset = ThinStr::length_offset();
+            builder.ins().store(
+                MemFlags::trusted(),
+                capacity,
+                allocated,
+                length_offset as i32,
+            );
+
+            allocated
+        } else {
+            self.debug_assert_ptr_valid(string, ThinStr::ALIGN as u32, builder);
+
+            let clone_str = self.imports.get("string_clone", self.module, builder.func);
+            let cloned = builder.call_fn(clone_str, &[string]);
+
+            if let Some(writer) = self.comment_writer.as_deref() {
+                writer.borrow_mut().add_comment(
+                    builder.value_def(cloned),
+                    format!("call @dbsp.str.clone({string})"),
+                );
+            }
+
+            cloned
+        }
     }
 
     fn comment<F, S>(&self, inst: Inst, make_comment: F)
