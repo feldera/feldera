@@ -85,6 +85,8 @@ public class CompilerOptions {
         public boolean jit = false;
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
+        @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
+        public boolean emitPng = false;
         @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
         @Parameter(names = "-js", description = "File containing schemas of all views and tables involved (in json)")
@@ -117,6 +119,7 @@ public class CompilerOptions {
                     "outputFile='" + outputFile + '\'' +
                     ", jit=" + jit +
                     ", emitJpeg=" + emitJpeg +
+                    ", emitPng=" + emitPng +
                     ", emitJsonErrors=" + emitJsonErrors +
                     ", emitJsonSchema='" + emitJsonSchema + '\'' +
                     ", inputFile='" + inputFile + '\'' +
