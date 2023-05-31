@@ -7,7 +7,6 @@ type Resolver<T> = (options: ApiRequestOptions) => Promise<T>
 type Headers = Record<string, string>
 
 export type OpenAPIConfig = {
-  BASE: string
   VERSION: string
   WITH_CREDENTIALS: boolean
   CREDENTIALS: 'include' | 'omit' | 'same-origin'
@@ -19,7 +18,6 @@ export type OpenAPIConfig = {
 }
 
 export const OpenAPI: OpenAPIConfig = {
-  BASE: 'http://gz-desktop-pro:8080',
   VERSION: '0.1.0',
   WITH_CREDENTIALS: false,
   CREDENTIALS: 'include',
