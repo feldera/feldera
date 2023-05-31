@@ -10,7 +10,12 @@ use std::{
 
 /// Relative time offset.
 ///
-/// Specifies relative time as an offset.
+/// Specifies relative time as an offset.  This is valuable for unsigned integer
+/// type `TS` because it allows representing times in the past.
+///
+/// `RelOffset::Before(0)` and `RelOffset::After(0)` both represent the same
+/// relative time.  This is also true for `RelOffset::Before(1)` and
+/// `RelOffset::After(-1)`, but the former is preferred.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum RelOffset<TS> {
@@ -70,7 +75,11 @@ where
 
 /// Relative time range.
 ///
-/// Specifies a time interval relative to a given moment in time.
+/// Specifies a closed time interval relative to a given moment in time.
+///
+/// `RelRange::new(RelOffset::Before(0), RelOffset::Before(0))` spans 1 unit of
+/// time; `RelRange::new(RelOffset::Before(2), RelOffset::Before(0))` spans 3
+/// units:
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RelRange<TS> {
@@ -90,6 +99,18 @@ where
     ///
     /// Returns `None` if the range is completely outside the range of type
     /// `TS`.
+    ///
+    /// # Example
+    ///
+    /// Starting from 5, a relative range of `[-3,-1]` is the same as absolute
+    /// range `[2,4]`:
+    ///
+    /// ```
+    /// use dbsp::operator::time_series::{Range, RelOffset, RelRange};
+    ///
+    /// let rr = RelRange::new(RelOffset::Before(3), RelOffset::Before(1));
+    /// assert_eq!(rr.range_of(&5), Some(Range::new(2, 4)));
+    /// ```
     pub fn range_of(&self, ts: &TS) -> Option<Range<TS>> {
         let from = match self.from {
             RelOffset::Before(off) => ts.saturating_sub(off),
@@ -106,6 +127,18 @@ where
     /// Returns a range containing all times `t` such that `ts ∈
     /// self.range_of(t)` or `None` if the range is completely outside
     /// the range of type `TS`.
+    ///
+    /// # Example
+    ///
+    /// If and only if `6 <= x <= 8`, starting from `x`, a relative range of
+    /// `[-3,-1]` contains 5:
+    ///
+    /// ```
+    /// use dbsp::operator::time_series::{Range, RelOffset, RelRange};
+    ///
+    /// let rr = RelRange::new(RelOffset::Before(3), RelOffset::Before(1));
+    /// assert_eq!(rr.affected_range_of(&5), Some(Range::new(6, 8)));
+    /// ```
     pub fn affected_range_of(&self, ts: &TS) -> Option<Range<TS>> {
         let from = match self.to {
             RelOffset::Before(off) => ts.checked_add(&off)?,
