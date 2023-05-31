@@ -1,2 +1,3 @@
-/dbsp-api-client
+# Uncommenting this for some reason breaks `pip install ./dbsp-api-client`.
+# /dbsp-api-client
 __pycache__
