@@ -455,7 +455,7 @@ mod test {
                 let start = tuples
                     .iter()
                     .position(|((k, v, ()), _w)| (k, v) >= (anchor_k, anchor_v))
-                    .unwrap_or_else(|| tuples.len()) as isize;
+                    .unwrap_or(tuples.len()) as isize;
 
                 let mut from = start - descr.before as isize;
                 let mut to = start + descr.after as isize;

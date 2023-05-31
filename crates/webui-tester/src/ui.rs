@@ -23,7 +23,7 @@ impl VerticalMenuLink {
     /// Name of the menu item.
     pub async fn name(&self) -> WebDriverResult<String> {
         let elem = self.link.resolve().await?;
-        Ok(elem.text().await?)
+        elem.text().await
     }
 
     /// Click the menu item (navigates to the page).
@@ -71,7 +71,7 @@ async fn set_text_generic(elem: &ElementResolver<WebElement>, text: &str) -> Web
 /// Retrieves the text of an element.
 async fn get_text_generic(elem: &ElementResolver<WebElement>) -> WebDriverResult<String> {
     let elem = elem.resolve().await?;
-    Ok(elem.text().await?)
+    elem.text().await
 }
 
 /// Generic function that waits until the text of `elem` is `wait_for_this`.
@@ -302,19 +302,19 @@ pub async fn drag_and_drop_impl(
     // or still the drag-and-drop bug in selenium
     driver
         .action_chain()
-        .move_to_element_center(&from)
+        .move_to_element_center(from)
         .perform()
         .await?;
     tokio::time::sleep(Duration::from_millis(800)).await;
     driver
         .action_chain()
-        .click_and_hold_element(&from)
+        .click_and_hold_element(from)
         .perform()
         .await?;
     tokio::time::sleep(Duration::from_millis(800)).await;
     driver
         .action_chain()
-        .move_to_element_center(&to)
+        .move_to_element_center(to)
         .perform()
         .await?;
     tokio::time::sleep(Duration::from_millis(800)).await;
@@ -535,7 +535,7 @@ impl PipelineBuilder {
         let buttons_len = drawer.select_buttons.resolve_present().await?.len();
         for idx in 0..buttons_len {
             let button = &drawer.select_buttons.resolve_present().await?[idx];
-            let _r = button.click().await?;
+            button.click().await?;
             // This keeps the ID of the drawer but we changed the content, don't
             // reference stuff in drawer at the moment as most of it is gone and
             // will throw an runtime error in selenium
@@ -598,9 +598,9 @@ impl PipelineBuilder {
                     return Ok(());
                 }
             }
-            return Err(anyhow!("`view` not found in program views"));
+            Err(anyhow!("`view` not found in program views"))
         } else {
-            return Err(anyhow!("`connector_name` not found in outputs"));
+            Err(anyhow!("`connector_name` not found in outputs"))
         }
     }
 
@@ -637,9 +637,9 @@ impl PipelineBuilder {
                     return Ok(());
                 }
             }
-            return Err(anyhow!("`table` not found in program tables"));
+            Err(anyhow!("`table` not found in program tables"))
         } else {
-            return Err(anyhow!("`connector_name` not found in inputs"));
+            Err(anyhow!("`connector_name` not found in inputs"))
         }
     }
 }
