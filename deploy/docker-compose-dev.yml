@@ -5,11 +5,11 @@ services:
    build:
      context: ../
      dockerfile: deploy/Dockerfile
-   image: dbspmanager
+   image: ghcr.io/feldera/dbsp-manager
 
   demo:
     build:
       context: ../
       dockerfile: deploy/Dockerfile
       target: client
-    image: demo-container
+    image: ghcr.io/feldera/demo-container

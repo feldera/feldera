@@ -15,7 +15,7 @@ services:
       retries: 5
 
   dbsp:
-   image: dbspmanager
+   image: ghcr.io/feldera/dbsp-manager
    ports:
      - "8085:8080"
    depends_on:
@@ -76,7 +76,7 @@ services:
     depends_on:
       dbsp:
         condition: service_started
-    image: demo-container
+    image: ghcr.io/feldera/demo-container
     container_name: demo-container
     environment:
       - RUST_BACKTRACE=1

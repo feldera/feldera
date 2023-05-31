@@ -375,19 +375,19 @@ test-rust:
     BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
-build-dbspmanager-container:
+build-dbsp-manager-container:
     FROM DOCKERFILE -f deploy/Dockerfile .
-    SAVE IMAGE dbspmanager
+    SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
 build-demo-container:
     FROM DOCKERFILE -f deploy/Dockerfile --target=client .
-    SAVE IMAGE demo-container
+    SAVE IMAGE ghcr.io/feldera/demo-container
 
 test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    WITH DOCKER --load dbspmanager=+build-dbspmanager-container \
-                --load demo-container=+build-demo-container
+    WITH DOCKER --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+                --load ghcr.io/feldera/demo-container=+build-demo-container
         RUN docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 

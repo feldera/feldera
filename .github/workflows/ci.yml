@@ -9,6 +9,8 @@ env:
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/dbspmanager
 
 jobs:
   pre_job:
@@ -23,6 +25,9 @@ jobs:
           skip_after_successful_duplicate: "true"
           do_not_skip: '["workflow_dispatch", "schedule"]'
   build:
+    permissions:
+        contents: read
+        packages: write
     runs-on: [self-hosted, skylake40]
     needs: [pre_job]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
@@ -52,5 +57,9 @@ jobs:
       
       - name: Earthly version
         run: earthly --version
+
       - name: Run CI
         run: earthly -P +all-tests
+
+      - name: Check images
+        run: docker image ls
