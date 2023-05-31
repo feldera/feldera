@@ -115,10 +115,7 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tempfile::TempDir) {
 #[cfg(not(feature = "pg-embed"))]
 async fn test_setup() -> DbHandle {
     let (conn, config) = setup_pg().await;
-    DbHandle {
-        db: conn,
-        config: config,
-    }
+    DbHandle { db: conn, config }
 }
 
 #[cfg(not(feature = "pg-embed"))]
@@ -317,7 +314,7 @@ async fn program_config() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: connector_id,
+        connector_id,
         config: "".to_string(),
     };
     let _ = handle
@@ -415,13 +412,13 @@ async fn duplicate_attached_conn_name() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: connector_id,
+        connector_id,
         config: "".to_string(),
     };
     let ac2 = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: connector_id,
+        connector_id,
         config: "".to_string(),
     };
     let _ = handle
@@ -1088,8 +1085,7 @@ impl Storage for Mutex<DbModel> {
                 // connector with this name UNIQUE constraint on table
                 let pipelines = s.pipelines.values().clone();
                 if pipelines
-                    .map(|p| p.attached_connectors.clone())
-                    .flatten()
+                    .flat_map(|p| p.attached_connectors.clone())
                     .collect::<Vec<_>>()
                     .iter()
                     .any(|eac| eac.name == ac.name)
@@ -1168,8 +1164,7 @@ impl Storage for Mutex<DbModel> {
                 // connector with this name UNIQUE constraint on table
                 let pipelines = s.pipelines.values().clone();
                 if pipelines
-                    .map(|p| p.attached_connectors.clone())
-                    .flatten()
+                    .flat_map(|p| p.attached_connectors.clone())
                     .collect::<Vec<_>>()
                     .iter()
                     .any(|eac| eac.name == ac.name)
@@ -1416,11 +1411,11 @@ impl Storage for Mutex<DbModel> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        if s.api_keys.contains_key(&hash) {
-            Err(anyhow::anyhow!(DBError::DuplicateKey))
-        } else {
-            s.api_keys.insert(hash, permissions);
+        if let std::collections::btree_map::Entry::Vacant(e) = s.api_keys.entry(hash) {
+            e.insert(permissions);
             Ok(())
+        } else {
+            Err(anyhow::anyhow!(DBError::DuplicateKey))
         }
     }
 

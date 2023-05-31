@@ -697,7 +697,7 @@ mod test {
                     &watermark,
                     |(partition, val)| (*partition, *val),
                     aggregator.clone(),
-                    range_spec.clone(),
+                    range_spec,
                 )
                 .gather(0)
                 .integrate();
@@ -732,7 +732,7 @@ mod test {
                     &watermark,
                     |(partition, val)| (*partition, *val),
                     aggregator.clone(),
-                    range_spec.clone(),
+                    range_spec,
                 );
             let output_500_500_watermark = aggregate_500_500_watermark.gather(0).integrate();
 
@@ -740,12 +740,11 @@ mod test {
             bound.set((u64::max_value(), None));
 
             aggregate_500_500_watermark
-                .integrate_trace_with_bound(TraceBound::new(), bound.clone())
+                .integrate_trace_with_bound(TraceBound::new(), bound)
                 .apply(move |trace| {
                     if let Some(bound) = size_bound {
                         assert!(trace.size_of().total_bytes() <= bound);
                     }
-                    ()
                 });
 
             expected_500_500.apply2(&output_500_500_watermark, |expected, actual| {

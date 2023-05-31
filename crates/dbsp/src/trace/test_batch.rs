@@ -274,7 +274,7 @@ where
         for ((k, v, t), r) in records.iter() {
             data.entry((k.clone(), v.clone(), t.clone()))
                 .or_insert_with(HasZero::zero)
-                .add_assign_by_ref(&r);
+                .add_assign_by_ref(r);
         }
 
         data.retain(|_, r| !r.is_zero());

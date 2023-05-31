@@ -470,7 +470,6 @@ mod test {
                 .integrate_trace_with_bound(bound, TraceBound::new())
                 .apply(|trace| {
                     assert!(trace.size_of().total_bytes() < 20000);
-                    ()
                 });
 
             Ok(input_handle)
