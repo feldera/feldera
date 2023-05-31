@@ -92,7 +92,7 @@ const getUrl = (config: OpenAPIConfig, options: ApiRequestOptions): string => {
       return substring
     })
 
-  const url = `${config.BASE}${path}`
+  const url = `${window.location.origin}${path}`
   if (options.query) {
     return `${url}${getQueryString(options.query)}`
   }
