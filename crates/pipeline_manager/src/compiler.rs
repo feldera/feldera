@@ -1,7 +1,6 @@
 use crate::db::storage::Storage;
 use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
-use fs_extra::{dir, dir::CopyOptions};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -114,15 +113,6 @@ impl Compiler {
                     config.workspace_dir().display()
                 ))
             })?;
-
-        // Copy SQL libraries to the workspace.  We do this instead of
-        // just referring to them as external dependencies, so that we can
-        // use the cargo `[patch]` mechanism to overwrite their `dbsp` crate
-        // dependencies.
-        let mut copy_options = CopyOptions::new();
-        copy_options.overwrite = true;
-        copy_options.copy_inside = true;
-        dir::copy(config.sql_lib_path(), config.workspace_dir(), &copy_options)?;
 
         let compiler_task = spawn(Self::compiler_task(config.clone(), db));
         Ok(Self { compiler_task })
@@ -390,9 +380,9 @@ impl CompilationJob {
         if let Some(p) = &config.dbsp_override_path {
             project_toml_code = project_toml_code
                 .replace("../../crates", &format!("{p}/crates"))
-                .replace("../lib", &format!("{p}/sql-to-dbsp-compiler/lib"));
+                .replace("../lib", &format!("{}", config.sql_lib_path().display()));
         };
-        eprintln!("TOML:\n{project_toml_code}");
+        debug!("TOML:\n{project_toml_code}");
 
         fs::write(&config.project_toml_path(program_id), project_toml_code)
             .await
