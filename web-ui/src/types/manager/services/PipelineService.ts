@@ -161,11 +161,11 @@ export class PipelineService {
    * Perform action on a pipeline.
    * Perform action on a pipeline.
    *
-   * - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program and
-   * configuration. This is a synchronous endpoint, which sends a response once
-   * the pipeline has been initialized.
+   * - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
+   * and configuration. This is a synchronous endpoint, which sends a response
+   * once the pipeline has been initialized.
    * - 'pause': Pause the pipeline.
-   * - 'resume': Resume the paused pipeline.
+   * - 'start': Resume the paused pipeline.
    * - 'shutdown': Terminate the execution of a pipeline. Sends a termination
    * request to the pipeline process. Returns immediately, without waiting for
    * the pipeline to terminate (which can take several seconds). The pipeline is
