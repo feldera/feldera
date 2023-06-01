@@ -44,7 +44,9 @@ import java.util.Objects;
  * - Boolean && and || with constant arguments are simplified
  * - 'if' expressions with constant arguments are simplified to the corresponding branch
  * - cast(NULL, T) is converted to a NULL value of type T
- * - 1 * x = x
+ * - 1 * x = x * 1 = x
+ * - 0 + x = x + 0 = x
+ * - 0 * x = x * 0 = 0
  */
 public class Simplify extends InnerRewriteVisitor {
     // You would think that Calcite has done these optimizations, but apparently not.
@@ -151,13 +153,13 @@ public class Simplify extends InnerRewriteVisitor {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                 IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
-                if (leftLit.sameValue(leftType.getZero())) {
+                if (leftType.isZero(leftLit)) {
                     result = right;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                 IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
-                if (rightLit.sameValue(rightType.getZero())) {
+                if (rightType.isZero(rightLit)) {
                     result = left;
                 }
             }
@@ -165,14 +167,18 @@ public class Simplify extends InnerRewriteVisitor {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                 IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
-                if (leftLit.sameValue(leftType.getOne())) {
+                if (leftType.isOne(leftLit)) {
                     result = right;
+                } else if (leftType.isZero(leftLit)) {
+                    result = left;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                 IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
-                if (rightLit.sameValue(rightType.getOne())) {
+                if (rightType.isOne(rightLit)) {
                     result = left;
+                } else if (rightType.isZero(rightLit)) {
+                    result = right;
                 }
             }
         } else if (left != expression.left || right != expression.right) {

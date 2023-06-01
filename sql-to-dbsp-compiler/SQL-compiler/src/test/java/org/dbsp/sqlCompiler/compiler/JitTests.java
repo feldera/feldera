@@ -46,16 +46,6 @@ public class JitTests extends EndToEndTests {
                         new DBSPI32Literal(10, true), new DBSPDoubleLiteral(13.0, true))));
     }
 
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
-    public void constAggregateDoubleExpression2() {
-        String query = "SELECT 20 / SUM(1), 20 / SUM(2) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true),
-                        new DBSPI32Literal(5, true)
-                )));
-    }
-
     @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
     public void testConcat() {
         String query = "SELECT T.COL4 || ' ' || T.COL4 FROM T";

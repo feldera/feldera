@@ -35,9 +35,9 @@ public interface IsNumericType {
     DBSPLiteral getMaxValue();
     DBSPLiteral getMinValue();
     default boolean isZero(DBSPLiteral literal) {
-        return this.getZero().equals(literal);
+        return this.getZero().sameValue(literal);
     }
     default boolean isOne(DBSPLiteral literal) {
-        return this.getOne().equals(literal);
+        return this.getOne().sameValue(literal);
     }
 }

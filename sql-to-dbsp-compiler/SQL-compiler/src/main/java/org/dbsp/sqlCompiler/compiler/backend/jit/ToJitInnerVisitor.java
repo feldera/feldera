@@ -108,7 +108,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 throw new RuntimeException("Duplicate declaration " + varName);
             }
             JITInstructionRef value = ToJitInnerVisitor.this.nextId();
-            JITInstructionRef isNull = new JITInstructionRef();
+            JITInstructionRef isNull = JITInstructionRef.INVALID;
             if (needsNull) {
                 isNull = ToJitInnerVisitor.this.nextId();
             }
@@ -294,7 +294,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         }
 
         // Is any arg nullable?
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         for (JITInstructionRef arg: nullableArgs) {
             if (!isNull.isValid())
                 isNull = arg;
@@ -447,7 +447,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 this.nextInstructionId(), type, literal, true);
         this.add(value);
 
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (mayBeNull) {
             isNull = this.constantBool(expression.isNull);
         }
@@ -468,7 +468,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         JITScalarType sourceType = convertScalarType(expression.source);
         JITScalarType destinationType = convertScalarType(expression);
         JITInstructionRef cast = this.insertCast(sourceId.value, sourceType, destinationType, expression.toString());
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (needsNull(expression)) {
             if (needsNull(expression.source)) {
                 isNull = sourceId.isNull;
@@ -477,7 +477,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             }
         } else {
             if (needsNull(expression.source)) {
-                isNull = new JITInstructionRef();
                 // TODO: if source is nullable and is null must panic at runtime
                 // this.createFunctionCall("dbsp.error.abort", expression);
             }
@@ -848,7 +847,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         JITInstructionRef value = this.insertBinary(
                 Utilities.getExists(opNames, expression.operation), leftId.value, rightId.value,
                 convertScalarType(expression.left), expression.toString());
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (needsNull(expression))
             // The result is null if either operand is null.
             isNull = this.eitherNull(leftId, rightId);
@@ -860,12 +859,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     public boolean preorder(DBSPUnaryExpression expression) {
         JITInstructionPair source = this.accept(expression.source);
         boolean isWrapBool = expression.operation.equals(DBSPOpcode.WRAP_BOOL);
-        JITInstructionRef False = new JITInstructionRef();
+        JITInstructionRef False = JITInstructionRef.INVALID;
         if (isWrapBool || expression.operation.equals(DBSPOpcode.IS_FALSE)
                 || expression.operation.equals(DBSPOpcode.IS_TRUE))
             False = this.constantBool(false);
         JITUnaryInstruction.Operation kind;
-        JITInstructionRef None = new JITInstructionRef();
         switch (expression.operation) {
             case NEG:
                 kind = JITUnaryInstruction.Operation.NEG;
@@ -947,7 +945,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 throw new Unimplemented(expression);
         }
         JITInstructionRef value = this.insertUnary(kind, source.value, convertScalarType(expression.source));
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (source.hasNull())
             isNull = source.isNull;
         this.map(expression, new JITInstructionPair(value, isNull));
@@ -1109,7 +1107,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         this.setCurrentBlock(next);
         JITType type = this.convertType(expression.getNonVoidType());
         JITInstructionRef paramValue = new JITInstructionRef(this.nextInstructionId());
-        JITInstructionRef isNull = new JITInstructionRef();
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         this.addParameter(next, type);
         if (nullable) {
             this.addParameter(next, JITBoolType.INSTANCE);
@@ -1186,7 +1184,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             stat.accept(this);
 
         // TODO: handle nullability
-        JITInstructionPair resultId = new JITInstructionPair(new JITInstructionRef());
+        JITInstructionPair resultId = new JITInstructionPair(JITInstructionRef.INVALID);
         if (expression.lastExpression != null) {
             if (this.jitVisitor.isScalarType(expression.lastExpression.getType())) {
                 resultId = this.accept(expression.lastExpression);

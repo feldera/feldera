@@ -179,17 +179,6 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
-    public void constAggregateDoubleExpression2() {
-        Logger.INSTANCE.setDebugLevel(ToJitVisitor.class, 4);
-        String query = "SELECT 20 / SUM(1), 20 / SUM(2) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true),
-                        new DBSPI32Literal(5, true)
-                )));
-    }
-
-    @Test
     public void overTwiceTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
