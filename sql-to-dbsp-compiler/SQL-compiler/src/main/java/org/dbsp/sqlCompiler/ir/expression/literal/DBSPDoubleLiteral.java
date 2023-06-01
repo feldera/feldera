@@ -71,4 +71,12 @@ public class DBSPDoubleLiteral extends DBSPFPLiteral {
     public DBSPLiteral getNonNullable() {
         return new DBSPDoubleLiteral(Objects.requireNonNull(this.value), false, this.raw);
     }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPDoubleLiteral that = (DBSPDoubleLiteral) o;
+        return Objects.equals(value, that.value);
+    }
 }

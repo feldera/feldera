@@ -34,7 +34,7 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     @Nullable public final Integer value;
 
     public DBSPIntervalMonthsLiteral(@Nullable Object node, DBSPType type, @Nullable Integer value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -54,6 +54,14 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPIntervalMonthsLiteral that = (DBSPIntervalMonthsLiteral) o;
+        return Objects.equals(value, that.value);
     }
 
     @Override

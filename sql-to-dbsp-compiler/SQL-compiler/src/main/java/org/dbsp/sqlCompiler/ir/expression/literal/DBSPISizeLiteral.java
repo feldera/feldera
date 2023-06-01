@@ -44,7 +44,7 @@ public class DBSPISizeLiteral extends DBSPLiteral {
     }
 
     public DBSPISizeLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -63,5 +63,13 @@ public class DBSPISizeLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPISizeLiteral(Objects.requireNonNull(this.value));
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPISizeLiteral that = (DBSPISizeLiteral) o;
+        return Objects.equals(value, that.value);
     }
 }

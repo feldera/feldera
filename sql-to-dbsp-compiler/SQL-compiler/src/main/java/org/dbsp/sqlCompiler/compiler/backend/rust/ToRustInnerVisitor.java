@@ -43,7 +43,6 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.UnsupportedException;
 import org.dbsp.util.Utilities;
 
-import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Objects;
 
@@ -155,7 +154,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Timestamp::new(");
-        this.builder.append(Long.toString(literal.getNonNullValue(Long.class)));
+        this.builder.append(Long.toString(Objects.requireNonNull(literal.value)));
         this.builder.append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
@@ -169,7 +168,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Date::new(");
-        this.builder.append(Integer.toString(literal.getNonNullValue(Integer.class)));
+        this.builder.append(Integer.toString(Objects.requireNonNull(literal.value)));
         this.builder.append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
@@ -183,7 +182,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("ShortInterval::new(");
-        this.builder.append(Long.toString(literal.getNonNullValue(Long.class)));
+        this.builder.append(Long.toString(Objects.requireNonNull(literal.value)));
         this.builder.append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
@@ -210,7 +209,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPBoolLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        this.builder.append(literal.wrapSome(Boolean.toString(literal.getNonNullValue(Boolean.class))));
+        this.builder.append(literal.wrapSome(Boolean.toString(Objects.requireNonNull(literal.value))));
         return false;
     }
 
@@ -246,7 +245,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPFloatLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        float value = literal.getNonNullValue(Float.class);
+        float value = Objects.requireNonNull(literal.value);
         String val = Float.toString(value);
         if (Float.isNaN(value))
             val = "std::f32::NAN";
@@ -280,7 +279,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPDoubleLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        double value = literal.getNonNullValue(Double.class);
+        double value = Objects.requireNonNull(literal.value);
         String val = Double.toString(value);
         if (Double.isNaN(value))
             val = "std::f64::NAN";
@@ -297,16 +296,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public boolean preorder(DBSPUSizeLiteral literal) {
-        assert literal.value != null;
-        String val = Long.toString(literal.getNonNullValue(Long.class));
+        String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + "usize"));
         return false;
     }
 
     @Override
     public boolean preorder(DBSPISizeLiteral literal) {
-        assert literal.value != null;
-        String val = Long.toString(literal.getNonNullValue(Long.class));
+        String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + "isize"));
         return false;
     }
@@ -315,7 +312,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPI16Literal literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        String val = Short.toString(literal.getNonNullValue(Short.class));
+        String val = Short.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return false;
     }
@@ -324,15 +321,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPI32Literal literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        String val = Integer.toString(literal.getNonNullValue(Integer.class));
+        String val = Integer.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return false;
     }
 
     @Override
     public boolean preorder(DBSPU32Literal literal) {
-        assert literal.value != null;
-        String val = Integer.toString(literal.value);
+        String val = Integer.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return false;
     }
@@ -341,15 +337,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public boolean preorder(DBSPI64Literal literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        String val = Long.toString(literal.getNonNullValue(Long.class));
+        String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return false;
     }
 
     @Override
     public boolean preorder(DBSPU64Literal literal) {
-        assert literal.value != null;
-        String val = Long.toString(literal.value);
+        String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return false;
     }
@@ -359,7 +354,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.isNull)
             return this.doNull(literal);
         this.builder.append(literal.wrapSome(
-                "String::from(" + Utilities.doubleQuote(literal.getNonNullValue(String.class)) + ")"));
+                "String::from(" + Utilities.doubleQuote(Objects.requireNonNull(literal.value)) + ")"));
         return false;
     }
 
@@ -387,7 +382,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (type.mayBeNull)
             this.builder.append("Some(");
         this.builder.append("Decimal::from_str(\"")
-                .append(literal.getNonNullValue(BigDecimal.class).toString())
+                .append(Objects.requireNonNull(literal.value).toString())
                 .append("\").unwrap()");
         if (type.mayBeNull)
             this.builder.append(")");
@@ -456,7 +451,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         } else {
             if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
                 expression.left.accept(this);
-                this.builder.append(".mul_by_ref(");
+                this.builder.append(".mul_by_ref(&");
                 expression.right.accept(this);
                 this.builder.append(")");
                 return false;

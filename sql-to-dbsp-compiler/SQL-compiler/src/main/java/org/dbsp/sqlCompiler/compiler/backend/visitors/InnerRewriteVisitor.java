@@ -896,7 +896,12 @@ public abstract class InnerRewriteVisitor
 
     @Override
     public boolean preorder(DBSPVariablePath expression) {
-        this.map(expression, expression);
+        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPExpression result = expression;
+        if (!type.sameType(expression.getType())) {
+            result = new DBSPVariablePath(expression.variable, type);
+        }
+        this.map(expression, result);
         return false;
     }
 

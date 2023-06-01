@@ -34,12 +34,16 @@ public class DBSPU32Literal extends DBSPLiteral {
     @Nullable
     public final Integer value;
 
-    public DBSPU32Literal() {
-        this(null, true);
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPU32Literal that = (DBSPU32Literal) o;
+        return Objects.equals(value, that.value);
     }
 
     public DBSPU32Literal(@Nullable Object node, DBSPType type, @Nullable Integer value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 

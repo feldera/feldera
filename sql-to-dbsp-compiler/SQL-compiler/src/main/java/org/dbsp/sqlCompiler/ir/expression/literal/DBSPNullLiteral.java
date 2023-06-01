@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.util.UnsupportedException;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * A literal with type NULL, the only value of this type.
@@ -16,7 +17,7 @@ public class DBSPNullLiteral extends DBSPLiteral {
     public final Object value = null;
 
     public DBSPNullLiteral(@Nullable Object node, DBSPType type, @Nullable Object value) {
-        super(node,  type, value);
+        super(node,  type, true);
         if (value != null)
             throw new RuntimeException("Value must be null");
         if (!this.getNonVoidType().sameType(DBSPTypeNull.INSTANCE))
@@ -31,6 +32,12 @@ public class DBSPNullLiteral extends DBSPLiteral {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        return o != null && getClass() == o.getClass();
     }
 
     @Override

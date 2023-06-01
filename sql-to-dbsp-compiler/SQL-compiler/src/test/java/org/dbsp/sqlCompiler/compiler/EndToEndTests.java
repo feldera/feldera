@@ -25,6 +25,7 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -32,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -174,6 +176,17 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL4 || NULL FROM T";
         DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.NULLABLE_INSTANCE));
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
+    }
+
+    @Test
+    public void constAggregateDoubleExpression2() {
+        Logger.INSTANCE.setDebugLevel(ToJitVisitor.class, 4);
+        String query = "SELECT 20 / SUM(1), 20 / SUM(2) FROM T GROUP BY COL1";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10, true),
+                        new DBSPI32Literal(5, true)
+                )));
     }
 
     @Test

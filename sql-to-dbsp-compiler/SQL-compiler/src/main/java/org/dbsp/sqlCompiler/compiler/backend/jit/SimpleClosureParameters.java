@@ -40,10 +40,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * If a closure has an argument which is a tuple (a, b), replace it
- * with multiple arguments a, b.
- * This requires that all arguments are used within the closure
- * only to access their fields.
+ * If a closure has parameter which is a tuple p = (a, b), replace it
+ * with multiple parameters a, b.
+ * This requires that all expressions involving the parameter are only field
+ * accesses, e.g., p.1.
  */
 public class SimpleClosureParameters
         extends InnerRewriteVisitor

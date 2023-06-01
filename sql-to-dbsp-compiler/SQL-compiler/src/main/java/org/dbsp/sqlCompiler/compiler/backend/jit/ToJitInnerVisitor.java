@@ -219,6 +219,9 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     }
 
     public JITInstructionRef constantBool(boolean value) {
+        JITInstructionRef exists = this.getCurrentBlock().getBooleanConstant(value);
+        if (exists.isValid())
+            return exists;
         return this.accept(new DBSPBoolLiteral(value)).value;
     }
 
@@ -543,8 +546,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     /**
      * Insert a mux operation in the current block.
      * @param condition  Reference to instruction computing mux condition.
-     * @param False      Reference to the constant 'false'.  May be invalid.
-     * @param True       Reference to the constant 'true'.  May be invalid.
      * @param left       Reference to the left operand.
      * @param right      Reference to the right operand.
      * @return           A reference to the inserted mux.  If the mux condition
@@ -553,17 +554,20 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
      */
     JITInstructionRef insertMux(
             JITInstructionRef condition,
-            JITInstructionRef False, JITInstructionRef True,
-            JITInstructionRef left, JITInstructionRef right) {
+            JITInstructionRef left, JITInstructionRef right,
+            String comment) {
         condition.mustBeValid();
         left.mustBeValid();
         right.mustBeValid();
+        JITInstructionRef False = this.getCurrentBlock().getBooleanConstant(false);
+        JITInstructionRef True = this.getCurrentBlock().getBooleanConstant(true);
+
         if (condition.equals(False))
             return right;
         if (condition.equals(True))
             return left;
         JITInstruction mux = this.add(new JITMuxInstruction(this.nextInstructionId(),
-                condition, left, right));
+                condition, left, right, comment));
         return mux.getInstructionReference();
     }
 
@@ -590,9 +594,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
 
     @Override
     public boolean preorder(DBSPBinaryExpression expression) {
-        // a || b for strings is concatenation.
         if (expression.operation.equals(DBSPOpcode.CONCAT)) {
-            this.createFunctionCall("dbsp.str.concat_clone", expression,
+            this.createFunctionCall("dbsp.str.concat", expression,
                     expression.left, expression.right);
             return false;
         }
@@ -681,10 +684,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 //                              : (b.is_null ? a.value : false)
 
                 // cond1 = (b.is_null ? true : b.value)
-                this.insertMux(rightNullId, False, True, True, rightId.value);
-                JITInstructionRef cond1 = this.insertMux(rightNullId, False, True, True, rightId.value);
+                this.insertMux(rightNullId, True, rightId.value, "");
+                JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, "");
                 // cond2 = (b.is_null ? !a.value   : false)
-                JITInstructionRef cond2 = this.insertMux(rightNullId, False, True, leftId.value, False);
+                JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, "");
 
                 // (a && b).value = a.is_null ? b.value
                 //                            : (b.is_null ? a.value : a.value && b.value)
@@ -694,11 +697,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                         JITBinaryInstruction.Operation.AND,
                         leftId.value, rightId.value, convertScalarType(expression.left), "");
                 // (b.is_null ? a.value : a.value && b.value)
-                JITInstructionRef secondBranch = this.insertMux(rightNullId, False, True, leftId.value, and);
+                JITInstructionRef secondBranch = this.insertMux(rightNullId, leftId.value, and, "");
                 // Final Mux
                 JITInstructionRef value = this.insertMux(
-                        leftNullId, False, True, rightId.value, secondBranch);
-                JITInstructionRef isNull = this.insertMux(leftNullId, False, True, cond1, cond2);
+                        leftNullId, rightId.value, secondBranch, expression.toString());
+                JITInstructionRef isNull = this.insertMux(leftNullId, cond1, cond2,
+                        expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             } else { // Boolean ||
                 // Nullable bit computation
@@ -710,12 +714,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 JITInstructionRef notB = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, rightId.value, JITBoolType.INSTANCE);
                 JITInstructionRef cond1 = this.insertMux(
-                        rightNullId, False, True, True, notB);
+                        rightNullId, True, notB, "");
                 // cond2 = (b.is_null ? !a.value : false)
                 // !a
                 JITInstructionRef notA = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, leftId.value, JITBoolType.INSTANCE);
-                JITInstructionRef cond2 = this.insertMux(rightNullId, False, True, notA, False);
+                JITInstructionRef cond2 = this.insertMux(rightNullId, notA, False, "");
 
                 // (a || b).value = a.is_null ? b.value
                 //                            : a.value || b.value
@@ -724,8 +728,9 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                                 JITBinaryInstruction.Operation.OR,
                                 leftId.value, rightId.value, convertScalarType(expression.left), "");
                 // Result
-                JITInstructionRef value = this.insertMux(leftNullId, False, True, cond1, cond2);
-                JITInstructionRef isNull = this.insertMux(leftNullId, False, True, rightId.value, or);
+                JITInstructionRef value = this.insertMux(leftNullId, cond1, cond2, expression.toString());
+                JITInstructionRef isNull = this.insertMux(leftNullId, rightId.value, or,
+                        expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             }
             return false;
@@ -821,6 +826,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             }
             return false;
         } else if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
+            throw new RuntimeException("Should have been removed");
+            /*
             // (a * w).value = (a.value * (type_of_a)w)
             // (a * w).is_null = a.is_null
             JITInstructionRef right;
@@ -829,12 +836,13 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             // Have to convert the weight to the correct type
             right = this.insertCast(rightId.value, rightType, leftType, "");
             JITInstructionRef value = this.insertBinary(
-                JITBinaryInstruction.Operation.MUL, leftId.value, right, leftType, expression.toString());
+                    JITBinaryInstruction.Operation.MUL, leftId.value, right, leftType, expression.toString());
             JITInstructionRef isNull = new JITInstructionRef();
             if (needsNull(expression))
                 isNull = leftId.isNull;
             this.map(expression, new JITInstructionPair(value, isNull));
             return false;
+             */
         }
 
         JITInstructionRef value = this.insertBinary(
@@ -867,7 +875,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 break;
             case WRAP_BOOL: {
                 JITInstructionRef value = this.insertMux(
-                        source.isNull, False, None, False, source.value);
+                        source.isNull, False, source.value, expression.toString());
                 this.map(expression, new JITInstructionPair(value));
                 return false;
             }
@@ -878,7 +886,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     JITInstructionRef ni = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
                     // result
-                    JITInstructionRef value = this.insertMux(source.isNull, False, None, False, ni);
+                    JITInstructionRef value = this.insertMux(source.isNull, False, ni, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                     return false;
                 } else {
@@ -891,7 +899,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     // result = left.is_null ? false : left.value
                     // result
                     JITInstructionRef value = this.insertMux(
-                        source.isNull, False, None, False, source.value);
+                        source.isNull, False, source.value, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));
@@ -906,7 +914,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                         JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
                     JITInstructionRef True = this.constantBool(true);
                     // result
-                    JITInstructionRef value = this.insertMux(source.isNull, False, True, True, ni);
+                    JITInstructionRef value = this.insertMux(source.isNull, True, ni, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                     return false;
                 } else {
@@ -920,7 +928,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     JITInstructionRef True = this.constantBool(true);
                     // result
                     JITInstructionRef value = this.insertMux(
-                        source.isNull, False, True, True, source.value);
+                        source.isNull, True, source.value, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));

@@ -35,7 +35,7 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
     public final BigDecimal value;
 
     public DBSPDecimalLiteral(@Nullable Object node, DBSPType type, @Nullable BigDecimal value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -49,5 +49,13 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
     public DBSPLiteral getNonNullable() {
         return new DBSPDecimalLiteral(this.getNode(), this.getNonVoidType().setMayBeNull(false),
                 Objects.requireNonNull(this.value));
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPDecimalLiteral that = (DBSPDecimalLiteral) o;
+        return this.getNonVoidType().sameType(that.type) && Objects.equals(value, that.value);
     }
 }

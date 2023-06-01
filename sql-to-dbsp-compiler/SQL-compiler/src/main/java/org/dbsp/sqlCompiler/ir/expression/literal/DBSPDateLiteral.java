@@ -29,12 +29,13 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 public class DBSPDateLiteral extends DBSPLiteral {
     @Nullable public final Integer value;
 
     public DBSPDateLiteral(@Nullable Object node, DBSPType type, @Nullable Integer value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -66,5 +67,13 @@ public class DBSPDateLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPDateLiteral(this.getNode(), this.getNonVoidType().setMayBeNull(false), this.value);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPDateLiteral that = (DBSPDateLiteral) o;
+        return Objects.equals(value, that.value);
     }
 }

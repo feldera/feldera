@@ -157,13 +157,22 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
             result.add(sub.negate());
             return result;
         }
+
+        @Override
+        public int hashCode() {
+            return this.data.hashCode();
+        }
+
+        public boolean sameValue(DBSPZSetLiteral.Contents other) {
+            return this.minus(other).size() == 0;
+        }
     }
 
     public final DBSPTypeZSet zsetType;
     public final Contents data;
 
     public DBSPZSetLiteral(@Nullable Object node, DBSPType type, Contents contents) {
-        super(node, type, 0); // 0 is never used
+        super(node, type, false);
         this.data = contents;
         this.zsetType = this.getNonVoidType().to(DBSPTypeZSet.class);
     }
@@ -212,5 +221,14 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
     public DBSPType getElementType() {
         return this.zsetType.elementType;
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPZSetLiteral that = (DBSPZSetLiteral) o;
+        if (!this.zsetType.sameType(that.zsetType)) return false;
+        return this.data.sameValue(that.data);
     }
 }

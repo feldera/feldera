@@ -20,7 +20,7 @@ public class DBSPI16Literal extends DBSPLiteral {
     }
 
     public DBSPI16Literal(@Nullable Object node, DBSPType type , @Nullable Short value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -44,5 +44,13 @@ public class DBSPI16Literal extends DBSPLiteral {
     public DBSPTypeInteger getIntegerType() {
         assert this.type != null;
         return this.type.to(DBSPTypeInteger.class);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPI16Literal that = (DBSPI16Literal) o;
+        return Objects.equals(value, that.value);
     }
 }

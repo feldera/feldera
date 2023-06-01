@@ -33,6 +33,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -80,7 +81,7 @@ public class ToCsvVisitor extends InnerVisitor {
     public boolean preorder(DBSPTimestampLiteral literal) {
         try {
             if (!literal.isNull)
-                this.appendable.append(Long.toString(literal.getNonNullValue(Long.class)));
+                this.appendable.append(Long.toString(Objects.requireNonNull(literal.value)));
             else
                 this.appendable.append(this.nullRepresentation.get());
         } catch (IOException ex) {

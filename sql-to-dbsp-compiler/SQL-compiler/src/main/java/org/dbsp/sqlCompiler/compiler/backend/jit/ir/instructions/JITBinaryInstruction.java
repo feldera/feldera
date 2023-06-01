@@ -95,9 +95,8 @@ public class JITBinaryInstruction extends JITInstruction {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        if (!this.comment.isEmpty())
-            builder.append("# ").append(this.comment).newline();
-        return builder.append(this.id)
+        return this.commentToString(builder)
+                .append(this.id)
                 .append(" ")
                 .append(this.left)
                 .append(" ")

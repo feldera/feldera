@@ -29,18 +29,26 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.IJITId;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITReference;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITConstantInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstructionRef;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 public class JITBlock extends JITNode implements IJITId {
     final List<JITBlockParameter> parameters;
     final List<JITInstruction> instructions;
+    // Cache 'true' and 'false' here.
+    // We only cache Boolean constants, since JITLiteral does not implement equals.
+    final Map<Boolean, JITInstruction> constants;
     /**
      * Terminator should never be null, but it is set later.
      */
@@ -52,6 +60,7 @@ public class JITBlock extends JITNode implements IJITId {
         this.id = id;
         this.instructions = new ArrayList<>();
         this.parameters = new ArrayList<>();
+        this.constants = new HashMap<>();
         this.terminator = null;
     }
 
@@ -90,10 +99,26 @@ public class JITBlock extends JITNode implements IJITId {
         return result;
     }
 
+    public JITInstructionRef getBooleanConstant(boolean value) {
+        JITInstruction instruction = this.constants.get(value);
+        if (instruction == null)
+            return JITInstructionRef.INVALID;
+        return instruction.getInstructionReference();
+    }
+
     public void add(JITInstruction instruction) {
         if (this.terminator != null)
             throw new RuntimeException("Block already terminated while adding instruction " + instruction);
         this.instructions.add(instruction);
+        if (instruction.is(JITConstantInstruction.class)) {
+            JITConstantInstruction cst = instruction.to(JITConstantInstruction.class);
+            if (cst.value.literal.is(DBSPBoolLiteral.class)) {
+                DBSPBoolLiteral lit = cst.value.literal.to(DBSPBoolLiteral.class);
+                if (cst.value.literal.isNull) return;
+                boolean b = Objects.requireNonNull(lit.value);
+                this.constants.put(b, instruction);
+            }
+        }
     }
 
     public JITInstructionRef addParameter(JITReference instruction, JITType type) {

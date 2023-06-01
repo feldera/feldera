@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.backend.optimize.EliminateMulWeight;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.ExpandClone;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.Simplify;
@@ -97,12 +98,13 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         public JITFunction getFunction() { return Objects.requireNonNull(this.function); }
     }
 
-    public InnerRewriteVisitor normalizer() {
+    public InnerRewriteVisitor normalizer(boolean simpleParameters) {
         InnerPassesVisitor passes = new
                 InnerPassesVisitor(this.getCompiler());
         passes.add(new ExpandClone(this.getCompiler()));
         passes.add(new BetaReduction(this.getCompiler()));
-        passes.add(new SimpleClosureParameters(this.getCompiler()));
+        if (simpleParameters)
+            passes.add(new SimpleClosureParameters(this.getCompiler()));
         return passes;
     }
 
@@ -113,7 +115,8 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
                 .append(function.toString())
                 .newline();
 
-        function = this.normalizer().apply(function).to(DBSPClosureExpression.class);
+        InnerRewriteVisitor normalizer = this.normalizer(true);
+        function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
         Logger.INSTANCE.from(this, 4)
@@ -153,7 +156,8 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
                 .append(function.toString())
                 .newline();
 
-        function = this.normalizer().apply(function).to(DBSPClosureExpression.class);
+        InnerRewriteVisitor normalizer = this.normalizer(false);
+        function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
         Logger.INSTANCE.from(this, 4)
@@ -412,7 +416,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
 
         JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
         JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
-                Objects.requireNonNull(aggregate.getIncrement().getResultType()), this);
+                aggregate.getIncrement().parameters[1].getNonVoidType(), this);
         JITOperator result = new JITAggregateOperator(
                 operator.id, accLayout, stepLayout, outputType,
                 inputs, init, stepFn, finishFn);
@@ -458,8 +462,9 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {
         PassesVisitor rewriter = new PassesVisitor(compiler);
         rewriter.add(new BlockClosures(compiler));
-        rewriter.add(new Simplify(compiler).circuitRewriter());
         rewriter.add(new ResolveWeightType(compiler).circuitRewriter());
+        rewriter.add(new EliminateMulWeight(compiler).circuitRewriter());
+        rewriter.add(new Simplify(compiler).circuitRewriter());
 
         circuit = rewriter.apply(circuit);
         Logger.INSTANCE.from("ToJitVisitor", 2)

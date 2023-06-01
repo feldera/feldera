@@ -12,7 +12,7 @@ public abstract class DBSPFPLiteral extends DBSPLiteral {
     public final boolean raw;
 
     protected DBSPFPLiteral(@Nullable Object node, DBSPType type, @Nullable Object value, boolean raw) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.raw = raw;
     }
 }

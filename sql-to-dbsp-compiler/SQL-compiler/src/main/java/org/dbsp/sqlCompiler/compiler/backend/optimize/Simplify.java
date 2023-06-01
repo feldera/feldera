@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 
 import java.util.Objects;
@@ -43,6 +44,7 @@ import java.util.Objects;
  * - Boolean && and || with constant arguments are simplified
  * - 'if' expressions with constant arguments are simplified to the corresponding branch
  * - cast(NULL, T) is converted to a NULL value of type T
+ * - 1 * x = x
  */
 public class Simplify extends InnerRewriteVisitor {
     // You would think that Calcite has done these optimizations, but apparently not.
@@ -110,7 +112,7 @@ public class Simplify extends InnerRewriteVisitor {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
                 if (bLeft.isNull) {
                     result = bLeft;
-                } else if (bLeft.getNonNullValue(Boolean.class)) {
+                } else if (Objects.requireNonNull(bLeft.value)) {
                     result = right;
                 } else {
                     result = left;
@@ -119,7 +121,7 @@ public class Simplify extends InnerRewriteVisitor {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
                 if (bRight.isNull) {
                     result = left;
-                } else if (bRight.getNonNullValue(Boolean.class)) {
+                } else if (Objects.requireNonNull(bRight.value)) {
                     result = left;
                 } else {
                     result = right;
@@ -130,7 +132,7 @@ public class Simplify extends InnerRewriteVisitor {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
                 if (bLeft.isNull) {
                     result = bLeft;
-                } else if (bLeft.getNonNullValue(Boolean.class)) {
+                } else if (Objects.requireNonNull(bLeft.value)) {
                     result = left;
                 } else {
                     result = right;
@@ -139,9 +141,37 @@ public class Simplify extends InnerRewriteVisitor {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
                 if (bRight.isNull) {
                     result = left;
-                } else if (bRight.getNonNullValue(Boolean.class)) {
+                } else if (Objects.requireNonNull(bRight.value)) {
                     result = right;
                 } else {
+                    result = left;
+                }
+            }
+        } else if (expression.operation.equals(DBSPOpcode.ADD)) {
+            if (left.is(DBSPLiteral.class)) {
+                DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
+                if (leftLit.sameValue(leftType.getZero())) {
+                    result = right;
+                }
+            } else if (right.is(DBSPLiteral.class)) {
+                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
+                if (rightLit.sameValue(rightType.getZero())) {
+                    result = left;
+                }
+            }
+        } else if (expression.operation.equals(DBSPOpcode.MUL)) {
+            if (left.is(DBSPLiteral.class)) {
+                DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
+                if (leftLit.sameValue(leftType.getOne())) {
+                    result = right;
+                }
+            } else if (right.is(DBSPLiteral.class)) {
+                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
+                if (rightLit.sameValue(rightType.getOne())) {
                     result = left;
                 }
             }

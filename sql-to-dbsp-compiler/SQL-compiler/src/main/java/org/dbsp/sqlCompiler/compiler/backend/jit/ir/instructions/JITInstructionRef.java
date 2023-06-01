@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITReference;
  * Refers to another instruction by its id.
  */
 public class JITInstructionRef extends JITReference {
+    static public final JITInstructionRef INVALID = new JITInstructionRef();
+
     public JITInstructionRef(long id) {
         super(id);
     }

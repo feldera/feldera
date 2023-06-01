@@ -43,19 +43,19 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeVec vecType;
 
     public DBSPVecLiteral(DBSPType elementType) {
-        super(null, new DBSPTypeVec(elementType), 0); // The 0 is not used
+        super(null, new DBSPTypeVec(elementType), false);
         this.data = new ArrayList<>();
         this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(DBSPType elementType, boolean isNull) {
-        super(null, new DBSPTypeVec(elementType), null);
+        super(null, new DBSPTypeVec(elementType), isNull);
         this.data = null;
         this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(@Nullable Object node, DBSPType type, @Nullable List<DBSPExpression> data) {
-        super(node, type, 0); // The 0 is not used
+        super(node, type, false);
         this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
         this.data = data;
         if (data != null) {
@@ -69,7 +69,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPVecLiteral(DBSPExpression... data) {
-        super(null, new DBSPTypeVec(data[0].getNonVoidType()), 0); // The 0 is not used
+        super(null, new DBSPTypeVec(data[0].getNonVoidType()), false);
         this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
@@ -114,5 +114,14 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     @Override
     public DBSPLiteral getNonNullable() {
         return this;
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPVecLiteral that = (DBSPVecLiteral) o;
+        if (!Objects.equals(data, that.data)) return false;
+        return vecType.equals(that.vecType);
     }
 }

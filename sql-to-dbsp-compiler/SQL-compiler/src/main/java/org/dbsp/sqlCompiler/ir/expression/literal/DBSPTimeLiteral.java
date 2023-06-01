@@ -35,12 +35,8 @@ public class DBSPTimeLiteral extends DBSPLiteral {
     @Nullable public final TimeString value;
 
     public DBSPTimeLiteral(@Nullable Object node, DBSPType type, @Nullable TimeString value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
-    }
-
-    public DBSPTimeLiteral(String value, boolean mayBeNull) {
-        this(null, DBSPTypeTime.INSTANCE.setMayBeNull(mayBeNull), new TimeString(value));
     }
 
     public DBSPTimeLiteral() {
@@ -51,6 +47,14 @@ public class DBSPTimeLiteral extends DBSPLiteral {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPTimeLiteral that = (DBSPTimeLiteral) o;
+        return Objects.equals(value, that.value);
     }
 
     @Override

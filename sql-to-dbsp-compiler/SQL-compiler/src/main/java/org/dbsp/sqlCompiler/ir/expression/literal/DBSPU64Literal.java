@@ -34,12 +34,16 @@ public class DBSPU64Literal extends DBSPLiteral {
     @Nullable
     public final Long value;
 
-    public DBSPU64Literal() {
-        this(null, true);
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPU64Literal that = (DBSPU64Literal) o;
+        return Objects.equals(value, that.value);
     }
 
     public DBSPU64Literal(@Nullable Object node, DBSPType type, @Nullable Long value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 

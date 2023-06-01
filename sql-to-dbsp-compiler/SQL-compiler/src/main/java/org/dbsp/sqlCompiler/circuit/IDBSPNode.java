@@ -46,8 +46,7 @@ public interface IDBSPNode extends ICastable {
     }
 
     /**
-     * @return the SQL IR node that was compiled to produce
-     * this DDlogIR node.
+     * @return the SQL IR node that was compiled to produce this IR node.
      */
     @Nullable
     Object getNode();
