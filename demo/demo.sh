@@ -14,5 +14,5 @@ docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized
 
 ${ROOT}/scripts/start_manager.sh ${THIS_DIR}/pipeline_data
 
-${THIS_DIR}/create_demo_projects.sh
-${THIS_DIR}/prepare_demo_data.sh
+DBSP_MANAGER="http://localhost:8080" ${THIS_DIR}/create_demo_projects.sh
+DBSP_MANAGER="http://localhost:8080" ${THIS_DIR}/prepare_demo_data.sh
