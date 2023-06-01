@@ -62,7 +62,7 @@ pub trait GraphExt {
     #[doc(hidden)]
     fn map_layouts_inner<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.nodes().values().for_each(|node| node.map_layouts(map));
     }
@@ -77,7 +77,7 @@ pub trait GraphExt {
     #[doc(hidden)]
     fn map_inputs_mut_inner<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         self.nodes_mut()
             .values_mut()

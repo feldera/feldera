@@ -64,13 +64,13 @@ impl ConstantStream {
 impl DataflowNode for ConstantStream {
     fn map_inputs<F>(&self, _map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
     }
 
     fn map_inputs_mut<F>(&mut self, _map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
     }
 
@@ -91,7 +91,7 @@ impl DataflowNode for ConstantStream {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
         self.value.layout().map_layouts(map);

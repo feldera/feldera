@@ -1,9 +1,9 @@
 use crate::ir::{
     exprs::{
-        ArgType, BinaryOp, Call, Cast, Constant, Copy, CopyRowTo, Expr, IsNull, Load, NullRow,
+        ArgType, BinaryOp, Call, Cast, Constant, Copy, CopyRowTo, Expr, IsNull, Load, Nop, NullRow,
         Select, SetNull, Store, UnaryOp, Uninit, UninitRow,
     },
-    LayoutId,
+    ExprId, LayoutId, RValue,
 };
 
 pub trait ExprVisitor {
@@ -22,6 +22,7 @@ pub trait ExprVisitor {
     fn visit_copy_row_to(&mut self, _copy_row_to: &CopyRowTo) {}
     fn visit_uninit_row(&mut self, _uninit_row: &UninitRow) {}
     fn visit_uninit(&mut self, _uninit: &Uninit) {}
+    fn visit_noop(&mut self, _noop: &Nop) {}
 }
 
 pub trait MutExprVisitor {
@@ -40,12 +41,13 @@ pub trait MutExprVisitor {
     fn visit_copy_row_to(&mut self, _copy_row_to: &mut CopyRowTo) {}
     fn visit_uninit_row(&mut self, _uninit_row: &mut UninitRow) {}
     fn visit_uninit(&mut self, _uninit: &mut Uninit) {}
+    fn visit_noop(&mut self, _noop: &mut Nop) {}
 }
 
 impl Expr {
     pub fn apply<V>(&self, visitor: &mut V)
     where
-        V: ExprVisitor,
+        V: ExprVisitor + ?Sized,
     {
         match self {
             Self::Call(call) => visitor.visit_call(call),
@@ -63,12 +65,13 @@ impl Expr {
             Self::CopyRowTo(copy_row_to) => visitor.visit_copy_row_to(copy_row_to),
             Self::UninitRow(uninit_row) => visitor.visit_uninit_row(uninit_row),
             Self::Uninit(uninit) => visitor.visit_uninit(uninit),
+            Self::Nop(noop) => visitor.visit_noop(noop),
         }
     }
 
     pub fn apply_mut<V>(&mut self, visitor: &mut V)
     where
-        V: MutExprVisitor,
+        V: MutExprVisitor + ?Sized,
     {
         match self {
             Self::Call(call) => visitor.visit_call(call),
@@ -86,11 +89,12 @@ impl Expr {
             Self::CopyRowTo(copy_row_to) => visitor.visit_copy_row_to(copy_row_to),
             Self::UninitRow(uninit_row) => visitor.visit_uninit_row(uninit_row),
             Self::Uninit(uninit) => visitor.visit_uninit(uninit),
+            Self::Nop(noop) => visitor.visit_noop(noop),
         }
     }
 }
 
-pub struct MapLayouts<F> {
+pub struct MapLayouts<F: ?Sized> {
     map_layout: F,
 }
 
@@ -102,7 +106,7 @@ impl<F> MapLayouts<F> {
 
 impl<F> ExprVisitor for MapLayouts<F>
 where
-    F: FnMut(LayoutId),
+    F: FnMut(LayoutId) + ?Sized,
 {
     fn visit_load(&mut self, load: &Load) {
         (self.map_layout)(load.source_layout);
@@ -143,7 +147,7 @@ where
 
 impl<F> MutExprVisitor for MapLayouts<F>
 where
-    F: FnMut(&mut LayoutId),
+    F: FnMut(&mut LayoutId) + ?Sized,
 {
     fn visit_load(&mut self, load: &mut Load) {
         (self.map_layout)(&mut load.source_layout);
@@ -185,5 +189,78 @@ where
         if let ArgType::Row(layout) = uninit.value_mut() {
             (self.map_layout)(layout);
         }
+    }
+}
+
+pub struct MapExprIds<F: ?Sized> {
+    map_expr: F,
+}
+
+impl<F> MapExprIds<F> {
+    pub fn new(map_expr: F) -> Self {
+        Self { map_expr }
+    }
+}
+
+impl<F> MutExprVisitor for MapExprIds<F>
+where
+    F: FnMut(&mut ExprId) + ?Sized,
+{
+    fn visit_call(&mut self, call: &mut Call) {
+        call.args_mut()
+            .iter_mut()
+            .for_each(|expr| (self.map_expr)(expr));
+    }
+
+    fn visit_cast(&mut self, cast: &mut Cast) {
+        (self.map_expr)(cast.value_mut());
+    }
+
+    fn visit_load(&mut self, load: &mut Load) {
+        (self.map_expr)(load.source_mut());
+    }
+
+    fn visit_store(&mut self, store: &mut Store) {
+        (self.map_expr)(store.target_mut());
+
+        if let RValue::Expr(value) = store.value_mut() {
+            (self.map_expr)(value);
+        }
+    }
+
+    fn visit_select(&mut self, select: &mut Select) {
+        (self.map_expr)(select.cond_mut());
+        (self.map_expr)(select.if_true_mut());
+        (self.map_expr)(select.if_false_mut());
+    }
+
+    fn visit_is_null(&mut self, is_null: &mut IsNull) {
+        (self.map_expr)(is_null.target_mut());
+    }
+
+    fn visit_set_null(&mut self, set_null: &mut SetNull) {
+        (self.map_expr)(set_null.target_mut());
+
+        if let RValue::Expr(is_null) = set_null.is_null_mut() {
+            (self.map_expr)(is_null);
+        }
+    }
+
+    fn visit_bin_op(&mut self, binop: &mut BinaryOp) {
+        (self.map_expr)(binop.lhs_mut());
+        (self.map_expr)(binop.rhs_mut());
+    }
+
+    fn visit_copy(&mut self, copy: &mut Copy) {
+        (self.map_expr)(copy.value_mut());
+    }
+
+    fn visit_unary_op(&mut self, unary_op: &mut UnaryOp) {
+        (self.map_expr)(unary_op.value_mut());
+    }
+
+    fn visit_copy_row_to(&mut self, copy_row_to: &mut CopyRowTo) {
+        (self.map_expr)(copy_row_to.src_mut());
+        (self.map_expr)(copy_row_to.dest_mut());
     }
 }

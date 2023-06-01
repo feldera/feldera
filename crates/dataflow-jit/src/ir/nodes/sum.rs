@@ -34,14 +34,14 @@ impl Sum {
 impl DataflowNode for Sum {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         self.inputs.iter().copied().for_each(map);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         self.inputs.iter_mut().for_each(map);
     }
@@ -58,7 +58,7 @@ impl DataflowNode for Sum {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }
@@ -91,7 +91,7 @@ impl Minus {
 impl DataflowNode for Minus {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.lhs);
         map(self.rhs);
@@ -99,7 +99,7 @@ impl DataflowNode for Minus {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
@@ -118,7 +118,7 @@ impl DataflowNode for Minus {
 
     fn map_layouts<F>(&self, _map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
     }
 

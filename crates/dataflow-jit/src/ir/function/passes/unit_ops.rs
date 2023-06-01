@@ -112,6 +112,9 @@ impl Function {
                 | Expr::IsNull(_)
                 | Expr::UnaryOp(_)
                 | Expr::SetNull(_) => true,
+
+                // Opportunistically remove nops
+                Expr::Nop(_) => false,
             });
 
             match block.terminator_mut() {
