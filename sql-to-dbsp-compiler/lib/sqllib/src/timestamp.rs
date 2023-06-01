@@ -547,7 +547,6 @@ impl<'de> Deserialize<'de> for Date {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let timestamp = NaiveDateTime::parse_from_str(str, "%Y-%m-%d")
         let date = NaiveDate::parse_from_str(&str, "%Y-%m-%d")
             .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
         Ok(Self::new((date.and_time(NaiveTime::default()).timestamp() / 86400) as i32))

@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler;
 
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -9,13 +8,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -31,26 +27,12 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
-    @Test@ Override @Ignore("https://github.com/feldera/dbsp/issues/186")
-    public void testConcatNull() {
-        String query = "SELECT T.COL4 || NULL FROM T";
-        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.NULLABLE_INSTANCE));
-        this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
-    }
-
     @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
     public void aggregateDistinctTest() {
         String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10, true), new DBSPDoubleLiteral(13.0, true))));
-    }
-
-    @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
-    public void testConcat() {
-        String query = "SELECT T.COL4 || ' ' || T.COL4 FROM T";
-        DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("Hi Hi"));
-        this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
     }
 
     @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
@@ -77,22 +59,6 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(17, true), new DBSPI32Literal(5, true))));
-    }
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/184")
-    public void groupBySumTest() {
-        String query = "SELECT COL1, SUM(col2) FROM T GROUP BY COL1, COL3";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(1)),
-                new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(12))));
-    }
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/184")
-    public void aggregateFloatTest() {
-        String query = "SELECT SUM(T.COL2) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPDoubleLiteral(13.0, true))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
