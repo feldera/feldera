@@ -124,14 +124,14 @@ impl GraphExt for Subgraph {
 impl DataflowNode for Subgraph {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         self.inputs.keys().copied().for_each(map);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         self.subgraph_mut().map_inputs_mut_inner(map);
         // TODO: Probably need to map over the feedback nodes as well
@@ -153,7 +153,7 @@ impl DataflowNode for Subgraph {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.subgraph.map_layouts_inner(map)
     }

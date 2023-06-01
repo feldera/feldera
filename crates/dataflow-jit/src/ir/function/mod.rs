@@ -6,7 +6,9 @@ pub use builder::FunctionBuilder;
 pub use flags::{InputFlags, InvalidInputFlag};
 use schemars::JsonSchema;
 
-use crate::ir::{block::Block, BlockId, ColumnType, ExprId, LayoutId, Signature};
+use crate::ir::{
+    block::Block, exprs::visit::MutExprVisitor, BlockId, ColumnType, ExprId, LayoutId, Signature,
+};
 use petgraph::{
     algo::dominators::{self, Dominators},
     prelude::DiGraphMap,
@@ -61,6 +63,17 @@ impl Function {
 
     pub(crate) fn set_cfg(&mut self, cfg: DiGraphMap<BlockId, ()>) {
         self.cfg = cfg;
+    }
+
+    pub fn apply_mut<V>(&mut self, visitor: &mut V)
+    where
+        V: MutExprVisitor + ?Sized,
+    {
+        for block in self.blocks_mut().values_mut() {
+            for (_expr_id, expr) in block.body_mut() {
+                expr.apply_mut(visitor);
+            }
+        }
     }
 }
 

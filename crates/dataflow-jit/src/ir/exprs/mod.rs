@@ -39,13 +39,14 @@ pub enum Expr {
     CopyRowTo(CopyRowTo),
     UninitRow(UninitRow),
     Uninit(Uninit),
+    Nop(Nop),
     // Drop(Drop),
 }
 
 impl Expr {
     pub fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.apply(&mut MapLayouts::new(map));
     }
@@ -104,6 +105,16 @@ impl RValue {
 impl From<bool> for RValue {
     fn from(value: bool) -> Self {
         Self::Imm(Constant::Bool(value))
+    }
+}
+
+/// No operation
+#[derive(Debug, Clone, From, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
+pub struct Nop;
+
+impl Nop {
+    pub const fn new() -> Self {
+        Self
     }
 }
 
@@ -256,6 +267,10 @@ impl Load {
         self.source
     }
 
+    pub fn source_mut(&mut self) -> &mut ExprId {
+        &mut self.source
+    }
+
     pub const fn source_layout(&self) -> LayoutId {
         self.source_layout
     }
@@ -303,6 +318,10 @@ impl Store {
 
     pub const fn target(&self) -> ExprId {
         self.target
+    }
+
+    pub fn target_mut(&mut self) -> &mut ExprId {
+        &mut self.target
     }
 
     pub const fn target_layout(&self) -> LayoutId {
@@ -356,6 +375,10 @@ impl IsNull {
 
     pub const fn target(&self) -> ExprId {
         self.target
+    }
+
+    pub fn target_mut(&mut self) -> &mut ExprId {
+        &mut self.target
     }
 
     pub const fn target_layout(&self) -> LayoutId {
@@ -452,9 +475,17 @@ impl CopyRowTo {
         self.src
     }
 
+    pub fn src_mut(&mut self) -> &mut ExprId {
+        &mut self.src
+    }
+
     /// Returns the destination row
     pub const fn dest(&self) -> ExprId {
         self.dest
+    }
+
+    pub fn dest_mut(&mut self) -> &mut ExprId {
+        &mut self.dest
     }
 
     /// Returns the layout of the `src` and `dest` rows

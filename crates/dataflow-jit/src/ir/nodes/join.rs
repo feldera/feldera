@@ -73,7 +73,7 @@ impl JoinCore {
 impl DataflowNode for JoinCore {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.lhs);
         map(self.rhs);
@@ -81,7 +81,7 @@ impl DataflowNode for JoinCore {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
@@ -111,7 +111,7 @@ impl DataflowNode for JoinCore {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.key_layout);
         map(self.value_layout);
@@ -164,7 +164,7 @@ impl MonotonicJoin {
 impl DataflowNode for MonotonicJoin {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.lhs);
         map(self.rhs);
@@ -172,7 +172,7 @@ impl DataflowNode for MonotonicJoin {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
@@ -198,7 +198,7 @@ impl DataflowNode for MonotonicJoin {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.key_layout);
         self.join_fn.map_layouts(map);
@@ -238,7 +238,7 @@ impl Antijoin {
 impl DataflowNode for Antijoin {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.lhs);
         map(self.rhs);
@@ -246,7 +246,7 @@ impl DataflowNode for Antijoin {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.lhs);
         map(&mut self.rhs);
@@ -266,7 +266,7 @@ impl DataflowNode for Antijoin {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }

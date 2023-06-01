@@ -1,7 +1,7 @@
 mod unit_ops;
 
 use crate::ir::{
-    exprs::{ArgType, Call},
+    exprs::{visit::MapExprIds, ArgType, Call, Nop},
     function::FuncArg,
     layout_cache::RowLayoutCache,
     ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Terminator,
@@ -76,34 +76,40 @@ impl Function {
             }
         }
 
+        let mut replacements = BTreeMap::new();
         for block in self.blocks.values_mut() {
-            for (_, expr) in block.body_mut() {
+            for (expr_id, expr) in block.body_mut() {
                 if let Expr::Call(call) = expr {
-                    if call.function() == "dbsp.str.concat" {
-                        let (lhs, rhs) = (call.args()[0], call.args()[1]);
-                        let (lhs_empty, rhs_empty) =
-                            (empty_strings.contains(&lhs), empty_strings.contains(&rhs));
+                    // TODO: `@dbsp.str.concat()` calls
+                    if call.function() == "dbsp.str.concat_clone" {
+                        call.args_mut().retain(|arg| !empty_strings.contains(arg));
 
-                        // If both strings are empty we turn the expression into an empty string
-                        // constant
-                        if lhs_empty && rhs_empty {
+                        // If the concat call has no non-empty values, simplify it to an empty
+                        // string
+                        if call.args().is_empty() {
                             tracing::debug!(
-                                "turned @dbsp.str.truncate({lhs}, {rhs}) into an empty string constant (both strings are empty)",
+                                %expr_id,
+                                "turned @dbsp.str.concat_clone() call into an empty string constant (both strings are empty)",
                             );
                             *expr = Expr::Constant(Constant::String(String::new()));
 
-                        // If just one of them is empty we want to rewrite all
-                        // uses of the expression
-                        // to consume the non-empty string
-                        } else if lhs_empty {
-                            todo!()
-                        } else if rhs_empty {
-                            todo!()
+                        // If there's only a single non-empty value remaining,
+                        // optimize the concat call to that value
+                        } else if let &[arg] = call.args() {
+                            replacements.insert(*expr_id, arg);
+                            *expr = Expr::Nop(Nop::new());
                         }
                     }
                 }
             }
         }
+
+        let mut remap_ids = MapExprIds::new(|expr_id: &mut ExprId| {
+            if let Some(&new) = replacements.get(expr_id) {
+                *expr_id = new;
+            }
+        });
+        self.apply_mut(&mut remap_ids);
     }
 
     // Turn all `@dbsp.str.truncate(string, 0)` calls into `@dbsp.str.clear(string)`
@@ -247,7 +253,8 @@ impl Function {
                         Expr::NullRow(_)
                         | Expr::Constant(_)
                         | Expr::UninitRow(_)
-                        | Expr::Uninit(_) => {}
+                        | Expr::Uninit(_)
+                        | Expr::Nop(_) => {}
                     }
                 }
 
@@ -365,7 +372,8 @@ impl Function {
                     Expr::CopyRowTo(_)
                     | Expr::NullRow(_)
                     | Expr::UninitRow(_)
-                    | Expr::Uninit(_) => {}
+                    | Expr::Uninit(_)
+                    | Expr::Nop(_) => {}
                 }
             }
         }
@@ -517,6 +525,7 @@ impl Function {
                         Expr::Cast(_) => todo!(),
                         Expr::Select(_) => todo!(),
                         Expr::Uninit(_) => todo!(),
+                        Expr::Nop(_) => todo!(),
                     }
                 }
 

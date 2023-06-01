@@ -51,14 +51,14 @@ impl Map {
 impl DataflowNode for Map {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -149,7 +149,7 @@ impl DataflowNode for Map {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.input_layout.map_layouts(map);
         self.output_layout.map_layouts(map);
@@ -186,14 +186,14 @@ impl Filter {
 impl DataflowNode for Filter {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -223,7 +223,7 @@ impl DataflowNode for Filter {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.filter_fn.map_layouts(map);
     }
@@ -265,14 +265,14 @@ impl FilterMap {
 impl DataflowNode for FilterMap {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -302,7 +302,7 @@ impl DataflowNode for FilterMap {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.layout);
         self.filter_map.map_layouts(map);

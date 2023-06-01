@@ -380,6 +380,7 @@ impl Codegen {
                             ctx.constant_expr(expr_id, constant, &mut builder);
                         }
                         Expr::Uninit(uninit) => ctx.uninit(expr_id, uninit, &mut builder),
+                        Expr::Nop(_) => {}
                     }
                 }
 
@@ -1540,7 +1541,7 @@ impl<'a> CodegenCtx<'a> {
             }
             BinaryOpKind::Mul => {
                 if lhs_ty.is_float() {
-                    builder.ins().fsub(lhs, rhs)
+                    builder.ins().fmul(lhs, rhs)
                 } else if lhs_ty.is_int() {
                     builder.ins().imul(lhs, rhs)
                 } else {

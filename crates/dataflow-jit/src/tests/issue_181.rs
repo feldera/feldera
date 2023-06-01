@@ -217,7 +217,7 @@ const CIRCUIT: &str = r#"{
 }"#;
 
 #[test]
-pub fn issue_181() {
+fn issue_181() {
     utils::test_logger();
 
     let graph = serde_json::from_str::<SqlGraph>(CIRCUIT)

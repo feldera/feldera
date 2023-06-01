@@ -1,4 +1,4 @@
-//! Test for https://github.com/feldera/dbsp/issues/146
+//! Test for https://github.com/feldera/dbsp/issues/186
 
 use crate::{
     codegen::CodegenConfig,
@@ -14,15 +14,15 @@ use crate::{
 
 const CIRCUIT: &str = r#"{
   "nodes": {
-    "6941": {
+    "6949": {
       "Source": {
         "layout": 1,
         "table": "T"
       }
     },
-    "6943": {
+    "6951": {
       "Map": {
-        "input": 6941,
+        "input": 6949,
         "map_fn": {
           "args": [
             {
@@ -48,87 +48,133 @@ const CIRCUIT: &str = r#"{
                     "Load": {
                       "source": 1,
                       "source_layout": 1,
-                      "column": 5,
-                      "column_type": "F64"
+                      "column": 3,
+                      "column_type": "String"
                     }
                   }
                 ],
                 [
                   4,
                   {
-                    "IsNull": {
-                      "target": 1,
-                      "target_layout": 1,
-                      "column": 5
+                    "Copy": {
+                      "value": 3,
+                      "value_ty": "String"
                     }
                   }
                 ],
                 [
                   5,
                   {
-                    "Load": {
-                      "source": 1,
-                      "source_layout": 1,
-                      "column": 5,
-                      "column_type": "F64"
+                    "Constant": {
+                      "String": ""
                     }
                   }
                 ],
                 [
                   6,
                   {
-                    "IsNull": {
-                      "target": 1,
-                      "target_layout": 1,
-                      "column": 5
+                    "Constant": {
+                      "Bool": true
                     }
                   }
-                ],
+                ]
+              ],
+              "terminator": {
+                "Branch": {
+                  "cond": {
+                    "Expr": 6
+                  },
+                  "true_params": [],
+                  "false_params": [],
+                  "falsy": 3,
+                  "truthy": 2
+                }
+              },
+              "params": []
+            },
+            "2": {
+              "id": 2,
+              "body": [
+                [
+                  9,
+                  {
+                    "Constant": {
+                      "String": ""
+                    }
+                  }
+                ]
+              ],
+              "terminator": {
+                "Jump": {
+                  "target": 4,
+                  "params": [
+                    9
+                  ]
+                }
+              },
+              "params": []
+            },
+            "3": {
+              "id": 3,
+              "body": [
                 [
                   7,
                   {
-                    "BinOp": {
-                      "lhs": 3,
-                      "rhs": 5,
-                      "kind": "Div",
-                      "operand_ty": "F64"
+                    "Call": {
+                      "function": "dbsp.str.concat",
+                      "args": [
+                        4,
+                        5
+                      ],
+                      "arg_types": [
+                        {
+                          "Scalar": "String"
+                        },
+                        {
+                          "Scalar": "String"
+                        }
+                      ],
+                      "ret_ty": "String"
                     }
                   }
-                ],
+                ]
+              ],
+              "terminator": {
+                "Jump": {
+                  "target": 4,
+                  "params": [
+                    7
+                  ]
+                }
+              },
+              "params": []
+            },
+            "4": {
+              "id": 4,
+              "body": [
                 [
-                  8,
-                  {
-                    "BinOp": {
-                      "lhs": 4,
-                      "rhs": 6,
-                      "kind": "Or",
-                      "operand_ty": "Bool"
-                    }
-                  }
-                ],
-                [
-                  9,
+                  10,
                   {
                     "Store": {
                       "target": 2,
                       "target_layout": 2,
                       "column": 0,
                       "value": {
-                        "Expr": 7
+                        "Expr": 8
                       },
-                      "value_type": "F64"
+                      "value_type": "String"
                     }
                   }
                 ],
                 [
-                  10,
+                  11,
                   {
                     "SetNull": {
                       "target": 2,
                       "target_layout": 2,
                       "column": 0,
                       "is_null": {
-                        "Expr": 8
+                        "Expr": 6
                       }
                     }
                   }
@@ -141,7 +187,14 @@ const CIRCUIT: &str = r#"{
                   }
                 }
               },
-              "params": []
+              "params": [
+                [
+                  8,
+                  {
+                    "Column": "String"
+                  }
+                ]
+              ]
             }
           }
         },
@@ -153,10 +206,10 @@ const CIRCUIT: &str = r#"{
         }
       }
     },
-    "6946": {
+    "6954": {
       "Sink": {
-        "input": 6943,
-        "comment": "CREATE VIEW V AS SELECT T.COL6 / T.COL6 FROM T",
+        "input": 6951,
+        "comment": "CREATE VIEW V AS SELECT T.COL4 || NULL FROM T",
         "input_layout": {
           "Set": 2
         }
@@ -196,7 +249,7 @@ const CIRCUIT: &str = r#"{
       "columns": [
         {
           "nullable": true,
-          "ty": "F64"
+          "ty": "String"
         }
       ]
     }
@@ -204,13 +257,8 @@ const CIRCUIT: &str = r#"{
 }"#;
 
 #[test]
-fn issue_146() {
+fn issue_186() {
     utils::test_logger();
-
-    println!(
-        "{:?}",
-        Constant::F64(f64::NAN).cmp(&Constant::F64(f64::NAN)),
-    );
 
     let graph = serde_json::from_str::<SqlGraph>(CIRCUIT)
         .unwrap()
@@ -219,7 +267,7 @@ fn issue_146() {
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
 
     circuit.append_input(
-        NodeId::new(6941),
+        NodeId::new(6949),
         &StreamCollection::Set(vec![
             (
                 RowLiteral::new(vec![
@@ -248,18 +296,10 @@ fn issue_146() {
 
     circuit.step().unwrap();
 
-    let result = circuit.consolidate_output(NodeId::new(6946));
+    let output = circuit.consolidate_output(NodeId::new(6954));
     assert!(must_equal_sc(
-        &result,
-        &StreamCollection::Set(vec!(
-            (RowLiteral::new(vec!(NullableConstant::null())), 1),
-            (
-                RowLiteral::new(vec!(NullableConstant::Nullable(Some(Constant::F64(
-                    f64::NAN
-                ))))),
-                1,
-            ),
-        ))
+        &output,
+        &StreamCollection::Set(vec![(RowLiteral::new(vec![NullableConstant::null()]), 2)])
     ));
 
     circuit.kill().unwrap();

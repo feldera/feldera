@@ -30,14 +30,14 @@ impl Export {
 impl DataflowNode for Export {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -52,7 +52,7 @@ impl DataflowNode for Export {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }
@@ -94,7 +94,7 @@ impl ExportedNode {
 impl DataflowNode for ExportedNode {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.subgraph);
         map(self.input);
@@ -102,7 +102,7 @@ impl DataflowNode for ExportedNode {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.subgraph);
         map(&mut self.input);
@@ -118,7 +118,7 @@ impl DataflowNode for ExportedNode {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }
@@ -152,13 +152,13 @@ impl Source {
 impl DataflowNode for Source {
     fn map_inputs<F>(&self, _map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
     }
 
     fn map_inputs_mut<F>(&mut self, _map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
     }
 
@@ -172,7 +172,7 @@ impl DataflowNode for Source {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.layout);
     }
@@ -214,13 +214,13 @@ impl SourceMap {
 impl DataflowNode for SourceMap {
     fn map_inputs<F>(&self, _map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
     }
 
     fn map_inputs_mut<F>(&mut self, _map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
     }
 
@@ -234,7 +234,7 @@ impl DataflowNode for SourceMap {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.key_layout);
         map(self.value_layout);
@@ -272,14 +272,14 @@ impl Sink {
 impl DataflowNode for Sink {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -297,7 +297,7 @@ impl DataflowNode for Sink {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.input_layout.map_layouts(map);
     }

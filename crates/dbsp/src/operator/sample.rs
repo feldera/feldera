@@ -35,7 +35,8 @@ where
     /// doesn't waste CPU cycles).
     ///
     /// Maximal supported sample size is [`MAX_SAMPLE_SIZE`].  If the operator
-    /// receives a larger `sample_size` value, it treats it as `MAX_SAMPLE_SIZE`.
+    /// receives a larger `sample_size` value, it treats it as
+    /// `MAX_SAMPLE_SIZE`.
     ///
     /// Outputs a Z-set containing randomly sampled keys.  Each key is output
     /// with weight `1` regardless of its weight or the number of associated
