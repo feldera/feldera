@@ -39,6 +39,7 @@ def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None)
         description='What do you want to do with the demo.')
     parser.add_argument('--dbsp_url', required=True)
     parser.add_argument('--actions', nargs='*', default=['create'])
+    parser.add_argument('--prepare-args', nargs='*', default=None)
     args = parser.parse_args()
 
     # Add hard-coded dependencies
@@ -53,5 +54,6 @@ def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None)
         actions.add('compile')
         actions.add('create')
         actions.add('run')
+    prepare = prepare_fn if args.prepare_args == None else lambda: prepare_fn(args.prepare_args)
     execute(dbsp_url, actions, name, code_file,
-            make_pipeline_fn, prepare_fn, verify_fn)
+            make_pipeline_fn, prepare, verify_fn)
