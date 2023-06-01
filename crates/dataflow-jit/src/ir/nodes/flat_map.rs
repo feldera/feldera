@@ -83,14 +83,14 @@ impl FlatMap {
 impl DataflowNode for FlatMap {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -115,7 +115,7 @@ impl DataflowNode for FlatMap {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.output_layout.map_layouts(map);
         self.flat_map.map_layouts(map);

@@ -258,18 +258,19 @@ where
     ///
     /// # Invariants
     ///
-    /// The actual sample computed by the method can be smaller than `sample_size`
-    /// even if `self` contains `>sample_size` keys.
+    /// The actual sample computed by the method can be smaller than
+    /// `sample_size` even if `self` contains `>sample_size` keys.
     ///
     /// A correct implementation must enforce the following invariants:
     ///
     /// * The output sample size cannot exceed `sample_size`.
     ///
-    /// * The output sample can only contain keys present in `self` (with non-zero weights).
+    /// * The output sample can only contain keys present in `self` (with
+    ///   non-zero weights).
     ///
-    /// * If `sample_size` is greater than or equal to the number of keys present
-    ///   in `self` (with non-zero weights), the resulting sample must contain all
-    ///   such keys.
+    /// * If `sample_size` is greater than or equal to the number of keys
+    ///   present in `self` (with non-zero weights), the resulting sample must
+    ///   contain all such keys.
     ///
     /// * The output sample contains keys sorted in ascending order.
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)

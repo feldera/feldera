@@ -94,7 +94,7 @@ impl Node {
 pub trait DataflowNode {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId);
+        F: FnMut(NodeId) + ?Sized;
 
     fn inputs(&self, inputs: &mut Vec<NodeId>) {
         self.map_inputs(&mut |node_id| inputs.push(node_id));
@@ -102,7 +102,7 @@ pub trait DataflowNode {
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId);
+        F: FnMut(&mut NodeId) + ?Sized;
 
     fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout>;
 
@@ -120,7 +120,7 @@ pub trait DataflowNode {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId);
+        F: FnMut(LayoutId) + ?Sized;
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>);
 }
@@ -168,7 +168,7 @@ impl StreamLayout {
 
     pub(crate) fn map_layouts<F>(self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         match self {
             Self::Set(key) => map(key),
@@ -232,14 +232,14 @@ impl Distinct {
 impl DataflowNode for Distinct {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -257,7 +257,7 @@ impl DataflowNode for Distinct {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }
@@ -286,13 +286,13 @@ impl DelayedFeedback {
 impl DataflowNode for DelayedFeedback {
     fn map_inputs<F>(&self, _map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
     }
 
     fn map_inputs_mut<F>(&mut self, _map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
     }
 
@@ -306,7 +306,7 @@ impl DataflowNode for DelayedFeedback {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         map(self.layout);
     }
@@ -334,14 +334,14 @@ impl Delta0 {
 impl DataflowNode for Delta0 {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -356,7 +356,7 @@ impl DataflowNode for Delta0 {
 
     fn map_layouts<F>(&self, _map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
     }
 
@@ -386,14 +386,14 @@ impl Neg {
 impl DataflowNode for Neg {
     fn map_inputs<F>(&self, map: &mut F)
     where
-        F: FnMut(NodeId),
+        F: FnMut(NodeId) + ?Sized,
     {
         map(self.input);
     }
 
     fn map_inputs_mut<F>(&mut self, map: &mut F)
     where
-        F: FnMut(&mut NodeId),
+        F: FnMut(&mut NodeId) + ?Sized,
     {
         map(&mut self.input);
     }
@@ -408,7 +408,7 @@ impl DataflowNode for Neg {
 
     fn map_layouts<F>(&self, map: &mut F)
     where
-        F: FnMut(LayoutId),
+        F: FnMut(LayoutId) + ?Sized,
     {
         self.layout.map_layouts(map);
     }

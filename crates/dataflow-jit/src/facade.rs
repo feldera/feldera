@@ -77,6 +77,8 @@ impl DbspCircuit {
 
             if optimize {
                 graph.optimize();
+                tracing::trace!("optimized graph for dbsp circuit: {graph:#?}");
+
                 validator
                     .validate_graph(&graph)
                     .expect("failed to validate graph after optimization");

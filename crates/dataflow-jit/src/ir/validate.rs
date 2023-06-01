@@ -604,6 +604,8 @@ impl FunctionValidator {
 
                         self.expr_row_mutability.insert(copy.dest(), true);
                     }
+
+                    Expr::Nop(_) => {}
                 }
             }
         }
