@@ -3817,7 +3817,6 @@ dependencies = [
  "lazy_static",
  "log",
  "reqwest",
- "sqlx",
  "thiserror",
  "tokio",
  "zip",
@@ -5118,8 +5117,6 @@ dependencies = [
  "paste",
  "percent-encoding",
  "rand",
- "rustls",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "sha1",
@@ -5129,9 +5126,7 @@ dependencies = [
  "sqlx-rt",
  "stringprep",
  "thiserror",
- "tokio-stream",
  "url",
- "webpki-roots",
  "whoami",
 ]
 
@@ -5163,9 +5158,6 @@ dependencies = [
  "async-native-tls",
  "async-std",
  "native-tls",
- "once_cell",
- "tokio",
- "tokio-rustls",
 ]
 
 [[package]]
@@ -5521,17 +5513,6 @@ dependencies = [
  "rustls",
  "tokio",
  "webpki",
-]
-
-[[package]]
-name = "tokio-stream"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "397c988d37662c7dda6d2208364a706264bf3d6138b11d436cbac0ad38832842"
-dependencies = [
- "futures-core",
- "pin-project-lite",
- "tokio",
 ]
 
 [[package]]
@@ -6020,15 +6001,6 @@ checksum = "f095d78192e208183081cc07bc5515ef55216397af48b873e5edcd72637fa1bd"
 dependencies = [
  "ring",
  "untrusted",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6c71e40d7d2c34a5106301fb632274ca37242cd0c9d3e64dbece371a40a2d87"
-dependencies = [
- "webpki",
 ]
 
 [[package]]
