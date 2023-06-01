@@ -11,6 +11,7 @@ use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
+use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::time::SystemTime;
@@ -1411,7 +1412,7 @@ impl Storage for Mutex<DbModel> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        if let std::collections::btree_map::Entry::Vacant(e) = s.api_keys.entry(hash) {
+        if let btree_map::Entry::Vacant(e) = s.api_keys.entry(hash) {
             e.insert(permissions);
             Ok(())
         } else {
