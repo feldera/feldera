@@ -457,7 +457,7 @@ impl<D> StreamValue<D> {
 ///     function, because it only takes a function rather than an [`Aggregator`]
 ///     object.
 ///
-///     [`Stream::average`] performs a specialized "quasi-linear" aggregation.
+///     [`Stream::average`] calculates the average over the values for each key.
 ///
 ///   * [`Stream::stream_aggregate`] aggregates data streams.  Each batch from
 ///     the input is separately aggregated and written to the output stream.
@@ -506,6 +506,9 @@ impl<D> StreamValue<D> {
 ///
 ///     [`Stream::partitioned_rolling_aggregate_linear`] is cheaper for linear
 ///     aggregation functions.
+///
+///     [`Stream::partitioned_rolling_average`] calculates the rolling average
+///     over a partition.
 ///
 ///   * If the application can discard data that arrives too out-of-order, use
 ///     [`Stream::partitioned_rolling_aggregate_with_watermark`], which can be

@@ -12,13 +12,17 @@ use crate::{
             PartitionedIndexedZSet, RelOffset,
         },
         trace::{TraceBound, TraceBounds, TraceFeedback},
-        Aggregator, FilterMap,
+        Aggregator, Avg, FilterMap,
     },
-    trace::{Builder, Cursor, Spine},
+    trace::{BatchReader, Builder, Cursor, Spine},
     Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
 use num::{Bounded, PrimInt};
-use std::{borrow::Cow, marker::PhantomData, ops::Neg};
+use std::{
+    borrow::Cow,
+    marker::PhantomData,
+    ops::{Div, Neg},
+};
 
 // TODO: `Default` trait bounds in this module are due to an implementation
 // detail and can in principle be avoided.
@@ -378,6 +382,45 @@ impl<B> Stream<RootCircuit, B> {
         let aggregator = LinearAggregator::new(f, output_func);
         self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
     }
+
+    /// Incremental rolling average.
+    ///
+    /// For each input record, it computes the average of the values in records
+    /// in the same partition in the time range specified by `range`.
+    pub fn partitioned_rolling_average<TS, V>(
+        &self,
+        range: RelRange<TS>,
+    ) -> OrdPartitionedOverStream<B::Key, TS, V, B::R>
+    where
+        B: PartitionedIndexedZSet<TS, V>,
+        B::R: ZRingValue + Default,
+        TS: DBData + PrimInt,
+        V: DBData + From<B::R> + GroupValue + Default + MulByRef<Output = V> + Div<Output = V>,
+        // This bound is only here to prevent conflict with `MulByRef<Present>` :(
+        <B as BatchReader>::R: From<i8>,
+    {
+        self.partitioned_rolling_average_generic(range)
+    }
+
+    pub fn partitioned_rolling_average_generic<TS, V, Out>(
+        &self,
+        range: RelRange<TS>,
+    ) -> Stream<RootCircuit, Out>
+    where
+        B: PartitionedIndexedZSet<TS, V>,
+        B::R: ZRingValue + Default,
+        TS: DBData + PrimInt,
+        V: DBData + From<B::R> + GroupValue + Default + MulByRef<Output = V> + Div<Output = V>,
+        // This bound is only here to prevent conflict with `MulByRef<Present>` :(
+        <B as BatchReader>::R: From<i8>,
+        Out: PartitionedIndexedZSet<TS, Option<V>, Key = B::Key, R = B::R>,
+    {
+        self.partitioned_rolling_aggregate_linear_generic(
+            move |v| Avg::new(v.clone(), B::R::one()),
+            |avg| avg.compute_avg().unwrap(),
+            range,
+        )
+    }
 }
 
 /// Quaternary operator that implements the internals of
@@ -589,7 +632,7 @@ mod test {
             FilterMap, Fold,
         },
         trace::{Batch, BatchReader, Cursor},
-        CollectionHandle, DBSPHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
+        CollectionHandle, DBSPHandle, IndexedZSet, OrdIndexedZSet, RootCircuit, Runtime, Stream,
     };
     use size_of::SizeOf;
 
@@ -830,6 +873,77 @@ mod test {
         circuit.step().unwrap();
 
         circuit.kill().unwrap();
+    }
+
+    #[test]
+    fn test_partitioned_rolling_average() {
+        let (circuit, (mut input, mut expected)) = RootCircuit::build(move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+            let (expected_stream, expected_handle) =
+                circuit.add_input_indexed_zset::<u64, (u64, Option<i64>), i64>();
+
+            let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(1));
+            input_stream
+                .partitioned_rolling_average(range_spec)
+                .apply2(&expected_stream, |avg, expected| assert_eq!(avg, expected));
+            Ok((input_handle, expected_handle))
+        })
+        .unwrap();
+
+        circuit.step().unwrap();
+
+        input.append(&mut vec![
+            (0, ((10, 10), 1)),
+            (0, ((11, 20), 1)),
+            (0, ((12, 30), 1)),
+            (0, ((13, 40), 1)),
+            (0, ((14, 50), 1)),
+            (0, ((15, 60), 1)),
+        ]);
+        expected.append(&mut vec![
+            (0, ((10, None), 1)),
+            (0, ((11, Some(10)), 1)),
+            (0, ((12, Some(15)), 1)),
+            (0, ((13, Some(20)), 1)),
+            (0, ((14, Some(30)), 1)),
+            (0, ((15, Some(40)), 1)),
+        ]);
+        circuit.step().unwrap();
+    }
+
+    #[test]
+    fn test_partitioned_rolling_aggregate() {
+        let (circuit, mut input) = RootCircuit::build(move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+
+            input_stream.inspect(|f| {
+                for (p, (ts, v), w) in f.iter() {
+                    println!(" input {p} {ts} {v:6} {w:+}");
+                }
+            });
+            let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(2));
+            let sum = input_stream.partitioned_rolling_aggregate_linear(|&f| f, |x| x, range_spec);
+            sum.inspect(|f| {
+                for (p, (ts, sum), w) in f.iter() {
+                    println!("output {p} {ts} {:6} {w:+}", sum.unwrap_or_default());
+                }
+            });
+            Ok(input_handle)
+        })
+        .unwrap();
+
+        input.append(&mut vec![
+            (1, ((0, 1), 1)),
+            (1, ((1, 10), 1)),
+            (1, ((2, 100), 1)),
+            (1, ((3, 1000), 1)),
+            (1, ((4, 10000), 1)),
+            (1, ((5, 100000), 1)),
+            (1, ((9, 123456), 1)),
+        ]);
+        circuit.step().unwrap();
     }
 
     use proptest::{collection, prelude::*};
