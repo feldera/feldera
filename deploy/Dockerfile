@@ -37,17 +37,31 @@ RUN /root/.cargo/bin/cargo build --release --bin=dbsp_pipeline_manager --no-defa
 # Java build can be performed in parallel
 FROM base as javabuild
 RUN mkdir sql
-COPY .git /sql/.git
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
 # Minimal image for running the pipeline manager
 FROM base as release
 ENV PATH="$PATH:/root/.cargo/bin"
+# Pipeline manager binary
 COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
-COPY --from=javabuild /sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
-COPY . /database-stream-processor
-CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
+# SQL compiler needs the rust libraries, the compiler fat jar and the script
+#  to invoke the compiler jar
+RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
+# The crates needed for the SQL compiler
+COPY crates/dbsp database-stream-processor/crates/dbsp
+COPY crates/adapters database-stream-processor/crates/adapters
+COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
+COPY README.md database-stream-processor/README.md
+# TODO: This is a bug. The compiler should not be referencing two different libs
+RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
+CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
 
 # The dev target adds an rpk client and demo projects
 FROM builder as client

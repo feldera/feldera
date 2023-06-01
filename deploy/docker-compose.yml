@@ -31,7 +31,7 @@ services:
      - ./dbsp_pipeline_manager 
      - --bind-address=0.0.0.0 
      - --working-directory=/working-dir 
-     - --sql-compiler-home=/sql-to-dbsp-compiler 
+     - --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler 
      - --dbsp-override-path=/database-stream-processor
      - --db-connection-string=postgresql://postgres:postgres@dbsp-postgres:5432
 
