@@ -17,6 +17,7 @@ import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
 import StatusSnackBar from 'src/components/errors/StatusSnackBar'
 import { defaultQueryFn } from 'src/types/defaultQueryFn'
+import { OpenAPI } from 'src/types/manager'
 
 type ExtendedAppProps = AppProps & {
   Component: NextPage
@@ -24,6 +25,8 @@ type ExtendedAppProps = AppProps & {
 }
 
 LicenseInfo.setLicenseKey(process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset')
+const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+OpenAPI.BASE = origin
 
 const clientSideEmotionCache = createEmotionCache()
 
