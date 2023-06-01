@@ -22,12 +22,13 @@ jobs:
         uses: fkirc/skip-duplicate-actions@master
         with:
           concurrent_skipping: "same_content_newer"
+          cancel_others: "true"
           skip_after_successful_duplicate: "true"
           do_not_skip: '["workflow_dispatch", "schedule"]'
   build:
     permissions:
-        contents: read
-        packages: write
+      contents: read
+      packages: write
     runs-on: [self-hosted, skylake40]
     needs: [pre_job]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
@@ -54,7 +55,7 @@ jobs:
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-ui/.env && cat web-ui/.env
         env:
           muix_license: ${{ secrets.muix_license }}
-      
+
       - name: Earthly version
         run: earthly --version
 
