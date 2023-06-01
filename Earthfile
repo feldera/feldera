@@ -388,7 +388,7 @@ test-docker-compose:
     COPY deploy/docker-compose.yml .
     WITH DOCKER --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
-        RUN docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN SECOPS_DEMO_ARGS="--prepare-args 500000" docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
 all-tests:

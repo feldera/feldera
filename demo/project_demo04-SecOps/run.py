@@ -14,8 +14,10 @@ from demo import *
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
 
 
-def prepare():
-    cmd = ["cargo", "run", "--release"]
+def prepare(args=[2000000]):
+    assert len(args) == 1, "Expected one '--prepare-args' argument for num_pipelines"
+    num_pipelines = args[0]
+    cmd = ["cargo", "run", "--release", "--", "%s" % num_pipelines]
     # Override --release if RUST_BUILD_PROFILE is set
     if "RUST_BUILD_PROFILE" in os.environ:
         cmd[-1] = os.environ["RUST_BUILD_PROFILE"]
