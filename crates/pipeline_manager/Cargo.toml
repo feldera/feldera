@@ -39,7 +39,7 @@ jsonwebtoken = "8"
 actix-web-httpauth = "0.8.0"
 cached = { version="0.43.0", features = ["async"]}
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
-pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true }
+pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true, default-features = false, features = ["rt_tokio"] }
 rand = "0.8.5"
 openssl = "0.10.52"
 static_assertions = "1.1.0"
