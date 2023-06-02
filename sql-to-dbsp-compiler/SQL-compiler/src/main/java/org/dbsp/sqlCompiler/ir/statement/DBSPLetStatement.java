@@ -76,10 +76,4 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
             this.initializer.accept(visitor);
         visitor.postorder(this);
     }
-
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
-        visitor.postorder(this);
-    }
 }
