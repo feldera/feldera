@@ -26,7 +26,6 @@
 package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
 import org.dbsp.util.Linq;

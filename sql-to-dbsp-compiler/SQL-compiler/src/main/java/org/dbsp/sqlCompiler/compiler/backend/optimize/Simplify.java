@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 
@@ -108,6 +109,10 @@ public class Simplify extends InnerRewriteVisitor {
     public boolean preorder(DBSPBinaryExpression expression) {
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
+        DBSPType leftType = left.getNonVoidType();
+        DBSPType rightType = right.getNonVoidType();
+        boolean leftMayBeNull = leftType.mayBeNull;
+        boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = expression;
         if (expression.operation.equals(DBSPOpcode.AND)) {
             if (left.is(DBSPBoolLiteral.class)) {
@@ -152,32 +157,34 @@ public class Simplify extends InnerRewriteVisitor {
         } else if (expression.operation.equals(DBSPOpcode.ADD)) {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
-                if (leftType.isZero(leftLit)) {
+                IsNumericType iLeftType = leftType.to(IsNumericType.class);
+                if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
+                    // This is not true for null values
                     result = right;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
-                if (rightType.isZero(rightLit)) {
+                IsNumericType iRightType = rightType.to(IsNumericType.class);
+                if (iRightType.isZero(rightLit) && !leftMayBeNull) {
                     result = left;
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.MUL)) {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
-                if (leftType.isOne(leftLit)) {
+                IsNumericType iLeftType = leftType.to(IsNumericType.class);
+                if (iLeftType.isOne(leftLit)) {
+                    // This works even for null
                     result = right.cast(expression.getNonVoidType());
-                } else if (leftType.isZero(leftLit)) {
+                } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                     result = left;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType rightType = right.getNonVoidType().to(IsNumericType.class);
-                if (rightType.isOne(rightLit)) {
+                IsNumericType iRightType = rightType.to(IsNumericType.class);
+                if (iRightType.isOne(rightLit)) {
                     result = left;
-                } else if (rightType.isZero(rightLit)) {
+                } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
                     result = right;
                 }
             }

@@ -420,6 +420,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             batchSize = 20;
         if (name.startsWith("select5"))
             batchSize = 5;
+        // Used for debugging
         int toSkip = 0;
 
         TestStatistics result = new TestStatistics(options.stopAtFirstError);
