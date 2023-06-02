@@ -48,6 +48,8 @@ impl CodegenCtx<'_> {
             | "dbsp.str.is_lowercase"
             | "dbsp.str.is_uppercase") => self.string_checks(function, expr_id, call, builder),
 
+            "dbsp.str.with.capacity" => self.string_with_capacity(expr_id, call, builder),
+
             // `fn(timestamp) -> date
             "dbsp.timestamp.to_date" => self.timestamp_to_date(expr_id, call, builder),
 
@@ -126,6 +128,9 @@ impl CodegenCtx<'_> {
             "dbsp.math.fdim" => self.math_fdim(expr_id, call, builder),
             "dbsp.math.radians_to_degrees" => self.math_radians_to_degrees(expr_id, call, builder),
             "dbsp.math.degrees_to_radians" => self.math_degrees_to_radians(expr_id, call, builder),
+
+            "dbsp.str.format" => self.format_string(expr_id, call, builder),
+            "dbsp.io.str.print" => self.print_string(call, builder),
 
             unknown => todo!("unknown function call: @{unknown}"),
         }
@@ -805,6 +810,27 @@ impl CodegenCtx<'_> {
         }
     }
 
+    fn string_with_capacity(
+        &mut self,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let capacity = self.value(call.args()[0]);
+        debug_assert_eq!(builder.value_type(capacity), self.pointer_type());
+
+        let with_capacity = self
+            .imports
+            .get("string_with_capacity", self.module, builder.func);
+        let with_capacity = builder.call_fn(with_capacity, &[capacity]);
+
+        self.add_expr(expr_id, with_capacity, ColumnType::String, None);
+
+        self.comment(builder.value_def(with_capacity), || {
+            format!("call @dbsp.str.with.capacity({})", call.args()[0])
+        });
+    }
+
     fn timestamp_epoch(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
         let timestamp = self.value(call.args()[0]);
 
@@ -1271,6 +1297,28 @@ impl CodegenCtx<'_> {
             .ins()
             .stack_load(ret_ty.native_type(&self.frontend_config()), slot, 0);
         self.add_expr(expr_id, value, Some(call.ret_ty()), None);
+    }
+
+    fn format_string(
+        &mut self,
+        _expr_id: ExprId,
+        _call: &Call,
+        _builder: &mut FunctionBuilder<'_>,
+    ) {
+        todo!()
+    }
+
+    fn print_string(&mut self, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let string = self.value(call.args()[0]);
+        let length = self.string_length(string, self.is_readonly(call.args()[0]), builder);
+        let ptr = self.string_ptr(string, builder);
+
+        let print_str = self.imports.get("print_str", self.module, builder.func);
+        let print_call = builder.ins().call(print_str, &[ptr, length]);
+
+        self.comment(print_call, || {
+            format!("call @dbsp.io.str.print({})", call.args()[0])
+        })
     }
 }
 

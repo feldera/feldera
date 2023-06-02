@@ -1416,6 +1416,7 @@ const CIRCUIT: &str = r#"{
 }"#;
 
 #[test]
+#[ignore = "performs invalid division operations"]
 fn issue_189() {
     utils::test_logger();
 

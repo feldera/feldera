@@ -92,6 +92,7 @@
     - [ ] `@dbsp.str.make_uppercase()`
     - [x] `@dbsp.str.is_ascii()`
     - [x] `@dbsp.str.write()`
+    - [x] `@dbsp.str.with.capacity()`
   - [ ] Vec/Array manipulation
   - [ ] Timestamp manipulation
     - [x] `@dbsp.timestamp.epoch`
@@ -184,4 +185,6 @@
     - [x] `@dbsp.math.expm1()`
     - [x] `@dbsp.math.fdim()` Positive difference between floating point values
     - [x] `@dbsp.math.radians_to_degrees()` Converts radians to degrees
-    - [x] `@dbsp.math.degrees_to_radians()` Converts degrees to radians 
+    - [x] `@dbsp.math.degrees_to_radians()` Converts degrees to radians
+  - [ ] `@dbsp.str.format()`
+  - [x] `@dbsp.io.str.print()`
