@@ -514,7 +514,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public DBSPExpression declare(String prefix, DBSPExpression closure) {
-        return this.circuit.declareLocal(prefix, closure).getVarReference();
+        // return this.circuit.declareLocal(prefix, closure).getVarReference();
+        return closure;
     }
 
     public void visitFilter(LogicalFilter filter) {

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.util.IModule;
@@ -45,8 +46,8 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
 
-    public DeadCodeVisitor(DBSPCompiler compiler) {
-        super(compiler, true);
+    public DeadCodeVisitor(IErrorReporter reporter) {
+        super(reporter, true);
     }
 
     public void keep(DBSPOperator operator) {
@@ -89,7 +90,7 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     public void endVisit() {
         for (DBSPOperator source: this.getCircuit().circuit.inputOperators) {
             if (!this.reachable.contains(source))
-                this.getCompiler().reportError(source.getSourcePosition(), true,
+                this.errorReporter.reportError(source.getSourcePosition(), true,
                         "Unused", "Table " + Utilities.singleQuote(source.outputName) +
                                 " is not used");
         }

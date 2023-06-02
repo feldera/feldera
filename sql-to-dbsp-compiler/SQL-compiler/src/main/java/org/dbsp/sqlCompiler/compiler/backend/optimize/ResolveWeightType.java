@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 
 /**
@@ -9,12 +11,15 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
  * as indicated by the compiler.
  */
 public class ResolveWeightType extends InnerRewriteVisitor {
-    public ResolveWeightType(DBSPCompiler compiler) {
-        super(compiler);
+    final DBSPType weightTypeImplementation;
+
+    public ResolveWeightType(IErrorReporter reporter, DBSPType weightTypeImplementation) {
+        super(reporter);
+        this.weightTypeImplementation = weightTypeImplementation;
     }
 
     public boolean preorder(DBSPTypeWeight type) {
-        this.map(type, this.getCompiler().getWeightTypeImplementation());
+        this.map(type, this.weightTypeImplementation);
         return false;
     }
 }

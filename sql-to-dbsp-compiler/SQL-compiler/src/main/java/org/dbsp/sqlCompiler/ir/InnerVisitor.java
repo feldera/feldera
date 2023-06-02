@@ -24,8 +24,7 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitDelegateVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -46,19 +45,14 @@ import org.dbsp.sqlCompiler.ir.type.primitive.*;
  * Depth-first traversal of an DBSPInnerNode hierarchy.
  */
 @SuppressWarnings("SameReturnValue, EmptyMethod")
-public abstract class InnerVisitor implements ICompilerComponent {
+public abstract class InnerVisitor {
     /// If true each visit call will visit by default the superclass.
     final boolean visitSuper;
-    final DBSPCompiler compiler;
+    protected final IErrorReporter errorReporter;
 
-    public InnerVisitor(DBSPCompiler compiler, boolean visitSuper) {
+    public InnerVisitor(IErrorReporter reporter, boolean visitSuper) {
         this.visitSuper = visitSuper;
-        this.compiler = compiler;
-    }
-
-    @Override
-    public DBSPCompiler getCompiler() {
-        return this.compiler;
+        this.errorReporter = reporter;
     }
 
     /**
@@ -1127,6 +1121,6 @@ public abstract class InnerVisitor implements ICompilerComponent {
     }
 
     public CircuitVisitor getCircuitVisitor() {
-        return new CircuitDelegateVisitor(this.getCompiler(), this);
+        return new CircuitDelegateVisitor(this.errorReporter, this);
     }
 }

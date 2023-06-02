@@ -24,9 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -37,7 +35,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -54,9 +52,9 @@ import java.util.function.Function;
 public class CircuitRewriter extends CircuitCloneVisitor {
     private final Function<IDBSPInnerNode, IDBSPInnerNode> transform;
 
-    public CircuitRewriter(DBSPCompiler compiler,
+    public CircuitRewriter(IErrorReporter reporter,
                            Function<IDBSPInnerNode, IDBSPInnerNode> transform) {
-        super(compiler, false);
+        super(reporter, false);
         this.transform = transform;
     }
 
@@ -269,15 +267,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public boolean preorder(DBSPPartialCircuit circuit) {
-        for (IDBSPNode node : circuit.getCode()) {
-            DBSPOperator op = node.as(DBSPOperator.class);
-            if (op != null)
-                op.accept(this);
-            else {
-                IDBSPInnerNode result = this.transform.apply(node.to(IDBSPInnerNode.class));
-                this.getResult().declare(result.to(IDBSPDeclaration.class));
-            }
-        }
+        for (DBSPOperator node : circuit.getAllOperators())
+            node.accept(this);
         return false;
     }
 

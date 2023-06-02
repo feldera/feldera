@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -30,8 +31,8 @@ import java.util.Map;
  * A DBSPZSetLiteral is converted to a Rust StreamCollection.
  */
 public class ToRustJitLiteral extends InnerRewriteVisitor {
-    public ToRustJitLiteral(DBSPCompiler compiler) {
-        super(compiler);
+    public ToRustJitLiteral(IErrorReporter reporter) {
+        super(reporter);
     }
 
     void constant(String type, DBSPLiteral argument) {

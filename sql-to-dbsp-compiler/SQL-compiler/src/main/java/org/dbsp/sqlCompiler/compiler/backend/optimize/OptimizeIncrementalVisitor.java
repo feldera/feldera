@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitCloneVisitor;
 import org.dbsp.util.Linq;
@@ -36,8 +37,8 @@ import java.util.List;
  * forward.
  */
 public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
-    public OptimizeIncrementalVisitor(DBSPCompiler compiler) {
-        super(compiler, false);
+    public OptimizeIncrementalVisitor(IErrorReporter reporter) {
+        super(reporter, false);
     }
 
     @Override

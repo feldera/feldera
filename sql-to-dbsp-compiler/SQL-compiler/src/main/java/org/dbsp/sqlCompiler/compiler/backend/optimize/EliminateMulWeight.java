@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -10,8 +11,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
  * Replaces MUL_WEIGHT with a cast followed by a multiplication.
  */
 public class EliminateMulWeight extends InnerRewriteVisitor {
-    public EliminateMulWeight(DBSPCompiler compiler) {
-        super(compiler);
+    public EliminateMulWeight(IErrorReporter reporter) {
+        super(reporter);
     }
 
     @Override

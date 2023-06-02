@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.SubstitutionContext;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
@@ -51,8 +52,8 @@ public class SimpleClosureParameters
     final SubstitutionContext<List<DBSPVariablePath>> context;
     final NameGen generator;
 
-    public SimpleClosureParameters(DBSPCompiler compiler) {
-        super(compiler);
+    public SimpleClosureParameters(IErrorReporter reporter) {
+        super(reporter);
         this.context = new SubstitutionContext<>();
         this.generator = new NameGen("p_");
     }

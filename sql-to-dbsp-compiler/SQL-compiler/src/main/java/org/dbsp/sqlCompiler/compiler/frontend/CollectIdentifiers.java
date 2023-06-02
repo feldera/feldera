@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitDelegateVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
@@ -48,8 +49,8 @@ public class CollectIdentifiers extends InnerVisitor {
      * Create a visitor which collects all identifiers that appear in an inner program.
      * @param used  Deposit the identifiers in this set.
      */
-    public CollectIdentifiers(DBSPCompiler compiler, Set<String> used) {
-        super(compiler, true);
+    public CollectIdentifiers(IErrorReporter reporter, Set<String> used) {
+        super(reporter, true);
         this.used = used;
     }
 
@@ -92,8 +93,8 @@ public class CollectIdentifiers extends InnerVisitor {
     static class OuterCollectIdentifiers extends CircuitDelegateVisitor {
         final Set<String> identifiers;
 
-        OuterCollectIdentifiers(DBSPCompiler compiler, Set<String> used, InnerVisitor visitor) {
-            super(compiler, visitor);
+        OuterCollectIdentifiers(IErrorReporter reporter, Set<String> used, InnerVisitor visitor) {
+            super(reporter, visitor);
             this.identifiers = used;
         }
 
@@ -109,6 +110,6 @@ public class CollectIdentifiers extends InnerVisitor {
      */
     @Override
     public CircuitVisitor getCircuitVisitor() {
-        return new OuterCollectIdentifiers(this.getCompiler(), this.used, this);
+        return new OuterCollectIdentifiers(this.errorReporter, this.used, this);
     }
 }

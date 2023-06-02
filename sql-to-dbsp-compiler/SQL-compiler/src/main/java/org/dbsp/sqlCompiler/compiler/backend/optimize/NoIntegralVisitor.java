@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegralOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
@@ -34,13 +35,13 @@ import org.dbsp.sqlCompiler.ir.CircuitVisitor;
  * (but there are legit streaming query circuits which would have to include integrals).
  */
 public class NoIntegralVisitor extends CircuitVisitor {
-    public NoIntegralVisitor(DBSPCompiler compiler) {
-        super(compiler, false);
+    public NoIntegralVisitor(IErrorReporter reporter) {
+        super(reporter, false);
     }
 
     @Override
     public boolean preorder(DBSPIntegralOperator node) {
-        ToDotVisitor.toDot(this.compiler, "circuit.png", "png", this.getCircuit());
+        ToDotVisitor.toDot(this.errorReporter, "circuit.png", "png", this.getCircuit());
         throw new RuntimeException("Circuit contains an integration operator " + node);
     }
 }

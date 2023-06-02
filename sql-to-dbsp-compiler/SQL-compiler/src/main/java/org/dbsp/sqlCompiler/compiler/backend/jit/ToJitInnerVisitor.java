@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameter;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameterMapping;
@@ -162,10 +163,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     final JITParameterMapping mapping;
     final ToJitVisitor jitVisitor;
 
-    public ToJitInnerVisitor(DBSPCompiler compiler, List<JITBlock> blocks,
+    public ToJitInnerVisitor(IErrorReporter reporter, List<JITBlock> blocks,
                              TypeCatalog typeCatalog, ToJitVisitor parent,
                              JITParameterMapping mapping) {
-        super(compiler, true);
+        super(reporter, true);
         this.blocks = blocks;
         this.jitVisitor = parent;
         this.typeCatalog = typeCatalog;
@@ -1222,10 +1223,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
      * @param catalog     The catalog of Tuple types.
      */
     static List<JITBlock> convertClosure(
-            DBSPCompiler compiler, ToJitVisitor parent, JITParameterMapping parameterMapping,
+            IErrorReporter reporter, ToJitVisitor parent, JITParameterMapping parameterMapping,
             DBSPClosureExpression expression, TypeCatalog catalog) {
         List<JITBlock> blocks = new ArrayList<>();
-        ToJitInnerVisitor visitor = new ToJitInnerVisitor(compiler, blocks, catalog, parent, parameterMapping);
+        ToJitInnerVisitor visitor = new ToJitInnerVisitor(reporter, blocks, catalog, parent, parameterMapping);
         visitor.newContext();
         expression.accept(visitor);
         visitor.popContext();

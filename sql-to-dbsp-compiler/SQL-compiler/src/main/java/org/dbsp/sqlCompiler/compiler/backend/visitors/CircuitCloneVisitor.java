@@ -25,10 +25,8 @@ package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.util.IModule;
 import org.dbsp.util.Linq;
@@ -58,8 +56,8 @@ public class CircuitCloneVisitor extends CircuitVisitor
     protected final boolean force;
     protected final Set<DBSPOperator> visited = new HashSet<>();
 
-    public CircuitCloneVisitor(DBSPCompiler compiler, boolean force) {
-        super(compiler, true);
+    public CircuitCloneVisitor(IErrorReporter reporter, boolean force) {
+        super(reporter, true);
         this.remap = new HashMap<>();
         this.force = force;
     }
@@ -97,14 +95,8 @@ public class CircuitCloneVisitor extends CircuitVisitor
     @Override
     public boolean preorder(DBSPPartialCircuit circuit) {
         super.preorder(circuit);
-        for (IDBSPNode node : circuit.getCode()) {
-            DBSPOperator op = node.as(DBSPOperator.class);
-            if (op != null)
-                op.accept(this);
-            else {
-                this.getResult().declare(node.to(IDBSPDeclaration.class));
-            }
-        }
+        for (DBSPOperator node : circuit.getAllOperators())
+            node.accept(this);
         return false;
     }
 
@@ -239,7 +231,7 @@ public class CircuitCloneVisitor extends CircuitVisitor
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         this.startVisit(circuit);
-        this.result = new DBSPPartialCircuit(circuit.circuit.compiler);
+        this.result = new DBSPPartialCircuit(circuit.circuit.errorReporter);
         circuit.accept(this);
         this.endVisit();
         DBSPPartialCircuit result = this.getResult();

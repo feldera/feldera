@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.IModule;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -15,12 +15,12 @@ import java.util.function.Supplier;
 public class InnerPassesVisitor extends InnerRewriteVisitor implements IModule {
     public final List<InnerRewriteVisitor> passes;
 
-    public InnerPassesVisitor(DBSPCompiler compiler, InnerRewriteVisitor... passes) {
-        this(compiler, Linq.list(passes));
+    public InnerPassesVisitor(IErrorReporter reporter, InnerRewriteVisitor... passes) {
+        this(reporter, Linq.list(passes));
     }
 
-    public InnerPassesVisitor(DBSPCompiler compiler, List<InnerRewriteVisitor> passes) {
-        super(compiler);
+    public InnerPassesVisitor(IErrorReporter reporter, List<InnerRewriteVisitor> passes) {
+        super(reporter);
         this.passes = passes;
     }
 

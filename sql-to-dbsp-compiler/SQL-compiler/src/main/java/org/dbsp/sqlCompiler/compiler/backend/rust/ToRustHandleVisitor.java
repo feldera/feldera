@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.IndentStream;
@@ -55,8 +56,8 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     int inputHandleIndex = 0;
     int outputHandleIndex = 0;
 
-    public ToRustHandleVisitor(DBSPCompiler compiler, IndentStream builder, String functionName) {
-        super(compiler, builder);
+    public ToRustHandleVisitor(IErrorReporter reporter, IndentStream builder, String functionName) {
+        super(reporter, builder);
         this.functionName = functionName;
     }
 
@@ -107,7 +108,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append("let (circuit, handles) = Runtime::init_circuit(workers, |circuit| {")
                 .increase();
 
-        for (IDBSPNode node : circuit.getCode())
+        for (IDBSPNode node : circuit.getAllOperators())
             super.processNode(node);
         this.builder.append("Ok((");
         for (int i = 0; i < this.outputHandleIndex; i++)
@@ -147,10 +148,10 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         return false;
     }
 
-    public static String toRustString(DBSPCompiler compiler, IDBSPOuterNode node, String functionName) {
+    public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node, String functionName) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustHandleVisitor(compiler, stream, functionName);
+        ToRustVisitor visitor = new ToRustHandleVisitor(reporter, stream, functionName);
         node.accept(visitor);
         return builder.toString();
     }

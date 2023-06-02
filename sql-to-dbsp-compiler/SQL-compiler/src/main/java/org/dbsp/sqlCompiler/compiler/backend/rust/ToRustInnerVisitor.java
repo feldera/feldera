@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.*;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -52,8 +52,8 @@ import java.util.Objects;
 public class ToRustInnerVisitor extends InnerVisitor {
     private final IndentStream builder;
 
-    public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder) {
-        super(compiler, true);
+    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder) {
+        super(reporter, true);
         this.builder = builder;
     }
 
@@ -1193,10 +1193,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return false;
     }
 
-    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node) {
+    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream);
         node.accept(visitor);
         return builder.toString();
     }

@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.optimize;
 import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitCloneVisitor;
 import org.dbsp.util.Logger;
@@ -39,8 +40,8 @@ public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
      */
     public final Set<DBSPOperator> keep;
 
-    public RemoveOperatorsVisitor(DBSPCompiler compiler, Set<DBSPOperator> keep) {
-        super(compiler, false);
+    public RemoveOperatorsVisitor(IErrorReporter reporter, Set<DBSPOperator> keep) {
+        super(reporter, false);
         this.keep = keep;
     }
 

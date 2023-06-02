@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -51,8 +52,8 @@ import java.util.Objects;
 public class Simplify extends InnerRewriteVisitor {
     // You would think that Calcite has done these optimizations, but apparently not.
 
-    public Simplify(DBSPCompiler compiler) {
-        super(compiler);
+    public Simplify(IErrorReporter reporter) {
+        super(reporter);
     }
 
     @Override

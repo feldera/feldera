@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
@@ -13,8 +14,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
  * Tuple::new(t.0, t.1, ... ).
  */
 public class ExpandClone extends InnerRewriteVisitor {
-    public ExpandClone(DBSPCompiler compiler) {
-        super(compiler);
+    public ExpandClone(IErrorReporter reporter) {
+        super(reporter);
     }
 
     @Override

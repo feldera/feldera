@@ -515,7 +515,6 @@ public class OtherTests extends BaseSQLTests implements IModule {
         Set<String> used = new HashSet<>();
         CollectIdentifiers ci = new CollectIdentifiers(testCompiler(), used);
         ci.getCircuitVisitor().apply(circuit);
-        Assert.assertTrue(used.contains("t")); // closure argument name
         Assert.assertTrue(used.contains("T")); // table name
         Assert.assertTrue(used.contains("V")); // view name
         FreshName gen = new FreshName(used);

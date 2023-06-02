@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -36,6 +37,7 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.PrintWriter;
 
@@ -46,8 +48,8 @@ import java.io.PrintWriter;
 public class ToDotVisitor extends CircuitVisitor implements IModule {
     private final IndentStream stream;
 
-    public ToDotVisitor(DBSPCompiler compiler, IndentStream stream) {
-        super(compiler, true);
+    public ToDotVisitor(IErrorReporter reporter, IndentStream stream) {
+        super(reporter, true);
         this.stream = stream;
     }
 
@@ -85,8 +87,8 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     String getFunction(DBSPOperator node) {
         if (node.function == null)
             return "";
-        DBSPExpression expression = this.getCircuit().circuit.resolve(node.function);
-        return ToRustInnerVisitor.toRustString(this.compiler, expression);
+        DBSPExpression expression = node.function;
+        return ToRustInnerVisitor.toRustString(this.errorReporter, expression);
     }
 
     @Override
@@ -125,7 +127,8 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
                 .newline();
     }
 
-    public static void toDot(DBSPCompiler compiler, String fileName, String outputFormat, DBSPCircuit circuit) {
+    public static void toDot(IErrorReporter reporter, String fileName,
+                             @Nullable String outputFormat, DBSPCircuit circuit) {
         try {
             Logger.INSTANCE.from("ToDotVisitor", 1)
                     .append("Writing circuit to ")
@@ -134,7 +137,7 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
             File tmp = File.createTempFile("tmp", ".dot");
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
-            circuit.accept(new ToDotVisitor(compiler, stream));
+            circuit.accept(new ToDotVisitor(reporter, stream));
             writer.close();
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,

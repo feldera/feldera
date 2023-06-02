@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitCloneVisitor;
@@ -26,8 +27,8 @@ import java.util.Objects;
  * - converts DBSPFlatmap into basic operations.
  */
 public class LowerCircuitVisitor extends CircuitCloneVisitor {
-    public LowerCircuitVisitor(DBSPCompiler compiler) {
-        super(compiler, false);
+    public LowerCircuitVisitor(IErrorReporter reporter) {
+        super(reporter, false);
     }
 
     /**
@@ -83,7 +84,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPVariablePath accumulator = accumulatorType.ref(true).var("a");
         DBSPVariablePath postAccumulator = accumulatorType.var("a");
 
-        BetaReduction reducer = new BetaReduction(this.compiler);
+        BetaReduction reducer = new BetaReduction(this.errorReporter);
         DBSPVariablePath weightVar = new DBSPVariablePath("w", Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
             DBSPExpression accumulatorField = accumulator.field(i);
@@ -111,8 +112,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression fold = constructor.call(
                 new DBSPRawTupleExpression(zeros),
                 accumFunction, postClosure);
-        DBSPLetStatement result = this.getResult().declareLocal("fold", fold);
-        return result.getVarReference();
+        // DBSPLetStatement result = this.getResult().declareLocal("fold", fold);
+        return fold; //.getVarReference();
     }
 
     DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
