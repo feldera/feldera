@@ -1210,6 +1210,8 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Timestamp);
             }
 
             "dbsp.math.is_power_of_two" => {
@@ -1231,6 +1233,8 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                assert_eq!(call.ret_ty(), ColumnType::Bool);
             }
 
             "dbsp.math.fdim" => {
@@ -1301,6 +1305,46 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+            }
+
+            "dbsp.str.with.capacity" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Usize) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), ColumnType::String);
+            }
+
+            "dbsp.io.str.print" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
             unknown => {
