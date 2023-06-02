@@ -20,7 +20,7 @@ def prepare(args=[2000000]):
     cmd = ["cargo", "run", "--release", "--", "%s" % num_pipelines]
     # Override --release if RUST_BUILD_PROFILE is set
     if "RUST_BUILD_PROFILE" in os.environ:
-        cmd[-1] = os.environ["RUST_BUILD_PROFILE"]
+        cmd[2] = os.environ["RUST_BUILD_PROFILE"]
     subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"))
 
 
