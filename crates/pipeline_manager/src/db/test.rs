@@ -553,7 +553,7 @@ fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_
     }
 }
 
-// Compare everything except the `created` field which gets set inside the DB.
+// Compare everything except the `created` field which gets set inside the DB..
 fn compare_pipeline(step: usize, model: AnyResult<PipelineDescr>, impl_: AnyResult<PipelineDescr>) {
     match (model, impl_) {
         (Ok(mut mr), Ok(mut ir)) => {
@@ -1187,6 +1187,12 @@ impl Storage for Mutex<DbModel> {
                 .get_mut(&pipeline_id)
                 .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
             c.attached_connectors = new_acs;
+        }
+        // Check program exists foreign key constraint
+        if let Some(program_id) = program_id {
+            if !db_programs.contains_key(&program_id) {
+                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
+            }
         }
 
         let c = s
