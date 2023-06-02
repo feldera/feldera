@@ -8,6 +8,7 @@ mod issue_181;
 mod issue_184;
 mod issue_186;
 mod issue_189;
+mod issue_195;
 
 use crate::ir::literal::{RowLiteral, StreamCollection};
 use std::collections::BTreeMap;

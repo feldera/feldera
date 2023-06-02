@@ -20,6 +20,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug, Write},
     hash::{Hash, Hasher},
+    io::{self, Write as _},
     mem::MaybeUninit,
     rc::Rc,
     slice, str,
@@ -548,6 +549,9 @@ intrinsics! {
     parse_f32_from_str = fn(ptr, usize, ptr) -> bool,
     parse_f64_from_str = fn(ptr, usize, ptr) -> bool,
     parse_bool_from_str = fn(ptr, usize, ptr) -> bool,
+
+    // IO
+    print_str = fn(ptr, usize),
 }
 
 /// Allocates memory with the given size and alignment
@@ -1225,4 +1229,17 @@ parse_from_str! {
     u64, i64,
     f32, f64,
     bool,
+}
+
+unsafe extern "C" fn print_str(ptr: *const u8, len: usize) {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+
+    let result = {
+        let mut stdout = io::stdout().lock();
+        stdout.write_all(string.as_bytes())
+    };
+
+    if let Err(error) = result {
+        tracing::error!("failed to print string: {error}");
+    }
 }
