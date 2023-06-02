@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.util.IModule;
@@ -36,13 +36,13 @@ import java.util.List;
 public class PassesVisitor extends CircuitVisitor implements IModule {
     public final List<CircuitVisitor> passes;
 
-    public PassesVisitor(DBSPCompiler compiler, CircuitVisitor... passes) {
-        super(compiler,false);
+    public PassesVisitor(IErrorReporter reporter, CircuitVisitor... passes) {
+        super(reporter,false);
         this.passes = Linq.list(passes);
     }
 
-    public PassesVisitor(DBSPCompiler compiler, List<CircuitVisitor> passes) {
-        super(compiler, false);
+    public PassesVisitor(IErrorReporter reporter, List<CircuitVisitor> passes) {
+        super(reporter, false);
         this.passes = passes;
     }
 
@@ -51,7 +51,7 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
     }
 
     public void add(InnerRewriteVisitor inner) {
-        this.passes.add(new CircuitRewriter(this.compiler, inner));
+        this.passes.add(new CircuitRewriter(this.errorReporter, inner));
     }
 
     @Override
@@ -61,7 +61,7 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
             Logger.INSTANCE.from(this, 3)
                     .append("Writing circuit to before.png")
                     .newline();
-            ToDotVisitor.toDot(this.compiler, "0before.png", "png", circuit);
+            ToDotVisitor.toDot(this.errorReporter, "0before.png", "png", circuit);
         }
         ++count;
         for (CircuitVisitor pass: this.passes) {
@@ -76,7 +76,7 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
                         .append("Writing circuit to ")
                         .append(name)
                         .newline();
-                ToDotVisitor.toDot(this.compiler, name, "png", circuit);
+                ToDotVisitor.toDot(this.errorReporter, name, "png", circuit);
             }
             ++count;
         }

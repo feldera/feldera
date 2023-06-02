@@ -34,8 +34,16 @@ import javax.annotation.Nullable;
 public class DBSPKeywordLiteral extends DBSPLiteral {
     public final String keyword;
 
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPKeywordLiteral that = (DBSPKeywordLiteral) o;
+        return keyword.equals(that.keyword);
+    }
+
     public DBSPKeywordLiteral(@Nullable Object node, String keyword) {
-        super(node, DBSPTypeKeyword.INSTANCE, keyword);
+        super(node, DBSPTypeKeyword.INSTANCE, false);
         this.keyword = keyword.toLowerCase();
         switch (keyword.toLowerCase()) {
             case "dow":

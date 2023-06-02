@@ -32,11 +32,11 @@ public class JITMuxInstruction extends JITInstruction {
     public final JITInstructionRef left;
     public final JITInstructionRef right;
 
-    public JITMuxInstruction(long id,
-                             JITInstructionRef condition,
-                             JITInstructionRef left,
-                             JITInstructionRef right) {
-        super(id, "Select");
+    public JITMuxInstruction(
+            long id,
+            JITInstructionRef condition, JITInstructionRef left, JITInstructionRef right,
+            String comment) {
+        super(id, "Select", comment);
         this.condition = condition;
         this.right = right;
         this.left = left;

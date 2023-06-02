@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -33,7 +32,7 @@ import javax.annotation.Nullable;
  * This class does not correspond to any Rust construct.
  * It represents a cast of an expression to a given type.
  */
-public class DBSPCastExpression extends DBSPExpression implements IDBSPInnerNode {
+public class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
     // Duplicate type here because the expression 'type' field is not serialized as JSON.
     public final DBSPType destinationType;

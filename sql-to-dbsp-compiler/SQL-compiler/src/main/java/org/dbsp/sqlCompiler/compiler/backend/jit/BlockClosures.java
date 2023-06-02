@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.util.IModule;
@@ -36,8 +36,8 @@ public class BlockClosures
         extends InnerRewriteVisitor
         implements IModule {
 
-    public BlockClosures(DBSPCompiler compiler) {
-        super(compiler);
+    public BlockClosures(IErrorReporter reporter) {
+        super(reporter);
     }
 
     @Override

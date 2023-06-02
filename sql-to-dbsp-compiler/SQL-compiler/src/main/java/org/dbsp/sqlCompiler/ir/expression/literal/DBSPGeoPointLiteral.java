@@ -39,13 +39,13 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
 
     public DBSPGeoPointLiteral(@Nullable Object node,
                                @Nullable DBSPExpression left, @Nullable DBSPExpression right) {
-        super(node, DBSPTypeGeoPoint.INSTANCE, 0);  // value unused.
+        super(node, DBSPTypeGeoPoint.INSTANCE, left == null || right == null);
         this.left = left;
         this.right = right;
     }
 
     public DBSPGeoPointLiteral() {
-        super(null, DBSPTypeGeoPoint.NULLABLE_INSTANCE, null);
+        super(null, DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
         this.left = null;
         this.right = null;
     }
@@ -60,5 +60,14 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     public DBSPLiteral getNonNullable() {
         return new DBSPGeoPointLiteral(
                 this.getNode(), Objects.requireNonNull(this.left), Objects.requireNonNull(this.right));
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPGeoPointLiteral that = (DBSPGeoPointLiteral) o;
+        if (!Objects.equals(left, that.left)) return false;
+        return Objects.equals(right, that.right);
     }
 }

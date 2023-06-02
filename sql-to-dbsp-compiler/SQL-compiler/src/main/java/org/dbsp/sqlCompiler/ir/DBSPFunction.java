@@ -84,12 +84,6 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
         visitor.postorder(this);
     }
 
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
-        visitor.postorder(this);
-    }
-
     public DBSPExpression getReference() {
         return this.type.var(this.name);
     }

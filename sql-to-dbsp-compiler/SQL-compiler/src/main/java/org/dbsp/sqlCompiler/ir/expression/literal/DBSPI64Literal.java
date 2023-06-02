@@ -47,7 +47,7 @@ public class DBSPI64Literal extends DBSPLiteral {
     }
 
     public DBSPI64Literal(@Nullable Object node, DBSPType type , @Nullable Long value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -74,6 +74,14 @@ public class DBSPI64Literal extends DBSPLiteral {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPI64Literal that = (DBSPI64Literal) o;
+        return Objects.equals(value, that.value);
     }
 
     @Override

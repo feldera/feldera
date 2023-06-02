@@ -88,6 +88,7 @@ public class Utilities {
      * @param value  Value to insert in map.
      * @return       The inserted value.
      */
+    @SuppressWarnings("UnusedReturnValue")
     public static <K, V, VE extends V> VE putNew(Map<K, V> map, K key, VE value) {
         V previous = map.put(Objects.requireNonNull(key), Objects.requireNonNull(value));
         if (previous != null)

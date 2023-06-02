@@ -148,7 +148,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     accumulator, new DBSPBinaryExpression(function, DBSPTypeInteger.SIGNED_64,
                             DBSPOpcode.MUL_WEIGHT,
                             argument,
-                            this.compiler.weightVar.borrow()));
+                            this.compiler.weightVar));
         }
         DBSPType semigroup = new DBSPTypeUser(null, "DefaultSemigroup", false, this.resultType);
         this.foldingFunction = new DBSPAggregate.Implementation(
@@ -205,7 +205,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             aggregatedValue.getNonVoidType(),
                             DBSPOpcode.MUL_WEIGHT,
                             aggregatedValue,
-                            this.compiler.weightVar.borrow()));
+                            this.compiler.weightVar));
         }
         DBSPType semigroup = new DBSPTypeUser(null, "DefaultOptSemigroup",
                 false, accumulator.getNonVoidType().setMayBeNull(false));
@@ -231,7 +231,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             aggregatedValue.getNonVoidType(),
                             DBSPOpcode.MUL_WEIGHT,
                             aggregatedValue,
-                            this.compiler.weightVar.borrow()));
+                            this.compiler.weightVar));
         }
         String semigroupName = "DefaultSemigroup";
         if (accumulator.getNonVoidType().mayBeNull)
@@ -274,7 +274,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             DBSPTypeInteger.SIGNED_64.setMayBeNull(plusOne.getNonVoidType().mayBeNull),
                             DBSPOpcode.MUL_WEIGHT,
                             plusOne,
-                            this.compiler.weightVar.borrow()));
+                            this.compiler.weightVar));
             sum = ExpressionCompiler.aggregateOperation(
                     function, DBSPOpcode.AGG_ADD, i64,
                     sumAccumulator, new DBSPBinaryExpression(
@@ -282,7 +282,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             i64,
                             DBSPOpcode.MUL_WEIGHT,
                             aggregatedValue,
-                            this.compiler.weightVar.borrow()));
+                            this.compiler.weightVar));
         }
         DBSPExpression increment = new DBSPRawTupleExpression(sum, count);
 

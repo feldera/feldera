@@ -26,7 +26,6 @@
 package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
 import org.dbsp.util.Linq;
@@ -84,7 +83,6 @@ public class Main {
         Logger.INSTANCE.setDebugLevel(CalciteCompiler.class, 3);
          */
         System.out.println(Arrays.toString(args));
-        RustSqlRuntimeLibrary.INSTANCE.writeSqlLibrary( "../lib/genlib/src/lib.rs");
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
         DBSPExecutor.register(parser);
         DbspJdbcExecutor.register(parser);

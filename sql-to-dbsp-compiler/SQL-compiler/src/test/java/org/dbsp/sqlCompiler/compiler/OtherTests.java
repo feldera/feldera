@@ -58,11 +58,13 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.StringPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
 import java.io.*;
+import java.nio.file.Files;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -354,6 +356,42 @@ public class OtherTests extends BaseSQLTests implements IModule {
         Assert.assertTrue(success);
     }
 
+    @Test @Ignore("Only run if we want to preserve casing for names")
+    public void testCaseSensitive() throws IOException {
+        String[] statements = new String[]{
+                "CREATE TABLE MYTABLE (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM MYTABLE",
+                "CREATE TABLE yourtable (\n" +
+                        "  column1 INT NOT NULL" +
+                        ", column2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V2 AS SELECT column2 FROM yourtable"
+        };
+        File file = this.createInputScript(statements);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        File tmp = File.createTempFile("out", ".rs", new File("."));
+        tmp.deleteOnExit();
+        CompilerMessages message = CompilerMain.execute(
+                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        Assert.assertEquals(message.exitCode, 0);
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+        String jsonContents  = String.join("\n", Files.readAllLines(json.toPath()));
+        System.out.println(jsonContents);
+        Assert.assertTrue(jsonContents.contains("MYTABLE"));  // checks case sensitivity
+        Assert.assertTrue(jsonContents.contains("COL1"));
+        Assert.assertTrue(jsonContents.contains("yourtable"));
+        Assert.assertTrue(jsonContents.contains("column1"));
+        boolean success = file.delete();
+        Assert.assertTrue(success);
+    }
+
+
     @Test
     public void testCompilerToJson() throws IOException {
         String[] statements = new String[]{
@@ -477,7 +515,6 @@ public class OtherTests extends BaseSQLTests implements IModule {
         Set<String> used = new HashSet<>();
         CollectIdentifiers ci = new CollectIdentifiers(testCompiler(), used);
         ci.getCircuitVisitor().apply(circuit);
-        Assert.assertTrue(used.contains("t")); // closure argument name
         Assert.assertTrue(used.contains("T")); // table name
         Assert.assertTrue(used.contains("V")); // view name
         FreshName gen = new FreshName(used);

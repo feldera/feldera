@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -33,6 +34,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -44,8 +46,8 @@ public class ToCsvVisitor extends InnerVisitor {
     private final Appendable appendable;
     public final Supplier<String> nullRepresentation;
 
-    public ToCsvVisitor(DBSPCompiler compiler, Appendable destination, Supplier<String> nullRepresentation) {
-        super(compiler, false);
+    public ToCsvVisitor(IErrorReporter reporter, Appendable destination, Supplier<String> nullRepresentation) {
+        super(reporter, false);
         this.appendable = destination;
         this.nullRepresentation = nullRepresentation;
     }
@@ -80,7 +82,7 @@ public class ToCsvVisitor extends InnerVisitor {
     public boolean preorder(DBSPTimestampLiteral literal) {
         try {
             if (!literal.isNull)
-                this.appendable.append(Long.toString(literal.getNonNullValue(Long.class)));
+                this.appendable.append(Long.toString(Objects.requireNonNull(literal.value)));
             else
                 this.appendable.append(this.nullRepresentation.get());
         } catch (IOException ex) {
@@ -175,13 +177,13 @@ public class ToCsvVisitor extends InnerVisitor {
 
     /**
      * Write a literal to a file as a csv format.
-     * @param compiler    A reference to a DBSPCompiler.
+     * @param reporter    A reference to an error reporter.
      * @param fileName    File to write to.
      * @param literal Literal to write.
      */
-    public static File toCsv(DBSPCompiler compiler, String fileName, DBSPZSetLiteral literal) throws IOException {
+    public static File toCsv(IErrorReporter reporter, String fileName, DBSPZSetLiteral literal) throws IOException {
         StringBuilder builder = new StringBuilder();
-        ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
+        ToCsvVisitor visitor = new ToCsvVisitor(reporter, builder, () -> "");
         visitor.traverse(literal);
         File file = new File(fileName);
         FileWriter writer = new FileWriter(file);

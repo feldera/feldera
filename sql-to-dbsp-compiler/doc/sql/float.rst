@@ -20,3 +20,5 @@ Infinity.  Infinity minus ``Infinity`` yields ``NaN``.
 An operation with a ``NaN`` input yields ``NaN``.  The only exception
 is when the operation's output does not depend on the ``NaN`` value:
 an example is ``NaN`` raised to the zero power yields one.
+
+In sorting order ``NaN`` is considered greater than all other values.

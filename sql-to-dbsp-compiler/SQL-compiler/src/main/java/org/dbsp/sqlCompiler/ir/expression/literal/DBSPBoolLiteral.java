@@ -41,7 +41,7 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     public static final DBSPBoolLiteral NULLABLE_FALSE = new DBSPBoolLiteral(false, true);
 
     public DBSPBoolLiteral(@Nullable Object node, DBSPType type, @Nullable Boolean value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -68,5 +68,13 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPBoolLiteral(Objects.requireNonNull(this.value));
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPBoolLiteral that = (DBSPBoolLiteral) o;
+        return Objects.equals(this.value, that.value);
     }
 }

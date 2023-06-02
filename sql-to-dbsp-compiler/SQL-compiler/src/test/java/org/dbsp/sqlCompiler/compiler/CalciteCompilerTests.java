@@ -27,7 +27,7 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.dbsp.sqlCompiler.compiler.sqlparser.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.junit.Assert;
 import org.junit.Test;
 

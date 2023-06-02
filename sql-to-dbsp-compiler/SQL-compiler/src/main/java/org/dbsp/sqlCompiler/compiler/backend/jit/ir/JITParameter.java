@@ -29,13 +29,34 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.util.IIndentStream;
 
 public class JITParameter extends JITReference {
-    public final boolean isInput;
-    public final JITRowType type;
+    public enum Direction {
+        IN("input"),
+        OUT("output"),
+        INOUT("inout");
 
-    public JITParameter(long id, boolean isInput, JITRowType type) {
+        public final String direction;
+
+        Direction(String direction) {
+            this.direction = direction;
+        }
+
+        @Override
+        public String toString() {
+            return this.direction;
+        }
+    }
+
+    public final String originalName;  // not used in code generation.
+    public final Direction direction;
+    public final JITRowType type;
+    public final boolean mayBeNull;    // not used in code generation
+
+    public JITParameter(long id, String name, Direction direction, JITRowType type, boolean mayBeNull) {
         super(id);
-        this.isInput = isInput;
+        this.direction = direction;
+        this.originalName = name;
         this.type = type;
+        this.mayBeNull = mayBeNull;
     }
 
     @Override
@@ -43,13 +64,13 @@ public class JITParameter extends JITReference {
         ObjectNode result = jsonFactory().createObjectNode();
         result.put("id", this.id);
         result.put("layout", this.type.getId());
-        result.put("flags", this.isInput ? "input" : "output");
+        result.put("flags", this.direction.toString());
         return result;
     }
 
     @Override
     public String toString() {
-        return this.id + " " + (this.isInput ? "IN" : "OUT") + ":" + this.type;
+        return this.originalName + " " + this.id + " " + this.direction + ":" + this.type;
     }
 
     @Override
