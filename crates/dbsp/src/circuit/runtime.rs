@@ -5,6 +5,7 @@ use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use std::{
     cell::{Cell, RefCell},
+    error::Error as StdError,
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
     sync::{
@@ -31,6 +32,8 @@ impl Display for Error {
         }
     }
 }
+
+impl StdError for Error {}
 
 // Thread-local variables used by the termination protocol.
 thread_local! {
