@@ -44,8 +44,16 @@ public class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStringLiteral(@Nullable Object node, DBSPType type, @Nullable String value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPStringLiteral that = (DBSPStringLiteral) o;
+        return Objects.equals(value, that.value);
     }
 
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {

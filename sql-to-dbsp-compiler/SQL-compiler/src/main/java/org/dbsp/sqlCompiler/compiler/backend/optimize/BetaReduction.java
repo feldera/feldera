@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -41,8 +41,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 public class BetaReduction extends InnerRewriteVisitor {
     final ExpressionSubstitutionContext context;
 
-    public BetaReduction(DBSPCompiler compiler) {
-        super(compiler);
+    public BetaReduction(IErrorReporter reporter) {
+        super(reporter);
         this.context = new ExpressionSubstitutionContext();
     }
 

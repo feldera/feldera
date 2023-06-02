@@ -34,12 +34,13 @@ import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.optimizer.CircuitOptimizer;
-import org.dbsp.sqlCompiler.compiler.sqlparser.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -69,7 +70,7 @@ import java.io.PrintStream;
  * execution and keeping track of the contents of each table.
  * The contents after insertions can be obtained using getTableContents().
  */
-public class DBSPCompiler implements IModule, ICompilerComponent {
+public class DBSPCompiler implements IModule, ICompilerComponent, IErrorReporter {
     enum InputSource {
         /**
          * No data source set yet.

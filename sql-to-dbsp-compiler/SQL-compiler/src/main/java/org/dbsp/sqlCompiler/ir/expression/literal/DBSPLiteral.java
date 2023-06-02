@@ -46,7 +46,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
-import java.util.Objects;
 
 /**
  * This is not just a base class, it also can be used to represent NULL
@@ -54,13 +53,10 @@ import java.util.Objects;
  */
 public abstract class DBSPLiteral extends DBSPExpression {
     public final boolean isNull;
-    @Nullable
-    private final Object value;
 
-    protected DBSPLiteral(@Nullable Object node, DBSPType type, @Nullable Object value) {
+    protected DBSPLiteral(@Nullable Object node, DBSPType type, boolean isNull) {
         super(node, type);
-        this.isNull = value == null;
-        this.value = value;
+        this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
             throw new RuntimeException("Type " + type + " cannot represent null");
     }
@@ -119,6 +115,11 @@ public abstract class DBSPLiteral extends DBSPExpression {
         return value;
     }
 
+    /**
+     * True if this and the other literal have the same type and value.
+     */
+    public abstract boolean sameValue(@Nullable DBSPLiteral other);
+
     public boolean mayBeNull() {
         return this.getNonVoidType().mayBeNull;
     }
@@ -127,10 +128,6 @@ public abstract class DBSPLiteral extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
-    }
-
-    public <T> T getNonNullValue(Class<T> clazz) {
-        return clazz.cast(Objects.requireNonNull(this.value));
     }
 
     public void checkNotNull() {

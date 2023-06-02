@@ -34,13 +34,16 @@ public class DBSPUSizeLiteral extends DBSPLiteral {
     @Nullable
     public final Long value;
 
-    @SuppressWarnings("unused")
-    public DBSPUSizeLiteral() {
-        this(null, true);
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPUSizeLiteral that = (DBSPUSizeLiteral) o;
+        return Objects.equals(value, that.value);
     }
 
     public DBSPUSizeLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 

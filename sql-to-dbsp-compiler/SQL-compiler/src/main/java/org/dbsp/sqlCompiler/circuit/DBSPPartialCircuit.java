@@ -23,14 +23,11 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -46,15 +43,13 @@ import java.util.*;
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IModule {
     public final List<DBSPSourceOperator> inputOperators = new ArrayList<>();
     public final List<DBSPSinkOperator> outputOperators = new ArrayList<>();
-    // This is the structure that is visited.
-    public final List<IDBSPNode> code = new ArrayList<>();
-    public final Map<String, IDBSPDeclaration> declarations = new HashMap<>();
+    public final List<DBSPOperator> allOperators = new ArrayList<>();
     public final Map<String, DBSPOperator> operatorDeclarations = new HashMap<>();
-    public final DBSPCompiler compiler;
+    public final IErrorReporter errorReporter;
 
-    public DBSPPartialCircuit(DBSPCompiler compiler) {
+    public DBSPPartialCircuit(IErrorReporter errorReporter) {
         super(null);
-        this.compiler = compiler;
+        this.errorReporter = errorReporter;
     }
 
     /**
@@ -83,10 +78,10 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
                 .append(operator.toString())
                 .newline();
         if (this.operatorDeclarations.containsKey(operator.outputName)) {
-            compiler.reportError(operator.getSourcePosition(), false, "Duplicate definition",
+            this.errorReporter.reportError(operator.getSourcePosition(), false, "Duplicate definition",
                     "View " + operator.outputName + " already defined");
             DBSPOperator previous = this.operatorDeclarations.get(operator.outputName);
-            compiler.reportError(previous.getSourcePosition(), false, "Duplicate definition",
+            this.errorReporter.reportError(previous.getSourcePosition(), false, "Duplicate definition",
                     "This is the previous definition");
             return;
         }
@@ -95,22 +90,10 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
             this.inputOperators.add(operator.to(DBSPSourceOperator.class));
         else if (operator.is(DBSPSinkOperator.class))
             this.outputOperators.add(operator.to(DBSPSinkOperator.class));
-        this.code.add(operator);
+        this.allOperators.add(operator);
     }
 
-    public Iterable<IDBSPNode> getCode() { return this.code; }
-
-    public void declare(IDBSPDeclaration declaration) {
-        this.code.add(declaration);
-        this.declarations.put(declaration.getName(), declaration);
-    }
-
-    public DBSPLetStatement declareLocal(String prefix, DBSPExpression init) {
-        String name = new NameGen(prefix).nextName();
-        DBSPLetStatement let = new DBSPLetStatement(name, init);
-        this.declare(let);
-        return let;
-    }
+    public Iterable<DBSPOperator> getAllOperators() { return this.allOperators; }
 
     @Nullable
     public DBSPOperator getOperator(String tableName) {
@@ -120,7 +103,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
     @Override
     public void accept(CircuitVisitor visitor) {
         if (!visitor.preorder(this)) return;
-        for (IDBSPNode op: this.code) {
+        for (IDBSPNode op: this.allOperators) {
             IDBSPOuterNode outer = op.as(IDBSPOuterNode.class);
             if (outer != null)
                 outer.accept(visitor);
@@ -131,22 +114,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
     public boolean sameCircuit(DBSPPartialCircuit other) {
         if (this == other)
             return true;
-        return Linq.same(this.code, other.code);
-    }
-
-    /**
-     * If an expression is a variable name, resolve its value by looking it
-     * up in the declarations of the current circuit.
-     */
-    public DBSPExpression resolve(DBSPExpression expression) {
-        while (expression.is(DBSPVariablePath.class)) {
-            String name = expression.to(DBSPVariablePath.class).variable;
-            if (this.declarations.containsKey(name)) {
-                DBSPLetStatement stat = this.declarations.get(name).to(DBSPLetStatement.class);
-                expression = Objects.requireNonNull(stat.initializer);
-            }
-        }
-        return expression;
+        return Linq.same(this.allOperators, other.allOperators);
     }
 
     /**

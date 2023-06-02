@@ -28,7 +28,7 @@
 @ParametersAreNonnullByDefault
 @FieldsAreNonnullByDefault
 @MethodsAreNonnullByDefault
-package org.dbsp.sqlCompiler.compiler.sqlparser;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.dbsp.util.FieldsAreNonnullByDefault;
 import org.dbsp.util.MethodsAreNonnullByDefault;

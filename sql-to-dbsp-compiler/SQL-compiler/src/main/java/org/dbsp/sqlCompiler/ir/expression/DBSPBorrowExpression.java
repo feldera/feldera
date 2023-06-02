@@ -27,6 +27,8 @@ import org.dbsp.sqlCompiler.ir.InnerVisitor;
 
 /**
  * An expression of the form &expression.
+ * Should not appear in the generated code from SQL, only in the
+ * tools for test generation.
  */
 public class DBSPBorrowExpression extends DBSPExpression {
     public final DBSPExpression expression;

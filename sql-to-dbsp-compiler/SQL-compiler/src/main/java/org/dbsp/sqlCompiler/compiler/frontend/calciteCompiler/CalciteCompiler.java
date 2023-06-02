@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.sqlparser;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.apache.calcite.avatica.util.Casing;
@@ -56,7 +56,6 @@ import org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl;
 import org.apache.calcite.sql.type.*;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
-import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
@@ -184,20 +183,25 @@ public class CalciteCompiler implements IModule {
         this.astRewriter = new RewriteDivision();
         this.options = options;
 
+        final boolean preserveCasing = false;
         Properties connConfigProp = new Properties();
-        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), Boolean.TRUE.toString());
-        connConfigProp.put(CalciteConnectionProperty.UNQUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
-        connConfigProp.put(CalciteConnectionProperty.QUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
-        connConfigProp.put(CalciteConnectionProperty.CONFORMANCE.camelName(), SqlConformanceEnum.BABEL.toString());
+        if (!preserveCasing) {
+            connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), Boolean.TRUE.toString());
+            connConfigProp.put(CalciteConnectionProperty.UNQUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
+            connConfigProp.put(CalciteConnectionProperty.QUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
+            connConfigProp.put(CalciteConnectionProperty.CONFORMANCE.camelName(), SqlConformanceEnum.BABEL.toString());
+        }
         CalciteConnectionConfig connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
-        SqlConformance conformance = connectionConfig.conformance();
         this.parserConfig = SqlParser.config()
                 .withLex(options.ioOptions.lexicalRules)
                 // Add support for DDL language
                 .withParserFactory(SqlDdlParserImpl.FACTORY)
+                // Enable the next to preserve casing.
+                //.withUnquotedCasing(Casing.UNCHANGED)
+                //.withQuotedCasing(Casing.UNCHANGED)
                 // TODO: would be nice to get DDL and BABEL at the same time...
                 //.withParserFactory(SqlBabelParserImpl.FACTORY)
-                .withConformance(conformance);
+                .withConformance(SqlConformanceEnum.LENIENT);
         this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
         this.catalog = new Catalog("schema");
         CalciteSchema rootSchema = CalciteSchema.createRootSchema(false, false);
@@ -233,9 +237,6 @@ public class CalciteCompiler implements IModule {
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
-                .withLenientOperatorLookup(connectionConfig.lenientOperatorLookup())
-                .withTypeCoercionEnabled(true)
-                .withDefaultNullCollation(connectionConfig.defaultNullCollation())
                 .withIdentifierExpansion(true);
 
         this.validator = SqlValidatorUtil.newValidator(

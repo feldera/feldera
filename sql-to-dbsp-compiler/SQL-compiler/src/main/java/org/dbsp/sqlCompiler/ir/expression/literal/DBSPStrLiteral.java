@@ -36,7 +36,7 @@ public class DBSPStrLiteral extends DBSPLiteral {
     public final boolean raw;
 
     public DBSPStrLiteral(@Nullable Object node, DBSPType type, @Nullable String value, boolean raw) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
         this.raw = raw;
     }
@@ -59,6 +59,15 @@ public class DBSPStrLiteral extends DBSPLiteral {
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPStrLiteral that = (DBSPStrLiteral) o;
+        if (raw != that.raw) return false;
+        return Objects.equals(value, that.value);
     }
 
     @Override

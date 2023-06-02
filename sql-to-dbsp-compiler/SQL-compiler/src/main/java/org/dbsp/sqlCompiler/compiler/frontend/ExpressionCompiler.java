@@ -87,16 +87,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
      */
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
-        // DBSPType type = this.typeCompiler.convertType(inputRef.getType());
-        // Unfortunately it looks like we can't trust the type coming from Calcite.
         if (this.inputRow == null)
             throw new RuntimeException("Row referenced without a row context");
+        // Unfortunately it looks like we can't trust the type coming from Calcite.
         DBSPTypeTuple type = this.inputRow.getNonVoidType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
-        if (index < type.size())
+        if (index < type.size()) {
             return new DBSPFieldExpression(
                     inputRef, this.inputRow,
-                    inputRef.getIndex());
+                    inputRef.getIndex()).applyCloneIfNeeded();
+        }
         if (index - type.size() < this.constants.size())
             return this.visitLiteral(this.constants.get(index - type.size()));
         throw new TranslationException("Index in row out of bounds ", inputRef);

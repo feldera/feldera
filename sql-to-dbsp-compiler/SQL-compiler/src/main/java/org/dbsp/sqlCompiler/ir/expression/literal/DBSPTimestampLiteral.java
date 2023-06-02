@@ -29,12 +29,13 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 public class DBSPTimestampLiteral extends DBSPLiteral {
     @Nullable public final Long value;
 
     public DBSPTimestampLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
-        super(node, type, value);
+        super(node, type, value == null);
         this.value = value;
     }
 
@@ -57,6 +58,14 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
         if (parts.length == 1)
             return result;
         return result.withFraction(parts[1]);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPTimestampLiteral that = (DBSPTimestampLiteral) o;
+        return Objects.equals(value, that.value);
     }
 
     public DBSPTimestampLiteral(String string, boolean mayBeNull) {

@@ -27,9 +27,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITFunction;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameter;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameterMapping;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.cfg.JITBlock;
@@ -38,8 +39,12 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.backend.optimize.EliminateMulWeight;
+import org.dbsp.sqlCompiler.compiler.backend.optimize.ExpandClone;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.Simplify;
+import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerPassesVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.PassesVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -61,11 +66,11 @@ import java.util.*;
 /**
  * Generates an encoding of the circuit as a JITProgram representation.
  */
-public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerComponent {
+public class ToJitVisitor extends CircuitVisitor implements IModule {
     final JITProgram program;
 
-    public ToJitVisitor(DBSPCompiler compiler) {
-        super(compiler, true);
+    public ToJitVisitor(IErrorReporter reporter) {
+        super(reporter, true);
         this.program = new JITProgram();
     }
 
@@ -82,7 +87,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
             this.type = ToJitVisitor.this.getTypeCatalog().convertTupleType(
                     operator.getOutputZSetElementType(), jitVisitor);
             if (operator.function != null) {
-                DBSPExpression func = ToJitVisitor.this.resolve(operator.function);
+                DBSPExpression func = operator.getFunction();
                 this.function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class));
             } else {
                 this.function = null;
@@ -93,6 +98,16 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         public JITFunction getFunction() { return Objects.requireNonNull(this.function); }
     }
 
+    public InnerRewriteVisitor normalizer(boolean simpleParameters) {
+        InnerPassesVisitor passes = new
+                InnerPassesVisitor(this.errorReporter);
+        passes.add(new ExpandClone(this.errorReporter));
+        passes.add(new BetaReduction(this.errorReporter));
+        if (simpleParameters)
+            passes.add(new SimpleClosureParameters(this.errorReporter));
+        return passes;
+    }
+
     JITFunction convertFunction(DBSPClosureExpression function) {
         Logger.INSTANCE.from(this, 4)
                 .append("Canonicalizing")
@@ -100,10 +115,8 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
                 .append(function.toString())
                 .newline();
 
-        BetaReduction reducer = new BetaReduction(this.compiler);
-        function = reducer.apply(function).to(DBSPClosureExpression.class);
-        SimpleClosureParameters scp = new SimpleClosureParameters(this.getCompiler());
-        function = scp.rewriteClosure(function);
+        InnerRewriteVisitor normalizer = this.normalizer(true);
+        function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
         Logger.INSTANCE.from(this, 4)
@@ -115,15 +128,58 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
 
         for (DBSPParameter param: function.parameters)
-            mapping.addInputParameter(param, this);
+            mapping.addParameter(param, JITParameter.Direction.IN, this);
 
         // If the result type is a scalar, it is marked as a result type.
         // Otherwise, we have to create a new parameter that is returned by reference.
         JITScalarType returnType = mapping.addReturn(resultType, this);
 
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
-                this.getCompiler(), this, mapping, function, this.getTypeCatalog());
-        JITFunction result = new JITFunction(mapping.allParameters, blocks, returnType);
+                this.errorReporter, this, mapping, function, this.getTypeCatalog());
+        JITFunction result = new JITFunction(mapping.parameters, blocks, returnType);
+        Logger.INSTANCE.from(this, 4)
+                .append(result.toAssembly())
+                .newline();
+        return result;
+    }
+
+    /**
+     * Slightly different version of 'convertFunction', which handles
+     * only step functions for the aggregate operation.  We need to
+     * handle these specially since they have an 'inout' parameter,
+     * which cannot be deduced from the signature we use for the function.
+     */
+    JITFunction convertStepFunction(DBSPClosureExpression function) {
+        Logger.INSTANCE.from(this, 4)
+                .append("Canonicalizing")
+                .newline()
+                .append(function.toString())
+                .newline();
+
+        InnerRewriteVisitor normalizer = this.normalizer(false);
+        function = normalizer.apply(function).to(DBSPClosureExpression.class);
+        function = this.tupleEachParameter(function);
+
+        Logger.INSTANCE.from(this, 4)
+                .append("Converting to JIT")
+                .newline()
+                .append(function.toString())
+                .newline();
+        JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
+        int index = 0;
+        for (DBSPParameter param: function.parameters) {
+            mapping.addParameter(param,
+                    index == 0 ? JITParameter.Direction.INOUT : JITParameter.Direction.IN,
+                    this);
+            index++;
+        }
+
+        if (index != 3)
+            throw new RuntimeException("Expected 3 parameters for step function, got " + index);
+
+        List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
+                this.errorReporter, this, mapping, function, this.getTypeCatalog());
+        JITFunction result = new JITFunction(mapping.parameters, blocks, JITUnitType.INSTANCE);
         Logger.INSTANCE.from(this, 4)
                 .append(result.toAssembly())
                 .newline();
@@ -280,7 +336,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
 
     @Override
     public boolean preorder(DBSPIndexOperator operator) {
-        DBSPExpression func = ToJitVisitor.this.resolve(operator.getFunction());
+        DBSPExpression func = operator.getFunction();
         JITFunction function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class));
         List<JITOperatorReference> inputs = Linq.map(operator.inputs, i -> new JITOperatorReference(i.id));
 
@@ -348,19 +404,19 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
         JITRowType outputType = this.getTypeCatalog().convertTupleType(operator.outputElementType, this);
 
         DBSPAggregate aggregate = operator.getAggregate();
-        DBSPExpression initial = this.resolve(aggregate.getZero());
+        DBSPExpression initial = aggregate.getZero();
         DBSPTupleExpression elementValue = initial.to(DBSPTupleExpression.class);
         JITTupleLiteral init = new JITTupleLiteral(elementValue, this);
 
         DBSPClosureExpression closure = aggregate.getIncrement();
-        JITFunction stepFn = this.convertFunction(closure);
+        JITFunction stepFn = this.convertStepFunction(closure);
 
         closure = aggregate.getPostprocessing();
         JITFunction finishFn = this.convertFunction(closure);
 
         JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
         JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
-                Objects.requireNonNull(aggregate.getIncrement().getResultType()), this);
+                aggregate.getIncrement().parameters[1].getNonVoidType(), this);
         JITOperator result = new JITAggregateOperator(
                 operator.id, accLayout, stepLayout, outputType,
                 inputs, init, stepFn, finishFn);
@@ -406,8 +462,9 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {
         PassesVisitor rewriter = new PassesVisitor(compiler);
         rewriter.add(new BlockClosures(compiler));
+        rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()).circuitRewriter());
+        rewriter.add(new EliminateMulWeight(compiler).circuitRewriter());
         rewriter.add(new Simplify(compiler).circuitRewriter());
-        rewriter.add(new ResolveWeightType(compiler).circuitRewriter());
 
         circuit = rewriter.apply(circuit);
         Logger.INSTANCE.from("ToJitVisitor", 2)
@@ -421,7 +478,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule, ICompilerCo
 
     /**
      * Generate JSON for a circuit and validate it.
-     * @param compiler Compiler that is compiling the circuit.
+     * @param compiler Compiler used to compile the code.
      * @param circuit  Circuit to generate JSON for.
      * @param compile  If true invoke the DBSP JIT compiler on the generated JSON.
      */

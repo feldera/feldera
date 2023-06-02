@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -74,12 +73,6 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
         this.type.accept(visitor);
         if (this.initializer != null)
             this.initializer.accept(visitor);
-        visitor.postorder(this);
-    }
-
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
         visitor.postorder(this);
     }
 }

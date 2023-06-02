@@ -39,6 +39,7 @@ public abstract class DBSPUnaryOperator extends DBSPOperator {
         this.addInput(source);
     }
 
+    @SuppressWarnings("SameParameterValue")
     protected DBSPUnaryOperator(@Nullable Object node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
                                 boolean isMultiset, DBSPOperator source,

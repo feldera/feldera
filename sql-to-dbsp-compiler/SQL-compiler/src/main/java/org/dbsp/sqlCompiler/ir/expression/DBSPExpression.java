@@ -112,4 +112,10 @@ public abstract class DBSPExpression
         }
         return new DBSPCastExpression(this.getNode(), this, to);
     }
+
+    public DBSPExpression applyCloneIfNeeded() {
+        if (this.getNonVoidType().hasCopy())
+            return this;
+        return this.applyClone();
+    }
 }

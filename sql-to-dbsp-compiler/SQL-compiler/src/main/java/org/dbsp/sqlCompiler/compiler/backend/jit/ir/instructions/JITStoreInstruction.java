@@ -37,8 +37,9 @@ public class JITStoreInstruction extends JITInstruction {
     public final JITScalarType valueType;
 
     public JITStoreInstruction(long id, JITInstructionRef target, JITRowType targetType,
-                               int column, JITInstructionRef source, JITScalarType valueType) {
-        super(id, "Store");
+                               int column, JITInstructionRef source, JITScalarType valueType,
+                               String comment) {
+        super(id, "Store", comment);
         this.target = target;
         this.targetType = targetType;
         this.column = column;

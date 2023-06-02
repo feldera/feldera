@@ -109,4 +109,9 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         }
         return new DBSPTupleExpression(casts).closure(var.asRefParameter());
     }
+
+    @Override
+    public boolean hasCopy() {
+        return false;
+    }
 }

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitRewriter;
@@ -43,8 +44,8 @@ public class RustFileWriter implements ICompilerComponent {
      * Stores the result in the "used" structure.
      */
     class FindResources extends InnerVisitor {
-        public FindResources(DBSPCompiler compiler) {
-            super(compiler, true);
+        public FindResources(IErrorReporter reporter) {
+            super(reporter, true);
         }
 
         @Override
@@ -293,9 +294,9 @@ public class RustFileWriter implements ICompilerComponent {
                 lowered.add(inner);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                outer = this.lower.apply(outer);
                 // Lowering implements aggregates and inlines some calls.
-                // Beta reduction can be beneficial.
+                outer = this.lower.apply(outer);
+                // Beta reduction is beneficial after implementing aggregates.
                 outer = this.circuitReducer.apply(outer);
                 // Find the resources used to generate the correct Rust preamble
                 outer.accept(this.findInCircuit);

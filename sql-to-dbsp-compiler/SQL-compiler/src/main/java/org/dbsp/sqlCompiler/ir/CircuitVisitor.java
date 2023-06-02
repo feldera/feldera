@@ -28,9 +28,7 @@ import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.IdGen;
 
 import javax.annotation.Nullable;
@@ -42,22 +40,16 @@ import java.util.function.Function;
  */
 @SuppressWarnings({"SameReturnValue", "BooleanMethodIsAlwaysInverted"})
 public abstract class CircuitVisitor extends IdGen
-        implements Function<DBSPCircuit, DBSPCircuit>,
-        ICompilerComponent {
+        implements Function<DBSPCircuit, DBSPCircuit> {
     /// If true each visit call will visit by default the superclass.
     final boolean visitSuper;
     @Nullable
     private DBSPCircuit circuit = null;
-    public final DBSPCompiler compiler;
+    public final IErrorReporter errorReporter;
 
-    public CircuitVisitor(DBSPCompiler compiler, boolean visitSuper) {
+    public CircuitVisitor(IErrorReporter errorReporter, boolean visitSuper) {
         this.visitSuper = visitSuper;
-        this.compiler = compiler;
-    }
-
-    @Override
-    public DBSPCompiler getCompiler() {
-        return this.compiler;
+        this.errorReporter = errorReporter;
     }
 
     public DBSPCircuit getCircuit() {
@@ -231,10 +223,6 @@ public abstract class CircuitVisitor extends IdGen
     public boolean preorder(DBSPIncrementalJoinOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
         else return true;
-    }
-
-    public DBSPExpression resolve(DBSPExpression expression) {
-        return this.getCircuit().circuit.resolve(expression);
     }
 
     ////////////////////////////////////

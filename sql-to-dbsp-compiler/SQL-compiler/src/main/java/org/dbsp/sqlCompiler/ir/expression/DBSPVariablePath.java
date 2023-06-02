@@ -74,5 +74,4 @@ public class DBSPVariablePath extends DBSPExpression {
             this.type.accept(visitor);
         visitor.postorder(this);
     }
-
 }

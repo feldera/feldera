@@ -23,6 +23,6 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-public interface IDBSPDeclaration extends IDBSPInnerNode, IDBSPOuterNode {
+public interface IDBSPDeclaration extends IDBSPInnerNode {
     String getName();
 }

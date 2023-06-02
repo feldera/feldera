@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -70,8 +70,8 @@ import java.util.function.Supplier;
 public abstract class InnerRewriteVisitor
         extends InnerVisitor
         implements Function<IDBSPInnerNode, IDBSPInnerNode>, IModule {
-    protected InnerRewriteVisitor(DBSPCompiler compiler) {
-        super(compiler,true);
+    protected InnerRewriteVisitor(IErrorReporter reporter) {
+        super(reporter,true);
     }
 
     /**
@@ -896,7 +896,12 @@ public abstract class InnerRewriteVisitor
 
     @Override
     public boolean preorder(DBSPVariablePath expression) {
-        this.map(expression, expression);
+        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPExpression result = expression;
+        if (!type.sameType(expression.getType())) {
+            result = new DBSPVariablePath(expression.variable, type);
+        }
+        this.map(expression, result);
         return false;
     }
 
@@ -1016,6 +1021,6 @@ public abstract class InnerRewriteVisitor
      * that optimizes an entire circuit.
      */
     public CircuitRewriter circuitRewriter() {
-        return new CircuitRewriter(this.getCompiler(), this);
+        return new CircuitRewriter(this.errorReporter, this);
     }
 }

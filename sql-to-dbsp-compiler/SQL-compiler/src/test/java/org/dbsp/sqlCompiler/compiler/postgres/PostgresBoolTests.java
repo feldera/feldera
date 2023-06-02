@@ -23,6 +23,7 @@ public class PostgresBoolTests extends BaseSQLTests {
         return compiler;
     }
 
+    @SuppressWarnings("SameParameterValue")
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, optimize);

@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.*;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -40,10 +40,10 @@ public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream builder;
     public final InnerVisitor innerVisitor;
 
-    public ToRustVisitor(DBSPCompiler compiler, IndentStream builder) {
-        super(compiler, true);
+    public ToRustVisitor(IErrorReporter reporter, IndentStream builder) {
+        super(reporter, true);
         this.builder = builder;
-        this.innerVisitor = new ToRustInnerVisitor(compiler, builder);
+        this.innerVisitor = new ToRustInnerVisitor(reporter, builder);
     }
 
     //////////////// Operators
@@ -94,7 +94,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public void generateBody(DBSPPartialCircuit circuit) {
         this.builder.append("let root = dbsp::RootCircuit::build(|circuit| {")
                 .increase();
-        for (IDBSPNode node : circuit.getCode())
+        for (IDBSPNode node : circuit.getAllOperators())
             this.processNode(node);
         this.builder.append("Ok(())");
         this.builder.decrease()
@@ -352,12 +352,12 @@ public class ToRustVisitor extends CircuitVisitor {
         return false;
     }
 
-    public static String toRustString(DBSPCompiler compiler, IDBSPOuterNode node) {
+    public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        LowerCircuitVisitor lower = new LowerCircuitVisitor(compiler);
+        LowerCircuitVisitor lower = new LowerCircuitVisitor(reporter);
         node = lower.apply(node.to(DBSPCircuit.class));
-        ToRustVisitor visitor = new ToRustVisitor(compiler, stream);
+        ToRustVisitor visitor = new ToRustVisitor(reporter, stream);
         node.accept(visitor);
         return builder.toString();
     }

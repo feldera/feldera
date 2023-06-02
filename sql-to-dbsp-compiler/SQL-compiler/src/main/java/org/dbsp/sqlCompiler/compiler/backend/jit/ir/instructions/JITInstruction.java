@@ -73,11 +73,19 @@ public abstract class JITInstruction extends JITNode implements IJITId {
         return new JITInstructionRef(this.id);
     }
 
+    public IIndentStream commentToString(IIndentStream builder) {
+        if (!this.comment.isEmpty()) {
+            return builder.append("# ")
+                    .join("\n# ", this.comment.split("\n"))
+                    .newline();
+        }
+        return builder;
+    }
+
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        if (!this.comment.isEmpty())
-            builder.append("# ").append(this.comment).newline();
-        return builder.append(this.id)
+        return this.commentToString(builder)
+                .append(this.id)
                 .append(" ")
                 .append(this.name);
     }
