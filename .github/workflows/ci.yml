@@ -61,6 +61,3 @@ jobs:
 
       - name: Run CI
         run: earthly -P +all-tests
-
-      - name: Check images
-        run: docker image ls
