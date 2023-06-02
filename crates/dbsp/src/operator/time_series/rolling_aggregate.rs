@@ -570,12 +570,7 @@ where
                 // For all affected times, seek them in `input_trace`, compute aggregates using
                 // using radix_tree.
                 while input_range_cursor.key_valid() {
-                    let range = if let Some(range) = self.range.range_of(input_range_cursor.key()) {
-                        range
-                    } else {
-                        input_range_cursor.step_key();
-                        continue;
-                    };
+                    let range = self.range.range_of(input_range_cursor.key());
                     tree_partition_cursor.rewind_keys();
 
                     // println!("aggregate_range({range:x?})");
@@ -587,9 +582,11 @@ where
                     while input_range_cursor.val_valid() {
                         // Generate output update.
                         if !input_range_cursor.weight().le0() {
-                            let agg = tree_partition_cursor
-                                .aggregate_range::<Agg::Semigroup>(&range)
-                                .map(|acc| self.aggregator.finalize(acc));
+                            let agg = range.clone().and_then(|range| {
+                                tree_partition_cursor
+                                    .aggregate_range::<Agg::Semigroup>(&range)
+                                    .map(|acc| self.aggregator.finalize(acc))
+                            });
                             // println!("key: {:?}, range: {:?}, agg: {:?}",
                             // input_range_cursor.key(), range, agg);
 
@@ -685,13 +682,9 @@ mod test {
                     while cursor.val_valid() {
                         let partition = *cursor.key();
                         let (ts, _val) = *cursor.val();
-                        let range = if let Some(range) = range_spec.range_of(&ts) {
-                            range
-                        } else {
-                            cursor.step_val();
-                            continue;
-                        };
-                        let agg = aggregate_range_slow(batch, partition, range);
+                        let agg = range_spec
+                            .range_of(&ts)
+                            .and_then(|range| aggregate_range_slow(batch, partition, range));
                         tuples.push(((partition, (ts, agg)), 1));
                         cursor.step_val();
                     }
@@ -873,6 +866,52 @@ mod test {
         circuit.step().unwrap();
 
         circuit.kill().unwrap();
+    }
+
+    // Test derived from issue #199 (https://github.com/feldera/dbsp/issues/199).
+    #[test]
+    fn test_partitioned_rolling_aggregate2() {
+        let (circuit, (mut input, mut expected)) = RootCircuit::build(move |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+            let (expected, expected_handle) =
+                circuit.add_input_indexed_zset::<u64, (u64, Option<i64>), i64>();
+
+            input.inspect(|f| {
+                for (p, (ts, v), w) in f.iter() {
+                    println!(" input {p} {ts} {v:6} {w:+}");
+                }
+            });
+            let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(2));
+            let sum = input.partitioned_rolling_aggregate_linear(|&f| f, |x| x, range_spec);
+            sum.inspect(|f| {
+                for (p, (ts, sum), w) in f.iter() {
+                    println!("output {p} {ts} {:6} {w:+}", sum.unwrap_or_default());
+                }
+            });
+            expected.apply2(&sum, |expected, actual| assert_eq!(expected, actual));
+            Ok((input_handle, expected_handle))
+        })
+        .unwrap();
+
+        input.append(&mut vec![
+            (1, ((0, 1), 1)),
+            (1, ((1, 10), 1)),
+            (1, ((2, 100), 1)),
+            (1, ((3, 1000), 1)),
+            (1, ((4, 10000), 1)),
+            (1, ((5, 100000), 1)),
+            (1, ((9, 123456), 1)),
+        ]);
+        expected.append(&mut vec![
+            (1, ((0, None), 1)),
+            (1, ((1, None), 1)),
+            (1, ((2, Some(1)), 1)),
+            (1, ((3, Some(11)), 1)),
+            (1, ((4, Some(110)), 1)),
+            (1, ((5, Some(1100)), 1)),
+            (1, ((9, None), 1)),
+        ]);
+        circuit.step().unwrap();
     }
 
     #[test]
