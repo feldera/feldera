@@ -3,6 +3,7 @@
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId};
 use itertools::Itertools;
 use std::{
+    error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     string::ToString,
 };
@@ -44,6 +45,8 @@ impl Display for Error {
         }
     }
 }
+
+impl StdError for Error {}
 
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
 /// runtime.
