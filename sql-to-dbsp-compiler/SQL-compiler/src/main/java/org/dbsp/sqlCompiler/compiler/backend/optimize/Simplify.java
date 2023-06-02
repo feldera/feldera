@@ -91,10 +91,12 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = expression;
         if (condition.is(DBSPBoolLiteral.class)) {
             DBSPBoolLiteral cond = condition.to(DBSPBoolLiteral.class);
-            if (Objects.requireNonNull(cond.value)) {
-                result = positive;
-            } else {
-                result = negative;
+            if (!cond.isNull) {
+                if (Objects.requireNonNull(cond.value)) {
+                    result = positive;
+                } else {
+                    result = negative;
+                }
             }
         } else if (condition != expression.condition ||
                 positive != expression.positive ||
@@ -161,12 +163,16 @@ public class Simplify extends InnerRewriteVisitor {
                 if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                     // This is not true for null values
                     result = right;
+                } else if (leftLit.isNull) {
+                    result = left;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                 IsNumericType iRightType = rightType.to(IsNumericType.class);
                 if (iRightType.isZero(rightLit) && !leftMayBeNull) {
                     result = left;
+                } else if (rightLit.isNull) {
+                    result = right;
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.MUL)) {
@@ -178,6 +184,8 @@ public class Simplify extends InnerRewriteVisitor {
                     result = right.cast(expression.getNonVoidType());
                 } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                     result = left;
+                } else if (leftLit.isNull) {
+                    result = left;
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
@@ -185,6 +193,8 @@ public class Simplify extends InnerRewriteVisitor {
                 if (iRightType.isOne(rightLit)) {
                     result = left;
                 } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
+                    result = right;
+                } else if (rightLit.isNull) {
                     result = right;
                 }
             }
