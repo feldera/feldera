@@ -457,7 +457,7 @@ impl Storage for ProjectDB {
         debug!("new_program {program_name} {program_description} {program_code}");
         self.pool.get().await?.execute(
                     "INSERT INTO program (id, version, name, description, code, schema, status, error, status_since)
-                        VALUES($1, 1, $2, $3, $4, NULL, NULL, NULL, extract(epoch from now()));",
+                        VALUES($1, 1, $2, $3, $4, NULL, NULL, NULL, now());",
                 &[&id, &program_name, &program_description, &program_code]
             )
             .await
@@ -593,7 +593,7 @@ impl Storage for ProjectDB {
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         self.pool.get().await?.execute(
-                "UPDATE program SET status = $1, error = $2, schema = '', status_since = extract(epoch from now()) WHERE id = $3",
+                "UPDATE program SET status = $1, error = $2, schema = '', status_since = now() WHERE id = $3",
             &[&status, &error, &program_id.0])
             .await?;
 
@@ -618,7 +618,7 @@ impl Storage for ProjectDB {
                 "UPDATE program SET
                  status = (CASE WHEN version = $4 THEN $1 ELSE status END),
                  error = (CASE WHEN version = $4 THEN $2 ELSE error END),
-                 status_since = (CASE WHEN version = $4 THEN extract(epoch from now())
+                 status_since = (CASE WHEN version = $4 THEN now()
                                  ELSE status_since END)
                  WHERE id = $3 RETURNING id",
                 &[&status, &error, &program_id.0, &expected_version.0],
@@ -1263,7 +1263,7 @@ impl ProjectDB {
             schema varchar,
             status varchar,
             error varchar,
-            status_since bigint NOT NULL)",
+            status_since timestamp NOT NULL)",
                 &[],
             )
             .await?;
