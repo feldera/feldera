@@ -245,7 +245,13 @@ build-manager:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager --no-run
     RUN cargo make -e RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE --cwd crates/pipeline_manager/ openapi_python
-    SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
+    IF [ -f ./target/debug/dbsp_pipeline_manager ] 
+        SAVE ARTIFACT --keep-ts --keep-own ./target/debug/dbsp_pipeline_manager dbsp_pipeline_manager
+    END
+    IF [ -f ./target/release/dbsp_pipeline_manager ] 
+        SAVE ARTIFACT --keep-ts --keep-own ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+    END
+    SAVE ARTIFACT --keep-ts --keep-own ./python python
 
 build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -257,6 +263,7 @@ build-sql:
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
     COPY --keep-ts crates crates
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
+    SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
 
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -286,7 +293,6 @@ build-nexmark:
     RUN cd crates/nexmark && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_nexmark -- -D warnings
-    SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 audit:
     FROM +build-cache
@@ -375,12 +381,50 @@ test-rust:
     BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
+# TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
+# but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
 build-dbsp-manager-container:
-    FROM DOCKERFILE -f deploy/Dockerfile .
+    FROM +install-rust
+    WORKDIR /
+
+    # First, copy over the artifacts built from previous stages
+    RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
+    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
+
+    # Then copy over the crates needed by the sql compiler
+    COPY crates/dbsp database-stream-processor/crates/dbsp
+    COPY crates/adapters database-stream-processor/crates/adapters
+    COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
+    COPY README.md database-stream-processor/README.md
+
+    # Then copy over the required SQL compiler files
+    COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+    COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
+    COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
+    CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
     SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
+# TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
-    FROM DOCKERFILE -f deploy/Dockerfile --target=client .
+    FROM +install-rust
+    WORKDIR /
+    RUN apt install unzip -y
+    RUN arch=`dpkg --print-architecture`; \
+            curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
+            && unzip rpk-linux-$arch.zip -d /bin/ \
+            && rpk version \
+            && rm rpk-linux-$arch.zip
+    COPY +build-manager/dbsp_pipeline_manager .
+    RUN ./dbsp_pipeline_manager --dump-openapi
+    RUN pip3 install openapi-python-client websockets
+    COPY python python
+    RUN cd python &&  \
+        openapi-python-client generate --path ../openapi.json && \
+        pip3 install ./dbsp-api-client && \
+        pip3 install .
+    COPY demo demo
+    CMD bash
     SAVE IMAGE ghcr.io/feldera/demo-container
 
 test-docker-compose:
