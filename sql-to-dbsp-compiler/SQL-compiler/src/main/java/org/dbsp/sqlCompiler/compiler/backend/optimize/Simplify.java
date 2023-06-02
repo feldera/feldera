@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -169,7 +168,7 @@ public class Simplify extends InnerRewriteVisitor {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                 IsNumericType leftType = left.getNonVoidType().to(IsNumericType.class);
                 if (leftType.isOne(leftLit)) {
-                    result = right;
+                    result = right.cast(expression.getNonVoidType());
                 } else if (leftType.isZero(leftLit)) {
                     result = left;
                 }
@@ -186,7 +185,7 @@ public class Simplify extends InnerRewriteVisitor {
             result = new DBSPBinaryExpression(expression.getNode(), expression.getNonVoidType(),
                     expression.operation, left, right, expression.primitive);
         }
-        this.map(expression, result);
+        this.map(expression, result.cast(expression.getNonVoidType()));
         return false;
     }
 }

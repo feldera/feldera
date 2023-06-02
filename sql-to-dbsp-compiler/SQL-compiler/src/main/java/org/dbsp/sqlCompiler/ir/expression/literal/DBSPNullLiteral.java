@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.util.UnsupportedException;
 
 import javax.annotation.Nullable;
-import java.util.Objects;
 
 /**
  * A literal with type NULL, the only value of this type.

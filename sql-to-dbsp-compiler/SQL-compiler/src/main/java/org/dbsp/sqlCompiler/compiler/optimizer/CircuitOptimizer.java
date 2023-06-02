@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.optimizer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.*;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.*;

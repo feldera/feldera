@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameter;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameterMapping;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.cfg.JITBlock;
@@ -827,22 +826,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             return false;
         } else if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             throw new RuntimeException("Should have been removed");
-            /*
-            // (a * w).value = (a.value * (type_of_a)w)
-            // (a * w).is_null = a.is_null
-            JITInstructionRef right;
-            JITScalarType rightType = convertScalarType(expression.right);
-            JITScalarType leftType = convertScalarType(expression.left);
-            // Have to convert the weight to the correct type
-            right = this.insertCast(rightId.value, rightType, leftType, "");
-            JITInstructionRef value = this.insertBinary(
-                    JITBinaryInstruction.Operation.MUL, leftId.value, right, leftType, expression.toString());
-            JITInstructionRef isNull = new JITInstructionRef();
-            if (needsNull(expression))
-                isNull = leftId.isNull;
-            this.map(expression, new JITInstructionPair(value, isNull));
-            return false;
-             */
         }
 
         JITInstructionRef value = this.insertBinary(

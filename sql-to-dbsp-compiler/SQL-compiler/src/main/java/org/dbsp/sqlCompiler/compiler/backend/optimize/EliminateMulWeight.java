@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;

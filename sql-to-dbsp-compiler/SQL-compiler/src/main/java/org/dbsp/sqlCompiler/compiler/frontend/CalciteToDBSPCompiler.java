@@ -1087,6 +1087,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new Unimplemented(node);
     }
 
+    @SuppressWarnings("UnusedReturnValue")
     @Nullable
     public DBSPNode compile(FrontEndStatement statement) {
         if (statement.is(CreateViewStatement.class)) {

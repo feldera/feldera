@@ -57,6 +57,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder = builder;
     }
 
+    @SuppressWarnings("SameReturnValue")
     boolean doNullExpression(DBSPExpression expression) {
         this.builder.append("None::<");
         expression.getNonVoidType().setMayBeNull(false).accept(this);

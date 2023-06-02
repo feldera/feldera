@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.backend.visitors;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.util.IModule;

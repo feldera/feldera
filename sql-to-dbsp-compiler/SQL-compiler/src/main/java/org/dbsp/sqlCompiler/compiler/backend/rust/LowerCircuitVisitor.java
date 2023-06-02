@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -109,11 +108,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                                 DBSPTypeAny.INSTANCE,
                                 DBSPTypeAny.INSTANCE),
                         new DBSPSimplePathSegment("with_output")));
-        DBSPExpression fold = constructor.call(
+        return constructor.call(
                 new DBSPRawTupleExpression(zeros),
-                accumFunction, postClosure);
-        // DBSPLetStatement result = this.getResult().declareLocal("fold", fold);
-        return fold; //.getVarReference();
+                accumFunction, postClosure); //.getVarReference();
     }
 
     DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {

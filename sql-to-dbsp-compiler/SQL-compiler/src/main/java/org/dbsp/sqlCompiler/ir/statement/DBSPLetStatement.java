@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
