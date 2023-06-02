@@ -45,33 +45,41 @@ FROM base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
 COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
-# SQL compiler needs the rust libraries, the compiler fat jar and the script
-#  to invoke the compiler jar
-RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+# SQL compiler uber jar
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
 # The crates needed for the SQL compiler
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/adapters database-stream-processor/crates/adapters
 COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md
-# TODO: This is a bug. The compiler should not be referencing two different libs
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+
+# Copy over the rust code and sql-to-dbsp script
 COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
+COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
+COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+
 CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
 
 # The dev target adds an rpk client and demo projects
-FROM builder as client
+FROM ubuntu:22.04 AS client
+ENV DEBIAN_FRONTEND noninteractive
+RUN apt update && apt install libssl-dev build-essential pkg-config \
+     git gcc clang libclang-dev python3-pip python3-plumbum hub numactl cmake \
+     curl unzip -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="$PATH:/root/.cargo/bin"
 RUN arch=`dpkg --print-architecture`; \
    curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
    && unzip rpk-linux-$arch.zip -d /bin/ \
    && rpk version \
    && rm rpk-linux-$arch.zip
-RUN target/release/dbsp_pipeline_manager --dump-openapi
+COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+COPY demo demo
+COPY python python
+RUN ./dbsp_pipeline_manager --dump-openapi
+RUN rm dbsp_pipeline_manager
 RUN pip3 install openapi-python-client websockets
 RUN cd python &&  \
     openapi-python-client generate --path ../openapi.json && \
