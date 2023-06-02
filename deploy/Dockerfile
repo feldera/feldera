@@ -1,13 +1,18 @@
-# The base image  contains tools to build the code given that
+# The base image contains tools to build the code given that
 # we need a Java and Rust compiler to run alongside the pipeline manager
 # as of now. This will change later.
 FROM ubuntu:22.04 AS base
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt update && apt install libssl-dev build-essential pkg-config \
-     git gcc clang libclang-dev python3-pip python3-plumbum hub numactl cmake \
-     curl openjdk-19-jre-headless maven netcat jq \
-     adduser libfontconfig1 unzip -y
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN apt update && apt install \
+     # pkg-config is required for cargo to find libssl
+     libssl-dev pkg-config \
+     # rdkafka dependency needs cmake and a CXX compiler
+     cmake build-essential \
+     # To install rust
+     curl  \
+     # For running the SQL compiler
+     openjdk-19-jre-headless -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 # web-ui build tools
 RUN curl -fsSL https://deb.nodesource.com/setup_19.x | bash -
 RUN apt-get install --yes nodejs
@@ -36,6 +41,7 @@ RUN /root/.cargo/bin/cargo build --release --bin=dbsp_pipeline_manager --no-defa
 
 # Java build can be performed in parallel
 FROM base as javabuild
+RUN apt install maven -y
 RUN mkdir sql
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
@@ -65,10 +71,12 @@ CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-
 # The dev target adds an rpk client and demo projects
 FROM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt update && apt install libssl-dev build-essential pkg-config \
-     git gcc clang libclang-dev python3-pip python3-plumbum hub numactl cmake \
+RUN apt update && apt install build-essential pkg-config \
+     # cmake is needed by rdkafka
+     cmake \ 
+     python3-pip python3-plumbum \
      curl unzip -y
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="$PATH:/root/.cargo/bin"
 RUN arch=`dpkg --print-architecture`; \
    curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
