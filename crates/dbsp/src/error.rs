@@ -1,6 +1,7 @@
 use crate::{RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
 use std::{
+    error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     io::Error as IOError,
 };
@@ -13,6 +14,8 @@ pub enum Error {
     Constructor(AnyError),
     Custom(String),
 }
+
+impl StdError for Error {}
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
