@@ -25,7 +25,6 @@
 // TODOs:
 // * Tests.
 // * Support multi-node DBSP deployments.
-// * Proper UI.
 
 use actix_web::dev::Service;
 use actix_web::{
@@ -136,7 +135,8 @@ observed by the user is outdated, so the request is rejected."
         update_connector,
         connector_status,
         delete_connector,
-        http_input
+        http_input,
+        http_output,
     ),
     components(schemas(
         compiler::SqlCompilerMessage,
@@ -155,7 +155,7 @@ observed by the user is outdated, so the request is rejected."
         dbsp_adapters::transport::KafkaInputConfig,
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::transport::KafkaLogLevel,
-        dbsp_adapters::transport::KafkaOutputConfig,
+        dbsp_adapters::transport::http::Chunk,
         dbsp_adapters::format::CsvEncoderConfig,
         dbsp_adapters::format::CsvParserConfig,
         TenantId,
@@ -379,6 +379,7 @@ where
         .service(connector_status)
         .service(delete_connector)
         .service(http_input)
+        .service(http_output)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(ResourceFiles::new("/", generated))
 }
@@ -410,6 +411,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
             DBError::UnknownConnector(_) => HttpResponse::NotFound(),
             // TODO: should we report not found instead?
             DBError::UnknownTenant(_) => HttpResponse::Unauthorized(),
+            DBError::UnknownAttachedConnector(..) => HttpResponse::NotFound(),
             // This error should never bubble up till here
             DBError::DuplicateKey => HttpResponse::InternalServerError(),
             DBError::InvalidKey => HttpResponse::Unauthorized(),
@@ -423,7 +425,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
         let message = runner_error.to_string();
         match runner_error {
-            RunnerError::PipelineShutdown(_) => HttpResponse::Conflict(),
+            RunnerError::PipelineShutdown(_) => HttpResponse::Gone(),
         }
         .json(ErrorResponse::new(&message))
     } else {
@@ -461,17 +463,6 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, HttpResponse> {
     match req.match_info().get("action") {
         None => Err(HttpResponse::BadRequest().body("missing action id argument")),
         Some(action) => Ok(action),
-    }
-}
-
-fn parse_connector_name_param(req: &HttpRequest) -> Result<String, HttpResponse> {
-    match req.match_info().get("connector_name") {
-        None => Err(HttpResponse::BadRequest().body("missing connector_name argument")),
-        Some(connector_name) => match connector_name.parse::<String>() {
-            Err(e) => Err(HttpResponse::BadRequest()
-                .body(format!("invalid connector_name '{connector_name}': {e}"))),
-            Ok(connector_name) => Ok(connector_name),
-        },
     }
 }
 
@@ -1519,41 +1510,60 @@ async fn connector_status(
     .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
-/// Connect to an HTTP input/output websocket
+/// Push data to a SQL table.
+///
+/// The client sends data encoded using the format specified in the `?format=`
+/// parameter as a body of the request.  The contents of the data must match
+/// the SQL table schema specified in `table_name`
+///
+/// The pipeline ingests data as it arrives without waiting for the end of
+/// the request.  Successful HTTP response indicates that all data has been
+/// ingested successfully.
+// TODO: implement chunked and batch modes.
 #[utoipa::path(
     responses(
         (status = OK
-            , description = "Pipeline successfully connected to."
-            , content_type = "application/json"
-            , body = String
-            , example = json!("Pipeline successfully connected to")),
+            , description = "Data successfully delivered to the pipeline."
+            , content_type = "application/json"),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
             , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
         (status = NOT_FOUND
-            , description = "Specified `connector_name` does not exist for the pipeline."
+            , description = "Specified table does not exist."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown stream name 'MyTable'"))),
+            , example = json!(ErrorResponse::new("Unknown table 'MyTable'"))),
+        (status = GONE
+            , description = "Pipeline is not currently running because it has been shutdown or not yet started."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Pipeline 'MyPipeline' is not currently running."))),
+        (status = BAD_REQUEST
+            , description = "Unknown data format specified in the '?format=' argument."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown input format 'custom_format'."))),
+        (status = UNPROCESSABLE_ENTITY
+            , description = "The pipeline an invalid"
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Error ingesting data: 'missing field 'foo''."))),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
+            , body = ErrorResponse),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
-        ("connector_name" = String, Path, description = "Connector name")
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
+        ("table_name" = String, Path, description = "SQL table name."),
+        ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines/{pipeline_id}/connector/{connector_name}")]
+#[post("/v0/pipelines/{pipeline_id}/ingress/{table_name}")]
 async fn http_input(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
 ) -> impl Responder {
-    debug!("Received {:?}", req);
+    debug!("Received {req:?}");
 
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
@@ -1563,15 +1573,90 @@ async fn http_input(
     };
     debug!("Pipeline_id {:?}", pipeline_id);
 
-    let connector_name = match parse_connector_name_param(&req) {
-        Err(e) => return e,
-        Ok(connector_name) => connector_name,
+    let table_name = match req.match_info().get("table_name") {
+        None => return HttpResponse::BadRequest().body("Missing table name argument."),
+        Some(table_name) => table_name,
     };
-    debug!("Connector name {:?}", connector_name);
+    debug!("Table name {table_name:?}");
+
+    let endpoint = format!("ingress/{table_name}");
 
     state
         .runner
-        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, connector_name.as_str(), req, body)
+        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e))
+}
+
+/// Subscribe to a stream of updates to a SQL view or table.
+///
+/// The pipeline responds with a continuous stream of changes to the specified
+/// table or view, encoded using the format specified in the `?format=` parameter.
+/// Updates are split into `Chunk`'s.
+///
+/// The pipeline continuous sending updates until the client closes the connection or the
+/// pipeline is shut down.
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "Connection to the endpoint successfully established. The body of the response contains a stream of data chunks."
+            , content_type = "application/json"
+            , body = Chunk),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+        (status = NOT_FOUND
+            , description = "Specified table or view does not exist."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown table or view 'MyTable'"))),
+        (status = GONE
+            , description = "Pipeline is not currently running because it has been shutdown or not yet started."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Pipeline 'MyPipeline' is not currently running."))),
+        (status = BAD_REQUEST
+            , description = "Unknown data format specified in the '?format=' argument."
+            , body = ErrorResponse
+            , example = json!(ErrorResponse::new("Unknown input format 'custom_format'."))),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
+        ("table_name" = String, Path, description = "SQL table name."),
+        ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+    ),
+    tag = "Pipeline"
+)]
+#[get("/v0/pipelines/{pipeline_id}/egress/{table_name}")]
+async fn http_output(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+    body: web::Payload,
+) -> impl Responder {
+    debug!("Received {req:?}");
+
+    let pipeline_id = match parse_pipeline_id_param(&req) {
+        Err(e) => {
+            return e;
+        }
+        Ok(pipeline_id) => pipeline_id,
+    };
+    debug!("Pipeline_id {:?}", pipeline_id);
+
+    let table_name = match req.match_info().get("table_name") {
+        None => return HttpResponse::BadRequest().body("Missing table name argument."),
+        Some(table_name) => table_name,
+    };
+    debug!("Table name {table_name:?}");
+
+    let endpoint = format!("egress/{table_name}");
+
+    state
+        .runner
+        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

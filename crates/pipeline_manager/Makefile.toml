@@ -35,7 +35,7 @@ script = '''
 description = "Test Python API"
 dependencies = ["openapi_python", "start_manager"]
 script = '''
-python3 ../../python/test.py
+python3 ../../python/test.py http://localhost:8080 http
 '''
 
 [tasks.fraud_notebook_test]

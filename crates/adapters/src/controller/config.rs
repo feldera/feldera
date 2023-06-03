@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
 /// be used in `#[serde(default="default_max_buffered_records")]`.
-const fn default_max_buffered_records() -> u64 {
+pub(crate) const fn default_max_buffered_records() -> u64 {
     1_000_000
 }
 

@@ -3,21 +3,14 @@ use crate::{
     db::PipelineStatus, ErrorResponse, ManagerConfig, PipelineId, ProgramId, ProgramStatus,
     ProjectDB, Version,
 };
-use actix_web::{
-    http::{Error, Method},
-    web::BytesMut,
-    HttpRequest, HttpResponse,
-};
-use actix_web_actors::ws::handshake;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use awc::Client;
-use futures_util::StreamExt;
 use serde::Serialize;
 use std::{error::Error as StdError, fmt, fmt::Display, path::Path, process::Stdio, sync::Arc};
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all},
-    io::{AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
     sync::Mutex,
     time::{sleep, Duration, Instant},
@@ -35,7 +28,7 @@ impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RunnerError::PipelineShutdown(pipeline_id) => {
-                write!(f, "Pipeline '{pipeline_id}' has been shut down")
+                write!(f, "Pipeline '{pipeline_id}' is not currently running.")
             }
         }
     }
@@ -179,13 +172,13 @@ impl Runner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        uuid: &str,
+        endpoint: &str,
         req: HttpRequest,
-        body: actix_web::web::Payload,
+        body: Payload,
     ) -> AnyResult<HttpResponse> {
         match self {
             Self::Local(r) => {
-                r.forward_to_pipeline_as_stream(tenant_id, pipeline_id, uuid, req, body)
+                r.forward_to_pipeline_as_stream(tenant_id, pipeline_id, endpoint, req, body)
                     .await
             }
         }
@@ -367,9 +360,9 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        name: &str,
+        endpoint: &str,
         req: HttpRequest,
-        mut body: actix_web::web::Payload,
+        body: Payload,
     ) -> AnyResult<HttpResponse> {
         let pipeline_descr = self
             .db
@@ -378,55 +371,32 @@ impl LocalRunner {
             .get_pipeline_by_id(tenant_id, pipeline_id)
             .await?;
         if pipeline_descr.status == PipelineStatus::Shutdown {
-            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+            bail!(RunnerError::PipelineShutdown(pipeline_id));
         }
         let port = pipeline_descr.port;
-        // We remove the 'debug-' prefix if it's in the name because we want to
-        // lookup the input / output of the actual connector (debug connectors
-        // are not in the DB). (TODO: this hack will go away once we have HTTP
-        // connectors by default)
-        let attached_connector_name = name.strip_prefix("debug-").unwrap_or(name);
-        let is_input = self
-            .db
-            .lock()
-            .await
-            .attached_connector_is_input(tenant_id, pipeline_id, attached_connector_name)
-            .await?;
 
         // TODO: it might be better to have ?name={}, otherwise we have to
         // restrict name format
-        let url = if is_input {
-            format!("ws://localhost:{port}/input_endpoint/{name}")
-        } else {
-            format!("ws://localhost:{port}/output_endpoint/{name}")
-        };
+        let url = format!("http://localhost:{port}/{endpoint}?{}", req.query_string());
 
-        let (_, socket) = awc::Client::new().ws(url).connect().await.unwrap();
-        let mut io = socket.into_parts().io;
-        let (tx, rx) = futures::channel::mpsc::unbounded();
-        let mut buf = BytesMut::new();
-        actix_web::rt::spawn(async move {
-            loop {
-                tokio::select! {
-                    res = body.next() => {
-                        match res {
-                            None => return,
-                            Some(body) => {
-                                let bytes = body.unwrap();
-                                io.write_all(&bytes).await.unwrap();
-                            }
-                        }
-                    }
-                    res = io.read_buf(&mut buf) => {
-                        let size = res.unwrap();
-                        let bytes = buf.split_to(size).freeze();
-                        tx.unbounded_send(Ok::<_, Error>(bytes)).unwrap();
-                    }
-                }
-            }
-        });
-        let mut resp = handshake(&req).unwrap();
-        Ok(resp.streaming(rx))
+        let client = awc::Client::new();
+
+        let mut request = client.request(req.method().clone(), url);
+
+        for header in req.headers().into_iter() {
+            request = request.append_header(header);
+        }
+
+        let response = request
+            .send_stream(body)
+            .await
+            .map_err(|e| anyhow!("Error forwarding request to pipeline {pipeline_id}: '{e}'"))?;
+
+        let mut builder = HttpResponseBuilder::new(response.status());
+        for header in response.headers().into_iter() {
+            builder.append_header(header);
+        }
+        Ok(builder.streaming(response))
     }
 
     async fn start(
@@ -459,17 +429,6 @@ impl LocalRunner {
             }
             Ok(())
         }
-        async fn add_debug_websocket(config: &mut String, ac: &AttachedConnector) -> AnyResult<()> {
-            let ident = 4;
-            config.push_str(format!("{:ident$}debug-{}:\n", "", ac.name.as_str()).as_str());
-            let ident = 8;
-            config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
-            for config_line in ["transport:", "     name: http", "format:", "    name: csv"].iter()
-            {
-                config.push_str(format!("{:ident$}{config_line}\n", "").as_str());
-            }
-            Ok(())
-        }
 
         let mut config = pipeline_descr.config.clone();
         config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
@@ -488,7 +447,6 @@ impl LocalRunner {
             .filter(|ac| !ac.is_input)
         {
             generate_attached_connector_config(tenant_id, db, &mut config, ac).await?;
-            add_debug_websocket(&mut config, ac).await?;
         }
         log::debug!("Pipeline config is '{}'", config);
 

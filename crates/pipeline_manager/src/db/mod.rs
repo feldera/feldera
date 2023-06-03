@@ -125,6 +125,7 @@ pub(crate) enum DBError {
     UnknownPipeline(PipelineId),
     UnknownConnector(ConnectorId),
     UnknownTenant(TenantId),
+    UnknownAttachedConnector(PipelineId, String),
     UnknownName(String),
     DuplicateName,
     DuplicateKey,
@@ -142,6 +143,12 @@ impl Display for DBError {
             }
             DBError::UnknownPipeline(pipeline_id) => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
+            }
+            DBError::UnknownAttachedConnector(pipeline_id, name) => {
+                write!(
+                    f,
+                    "Pipeline '{pipeline_id}' does not have a connector named '{name}'"
+                )
             }
             DBError::UnknownConnector(connector_id) => {
                 write!(f, "Unknown connector id '{connector_id}'")

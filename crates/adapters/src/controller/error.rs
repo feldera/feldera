@@ -26,7 +26,11 @@ pub enum ConfigError {
     /// Endpoint configuration specifies unknown output transport name.
     UnknownOutputTransport { transport_name: String },
 
-    /// Controller configuration specifies output stream name
+    /// Endpoint configuration specifies an input stream name
+    /// that is not found in the circuit catalog.
+    UnknownInputStream { stream_name: String },
+
+    /// Endpoint configuration specifies an output stream name
     /// that is not found in the circuit catalog.
     UnknownOutputStream { stream_name: String },
 }
@@ -52,8 +56,11 @@ impl Display for ConfigError {
             Self::UnknownOutputTransport { transport_name } => {
                 write!(f, "unknown output transport '{transport_name}'")
             }
+            Self::UnknownInputStream { stream_name } => {
+                write!(f, "unknown table '{stream_name}'")
+            }
             Self::UnknownOutputStream { stream_name } => {
-                write!(f, "unknown output stream '{stream_name}'")
+                write!(f, "unknown output table or view '{stream_name}'")
             }
         }
     }
@@ -93,6 +100,12 @@ impl ConfigError {
     pub fn unknown_output_transport(transport_name: &str) -> Self {
         Self::UnknownOutputTransport {
             transport_name: transport_name.to_owned(),
+        }
+    }
+
+    pub fn unknown_input_stream(stream_name: &str) -> Self {
+        Self::UnknownInputStream {
+            stream_name: stream_name.to_owned(),
         }
     }
 
@@ -236,6 +249,12 @@ impl ControllerError {
     pub fn unknown_output_transport(transport_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::unknown_output_transport(transport_name),
+        }
+    }
+
+    pub fn unknown_input_stream(stream_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::unknown_input_stream(stream_name),
         }
     }
 

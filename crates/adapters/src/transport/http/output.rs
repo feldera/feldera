@@ -1,243 +1,211 @@
-use super::MAX_SOCKETS_PER_ENDPOINT;
-use crate::{OutputEndpoint, OutputTransport};
-use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler};
-use actix_web::{web::Payload, HttpRequest, HttpResponse};
-use actix_web_actors::ws::{
-    self, Message as WsMessage, ProtocolError as WsProtocolError, WebsocketContext,
-};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
-use futures::executor::block_on;
-use log::{debug, info};
-use once_cell::sync::Lazy;
-use serde::Deserialize;
+use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
+use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
+use anyhow::{anyhow, Result as AnyResult};
+use async_stream::stream;
+use log::debug;
+use serde::{ser::SerializeStruct, Serializer};
 use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
-use utoipa::ToSchema;
+use tokio::sync::broadcast::{self, error::RecvError};
 
-/// Global map of output HTTP endpoints.
-static OUTPUT_HTTP_ENDPOINTS: Lazy<RwLock<BTreeMap<String, HttpOutputEndpoint>>> =
-    Lazy::new(|| RwLock::new(BTreeMap::new()));
+// TODO: make this configurable via endpoint config.
+const MAX_BUFFERS: usize = 100;
 
-/// [`OutputTransport`] implementation that writes data to a websocket.
-///
-/// This output transport is only available if the crate is configured with the
-/// `server` feature.
-///
-/// The output transport factory gives this transport the name `http`.
-pub struct HttpOutputTransport;
-
-impl OutputTransport for HttpOutputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("http")
-    }
-
-    /// Creates a new [`OutputEndpoint`] for sending data to a websocket.  There
-    /// is no configuration (`_config` is ignored).  Rather, the client
-    /// connects a websocket by issuing a GET request to the
-    /// `/output_endpoint/<name>` endpoint, where `name` is the argument passed
-    /// here.
-    ///
-    /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(
-        &self,
-        name: &str,
-        _config: &YamlValue,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
-    ) -> AnyResult<Box<dyn OutputEndpoint>> {
-        // let _config = HttpOutputConfig::deserialize(config)?;
-        let ep = HttpOutputEndpoint::new(name, async_error_callback)?;
-        Ok(Box::new(ep))
-    }
+enum Format {
+    Binary,
+    Text,
+    #[allow(dead_code)]
+    Json,
 }
+
+/// HTTP output transport.
+///
+/// HTTP endpoints are instantiated via the REST API, so this type doesn't
+/// implement `trait OutputTransport`.  It is only used to
+/// collect static functions related to HTTP.
+pub(crate) struct HttpOutputTransport;
 
 impl HttpOutputTransport {
-    pub(crate) fn get_endpoint_websocket(
-        endpoint_name: &str,
-        req: &HttpRequest,
-        stream: Payload,
-    ) -> AnyResult<HttpResponse> {
-        let endpoint = OUTPUT_HTTP_ENDPOINTS
-            .read()
-            .unwrap()
-            .get(endpoint_name)
-            .map(Clone::clone)
-            .ok_or_else(|| anyhow!("unknown HTTP output endpoint '{endpoint_name}'"))?;
-        if endpoint.num_sockets() >= MAX_SOCKETS_PER_ENDPOINT {
-            return Err(anyhow!(
-                "maximum number of connections per HTTP endpoint exceeded"
-            ));
+    pub(crate) fn config() -> TransportConfig {
+        TransportConfig {
+            name: Cow::from("api"),
+            config: YamlValue::Null,
         }
-        let resp = ws::start(HttpOutputWs::new(endpoint), req, stream)
-            .map_err(|e| anyhow!(format!("error initializing websocket: {e}")))?;
-        info!("HTTP output endpoint '{endpoint_name}': opened websocket");
-        Ok(resp)
+    }
+
+    pub(crate) fn default_format() -> String {
+        String::from("csv")
+    }
+
+    pub(crate) fn default_max_buffered_records() -> u64 {
+        100_000
     }
 }
 
-/// Configuration for writing data to a websocket with `HttpOutputTransport`.
-///
-/// This is an empty struct because this kind of transport doesn't accept any
-/// configuration.
-#[derive(Clone, Deserialize, ToSchema)]
-pub struct HttpOutputConfig;
+#[derive(Clone)]
+struct Buffer {
+    pub sequence_number: u64,
+    pub data: Bytes,
+}
+
+impl Buffer {
+    fn new(sequence_number: u64, data: Bytes) -> Self {
+        Self {
+            sequence_number,
+            data,
+        }
+    }
+}
 
 struct HttpOutputEndpointInner {
     name: String,
+    format: Format,
 
-    /// Addresses of websocket actors associated with the endpoint.
-    ///
-    /// HTTP endpoint supports up to MAX_SOCKETS_PER_ENDPOINT simultaneously
-    /// open websockets.  The client opens a new websocket by issuing a GET
-    /// request to the `/output_endpoint/{endpoint_name}` endpoint.  The
-    /// websocket is removed from this set when client connection closes.
-    ///
-    /// This field is used to notify all websocket actors about new data
-    /// buffers to send out.
-    socket_addrs: RwLock<HashSet<Addr<HttpOutputWs>>>,
-    _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+    total_buffers: AtomicU64,
+    sender: broadcast::Sender<Buffer>,
+    // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl HttpOutputEndpointInner {
-    fn new(name: &str, async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>) -> Self {
+    pub(crate) fn new(name: &str, format: Format) -> Self {
         Self {
             name: name.to_string(),
-            socket_addrs: RwLock::new(HashSet::new()),
-            _async_error_callback: async_error_callback,
+            format,
+            total_buffers: AtomicU64::new(0),
+            sender: broadcast::channel(MAX_BUFFERS).0,
+            // async_error_callback: RwLock::new(None),
         }
     }
 }
 
-/// Output endpoint that establishes websocket connections with clients on
-/// demand and sends output batches to these websockets.
+struct RequestGuard {
+    finalizer: Box<dyn FnMut()>,
+}
+
+impl RequestGuard {
+    fn new(finalizer: Box<dyn FnMut()>) -> Self {
+        Self { finalizer }
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        (self.finalizer)();
+    }
+}
+
+/// Output endpoint that sends a data stream to the client as a response to an
+/// HTTP request.
 ///
 /// This implementation provides no support for reliable delivery
 /// and is mostly intended for browser-based testing.
 #[derive(Clone)]
-struct HttpOutputEndpoint {
+pub(crate) struct HttpOutputEndpoint {
     inner: Arc<HttpOutputEndpointInner>,
 }
 
 impl HttpOutputEndpoint {
-    fn new(
-        name: &str,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
-    ) -> AnyResult<Self> {
-        let mut endpoint_map = OUTPUT_HTTP_ENDPOINTS.write().unwrap();
-
-        if endpoint_map.contains_key(name) {
-            return Err(anyhow!(format!(
-                "duplicate HTTP output endpoint name '{name}'"
-            )));
-        }
-
-        let endpoint = Self {
-            inner: Arc::new(HttpOutputEndpointInner::new(name, async_error_callback)),
+    pub(crate) fn new(name: &str, format: &str) -> Self {
+        let format = match format {
+            "csv" => Format::Text,
+            _ => Format::Binary,
         };
-
-        endpoint_map.insert(name.to_string(), endpoint.clone());
-        Ok(endpoint)
+        Self {
+            inner: Arc::new(HttpOutputEndpointInner::new(name, format)),
+        }
     }
 
     fn name(&self) -> &str {
         self.inner.name.as_str()
     }
 
-    /// Number of connected websockets.
-    fn num_sockets(&self) -> usize {
-        self.inner.socket_addrs.read().unwrap().len()
+    fn connect(&self) -> broadcast::Receiver<Buffer> {
+        self.inner.sender.subscribe()
     }
 
-    /// Register new websocket actor.
-    fn add_socket(&self, addr: Addr<HttpOutputWs>) {
-        self.inner.socket_addrs.write().unwrap().insert(addr);
-    }
+    /// Create an HTTP response object with a streaming body that
+    /// will continue sending output updates until the circuit
+    /// terminates or the client disconnects.
+    ///
+    /// This method returns instantly.  The resulting `HttpResponse`
+    /// object can be returned to the actix framework, which will
+    /// run its streaming body and invoke `finalizer` upon completion.
+    pub(crate) fn request(&self, finalizer: Box<dyn FnMut()>) -> HttpResponse {
+        let mut receiver = self.connect();
+        let name = self.name().to_string();
+        let guard = RequestGuard::new(finalizer);
 
-    /// Remove closed websocket.
-    fn remove_socket(&self, addr: &Addr<HttpOutputWs>) {
-        self.inner.socket_addrs.write().unwrap().remove(addr);
+        HttpResponse::Ok()
+            .insert_header(ContentType::json())
+            .streaming(stream! {
+                let _guard = guard;
+                loop {
+                    match receiver.recv().await {
+                        Err(RecvError::Closed) => break,
+                        Err(RecvError::Lagged(_)) => (),
+                        Ok(buffer) => {
+                            debug!(
+                                "HTTP output endpoint '{}': sending frame #{} ({} bytes)",
+                                name,
+                                buffer.sequence_number,
+                                buffer.data.len(),
+                            );
+                            yield <AnyResult<_>>::Ok(buffer.data)
+                        },
+                    }
+                }
+            })
     }
 }
 
 impl OutputEndpoint for HttpOutputEndpoint {
-    fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        for addr in self.inner.socket_addrs.read().unwrap().iter() {
-            block_on(addr.send(Event::Buffer(Vec::from(buffer))))?;
-        }
+    fn connect(&self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+        // *self.inner.async_error_callback.write().unwrap() = Some(async_error_callback);
         Ok(())
     }
-}
 
-#[derive(Message)]
-#[rtype(result = "()")]
-enum Event {
-    Buffer(Vec<u8>),
-}
+    fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        let seq_number = self.inner.total_buffers.fetch_add(1, Ordering::AcqRel);
 
-/// Actix actor that handles websocket communication.
-struct HttpOutputWs {
-    endpoint: HttpOutputEndpoint,
-}
+        let json_buf = Vec::with_capacity(buffer.len() + 1024);
+        let mut serializer = serde_json::Serializer::new(json_buf);
+        let mut struct_serializer = serializer
+            .serialize_struct("Chunk", 2)
+            .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
+        struct_serializer
+            .serialize_field("sequence_number", &seq_number)
+            .map_err(|e| anyhow!("error serializing 'sequence_number' field: '{e}'"))?;
 
-impl HttpOutputWs {
-    fn new(endpoint: HttpOutputEndpoint) -> Self {
-        Self { endpoint }
-    }
-}
-
-impl Actor for HttpOutputWs {
-    type Context = WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        // Websocket connection established: register websocket actor with the endpoint.
-        let addr = ctx.address();
-        self.endpoint.add_socket(addr);
-    }
-
-    fn stopped(&mut self, ctx: &mut Self::Context) {
-        // Connection closed: unregister the actor.
-        let addr = ctx.address();
-        self.endpoint.remove_socket(&addr);
-    }
-}
-
-impl StreamHandler<Result<WsMessage, WsProtocolError>> for HttpOutputWs {
-    /// Handle websocket message from the client.
-    fn handle(&mut self, msg: Result<WsMessage, WsProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            // The client may check our heartbeat by sending ping messages.
-            // Reply with a pong message.
-            Ok(WsMessage::Ping(msg)) => ctx.pong(&msg),
-            Ok(WsMessage::Close(reason)) => {
-                info!(
-                    "HTTP output endpoint '{}': websocket closed by client (reason: {reason:?})",
-                    self.endpoint.name(),
-                );
-                ctx.stop()
+        match self.inner.format {
+            Format::Binary => unimplemented!(),
+            Format::Text => {
+                let data_str = std::str::from_utf8(buffer)
+                    .map_err(|e| anyhow!("received an invalid UTF8 string from encoder: '{e}'"))?;
+                struct_serializer
+                    .serialize_field("text_data", data_str)
+                    .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
             }
-            _ => (),
+            Format::Json => unimplemented!(),
         }
-    }
-}
+        struct_serializer
+            .end()
+            .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
 
-impl Handler<Event> for HttpOutputWs {
-    type Result = ();
+        let mut json_buf = serializer.into_inner();
+        json_buf.push(b'\r');
+        json_buf.push(b'\n');
 
-    /// Handle new outgoing data buffer.
-    fn handle(&mut self, msg: Event, ctx: &mut Self::Context) {
-        match msg {
-            Event::Buffer(buf) => {
-                debug!(
-                    "HTTP output endpoint '{}': sending {} bytes",
-                    self.endpoint.name(),
-                    buf.len(),
-                );
-
-                ctx.binary(buf);
-            }
-        }
+        // A failure simply means that there are no receivers.
+        let _ = self
+            .inner
+            .sender
+            .send(Buffer::new(seq_number, Bytes::from(json_buf)));
+        Ok(())
     }
 }

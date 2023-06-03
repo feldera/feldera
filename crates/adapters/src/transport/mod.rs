@@ -19,10 +19,6 @@
 //!   * `file`, for input from a file via [`FileInputTransport`] or output to a
 //!     file via [`FileOutputTransport`].
 //!
-//!   * `http`, for input from a websocket via [`HttpInputTransport`] or output
-//!     to a websocket via [`HttpOutputTransport`], if the `server` feature is
-//!     enabled.
-//!
 //!   * `kafka`, for input from [Kafka](https://kafka.apache.org/) via
 //!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
 //!     if the `with-kafka` feature is enabled.
@@ -33,6 +29,7 @@
 //! let transport = <dyn InputTransport>::get_transport(transport_name).unwrap();
 //! let endpoint = transport.new_endpoint(endpoint_name, &config, consumer);
 //! ```
+use crate::OutputEndpointConfig;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
@@ -42,15 +39,12 @@ use std::collections::BTreeMap;
 mod file;
 
 #[cfg(feature = "server")]
-mod http;
+pub mod http;
 
 #[cfg(feature = "with-kafka")]
 mod kafka;
 
 pub use file::{FileInputConfig, FileInputTransport, FileOutputConfig, FileOutputTransport};
-
-#[cfg(feature = "server")]
-pub use http::{HttpInputTransport, HttpOutputTransport};
 
 #[cfg(feature = "with-kafka")]
 pub use kafka::{
@@ -66,11 +60,6 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
             "file",
             Box::new(FileInputTransport) as Box<dyn InputTransport>,
         ),
-        #[cfg(feature = "server")]
-        (
-            "http",
-            Box::new(HttpInputTransport) as Box<dyn InputTransport>,
-        ),
         #[cfg(feature = "with-kafka")]
         (
             "kafka",
@@ -85,11 +74,6 @@ static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> 
         (
             "file",
             Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
-        ),
-        #[cfg(feature = "server")]
-        (
-            "http",
-            Box::new(HttpOutputTransport) as Box<dyn OutputTransport>,
         ),
         #[cfg(feature = "with-kafka")]
         (
@@ -126,12 +110,7 @@ pub trait InputTransport: Send + Sync {
     /// Fails if the specified configuration is invalid or the endpoint failed
     /// to initialize (e.g., the endpoint was not able to establish a network
     /// connection).
-    fn new_endpoint(
-        &self,
-        name: &str,
-        config: &YamlValue,
-        consumer: Box<dyn InputConsumer>,
-    ) -> AnyResult<Box<dyn InputEndpoint>>;
+    fn new_endpoint(&self, name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>>;
 }
 
 impl dyn InputTransport {
@@ -145,6 +124,8 @@ impl dyn InputTransport {
 /// Input transport endpoint receives a stream of bytes via the underlying
 /// data transport protocol and pushes it to the associated [`InputConsumer`].
 pub trait InputEndpoint: Send {
+    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()>;
+
     /// Pause the endpoint.
     ///
     /// The endpoint must stop pushing data downstream.  This method may
@@ -174,7 +155,7 @@ pub trait InputEndpoint: Send {
 // TODO: `input_owned`.
 pub trait InputConsumer: Send {
     /// Push a chunk of data to the consumer.
-    fn input(&mut self, data: &[u8]);
+    fn input(&mut self, data: &[u8]) -> AnyResult<()>;
 
     /// Endpoint failed.
     ///
@@ -184,7 +165,7 @@ pub trait InputConsumer: Send {
     /// End-of-input-stream notification.
     ///
     /// No more data will be received from the endpoint.
-    fn eoi(&mut self);
+    fn eoi(&mut self) -> AnyResult<()>;
 
     /// Create a new consumer instance.
     ///
@@ -230,8 +211,7 @@ pub trait OutputTransport: Send + Sync {
     fn new_endpoint(
         &self,
         name: &str,
-        config: &YamlValue,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+        config: &OutputEndpointConfig,
     ) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 
@@ -242,6 +222,10 @@ impl dyn OutputTransport {
     }
 }
 
+pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
+
 pub trait OutputEndpoint: Send {
+    fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()>;
 }

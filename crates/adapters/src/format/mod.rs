@@ -1,7 +1,7 @@
 use crate::{DeCollectionHandle, SerBatch};
 use anyhow::Result as AnyResult;
+use erased_serde::Deserializer as ErasedDeserializer;
 use once_cell::sync::Lazy;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 mod csv;
@@ -32,11 +32,11 @@ pub trait InputFormat: Send + Sync {
     ///
     /// * `input_stream` - Input stream of the circuit to push parsed data to.
     ///
-    /// * `config` - Format-specific configuration.
+    /// * `config` - Deserializer to extract format-specific configuration.
     fn new_parser(
         &self,
         input_stream: &dyn DeCollectionHandle,
-        config: &YamlValue,
+        config: &mut dyn ErasedDeserializer,
     ) -> AnyResult<Box<dyn Parser>>;
 }
 
@@ -101,12 +101,12 @@ pub trait OutputFormat: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `config` - Format-specific configuration.
+    /// * `config` - Deserializer object to extract format-specific configuration.
     ///
     /// * `consumer` - Consumer to send encoded data batches to.
     fn new_encoder(
         &self,
-        config: &YamlValue,
+        config: &mut dyn ErasedDeserializer,
         consumer: Box<dyn OutputConsumer>,
     ) -> AnyResult<Box<dyn Encoder>>;
 }

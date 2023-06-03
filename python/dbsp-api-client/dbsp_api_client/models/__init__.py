@@ -2,6 +2,8 @@
 
 from .attached_connector import AttachedConnector
 from .cancel_program_request import CancelProgramRequest
+from .chunk import Chunk
+from .chunk_json_data import ChunkJsonData
 from .compile_program_request import CompileProgramRequest
 from .connector_descr import ConnectorDescr
 from .csv_encoder_config import CsvEncoderConfig
@@ -53,6 +55,8 @@ from .update_program_response import UpdateProgramResponse
 __all__ = (
     "AttachedConnector",
     "CancelProgramRequest",
+    "Chunk",
+    "ChunkJsonData",
     "CompileProgramRequest",
     "ConnectorDescr",
     "CsvEncoderConfig",
