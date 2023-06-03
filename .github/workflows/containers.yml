@@ -1,8 +1,8 @@
-on: [push]
-  # schedule:
-  #   - cron: '0 0 * * *'
-  # release:
-  #     types: [published]
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  release:
+      types: [published]
 
 env:
   REGISTRY: ghcr.io
