@@ -1,5 +1,5 @@
 use super::{InputConsumer, InputEndpoint, InputTransport, OutputEndpoint, OutputTransport};
-use crate::PipelineState;
+use crate::{OutputEndpointConfig, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
@@ -34,15 +34,9 @@ impl InputTransport for FileInputTransport {
     /// `config` as a [`FileInputConfig`].
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(
-        &self,
-        _name: &str,
-        config: &YamlValue,
-        consumer: Box<dyn InputConsumer>,
-    ) -> AnyResult<Box<dyn InputEndpoint>> {
+    fn new_endpoint(&self, _name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
         let config = FileInputConfig::deserialize(config)?;
-        let mut ep = FileInputEndpoint::new(config);
-        ep.connect(consumer)?;
+        let ep = FileInputEndpoint::new(config);
         Ok(Box::new(ep))
     }
 }
@@ -84,26 +78,6 @@ impl FileInputEndpoint {
         }
     }
 
-    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
-        let file = File::open(&self.config.path).map_err(|e| {
-            AnyError::msg(format!(
-                "Failed to open input file '{}': {e}",
-                self.config.path
-            ))
-        })?;
-        let reader = match self.config.buffer_size_bytes {
-            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
-            _ => BufReader::new(file),
-        };
-
-        let parker = Parker::new();
-        self.unparker = Some(parker.unparker().clone());
-        let status = self.status.clone();
-        let follow = self.config.follow;
-        let _worker = spawn(move || Self::worker_thread(reader, consumer, parker, status, follow));
-        Ok(())
-    }
-
     fn unpark(&self) {
         if let Some(unparker) = &self.unparker {
             unparker.unpark();
@@ -129,7 +103,7 @@ impl FileInputEndpoint {
                         }
                         Ok(data) if data.is_empty() => {
                             if !follow {
-                                consumer.eoi();
+                                let _ = consumer.eoi();
                                 return;
                             } else {
                                 sleep(Duration::from_millis(SLEEP_MS));
@@ -137,7 +111,10 @@ impl FileInputEndpoint {
                         }
                         Ok(data) => {
                             // println!("read {} bytes from file", data.len());
-                            consumer.input(data);
+
+                            // Leave it to the controller to handle errors.  There is noone we can
+                            // forward the error to upstream.
+                            let _ = consumer.input(data);
                             let len = data.len();
                             reader.consume(len);
                         }
@@ -151,6 +128,26 @@ impl FileInputEndpoint {
 }
 
 impl InputEndpoint for FileInputEndpoint {
+    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+        let file = File::open(&self.config.path).map_err(|e| {
+            AnyError::msg(format!(
+                "Failed to open input file '{}': {e}",
+                self.config.path
+            ))
+        })?;
+        let reader = match self.config.buffer_size_bytes {
+            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
+            _ => BufReader::new(file),
+        };
+
+        let parker = Parker::new();
+        self.unparker = Some(parker.unparker().clone());
+        let status = self.status.clone();
+        let follow = self.config.follow;
+        let _worker = spawn(move || Self::worker_thread(reader, consumer, parker, status, follow));
+        Ok(())
+    }
+
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the status flag.  The worker may
         // send another buffer downstream before the flag takes effect.
@@ -200,10 +197,9 @@ impl OutputTransport for FileOutputTransport {
     fn new_endpoint(
         &self,
         _name: &str,
-        config: &YamlValue,
-        _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+        config: &OutputEndpointConfig,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = FileOutputConfig::deserialize(config)?;
+        let config = FileOutputConfig::deserialize(&config.transport.config)?;
         let ep = FileOutputEndpoint::new(config)?;
 
         Ok(Box::new(ep))
@@ -234,6 +230,13 @@ impl FileOutputEndpoint {
 }
 
 impl OutputEndpoint for FileOutputEndpoint {
+    fn connect(
+        &self,
+        _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+    ) -> AnyResult<()> {
+        Ok(())
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.file.write_all(buffer)?;
         Ok(())

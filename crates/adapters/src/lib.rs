@@ -149,9 +149,6 @@ pub use controller::{
     InputEndpointConfig, OutputEndpointConfig, PipelineConfig, TransportConfig,
 };
 pub use transport::{
-    FileInputTransport, InputConsumer, InputEndpoint, InputTransport, OutputEndpoint,
-    OutputTransport,
+    AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputTransport,
+    OutputEndpoint, OutputTransport,
 };
-
-#[cfg(feature = "server")]
-pub use transport::{HttpInputTransport, HttpOutputTransport};

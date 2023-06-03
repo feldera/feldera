@@ -1,0 +1,92 @@
+//! Helper functions for testing http-based communication.
+
+use crate::{test::TestStruct, transport::http::Chunk};
+use actix_web::web::Bytes;
+use async_stream::stream;
+use awc::{error::PayloadError, ClientRequest};
+use csv::ReaderBuilder as CsvReaderBuilder;
+use csv::WriterBuilder as CsvWriterBuilder;
+use futures::{Stream, StreamExt};
+
+pub struct TestHttpSender;
+pub struct TestHttpReceiver;
+
+impl TestHttpSender {
+    /// Serialize `data` as `csv` and send it as part of HTTP request.
+    pub async fn send_stream(req: ClientRequest, data: &[Vec<TestStruct>]) {
+        let data = data.iter().cloned().collect::<Vec<_>>();
+
+        req.send_stream(stream! {
+            for batch in data.iter() {
+                let mut writer = CsvWriterBuilder::new()
+                    .has_headers(false)
+                    .from_writer(Vec::with_capacity(batch.len() * 32));
+
+                for val in batch.iter().cloned() {
+                    writer.serialize(val).unwrap();
+                }
+                writer.flush().unwrap();
+                let bytes = writer.into_inner().unwrap();
+                yield <Result<_, anyhow::Error>>::Ok(Bytes::from(bytes));
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
+impl TestHttpReceiver {
+    /// Read from `response` until the entire contents of `data` is received.
+    pub async fn wait_for_output_unordered<S>(response: &mut S, data: &[Vec<TestStruct>])
+    where
+        S: Stream<Item = Result<Bytes, PayloadError>> + Unpin,
+    {
+        let num_records: usize = data.iter().map(Vec::len).sum();
+
+        let mut expected = data
+            .iter()
+            .flat_map(|data| data.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        expected.sort();
+
+        let mut received = Vec::with_capacity(num_records);
+
+        let mut data = Vec::new();
+
+        while received.len() < num_records {
+            let bytes = response.next().await.unwrap().unwrap();
+            println!("received {} bytes", bytes.len());
+
+            data.extend_from_slice(&bytes);
+
+            if data[data.len() - 1] == b'\n' {
+                let chunk: Chunk = serde_json::from_slice(&data).unwrap();
+
+                println!("chunk {}", chunk.sequence_number);
+
+                let mut builder = CsvReaderBuilder::new();
+                builder.has_headers(false);
+                let mut reader = builder.from_reader(if let Some(csv) = &chunk.text_data {
+                    csv.as_bytes()
+                } else {
+                    panic!("not a text chunk");
+                });
+                // let mut num_received = 0;
+                for (record, w) in reader
+                    .deserialize::<(TestStruct, i32)>()
+                    .map(Result::unwrap)
+                {
+                    // num_received += 1;
+                    assert_eq!(w, 1);
+                    // println!("received record: {:?}", record);
+                    received.push(record);
+                }
+                data.clear();
+            }
+        }
+        received.sort();
+
+        assert_eq!(expected, received);
+    }
+}

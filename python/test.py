@@ -1,8 +1,8 @@
 import tempfile
 import os
 import sys
-import asyncio
-import websockets
+import requests
+import json
 
 from dbsp import DBSPConnection
 from dbsp import DBSPPipelineConfig
@@ -64,7 +64,7 @@ transactions = """
 2008-01-04 04:23:04,4082400842710944,381,2,89.9,c0c039baa4d0e62e4b16e0690ac54313,1199449384,42.331448,-70.495846,0
 """
 
-expected = b"""
+expected = """
 2008-01-03 05:38:14,4082400842710944.0,169,418,1
 2008-01-04 00:58:43,4082400842710944.0,169,418,1
 2008-01-04 04:23:04,4082400842710944.0,169,418,1
@@ -117,22 +117,6 @@ CREATE VIEW transactions_with_demographics as
         transactions JOIN demographics
         ON transactions.cc_num = demographics.cc_num;"""
 
-async def send(uri, data):
-    async with websockets.connect(uri) as websocket:
-        await websocket.send(data)
-
-async def do(connector_endpoints):
-    output_uri = connector_endpoints["TRANSACTIONS_WITH_DEMOGRAPHICS"]
-    input_d = connector_endpoints["DEMOGRAPHICS"]
-    input_t = connector_endpoints["TRANSACTIONS"]
-    async with websockets.connect(output_uri) as websocket:
-        input1 = asyncio.create_task(send(input_d, ("01234567" + demographics).encode()))
-        input2 = asyncio.create_task(send(input_t, ("01234567" + transactions).encode()))
-        await input1
-        await input2
-        message = await websocket.recv()
-        assert message.strip() == expected.strip()
-
 def main():
     url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
     dbsp = DBSPConnection(url)
@@ -168,10 +152,6 @@ def main():
                             filepath=transpath, format=CsvInputFormatConfig())
         pipeline.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
                             filepath=outpath, format=CsvOutputFormatConfig())
-    else:
-        pipeline.add_http_input(stream = 'DEMOGRAPHICS', name = "DEMOGRAPHICS", format = CsvInputFormatConfig())
-        pipeline.add_http_input(stream = 'TRANSACTIONS', name = "TRANSACTIONS", format = CsvInputFormatConfig())
-        pipeline.add_http_output(stream = 'TRANSACTIONS_WITH_DEMOGRAPHICS', name = "TRANSACTIONS_WITH_DEMOGRAPHICS", format = CsvOutputFormatConfig())
 
     program.compile()
     print("Project compiled")
@@ -183,9 +163,31 @@ def main():
     print("Pipeline is running")
 
     if (connector_type == "http"):
-        connector_endpoint = (url + "/pipelines/" + str(pipeline.pipeline_id) + "/connector/").replace("http://", "ws://")
-        connector_endpoints = {i.config : connector_endpoint + i.name for i in pipeline.attached_connectors}
-        asyncio.run(do(connector_endpoints))
+        output = requests.get(
+                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/egress/TRANSACTIONS_WITH_DEMOGRAPHICS",
+                stream = True)
+
+        print("Sending demongraphics data")
+        r = requests.post(
+                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/ingress/DEMOGRAPHICS",
+                data = demographics)
+        print("result: " + str(r))
+
+        print("Sending transaction data")
+        r = requests.post(
+                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/ingress/TRANSACTIONS",
+                data = transactions)
+        print("result: " + str(r))
+
+        data = ''
+        for line in output.iter_lines():
+            csv = json.loads(line)['text_data']
+            print(csv.strip())
+            data = data + csv
+            if data.strip() == expected.strip():
+                break
+
+        assert data.strip() == expected.strip()
 
     print("Pipeline status: " + str(pipeline.descriptor().status))
 

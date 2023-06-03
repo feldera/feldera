@@ -56,14 +56,9 @@ impl InputTransport for KafkaInputTransport {
     /// interpreting `config` as a [`KafkaInputConfig`].
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(
-        &self,
-        _name: &str,
-        config: &YamlValue,
-        consumer: Box<dyn InputConsumer>,
-    ) -> AnyResult<Box<dyn InputEndpoint>> {
+    fn new_endpoint(&self, _name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
         let config = KafkaInputConfig::deserialize(config)?;
-        let ep = KafkaInputEndpoint::new(config, consumer)?;
+        let ep = KafkaInputEndpoint::new(config)?;
         Ok(Box::new(ep))
     }
 }
@@ -187,8 +182,8 @@ impl KafkaInputConfig {
 struct KafkaInputEndpoint(Arc<KafkaInputEndpointInner>);
 
 impl KafkaInputEndpoint {
-    fn new(config: KafkaInputConfig, consumer: Box<dyn InputConsumer>) -> AnyResult<Self> {
-        Ok(Self(KafkaInputEndpointInner::new(config, consumer)?))
+    fn new(config: KafkaInputConfig) -> AnyResult<Self> {
+        Ok(Self(KafkaInputEndpointInner::new(config)?))
     }
 }
 
@@ -243,7 +238,7 @@ struct KafkaInputEndpointInner {
 }
 
 impl KafkaInputEndpointInner {
-    fn new(mut config: KafkaInputConfig, consumer: Box<dyn InputConsumer>) -> AnyResult<Arc<Self>> {
+    fn new(mut config: KafkaInputConfig) -> AnyResult<Arc<Self>> {
         // Create Kafka consumer configuration.
         config.validate()?;
         debug!("Starting Kafka input endpoint: {config:?}");
@@ -298,9 +293,6 @@ impl KafkaInputEndpointInner {
             }
         }
 
-        let endpoint_clone = endpoint.clone();
-        spawn(move || Self::worker_thread(endpoint_clone, consumer));
-
         Ok(endpoint)
     }
 
@@ -345,7 +337,9 @@ impl KafkaInputEndpointInner {
     fn refine_error(&self, e: KafkaError) -> (bool, AnyError) {
         refine_kafka_error(self.kafka_consumer.client(), e)
     }
+}
 
+impl KafkaInputEndpoint {
     fn worker_thread(endpoint: Arc<KafkaInputEndpointInner>, mut consumer: Box<dyn InputConsumer>) {
         let mut actual_state = PipelineState::Paused;
         loop {
@@ -394,7 +388,9 @@ impl KafkaInputEndpointInner {
                     // message.payload().map(|payload| consumer.input(payload));
 
                     if let Some(payload) = message.payload() {
-                        consumer.input(payload);
+                        // Leave it to the controller to handle errors.  There is noone we can
+                        // forward the error to upstream.
+                        let _ = consumer.input(payload);
                     }
                 }
             }
@@ -403,6 +399,12 @@ impl KafkaInputEndpointInner {
 }
 
 impl InputEndpoint for KafkaInputEndpoint {
+    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+        let endpoint_clone = self.0.clone();
+        spawn(move || Self::worker_thread(endpoint_clone, consumer));
+        Ok(())
+    }
+
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the state flag.  The worker may
         // send another buffer downstream before the flag takes effect.

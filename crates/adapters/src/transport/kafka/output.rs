@@ -1,5 +1,5 @@
 use super::KafkaLogLevel;
-use crate::{OutputEndpoint, OutputTransport};
+use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use log::debug;
@@ -9,8 +9,7 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, collections::BTreeMap, env, time::Duration};
+use std::{borrow::Cow, collections::BTreeMap, env, sync::RwLock, time::Duration};
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -41,11 +40,10 @@ impl OutputTransport for KafkaOutputTransport {
     fn new_endpoint(
         &self,
         _name: &str,
-        config: &YamlValue,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+        config: &OutputEndpointConfig,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = KafkaOutputConfig::deserialize(config)?;
-        let ep = KafkaOutputEndpoint::new(config, async_error_callback)?;
+        let config = KafkaOutputConfig::deserialize(&config.transport.config)?;
+        let ep = KafkaOutputEndpoint::new(config)?;
 
         Ok(Box::new(ep))
     }
@@ -150,6 +148,7 @@ used to configure the Kafka producer."#))))
         )
     }
 }
+
 /// Producer context object used to handle async delivery notifications from
 /// Kafka.
 struct KafkaOutputContext {
@@ -158,17 +157,14 @@ struct KafkaOutputContext {
     unparker: Unparker,
 
     /// Callback to notify the controller about delivery failure.
-    async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+    async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl KafkaOutputContext {
-    fn new(
-        unparker: Unparker,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
-    ) -> Self {
+    fn new(unparker: Unparker) -> Self {
         Self {
             unparker,
-            async_error_callback,
+            async_error_callback: RwLock::new(None),
         }
     }
 }
@@ -184,7 +180,9 @@ impl ProducerContext for KafkaOutputContext {
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
         if let Err((error, _message)) = delivery_result {
-            (self.async_error_callback)(false, AnyError::new(error.clone()));
+            if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
+                cb(false, AnyError::new(error.clone()));
+            }
         }
 
         // There is no harm in unparking the endpoint thread unconditionally,
@@ -201,10 +199,7 @@ struct KafkaOutputEndpoint {
 }
 
 impl KafkaOutputEndpoint {
-    fn new(
-        mut config: KafkaOutputConfig,
-        async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
-    ) -> AnyResult<Self> {
+    fn new(mut config: KafkaOutputConfig) -> AnyResult<Self> {
         // Create Kafka producer configuration.
         config.validate()?;
         debug!("Starting Kafka output endpoint: {config:?}");
@@ -222,7 +217,7 @@ impl KafkaOutputEndpoint {
         let parker = Parker::new();
 
         // Context object to intercept message delivery events.
-        let context = KafkaOutputContext::new(parker.unparker().clone(), async_error_callback);
+        let context = KafkaOutputContext::new(parker.unparker().clone());
 
         // Create Kafka producer.
         let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)?;
@@ -237,6 +232,16 @@ impl KafkaOutputEndpoint {
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
+    fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+        *self
+            .kafka_producer
+            .context()
+            .async_error_callback
+            .write()
+            .unwrap() = Some(async_error_callback);
+        Ok(())
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         // Wait for the number of unacknowledged messages to drop
         // below `max_inflight_messages`.

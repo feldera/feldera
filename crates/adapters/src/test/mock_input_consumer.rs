@@ -1,5 +1,6 @@
 use crate::{controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, Parser};
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use erased_serde::Deserializer as ErasedDeserializer;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(&AnyError) + Send>;
@@ -45,7 +46,10 @@ impl MockInputConsumerState {
     ) -> Self {
         let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
         let parser = format
-            .new_parser(input_handle, &format_config.config)
+            .new_parser(
+                input_handle,
+                &mut <dyn ErasedDeserializer>::erase(&format_config.config),
+            )
             .unwrap();
         Self::new(parser)
     }
@@ -88,7 +92,7 @@ impl MockInputConsumer {
 }
 
 impl InputConsumer for MockInputConsumer {
-    fn input(&mut self, data: &[u8]) {
+    fn input(&mut self, data: &[u8]) -> AnyResult<()> {
         // println!("input");
         let mut state = self.state();
 
@@ -102,8 +106,14 @@ impl InputConsumer for MockInputConsumer {
                 panic!("mock_input_consumer: parse error '{e}'");
             }
         }
-        state.parser_result = Some(parser_result);
+
+        // Wrap AnyError in Arc so we can clone it.
+        let parser_result = parser_result.map_err(|e| Arc::new(e));
+        let parser_result_clone = parser_result.clone();
+
+        state.parser_result = Some(parser_result.map_err(|e| anyhow!(e)));
         state.parser.flush();
+        parser_result_clone.map(|_| ()).map_err(|e| anyhow!(e))
     }
 
     fn error(&mut self, _fatal: bool, error: AnyError) {
@@ -117,8 +127,9 @@ impl InputConsumer for MockInputConsumer {
         state.endpoint_error = Some(error);
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&mut self) -> AnyResult<()> {
         self.state().eoi = true;
+        Ok(())
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {
