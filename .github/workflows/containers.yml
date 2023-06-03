@@ -1,8 +1,8 @@
-on:
-  schedule:
-    - cron: '0 0 * * *'
-  release:
-      types: [published]
+on: [push]
+  # schedule:
+  #   - cron: '0 0 * * *'
+  # release:
+  #     types: [published]
 
 env:
   REGISTRY: ghcr.io
@@ -22,13 +22,18 @@ jobs:
         with:
           submodules: true
 
+      - name: MUIX license
+        run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-ui/.env && cat web-ui/.env
+        env:
+          muix_license: ${{ secrets.muix_license }}
+
       - name: Run integration tests
         run: |
           cd deploy && \
           SECOPS_DEMO_ARGS="--prepare-args 500000" docker compose -f docker-compose.yml -f docker-compose-dev.yml --profile demo up --build --force-recreate --exit-code-from demo
 
       # Disable until we bring the Kubernetes workflows up to speed
-      # 
+      #
       # - uses: engineerd/setup-kind@v0.5.0
       #   with:
       #     version: "v0.11.1"
@@ -41,7 +46,7 @@ jobs:
       #   run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
 
       - name: Log in to the Container registry
-        if: github.event_name == 'release'
+        # if: github.event_name == 'release'
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
           registry: ${{ env.REGISTRY }}
@@ -49,6 +54,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Docker image
-        if: github.event_name == 'release'
+        # if: github.event_name == 'release'
         run: |
           docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
