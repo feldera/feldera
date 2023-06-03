@@ -1,6 +1,3 @@
-volumes:
-  redpanda-0: null
-
 services:
   db:
     image: postgres
@@ -28,10 +25,10 @@ services:
      - REDPANDA_BROKERS=redpanda:9092
      - RUST_LOG=debug,tokio_postgres=info
    command:
-     - ./dbsp_pipeline_manager 
-     - --bind-address=0.0.0.0 
-     - --working-directory=/working-dir 
-     - --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler 
+     - ./dbsp_pipeline_manager
+     - --bind-address=0.0.0.0
+     - --working-directory=/working-dir
+     - --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler
      - --dbsp-override-path=/database-stream-processor
      - --db-connection-string=postgresql://postgres:postgres@dbsp-postgres:5432
 
@@ -63,8 +60,6 @@ services:
       # - --default-log-level=debug
     image: docker.redpanda.com/vectorized/redpanda:v22.3.11
     container_name: redpanda
-    volumes:
-      - redpanda-0:/var/lib/redpanda/data
     ports:
       - 18081:18081
       - 18082:18082
