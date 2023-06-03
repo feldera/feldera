@@ -382,8 +382,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeDecimal type = literal.getNonVoidType().to(DBSPTypeDecimal.class);
         if (type.mayBeNull)
             this.builder.append("Some(");
+        String value = Objects.requireNonNull(literal.value).toPlainString();
         this.builder.append("Decimal::from_str(\"")
-                .append(Objects.requireNonNull(literal.value).toString())
+                .append(value)
                 .append("\").unwrap()");
         if (type.mayBeNull)
             this.builder.append(")");

@@ -39,6 +39,10 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
         this.value = value;
     }
 
+    public DBSPDecimalLiteral(DBSPType type, @Nullable BigDecimal value) {
+        this(null, type, value);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;

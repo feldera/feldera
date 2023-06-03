@@ -30,17 +30,18 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.util.Objects;
+import java.math.BigDecimal;
 
 /**
  * Tests manually adapted from
@@ -693,11 +694,13 @@ public class PostgresNumericTests extends BaseSQLTests {
         this.testQuery(intermediate, last);
     }
 
-    DBSPZSetLiteral.Contents parseTable(String table) {
+    DBSPZSetLiteral.Contents parseTable(String table, boolean doubles, DBSPType outputType) {
+        DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
+        DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
+        DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
+
         String[] lines = table.split("\n");
         boolean inHeader = true;
-        DBSPZSetLiteral.Contents result = null;
-        int tupleSize = 0;
         for (String line: lines) {
             if (line.startsWith("---")) {
                 inHeader = false;
@@ -706,34 +709,37 @@ public class PostgresNumericTests extends BaseSQLTests {
             if (inHeader)
                 continue;
             String[] columns = line.split("[|]");
-            if (result == null) {
-                DBSPType[] fields = new DBSPType[columns.length];
-                for (int i = 0; i < columns.length; i++)
-                    fields[i] = DBSPTypeDouble.INSTANCE;
-                DBSPTypeTuple tuple = new DBSPTypeTuple(fields);
-                result = DBSPZSetLiteral.Contents.emptyWithElementType(tuple);
-                tupleSize  = columns.length;
-            }
+            if (columns.length != tuple.size())
+                throw new RuntimeException("Row has " + columns.length + " columns, but expected " + tuple.size());
             DBSPExpression[] values = new DBSPExpression[columns.length];
-            if (columns.length != tupleSize)
-                throw new RuntimeException("Row size is " + columns.length + " but expected " + tupleSize);
             for (int i = 0; i < columns.length; i++) {
-                String column = columns[i];
-                double value = Double.parseDouble(column);
-                values[i] = new DBSPDoubleLiteral(value);
+                String column = columns[i].trim();
+                DBSPType fieldType = tuple.getFieldType(i);
+                if (doubles) {
+                    double value = Double.parseDouble(column);
+                    values[i] = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
+                } else {
+                    BigDecimal value;
+                    if (column.isEmpty()) {
+                        values[i] = new DBSPDecimalLiteral(fieldType, null);
+                    } else {
+                        value = new BigDecimal(column);
+                        values[i] = new DBSPDecimalLiteral(fieldType, value);
+                    }
+                }
             }
-            DBSPExpression tupleValue = new DBSPTupleExpression(values);
-            result.add(tupleValue);
+            result.add(new DBSPTupleExpression(values));
         }
-        return Objects.requireNonNull(result);
+        return result;
     }
 
-    void compare(String query, String expected) {
+    void compare(String query, String expected, boolean doubles) {
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(query);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
-        DBSPZSetLiteral.Contents result = this.parseTable(expected);
+        DBSPType outputType = circuit.getOutputType(0);
+        DBSPZSetLiteral.Contents result = this.parseTable(expected, doubles, outputType);
         InputOutputPair streams = new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0],
                 new DBSPZSetLiteral.Contents[] { result }
@@ -743,8 +749,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testSpecialValues() {
-        // TODO: this test was written with NUMERIC values, but was converted to FP
-        String query = "CREATE VIEW VV AS " +
+        // This test was written with NUMERIC values, but was converted to FP
+        String query =
                 "WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 + x2 AS s,\n" +
@@ -802,63 +808,215 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "       NaN |  Infinity |       NaN |       NaN |       NaN\n" +
                 "       NaN | -Infinity |       NaN |       NaN |       NaN\n" +
                 "       NaN |       NaN |       NaN |       NaN |       NaN";
-        this.compare(query, expected);
+        this.compare(query, expected, true);
     }
 
-    @Test @Ignore("Work in progress")
+    @Test
+    public void testSpecialValuesNumeric() {
+        // Removed unsupported numeric values inf, nan, etc.
+        String query =
+                "WITH v(x) AS (VALUES(0),(1),(-1),(4.2))\n" +
+                        "SELECT x1, x2,\n" +
+                        "  x1 + x2 AS s,\n" +
+                        "  x1 - x2 AS diff,\n" +
+                        "  x1 * x2 AS prod\n" +
+                        "FROM v AS v1(x1), v AS v2(x2)";
+        String expected = "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
+                "-----------+-----------+-----------+-----------+-----------\n" +
+                "         0 |         0 |         0 |         0 |         0\n" +
+                "         0 |         1 |         1 |        -1 |         0\n" +
+                "         0 |        -1 |        -1 |         1 |         0\n" +
+                "         0 |       4.2 |       4.2 |      -4.2 |       0.0\n" +
+                "         1 |         0 |         1 |         1 |         0\n" +
+                "         1 |         1 |         2 |         0 |         1\n" +
+                "         1 |        -1 |         0 |         2 |        -1\n" +
+                "         1 |       4.2 |       5.2 |      -3.2 |       4.2\n" +
+                "        -1 |         0 |        -1 |        -1 |         0\n" +
+                "        -1 |         1 |         0 |        -2 |        -1\n" +
+                "        -1 |        -1 |        -2 |         0 |         1\n" +
+                "        -1 |       4.2 |       3.2 |      -5.2 |      -4.2\n" +
+                "       4.2 |         0 |       4.2 |       4.2 |       0.0\n" +
+                "       4.2 |         1 |       5.2 |       3.2 |       4.2\n" +
+                "       4.2 |        -1 |       3.2 |       5.2 |      -4.2\n" +
+                "       4.2 |       4.2 |       8.4 |       0.0 |     17.64\n";
+        this.compare(query, expected, false);
+    }
+
+    @Test
     public void testSpecialValues2() {
-        String query = "CREATE VIEW VV AS WITH v(x) AS\n" +
+        // no div or mod defined for fp, so I removed these
+        String query = "WITH v(x) AS\n" +
                 "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
-                "  x1 / x2 AS quot,\n" +
-                "  x1 % x2 AS m,\n" + // not really defined for FP
-                "  div(x1, x2) AS div\n" +
+                "  x1 / x2 AS quot\n" +
+                //"  x1 % x2 AS m,\n" +
+                //"  div(x1, x2) AS div\n" +
                 "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0E0";
         String expected =
-                "    x1     |    x2     |          quot           | mod  |    div    \n" +
-                "-----------+-----------+-------------------------+------+-----------\n" +
-                "         0 |         1 |  0.00000000000000000000 |    0 |         0\n" +
-                "         1 |         1 |  1.00000000000000000000 |    0 |         1\n" +
-                "        -1 |         1 | -1.00000000000000000000 |    0 |        -1\n" +
-                "       4.2 |         1 |      4.2000000000000000 |  0.2 |         4\n" +
-                "  Infinity |         1 |                Infinity |  NaN |  Infinity\n" +
-                " -Infinity |         1 |               -Infinity |  NaN | -Infinity\n" +
-                "       NaN |         1 |                     NaN |  NaN |       NaN\n" +
-                "         0 |        -1 |  0.00000000000000000000 |    0 |         0\n" +
-                "         1 |        -1 | -1.00000000000000000000 |    0 |        -1\n" +
-                "        -1 |        -1 |  1.00000000000000000000 |    0 |         1\n" +
-                "       4.2 |        -1 |     -4.2000000000000000 |  0.2 |        -4\n" +
-                "  Infinity |        -1 |               -Infinity |  NaN | -Infinity\n" +
-                " -Infinity |        -1 |                Infinity |  NaN |  Infinity\n" +
-                "       NaN |        -1 |                     NaN |  NaN |       NaN\n" +
-                "         0 |       4.2 |  0.00000000000000000000 |  0.0 |         0\n" +
-                "         1 |       4.2 |  0.23809523809523809524 |  1.0 |         0\n" +
-                "        -1 |       4.2 | -0.23809523809523809524 | -1.0 |         0\n" +
-                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0 |         1\n" +
-                "  Infinity |       4.2 |                Infinity |  NaN |  Infinity\n" +
-                " -Infinity |       4.2 |               -Infinity |  NaN | -Infinity\n" +
-                "       NaN |       4.2 |                     NaN |  NaN |       NaN\n" +
-                "         0 |  Infinity |                       0 |    0 |         0\n" +
-                "         1 |  Infinity |                       0 |    1 |         0\n" +
-                "        -1 |  Infinity |                       0 |   -1 |         0\n" +
-                "       4.2 |  Infinity |                       0 |  4.2 |         0\n" +
-                "  Infinity |  Infinity |                     NaN |  NaN |       NaN\n" +
-                " -Infinity |  Infinity |                     NaN |  NaN |       NaN\n" +
-                "       NaN |  Infinity |                     NaN |  NaN |       NaN\n" +
-                "         0 | -Infinity |                       0 |    0 |         0\n" +
-                "         1 | -Infinity |                       0 |    1 |         0\n" +
-                "        -1 | -Infinity |                       0 |   -1 |         0\n" +
-                "       4.2 | -Infinity |                       0 |  4.2 |         0\n" +
-                "  Infinity | -Infinity |                     NaN |  NaN |       NaN\n" +
-                " -Infinity | -Infinity |                     NaN |  NaN |       NaN\n" +
-                "       NaN | -Infinity |                     NaN |  NaN |       NaN\n" +
-                "         0 |       NaN |                     NaN |  NaN |       NaN\n" +
-                "         1 |       NaN |                     NaN |  NaN |       NaN\n" +
-                "        -1 |       NaN |                     NaN |  NaN |       NaN\n" +
-                "       4.2 |       NaN |                     NaN |  NaN |       NaN\n" +
-                "  Infinity |       NaN |                     NaN |  NaN |       NaN\n" +
-                " -Infinity |       NaN |                     NaN |  NaN |       NaN\n" +
-                "       NaN |       NaN |                     NaN |  NaN |       NaN";
-        this.compare(query, expected);
+                "    x1     |    x2     |          quot            \n" +
+                "-----------+-----------+--------------------------\n" +
+                "         0 |         1 |  0.00000000000000000000 \n" +
+                "         1 |         1 |  1.00000000000000000000 \n" +
+                "        -1 |         1 | -1.00000000000000000000 \n" +
+                "       4.2 |         1 |      4.2000000000000000 \n" +
+                "  Infinity |         1 |                Infinity \n" +
+                " -Infinity |         1 |               -Infinity \n" +
+                "       NaN |         1 |                     NaN \n" +
+                "         0 |        -1 |  0.00000000000000000000 \n" +
+                "         1 |        -1 | -1.00000000000000000000 \n" +
+                "        -1 |        -1 |  1.00000000000000000000 \n" +
+                "       4.2 |        -1 |     -4.2000000000000000 \n" +
+                "  Infinity |        -1 |               -Infinity \n" +
+                " -Infinity |        -1 |                Infinity \n" +
+                "       NaN |        -1 |                     NaN \n" +
+                "         0 |       4.2 |  0.00000000000000000000 \n" +
+                "         1 |       4.2 |  0.23809523809523809524 \n" +
+                "        -1 |       4.2 | -0.23809523809523809524 \n" +
+                "       4.2 |       4.2 |  1.00000000000000000000 \n" +
+                "  Infinity |       4.2 |                Infinity \n" +
+                " -Infinity |       4.2 |               -Infinity \n" +
+                "       NaN |       4.2 |                     NaN \n" +
+                "         0 |  Infinity |                       0 \n" +
+                "         1 |  Infinity |                       0 \n" +
+                "        -1 |  Infinity |                       0 \n" +
+                "       4.2 |  Infinity |                       0 \n" +
+                "  Infinity |  Infinity |                     NaN \n" +
+                " -Infinity |  Infinity |                     NaN \n" +
+                "       NaN |  Infinity |                     NaN \n" +
+                "         0 | -Infinity |                       0 \n" +
+                "         1 | -Infinity |                       0 \n" +
+                "        -1 | -Infinity |                       0 \n" +
+                "       4.2 | -Infinity |                       0 \n" +
+                "  Infinity | -Infinity |                     NaN \n" +
+                " -Infinity | -Infinity |                     NaN \n" +
+                "       NaN | -Infinity |                     NaN \n" +
+                "         0 |       NaN |                     NaN \n" +
+                "         1 |       NaN |                     NaN \n" +
+                "        -1 |       NaN |                     NaN \n" +
+                "       4.2 |       NaN |                     NaN \n" +
+                "  Infinity |       NaN |                     NaN \n" +
+                " -Infinity |       NaN |                     NaN \n" +
+                "       NaN |       NaN |                     NaN ";
+        this.compare(query, expected, true);
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5651")
+    public void testSpecialValues2Numeric() {
+        // Removed unsupported numeric values inf, nan, etc.
+        // No div function known, so I removed this one
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(CAST(0 AS NUMERIC(" + width + ", 20))),\n" +
+                "         (CAST(1 AS NUMERIC(" + width + ", 20))),\n" +
+                "         (CAST(-1 AS NUMERIC(" + width + ",20))),\n" +
+                "         (CAST(4.2 AS NUMERIC(" + width + ", 20))))\n" +
+                "SELECT x1, x2,\n" +
+                "  x1 / x2 AS quot,\n" +
+                "  x1 % x2 AS m\n" +
+                // "  div(x1, x2) AS div\n" +
+                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0";
+        String expected =
+                "    x1     |    x2     |          quot           | mod  \n" +
+                "-----------+-----------+-------------------------+------\n" +
+                "         0 |         1 |  0.00000000000000000000 |    0\n" +
+                "         1 |         1 |  1.00000000000000000000 |    0\n" +
+                "        -1 |         1 | -1.00000000000000000000 |    0\n" +
+                "       4.2 |         1 |      4.2000000000000000 |  0.2\n" +
+                "         0 |        -1 |  0.00000000000000000000 |    0\n" +
+                "         1 |        -1 | -1.00000000000000000000 |    0\n" +
+                "        -1 |        -1 |  1.00000000000000000000 |    0\n" +
+                "       4.2 |        -1 |     -4.2000000000000000 |  0.2\n" +
+                "         0 |       4.2 |  0.00000000000000000000 |  0.0\n" +
+                "         1 |       4.2 |  0.23809523809523809524 |  1.0\n" +
+                "        -1 |       4.2 | -0.23809523809523809524 | -1.0\n" +
+                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0\n";
+        this.compare(query, expected, false);
+    }
+
+    // We don't support 'Infinity' for Decimal
+    // We don't support NaN for Decimal
+    //SELECT '0'::numeric / '0';
+    //ERROR:  division by zero
+    //SELECT 'inf'::numeric % '0';
+    //ERROR:  division by zero
+    //SELECT '-inf'::numeric % '0';
+    //ERROR:  division by zero
+    //SELECT 'nan'::numeric % '0';
+    // ?column?
+    //----------
+    //      NaN
+    //(1 row)
+    //
+    //SELECT '0'::numeric % '0';
+    //ERROR:  division by zero
+    //SELECT div('inf'::numeric, '0');
+    //ERROR:  division by zero
+    //SELECT div('-inf'::numeric, '0');
+    //ERROR:  division by zero
+    //SELECT div('nan'::numeric, '0');
+    // div
+    //-----
+    // NaN
+    //(1 row)
+    //
+    //SELECT div('0'::numeric, '0');
+    //ERROR:  division by zero
+
+    @Test
+    public void testFunctions0() {
+        // TODO: this test was written with NUMERIC values, but was converted to FP
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(-7.777E0),(CAST('inf' AS DOUBLE)),(CAST('-inf' AS DOUBLE)),(CAST('nan' AS DOUBLE)))\n" +
+                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x), numeric_inc(x) as inc\n" +
+                "FROM v";
+        String expected =
+                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign |    inc    \n" +
+                "-----------+-----------+----------+-----------+-----------+------+-----------\n" +
+                "         0 |         0 |        0 |         0 |         0 |    0 |         1\n" +
+                "         1 |        -1 |        1 |         1 |         1 |    1 |         2\n" +
+                "        -1 |         1 |        1 |        -1 |        -1 |   -1 |         0\n" +
+                "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 |       5.2\n" +
+                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 |    -6.777\n" +
+                "  Infinity | -Infinity | Infinity |  Infinity |  Infinity |    1 |  Infinity\n" +
+                " -Infinity |  Infinity | Infinity | -Infinity | -Infinity |   -1 | -Infinity\n" +
+                "       NaN |       NaN |      NaN |       NaN |       NaN |  NaN |       NaN";
+        this.compare(query, expected, true);
+    }
+
+    @Test
+    public void testFunctionsNumeric0() {
+        // dropped unsupported values inf, nan, etc.
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(0),(1),(-1),(4.2),(-7.777))\n" +
+                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x), numeric_inc(x) as inc\n" +
+                "FROM v";
+        String expected =
+                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign |    inc    \n" +
+                        "-----------+-----------+----------+-----------+-----------+------+-----------\n" +
+                        "         0 |         0 |        0 |         0 |         0 |    0 |         1\n" +
+                        "         1 |        -1 |        1 |         1 |         1 |    1 |         2\n" +
+                        "        -1 |         1 |        1 |        -1 |        -1 |   -1 |         0\n" +
+                        "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 |       5.2\n" +
+                        "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 |    -6.777\n";
+        this.compare(query, expected, false);
+    }
+
+    @Test
+    public void testFunctions1() {
+        // Removed the unsupported inf, nan, etc. values
+        // This test makes not sense for FP
+        // 'trunc' has been renamed to 'truncate'
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(0),(1),(-1),(4.2),(-7.777))\n" +
+                "SELECT x, round(x), round(x,1) as round1, truncate(x), truncate(x,1) as trunc1\n" +
+                "FROM v";
+        String expected =
+                "     x     |   round   |  round1   |   trunc   |  trunc1   \n" +
+                "-----------+-----------+-----------+-----------+-----------\n" +
+                "         0 |         0 |       0.0 |         0 |       0.0\n" +
+                "         1 |         1 |       1.0 |         1 |       1.0\n" +
+                "        -1 |        -1 |      -1.0 |        -1 |      -1.0\n" +
+                "       4.2 |         4 |       4.2 |         4 |       4.2\n" +
+                "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7\n";
+        this.compare(query, expected, false);
     }
 }

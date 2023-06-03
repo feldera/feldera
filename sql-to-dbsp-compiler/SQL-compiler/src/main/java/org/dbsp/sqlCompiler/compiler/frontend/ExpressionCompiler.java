@@ -442,6 +442,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();
                 switch (opName) {
+                    case "truncate":
                     case "round": {
                         DBSPExpression right;
                         if (call.operands.size() < 1)
@@ -455,10 +456,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         DBSPType rightType = right.getNonVoidType();
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new Unimplemented("ROUND expects a constant second argument", call);
-                        String function = "round_" +
+                        String function = opName + "_" +
                                 leftType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(function, type, left, right);
                     }
+                    case "numeric_inc":
+                    case "sign":
                     case "log10":
                     case "ln":
                     case "abs": {
@@ -497,10 +500,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return new DBSPApplyExpression(method, type, arg);
                     }
                     case "power": {
-                        DBSPType leftType = ops.get(0).getNonVoidType();
-                        DBSPType rightType = ops.get(1).getNonVoidType();
                         if (call.operands.size() != 2)
                             throw new Unimplemented(call);
+                        DBSPType leftType = ops.get(0).getNonVoidType();
+                        DBSPType rightType = ops.get(1).getNonVoidType();
                         String functionName = "power_" + leftType.baseTypeWithSuffix() +
                                 "_" + rightType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(functionName, type, ops.get(0), ops.get(1));
@@ -529,11 +532,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case FLOOR:
             case CEIL: {
-                if (call.operands.size() != 2)
+                if (call.operands.size() == 2) {
+                    DBSPKeywordLiteral keyword = ops.get(1).to(DBSPKeywordLiteral.class);
+                    String functionName = call.getKind().toString().toLowerCase() + "_" +
+                            type.to(DBSPTypeBaseType.class).shortName() + "_" + keyword + type.nullableSuffix();
+                    return new DBSPApplyExpression(functionName, type, ops.get(0));
+                } else if (call.operands.size() == 1) {
+                    String functionName = call.getKind().toString().toLowerCase() + "_" +
+                            type.to(DBSPTypeBaseType.class).shortName() + type.nullableSuffix();
+                    return new DBSPApplyExpression(functionName, type, ops.get(0));
+                } else {
                     throw new Unimplemented(call);
-                DBSPKeywordLiteral keyword = ops.get(1).to(DBSPKeywordLiteral.class);
-                String functionName = call.getKind().toString().toLowerCase() + "_" + type.to(IsNumericType.class).getRustString() + "_" + keyword + type.nullableSuffix();
-                return new DBSPApplyExpression(functionName, type, ops.get(0));
+                }
             }
             case ARRAY_VALUE_CONSTRUCTOR: {
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);

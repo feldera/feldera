@@ -169,6 +169,20 @@ public class CalciteCompiler implements IModule {
         }
     }
 
+    /**
+     * Postgres NUMERIC_INC function
+     */
+    static class SqlIncFunction extends SqlFunction {
+        public SqlIncFunction() {
+            super("NUMERIC_INC",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.ARG0,
+                    null,
+                    OperandTypes.NUMERIC,
+                    SqlFunctionCategory.NUMERIC);
+        }
+    }
+
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
         public int getMaxNumericPrecision() {
             return DBSPTypeDecimal.MAX_PRECISION;
@@ -223,6 +237,7 @@ public class CalciteCompiler implements IModule {
                 rootSchema, Collections.singletonList(catalog.schemaName), this.typeFactory, connectionConfig);
 
         SqlFunction division = new SqlDivideFunction();
+        SqlFunction inc = new SqlIncFunction();
         SqlOperatorTable operatorTable = SqlOperatorTables.chain(
                 // Libraries of user-defined functions supported.
                 SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
@@ -233,7 +248,7 @@ public class CalciteCompiler implements IModule {
                                 // Geospatial functions
                                 SqlLibrary.SPATIAL)),
                 // Our custom division operation
-                SqlOperatorTables.of(division)
+                SqlOperatorTables.of(inc, division)
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT

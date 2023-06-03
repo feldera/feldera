@@ -30,6 +30,9 @@ unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 
 Division or modulus by zero return ``NULL``.
 
+Casting a string to a decimal value will produce the value ``0`` when
+parsing fails.
+
 Predefined functions on Decimal Values
 --------------------------------------
 

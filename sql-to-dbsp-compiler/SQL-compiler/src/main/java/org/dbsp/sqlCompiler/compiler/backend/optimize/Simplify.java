@@ -160,8 +160,7 @@ public class Simplify extends InnerRewriteVisitor {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                 IsNumericType iLeftType = leftType.to(IsNumericType.class);
-                if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
-                    // This is not true for null values
+                if (iLeftType.isZero(leftLit)) {
                     result = right;
                 } else if (leftLit.isNull) {
                     result = left;
@@ -169,7 +168,7 @@ public class Simplify extends InnerRewriteVisitor {
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                 IsNumericType iRightType = rightType.to(IsNumericType.class);
-                if (iRightType.isZero(rightLit) && !leftMayBeNull) {
+                if (iRightType.isZero(rightLit)) {
                     result = left;
                 } else if (rightLit.isNull) {
                     result = right;
@@ -183,6 +182,7 @@ public class Simplify extends InnerRewriteVisitor {
                     // This works even for null
                     result = right.cast(expression.getNonVoidType());
                 } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
+                    // This is not true for null values
                     result = left;
                 } else if (leftLit.isNull) {
                     result = left;
@@ -193,6 +193,7 @@ public class Simplify extends InnerRewriteVisitor {
                 if (iRightType.isOne(rightLit)) {
                     result = left;
                 } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
+                    // This is not true for null values
                     result = right;
                 } else if (rightLit.isNull) {
                     result = right;
