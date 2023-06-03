@@ -50,7 +50,7 @@ class DBSPPipelineConfig:
         self.name = name
         self.description = description
 
-    def add_input(self, stream: str, connector: DBSPConnector):
+    def add_input(self, stream: str, connector: DBSPConnector, name: str = None):
         """Add an input endpoint to the pipeline configuration.
 
         Args:
@@ -62,7 +62,7 @@ class DBSPPipelineConfig:
         self.attached_connectors.append(AttachedConnector(
             connector_id=connector.connector_id,
             is_input=True,
-            name=uuid.uuid4().hex,
+            name=uuid.uuid4().hex if name is None else name,
             config=stream,
         ))
 
@@ -91,7 +91,8 @@ class DBSPPipelineConfig:
         self.add_input(
             stream,
             DBSPConnector(self.api_client, name, TransportConfig(
-                name="http"), format=format))
+                name="http"), format=format),
+            name = name)
 
     def add_kafka_output(self, name: str, stream: str, config: KafkaOutputConfig, format: FormatConfig):
         """Add a Kafka output connector to the pipeline configuration.
@@ -108,7 +109,7 @@ class DBSPPipelineConfig:
                 name="kafka",
                 config=config), format=format))
 
-    def add_output(self, stream: str, connector: DBSPConnector):
+    def add_output(self, stream: str, connector: DBSPConnector, name: str = None):
         """Add an output connector to the pipeline configuration.
 
         Args:
@@ -120,7 +121,7 @@ class DBSPPipelineConfig:
         self.attached_connectors.append(AttachedConnector(
             connector_id=connector.connector_id,
             is_input=False,
-            name=uuid.uuid4().hex,
+            name=uuid.uuid4().hex if name is None else name,
             config=stream,
         ))
 
@@ -162,9 +163,8 @@ class DBSPPipelineConfig:
         self.add_output(
             stream,
             DBSPConnector(self.api_client, name, TransportConfig(
-                name="http"), format=format))
-
-
+                name="http"), format=format),
+            name)
 
     def yaml(self) -> str:
         """Convert pipeline configuration to YAML format."""

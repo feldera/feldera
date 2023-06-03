@@ -1,10 +1,11 @@
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, Union
 
 import httpx
 
 from ... import errors
 from ...client import Client
+from ...models.chunk import Chunk
 from ...models.error_response import ErrorResponse
 from ...types import UNSET, Response
 
@@ -16,7 +17,7 @@ def _get_kwargs(
     client: Client,
     format_: str,
 ) -> Dict[str, Any]:
-    url = "{}/v0/pipelines/{pipeline_id}/ingress/{table_name}".format(
+    url = "{}/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
         client.base_url, pipeline_id=pipeline_id, table_name=table_name
     )
 
@@ -29,7 +30,7 @@ def _get_kwargs(
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     return {
-        "method": "post",
+        "method": "get",
         "url": url,
         "headers": headers,
         "cookies": cookies,
@@ -39,9 +40,10 @@ def _get_kwargs(
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Any, ErrorResponse]]:
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Chunk, ErrorResponse]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = cast(Any, None)
+        response_200 = Chunk.from_dict(response.json())
+
         return response_200
     if response.status_code == HTTPStatus.BAD_REQUEST:
         response_400 = ErrorResponse.from_dict(response.json())
@@ -55,10 +57,6 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         response_410 = ErrorResponse.from_dict(response.json())
 
         return response_410
-    if response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
-        response_422 = ErrorResponse.from_dict(response.json())
-
-        return response_422
     if response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
         response_500 = ErrorResponse.from_dict(response.json())
 
@@ -69,7 +67,7 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Any, ErrorResponse]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Chunk, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -84,18 +82,17 @@ def sync_detailed(
     *,
     client: Client,
     format_: str,
-) -> Response[Union[Any, ErrorResponse]]:
-    """Push data to a SQL table.
+) -> Response[Union[Chunk, ErrorResponse]]:
+    """Subscribe to a stream of updates to a SQL view or table.
 
-     Push data to a SQL table.
+     Subscribe to a stream of updates to a SQL view or table.
 
-    The client sends data encoded using the format specified in the `?format=`
-    parameter as a body of the request.  The contents of the data must match
-    the SQL table schema specified in `table_name`
+    The pipeline responds with a continuous stream of changes to the specified
+    table or view, encoded using the format specified in the `?format=` parameter.
+    Updates are split into `Chunk`'s.
 
-    The pipeline ingests data as it arrives without waiting for the end of
-    the request.  Successful HTTP response indicates that all data has been
-    ingested successfully.
+    The pipeline continuous sending updates until the client closes the connection or the
+    pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -107,7 +104,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[Any, ErrorResponse]]
+        Response[Union[Chunk, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -131,18 +128,17 @@ def sync(
     *,
     client: Client,
     format_: str,
-) -> Optional[Union[Any, ErrorResponse]]:
-    """Push data to a SQL table.
+) -> Optional[Union[Chunk, ErrorResponse]]:
+    """Subscribe to a stream of updates to a SQL view or table.
 
-     Push data to a SQL table.
+     Subscribe to a stream of updates to a SQL view or table.
 
-    The client sends data encoded using the format specified in the `?format=`
-    parameter as a body of the request.  The contents of the data must match
-    the SQL table schema specified in `table_name`
+    The pipeline responds with a continuous stream of changes to the specified
+    table or view, encoded using the format specified in the `?format=` parameter.
+    Updates are split into `Chunk`'s.
 
-    The pipeline ingests data as it arrives without waiting for the end of
-    the request.  Successful HTTP response indicates that all data has been
-    ingested successfully.
+    The pipeline continuous sending updates until the client closes the connection or the
+    pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -154,7 +150,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[Any, ErrorResponse]
+        Union[Chunk, ErrorResponse]
     """
 
     return sync_detailed(
@@ -171,18 +167,17 @@ async def asyncio_detailed(
     *,
     client: Client,
     format_: str,
-) -> Response[Union[Any, ErrorResponse]]:
-    """Push data to a SQL table.
+) -> Response[Union[Chunk, ErrorResponse]]:
+    """Subscribe to a stream of updates to a SQL view or table.
 
-     Push data to a SQL table.
+     Subscribe to a stream of updates to a SQL view or table.
 
-    The client sends data encoded using the format specified in the `?format=`
-    parameter as a body of the request.  The contents of the data must match
-    the SQL table schema specified in `table_name`
+    The pipeline responds with a continuous stream of changes to the specified
+    table or view, encoded using the format specified in the `?format=` parameter.
+    Updates are split into `Chunk`'s.
 
-    The pipeline ingests data as it arrives without waiting for the end of
-    the request.  Successful HTTP response indicates that all data has been
-    ingested successfully.
+    The pipeline continuous sending updates until the client closes the connection or the
+    pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -194,7 +189,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[Any, ErrorResponse]]
+        Response[Union[Chunk, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -216,18 +211,17 @@ async def asyncio(
     *,
     client: Client,
     format_: str,
-) -> Optional[Union[Any, ErrorResponse]]:
-    """Push data to a SQL table.
+) -> Optional[Union[Chunk, ErrorResponse]]:
+    """Subscribe to a stream of updates to a SQL view or table.
 
-     Push data to a SQL table.
+     Subscribe to a stream of updates to a SQL view or table.
 
-    The client sends data encoded using the format specified in the `?format=`
-    parameter as a body of the request.  The contents of the data must match
-    the SQL table schema specified in `table_name`
+    The pipeline responds with a continuous stream of changes to the specified
+    table or view, encoded using the format specified in the `?format=` parameter.
+    Updates are split into `Chunk`'s.
 
-    The pipeline ingests data as it arrives without waiting for the end of
-    the request.  Successful HTTP response indicates that all data has been
-    ingested successfully.
+    The pipeline continuous sending updates until the client closes the connection or the
+    pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -239,7 +233,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[Any, ErrorResponse]
+        Union[Chunk, ErrorResponse]
     """
 
     return (

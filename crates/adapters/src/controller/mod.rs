@@ -38,19 +38,19 @@ use crate::{
     OutputEndpoint, OutputFormat, OutputTransport, Parser, PipelineState, SerBatch,
     SerOutputBatchHandle,
 };
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::DBSPHandle;
+use erased_serde::Deserializer as ErasedDeserializer;
 use log::{debug, error, info};
 use num_traits::FromPrimitive;
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashSet},
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread::{spawn, JoinHandle},
@@ -65,8 +65,13 @@ pub use config::{
     FormatConfig, GlobalPipelineConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     TransportConfig,
 };
-pub use error::ControllerError;
+pub use error::{ConfigError, ControllerError};
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
+
+/// Maximal number of concurrent API connections per circuit
+/// (including both input and output connecions).
+// TODO: make this configurable.
+const MAX_API_CONNECTIONS: u64 = 100;
 
 pub(crate) type EndpointId = u64;
 
@@ -186,8 +191,99 @@ impl Controller {
         &self,
         endpoint_name: &str,
         config: &InputEndpointConfig,
-    ) -> AnyResult<()> {
+    ) -> AnyResult<EndpointId> {
         self.inner.connect_input(endpoint_name, config)
+    }
+
+    /// Disconnect an existing input endpoint.
+    ///
+    /// This method is asynchronous and may return before all endpoint
+    /// threads have terminated.
+    pub fn disconnect_input(&self, endpoint_id: &EndpointId) {
+        self.inner.disconnect_input(endpoint_id)
+    }
+
+    /// Connect a previously instantiated input endpoint.
+    ///
+    /// Used to connect an endpoint instantiated manually rather than from an
+    /// [`InputEndpointConfig`].
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint_name` - endpoint name unique within the pipeline.
+    ///
+    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name`
+    ///   and `stream` fields need to be initialized.
+    ///
+    /// * `format_config` - a deserializer used to extract format-specific
+    ///    configuration.
+    ///
+    /// * `endpoint` - transport endpoint object.
+    pub fn add_input_endpoint(
+        &self,
+        endpoint_name: &str,
+        endpoint_config: InputEndpointConfig,
+        format_config: &mut dyn ErasedDeserializer,
+        endpoint: Box<dyn InputEndpoint>,
+    ) -> AnyResult<EndpointId> {
+        self.inner
+            .add_input_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
+    }
+
+    /// Disconnect an existing output endpoint.
+    ///
+    /// This method is asynchronous and may return before all endpoint
+    /// threads have terminated.
+    pub fn disconnect_output(&self, endpoint_id: &EndpointId) {
+        self.inner.disconnect_output(endpoint_id)
+    }
+
+    /// Connect a previously instantiated output endpoint.
+    ///
+    /// Used to connect an endpoint instantiated manually rather than from an
+    /// [`OutputEndpointConfig`].
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint_name` - endpoint name unique within the pipeline.
+    ///
+    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name`
+    ///   and `stream` fields need to be initialized.
+    ///
+    /// * `format_config` - a deserializer used to extract format-specific
+    ///    configuration.
+    ///
+    /// * `endpoint` - transport endpoint object.
+    pub fn add_output_endpoint(
+        &self,
+        endpoint_name: &str,
+        endpoint_config: &OutputEndpointConfig,
+        format_config: &mut dyn ErasedDeserializer,
+        endpoint: Box<dyn OutputEndpoint>,
+    ) -> AnyResult<EndpointId> {
+        self.inner
+            .add_output_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
+    }
+
+    /// Increment the nubmber of active API connections.
+    ///
+    /// API connections are created dynamically via the `ingress` and `egress`
+    /// REST API endpoints.
+    ///
+    /// Fails if the number of connections exceeds the current limit,
+    /// returning the number of existing API connections.
+    pub fn register_api_connection(&self) -> Result<(), u64> {
+        self.inner.register_api_connection()
+    }
+
+    /// Decrement the nubmber of active API connections.
+    pub fn unregister_api_connection(&self) {
+        self.inner.unregister_api_connection();
+    }
+
+    /// Return the number of active API connections.
+    pub fn num_api_connections(&self) -> u64 {
+        self.inner.num_api_connections()
     }
 
     /// Change the state of all input endpoints to running.
@@ -476,25 +572,32 @@ struct OutputEndpointDescr {
     /// Endpoint name.
     endpoint_name: String,
 
+    /// Stream name that the endpoint is connected to.
+    stream_name: String,
+
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
+
+    /// Used to notify the endpoint thread that the endpoint is being disconnected.
+    disconnect_flag: Arc<AtomicBool>,
 
     /// Unparker for the endpoint thread.
     unparker: Unparker,
 }
 
 impl OutputEndpointDescr {
-    pub fn new(endpoint_name: &str, unparker: Unparker) -> Self {
+    pub fn new(endpoint_name: &str, stream_name: &str, unparker: Unparker) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
+            stream_name: stream_name.to_string(),
             queue: Arc::new(SegQueue::new()),
+            disconnect_flag: Arc::new(AtomicBool::new(false)),
             unparker,
         }
     }
 }
 
-type StreamEndpointMap =
-    BTreeMap<Cow<'static, str>, (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>)>;
+type StreamEndpointMap = BTreeMap<String, (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>)>;
 
 struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
@@ -513,7 +616,7 @@ impl OutputEndpoints {
         &self,
     ) -> impl Iterator<
         Item = (
-            &'_ Cow<'static, str>,
+            &'_ String,
             &'_ (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>),
         ),
     > {
@@ -537,16 +640,25 @@ impl OutputEndpoints {
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        stream: Cow<'static, str>,
+        stream: &str,
         collection_handle: Box<dyn SerOutputBatchHandle>,
         endpoint_descr: OutputEndpointDescr,
     ) {
         self.by_id.insert(endpoint_id, endpoint_descr);
         self.by_stream
-            .entry(stream)
+            .entry(stream.to_string())
             .or_insert_with(|| (collection_handle, BTreeSet::new()))
             .1
             .insert(endpoint_id);
+    }
+
+    fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
+        self.by_id.remove(endpoint_id).map(|descr| {
+            self.by_stream
+                .get_mut(&descr.stream_name)
+                .map(|(_, endpoints)| endpoints.remove(endpoint_id));
+            descr
+        })
     }
 }
 
@@ -557,6 +669,7 @@ impl OutputEndpoints {
 struct ControllerInner {
     status: ControllerStatus,
     state: AtomicU32,
+    num_api_connections: AtomicU64,
     dump_profile_request: AtomicBool,
     catalog: Arc<Mutex<Catalog>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
@@ -581,6 +694,7 @@ impl ControllerInner {
         Self {
             status,
             state,
+            num_api_connections: AtomicU64::new(0),
             dump_profile_request,
             catalog: Arc::new(Mutex::new(catalog)),
             inputs: Mutex::new(BTreeMap::new()),
@@ -595,7 +709,41 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
-    ) -> AnyResult<()> {
+    ) -> AnyResult<EndpointId> {
+        // Create transport endpoint.
+        let transport = <dyn InputTransport>::get_transport(&endpoint_config.transport.name)
+            .ok_or_else(|| {
+                ControllerError::unknown_input_transport(&endpoint_config.transport.name)
+            })?;
+
+        let endpoint = transport.new_endpoint(endpoint_name, &endpoint_config.transport.config)?;
+
+        self.add_input_endpoint(
+            endpoint_name,
+            endpoint_config.clone(),
+            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.format.config),
+            endpoint,
+        )
+    }
+
+    fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
+        let mut inputs = self.inputs.lock().unwrap();
+
+        if let Some(ep) = inputs.remove(endpoint_id) {
+            ep.endpoint.disconnect();
+            self.status.remove_input(endpoint_id);
+            self.unpark_circuit();
+            self.unpark_backpressure();
+        }
+    }
+
+    fn add_input_endpoint(
+        self: &Arc<Self>,
+        endpoint_name: &str,
+        endpoint_config: InputEndpointConfig,
+        format_config: &mut dyn ErasedDeserializer,
+        mut endpoint: Box<dyn InputEndpoint>,
+    ) -> AnyResult<EndpointId> {
         let mut inputs = self.inputs.lock().unwrap();
 
         if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
@@ -609,16 +757,16 @@ impl ControllerInner {
         // │endpoint├──►│InputProbe├──►│parser├──►
         // └────────┘   └──────────┘   └──────┘
 
+        let catalog = self.catalog.lock().unwrap();
+        let input_stream = catalog
+            .input_collection_handle(&endpoint_config.stream)
+            .ok_or_else(|| ControllerError::unknown_input_stream(&endpoint_config.stream))?;
+
         // Create parser.
         let format = <dyn InputFormat>::get_format(&endpoint_config.format.name)
             .ok_or_else(|| ControllerError::unknown_input_format(&endpoint_config.format.name))?;
 
-        let catalog = self.catalog.lock().unwrap();
-        let input_stream = catalog
-            .input_collection_handle(&endpoint_config.stream)
-            .ok_or_else(|| AnyError::msg(format!("unknown stream '{}'", endpoint_config.stream)))?;
-
-        let parser = format.new_parser(input_stream, &endpoint_config.format.config)?;
+        let parser = format.new_parser(input_stream, format_config)?;
 
         // Create probe.
         let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -631,14 +779,14 @@ impl ControllerInner {
             self.backpressure_thread_unparker.clone(),
         ));
 
-        // Create transport endpoint.
-        let transport = <dyn InputTransport>::get_transport(&endpoint_config.transport.name)
-            .ok_or_else(|| {
-                ControllerError::unknown_input_transport(&endpoint_config.transport.name)
-            })?;
+        // Initialize endpoint stats.
+        self.status
+            .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
-        let endpoint =
-            transport.new_endpoint(endpoint_name, &endpoint_config.transport.config, probe)?;
+        endpoint.connect(probe)?;
+        if self.state() == PipelineState::Running {
+            endpoint.start()?;
+        }
 
         inputs.insert(
             endpoint_id,
@@ -647,12 +795,28 @@ impl ControllerInner {
 
         drop(inputs);
 
-        // Initialize endpoint stats.
-        self.status
-            .add_input(&endpoint_id, endpoint_name, endpoint_config);
-
         self.unpark_backpressure();
-        Ok(())
+        Ok(endpoint_id)
+    }
+
+    fn register_api_connection(&self) -> Result<(), u64> {
+        let num_connections = self.num_api_connections.load(Ordering::Acquire);
+
+        if num_connections >= MAX_API_CONNECTIONS {
+            Err(num_connections)
+        } else {
+            self.num_api_connections.fetch_add(1, Ordering::AcqRel);
+            Ok(())
+        }
+    }
+
+    fn unregister_api_connection(&self) {
+        let old = self.num_api_connections.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(old > 0);
+    }
+
+    fn num_api_connections(&self) -> u64 {
+        self.num_api_connections.load(Ordering::Acquire)
     }
 
     /// Unpark the circuit thread.
@@ -669,7 +833,39 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-    ) -> AnyResult<()> {
+    ) -> AnyResult<EndpointId> {
+        // Create transport endpoint.
+        let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
+            .ok_or_else(|| {
+                ControllerError::unknown_output_transport(&endpoint_config.transport.name)
+            })?;
+
+        let endpoint = transport.new_endpoint(endpoint_name, endpoint_config)?;
+        self.add_output_endpoint(
+            endpoint_name,
+            endpoint_config,
+            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.format.config),
+            endpoint,
+        )
+    }
+
+    fn disconnect_output(self: &Arc<Self>, endpoint_id: &EndpointId) {
+        let mut outputs = self.outputs.write().unwrap();
+
+        if let Some(ep) = outputs.remove(endpoint_id) {
+            ep.disconnect_flag.store(true, Ordering::Release);
+            ep.unparker.unpark();
+            self.status.remove_output(endpoint_id);
+        }
+    }
+
+    fn add_output_endpoint(
+        self: &Arc<Self>,
+        endpoint_name: &str,
+        endpoint_config: &OutputEndpointConfig,
+        format_config: &mut dyn ErasedDeserializer,
+        endpoint: Box<dyn OutputEndpoint>,
+    ) -> AnyResult<EndpointId> {
         let mut outputs = self.outputs.write().unwrap();
 
         if outputs.lookup_by_name(endpoint_name).is_some() {
@@ -692,25 +888,15 @@ impl ControllerInner {
             .ok_or_else(|| ControllerError::unknown_output_stream(&endpoint_config.stream))?
             .fork();
 
-        // Create transport endpoint.
-        let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
-            .ok_or_else(|| {
-                ControllerError::unknown_output_transport(&endpoint_config.transport.name)
-            })?;
-
         let endpoint_id = outputs.alloc_endpoint_id();
         let endpoint_name_str = endpoint_name.to_string();
 
         let self_weak = Arc::downgrade(self);
-        let endpoint = transport.new_endpoint(
-            endpoint_name,
-            &endpoint_config.transport.config,
-            Box::new(move |fatal: bool, e: AnyError| {
-                if let Some(controller) = self_weak.upgrade() {
-                    controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
-                }
-            }),
-        )?;
+        endpoint.connect(Box::new(move |fatal: bool, e: AnyError| {
+            if let Some(controller) = self_weak.upgrade() {
+                controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
+            }
+        }))?;
 
         // Create probe.
         let probe = Box::new(OutputProbe::new(
@@ -723,16 +909,21 @@ impl ControllerInner {
         // Create encoder.
         let format = <dyn OutputFormat>::get_format(&endpoint_config.format.name)
             .ok_or_else(|| ControllerError::unknown_output_format(&endpoint_config.format.name))?;
-        let encoder = format.new_encoder(&endpoint_config.format.config, probe)?;
+        let encoder = format.new_encoder(format_config, probe)?;
 
         let parker = Parker::new();
-        let endpoint_state = OutputEndpointDescr::new(endpoint_name, parker.unparker().clone());
+        let endpoint_state = OutputEndpointDescr::new(
+            endpoint_name,
+            &endpoint_config.stream,
+            parker.unparker().clone(),
+        );
         let queue = endpoint_state.queue.clone();
+        let disconnect_flag = endpoint_state.disconnect_flag.clone();
         let controller = self.clone();
 
         outputs.insert(
             endpoint_id,
-            endpoint_config.stream.clone(),
+            &endpoint_config.stream,
             collection_handle,
             endpoint_state,
         );
@@ -746,6 +937,7 @@ impl ControllerInner {
                 encoder,
                 parker,
                 queue,
+                disconnect_flag,
                 controller,
             )
         });
@@ -756,7 +948,7 @@ impl ControllerInner {
         self.status
             .add_output(&endpoint_id, endpoint_name, endpoint_config);
 
-        Ok(())
+        Ok(endpoint_id)
     }
 
     fn output_thread_func(
@@ -765,10 +957,15 @@ impl ControllerInner {
         mut encoder: Box<dyn Encoder>,
         parker: Parker,
         queue: Arc<BatchQueue>,
+        disconnect_flag: Arc<AtomicBool>,
         controller: Arc<ControllerInner>,
     ) {
         loop {
             if controller.state() == PipelineState::Terminated {
+                return;
+            }
+
+            if disconnect_flag.load(Ordering::Acquire) {
                 return;
             }
 
@@ -923,7 +1120,7 @@ impl InputProbe {
 
 /// `InputConsumer` interface exposed to the transport endpoint.
 impl InputConsumer for InputProbe {
-    fn input(&mut self, data: &[u8]) {
+    fn input(&mut self, data: &[u8]) -> AnyResult<()> {
         // println!("input consumer {} bytes", data.len());
         // Pass input buffer to the parser.
         match self.parser.input(data) {
@@ -938,16 +1135,24 @@ impl InputConsumer for InputProbe {
                     &self.circuit_thread_unparker,
                     &self.backpressure_thread_unparker,
                 );
+                Ok(())
             }
             Err(error) => {
+                // Wrap it in Arc, so we can pass it to `parse_error` and return from this function
+                // as well.
+                let error = Arc::new(error);
                 self.parser.clear();
-                self.controller
-                    .parse_error(self.endpoint_id, &self.endpoint_name, error);
+                self.controller.parse_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    anyhow!(error.clone()),
+                );
+                Err(anyhow!(error))
             }
         }
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&mut self) -> AnyResult<()> {
         // The endpoint reached end-of-file.  Notify and flush the parser (even though
         // no new data has been received, the parser may contain some partially
         // parsed data and may be waiting for, e.g., and end-of-line or
@@ -960,11 +1165,16 @@ impl InputConsumer for InputProbe {
                     num_records,
                     &self.circuit_thread_unparker,
                 );
+                Ok(())
             }
             Err(error) => {
+                let error = Arc::new(error);
                 self.parser.clear();
-                self.controller
-                    .error(ControllerError::parse_error(&self.endpoint_name, error));
+                self.controller.error(ControllerError::parse_error(
+                    &self.endpoint_name,
+                    anyhow!(error.clone()),
+                ));
+                Err(anyhow!(error))
             }
         }
     }

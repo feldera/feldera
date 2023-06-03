@@ -9,7 +9,6 @@ use csv::{
 };
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
@@ -27,7 +26,7 @@ impl InputFormat for CsvInputFormat {
     fn new_parser(
         &self,
         input_stream: &dyn DeCollectionHandle,
-        _config: &YamlValue,
+        _config: &mut dyn ErasedDeserializer,
     ) -> AnyResult<Box<dyn Parser>> {
         Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
@@ -174,7 +173,7 @@ impl OutputFormat for CsvOutputFormat {
 
     fn new_encoder(
         &self,
-        config: &YamlValue,
+        config: &mut dyn ErasedDeserializer,
         consumer: Box<dyn OutputConsumer>,
     ) -> AnyResult<Box<dyn Encoder>> {
         let config = CsvEncoderConfig::deserialize(config)?;

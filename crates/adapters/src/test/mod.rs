@@ -15,7 +15,7 @@ mod data;
 pub mod kafka;
 
 #[cfg(feature = "server")]
-pub mod websocket;
+pub mod http;
 
 mod mock_dezset;
 mod mock_input_consumer;
@@ -83,13 +83,11 @@ where
     let consumer = MockInputConsumer::from_handle(&input_handle, &config.format);
 
     let transport = <dyn InputTransport>::get_transport(&config.transport.name).unwrap();
-    let endpoint = transport
-        .new_endpoint(
-            &config.stream,
-            &config.transport.config,
-            Box::new(consumer.clone()),
-        )
+    let mut endpoint = transport
+        .new_endpoint(&config.stream, &config.transport.config)
         .unwrap();
+
+    endpoint.connect(Box::new(consumer.clone())).unwrap();
 
     (endpoint, consumer, input_handle)
 }

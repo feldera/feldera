@@ -1,13 +1,20 @@
 use crate::{
-    Catalog, Controller, ControllerError, HttpInputTransport, HttpOutputTransport, PipelineConfig,
+    controller::ConfigError,
+    transport::http::{
+        HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
+    },
+    Catalog, Controller, ControllerError, FormatConfig, InputEndpoint, InputEndpointConfig,
+    OutputEndpoint, OutputEndpointConfig, PipelineConfig,
 };
 use actix_web::{
     dev::{Server, ServiceFactory, ServiceRequest},
     get,
+    http::StatusCode,
     middleware::Logger,
-    rt, web,
-    web::Data as WebData,
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
+    post, rt, web,
+    web::{Data as WebData, Payload, Query},
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpResponseBuilder, HttpServer,
+    Responder,
 };
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
@@ -15,14 +22,24 @@ use clap::Parser;
 use colored::Colorize;
 use dbsp::DBSPHandle;
 use env_logger::Env;
-use log::{error, info, warn};
-use serde::Serialize;
+use erased_serde::Deserializer as ErasedDeserializer;
+use form_urlencoded;
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
+use serde_urlencoded::Deserializer as UrlDeserializer;
+use serde_yaml::Value as YamlValue;
 use std::io::Write;
-use std::{net::TcpListener, sync::Mutex};
+use std::{
+    borrow::Cow,
+    net::TcpListener,
+    sync::{Arc, Mutex},
+};
 use tokio::{
     spawn,
     sync::mpsc::{channel, Receiver, Sender},
 };
+use uuid::Uuid;
+
 mod prometheus;
 
 use self::prometheus::PrometheusMetrics;
@@ -54,7 +71,7 @@ impl ServerState {
 }
 
 #[derive(Serialize)]
-struct ErrorResponse {
+pub(crate) struct ErrorResponse {
     message: String,
 }
 
@@ -64,6 +81,33 @@ impl ErrorResponse {
             message: message.to_string(),
         }
     }
+}
+
+fn http_resp_from_error(error: &AnyError) -> HttpResponse {
+    debug!("Returning HTTP error: {:?}", error);
+    if let Some(controller_error) = error.downcast_ref::<ControllerError>() {
+        let message = controller_error.to_string();
+        match controller_error {
+            ControllerError::Config {
+                config_error: ConfigError::UnknownInputStream { .. },
+            } => HttpResponse::NotFound(),
+            ControllerError::Config {
+                config_error: ConfigError::UnknownOutputStream { .. },
+            } => HttpResponse::NotFound(),
+            ControllerError::Config { .. } => HttpResponse::BadRequest(),
+            _ => HttpResponse::InternalServerError(),
+        }
+        .json(ErrorResponse::new(&message))
+    } else {
+        HttpResponse::InternalServerError().json(ErrorResponse::new(&error.to_string()))
+    }
+}
+
+/// Create a HTTP error response from a status code and an error message.
+pub(crate) fn http_error(status: StatusCode, msg: &str) -> HttpResponse {
+    let response = HttpResponseBuilder::new(status).json(&ErrorResponse::new(msg));
+    error!("HTTP error response: {response:?}");
+    response
 }
 
 #[derive(Parser, Debug)]
@@ -262,9 +306,7 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
             controller.start();
             HttpResponse::Ok().json("The pipeline is running")
         }
-        None => {
-            HttpResponse::Conflict().json(&ErrorResponse::new("The pipeline has been terminated"))
-        }
+        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
     }
 }
 
@@ -275,9 +317,7 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
             controller.pause();
             HttpResponse::Ok().json("Pipeline paused")
         }
-        None => {
-            HttpResponse::Conflict().json(&ErrorResponse::new("The pipeline has been terminated"))
-        }
+        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
     }
 }
 
@@ -290,9 +330,7 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
                 .content_type(mime::APPLICATION_JSON)
                 .body(json_string)
         }
-        None => {
-            HttpResponse::Conflict().json(&ErrorResponse::new("The pipeline has been terminated"))
-        }
+        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
     }
 }
 
@@ -304,11 +342,12 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
             Ok(metrics) => HttpResponse::Ok()
                 .content_type(mime::TEXT_PLAIN)
                 .body(metrics),
-            Err(e) => {
-                HttpResponse::InternalServerError().body(format!("Error retrieving metrics: {e}"))
-            }
+            Err(e) => http_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Error retrieving metrics: {e}"),
+            ),
         },
-        None => HttpResponse::Conflict().body("The pipeline has been terminated"),
+        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
     }
 }
 
@@ -326,9 +365,7 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
             controller.dump_profile();
             HttpResponse::Ok().json("Profile dump initiated")
         }
-        None => {
-            HttpResponse::Conflict().json(&ErrorResponse::new("The pipeline has been terminated"))
-        }
+        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
     }
 }
 
@@ -346,45 +383,190 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
                 }
                 HttpResponse::Ok().json("Pipeline terminated")
             }
-            Err(e) => HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
-                "Failed to terminate the pipeline: {e}"
-            ))),
+            Err(e) => http_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Failed to terminate the pipeline: '{e}'"),
+            ),
         }
     } else {
         HttpResponse::Ok().json("Pipeline already terminated")
     }
 }
 
-#[get("/input_endpoint/{endpoint_name}")]
-async fn input_endpoint(req: HttpRequest, stream: web::Payload) -> impl Responder {
-    match req.match_info().get("endpoint_name") {
-        None => HttpResponse::BadRequest().body("Missing endpoint name argument"),
-        Some(endpoint_name) => {
-            HttpInputTransport::get_endpoint_websocket(endpoint_name, &req, stream).unwrap_or_else(
-                |e| {
-                    HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
-                        "Failed to establish connection to input HTTP endpoint: {e}"
-                    )))
-                },
-            )
-        }
-    }
+#[derive(Debug, Deserialize)]
+struct IngressArgs {
+    // #[serde(default = "HttpInputTransport::default_mode")]
+    // mode: HttpIngressMode,
+    #[serde(default = "HttpInputTransport::default_format")]
+    format: String,
 }
 
-#[get("/output_endpoint/{endpoint_name}")]
-async fn output_endpoint(req: HttpRequest, stream: web::Payload) -> impl Responder {
-    match req.match_info().get("endpoint_name") {
-        None => HttpResponse::BadRequest().body("Missing endpoint name argument"),
-        Some(endpoint_name) => {
-            HttpOutputTransport::get_endpoint_websocket(endpoint_name, &req, stream).unwrap_or_else(
-                |e| {
-                    HttpResponse::InternalServerError().json(&ErrorResponse::new(&format!(
-                        "Failed to establish connection to output HTTP endpoint: {e}"
-                    )))
-                },
-            )
+#[post("/ingress/{table_name}")]
+async fn input_endpoint(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+    args: Query<IngressArgs>,
+    payload: Payload,
+) -> impl Responder {
+    debug!("{req:?}");
+    let table_name = match req.match_info().get("table_name") {
+        None => return http_error(StatusCode::BAD_REQUEST, "Missing table name argument."),
+        Some(table_name) => table_name.to_string(),
+    };
+    // debug!("Table name {table_name:?}");
+
+    // Generate endpoint name.
+    let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
+
+    // Create HTTP endpoint with given mode.
+    let endpoint = HttpInputEndpoint::new(&endpoint_name);
+
+    // Create endpoint config.
+    let config = InputEndpointConfig {
+        transport: HttpInputTransport::config(),
+        stream: Cow::from(table_name),
+        format: FormatConfig {
+            name: Cow::from(args.format.clone()),
+            config: YamlValue::Null,
+        },
+        max_buffered_records: HttpInputTransport::default_max_buffered_records(),
+    };
+
+    // Connect endpoint.
+    let endpoint_id = match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            if controller.register_api_connection().is_err() {
+                return http_error(StatusCode::TOO_MANY_REQUESTS,
+                        "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
+                    );
+            }
+
+            match controller.add_input_endpoint(
+                &endpoint_name,
+                config,
+                &mut <dyn ErasedDeserializer>::erase(UrlDeserializer::new(form_urlencoded::parse(
+                    req.query_string().as_bytes(),
+                ))),
+                Box::new(endpoint.clone()) as Box<dyn InputEndpoint>,
+            ) {
+                Ok(endpoint_id) => endpoint_id,
+                Err(e) => {
+                    controller.unregister_api_connection();
+                    debug!("Failed to create API endpoint: '{e}'");
+                    return http_resp_from_error(&e);
+                }
+            }
         }
+        None => {
+            return http_error(StatusCode::GONE, "The pipeline has been terminated");
+        }
+    };
+
+    // Call endpoint to complete request.
+    // Who calls `start` on new endpoint?
+    let response = endpoint.complete_request(payload).await;
+    drop(endpoint);
+
+    // Delete endpoint on completion/error.
+    if let Some(controller) = state.controller.lock().unwrap().as_ref() {
+        controller.disconnect_input(&endpoint_id);
+        controller.unregister_api_connection();
     }
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+struct EgressArgs {
+    // #[serde(default = "HttpOutputTransport::default_mode")]
+    // mode: HttpIngressMode,
+    #[serde(default = "HttpOutputTransport::default_format")]
+    format: String,
+}
+
+#[get("/egress/{table_name}")]
+async fn output_endpoint(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+    args: Query<EgressArgs>,
+) -> impl Responder {
+    debug!("{req:?}");
+    let table_name = match req.match_info().get("table_name") {
+        None => return http_error(StatusCode::BAD_REQUEST, "Missing table name argument."),
+        Some(table_name) => table_name.to_string(),
+    };
+
+    // Generate endpoint name.
+    let endpoint_name = format!("api-egress-{table_name}-{}", Uuid::new_v4());
+
+    // Create HTTP endpoint.
+    let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format);
+
+    // Create endpoint config.
+    let config = OutputEndpointConfig {
+        transport: HttpOutputTransport::config(),
+        stream: Cow::from(table_name),
+        format: FormatConfig {
+            name: Cow::from(args.format.clone()),
+            config: YamlValue::Null,
+        },
+        max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
+    };
+
+    // Connect endpoint.
+    let endpoint_id = match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            if controller.register_api_connection().is_err() {
+                return http_error(StatusCode::TOO_MANY_REQUESTS,
+                        "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
+                    );
+            }
+
+            match controller.add_output_endpoint(
+                &endpoint_name,
+                &config,
+                &mut <dyn ErasedDeserializer>::erase(UrlDeserializer::new(form_urlencoded::parse(
+                    req.query_string().as_bytes(),
+                ))),
+                Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+            ) {
+                Ok(endpoint_id) => endpoint_id,
+                Err(e) => {
+                    controller.unregister_api_connection();
+                    // TODO: Convert `e` to an appropriate HTTP error code.
+                    debug!("Failed to create HTTP endpoint: '{e}'");
+                    return http_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &format!("Failed to create HTTP endpoint: '{e}'"),
+                    );
+                }
+            }
+        }
+        None => {
+            return http_error(StatusCode::GONE, "The pipeline has been terminated");
+        }
+    };
+
+    // We need to pass a callback to `request` to disconnect the endpoint when the request
+    // completes.  Use a donwgraded reference to `state`, so this closure doesn't prevent
+    // the controller from shutting down.
+    let weak_state = Arc::downgrade(&state.into_inner());
+
+    // Call endpoint to complete request.
+    // Who calls `start` on new endpoint?
+    let response = endpoint.request(Box::new(move || {
+        // Delete endpoint on completion/error.
+        if let Some(state) = weak_state.upgrade() {
+            if let Some(controller) = state.controller.lock().unwrap().as_ref() {
+                controller.disconnect_output(&endpoint_id);
+                controller.unregister_api_connection();
+            }
+        }
+    }));
+
+    drop(endpoint);
+
+    response
 }
 
 #[cfg(test)]
@@ -395,25 +577,20 @@ mod test_with_kafka {
     use crate::{
         test::{
             generate_test_batches,
+            http::{TestHttpReceiver, TestHttpSender},
             kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit, wait,
-            websocket::{TestWsReceiver, TestWsSender},
-            TEST_LOGGER,
+            test_circuit, wait, TEST_LOGGER,
         },
         Controller, ControllerError, PipelineConfig,
     };
-    use actix_http::ws::{Frame as WsFrame, Message as WsMessage};
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
-    use bytes::Bytes;
-    use bytestring::ByteString;
     use crossbeam::queue::SegQueue;
-    use futures::{SinkExt, StreamExt};
     use log::{error, LevelFilter};
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use std::{pin::Pin, sync::Arc, thread::sleep, time::Duration};
+    use std::{sync::Arc, thread::sleep, time::Duration};
 
     #[actix_web::test]
     async fn test_server() {
@@ -452,12 +629,6 @@ inputs:
                 log_level: debug
         format:
             name: csv
-    test_input_http:
-        stream: test_input1
-        transport:
-            name: http
-        format:
-            name: csv
 outputs:
     test_output2:
         stream: test_output1
@@ -467,12 +638,6 @@ outputs:
                 bootstrap.servers: "localhost"
                 topic: test_server_output_topic
                 max_inflight_messages: 0
-        format:
-            name: csv
-    test_output_http:
-        stream: test_output1
-        transport:
-            name: http
         format:
             name: csv
 "#;
@@ -506,7 +671,7 @@ outputs:
             "metadata".to_string(),
             None,
         ));
-        let mut server =
+        let server =
             actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
 
         // Write data to Kafka.
@@ -555,96 +720,39 @@ outputs:
         producer.send_string("invalid\n", "test_server_input_topic");
         wait(|| errors.len() == 1, None);
 
-        println!("Connecting to HTTP input endpoint");
-        let mut ws1 = server
-            .ws_at("/input_endpoint/test_input_http")
-            .await
-            .unwrap();
-        ws1.send(WsMessage::Text(ByteString::from_static("state")))
-            .await
-            .unwrap();
-        assert_eq!(
-            ws1.next().await.unwrap().unwrap(),
-            WsFrame::Text(Bytes::from("running"))
-        );
-
-        let mut ws2 = server
-            .ws_at("/input_endpoint/test_input_http")
-            .await
-            .unwrap();
-        ws2.send(WsMessage::Text(ByteString::from_static("state")))
-            .await
-            .unwrap();
-        assert_eq!(
-            ws2.next().await.unwrap().unwrap(),
-            WsFrame::Text(Bytes::from("running"))
-        );
-
         println!("Connecting to HTTP output endpoint");
-        let mut outws1 = server
-            .ws_at("/output_endpoint/test_output_http")
-            .await
-            .unwrap();
-        outws1
-            .send(WsMessage::Ping(Bytes::from("ping")))
-            .await
-            .unwrap();
-        assert_eq!(
-            outws1.next().await.unwrap().unwrap(),
-            WsFrame::Pong(Bytes::from("ping"))
-        );
+        let mut resp1 = server.get("/egress/test_output1").send().await.unwrap();
 
-        let mut outws2 = server
-            .ws_at("/output_endpoint/test_output_http")
-            .await
-            .unwrap();
-        outws2
-            .send(WsMessage::Ping(Bytes::from("ping")))
-            .await
-            .unwrap();
-        assert_eq!(
-            outws2.next().await.unwrap().unwrap(),
-            WsFrame::Pong(Bytes::from("ping"))
-        );
+        let mut resp2 = server.get("/egress/test_output1").send().await.unwrap();
 
-        println!("Websocket test: whole messages");
-        TestWsSender::send_to_websocket(Pin::new(&mut ws1), &data).await;
+        println!("Streaming test");
+        let req = server.post("/ingress/test_input1");
+
+        TestHttpSender::send_stream(req, &data).await;
+        println!("data sent");
 
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
 
-        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws1), &data).await;
-        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws2), &data).await;
+        TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
+        TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
 
-        TestWsSender::send_to_websocket(Pin::new(&mut ws2), &data).await;
+        let req = server.post("/ingress/test_input1");
 
-        buffer_consumer.wait_for_output_unordered(&data);
-        buffer_consumer.clear();
-
-        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws1), &data).await;
-        TestWsReceiver::wait_for_output_unordered(Pin::new(&mut outws2), &data).await;
-
-        println!("Websocket test: continuations");
-        TestWsSender::send_to_websocket_continuations(Pin::new(&mut ws1), &data).await;
+        TestHttpSender::send_stream(req, &data).await;
 
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
 
-        TestWsSender::send_to_websocket_continuations(Pin::new(&mut ws2), &data).await;
-
-        buffer_consumer.wait_for_output_unordered(&data);
-        buffer_consumer.clear();
+        TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
+        TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
+        drop(resp1);
+        drop(resp2);
 
         println!("/pause");
         let resp = server.get("/pause").send().await.unwrap();
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
-
-        // Make sure the websocket gets status update.
-        assert_eq!(
-            ws1.next().await.unwrap().unwrap(),
-            WsFrame::Text(Bytes::from("paused"))
-        );
 
         // Shutdown
         println!("/shutdown");
@@ -655,7 +763,7 @@ outputs:
         // Start after shutdown must fail.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert_eq!(resp.status(), StatusCode::GONE);
 
         drop(buffer_consumer);
         drop(kafka_resources);

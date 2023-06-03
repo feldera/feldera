@@ -161,12 +161,20 @@ impl ControllerStatus {
         &self,
         endpoint_id: &EndpointId,
         endpoint_name: &str,
-        config: &InputEndpointConfig,
+        config: InputEndpointConfig,
     ) {
         self.inputs.write().unwrap().insert(
             *endpoint_id,
             InputEndpointStatus::new(endpoint_name, config),
         );
+    }
+
+    pub fn remove_input(&self, endpoint_id: &EndpointId) {
+        self.inputs.write().unwrap().remove(endpoint_id);
+    }
+
+    pub fn remove_output(&self, endpoint_id: &EndpointId) {
+        self.outputs.write().unwrap().remove(endpoint_id);
     }
 
     /// Initialize stats for a new output endpoint.
@@ -482,10 +490,10 @@ pub struct InputEndpointStatus {
 }
 
 impl InputEndpointStatus {
-    fn new(endpoint_name: &str, config: &InputEndpointConfig) -> Self {
+    fn new(endpoint_name: &str, config: InputEndpointConfig) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
-            config: config.clone(),
+            config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
         }
