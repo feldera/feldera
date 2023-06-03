@@ -461,7 +461,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
-                                new BigDecimal(0.5)))));
+                                new BigDecimal("0.5")))));
     }
 
     @Test
