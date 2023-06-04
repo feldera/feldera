@@ -288,11 +288,6 @@ const CIRCUIT: &str = r#"{
                             "flags": "input"
                         },
                         {
-                            "id": 2,
-                            "layout": 6,
-                            "flags": "input"
-                        },
-                        {
                             "id": 3,
                             "layout": 5,
                             "flags": "output"
@@ -326,27 +321,6 @@ const CIRCUIT: &str = r#"{
                                     }
                                 ],
                                 [
-                                    6,
-                                    {
-                                        "Load": {
-                                            "source": 2,
-                                            "source_layout": 6,
-                                            "column": 0,
-                                            "column_type": "I32"
-                                        }
-                                    }
-                                ],
-                                [
-                                    7,
-                                    {
-                                        "IsNull": {
-                                            "target": 2,
-                                            "target_layout": 6,
-                                            "column": 0
-                                        }
-                                    }
-                                ],
-                                [
                                     8,
                                     {
                                         "Store": {
@@ -369,33 +343,6 @@ const CIRCUIT: &str = r#"{
                                             "column": 0,
                                             "is_null": {
                                                 "Expr": 5
-                                            }
-                                        }
-                                    }
-                                ],
-                                [
-                                    10,
-                                    {
-                                        "Store": {
-                                            "target": 3,
-                                            "target_layout": 5,
-                                            "column": 1,
-                                            "value": {
-                                                "Expr": 6
-                                            },
-                                            "value_type": "I32"
-                                        }
-                                    }
-                                ],
-                                [
-                                    11,
-                                    {
-                                        "SetNull": {
-                                            "target": 3,
-                                            "target_layout": 5,
-                                            "column": 1,
-                                            "is_null": {
-                                                "Expr": 7
                                             }
                                         }
                                     }

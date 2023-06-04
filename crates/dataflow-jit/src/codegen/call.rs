@@ -129,6 +129,8 @@ impl CodegenCtx<'_> {
             "dbsp.math.radians_to_degrees" => self.math_radians_to_degrees(expr_id, call, builder),
             "dbsp.math.degrees_to_radians" => self.math_degrees_to_radians(expr_id, call, builder),
 
+            "dbsp.sql.round" => self.sql_round(expr_id, call, builder),
+
             "dbsp.str.format" => self.format_string(expr_id, call, builder),
             "dbsp.io.str.print" => self.print_string(call, builder),
 
@@ -1200,6 +1202,31 @@ impl CodegenCtx<'_> {
         };
 
         self.add_expr(expr_id, is_negative, ColumnType::Bool, None);
+    }
+
+    fn sql_round(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+        let float = self.value(call.args()[0]);
+        let float_ty = call.arg_types()[0].as_scalar().unwrap();
+        debug_assert!(float_ty.is_float());
+
+        let digits = self.value(call.args()[1]);
+        debug_assert_eq!(builder.value_type(digits), types::I32);
+
+        let rounded = if self.config.string_based_round_function {
+            let intrinsic = if float_ty.is_f32() {
+                "round_sql_float_with_string_f32"
+            } else {
+                debug_assert!(float_ty.is_f64());
+                "round_sql_float_with_string_f64"
+            };
+            let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+
+            builder.call_fn(intrinsic, &[float, digits])
+        } else {
+            self.sql_round_float(float, digits, builder)
+        };
+
+        self.add_expr(expr_id, rounded, float_ty, None);
     }
 
     fn string_parse(&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {

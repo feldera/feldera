@@ -878,4 +878,32 @@ impl CodegenCtx<'_> {
         let quotient = builder.block_params(after_block)[0];
         (quotient, overflowed)
     }
+
+    /// Rounds a floating point value to the given number of digits using scalar
+    /// operations
+    // FIXME: I don't think this is the best way to do this, Materialize does a more
+    // complex song and dance <https://github.com/MaterializeInc/materialize/blob/main/src/expr/src/scalar/func.rs#L382-L428>
+    pub(super) fn sql_round_float(
+        &self,
+        float: Value,
+        digits: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        let (float_ty, digits_ty) = (builder.value_type(float), builder.value_type(digits));
+        debug_assert!(float_ty.is_float());
+        debug_assert_eq!(digits_ty, types::I32);
+
+        // (10 ** digits) as type_of(float)
+        let ten = builder.ins().iconst(digits_ty, 10);
+        let factor = builder.ins().imul(ten, digits);
+        let factor = builder.ins().fcvt_from_uint(float_ty, factor);
+
+        // Multiply by the factor
+        let stretched = builder.ins().fmul(float, factor);
+        // FIXME: Different rounding criteria?
+        let rounded = builder.ins().nearest(stretched);
+
+        // Divide by the factor
+        builder.ins().fdiv(rounded, factor)
+    }
 }
