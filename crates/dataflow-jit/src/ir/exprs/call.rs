@@ -1,9 +1,10 @@
 use crate::ir::{ColumnType, ExprId, LayoutId};
+use derive_more::Unwrap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The type of a function argument
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Unwrap, JsonSchema)]
 pub enum ArgType {
     /// A row type
     Row(LayoutId),

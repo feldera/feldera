@@ -1347,6 +1347,36 @@ impl FunctionValidator {
                 assert_eq!(call.ret_ty(), ColumnType::Unit);
             }
 
+            "dbsp.sql.round" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if !actual_arg_types[0]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_float)
+                {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a float but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                if actual_arg_types[1] != ArgType::Scalar(ColumnType::I32) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be an i32 but instead got {:?}",
+                        actual_arg_types[1],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), actual_arg_types[0].unwrap_scalar());
+            }
+
             unknown => {
                 return Err(ValidationError::UnknownFunction {
                     expr_id,

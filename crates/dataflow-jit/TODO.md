@@ -143,7 +143,6 @@
     - [ ] Least common multiple
     - [ ] Logarithm `x` to base `b`
     - [ ] Power
-    - [ ] Round
     - [ ] `@dbsp.math.sign({int, float}) -> {int, float}`
     - [x] `@dbsp.math.is_sign_positive({int, float}) -> bool`
     - [x] `@dbsp.math.is_sign_negative({int, float}) -> bool`
@@ -186,5 +185,6 @@
     - [x] `@dbsp.math.fdim()` Positive difference between floating point values
     - [x] `@dbsp.math.radians_to_degrees()` Converts radians to degrees
     - [x] `@dbsp.math.degrees_to_radians()` Converts degrees to radians
+    - [x] `@dbsp.sql.round(f32, i32)`/`@dbsp.sql.round(f64, i32)`
   - [ ] `@dbsp.str.format()`
   - [x] `@dbsp.io.str.print()`

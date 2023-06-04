@@ -550,6 +550,9 @@ intrinsics! {
     parse_f64_from_str = fn(ptr, usize, ptr) -> bool,
     parse_bool_from_str = fn(ptr, usize, ptr) -> bool,
 
+    round_sql_float_with_string_f32 = fn(f32, i32) -> f32,
+    round_sql_float_with_string_f64 = fn(f64, i32) -> f64,
+
     // IO
     print_str = fn(ptr, usize),
 }
@@ -1030,7 +1033,7 @@ macro_rules! parse_csv {
                 unsafe extern "C" fn [<csv_get_ $ty>](record: &StringRecord, column: usize) -> $ty {
                     record
                         .get(column)
-                        .and_then(|column| match column.parse() {
+                        .and_then(|value| match lexical::parse(value) {
                             Ok(value) => Some(value),
                             Err(error) => {
                                 tracing::error!(
@@ -1040,7 +1043,7 @@ macro_rules! parse_csv {
                                 None
                             }
                         })
-                        .unwrap_or(<$ty>::default())
+                        .unwrap_or_default()
                 }
 
                 // Returns `true` if the value is null
@@ -1052,7 +1055,7 @@ macro_rules! parse_csv {
                     if let Some(value) = record
                         .get(column)
                         .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
-                        .and_then(|column| match column.parse() {
+                        .and_then(|value| match lexical::parse(value) {
                             Ok(value) => Some(value),
                             Err(error) => {
                                 tracing::error!(
@@ -1081,7 +1084,59 @@ parse_csv! {
     u32, i32,
     u64, i64,
     f32, f64,
-    bool,
+}
+
+unsafe extern "C" fn csv_get_bool(record: &StringRecord, column: usize) -> bool {
+    record
+        .get(column)
+        .and_then(|value| {
+            let value = value.trim();
+
+            if value.eq_ignore_ascii_case("true") {
+                Some(true)
+            } else if value.eq_ignore_ascii_case("false") {
+                Some(false)
+            } else {
+                tracing::error!(
+                    "failed to parse bool from column {column}: {value:?} \
+                    is not a valid bool (expected \"true\" or \"false\")",
+                );
+                None
+            }
+        })
+        .unwrap_or_default()
+}
+
+// Returns `true` if the value is null
+unsafe extern "C" fn csv_get_nullable_bool(
+    record: &StringRecord,
+    column: usize,
+    output: &mut MaybeUninit<bool>,
+) -> bool {
+    if let Some(value) = record
+        .get(column)
+        .filter(|value| !value.trim().eq_ignore_ascii_case("null"))
+        .and_then(|value| {
+            let value = value.trim();
+
+            if value.eq_ignore_ascii_case("true") {
+                Some(true)
+            } else if value.eq_ignore_ascii_case("false") {
+                Some(false)
+            } else {
+                tracing::error!(
+                    "failed to parse nullable bool from column {column}: {value:?} \
+                    is not a valid bool (expected \"true\" or \"false\")",
+                );
+                None
+            }
+        })
+    {
+        output.write(value);
+        false
+    } else {
+        true
+    }
 }
 
 unsafe extern "C" fn csv_get_str(record: &StringRecord, column: usize) -> ThinStr {
@@ -1204,7 +1259,7 @@ macro_rules! parse_from_str {
                 // Returns `true` if an error occurs
                 unsafe extern "C" fn [<parse_ $ty _from_str>](ptr: *const u8, len: usize, output: &mut MaybeUninit<$ty>) -> bool {
                     let string = unsafe { str_from_raw_parts(ptr, len) };
-                    match string.parse::<$ty>() {
+                    match lexical::parse(string) {
                         Ok(value) => {
                             output.write(value);
                             false
@@ -1228,7 +1283,36 @@ parse_from_str! {
     u32, i32,
     u64, i64,
     f32, f64,
-    bool,
+}
+
+// Returns `true` if an error occurs
+// TODO: Should we accept more true and false states other than just `true` and
+// `false`? `1` and `0` maybe? `t` and `f`? `yes` and `no`? `y` and `n`?
+unsafe extern "C" fn parse_bool_from_str(
+    ptr: *const u8,
+    len: usize,
+    output: &mut MaybeUninit<bool>,
+) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len).trim() };
+
+    // true
+    if string.eq_ignore_ascii_case("true") {
+        output.write(true);
+        false
+
+    // false
+    } else if string.eq_ignore_ascii_case("false") {
+        output.write(false);
+        false
+
+    // Invalid bool
+    } else {
+        tracing::error!(
+            "failed to parse bool from string: {string:?} \
+            is not a valid bool (expected \"true\" or \"false\")",
+        );
+        true
+    }
 }
 
 unsafe extern "C" fn print_str(ptr: *const u8, len: usize) {
@@ -1241,5 +1325,29 @@ unsafe extern "C" fn print_str(ptr: *const u8, len: usize) {
 
     if let Err(error) = result {
         tracing::error!("failed to print string: {error}");
+    }
+}
+
+unsafe extern "C" fn round_sql_float_with_string_f32(float: f32, digits: i32) -> f32 {
+    let digits = digits as usize;
+    let formatted = format!("{float:.digits$}");
+    match lexical::parse(formatted) {
+        Ok(float) => float,
+        Err(error) => {
+            tracing::error!("error occurred when rounding {float} to {digits} places: {error}");
+            f32::NAN
+        }
+    }
+}
+
+unsafe extern "C" fn round_sql_float_with_string_f64(float: f32, digits: i32) -> f64 {
+    let digits = digits as usize;
+    let formatted = format!("{float:.digits$}");
+    match lexical::parse(formatted) {
+        Ok(float) => float,
+        Err(error) => {
+            tracing::error!("error occurred when rounding {float} to {digits} places: {error}");
+            f64::NAN
+        }
     }
 }
