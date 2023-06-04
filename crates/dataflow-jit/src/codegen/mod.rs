@@ -48,7 +48,7 @@ use cranelift::{
     },
 };
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{DataContext, DataId, FuncId, Module};
+use cranelift_module::{DataDescription, DataId, FuncId, Module};
 use std::{
     cell::{Ref, RefCell},
     cmp::Ordering,
@@ -93,6 +93,13 @@ pub struct CodegenConfig {
     /// Causes readonly to be transitively applied to any values loaded from
     /// input parameters
     pub propagate_readonly: bool,
+    /// Whether to use string-based rounding for the sql `ROUND()` function
+    ///
+    /// If true, `ROUND()` calls are equivalent to
+    /// `format("{:.1$}", float, precision).parse::<f32>()`. If false, `ROUND()`
+    /// calls are equivalent to a more complex float-based rounding
+    /// procedure
+    pub string_based_round_function: bool,
 }
 
 impl CodegenConfig {
@@ -103,6 +110,7 @@ impl CodegenConfig {
         clif_comments: bool,
         saturating_float_to_int_casts: bool,
         propagate_readonly: bool,
+        string_based_round_function: bool,
     ) -> Self {
         Self {
             debug_assertions,
@@ -111,6 +119,7 @@ impl CodegenConfig {
             clif_comments,
             saturating_float_to_int_casts,
             propagate_readonly,
+            string_based_round_function,
         }
     }
 
@@ -147,6 +156,14 @@ impl CodegenConfig {
         self
     }
 
+    pub const fn with_string_based_round_function(
+        mut self,
+        string_based_round_function: bool,
+    ) -> Self {
+        self.string_based_round_function = string_based_round_function;
+        self
+    }
+
     pub const fn debug() -> Self {
         Self {
             debug_assertions: true,
@@ -155,6 +172,7 @@ impl CodegenConfig {
             clif_comments: true,
             saturating_float_to_int_casts: true,
             propagate_readonly: true,
+            string_based_round_function: false,
         }
     }
 
@@ -166,6 +184,7 @@ impl CodegenConfig {
             clif_comments: false,
             saturating_float_to_int_casts: true,
             propagate_readonly: true,
+            string_based_round_function: false,
         }
     }
 }
@@ -180,7 +199,7 @@ pub struct Codegen {
     layout_cache: NativeLayoutCache,
     module: JITModule,
     module_ctx: Context,
-    data_ctx: DataContext,
+    data_ctx: DataDescription,
     function_ctx: FunctionBuilderContext,
     config: CodegenConfig,
     intrinsics: Intrinsics,
@@ -223,7 +242,7 @@ impl Codegen {
             layout_cache,
             module,
             module_ctx,
-            data_ctx: DataContext::new(),
+            data_ctx: DataDescription::new(),
             function_ctx: FunctionBuilderContext::new(),
             config,
             intrinsics,
@@ -240,7 +259,6 @@ impl Codegen {
         let options = &[
             ("opt_level", "speed"),
             ("enable_simd", "true"),
-            ("use_egraphs", "true"),
             ("unwind_info", "true"),
             ("enable_verifier", "true"),
             ("enable_jump_tables", "true"),
@@ -465,7 +483,7 @@ impl Codegen {
 struct CodegenCtx<'a> {
     config: CodegenConfig,
     module: &'a mut JITModule,
-    data_ctx: &'a mut DataContext,
+    data_ctx: &'a mut DataDescription,
     // TODO: Use an interner
     data: &'a mut HashMap<Box<[u8]>, DataId>,
     layout_cache: NativeLayoutCache,
@@ -486,7 +504,7 @@ impl<'a> CodegenCtx<'a> {
     fn new(
         config: CodegenConfig,
         module: &'a mut JITModule,
-        data_ctx: &'a mut DataContext,
+        data_ctx: &'a mut DataDescription,
         data: &'a mut HashMap<Box<[u8]>, DataId>,
         layout_cache: NativeLayoutCache,
         imports: ImportIntrinsics,

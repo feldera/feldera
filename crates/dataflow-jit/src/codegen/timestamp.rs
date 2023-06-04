@@ -82,7 +82,7 @@ impl CodegenCtx<'_> {
         // };
         let days = {
             let offset = builder.ins().iconst(types::I32, 719_163);
-            let (days, add_overflowed) = builder.ins().iadd_cout(days, offset);
+            let (days, add_overflowed) = builder.ins().sadd_overflow(days, offset);
 
             let days_valid = builder.create_block();
             builder
