@@ -245,10 +245,10 @@ build-manager:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager --no-run
     RUN cargo make -e RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE --cwd crates/pipeline_manager/ openapi_python
-    IF [ -f ./target/debug/dbsp_pipeline_manager ] 
+    IF [ -f ./target/debug/dbsp_pipeline_manager ]
         SAVE ARTIFACT --keep-ts --keep-own ./target/debug/dbsp_pipeline_manager dbsp_pipeline_manager
     END
-    IF [ -f ./target/release/dbsp_pipeline_manager ] 
+    IF [ -f ./target/release/dbsp_pipeline_manager ]
         SAVE ARTIFACT --keep-ts --keep-own ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
     END
     SAVE ARTIFACT --keep-ts --keep-own ./python python
@@ -381,6 +381,13 @@ test-rust:
     BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
+test-sql:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn test
+
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
 # but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
 build-dbsp-manager-container:
@@ -439,4 +446,5 @@ all-tests:
     BUILD +test-rust
     BUILD +test-python
     BUILD +audit
+    BUILD +test-sql
     BUILD +test-docker-compose
