@@ -1422,7 +1422,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// the operator's output.  This enables the construction of feedback loops.
     /// Since all loops in a well-formed circuit must include a [strict
     /// operator](`crate::circuit::operator_traits::StrictOperator`), `operator`
-    /// must be strict.
+    /// must be [strict](`crate::circuit::operator_traits::StrictOperator`).
     ///
     /// Returns the output stream of the operator and an object that can be used
     /// to later connect its input.
@@ -1474,11 +1474,12 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Like `add_feedback`, but additionally makes the output of the operator
     /// available to the parent circuit.
     ///
-    /// Normally a strict operator writes a value computed based on inputs from
-    /// previous clock cycles to its output stream at the start of each new
-    /// clock cycle.  When the local clock epoch ends, the last value
-    /// computed by the operator (that would otherwise be dropped) is
-    /// written to the export stream instead.
+    /// Normally a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`) writes a
+    /// value computed based on inputs from previous clock cycles to its
+    /// output stream at the start of each new clock cycle.  When the local
+    /// clock epoch ends, the last value computed by the operator (that
+    /// would otherwise be dropped) is written to the export stream instead.
     ///
     /// # Examples
     ///
