@@ -53,7 +53,9 @@ pub enum CircuitEvent {
     /// Subregion complete.
     PopRegion,
 
-    /// A new regular (non-strict) operator is added to the circuit.
+    /// A new regular
+    /// (non-[strict](`crate::circuit::operator_traits::StrictOperator`))
+    /// operator is added to the circuit.
     Operator {
         /// Global id of the new operator.
         node_id: GlobalNodeId,
@@ -63,8 +65,8 @@ pub enum CircuitEvent {
         location: OperatorLocation,
     },
 
-    /// The output half of a
-    /// [`StrictOperator`](`crate::circuit::operator_traits::StrictOperator`).
+    /// The output half of a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`).
     /// A strict operator is activated twice in each clock cycle: first, its
     /// output computed based on previous inputs is read; second, a new
     /// input for the current cycle is pushed to the operator.  These

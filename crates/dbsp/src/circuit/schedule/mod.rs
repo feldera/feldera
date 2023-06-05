@@ -54,8 +54,9 @@ impl Display for Error {
 ///
 /// A valid schedule evaluates each node exactly once, after all of its upstream
 /// nodes have been evaluated.  Note that this works for circuits with logical
-/// cycles, as all such cycles must contain a strict operator, which maps into a
-/// pair of source and sink nodes, so that the resulting circuit is still
+/// cycles, as all such cycles must contain a [strict
+/// operator](`crate::circuit::operator_traits::StrictOperator`), which maps
+/// into a pair of source and sink nodes, so that the resulting circuit is still
 /// acyclic and output of the strict operator is evaluated before feed input to
 /// it.  In addition, the scheduler must wait for an async operator to be in a
 /// ready state before evaluating it (see
