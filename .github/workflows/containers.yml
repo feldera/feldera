@@ -6,11 +6,12 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/dbsp-manager
+  DBSP_IMAGE: ghcr.io/${{ github.repository_owner }}/dbsp-manager
+  DEMO_IMAGE: ghcr.io/${{ github.repository_owner }}/demo-container
 
 jobs:
   build-and-push-image:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, skylake40]
     permissions:
       contents: read
       packages: write
@@ -21,32 +22,27 @@ jobs:
         with:
           submodules: true
 
-      - name: Install jq tool
-        run: |
-          sudo apt-get update
-          sudo apt-get install jq
-
-      - name: Build Docker image
-        run: |
-          cd deploy && \
-          docker build -f Dockerfile -t dbspmanager ../ && \
-          docker build -f Dockerfile --target=client -t dbspmanager-dev ../
+      - name: MUIX license
+        run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-ui/.env && cat web-ui/.env
+        env:
+          muix_license: ${{ secrets.muix_license }}
 
       - name: Run integration tests
         run: |
           cd deploy && \
-          bash integration-tests.sh http://dbsp:8080
+          SECOPS_DEMO_ARGS="--prepare-args 500000" docker compose -f docker-compose.yml -f docker-compose-dev.yml --profile demo up --build --force-recreate --exit-code-from demo --renew-anon-volumes
+      # Disable until we bring the Kubernetes workflows up to speed
+      #
+      # - uses: engineerd/setup-kind@v0.5.0
+      #   with:
+      #     version: "v0.11.1"
+      #     skipClusterCreation: "true"
 
-      - uses: engineerd/setup-kind@v0.5.0
-        with:
-          version: "v0.11.1"
-          skipClusterCreation: "true"
+      # - name: Set up kind
+      #   run: cd deploy/kind && ./setup.sh && ./setup.sh
 
-      - name: Set up kind
-        run: cd deploy/kind && ./setup.sh && ./setup.sh
-
-      - name: Deploy DBSP
-        run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
+      # - name: Deploy DBSP
+      #   run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
 
       - name: Log in to the Container registry
         if: github.event_name == 'release'
@@ -56,15 +52,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        if: github.event_name == 'release'
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
       - name: Push Docker image
         if: github.event_name == 'release'
         run: |
-          docker tag dbspmanager ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} && \
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}

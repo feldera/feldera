@@ -6,6 +6,7 @@ that aims to be more expressive and performant than existing streaming engines.
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/dbsp/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
 [![codecov](https://codecov.io/gh/feldera/dbsp/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/dbsp)
+[![nightly](https://github.com/feldera/dbsp/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/dbsp/actions/workflows/containers.yml)
 
 ## DBSP Mission Statement
 
