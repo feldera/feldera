@@ -578,8 +578,14 @@ where
 /// methods.
 ///
 /// The handle provides an API to push updates to the stream in
-/// the form of `(key, value)` tuples.  See
-/// [`add_input_zset`](`RootCircuit::add_input_zset`),
+/// the form of `(key, value)` tuples:
+///
+///    * For `add_input_zset`, the tuples have the form `(key, weight)`.
+///
+///    * For `add_input_indexed_zset`, the tuples have the form `(key, (value,
+///      weight)`).
+///
+/// See [`add_input_zset`](`RootCircuit::add_input_zset`),
 /// [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`) and
 /// documentation for the exact semantics of these updates.
 ///
@@ -742,10 +748,15 @@ impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
 /// methods.
 ///
 /// The handle provides an API to push updates to the stream in
-/// the form of `(key, value)` tuples.  See
-/// [`add_input_set`](`RootCircuit::add_input_set`) and
-/// [`add_input_map`](`RootCircuit::add_input_map`)
-/// documentation for the exact semantics of these updates.
+/// the form of `(key, value)` tuples:
+///
+///    * For `add_input_set`, the tuples have the form `(Key, bool)`.
+///
+///    * For `add_input_map`, the tuples have the form `(Key, Option<Value>)`.
+///
+/// See [`add_input_set`](`RootCircuit::add_input_set`) and
+/// [`add_input_map`](`RootCircuit::add_input_map`) documentation for the exact
+/// semantics of these updates.
 ///
 /// Internally, the handle manages an array of mailboxes, one for
 /// each worker thread. It automatically partitions updates across
