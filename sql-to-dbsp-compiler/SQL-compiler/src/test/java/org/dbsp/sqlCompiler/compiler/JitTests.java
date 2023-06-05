@@ -31,14 +31,6 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
-    public void aggregateDistinctTest() {
-        String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true), new DBSPDoubleLiteral(13.0, true))));
-    }
-
     @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
     public void fullOuterJoinTest() {
         String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
@@ -55,14 +47,6 @@ public class JitTests extends EndToEndTests {
         String query = "SELECT 3 in (SELECT COL5 FROM T)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeBool.NULLABLE_INSTANCE))));
-    }
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
-    public void constAggregateDoubleExpression() {
-        String query = "SELECT 34 / SUM (1), 20 / SUM(2) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(17, true), new DBSPI32Literal(5, true))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")

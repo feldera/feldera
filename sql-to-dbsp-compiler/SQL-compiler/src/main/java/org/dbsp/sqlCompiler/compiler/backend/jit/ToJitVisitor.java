@@ -88,7 +88,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
                     operator.getOutputZSetElementType(), jitVisitor);
             if (operator.function != null) {
                 DBSPExpression func = operator.getFunction();
-                this.function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class));
+                this.function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class), true);
             } else {
                 this.function = null;
             }
@@ -108,14 +108,14 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         return passes;
     }
 
-    JITFunction convertFunction(DBSPClosureExpression function) {
+    JITFunction convertFunction(DBSPClosureExpression function, boolean simpleParameters) {
         Logger.INSTANCE.from(this, 4)
                 .append("Canonicalizing")
                 .newline()
                 .append(function.toString())
                 .newline();
 
-        InnerRewriteVisitor normalizer = this.normalizer(true);
+        InnerRewriteVisitor normalizer = this.normalizer(simpleParameters);
         function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
@@ -337,7 +337,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     @Override
     public boolean preorder(DBSPIndexOperator operator) {
         DBSPExpression func = operator.getFunction();
-        JITFunction function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class));
+        JITFunction function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class), true);
         List<JITOperatorReference> inputs = Linq.map(operator.inputs, i -> new JITOperatorReference(i.id));
 
         JITRowType keyType = this.getTypeCatalog().convertTupleType(operator.keyType, this);
@@ -412,7 +412,10 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         JITFunction stepFn = this.convertStepFunction(closure);
 
         closure = aggregate.getPostprocessing();
-        JITFunction finishFn = this.convertFunction(closure);
+        if (closure.parameters.length != 1)
+            throw new RuntimeException("Expected function to have exactly 1 parameter, not " +
+                    closure.parameters.length);
+        JITFunction finishFn = this.convertFunction(closure, false);
 
         JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
         JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
