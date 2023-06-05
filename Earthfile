@@ -384,8 +384,8 @@ test-rust:
 test-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    RUN apt install graphviz -y
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn test
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
