@@ -64,6 +64,7 @@ import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Pair;
+import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -195,7 +196,7 @@ public class CalciteCompiler implements IModule {
         this.parserConfig = SqlParser.config()
                 .withLex(options.ioOptions.lexicalRules)
                 // Add support for DDL language
-                .withParserFactory(SqlDdlParserImpl.FACTORY)
+                .withParserFactory(DbspParserImpl.FACTORY)
                 // Enable the next to preserve casing.
                 //.withUnquotedCasing(Casing.UNCHANGED)
                 //.withQuotedCasing(Casing.UNCHANGED)
