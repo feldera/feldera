@@ -1,0 +1,106 @@
+# Structure has to follow the fields in Calcite's default_config.fmpp.
+
+data: {
+  parser: {
+    package: "org.dbsp.generated.parser",
+    class: "DbspParserImpl",
+
+    imports: [
+      "org.apache.calcite.schema.ColumnStrategy"
+      "org.apache.calcite.sql.SqlCreate"
+      "org.apache.calcite.sql.SqlDrop"
+      "org.apache.calcite.sql.ddl.SqlDdlNodes"
+    ]
+
+    # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
+    # not a reserved keyword, add it to the 'nonReservedKeywords' section.
+    keywords: [
+      "IF"
+    ]
+
+    # List of keywords from "keywords" section that are not reserved.
+    # We might want the full list from here: https://github.com/apache/calcite/blob/main/core/src/main/codegen/default_config.fmpp
+    nonReservedKeywords: [
+    ]
+
+    # List of non-reserved keywords to add
+    nonReservedKeywordsToAdd: [
+      "IF"
+      # from core
+      "A"
+      "FIRST"
+      "STATE"
+      "TYPE"
+      "NAME"
+      "NAMES"
+      "PATH"
+    ]
+
+    # List of non-reserved keywords to remove;
+    # items in this list become reserved.
+    nonReservedKeywordsToRemove: [
+    ]
+
+    # List of additional join types. Each is a method with no arguments.
+    joinTypes: [
+    ]
+
+    # List of methods for parsing custom SQL statements.
+    # Return type of method implementation should be 'SqlNode'.
+    statementParserMethods: [
+    ]
+
+    # List of methods for parsing custom literals.
+    # Return type of method implementation should be "SqlNode".
+    literalParserMethods: [
+    ]
+
+    # List of methods for parsing custom data types.
+    dataTypeParserMethods: [
+    ]
+
+    # List of methods for parsing builtin function calls.
+    # Return type of method implementation should be "SqlNode".
+    builtinFunctionCallMethods: [
+    ]
+
+    # List of methods for parsing extensions to "ALTER <scope>" calls.
+    # Each must accept arguments "(SqlParserPos pos, String scope)".
+    alterStatementParserMethods: [
+    ]
+
+    # List of methods for parsing extensions to "CREATE [OR REPLACE]" calls.
+    # Each must accept arguments "(SqlParserPos pos, boolean replace)".
+    createStatementParserMethods: [
+      "SqlCreateTable"
+      "SqlCreateView"
+    ]
+
+    # List of methods for parsing extensions to "DROP" calls.
+    # Each must accept arguments "(SqlParserPos pos)".
+    dropStatementParserMethods: [
+    ]
+
+    # Binary operators tokens.
+    binaryOperatorsTokens: [
+    ]
+
+    # Binary operators initialization.
+    extraBinaryExpressions: [
+    ]
+
+    includePosixOperators: false
+    includeCompoundIdentifier: true
+    includeBraces: true
+    includeAdditionalDeclarations: false
+    includeParsingStringLiteralAsArrayLiteral: false
+
+    implementationFiles: [
+      "ddl.ftl"
+    ]
+  }
+}
+
+freemarkerLinks: {
+  includes: includes/
+}
