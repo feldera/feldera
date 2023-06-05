@@ -130,14 +130,14 @@ pub trait Operator: 'static {
     /// documentation for [`is_async`](`Self::is_async`) and
     /// [`ready`](`Self::ready`)) in order to enable dynamic schedulers to
     /// run async operators as they become ready without continuously
-    /// polling them.  It can be invoked at most once per operator; invoking
-    /// it more than once is undefined behavior.
+    /// polling them.  The operator need only support this method being
+    /// called once, to set a single callback.
     ///
     /// Once the callback has been registered, the operator will invoke the
     /// callback at every clock cycle, when the operator becomes ready.
-    /// The callback in invoked with at-least-once semantics, meaning that
+    /// The callback is invoked with at-least-once semantics, meaning that
     /// spurious invocations are possible.  The scheduler must always check
-    /// if the operator is ready ro run by calling [`ready`](`Self::ready`)
+    /// if the operator is ready to run by calling [`ready`](`Self::ready`)
     /// and must be prepared to wait if it returns `false`.
     fn register_ready_callback<F>(&mut self, _cb: F)
     where
@@ -356,7 +356,7 @@ where
     }
 }
 
-/// The output of a strict operator only depends on inputs from previous
+/// A "strict operator" is one whose output only depends on inputs from previous
 /// timestamps and hence can be produced before consuming new inputs.  This way
 /// a strict operator can be used as part of a feedback loop where its output is
 /// needed before input for the current timestamp is available.

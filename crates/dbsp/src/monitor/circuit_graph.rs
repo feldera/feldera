@@ -177,7 +177,8 @@ pub(super) enum NodeKind {
         children: HashMap<NodeId, Node>,
         region: Region,
     },
-    /// The input half of a strict operator.
+    /// The input half of a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`).
     StrictInput { output: NodeId },
     /// The output half of a strict operator.
     StrictOutput,
@@ -268,7 +269,8 @@ impl Node {
         }
     }
 
-    /// `true` if `self` is the input half of a strict operator.
+    /// `true` if `self` is the input half of a [strict
+    /// operator](`crate::circuit::operator_traits::StrictOperator`).
     pub(super) fn is_strict_input(&self) -> bool {
         matches!(self.kind, NodeKind::StrictInput { .. })
     }
