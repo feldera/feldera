@@ -488,7 +488,12 @@ impl<D> StreamValue<D> {
 /// The unit of time in use is relevant only for specifying the width of the
 /// aggregation window, with [`RelRange`].
 ///
-/// The DBSP logical time concept is unrelated to times for rolling aggregation.
+/// The DBSP logical time concept is unrelated to times used in rolling
+/// aggregation and other time-series operators. The former is used to establish
+/// the ordering in which updates are consumed by DBSP, while the latter model
+/// physical times when the corresponding events were generated, observed, or
+/// processed. In particular, the ordering of physical and logical timestamps
+/// doesn't have to match. In other words, DBSP can process events out-of-order.
 ///
 /// Rolling aggregation takes place within a "partition", which is any
 /// convenient division of the data.  It might correspond to a tenant ID, for
