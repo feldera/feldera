@@ -248,7 +248,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         return new DBSPFunction("stream_input", Linq.list(), returnType, block, Linq.list());
     }
 
-    void runBatch(TestStatistics result) {
+    boolean runBatch(TestStatistics result) {
         try {
             DBSPCompiler compiler = new DBSPCompiler(this.compilerOptions);
             final List<ProgramAndTester> codeGenerated = new ArrayList<>();
@@ -273,7 +273,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     result.addFailure(
                             new TestStatistics.FailedTestDescription(testQuery,
                                     "Exception during test", ex, options.verbosity > 0));
-                    return;
+                    return false;
                 }
                 queryNo++;
             }
@@ -296,6 +296,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         } catch (SQLException | IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
+        return true;
     }
 
     ProgramAndTester generateTestCase(
@@ -430,7 +431,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {
                 if (seenQueries) {
-                    this.runBatch(result);
+                    boolean success = this.runBatch(result);
+                    if (options.stopAtFirstError && !success)
+                        return result;
                     remainingInBatch = batchSize;
                     seenQueries = false;
                 }
@@ -466,7 +469,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 this.queriesToRun.add(query);
                 remainingInBatch--;
                 if (remainingInBatch == 0) {
-                    this.runBatch(result);
+                    boolean success = this.runBatch(result);
+                    if (!success && options.stopAtFirstError)
+                        return result;
                     remainingInBatch = batchSize;
                     seenQueries = false;
                 }
@@ -671,6 +676,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.optimizerOptions.incrementalize = incremental.get();
                 compilerOptions.ioOptions.jit = jit.get();
+                compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);

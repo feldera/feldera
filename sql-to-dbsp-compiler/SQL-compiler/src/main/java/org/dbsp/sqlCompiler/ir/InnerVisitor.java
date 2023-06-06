@@ -595,6 +595,11 @@ public abstract class InnerVisitor {
         else return true;
     }
 
+    public boolean preorder(DBSPIndexedZSetLiteral node) {
+        if (this.visitSuper) return this.preorder((DBSPLiteral) node);
+        else return true;
+    }
+
     public boolean preorder(DBSPStrLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
         else return true;
@@ -1056,6 +1061,10 @@ public abstract class InnerVisitor {
     }
 
     public void postorder(DBSPUSizeLiteral node) {
+        if (this.visitSuper) this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPIndexedZSetLiteral node) {
         if (this.visitSuper) this.postorder((DBSPLiteral) node);
     }
 

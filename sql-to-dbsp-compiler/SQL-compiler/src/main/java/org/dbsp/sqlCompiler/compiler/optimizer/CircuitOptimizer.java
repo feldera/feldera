@@ -55,6 +55,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         }
 
         List<CircuitVisitor> passes = new ArrayList<>();
+        passes.add(new PropagateEmptySources(this.getCompiler()));
         passes.add(new OptimizeDistinctVisitor(this.getCompiler()));
         if (this.getCompiler().options.optimizerOptions.incrementalize) {
             passes.add(new IncrementalizeVisitor(this.getCompiler()));
