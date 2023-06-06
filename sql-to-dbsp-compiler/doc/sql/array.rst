@@ -55,4 +55,4 @@ Predefined functions on array values
        future we should probably replace the runtime exception with
        a ``NULL`` result for this case.)
 
-       
+
