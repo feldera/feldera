@@ -25,7 +25,7 @@ use std::{
 };
 
 // We use the `Runtime::local_store` mechanism to connect multiple workers
-// to an `Exchange` instance.  During circuit construction each, worker
+// to an `Exchange` instance.  During circuit construction, each worker
 // allocates a unique id that happens to be the same across all workers.
 // The worker then allocates a new `Exchange` and adds it to the local store
 // using the id as a key.  If there already is an `Exchange` with this id in
