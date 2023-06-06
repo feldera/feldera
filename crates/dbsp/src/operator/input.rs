@@ -589,7 +589,6 @@ where
 /// cycle, the circuit consumes updates buffered in each mailbox,
 /// leaving the mailbox empty.
 pub struct CollectionHandle<K, V> {
-    buffers: Vec<Vec<(K, V)>>,
     input_handle: InputHandle<Vec<(K, V)>>,
     // Used to send tuples to workers in round robin.  Oftentimes the
     // workers will immediately repartition the inputs based on the hash
@@ -604,7 +603,6 @@ where
     V: DBData,
 {
     fn clone(&self) -> Self {
-        // Don't clone buffers.
         Self::new(self.input_handle.clone())
     }
 }
@@ -616,7 +614,6 @@ where
 {
     fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self {
         Self {
-            buffers: vec![Vec::new(); input_handle.0.mailbox.len()],
             input_handle,
             next_worker: AtomicUsize::new(0),
         }
@@ -624,7 +621,7 @@ where
 
     #[inline]
     fn num_partitions(&self) -> usize {
-        self.buffers.len()
+        self.input_handle.0.mailbox.len()
     }
 
     /// Push a single `(key,value)` pair to the input stream.
@@ -663,42 +660,54 @@ where
     /// during subsequent logical clock cycles.
     pub fn append(&mut self, vals: &mut Vec<(K, V)>) {
         let num_partitions = self.num_partitions();
+        let next_worker = if num_partitions > 1 {
+            self.next_worker.load(Ordering::Acquire)
+        } else {
+            0
+        };
 
-        if num_partitions > 1 {
-            let mut next_worker = self.next_worker.load(Ordering::Acquire);
-            let partition_size = vals.len() / num_partitions;
-
-            for worker in 0..num_partitions {
-                if worker == num_partitions - 1 {
-                    self.buffers[next_worker % num_partitions].append(vals);
-                } else {
-                    let len = vals.len();
-                    // Draining from the end should be more efficient as it doesn't
-                    // require memcpy'ing the tail of the vector to the front.
-                    self.buffers[next_worker % num_partitions]
-                        .extend(vals.drain(len - partition_size..));
-                }
-                next_worker += 1;
+        // We divide `val` across `num_partitions` workers as evenly as we can.  The
+        // first `remainder` workers will receive `quotient + 1` values, and the
+        // rest will receive `quotient`.
+        let quotient = vals.len() / num_partitions;
+        let remainder = vals.len() % num_partitions;
+        for i in 0..num_partitions {
+            let mut partition_size = quotient;
+            if i < remainder {
+                partition_size += 1;
             }
-            self.next_worker.store(next_worker, Ordering::Release);
 
-            for worker in 0..num_partitions {
+            let worker = (next_worker + i) % num_partitions;
+            if partition_size == vals.len() {
                 self.input_handle.update_for_worker(worker, |tuples| {
                     if tuples.is_empty() {
-                        *tuples = take(&mut self.buffers[worker]);
+                        *tuples = take(vals);
                     } else {
-                        tuples.append(&mut self.buffers[worker]);
+                        tuples.append(vals);
                     }
-                })
+                });
+                break;
             }
-        } else {
-            self.input_handle.update_for_worker(0, |tuples| {
+
+            // Draining from the end should be more efficient as it doesn't
+            // require memcpy'ing the tail of the vector to the front.
+            let tail = vals.drain(vals.len() - partition_size..);
+            self.input_handle.update_for_worker(worker, |tuples| {
                 if tuples.is_empty() {
-                    *tuples = take(vals);
+                    *tuples = tail.collect();
                 } else {
-                    tuples.append(vals);
+                    tuples.extend(tail);
                 }
             });
+        }
+        assert_eq!(vals.len(), 0);
+
+        // If `remainder` is positive, then the values were not distributed completely
+        // evenly. Advance `self.next_worker` so that the next batch of values
+        // will give extra values to the ones that didn't get extra this time.
+        if remainder > 0 {
+            self.next_worker
+                .store(next_worker + remainder, Ordering::Release);
         }
     }
 
