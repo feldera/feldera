@@ -265,7 +265,7 @@ impl<D> StreamValue<D> {
 /// its side effects, such as printing the data item to stdout.  The `inspect`
 /// operator yields the same stream on its output.
 ///
-/// It is not an operator, but `Circuit::region` can help with debugging by
+/// It is not an operator, but [`Circuit::region`] can help with debugging by
 /// grouping operators into a named collection.
 ///
 /// ## Record-by-record mapping operators
