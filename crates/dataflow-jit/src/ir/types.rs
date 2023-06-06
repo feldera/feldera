@@ -1,6 +1,10 @@
 use crate::{
     codegen::NativeType,
-    ir::{function::InputFlags, LayoutId, RowLayoutCache},
+    ir::{
+        function::InputFlags,
+        pretty::{DocAllocator, DocBuilder, Pretty},
+        LayoutId, RowLayoutCache,
+    },
 };
 use bitvec::vec::BitVec;
 use schemars::JsonSchema;
@@ -168,6 +172,16 @@ impl ColumnType {
 impl Display for ColumnType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.to_str())
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for ColumnType
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_str())
     }
 }
 

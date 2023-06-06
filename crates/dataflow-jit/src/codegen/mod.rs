@@ -22,14 +22,15 @@ use crate::{
         intrinsics::{ImportIntrinsics, Intrinsics},
         layout::MemoryEntry,
         pretty_clif::CommentWriter,
-        utils::FunctionBuilderExt,
+        utils::{column_non_null, FunctionBuilderExt},
     },
     ir::{
         block::ParamType,
         exprs::{
-            ArgType, BinaryOp, BinaryOpKind, Constant, CopyRowTo, Expr, ExprId, IsNull, Load,
+            ArgType, BinaryOp, BinaryOpKind, Constant, CopyRowTo, Drop, Expr, ExprId, IsNull, Load,
             NullRow, RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, Uninit,
         },
+        pretty::{Arena, Pretty, DEFAULT_WIDTH},
         BlockId, Branch, Cast, ColumnType, Copy, Function, InputFlags, LayoutId, RowLayoutCache,
         Signature, Terminator, UninitRow,
     },
@@ -398,6 +399,7 @@ impl Codegen {
                             ctx.constant_expr(expr_id, constant, &mut builder);
                         }
                         Expr::Uninit(uninit) => ctx.uninit(expr_id, uninit, &mut builder),
+                        Expr::Drop(drop) => ctx.drop_expr(drop, &mut builder),
                         Expr::Nop(_) => {}
                     }
                 }
@@ -2245,6 +2247,116 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
+    fn drop_expr(&mut self, drop: &Drop, builder: &mut FunctionBuilder<'_>) {
+        // Only do anything if the value actually needs dropping
+        if !drop.ty().needs_drop(self.layout_cache.row_layout_cache()) {
+            return;
+        }
+
+        let value = self.value(drop.value());
+
+        let drop_inst = match drop.ty() {
+            ArgType::Row(layout) => {
+                debug_assert!(!self.is_readonly(drop.value()));
+
+                let (layout, row_layout) = self.layout_cache.get_layouts(layout);
+
+                let mut first_inst = None;
+                for (idx, (ty, nullable)) in row_layout
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (ty, _))| ty.needs_drop())
+                {
+                    // Strings are the only thing that need dropping right now
+                    debug_assert_eq!(ty, ColumnType::String);
+
+                    let next_drop = if nullable {
+                        // Zero = string isn't null, non-zero = string is null
+                        let string_null = column_non_null(idx, value, &layout, builder, false);
+                        first_inst.get_or_insert_with(|| builder.value_def(string_null));
+
+                        // If the string is null, jump to the `next_drop` block and don't drop
+                        // the current string. Otherwise (if the string isn't null) drop it and
+                        // then continue dropping any other fields
+                        let drop_string = builder.create_block();
+                        let next_drop = builder.create_block();
+                        builder
+                            .ins()
+                            .brif(string_null, next_drop, &[], drop_string, &[]);
+
+                        builder.switch_to_block(drop_string);
+
+                        Some(next_drop)
+                    } else {
+                        None
+                    };
+
+                    // Load the string
+                    let offset = layout.offset_of(idx) as i32;
+                    let native_ty = layout.type_of(idx).native_type(&self.frontend_config());
+                    let flags = MemFlags::trusted();
+                    let string = builder.ins().load(native_ty, flags, value, offset);
+                    first_inst.get_or_insert_with(|| builder.value_def(string));
+
+                    // Drop the string
+                    let string_drop_in_place =
+                        self.imports
+                            .get("string_drop_in_place", self.module, builder.func);
+                    builder.ins().call(string_drop_in_place, &[string]);
+
+                    if let Some(next_drop) = next_drop {
+                        builder.ins().jump(next_drop, &[]);
+                        builder.switch_to_block(next_drop);
+                    }
+                }
+
+                first_inst.expect("already checked for needs_drop")
+            }
+
+            ArgType::Scalar(ty) => self
+                .drop_scalar(value, ty, builder)
+                .expect("already checked for needs_drop"),
+        };
+
+        self.comment(drop_inst, || {
+            let alloc = Arena::<()>::new();
+            let doc = drop.pretty(&alloc, self.layout_cache.row_layout_cache());
+
+            let mut buf = String::new();
+            doc.render_fmt(DEFAULT_WIDTH, &mut buf)
+                .expect("writing to a string can't fail");
+
+            buf
+        });
+    }
+
+    // Drops a scalar value, returns the first instruction in the drop sequence (if the type requires dropping)
+    fn drop_scalar(
+        &mut self,
+        value: Value,
+        ty: ColumnType,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Option<Inst> {
+        if !ty.needs_drop() {
+            tracing::warn!(
+                "dropping scalar value that doesn't need drop: {ty} doesn't need to be dropped",
+            );
+        }
+
+        // Drop strings
+        if let ColumnType::String = ty {
+            let string_drop_in_place =
+                self.imports
+                    .get("string_drop_in_place", self.module, builder.func);
+            Some(builder.ins().call(string_drop_in_place, &[value]))
+
+        // Other scalars don't need dropping
+        } else {
+            debug_assert!(!ty.needs_drop());
+            None
+        }
+    }
+
     fn string_length(
         &self,
         string: Value,
@@ -2353,7 +2465,7 @@ impl<'a> CodegenCtx<'a> {
 
             // Copy data from the static string into the allocated one
             let allocated_ptr = self.string_ptr(allocated, builder);
-            builder.call_memmove(self.frontend_config(), allocated_ptr, string, capacity);
+            builder.call_memcpy(self.frontend_config(), allocated_ptr, string, capacity);
 
             // Set the allocated string's length
             let length_offset = ThinStr::length_offset();

@@ -101,6 +101,8 @@ impl Function {
                     ArgType::Scalar(_) => true,
                 },
 
+                Expr::Drop(drop) => drop.as_scalar().map(|ty| !ty.is_unit()).unwrap_or(true),
+
                 // TODO: Eliminate/evaluate zst binops
                 // Expr::BinOp(binop) if binop.operand_ty().is_unit() =>  {
                 //

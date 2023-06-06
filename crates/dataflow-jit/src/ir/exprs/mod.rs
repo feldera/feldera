@@ -3,6 +3,9 @@ pub mod visit;
 mod binary;
 mod call;
 mod constant;
+mod drop;
+mod mem;
+mod nullish;
 mod select;
 mod unary;
 
@@ -10,10 +13,17 @@ pub use crate::ir::ExprId;
 pub use binary::{BinaryOp, BinaryOpKind};
 pub use call::{ArgType, Call};
 pub use constant::Constant;
+pub use drop::Drop;
+pub use mem::{CopyRowTo, Load, Store};
+pub use nullish::{IsNull, SetNull};
 pub use select::Select;
 pub use unary::{UnaryOp, UnaryOpKind};
 
-use crate::ir::{exprs::visit::MapLayouts, ColumnType, LayoutId};
+use crate::ir::{
+    exprs::visit::MapLayouts,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ColumnType, LayoutId, RowLayoutCache,
+};
 use derive_more::From;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,7 +50,7 @@ pub enum Expr {
     UninitRow(UninitRow),
     Uninit(Uninit),
     Nop(Nop),
-    // Drop(Drop),
+    Drop(Drop),
 }
 
 impl Expr {
@@ -60,6 +70,60 @@ impl Expr {
 
     pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.map_layouts_mut(&mut |layout| *layout = mappings[layout]);
+    }
+
+    /// Returns `true` if the expression "assigns" a value, used for pretty printing
+    pub(crate) fn needs_assign(&self) -> bool {
+        match self {
+            Self::Call(call) => !call.ret_ty().is_unit(),
+
+            Self::Cast(_)
+            | Self::Load(_)
+            | Self::Select(_)
+            | Self::IsNull(_)
+            | Self::BinOp(_)
+            | Self::Copy(_)
+            | Self::UnaryOp(_)
+            | Self::NullRow(_)
+            | Self::Constant(_)
+            | Self::UninitRow(_)
+            | Self::Uninit(_) => true,
+
+            Self::Store(_)
+            | Self::SetNull(_)
+            | Self::CopyRowTo(_)
+            | Self::Nop(_)
+            | Self::Drop(_) => false,
+        }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Expr
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            Expr::Call(call) => call.pretty(alloc, cache),
+            Expr::Cast(cast) => cast.pretty(alloc, cache),
+            Expr::Load(load) => load.pretty(alloc, cache),
+            Expr::Store(store) => store.pretty(alloc, cache),
+            Expr::Select(select) => select.pretty(alloc, cache),
+            Expr::IsNull(is_null) => is_null.pretty(alloc, cache),
+            Expr::BinOp(bin_op) => bin_op.pretty(alloc, cache),
+            Expr::Copy(copy) => copy.pretty(alloc, cache),
+            Expr::UnaryOp(unary_op) => unary_op.pretty(alloc, cache),
+            Expr::NullRow(null_row) => null_row.pretty(alloc, cache),
+            Expr::SetNull(set_null) => set_null.pretty(alloc, cache),
+            Expr::Constant(constant) => constant.pretty(alloc, cache),
+            Expr::CopyRowTo(copy_row_to) => copy_row_to.pretty(alloc, cache),
+            Expr::UninitRow(uninit_row) => uninit_row.pretty(alloc, cache),
+            Expr::Uninit(uninit) => uninit.pretty(alloc, cache),
+            Expr::Nop(nop) => nop.pretty(alloc, cache),
+            Expr::Drop(drop) => drop.pretty(alloc, cache),
+        }
     }
 }
 
@@ -108,6 +172,19 @@ impl From<bool> for RValue {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &RValue
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            RValue::Expr(expr) => expr.pretty(alloc, cache),
+            RValue::Imm(imm) => imm.pretty(alloc, cache),
+        }
+    }
+}
+
 /// No operation
 #[derive(Debug, Clone, From, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
 pub struct Nop;
@@ -115,6 +192,16 @@ pub struct Nop;
 impl Nop {
     pub const fn new() -> Self {
         Self
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Nop
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text("nop")
     }
 }
 
@@ -203,6 +290,24 @@ impl Cast {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Cast
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("cast")
+            .append(alloc.space())
+            .append(self.from.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.value.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(alloc.text("to"))
+            .append(self.to.pretty(alloc, cache))
+    }
+}
+
 /// Copies a value
 ///
 /// For most types this is a noop, however for [`String`] this clones the
@@ -235,262 +340,18 @@ impl Copy {
     }
 }
 
-/// Load a value from the given column of the given row
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct Load {
-    /// The row to load from
-    source: ExprId,
-    /// The layout of the target row
-    source_layout: LayoutId,
-    /// The index of the column to load from
-    column: usize,
-    /// The type of the value being loaded (the type of `source_layout[column]`)
-    column_type: ColumnType,
-}
-
-impl Load {
-    pub fn new(
-        source: ExprId,
-        source_layout: LayoutId,
-        column: usize,
-        column_type: ColumnType,
-    ) -> Self {
-        Self {
-            source,
-            source_layout,
-            column,
-            column_type,
-        }
-    }
-
-    pub const fn source(&self) -> ExprId {
-        self.source
-    }
-
-    pub fn source_mut(&mut self) -> &mut ExprId {
-        &mut self.source
-    }
-
-    pub const fn source_layout(&self) -> LayoutId {
-        self.source_layout
-    }
-
-    pub const fn column(&self) -> usize {
-        self.column
-    }
-
-    pub const fn column_type(&self) -> ColumnType {
-        self.column_type
-    }
-}
-
-/// Store a value to the given column of the given row
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct Store {
-    /// The row to store into
-    target: ExprId,
-    /// The layout of the target row
-    target_layout: LayoutId,
-    /// The index of the column to store to
-    column: usize,
-    /// The value being stored
-    value: RValue,
-    /// The type of the value being stored
-    value_type: ColumnType,
-}
-
-impl Store {
-    pub fn new(
-        target: ExprId,
-        target_layout: LayoutId,
-        column: usize,
-        value: RValue,
-        value_type: ColumnType,
-    ) -> Self {
-        Self {
-            target,
-            target_layout,
-            column,
-            value,
-            value_type,
-        }
-    }
-
-    pub const fn target(&self) -> ExprId {
-        self.target
-    }
-
-    pub fn target_mut(&mut self) -> &mut ExprId {
-        &mut self.target
-    }
-
-    pub const fn target_layout(&self) -> LayoutId {
-        self.target_layout
-    }
-
-    pub const fn column(&self) -> usize {
-        self.column
-    }
-
-    pub const fn value(&self) -> &RValue {
-        &self.value
-    }
-
-    pub fn value_mut(&mut self) -> &mut RValue {
-        &mut self.value
-    }
-
-    pub const fn value_type(&self) -> ColumnType {
-        self.value_type
-    }
-}
-
-/// Checks if the given column of the target row is null
-///
-/// Requires that `column` of the target layout is nullable.
-/// Returns `true` if the `column`-th row of `target` is currently null and
-/// `false` if it's not null
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct IsNull {
-    /// The row we're checking
-    target: ExprId,
-    /// The layout of the target row
-    target_layout: LayoutId,
-    /// The column of `target` to fetch the null-ness of
-    column: usize,
-}
-
-impl IsNull {
-    /// Create a new `IsNull` expression
-    ///
-    /// - `target` must be a readable row type
-    /// - `column` must be a valid column index into `target`
-    pub fn new(target: ExprId, target_layout: LayoutId, column: usize) -> Self {
-        Self {
-            target,
-            target_layout,
-            column,
-        }
-    }
-
-    pub const fn target(&self) -> ExprId {
-        self.target
-    }
-
-    pub fn target_mut(&mut self) -> &mut ExprId {
-        &mut self.target
-    }
-
-    pub const fn target_layout(&self) -> LayoutId {
-        self.target_layout
-    }
-
-    pub const fn column(&self) -> usize {
-        self.column
-    }
-}
-
-/// Sets the nullness of the `column`-th row of the target row
-///
-/// Requires that `column` of the target layout is nullable and that `target` is
-/// writeable. `is_null` determines
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct SetNull {
-    /// The row that's being manipulated
-    target: ExprId,
-    /// The layout of the target row
-    target_layout: LayoutId,
-    /// The column of `target` that we're setting the null flag of
-    column: usize,
-    /// A boolean constant to be stored in `target.column`'s null flag
-    is_null: RValue,
-}
-
-impl SetNull {
-    /// Create a new `SetNull` expression
-    ///
-    /// - `target` must be a writeable row type
-    /// - `column` must be a valid column index into `target`
-    /// - `is_null` must be a boolean value
-    pub fn new(target: ExprId, target_layout: LayoutId, column: usize, is_null: RValue) -> Self {
-        Self {
-            target,
-            target_layout,
-            column,
-            is_null,
-        }
-    }
-
-    /// Gets the target of the `SetNull`
-    pub const fn target(&self) -> ExprId {
-        self.target
-    }
-
-    pub fn target_mut(&mut self) -> &mut ExprId {
-        &mut self.target
-    }
-
-    pub const fn target_layout(&self) -> LayoutId {
-        self.target_layout
-    }
-
-    pub const fn column(&self) -> usize {
-        self.column
-    }
-
-    pub const fn is_null(&self) -> &RValue {
-        &self.is_null
-    }
-
-    pub fn is_null_mut(&mut self) -> &mut RValue {
-        &mut self.is_null
-    }
-}
-
-/// Copies the contents of the source row into the destination row
-///
-/// Both the `src` and `dest` rows must have the same layout.
-///
-/// Semantically equivalent to [`Load`]-ing each column within `src`, calling
-/// [`struct@Copy`] on the loaded value and then [`Store`]-ing the copied value
-/// to `dest` (along with any required [`IsNull`]/[`SetNull`] juggling that has
-/// to be done due to nullable columns)
-// TODO: We need to offer a drop operator of some kind so that rows can be deinitialized if needed
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct CopyRowTo {
-    src: ExprId,
-    dest: ExprId,
-    layout: LayoutId,
-}
-
-impl CopyRowTo {
-    /// Creates a new `CopyRowTo` expression, both `src` and `dest` must be rows
-    /// of `layout`'s layout
-    pub fn new(src: ExprId, dest: ExprId, layout: LayoutId) -> Self {
-        Self { src, dest, layout }
-    }
-
-    /// Returns the source row
-    pub const fn src(&self) -> ExprId {
-        self.src
-    }
-
-    pub fn src_mut(&mut self) -> &mut ExprId {
-        &mut self.src
-    }
-
-    /// Returns the destination row
-    pub const fn dest(&self) -> ExprId {
-        self.dest
-    }
-
-    pub fn dest_mut(&mut self) -> &mut ExprId {
-        &mut self.dest
-    }
-
-    /// Returns the layout of the `src` and `dest` rows
-    pub const fn layout(&self) -> LayoutId {
-        self.layout
+impl<'a, D, A> Pretty<'a, D, A> for &Copy
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("copy")
+            .append(alloc.space())
+            .append(self.value_ty.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.value.pretty(alloc, cache))
     }
 }
 
@@ -515,6 +376,19 @@ impl UninitRow {
     /// Returns the layout of the produced row
     pub const fn layout(&self) -> LayoutId {
         self.layout
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &UninitRow
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("uninit_row")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
     }
 }
 
@@ -546,6 +420,19 @@ impl NullRow {
     /// Returns the layout of the produced row
     pub const fn layout(&self) -> LayoutId {
         self.layout
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &NullRow
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("null")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
     }
 }
 
@@ -586,49 +473,15 @@ impl Uninit {
     }
 }
 
-/// Drops the given scalar or row value
-#[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[allow(dead_code)]
-pub struct Drop {
-    value: ExprId,
-    ty: ArgType,
-}
-
-impl Drop {
-    /// Create a new drop
-    pub fn new(value: ExprId, ty: ArgType) -> Self {
-        Self { value, ty }
-    }
-
-    pub const fn value(&self) -> ExprId {
-        self.value
-    }
-
-    pub fn value_mut(&mut self) -> &mut ExprId {
-        &mut self.value
-    }
-
-    pub const fn ty(&self) -> ArgType {
-        self.ty
-    }
-
-    pub fn ty_mut(&mut self) -> &mut ArgType {
-        &mut self.ty
-    }
-
-    pub const fn is_scalar(&self) -> bool {
-        self.ty.is_scalar()
-    }
-
-    pub const fn is_row(&self) -> bool {
-        self.ty.is_row()
-    }
-
-    pub const fn as_scalar(&self) -> Option<ColumnType> {
-        self.ty.as_scalar()
-    }
-
-    pub const fn as_row(&self) -> Option<LayoutId> {
-        self.ty.as_row()
+impl<'a, D, A> Pretty<'a, D, A> for &Uninit
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("uninit")
+            .append(alloc.space())
+            .append(self.value.pretty(alloc, cache))
     }
 }

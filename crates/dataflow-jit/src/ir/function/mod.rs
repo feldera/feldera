@@ -4,15 +4,18 @@ mod passes;
 
 pub use builder::FunctionBuilder;
 pub use flags::{InputFlags, InvalidInputFlag};
-use schemars::JsonSchema;
 
 use crate::ir::{
-    block::Block, exprs::visit::MutExprVisitor, BlockId, ColumnType, ExprId, LayoutId, Signature,
+    block::Block,
+    exprs::visit::MutExprVisitor,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    BlockId, ColumnType, ExprId, LayoutId, RowLayoutCache, Signature,
 };
 use petgraph::{
     algo::dominators::{self, Dominators},
     prelude::DiGraphMap,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -77,6 +80,53 @@ impl Function {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Function
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("fn")
+            .append(
+                alloc
+                    .intersperse(
+                        self.args.iter().map(|arg| arg.pretty(alloc, cache)),
+                        alloc.text(",").append(alloc.space()),
+                    )
+                    .parens(),
+            )
+            .append(alloc.space())
+            .append(
+                alloc
+                    .text("->")
+                    .append(alloc.space())
+                    .append(self.ret.pretty(alloc, cache))
+                    .group(),
+            )
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(
+                        alloc
+                            .intersperse(
+                                self.blocks.values().map(|block| block.pretty(alloc, cache)),
+                                alloc.hardline().append(alloc.hardline()),
+                            )
+                            .append(if self.blocks.is_empty() {
+                                alloc.nil()
+                            } else {
+                                alloc.hardline()
+                            })
+                            .indent(2),
+                    )
+                    .braces(),
+            )
+    }
+}
+
 impl schemars::JsonSchema for Function {
     fn schema_name() -> String {
         "Function".to_owned()
@@ -132,5 +182,21 @@ pub struct FuncArg {
 impl FuncArg {
     pub const fn new(id: ExprId, layout: LayoutId, flags: InputFlags) -> Self {
         Self { id, layout, flags }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &FuncArg
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text(self.flags.to_str())
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.id.pretty(alloc, cache))
     }
 }

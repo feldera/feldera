@@ -1,4 +1,7 @@
-use crate::ir::{ColumnType, ExprId, LayoutId};
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ColumnType, ExprId, LayoutId, RowLayoutCache,
+};
 use derive_more::Unwrap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -48,11 +51,31 @@ impl ArgType {
             None
         }
     }
+
+    pub fn needs_drop(self, cache: &RowLayoutCache) -> bool {
+        match self {
+            Self::Row(layout) => cache.get(layout).needs_drop(),
+            Self::Scalar(scalar) => scalar.needs_drop(),
+        }
+    }
 }
 
 impl Default for ArgType {
     fn default() -> Self {
         Self::Scalar(ColumnType::Unit)
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for ArgType
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            Self::Row(row) => row.pretty(alloc, cache),
+            Self::Scalar(scalar) => scalar.pretty(alloc, cache),
+        }
     }
 }
 
@@ -122,5 +145,33 @@ impl Call {
 
     pub const fn ret_ty(&self) -> ColumnType {
         self.ret_ty
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Call
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("call")
+            .append(alloc.space())
+            .append(self.ret_ty.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(alloc.text(self.function.clone()))
+            .append(
+                alloc
+                    .intersperse(
+                        self.arg_types.iter().zip(&self.args).map(|(ty, arg)| {
+                            ty.pretty(alloc, cache)
+                                .append(alloc.space())
+                                .append(arg.pretty(alloc, cache))
+                        }),
+                        alloc.text(",").append(alloc.space()),
+                    )
+                    .parens(),
+            )
     }
 }

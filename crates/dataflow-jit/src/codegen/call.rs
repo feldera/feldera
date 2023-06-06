@@ -376,7 +376,7 @@ impl CodegenCtx<'_> {
 
         // Copy over the data into the allocated string
         let allocated_ptr = self.string_ptr(allocated, builder);
-        builder.call_memmove(self.frontend_config(), allocated_ptr, string, new_length);
+        builder.call_memcpy(self.frontend_config(), allocated_ptr, string, new_length);
 
         // Get the offset of the length field
         let length_offset = ThinStr::length_offset();
@@ -589,7 +589,7 @@ impl CodegenCtx<'_> {
         for (idx, (string, length)) in strings.into_iter().zip(lengths).enumerate() {
             // Copy each string into the allocation
             let string_ptr = self.string_ptr(string, builder);
-            builder.call_memmove(self.frontend_config(), target_pointer, string_ptr, length);
+            builder.call_memcpy(self.frontend_config(), target_pointer, string_ptr, length);
 
             if idx + 1 != string_ids.len() {
                 // Advance the pointer
