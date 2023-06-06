@@ -289,6 +289,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                 boolean validateJIT = false;
                 // CompilerOptions compilerOptions = unused.compilerOptions;
                 CompilerOptions compilerOptions = new CompilerOptions();
+                compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
                 DbspJdbcExecutor result = new DbspJdbcExecutor(
                         inner, options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();

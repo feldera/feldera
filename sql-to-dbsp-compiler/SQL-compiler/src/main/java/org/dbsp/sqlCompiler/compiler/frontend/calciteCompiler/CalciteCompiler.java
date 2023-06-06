@@ -52,7 +52,6 @@ import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
-import org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl;
 import org.apache.calcite.sql.type.*;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
@@ -195,13 +194,11 @@ public class CalciteCompiler implements IModule {
         CalciteConnectionConfig connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(options.ioOptions.lexicalRules)
-                // Add support for DDL language
+                // Our own parser factory, which is a blend of DDL and BABEL
                 .withParserFactory(DbspParserImpl.FACTORY)
                 // Enable the next to preserve casing.
                 //.withUnquotedCasing(Casing.UNCHANGED)
                 //.withQuotedCasing(Casing.UNCHANGED)
-                // TODO: would be nice to get DDL and BABEL at the same time...
-                //.withParserFactory(SqlBabelParserImpl.FACTORY)
                 .withConformance(SqlConformanceEnum.LENIENT);
         this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
         this.catalog = new Catalog("schema");

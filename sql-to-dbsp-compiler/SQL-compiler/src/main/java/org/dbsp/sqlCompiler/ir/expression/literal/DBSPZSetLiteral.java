@@ -177,6 +177,10 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         this.zsetType = this.getNonVoidType().to(DBSPTypeZSet.class);
     }
 
+    public DBSPZSetLiteral(DBSPType zsetType) {
+        this(null, zsetType, new Contents(zsetType.to(DBSPTypeZSet.class).elementType));
+    }
+
     public DBSPZSetLiteral(DBSPType weightType, Contents contents) {
         this(null, TypeCompiler.makeZSet(contents.elementType, weightType), contents);
     }
