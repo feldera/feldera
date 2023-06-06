@@ -253,7 +253,7 @@ where
 }
 
 /// The data-type that is persisted as the value in RocksDB.
-#[derive(Debug)]
+#[derive(Debug, Decode, Encode)]
 pub(super) enum PersistedValue<V, T, R>
 where
     V: DBData,
@@ -269,59 +269,9 @@ where
     Tombstone,
 }
 
-/// Decode for [`Self`] is currently implemented manually thanks to a bug in
-/// bincode (enum+generics seems to break things).
-///
-/// See also: https://github.com/bincode-org/bincode/issues/537
-impl<V, T, R> Decode for PersistedValue<V, T, R>
-where
-    V: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
-{
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> core::result::Result<Self, bincode::error::DecodeError> {
-        let typ: u8 = bincode::Decode::decode(decoder)?;
-
-        match typ {
-            0 => Ok(Self::Tombstone),
-            1 => Ok(Self::Values(bincode::Decode::decode(decoder)?)),
-            _ => panic!("Unknown PersistedValue type"),
-        }
-    }
-}
-
-/// Encode for [`Self`] is currently implemented manually thanks to a bug in
-/// bincode (enum+generics seems to break things).
-///
-/// See also: https://github.com/bincode-org/bincode/issues/537
-impl<V, T, R> Encode for PersistedValue<V, T, R>
-where
-    V: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
-{
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), bincode::error::EncodeError> {
-        match self {
-            Self::Tombstone => {
-                bincode::Encode::encode(&0u8, encoder)?;
-            }
-            Self::Values(v) => {
-                bincode::Encode::encode(&1u8, encoder)?;
-                bincode::Encode::encode(v, encoder)?;
-            }
-        }
-        Ok(())
-    }
-}
-
 /// A merge-op is what [`PersistentTrace`] supplies to the RocksDB instance to
 /// indicate how to update the values.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Decode, Encode)]
 enum MergeOp<V, T, R>
 where
     V: DBData,
@@ -332,57 +282,6 @@ where
     RecedeTo(T),
     /// An insertion of a new value or update of an existing value.
     Insert(Values<V, T, R>),
-}
-
-/// Decode for [`Self`] is currently implemented manually thanks to a bug in
-/// bincode (enum+generics seems to break things).
-///
-/// See also: https://github.com/bincode-org/bincode/issues/537
-impl<V, T, R> Decode for MergeOp<V, T, R>
-where
-    V: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
-{
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> core::result::Result<Self, bincode::error::DecodeError> {
-        let typ: u8 = bincode::Decode::decode(decoder)?;
-
-        match typ {
-            0 => Ok(Self::RecedeTo(bincode::Decode::decode(decoder)?)),
-            1 => Ok(Self::Insert(bincode::Decode::decode(decoder)?)),
-            _ => panic!("Unknown MergeOp type"),
-        }
-    }
-}
-
-/// Encode for [`Self`] is currently implemented manually thanks to a bug in
-/// bincode (enum+generics seems to break things).
-///
-/// See also: https://github.com/bincode-org/bincode/issues/537
-impl<V, T, R> Encode for MergeOp<V, T, R>
-where
-    V: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
-{
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), bincode::error::EncodeError> {
-        match self {
-            Self::RecedeTo(t) => {
-                bincode::Encode::encode(&0u8, encoder)?;
-                bincode::Encode::encode(t, encoder)?;
-            }
-            Self::Insert(v) => {
-                bincode::Encode::encode(&1u8, encoder)?;
-                bincode::Encode::encode(v, encoder)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 /// The implementation of the merge operator for the RocksDB instance.
