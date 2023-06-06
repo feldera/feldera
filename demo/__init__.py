@@ -20,13 +20,12 @@ def execute(dbsp_url, actions, name, code_file, make_pipeline_fn, prepare_fn=Non
         print("Preparing...")
         prepare_fn()
 
-    try:
-        if 'run' in actions:
+    if 'run' in actions:
+        try:
             pipeline.run()
             print("Pipeline status: " + str(pipeline.descriptor().status))
             #print("Pipeline stats: " + str(pipeline.stats()))
-    finally:
-        if pipeline:
+        finally:
             pipeline.delete()
             print("Pipeline removed")
 
