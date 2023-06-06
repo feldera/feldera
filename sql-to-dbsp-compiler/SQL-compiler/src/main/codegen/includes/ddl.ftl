@@ -75,13 +75,7 @@ void TableElement(List<SqlNode> list) :
         list.add(id);
     }
 |
-    [ <CONSTRAINT> { s.add(this); } name = SimpleIdentifier() ]
     (
-        <CHECK> { s.add(this); } <LPAREN>
-        e = Expression(ExprContext.ACCEPT_SUB_QUERY) <RPAREN> {
-            list.add(SqlDdlNodes.check(s.end(this), name, e));
-        }
-    |
         <UNIQUE> { s.add(this); }
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.unique(s.end(columnList), name, columnList));
