@@ -21,6 +21,8 @@ where
     /// Apply the [`Plus`] operator to `self` and `other`.
     /// Adding two indexed Z-sets adds the weights of matching key-value pairs.
     ///
+    /// The stream type's addition operation must be commutative.
+    ///
     /// # Examples
     ///
     /// ```
@@ -99,6 +101,8 @@ where
 
 /// Operator that computes the sum of values in its two input streams at each
 /// timestamp.
+///
+/// The stream type's addition operation must be commutative.
 pub struct Plus<D> {
     phantom: PhantomData<D>,
 }
