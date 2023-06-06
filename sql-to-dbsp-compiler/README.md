@@ -18,8 +18,6 @@ working installation of Rust (we recommend using rustup to install:
 current version of the DBSP library sources from github
 (<https://github.com/feldera/dbsp>).
 
-The testing programs use sqllogictest -- see the [section on testing](#testing)
-
 If you want to generate images of the query plans you need
 to also install graphviz as described here <https://graphviz.org/download/>.
 

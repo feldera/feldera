@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -11,9 +12,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
+
+import java.math.BigDecimal;
 
 /**
  * Runs tests using the JIT compiler backend and runtime.
@@ -27,14 +32,6 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
-    public void aggregateDistinctTest() {
-        String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true), new DBSPDoubleLiteral(13.0, true))));
-    }
-
     @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
     public void fullOuterJoinTest() {
         String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
@@ -46,19 +43,13 @@ public class JitTests extends EndToEndTests {
         ));
     }
 
-    @Test @Override @Ignore("Produces incorrect result")
-    public void inTest() {
-        String query = "SELECT 3 in (SELECT COL5 FROM T)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeBool.NULLABLE_INSTANCE))));
-    }
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/189")
-    public void constAggregateDoubleExpression() {
-        String query = "SELECT 34 / SUM (1), 20 / SUM(2) FROM T GROUP BY COL1";
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    public void divZero() {
+        String query = "SELECT 'Infinity' / 0";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPI32Literal(17, true), new DBSPI32Literal(5, true))));
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT_NULLABLE,
+                                null))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
@@ -69,6 +60,24 @@ public class JitTests extends EndToEndTests {
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
                 DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+    }
+
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    public void decimalParse() {
+        String query = "SELECT CAST('0.5' AS DECIMAL)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal("0.5")))));
+    }
+
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    public void decimalParseFail() {
+        String query = "SELECT CAST('blah' AS DECIMAL)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal(0)))));
     }
 
     @Test @Override @Ignore("WINDOWS not yet implemented")

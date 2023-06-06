@@ -26,10 +26,13 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
+
+import java.math.BigDecimal;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
 // using an incremental non-optimized circuit.
@@ -142,6 +145,34 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPTupleExpression(DBSPLiteral.none(
                         DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
     }
+
+    @Test
+    public void decimalParse() {
+        String query = "SELECT CAST('0.5' AS DECIMAL)";
+        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal("0.5")))));
+    }
+
+    @Test
+    public void decimalParseFail() {
+        String query = "SELECT CAST('blah' AS DECIMAL)";
+        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal(0)))));
+    }
+
+    @Test
+    public void divZero() {
+        String query = "SELECT 'Infinity' / 0";
+        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT_NULLABLE,
+                                null))));
+    }
+
 
     @Test @Override
     public void nestedDivTest() {

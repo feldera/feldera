@@ -323,7 +323,11 @@ public class CalciteCompiler implements IModule {
                 CoreRules.JOIN_REDUCE_EXPRESSIONS,
                 CoreRules.WINDOW_REDUCE_EXPRESSIONS,
                 CoreRules.CALC_REDUCE_EXPRESSIONS,
-                CoreRules.CALC_REDUCE_DECIMALS
+                CoreRules.CALC_REDUCE_DECIMALS,
+                CoreRules.FILTER_VALUES_MERGE,
+                CoreRules.PROJECT_FILTER_VALUES_MERGE,
+                CoreRules.PROJECT_VALUES_MERGE,
+                CoreRules.AGGREGATE_VALUES
         );
         // Remove empty collections
         HepProgram removeEmpty = createProgram(

@@ -22,3 +22,39 @@ is when the operation's output does not depend on the ``NaN`` value:
 an example is ``NaN`` raised to the zero power yields one.
 
 In sorting order ``NaN`` is considered greater than all other values.
+
+The legal operations are ``+`` (plus, unary and binary), ``-`` (minus,
+unary and binary), ``*`` (multiplication), ``/`` (division).
+(modulus).
+
+Division or modulus by zero return ``NaN``.
+
+Casting a string to a floating-point value will produce the value
+``0`` when parsing fails.
+
+
+Predefined functions on Floating-point Values
+---------------------------------------------
+
+.. list-table:: Predefined functions on decimal values
+  :header-rows: 1
+
+  * - ``ABS(value)``
+    - absolute value
+  * - ``CEIL(value)``
+    - Ceiling function: nearest integer value greater than or equal to
+      argument (result is a floating point value)
+  * - ``FLOOR(value)``
+    - Floor function: nearest integer value less than or equal to
+      argument (result is a floating point value)
+  * - ``POWER(BASE, EXPONENT)``
+    - The power function, raising ``BASE`` to the power ``EXPONENT``
+  * - ``SQRT(value``
+    - Square root of value.  Produces a runtime error for negative values.
+  * - ``LN(value)``
+    - The natural logarithm of value.  Produces a runtime error for
+      values less than or equal to zero.
+  * - ``LOG10(value)``
+    - The logarithm base 10 of value.  Produces a runtime error for
+      values less than or equal to zero.
+
