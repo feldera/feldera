@@ -566,7 +566,10 @@ where
         // Create a new column family for the Trace
         let cf_name = Uuid::new_v4().to_string();
         let mut cf_options = Options::default();
-        cf_options.set_comparator("Rust type compare", rocksdb_key_comparator::<B::Key>);
+        cf_options.set_comparator(
+            "Rust type compare",
+            Box::new(rocksdb_key_comparator::<B::Key>),
+        );
         cf_options.set_merge_operator_associative(
             "Trace value merge function",
             rocksdb_concat_merge::<B::Key, B::Val, B::R, B::Time>,

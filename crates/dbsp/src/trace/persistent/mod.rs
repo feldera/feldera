@@ -46,7 +46,7 @@ static DB_PATH: Lazy<String> = Lazy::new(|| format!("/tmp/{}.db", Uuid::new_v4()
 
 /// Options for the RocksDB database
 static DB_OPTS: Lazy<Options> = Lazy::new(|| {
-    let cache = Cache::new_lru_cache(DB_DRAM_CACHE_SIZE).expect("Can't create cache for DB");
+    let cache = Cache::new_lru_cache(DB_DRAM_CACHE_SIZE);
     let mut global_opts = Options::default();
     // Create the database file if it's missing (the default behavior)
     global_opts.create_if_missing(true);
