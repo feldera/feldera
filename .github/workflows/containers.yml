@@ -27,10 +27,27 @@ jobs:
         env:
           muix_license: ${{ secrets.muix_license }}
 
+      - name: Docker meta (dbsp-manager)
+        id: meta_dbsp
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DBSP_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+
+      - name: Docker meta (demo-container)
+        id: meta_demo
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DEMO_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+
       - name: Run integration tests
         run: |
           cd deploy && \
           SECOPS_DEMO_ARGS="--prepare-args 500000" docker compose -f docker-compose.yml -f docker-compose-dev.yml --profile demo up --build --force-recreate --exit-code-from demo --renew-anon-volumes
+
       # Disable until we bring the Kubernetes workflows up to speed
       #
       # - uses: engineerd/setup-kind@v0.5.0
@@ -45,14 +62,50 @@ jobs:
       #   run: cd deploy/kind && sleep 60 && kubectl apply -f dbsp-deploy.yml && kubectl wait --for=condition=ready pod -l app=dbsp -n dbsp --timeout=300s
 
       - name: Log in to the Container registry
-        if: github.event_name == 'release'
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Docker image
+      # Push untagged images when the workflow is not triggered by a release
+      - name: Push containers
+        if: github.event_name != 'release'
+        run: docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
+
+      # Tagged DBSP image
+      - name: Push (dbsp-manager)
+        uses: docker/build-push-action@v4
         if: github.event_name == 'release'
-        run: |
-          docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ steps.meta_dbsp.outputs.tags }}
+          labels: ${{ steps.meta_dbsp.outputs.labels }}
+
+      # Tagged demo image
+      - name: Push (demo-container)
+        uses: docker/build-push-action@v4
+        if: github.event_name == 'release'
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: client
+          push: true
+          tags: ${{ steps.meta_demo.outputs.tags }}
+          labels: ${{ steps.meta_demo.outputs.labels }}
+
+      - uses: actions/delete-package-versions@v4
+        with:
+          package-name: dbsp-manager
+          package-type: 'container'
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: 'true'
+
+      - uses: actions/delete-package-versions@v4
+        with:
+          package-name:  demo-container
+          package-type: 'container'
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: 'true'
