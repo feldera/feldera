@@ -4,8 +4,9 @@ import sys
 import subprocess
 
 from dbsp import DBSPPipelineConfig
-from dbsp import CsvInputFormatConfig
+from dbsp import CsvInputFormatConfig, CsvOutputFormatConfig
 from dbsp import KafkaInputConfig
+from dbsp import KafkaOutputConfig
 
 # Import
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".."))
@@ -23,6 +24,10 @@ def prepare(args=[2000000]):
         cmd[2] = os.environ["RUST_BUILD_PROFILE"]
     subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"))
 
+    from plumbum.cmd import rpk
+    rpk['topic', 'delete', 'secops_vulnerability_stats']()
+    rpk['topic', 'create', 'secops_vulnerability_stats',
+        '-c', 'retention.ms=-1', '-c', 'retention.bytes=-1']()
 
 def make_config(project):
     config = DBSPPipelineConfig(project, 8, "SecOps Pipeline")
@@ -67,10 +72,12 @@ def make_config(project):
         ),
         format=CsvInputFormatConfig(),
     )
-    config.add_file_output(
-        stream="K8SCLUSTER_VULNERABILITY_STATS",
-        filepath=os.path.join(SCRIPT_DIR, "k8scluster_vulnerability_stats.csv"),
-        format=CsvInputFormatConfig(),
+    config.add_kafka_output(
+        name='secops_vulnerability_stats',
+        stream='K8SCLUSTER_VULNERABILITY_STATS',
+        config=KafkaOutputConfig.from_dict(
+                {'topic': 'secops_vulnerability_stats'}),
+        format=CsvOutputFormatConfig(),
     )
 
     config.save()
