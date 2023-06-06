@@ -33,7 +33,7 @@ rstest = "0.15"
 hdrhist = "0.5"
 ascii_table = "4.0.2"
 num-format = "0.4.0"
-serde_with = "2.0.1"
+serde_with = "3.0.0"
 indicatif = "0.17.0-rc.11"
 mimalloc-rust-sys = "1.7.2"
 time = { version = "0.3.14", features = [
