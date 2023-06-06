@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres
-    container_name: dbsp-postgres
     restart: always
     environment:
       POSTGRES_PASSWORD: postgres
@@ -19,7 +18,6 @@ services:
     db:
       condition: service_healthy
    stop_grace_period: 0s
-   container_name: dbsp
    environment:
      - RUST_BACKTRACE=1
      - REDPANDA_BROKERS=redpanda:9092
@@ -30,7 +28,7 @@ services:
      - --working-directory=/working-dir
      - --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler
      - --dbsp-override-path=/database-stream-processor
-     - --db-connection-string=postgresql://postgres:postgres@dbsp-postgres:5432
+     - --db-connection-string=postgresql://postgres:postgres@db:5432
 
   redpanda:
     command:
@@ -59,7 +57,6 @@ services:
       # enable logs for debugging.
       # - --default-log-level=debug
     image: docker.redpanda.com/vectorized/redpanda:v22.3.11
-    container_name: redpanda
     ports:
       - 18081:18081
       - 18082:18082
@@ -72,7 +69,6 @@ services:
       dbsp:
         condition: service_started
     image: ghcr.io/feldera/demo-container
-    container_name: demo-container
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
