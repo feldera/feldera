@@ -16,7 +16,7 @@ install-deps:
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
-                              libsasl2-dev docker.io libenchant-2-2
+                              libsasl2-dev docker.io libenchant-2-2 graphviz
     RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
     RUN apt-get install -y
     RUN npm install --global yarn
@@ -403,7 +403,6 @@ test-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    RUN apt install graphviz -y
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn test
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
