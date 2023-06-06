@@ -64,4 +64,4 @@ Predefined functions on Decimal Values
   * - ``LOG10(value)``
     - The logarithm base 10 of value.  Produces a runtime error for
       values less than or equal to zero.
-      
+
