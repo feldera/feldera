@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -36,7 +37,13 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
 
     public DBSPDecimalLiteral(@Nullable Object node, DBSPType type, @Nullable BigDecimal value) {
         super(node, type, value == null);
+        if (!type.is(DBSPTypeDecimal.class))
+            throw new RuntimeException("Decimal literal cannot have type " + type);
         this.value = value;
+    }
+
+    public DBSPDecimalLiteral(DBSPType type, @Nullable BigDecimal value) {
+        this(null, type, value);
     }
 
     @Override

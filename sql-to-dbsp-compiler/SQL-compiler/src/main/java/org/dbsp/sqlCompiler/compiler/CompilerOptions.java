@@ -129,7 +129,7 @@ public class CompilerOptions {
         }
     }
 
-    @Parameter(names = {"-h", "--help", "-"}, help=true, description = "Show this message and exit")
+    @Parameter(names = {"-h", "--help", "-?"}, help=true, description = "Show this message and exit")
     public boolean help;
     @ParametersDelegate
     public IO ioOptions = new IO();

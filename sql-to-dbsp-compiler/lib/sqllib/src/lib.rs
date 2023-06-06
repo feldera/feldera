@@ -8,8 +8,9 @@ pub mod timestamp;
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use geopoint::GeoPoint;
-use num::ToPrimitive;
+use num::{ToPrimitive,Signed};
 use rust_decimal::{Decimal, MathematicalOps};
+use rust_decimal_macros::dec;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Add;
@@ -627,6 +628,24 @@ where
 }
 
 #[inline(always)]
+pub fn truncate_decimal<T>(left: Decimal, right: T) -> Decimal
+where
+    u32: TryFrom<T>,
+    <u32 as TryFrom<T>>::Error: Debug,
+{
+    left.trunc_with_scale(u32::try_from(right).unwrap())
+}
+
+#[inline(always)]
+pub fn truncate_decimalN<T>(left: Option<Decimal>, right: T) -> Option<Decimal>
+where
+    u32: TryFrom<T>,
+    <u32 as TryFrom<T>>::Error: Debug,
+{
+    left.map(|x| truncate_decimal(x, right))
+}
+
+#[inline(always)]
 pub fn times_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
     left * right
 }
@@ -971,3 +990,137 @@ pub fn power_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) ->
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right
 }
+
+//////////////////// floor /////////////////////
+
+#[inline(always)]
+pub fn floor_d(value: F64) -> F64 {
+    F64::new(value.into_inner().floor())
+}
+
+#[inline(always)]
+pub fn floor_dN(value: Option<F64>) -> Option<F64> {
+    value.map(|x| F64::new(x.into_inner().floor()))
+}
+
+#[inline(always)]
+pub fn floor_f(value: F32) -> F32 {
+    F32::new(value.into_inner().floor())
+}
+
+#[inline(always)]
+pub fn floor_fN(value: Option<F32>) -> Option<F32> {
+    value.map(|x| F32::new(x.into_inner().floor()))
+}
+
+#[inline(always)]
+pub fn floor_decimal(value: Decimal) -> Decimal {
+    value.floor()
+}
+
+#[inline(always)]
+pub fn floor_decimalN(value: Option<Decimal>) -> Option<Decimal> {
+    value.map(|x| floor_decimal(x))
+}
+
+//////////////////// ceil /////////////////////
+
+#[inline(always)]
+pub fn ceil_d(value: F64) -> F64 {
+    F64::new(value.into_inner().ceil())
+}
+
+#[inline(always)]
+pub fn ceil_dN(value: Option<F64>) -> Option<F64> {
+    value.map(|x| ceil_d(x))
+}
+
+#[inline(always)]
+pub fn ceil_f(value: F32) -> F32 {
+    F32::new(value.into_inner().ceil())
+}
+
+#[inline(always)]
+pub fn ceil_fN(value: Option<F32>) -> Option<F32> {
+    value.map(|x| ceil_f(x))
+}
+
+#[inline(always)]
+pub fn ceil_decimal(value: Decimal) -> Decimal {
+    value.ceil()
+}
+
+#[inline(always)]
+pub fn ceil_decimalN(value: Option<Decimal>) -> Option<Decimal> {
+    value.map(|x| ceil_decimal(x))
+}
+
+///////////////////// sign //////////////////////
+
+#[inline(always)]
+pub fn sign_d(value: F64) -> F64 {
+    // Rust signum never returns 0
+    let x = value.into_inner();
+    if x == 0f64 { value }
+    else { F64::new(x.signum()) }
+}
+
+#[inline(always)]
+pub fn sign_dN(value: Option<F64>) -> Option<F64> {
+    value.map(|x| sign_d(x))
+}
+
+#[inline(always)]
+pub fn sign_f(value: F32) -> F32 {
+    // Rust signum never returns 0
+    let x = value.into_inner();
+    if x == 0f32 { value }
+    else { F32::new(x.signum()) }
+}
+
+#[inline(always)]
+pub fn sign_fN(value: Option<F32>) -> Option<F32> {
+    value.map(|x| sign_f(x))
+}
+
+#[inline(always)]
+pub fn sign_decimal(value: Decimal) -> Decimal {
+    value.signum()
+}
+
+#[inline(always)]
+pub fn sign_decimalN(value: Option<Decimal>) -> Option<Decimal> {
+    value.map(|x| sign_decimal(x))
+}
+///////////////////// numeric_inc //////////////////////
+
+#[inline(always)]
+pub fn numeric_inc_d(value: F64) -> F64 {
+    F64::new(value.into_inner() + 1f64)
+}
+
+#[inline(always)]
+pub fn numeric_inc_dN(value: Option<F64>) -> Option<F64> {
+    value.map(|x| numeric_inc_d(x))
+}
+
+#[inline(always)]
+pub fn numeric_inc_f(value: F32) -> F32 {
+    F32::new(value.into_inner() + 1f32)
+}
+
+#[inline(always)]
+pub fn numeric_inc_fN(value: Option<F32>) -> Option<F32> {
+    value.map(|x| numeric_inc_f(x))
+}
+
+#[inline(always)]
+pub fn numeric_inc_decimal(value: Decimal) -> Decimal {
+    value + dec!(1)
+}
+
+#[inline(always)]
+pub fn numeric_inc_decimalN(value: Option<Decimal>) -> Option<Decimal> {
+    value.map(|x| numeric_inc_decimal(x))
+}
+

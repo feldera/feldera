@@ -29,11 +29,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.junit.Ignore;
 import org.junit.Test;
+
+import java.math.BigDecimal;
 
 /**
  * Test end-to-end by compiling some DDL statements and view
@@ -448,8 +451,35 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL1 / T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.SIGNED_32.setMayBeNull(true))),
+                        DBSPTypeInteger.NULLABLE_SIGNED_32)),
                 new DBSPTupleExpression(new DBSPI32Literal(10, true))));
+    }
+
+    @Test
+    public void decimalParse() {
+        String query = "SELECT CAST('0.5' AS DECIMAL)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal("0.5")))));
+    }
+
+    @Test
+    public void decimalParseFail() {
+        String query = "SELECT CAST('blah' AS DECIMAL)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                                new BigDecimal(0)))));
+    }
+
+    @Test
+    public void divZero() {
+        String query = "SELECT 'Infinity' / 0";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT_NULLABLE,
+                                null))));
     }
 
     @Test
@@ -457,7 +487,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL5 / T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.SIGNED_32.setMayBeNull(true))),
+                        DBSPTypeInteger.NULLABLE_SIGNED_32)),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true))));
     }
 
