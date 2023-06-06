@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -557,7 +558,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testAdd() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id as ID2, CAST(t1.val + t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id as ID2, "  +
+                "CAST(t1.val + t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected\n" +
                 "    FROM num_result t1, num_exp_add t2\n" +
@@ -568,7 +570,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testRoundAdd() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(round(t1.val + t2.val, 10) AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(round(t1.val + t2.val, 10) AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, round(t2.expected, 10) as expected\n" +
                 "    FROM num_result t1, num_exp_add t2\n" +
@@ -579,7 +582,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testSubtraction() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(t1.val - t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(t1.val - t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected\n" +
                 "    FROM num_result t1, num_exp_sub t2\n" +
@@ -590,7 +594,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testRoundSubtraction() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(ROUND(t1.val - t2.val, 40) AS NUMERIC(" + width + ",10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(ROUND(t1.val - t2.val, 40) AS NUMERIC(" + width + ",10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, round(t2.expected, 40)\n" +
                 "    FROM num_result t1, num_exp_sub t2\n" +
@@ -601,7 +606,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testMultiply() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(t1.val * t2.val AS NUMERIC(" + width + ",10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(t1.val * t2.val AS NUMERIC(" + width + ",10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected\n" +
                 "    FROM num_result t1, num_exp_mul t2\n" +
@@ -612,7 +618,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testRoundMultiply() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(round(t1.val * t2.val, 30) AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(round(t1.val * t2.val, 30) AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, round(t2.expected, 30)\n" +
                 "    FROM num_result t1, num_exp_mul t2\n" +
@@ -623,7 +630,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testDivision() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(t1.val / t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(t1.val / t2.val AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected\n" +
                 "    FROM num_result t1, num_exp_div t2\n" +
@@ -634,7 +642,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test
     public void testDivisionRound() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, CAST(round(t1.val / t2.val, 10) AS NUMERIC(" + width + ", 10)) AS results\n" +
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+                "CAST(round(t1.val / t2.val, 10) AS NUMERIC(" + width + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, round(t2.expected, 10)\n" +
                 "    FROM num_result t1, num_exp_div t2\n" +
@@ -683,7 +692,8 @@ public class PostgresNumericTests extends BaseSQLTests {
 
     @Test @Ignore("This test fails because Postgres has higher precision than we support")
     public void power10Test() {
-        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0, CAST(POWER(10, LN(ABS(round(val,200)))) AS NUMERIC(" +
+        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0, " +
+                "CAST(POWER(10, LN(ABS(round(val,200)))) AS NUMERIC(" +
                 width + ", 10)) AS results\n" +
                 "    FROM num_data\n" +
                 "    WHERE val != '0.0'";
@@ -694,7 +704,7 @@ public class PostgresNumericTests extends BaseSQLTests {
         this.testQuery(intermediate, last);
     }
 
-    DBSPZSetLiteral.Contents parseTable(String table, boolean doubles, DBSPType outputType) {
+    DBSPZSetLiteral.Contents parseTable(String table, DBSPType outputType) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
@@ -715,7 +725,7 @@ public class PostgresNumericTests extends BaseSQLTests {
             for (int i = 0; i < columns.length; i++) {
                 String column = columns[i].trim();
                 DBSPType fieldType = tuple.getFieldType(i);
-                if (doubles) {
+                if (fieldType.is(DBSPTypeFP.class)) {
                     double value = Double.parseDouble(column);
                     values[i] = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
                 } else {
@@ -733,13 +743,13 @@ public class PostgresNumericTests extends BaseSQLTests {
         return result;
     }
 
-    void compare(String query, String expected, boolean doubles) {
+    void compare(String query, String expected) {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPType outputType = circuit.getOutputType(0);
-        DBSPZSetLiteral.Contents result = this.parseTable(expected, doubles, outputType);
+        DBSPZSetLiteral.Contents result = this.parseTable(expected, outputType);
         InputOutputPair streams = new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0],
                 new DBSPZSetLiteral.Contents[] { result }
@@ -751,7 +761,8 @@ public class PostgresNumericTests extends BaseSQLTests {
     public void testSpecialValues() {
         // This test was written with NUMERIC values, but was converted to FP
         String query =
-                "WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
+                "WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE))," +
+                        "(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 + x2 AS s,\n" +
                 "  x1 - x2 AS diff,\n" +
@@ -808,7 +819,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "       NaN |  Infinity |       NaN |       NaN |       NaN\n" +
                 "       NaN | -Infinity |       NaN |       NaN |       NaN\n" +
                 "       NaN |       NaN |       NaN |       NaN |       NaN";
-        this.compare(query, expected, true);
+        this.compare(query, expected);
     }
 
     @Test
@@ -839,14 +850,15 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "       4.2 |         1 |       5.2 |       3.2 |       4.2\n" +
                 "       4.2 |        -1 |       3.2 |       5.2 |      -4.2\n" +
                 "       4.2 |       4.2 |       8.4 |       0.0 |     17.64\n";
-        this.compare(query, expected, false);
+        this.compare(query, expected);
     }
 
     @Test
     public void testSpecialValues2() {
         // no div or mod defined for fp, so I removed these
         String query = "WITH v(x) AS\n" +
-                "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
+                "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE))," +
+                "(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 / x2 AS quot\n" +
                 //"  x1 % x2 AS m,\n" +
@@ -897,7 +909,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "  Infinity |       NaN |                     NaN \n" +
                 " -Infinity |       NaN |                     NaN \n" +
                 "       NaN |       NaN |                     NaN ";
-        this.compare(query, expected, true);
+        this.compare(query, expected);
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5651")
@@ -929,7 +941,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "         1 |       4.2 |  0.23809523809523809524 |  1.0\n" +
                 "        -1 |       4.2 | -0.23809523809523809524 | -1.0\n" +
                 "       4.2 |       4.2 |  1.00000000000000000000 |  0.0\n";
-        this.compare(query, expected, false);
+        this.compare(query, expected);
     }
 
     // We don't support 'Infinity' for Decimal
@@ -966,20 +978,20 @@ public class PostgresNumericTests extends BaseSQLTests {
         // TODO: this test was written with NUMERIC values, but was converted to FP
         String query = "WITH v(x) AS\n" +
                 "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(-7.777E0),(CAST('inf' AS DOUBLE)),(CAST('-inf' AS DOUBLE)),(CAST('nan' AS DOUBLE)))\n" +
-                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x), numeric_inc(x) as inc\n" +
+                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)\n" +
                 "FROM v";
         String expected =
-                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign |    inc    \n" +
-                "-----------+-----------+----------+-----------+-----------+------+-----------\n" +
-                "         0 |         0 |        0 |         0 |         0 |    0 |         1\n" +
-                "         1 |        -1 |        1 |         1 |         1 |    1 |         2\n" +
-                "        -1 |         1 |        1 |        -1 |        -1 |   -1 |         0\n" +
-                "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 |       5.2\n" +
-                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 |    -6.777\n" +
-                "  Infinity | -Infinity | Infinity |  Infinity |  Infinity |    1 |  Infinity\n" +
-                " -Infinity |  Infinity | Infinity | -Infinity | -Infinity |   -1 | -Infinity\n" +
-                "       NaN |       NaN |      NaN |       NaN |       NaN |  NaN |       NaN";
-        this.compare(query, expected, true);
+                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign  \n" +
+                "-----------+-----------+----------+-----------+-----------+-------\n" +
+                "         0 |         0 |        0 |         0 |         0 |    0 \n" +
+                "         1 |        -1 |        1 |         1 |         1 |    1 \n" +
+                "        -1 |         1 |        1 |        -1 |        -1 |   -1 \n" +
+                "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 \n" +
+                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 \n" +
+                "  Infinity | -Infinity | Infinity |  Infinity |  Infinity |    1 \n" +
+                " -Infinity |  Infinity | Infinity | -Infinity | -Infinity |   -1 \n" +
+                "       NaN |       NaN |      NaN |       NaN |       NaN |  NaN ";
+        this.compare(query, expected);
     }
 
     @Test
@@ -987,17 +999,17 @@ public class PostgresNumericTests extends BaseSQLTests {
         // dropped unsupported values inf, nan, etc.
         String query = "WITH v(x) AS\n" +
                 "  (VALUES(0),(1),(-1),(4.2),(-7.777))\n" +
-                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x), numeric_inc(x) as inc\n" +
+                "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)\n" +
                 "FROM v";
         String expected =
-                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign |    inc    \n" +
-                        "-----------+-----------+----------+-----------+-----------+------+-----------\n" +
-                        "         0 |         0 |        0 |         0 |         0 |    0 |         1\n" +
-                        "         1 |        -1 |        1 |         1 |         1 |    1 |         2\n" +
-                        "        -1 |         1 |        1 |        -1 |        -1 |   -1 |         0\n" +
-                        "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 |       5.2\n" +
-                        "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 |    -6.777\n";
-        this.compare(query, expected, false);
+                "     x     |  minusx   |   abs    |   floor   |   ceil    | sign \n" +
+                "-----------+-----------+----------+-----------+-----------+------\n" +
+                "         0 |         0 |        0 |         0 |         0 |    0\n" +
+                "         1 |        -1 |        1 |         1 |         1 |    1\n" +
+                "        -1 |         1 |        1 |        -1 |        -1 |   -1\n" +
+                "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1\n" +
+                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1\n";
+        this.compare(query, expected);
     }
 
     @Test
@@ -1017,6 +1029,70 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "        -1 |        -1 |      -1.0 |        -1 |      -1.0\n" +
                 "       4.2 |         4 |       4.2 |         4 |       4.2\n" +
                 "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7\n";
-        this.compare(query, expected, false);
+        this.compare(query, expected);
+    }
+
+    // -- the large values fall into the numeric abbreviation code's maximal classes
+    //WITH v(x) AS
+    //  (VALUES('0'::numeric),('1'),('-1'),('4.2'),('-7.777'),('1e340'),('-1e340'),
+    //         ('inf'),('-inf'),('nan'),
+    //         ('inf'),('-inf'),('nan'))
+    //SELECT substring(x::text, 1, 32)
+    //FROM v ORDER BY x;
+    //            substring
+    //----------------------------------
+    // -Infinity
+    // -Infinity
+    // -1000000000000000000000000000000
+    // -7.777
+    // -1
+    // 0
+    // 1
+    // 4.2
+    // 10000000000000000000000000000000
+    // Infinity
+    // Infinity
+    // NaN
+    // NaN
+    //(13 rows)
+
+    @Test
+    public void testSqrt() {
+        // Removed 'inf' and 'nan'.
+        // Interestingly, sqrt in Calcite returns a FP value.
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(0),(1),(4.2))\n" +
+                "SELECT x, sqrt(x)\n" +
+                "FROM v";
+        String expected =
+                "    x     |       sqrt        \n" +
+                "----------+-------------------\n" +
+                "        0 | 0.000000000000000\n" +
+                "        1 | 1.000000000000000\n" +
+                "      4.2 | 2.049390153191920\n";
+        this.compare(query, expected);
+    }
+
+    // TODO: Calcite thinks that sqrt(-1) should produce a runtime error
+    // SELECT sqrt('-1'::numeric);
+    //ERROR:  cannot take square root of a negative number
+
+    @Test @Ignore("Waiting for https://issues.apache.org/jira/browse/CALCITE-5651")
+    public void testLog() {
+        // Removed 'inf' and 'nan'
+        // Calcite does not have log
+        String query = "WITH v(x) AS\n" +
+                "  (VALUES(1),(CAST(4.2 AS NUMERIC(" + width + ", 22))))\n" +
+                "SELECT x,\n" +
+                //"  log(x),\n" +
+                "  log10(x),\n" +
+                "  ln(x)\n" +
+                "FROM v";
+        String expected =
+                "    x     |        log         |         ln         \n" +
+                "----------+--------------------+--------------------\n" +
+                "        1 | 0.0000000000000000 | 0.0000000000000000\n" +
+                "      4.2 | 0.6232492903979005 | 1.4350845252893226";
+        this.compare(query, expected);
     }
 }

@@ -694,7 +694,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("| ");
         DBSPType resultType = expression.getResultType();
         if (resultType != null) {
-            this.builder.append("-> ");
+            this.builder.append("-> ").newline();
             resultType.accept(this);
             this.builder.append(" ");
         }

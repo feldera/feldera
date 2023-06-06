@@ -44,3 +44,24 @@ Predefined functions on Decimal Values
   * - ``ROUND(value, digits)``
     - where ``digits`` is an integer value.  Round the value to the
       specified number of *decimal* digits after the decimal point.
+  * - ``ABS(value)``
+    - absolute value
+  * - ``CEIL(value)``
+    - Ceiling function: nearest integer value greater than or equal to
+      argument (result is a decimal value)
+  * - ``FLOOR(value)``
+    - Floor function: nearest integer value less than or equal to
+      argument (result is a decimal value)
+  * - ``SIGN(value)``
+    - The "sign" function: -1, 0, or 1 showing if value is <0, =0, or >0.
+  * - ``POWER(base, exponent)``
+    - The power function, raising base to the power exponent.
+  * - ``SQRT(value``
+    - Square root of value.  Produces a runtime error for negative values.
+  * - ``LN(value)``
+    - The natural logarithm of value.  Produces a runtime error for
+      values less than or equal to zero.
+  * - ``LOG10(value)``
+    - The logarithm base 10 of value.  Produces a runtime error for
+      values less than or equal to zero.
+      
