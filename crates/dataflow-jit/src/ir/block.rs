@@ -1,4 +1,7 @@
-use crate::ir::{BlockId, ColumnType, Expr, ExprId, LayoutId, Terminator};
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    BlockId, ColumnType, Expr, ExprId, LayoutId, RowLayoutCache, Terminator,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +74,56 @@ impl Block {
     #[inline]
     pub fn terminator_mut(&mut self) -> &mut Terminator {
         &mut self.terminator
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Block
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        self.id
+            .pretty(alloc, cache)
+            .append(alloc.intersperse(
+                self.params.iter().map(|(expr, ty)| {
+                    ty.pretty(alloc, cache)
+                        .append(alloc.space())
+                        .append(expr.pretty(alloc, cache))
+                }),
+                alloc.text(",").append(alloc.space()),
+            ))
+            .append(alloc.text(":"))
+            .append(alloc.hardline())
+            .append(
+                alloc
+                    .intersperse(
+                        self.body.iter().map(|(id, expr)| {
+                            if expr.needs_assign() {
+                                id.pretty(alloc, cache)
+                                    .append(alloc.space())
+                                    .append(alloc.text("="))
+                                    .append(alloc.space())
+                                    .append(expr.pretty(alloc, cache))
+                            } else {
+                                expr.pretty(alloc, cache)
+                                    .append(alloc.space())
+                                    .append(alloc.text(";"))
+                                    .append(alloc.space())
+                                    .append(id.pretty(alloc, cache))
+                            }
+                        }),
+                        alloc.hardline(),
+                    )
+                    .append(if self.body.is_empty() {
+                        alloc.nil()
+                    } else {
+                        alloc.hardline()
+                    })
+                    .append(self.terminator.pretty(alloc, cache))
+                    .indent(2),
+            )
     }
 }
 
@@ -243,5 +296,18 @@ impl From<LayoutId> for ParamType {
     #[inline]
     fn from(row: LayoutId) -> Self {
         Self::Row(row)
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for ParamType
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            Self::Row(row) => row.pretty(alloc, cache),
+            Self::Column(column) => column.pretty(alloc, cache),
+        }
     }
 }

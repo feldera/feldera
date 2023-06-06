@@ -1,4 +1,7 @@
-use crate::ir::ColumnType;
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ColumnType, RowLayoutCache,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, mem};
@@ -97,6 +100,41 @@ impl Constant {
             Self::Bool(_) => ColumnType::Bool,
             Self::String(_) => ColumnType::String,
         }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Constant
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        if self.is_unit() {
+            return alloc.text("unit");
+        }
+
+        let value = match self {
+            Constant::U8(u8) => format!("{u8}"),
+            Constant::I8(i8) => format!("{i8}"),
+            Constant::U16(u16) => format!("{u16}"),
+            Constant::I16(i16) => format!("{i16}"),
+            Constant::U32(u32) => format!("{u32}"),
+            Constant::I32(i32) => format!("{i32}"),
+            Constant::U64(u64) => format!("{u64}"),
+            Constant::I64(i64) => format!("{i64}"),
+            Constant::Usize(usize) => format!("{usize}"),
+            Constant::Isize(isize) => format!("{isize}"),
+            Constant::F32(f32) => format!("{f32}"),
+            Constant::F64(f64) => format!("{f64}"),
+            Constant::Bool(bool) => format!("{bool}"),
+            Constant::String(string) => format!("{string:?}"),
+            Constant::Unit => unreachable!("already handled unit"),
+        };
+
+        self.column_type()
+            .pretty(alloc, cache)
+            .append(alloc.space())
+            .append(alloc.text(value))
     }
 }
 

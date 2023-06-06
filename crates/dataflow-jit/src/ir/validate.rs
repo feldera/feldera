@@ -26,6 +26,8 @@ use std::{
     error::Error,
 };
 
+use super::exprs::Drop;
+
 // TODO: Validate block parameters
 
 type ValidationResult<T = ()> = Result<T, ValidationError>;
@@ -532,6 +534,7 @@ impl FunctionValidator {
                     Expr::UninitRow(uninit_row) => self.uninit_row(expr_id, uninit_row)?,
                     Expr::Uninit(uninit) => self.uninit(expr_id, uninit)?,
                     Expr::BinOp(binop) => self.binop(expr_id, binop)?,
+                    Expr::Drop(drop) => self.drop(expr_id, drop)?,
 
                     Expr::UnaryOp(unary) => {
                         let value_ty = self.expr_types.get(&unary.value()).unwrap().unwrap();
@@ -1442,6 +1445,33 @@ impl FunctionValidator {
                 let prev = self.expr_types.insert(expr_id, Ok(lhs_ty));
                 assert!(prev.is_none());
             }
+        }
+
+        Ok(())
+    }
+
+    fn drop(&mut self, expr_id: ExprId, drop: &Drop) -> ValidationResult {
+        if !self.exprs.contains(&drop.value()) {
+            return Err(ValidationError::MissingExpr { expr: drop.value() });
+        }
+
+        let ty = self.expr_types[&drop.value()];
+        match (ty, drop.ty()) {
+            (Ok(ty), ArgType::Scalar(drop_ty)) => {
+                assert_eq!(ty, drop_ty);
+                // TODO: Error
+            }
+
+            (Err(ty), ArgType::Row(drop_ty)) => {
+                assert_eq!(ty, drop_ty);
+                // TODO: Error
+            }
+
+            _ => todo!(
+                "drop {expr_id} got value {} with type {ty:?} but expected {:?}",
+                drop.value(),
+                drop.ty()
+            ),
         }
 
         Ok(())

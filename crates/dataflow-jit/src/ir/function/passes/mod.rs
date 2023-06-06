@@ -12,11 +12,17 @@ use std::{
 };
 
 impl Function {
+    // TODO: Tree shaking to remove unreachable nodes
+    // TODO: Eliminate unused block parameters
+    // TODO: Promote conditional writes to rows to block params
+    // TODO: Remove redundant `Copy`, `Drop` and `Cast` calls
+    // TODO: SROA (Scalar Reification of Aggregates)
+    // TODO: Simplify branching (remove immediate jumps)
+    // TODO: Struct-ify opt passes
     #[tracing::instrument(skip_all)]
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
         self.warn_string_load_store_sequences();
 
-        // self.remove_redundant_casts();
         self.dce();
         self.remove_unit_memory_operations(layout_cache);
         self.deduplicate_input_loads();
@@ -24,10 +30,6 @@ impl Function {
         self.truncate_zero();
         self.concat_empty_strings();
         self.dce();
-        // self.remove_noop_copies(layout_cache)
-        // TODO: Tree shaking to remove unreachable nodes
-        // TODO: Eliminate unused block parameters
-        // TODO: Promote conditional writes to rows to block params
     }
 
     fn warn_string_load_store_sequences(&self) {
@@ -249,6 +251,11 @@ impl Function {
                             used.extend(call.args());
                         }
 
+                        // TODO: Should drop *really* count as a productive use, if all something does is get dropped we don't want to retain it
+                        Expr::Drop(drop) => {
+                            used.insert(drop.value());
+                        }
+
                         // These contain no expressions
                         Expr::NullRow(_)
                         | Expr::Constant(_)
@@ -365,6 +372,8 @@ impl Function {
                         }
                     }
 
+                    Expr::Drop(drop) => remap(drop.value_mut()),
+
                     // Constants contain no expressions
                     Expr::Constant(_) => {}
 
@@ -412,11 +421,6 @@ impl Function {
         }
     }
 
-    #[allow(dead_code)]
-    fn remove_redundant_casts(&mut self) {
-        todo!()
-    }
-
     fn simplify_branches(&mut self) {
         // TODO: Consume const prop dataflow graph and turn conditional branches with
         // constant conditions into unconditional ones
@@ -433,141 +437,6 @@ impl Function {
                 })
             {
                 *block.terminator_mut() = Terminator::Jump(Jump::new(target, params));
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn remove_noop_copies(&mut self, layout_cache: &RowLayoutCache) {
-        let mut scalar_exprs = BTreeSet::new();
-        let mut row_exprs = BTreeMap::new();
-        for arg in &self.args {
-            row_exprs.insert(arg.id, arg.layout);
-        }
-
-        let mut substitutions = BTreeMap::new();
-
-        // FIXME: Doesn't work for back edges/loops
-        let mut stack = vec![self.entry_block];
-        while let Some(block_id) = stack.pop() {
-            let block = self.blocks.get_mut(&block_id).unwrap();
-
-            block.retain(|expr_id, expr| {
-                match expr {
-                    Expr::UninitRow(uninit) => {
-                        row_exprs.insert(expr_id, uninit.layout());
-                    }
-
-                    Expr::NullRow(null) => {
-                        row_exprs.insert(expr_id, null.layout());
-                    }
-
-                    Expr::Constant(constant) => {
-                        if constant.is_unit() || constant.is_bool() || constant.is_int() {
-                            scalar_exprs.insert(expr_id);
-                        }
-                    }
-
-                    Expr::Load(load) => {
-                        let row_layout = row_exprs[&load.source()];
-                        let layout = layout_cache.get(row_layout);
-
-                        if !layout.columns()[load.column()].requires_nontrivial_clone() {
-                            scalar_exprs.insert(expr_id);
-                        }
-                    }
-
-                    Expr::Copy(copy) => {
-                        if scalar_exprs.contains(&copy.value()) {
-                            scalar_exprs.insert(expr_id);
-                            substitutions.insert(expr_id, copy.value());
-                            return false;
-                        }
-                    }
-
-                    Expr::BinOp(binop) => {
-                        if scalar_exprs.contains(&binop.lhs())
-                            || scalar_exprs.contains(&binop.rhs())
-                        {
-                            scalar_exprs.insert(expr_id);
-                        }
-                    }
-
-                    _ => {}
-                }
-
-                true
-            });
-
-            match block.terminator_mut() {
-                Terminator::Return(_) | Terminator::Unreachable => {}
-                Terminator::Jump(jump) => stack.push(jump.target()),
-                Terminator::Branch(branch) => stack.extend([branch.truthy(), branch.falsy()]),
-            }
-        }
-
-        if !substitutions.is_empty() {
-            for block in self.blocks.values_mut() {
-                for (_, expr) in block.body() {
-                    match expr {
-                        Expr::Call(_) => todo!(),
-                        Expr::Load(_) => todo!(),
-                        Expr::Store(_) => todo!(),
-                        Expr::BinOp(_) => todo!(),
-                        Expr::UnaryOp(_) => todo!(),
-                        Expr::IsNull(_) => todo!(),
-                        Expr::Copy(_) => todo!(),
-                        Expr::NullRow(_) => todo!(),
-                        Expr::SetNull(_) => todo!(),
-                        Expr::Constant(_) => {}
-                        Expr::CopyRowTo(_) => todo!(),
-                        Expr::UninitRow(_) => todo!(),
-                        Expr::Cast(_) => todo!(),
-                        Expr::Select(_) => todo!(),
-                        Expr::Uninit(_) => todo!(),
-                        Expr::Nop(_) => todo!(),
-                    }
-                }
-
-                match block.terminator_mut() {
-                    Terminator::Return(ret) => {
-                        if let &RValue::Expr(value) = ret.value() {
-                            if let Some(&subst) = substitutions.get(&value) {
-                                *ret.value_mut() = RValue::Expr(subst);
-                            }
-                        }
-                    }
-
-                    Terminator::Branch(branch) => {
-                        if let &RValue::Expr(value) = branch.cond() {
-                            if let Some(&subst) = substitutions.get(&value) {
-                                *branch.cond_mut() = RValue::Expr(subst);
-                            }
-                        }
-
-                        for param in branch.true_params_mut() {
-                            if let Some(&subst) = substitutions.get(param) {
-                                *param = subst;
-                            }
-                        }
-
-                        for param in branch.false_params_mut() {
-                            if let Some(&subst) = substitutions.get(param) {
-                                *param = subst;
-                            }
-                        }
-                    }
-
-                    Terminator::Jump(jump) => {
-                        for param in jump.params_mut() {
-                            if let Some(&subst) = substitutions.get(param) {
-                                *param = subst;
-                            }
-                        }
-                    }
-
-                    Terminator::Unreachable => {}
-                }
             }
         }
     }

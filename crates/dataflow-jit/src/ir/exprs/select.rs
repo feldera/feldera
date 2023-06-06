@@ -1,4 +1,7 @@
-use crate::ir::ExprId;
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ExprId, RowLayoutCache,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -53,5 +56,27 @@ impl Select {
 
     pub fn if_false_mut(&mut self) -> &mut ExprId {
         &mut self.if_false
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Select
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("select")
+            .append(alloc.space())
+            .append(alloc.text("bool"))
+            .append(alloc.space())
+            .append(self.cond.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(alloc.text("["))
+            .append(self.if_true.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.if_false.pretty(alloc, cache))
+            .append(alloc.text("]"))
     }
 }

@@ -1,4 +1,7 @@
-use crate::ir::{ColumnType, ExprId};
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ColumnType, ExprId, RowLayoutCache,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +55,24 @@ impl BinaryOp {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &BinaryOp
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        self.kind
+            .pretty(alloc, cache)
+            .append(alloc.space())
+            .append(self.operand_ty.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.lhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.rhs.pretty(alloc, cache))
+    }
+}
+
 /// The kind of binary operation being performed
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum BinaryOpKind {
@@ -94,4 +115,40 @@ pub enum BinaryOpKind {
     /// Maximum
     Max,
     // TODO: shr, shl, rotl, rotr, pow
+}
+
+impl BinaryOpKind {
+    pub const fn to_str(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Sub => "sub",
+            Self::Mul => "mul",
+            Self::Div => "div",
+            Self::DivFloor => "div_floor",
+            Self::Rem => "rem",
+            Self::Mod => "mod",
+            Self::ModFloor => "mod_floor",
+            Self::Eq => "eq",
+            Self::Neq => "neq",
+            Self::LessThan => "lt",
+            Self::GreaterThan => "gt",
+            Self::LessThanOrEqual => "le",
+            Self::GreaterThanOrEqual => "ge",
+            Self::And => "and",
+            Self::Or => "or",
+            Self::Xor => "xor",
+            Self::Min => "min",
+            Self::Max => "max",
+        }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for BinaryOpKind
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_str())
+    }
 }

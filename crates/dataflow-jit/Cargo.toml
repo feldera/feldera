@@ -12,14 +12,14 @@ name = "dataflow-jit"
 required-features = ["binary"]
 
 [dependencies]
-anyhow = "1.0.57"
 csv = "1.2.1"
 libm = "0.2.6"
 paste = "1.0.9"
+anyhow = "1.0.57"
+pretty = "0.12.1"
 lexical = "6.1.1"
 size-of = "0.1.4"
 tracing = "0.1.37"
-# pretty = "0.11.3"
 cranelift = "0.96.2"
 enum_dispatch = "0.3.8"
 cranelift-jit = "0.96.2"

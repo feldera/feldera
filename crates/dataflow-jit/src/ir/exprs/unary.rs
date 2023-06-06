@@ -1,4 +1,7 @@
-use crate::ir::{ColumnType, ExprId};
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    ColumnType, ExprId, RowLayoutCache,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +43,21 @@ impl UnaryOp {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &UnaryOp
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        self.kind
+            .pretty(alloc, cache)
+            .append(alloc.space())
+            .append(self.value_ty.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.value.pretty(alloc, cache))
+    }
+}
+
 /// The kind of unary operation being performed
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum UnaryOpKind {
@@ -61,4 +79,37 @@ pub enum UnaryOpKind {
     /// Returns the length of the passed string as a u64
     // TODO: Should we expose `usize` to users?
     StringLen,
+}
+
+impl UnaryOpKind {
+    pub const fn to_str(self) -> &'static str {
+        match self {
+            Self::Abs => "abs",
+            Self::Neg => "neg",
+            Self::Not => "not",
+            Self::Ceil => "ceil",
+            Self::Floor => "floor",
+            Self::Trunc => "trunc",
+            Self::Sqrt => "sqrt",
+            Self::CountOnes => "count_ones",
+            Self::CountZeroes => "count_zeroes",
+            Self::LeadingOnes => "leading_ones",
+            Self::LeadingZeroes => "leading_zeroes",
+            Self::TrailingOnes => "trailing_ones",
+            Self::TrailingZeroes => "trailing_zeroes",
+            Self::BitReverse => "bit_reverse",
+            Self::ByteReverse => "byte_reverse",
+            Self::StringLen => "string_len",
+        }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for UnaryOpKind
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_str())
+    }
 }

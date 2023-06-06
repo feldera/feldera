@@ -1,4 +1,7 @@
-use crate::ir::{BlockId, ExprId, RValue};
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    BlockId, ExprId, RValue, RowLayoutCache,
+};
 use derive_more::From;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -100,6 +103,22 @@ impl Terminator {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Terminator
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            Terminator::Jump(jump) => jump.pretty(alloc, cache),
+            Terminator::Branch(branch) => branch.pretty(alloc, cache),
+            Terminator::Return(ret) => ret.pretty(alloc, cache),
+            Terminator::Unreachable => alloc.text("unreachable"),
+        }
+    }
+}
+
 /// An unconditional branch instruction
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Jump {
@@ -128,6 +147,30 @@ impl Jump {
     /// Returns a mutable reference to the parameters passed by the jump
     pub fn params_mut(&mut self) -> &mut [ExprId] {
         &mut self.params
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Jump
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("jump")
+            .append(alloc.space())
+            .append(self.target.pretty(alloc, cache))
+            .append(if self.params.is_empty() {
+                alloc.nil()
+            } else {
+                alloc
+                    .intersperse(
+                        self.params.iter().map(|param| param.pretty(alloc, cache)),
+                        alloc.text(",").append(alloc.space()),
+                    )
+                    .parens()
+            })
     }
 }
 
@@ -210,6 +253,58 @@ impl Branch {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Branch
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("br")
+            .append(alloc.space())
+            .append(self.cond.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(
+                self.truthy
+                    .pretty(alloc, cache)
+                    .append(if self.true_params.is_empty() {
+                        alloc.nil()
+                    } else {
+                        alloc
+                            .intersperse(
+                                self.true_params
+                                    .iter()
+                                    .map(|param| param.pretty(alloc, cache)),
+                                alloc.text(",").append(alloc.space()),
+                            )
+                            .parens()
+                    })
+                    .group(),
+            )
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(
+                self.falsy
+                    .pretty(alloc, cache)
+                    .append(if self.false_params.is_empty() {
+                        alloc.nil()
+                    } else {
+                        alloc
+                            .intersperse(
+                                self.false_params
+                                    .iter()
+                                    .map(|param| param.pretty(alloc, cache)),
+                                alloc.text(",").append(alloc.space()),
+                            )
+                            .parens()
+                    })
+                    .group(),
+            )
+    }
+}
+
 /// Returns a value from the current function
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Return {
@@ -230,5 +325,19 @@ impl Return {
     /// Gets a mutable reference to the value this instruction will return
     pub fn value_mut(&mut self) -> &mut RValue {
         &mut self.value
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Return
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("ret")
+            .append(alloc.space())
+            .append(self.value.pretty(alloc, cache))
     }
 }

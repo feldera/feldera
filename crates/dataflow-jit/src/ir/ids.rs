@@ -1,5 +1,9 @@
 //! Defines id types used within the jit
 
+use crate::ir::{
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    RowLayoutCache,
+};
 use schemars::{
     schema::{InstanceType, Metadata, NumberValidation, Schema, SchemaObject},
     JsonSchema,
@@ -189,4 +193,44 @@ create_ids! {
     BlockId  = "bb",
     /// The id of a layout
     LayoutId = "layout",
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for NodeId
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_string())
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for ExprId
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_string())
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for BlockId
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, _cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(self.to_string())
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for LayoutId
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(cache.get(self).to_string())
+    }
 }
