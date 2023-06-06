@@ -1,5 +1,6 @@
+pub use pretty::{termcolor, Arena, DocAllocator, DocBuilder};
+
 use crate::ir::RowLayoutCache;
-pub use pretty::{Arena, DocAllocator, DocBuilder};
 
 /// The default rendering width to use, 80 characters
 pub const DEFAULT_WIDTH: usize = 80;
