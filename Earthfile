@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install --yes sudo
 WORKDIR /dbsp
 ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
-ENV PATH=$HOME/.cargo/bin:$PATH
+# Adds python and rust binaries to thep path
+ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.69.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 
@@ -15,7 +16,7 @@ install-deps:
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
-                              libsasl2-dev docker.io
+                              libsasl2-dev docker.io libenchant-2-2
     RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
     RUN apt-get install -y
     RUN npm install --global yarn
@@ -42,6 +43,13 @@ install-rust:
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
+
+install-python-deps:
+    FROM +install-deps
+    COPY sql-to-dbsp-compiler/doc/requirements.txt requirements-sql-doc.txt
+    RUN pip3 install -r requirements-sql-doc.txt
+    COPY demo/demo_notebooks/requirements.txt requirements-dbsp-demo.txt
+    RUN pip3 install -r requirements-dbsp-demo.txt
 
 build-webui-deps:
     FROM +install-deps
@@ -262,8 +270,18 @@ build-sql:
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
     COPY --keep-ts crates crates
+
+    CACHE /root/.m2
+    COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
+
+build-sql-docs:
+    FROM +install-python-deps
+    COPY sql-to-dbsp-compiler/doc/ sql-to-dbsp-compiler/doc/
+    RUN doc8 --ignore-path _build --max-line-length 120 .
+    RUN cd sql-to-dbsp-compiler/doc/ && sphinx-build -M html "." "_build"
+    SAVE ARTIFACT sql-to-dbsp-compiler/doc/_build/html AS LOCAL sql-docs
 
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
