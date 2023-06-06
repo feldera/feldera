@@ -72,7 +72,7 @@ impl Expr {
         self.map_layouts_mut(&mut |layout| *layout = mappings[layout]);
     }
 
-    /// Returns `true` if the expression "assigns" a value, used for pretty printing
+    /// Returns `true` if the expression "assigns" a value, used for pretty
     pub(crate) fn needs_assign(&self) -> bool {
         match self {
             Self::Call(call) => !call.ret_ty().is_unit(),

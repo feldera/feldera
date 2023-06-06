@@ -16,7 +16,6 @@ csv = "1.2.1"
 libm = "0.2.6"
 paste = "1.0.9"
 anyhow = "1.0.57"
-pretty = "0.12.1"
 lexical = "6.1.1"
 size-of = "0.1.4"
 tracing = "0.1.37"
@@ -33,6 +32,9 @@ xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 cranelift-codegen = { version = "0.96.2", features = ["unwind"] }
 petgraph = { version = "0.6.2", features = ["graphmap", "serde-1"] }
 bincode = { version = "2.0.0-rc.2", features = ["serde"] }
+
+# TODO: Make this optional
+pretty = { version = "0.12.1", features = ["termcolor"] }
 
 # JSON schema validation
 # TODO: Feature-gate schema support
@@ -73,6 +75,7 @@ features = ["winnt"]
 
 [dev-dependencies]
 proptest = "1.0.0"
+is-terminal = "0.4.7"
 num-integer = "0.1.45"
 proptest-derive = "0.3.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }

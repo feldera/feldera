@@ -97,14 +97,16 @@ where
                     )
                     .parens(),
             )
-            .append(alloc.space())
-            .append(
+            .append(if self.ret.is_unit() {
+                alloc.nil()
+            } else {
                 alloc
-                    .text("->")
+                    .space()
+                    .append(alloc.text("->"))
                     .append(alloc.space())
                     .append(self.ret.pretty(alloc, cache))
-                    .group(),
-            )
+                    .group()
+            })
             .append(alloc.space())
             .append(
                 alloc

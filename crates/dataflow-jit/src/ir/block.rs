@@ -86,14 +86,20 @@ where
     fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
         self.id
             .pretty(alloc, cache)
-            .append(alloc.intersperse(
-                self.params.iter().map(|(expr, ty)| {
-                    ty.pretty(alloc, cache)
-                        .append(alloc.space())
-                        .append(expr.pretty(alloc, cache))
-                }),
-                alloc.text(",").append(alloc.space()),
-            ))
+            .append(if self.params.is_empty() {
+                alloc.nil()
+            } else {
+                alloc
+                    .intersperse(
+                        self.params.iter().map(|(expr, ty)| {
+                            ty.pretty(alloc, cache)
+                                .append(alloc.space())
+                                .append(expr.pretty(alloc, cache))
+                        }),
+                        alloc.text(",").append(alloc.space()),
+                    )
+                    .parens()
+            })
             .append(alloc.text(":"))
             .append(alloc.hardline())
             .append(

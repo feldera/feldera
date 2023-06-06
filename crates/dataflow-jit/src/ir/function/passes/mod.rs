@@ -4,6 +4,7 @@ use crate::ir::{
     exprs::{visit::MapExprIds, ArgType, Call, Nop},
     function::FuncArg,
     layout_cache::RowLayoutCache,
+    pretty::{Arena, Pretty},
     ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Terminator,
 };
 use std::{
@@ -21,6 +22,12 @@ impl Function {
     // TODO: Struct-ify opt passes
     #[tracing::instrument(skip_all)]
     pub fn optimize(&mut self, layout_cache: &RowLayoutCache) {
+        let arena = Arena::<()>::new();
+        tracing::trace!(
+            "Pre-opt:\n{}",
+            Pretty::pretty(&*self, &arena, layout_cache).pretty(80),
+        );
+
         self.warn_string_load_store_sequences();
 
         self.dce();
@@ -30,6 +37,11 @@ impl Function {
         self.truncate_zero();
         self.concat_empty_strings();
         self.dce();
+
+        tracing::trace!(
+            "Post-opt:\n{}",
+            Pretty::pretty(&*self, &arena, layout_cache).pretty(80),
+        );
     }
 
     fn warn_string_load_store_sequences(&self) {
