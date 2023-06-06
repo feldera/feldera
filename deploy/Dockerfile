@@ -73,7 +73,7 @@ FROM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update && apt install build-essential pkg-config \
      # cmake is needed by rdkafka
-     cmake \ 
+     cmake \
      python3-pip python3-plumbum \
      curl unzip -y
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
@@ -91,7 +91,7 @@ RUN rm dbsp_pipeline_manager
 RUN pip3 install openapi-python-client websockets
 RUN cd python &&  \
     openapi-python-client generate --path ../openapi.json && \
-    pip3 install ./dbsp-api-client && \ 
+    pip3 install ./dbsp-api-client && \
     pip3 install .
 # TODO: only required for running the fraud detection demo. Remove when we clean that up.
 RUN pip3 install gdown
