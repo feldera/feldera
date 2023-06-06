@@ -100,6 +100,7 @@ public class RustFileWriter implements ICompilerComponent {
                     "    },\n" +
                     "    trace::ord::{OrdIndexedZSet, OrdZSet},\n" +
                     "    zset,\n" +
+                    "    indexed_zset,\n" +
                     "    DBWeight,\n" +
                     "    DBData,\n" +
                     "    DBSPHandle,\n" +

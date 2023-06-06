@@ -243,6 +243,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public boolean preorder(DBSPIndexedZSetLiteral literal) {
+        this.builder.append("indexed_zset!(")
+                .append(")");
+        return false;
+    }
+
+    @Override
     public boolean preorder(DBSPFloatLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);

@@ -123,8 +123,11 @@ public class CompilerMessages {
 
     void reportError(Error message) {
         this.messages.add(message);
-        if (!message.warning)
+        if (!message.warning) {
             this.setExitCode(1);
+            if (this.compiler.options.optimizerOptions.throwOnError)
+                throw new RuntimeException(message.toString());
+        }
     }
 
     public void reportError(SourcePositionRange range, boolean warning,
