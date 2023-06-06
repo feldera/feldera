@@ -111,7 +111,7 @@ pub trait Timestamp:
     /// Advance `self` by one clock tick by incrementing the clock at the
     /// specified nesting level by one, while resetting all clocks at deeper
     /// nesting levels to `0`. `scope` identifies the nesting level of the
-    /// circuit whoce clock is ticking.  `0` refers to the innermost
+    /// circuit whose clock is ticking.  `0` refers to the innermost
     /// circuit.  `1` is its parent circuit, etc. Returns the most accurate
     /// approximation of the new timestamp value supported by this time
     /// representation.
