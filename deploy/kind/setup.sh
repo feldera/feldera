@@ -1,5 +1,6 @@
 #!/bin/sh
 
+set -e
 
 #### Refresh kind
 kind delete cluster
