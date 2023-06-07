@@ -1,7 +1,7 @@
 //! This module contains the [`RowLayoutCache`] which allows us to only perform
 //! fairly expensive layout calculations once for each layout
 
-use crate::ir::{types::RowLayout, LayoutId};
+use crate::ir::{row_layout::RowLayout, LayoutId};
 use std::{
     cell::{Ref, RefCell},
     fmt::{self, Debug},

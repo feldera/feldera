@@ -1,83 +1,9 @@
 use crate::ir::{
     pretty::{DocAllocator, DocBuilder, Pretty},
-    ColumnType, ExprId, LayoutId, RowLayoutCache,
+    ColumnType, ExprId, RowLayoutCache, RowOrScalar,
 };
-use derive_more::Unwrap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-/// The type of a function argument
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Unwrap, JsonSchema)]
-pub enum ArgType {
-    /// A row type
-    Row(LayoutId),
-    /// A scalar value's type
-    Scalar(ColumnType),
-}
-
-impl ArgType {
-    /// Returns `true` if the arg type is a [`Row`].
-    ///
-    /// [`Row`]: ArgType::Row
-    #[must_use]
-    #[inline]
-    pub const fn is_row(&self) -> bool {
-        matches!(self, Self::Row(..))
-    }
-
-    /// Returns `true` if the arg type is a [`Scalar`].
-    ///
-    /// [`Scalar`]: ArgType::Scalar
-    #[must_use]
-    #[inline]
-    pub const fn is_scalar(&self) -> bool {
-        matches!(self, Self::Scalar(..))
-    }
-
-    #[inline]
-    pub const fn as_row(self) -> Option<LayoutId> {
-        if let Self::Row(layout) = self {
-            Some(layout)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub const fn as_scalar(self) -> Option<ColumnType> {
-        if let Self::Scalar(scalar) = self {
-            Some(scalar)
-        } else {
-            None
-        }
-    }
-
-    pub fn needs_drop(self, cache: &RowLayoutCache) -> bool {
-        match self {
-            Self::Row(layout) => cache.get(layout).needs_drop(),
-            Self::Scalar(scalar) => scalar.needs_drop(),
-        }
-    }
-}
-
-impl Default for ArgType {
-    fn default() -> Self {
-        Self::Scalar(ColumnType::Unit)
-    }
-}
-
-impl<'a, D, A> Pretty<'a, D, A> for ArgType
-where
-    A: 'a,
-    D: DocAllocator<'a, A> + ?Sized,
-{
-    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
-        match self {
-            Self::Row(row) => row.pretty(alloc, cache),
-            Self::Scalar(scalar) => scalar.pretty(alloc, cache),
-        }
-    }
-}
 
 /// The call instruction, calls a function
 ///
@@ -102,7 +28,7 @@ pub struct Call {
     /// The arguments passed to the function
     args: Vec<ExprId>,
     /// The types of each argument
-    arg_types: Vec<ArgType>,
+    arg_types: Vec<RowOrScalar>,
     /// The function's return type
     // FIXME: Could return a row type as well
     ret_ty: ColumnType,
@@ -112,7 +38,7 @@ impl Call {
     pub fn new(
         function: String,
         args: Vec<ExprId>,
-        arg_types: Vec<ArgType>,
+        arg_types: Vec<RowOrScalar>,
         ret_ty: ColumnType,
     ) -> Self {
         Self {
@@ -135,11 +61,11 @@ impl Call {
         &mut self.args
     }
 
-    pub fn arg_types(&self) -> &[ArgType] {
+    pub fn arg_types(&self) -> &[RowOrScalar] {
         &self.arg_types
     }
 
-    pub fn arg_types_mut(&mut self) -> &mut Vec<ArgType> {
+    pub fn arg_types_mut(&mut self) -> &mut Vec<RowOrScalar> {
         &mut self.arg_types
     }
 

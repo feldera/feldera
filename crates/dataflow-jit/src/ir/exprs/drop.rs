@@ -1,5 +1,5 @@
 use crate::ir::{
-    exprs::{ArgType, ExprId},
+    exprs::{ExprId, RowOrScalar},
     pretty::{DocAllocator, DocBuilder, Pretty},
     ColumnType, LayoutId, RowLayoutCache,
 };
@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 #[allow(dead_code)]
 pub struct Drop {
     value: ExprId,
-    ty: ArgType,
+    ty: RowOrScalar,
 }
 
 impl Drop {
     /// Create a new drop
-    pub fn new(value: ExprId, ty: ArgType) -> Self {
+    pub fn new(value: ExprId, ty: RowOrScalar) -> Self {
         Self { value, ty }
     }
 
@@ -30,11 +30,11 @@ impl Drop {
         &mut self.value
     }
 
-    pub const fn ty(&self) -> ArgType {
+    pub const fn ty(&self) -> RowOrScalar {
         self.ty
     }
 
-    pub fn ty_mut(&mut self) -> &mut ArgType {
+    pub fn ty_mut(&mut self) -> &mut RowOrScalar {
         &mut self.ty
     }
 

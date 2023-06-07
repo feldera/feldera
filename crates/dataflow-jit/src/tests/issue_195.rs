@@ -2,7 +2,7 @@ use crate::{
     codegen::CodegenConfig,
     facade::Demands,
     ir::{
-        exprs::{ArgType, Call},
+        exprs::{Call, RowOrScalar},
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,
         ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
@@ -42,7 +42,7 @@ fn issue_195() {
             let mut target_string = builder.add_expr(Call::new(
                 "dbsp.str.with.capacity".into(),
                 vec![capacity],
-                vec![ArgType::Scalar(ColumnType::Usize)],
+                vec![RowOrScalar::Scalar(ColumnType::Usize)],
                 ColumnType::String,
             ));
 
@@ -64,7 +64,10 @@ fn issue_195() {
                 let string = builder.add_expr(Call::new(
                     "dbsp.str.write".into(),
                     vec![target_string, value],
-                    vec![ArgType::Scalar(ColumnType::String), ArgType::Scalar(ty)],
+                    vec![
+                        RowOrScalar::Scalar(ColumnType::String),
+                        RowOrScalar::Scalar(ty),
+                    ],
                     ColumnType::String,
                 ));
 
@@ -72,8 +75,8 @@ fn issue_195() {
                     "dbsp.str.write".into(),
                     vec![string, space],
                     vec![
-                        ArgType::Scalar(ColumnType::String),
-                        ArgType::Scalar(ColumnType::String),
+                        RowOrScalar::Scalar(ColumnType::String),
+                        RowOrScalar::Scalar(ColumnType::String),
                     ],
                     ColumnType::String,
                 ));
@@ -84,7 +87,7 @@ fn issue_195() {
             builder.add_expr(Call::new(
                 "dbsp.io.str.print".into(),
                 vec![target_string],
-                vec![ArgType::Scalar(ColumnType::String)],
+                vec![RowOrScalar::Scalar(ColumnType::String)],
                 ColumnType::Unit,
             ));
 

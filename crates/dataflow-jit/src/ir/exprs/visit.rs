@@ -1,7 +1,7 @@
 use crate::ir::{
     exprs::{
-        ArgType, BinaryOp, Call, Cast, Constant, Copy, CopyRowTo, Drop, Expr, IsNull, Load, Nop,
-        NullRow, Select, SetNull, Store, UnaryOp, Uninit, UninitRow,
+        BinaryOp, Call, Cast, Constant, Copy, CopyRowTo, Drop, Expr, IsNull, Load, Nop, NullRow,
+        RowOrScalar, Select, SetNull, Store, UnaryOp, Uninit, UninitRow,
     },
     ExprId, LayoutId, RValue,
 };
@@ -142,7 +142,7 @@ where
 
     fn visit_call(&mut self, call: &Call) {
         for arg in call.arg_types() {
-            if let ArgType::Row(layout) = *arg {
+            if let RowOrScalar::Row(layout) = *arg {
                 (self.map_layout)(layout);
             }
         }
@@ -183,14 +183,14 @@ where
 
     fn visit_call(&mut self, call: &mut Call) {
         for arg in call.arg_types_mut() {
-            if let ArgType::Row(layout) = arg {
+            if let RowOrScalar::Row(layout) = arg {
                 (self.map_layout)(layout);
             }
         }
     }
 
     fn visit_uninit(&mut self, uninit: &mut Uninit) {
-        if let ArgType::Row(layout) = uninit.value_mut() {
+        if let RowOrScalar::Row(layout) = uninit.value_mut() {
             (self.map_layout)(layout);
         }
     }

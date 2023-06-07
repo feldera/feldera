@@ -336,7 +336,7 @@ mod tests {
             Codegen, CodegenConfig,
         },
         ir::{
-            exprs::{ArgType, Call},
+            exprs::{Call, RowOrScalar},
             ColumnType, FunctionBuilder, RowLayoutBuilder, RowLayoutCache,
         },
         utils,
@@ -442,7 +442,7 @@ mod tests {
             let div = builder.add_expr(Call::new(
                 "dbsp.timestamp.year".into(),
                 vec![timestamp],
-                vec![ArgType::Scalar(ColumnType::Timestamp)],
+                vec![RowOrScalar::Scalar(ColumnType::Timestamp)],
                 ColumnType::I64,
             ));
             builder.store(output, 0, div);
@@ -515,7 +515,7 @@ mod tests {
             let div = builder.add_expr(Call::new(
                 "dbsp.timestamp.year".into(),
                 vec![timestamp],
-                vec![ArgType::Scalar(ColumnType::Timestamp)],
+                vec![RowOrScalar::Scalar(ColumnType::Timestamp)],
                 ColumnType::I64,
             ));
             builder.store(output, 0, div);

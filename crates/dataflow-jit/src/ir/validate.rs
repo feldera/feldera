@@ -1,7 +1,7 @@
 use crate::{
     codegen::TRIG_INTRINSICS,
     ir::{
-        exprs::ArgType,
+        exprs::RowOrScalar,
         exprs::{
             BinaryOp, BinaryOpKind, Cast, Constant, Expr, ExprId, IsNull, Load, NullRow, RValue,
             SetNull, Store, UnaryOpKind, Uninit, UninitRow,
@@ -846,12 +846,12 @@ impl FunctionValidator {
 
     fn uninit(&mut self, expr_id: ExprId, uninit: &Uninit) -> ValidationResult {
         match uninit.value() {
-            ArgType::Row(layout) => {
+            RowOrScalar::Row(layout) => {
                 self.expr_row_mutability.insert(expr_id, true);
                 self.expr_types.insert(expr_id, Err(layout));
             }
 
-            ArgType::Scalar(scalar_ty) => self.add_column_expr(expr_id, scalar_ty),
+            RowOrScalar::Scalar(scalar_ty) => self.add_column_expr(expr_id, scalar_ty),
         }
 
         Ok(())
@@ -876,8 +876,8 @@ impl FunctionValidator {
             .iter()
             .map(|&arg| {
                 Ok(match self.expr_type(arg)? {
-                    Ok(scalar) => ArgType::Scalar(scalar),
-                    Err(layout) => ArgType::Row(layout),
+                    Ok(scalar) => RowOrScalar::Scalar(scalar),
+                    Err(layout) => RowOrScalar::Row(layout),
                 })
             })
             .collect::<ValidationResult<Vec<_>>>()?;
@@ -908,7 +908,7 @@ impl FunctionValidator {
                 }
 
                 let vec_layout = self.layout_cache.row_vector();
-                if actual_arg_types[0] != ArgType::Row(vec_layout) {
+                if actual_arg_types[0] != RowOrScalar::Row(vec_layout) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be vec layout {vec_layout} but instead got {:?}",
                         actual_arg_types[0],
@@ -932,14 +932,14 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
                     );
                 }
 
-                if actual_arg_types[1] != ArgType::Scalar(ColumnType::Usize) {
+                if actual_arg_types[1] != RowOrScalar::Scalar(ColumnType::Usize) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
                         actual_arg_types[1],
@@ -959,14 +959,14 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
                     );
                 }
 
-                if actual_arg_types[1] != ArgType::Scalar(ColumnType::Usize) {
+                if actual_arg_types[1] != RowOrScalar::Scalar(ColumnType::Usize) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
                         actual_arg_types[1],
@@ -986,7 +986,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
@@ -1007,7 +1007,7 @@ impl FunctionValidator {
                 }
 
                 for (idx, arg) in actual_arg_types.iter().enumerate() {
-                    if arg != &ArgType::Scalar(ColumnType::String) {
+                    if arg != &RowOrScalar::Scalar(ColumnType::String) {
                         todo!(
                             "mismatched argument type in {expr_id}, argument {idx} should be a string but instead got {:?}",
                             arg,
@@ -1028,7 +1028,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
@@ -1054,7 +1054,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
@@ -1074,7 +1074,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, argument 0 should be a string but instead got {:?}",
                         actual_arg_types[0],
@@ -1118,7 +1118,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Timestamp) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
                         actual_arg_types[0],
@@ -1136,7 +1136,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Timestamp) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
                         actual_arg_types[0],
@@ -1154,7 +1154,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Timestamp) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Timestamp) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a timestamp but instead got {:?}",
                         actual_arg_types[0],
@@ -1189,7 +1189,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Date) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Date) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a date but instead got {:?}",
                         actual_arg_types[0],
@@ -1207,7 +1207,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Date) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Date) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a date but instead got {:?}",
                         actual_arg_types[0],
@@ -1320,7 +1320,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::Usize) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Usize) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a usize but instead got {:?}",
                         actual_arg_types[0],
@@ -1340,7 +1340,7 @@ impl FunctionValidator {
                     });
                 }
 
-                if actual_arg_types[0] != ArgType::Scalar(ColumnType::String) {
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
                         actual_arg_types[0],
@@ -1370,7 +1370,7 @@ impl FunctionValidator {
                     );
                 }
 
-                if actual_arg_types[1] != ArgType::Scalar(ColumnType::I32) {
+                if actual_arg_types[1] != RowOrScalar::Scalar(ColumnType::I32) {
                     todo!(
                         "mismatched argument type in {expr_id}, should be an i32 but instead got {:?}",
                         actual_arg_types[1],
@@ -1457,12 +1457,12 @@ impl FunctionValidator {
 
         let ty = self.expr_types[&drop.value()];
         match (ty, drop.ty()) {
-            (Ok(ty), ArgType::Scalar(drop_ty)) => {
+            (Ok(ty), RowOrScalar::Scalar(drop_ty)) => {
                 assert_eq!(ty, drop_ty);
                 // TODO: Error
             }
 
-            (Err(ty), ArgType::Row(drop_ty)) => {
+            (Err(ty), RowOrScalar::Row(drop_ty)) => {
                 assert_eq!(ty, drop_ty);
                 // TODO: Error
             }
