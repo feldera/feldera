@@ -258,7 +258,6 @@ pub(crate) struct ProgramDescr {
 pub(crate) enum PipelineStatus {
     Shutdown,
     Deployed,
-    FailedToDeploy,
     Running,
     Paused,
     // Failure isn't in-use yet -- we don't have failure detection.
@@ -271,7 +270,6 @@ impl TryFrom<String> for PipelineStatus {
         match value.as_str() {
             "shutdown" => Ok(Self::Shutdown),
             "deployed" => Ok(Self::Deployed),
-            "failedtodeploy" => Ok(Self::FailedToDeploy),
             "running" => Ok(Self::Running),
             "paused" => Ok(Self::Paused),
             "failed" => Ok(Self::Failed),
@@ -285,7 +283,6 @@ impl From<PipelineStatus> for &'static str {
         match val {
             PipelineStatus::Shutdown => "shutdown",
             PipelineStatus::Deployed => "deployed",
-            PipelineStatus::FailedToDeploy => "failedtodeploy",
             PipelineStatus::Running => "running",
             PipelineStatus::Paused => "paused",
             PipelineStatus::Failed => "failed",

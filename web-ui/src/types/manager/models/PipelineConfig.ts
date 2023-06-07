@@ -41,7 +41,7 @@ export type PipelineConfig = {
   /**
    * Pipeline name
    */
-  name?: string
+  name?: string | null
   /**
    * Output endpoint configuration.
    */

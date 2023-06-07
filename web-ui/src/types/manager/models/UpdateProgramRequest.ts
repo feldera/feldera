@@ -12,7 +12,7 @@ export type UpdateProgramRequest = {
    * New SQL code for the program or `None` to keep existing program
    * code unmodified.
    */
-  code?: string
+  code?: string | null
   /**
    * New description for the program.
    */

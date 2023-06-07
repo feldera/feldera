@@ -20,7 +20,7 @@ export class PipelineService {
    * @returns PipelineDescr Pipeline descriptor retrieved successfully.
    * @throws ApiError
    */
-  public static pipelineStatus(id?: string, name?: string): CancelablePromise<PipelineDescr> {
+  public static pipelineStatus(id?: string | null, name?: string | null): CancelablePromise<PipelineDescr> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/pipeline',

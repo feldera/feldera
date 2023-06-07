@@ -12,7 +12,7 @@ export type FileInputConfig = {
    * Default: when this parameter is not specified, a platform-specific
    * default is used.
    */
-  buffer_size_bytes?: number
+  buffer_size_bytes?: number | null
   /**
    * Enable file following.
    *

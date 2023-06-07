@@ -16,7 +16,7 @@ export type NewPipelineRequest = {
   /**
    * Attached connectors.
    */
-  connectors?: Array<AttachedConnector>
+  connectors?: Array<AttachedConnector> | null
   /**
    * Config description.
    */
@@ -25,5 +25,5 @@ export type NewPipelineRequest = {
    * Config name.
    */
   name: string
-  program_id?: ProgramId
+  program_id?: ProgramId | null
 }

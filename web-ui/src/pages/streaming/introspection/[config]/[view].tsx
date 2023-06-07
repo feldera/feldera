@@ -56,7 +56,7 @@ const IntrospectInputOutput = () => {
     }
   }, [pipelineId, setPipelineId, config, view, setViewName])
 
-  const configQuery = useQuery<PipelineDescr>(['configStatus', { config_id: pipelineId }], {
+  const configQuery = useQuery<PipelineDescr>(['pipelineStatus', { pipeline_id: pipelineId }], {
     enabled: pipelineId !== undefined
   })
   useEffect(() => {
