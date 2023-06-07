@@ -399,7 +399,7 @@ impl ErrorResponse {
 }
 
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
-    debug!("Received {:?}", error);
+    debug!("Returning HTTP error: {:?}", error);
     if let Some(db_error) = error.downcast_ref::<DBError>() {
         let message = db_error.to_string();
         match db_error {
@@ -904,7 +904,7 @@ async fn do_delete_program(
 }
 
 /// Request to create a new program configuration.
-#[derive(Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct NewPipelineRequest {
     /// Config name.
     name: String,
@@ -945,6 +945,7 @@ async fn new_pipeline(
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewPipelineRequest>,
 ) -> impl Responder {
+    debug!("Received new-pipeline request: {request:?}");
     state
         .db
         .lock()
