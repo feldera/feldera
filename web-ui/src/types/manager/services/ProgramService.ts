@@ -24,7 +24,7 @@ export class ProgramService {
    * @returns ProgramDescr Program status retrieved successfully.
    * @throws ApiError
    */
-  public static programStatus(id?: string, name?: string): CancelablePromise<ProgramDescr> {
+  public static programStatus(id?: string | null, name?: string | null): CancelablePromise<ProgramDescr> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/program',

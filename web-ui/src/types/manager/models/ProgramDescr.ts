@@ -50,7 +50,7 @@ export type ProgramDescr = {
    * }
    * ```
    */
-  schema?: string
+  schema?: string | null
   status: ProgramStatus
   version: Version
 }
