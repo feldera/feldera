@@ -25,8 +25,12 @@ type ExtendedAppProps = AppProps & {
 }
 
 LicenseInfo.setLicenseKey(process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset')
-const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-OpenAPI.BASE = origin
+OpenAPI.BASE =
+  typeof window !== 'undefined' && window.location.origin
+    ? window.location.origin == 'http://localhost:3000'
+      ? 'http://localhost:8080'
+      : window.location.origin
+    : ''
 
 const clientSideEmotionCache = createEmotionCache()
 
