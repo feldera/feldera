@@ -986,13 +986,19 @@ impl Storage for ProjectDB {
             .pool
             .get()
             .await?
-            .query_one(
+            .query_opt(
                 "SELECT is_input FROM attached_connector WHERE name = $1 AND pipeline_id = $2 AND tenant_id = $3",
                 &[&name, &pipeline_id.0, &tenant_id.0],
             )
             .await?;
 
-        Ok(row.get(0))
+        match row {
+            Some(row) => Ok(row.get(0)),
+            None => Err(anyhow!(DBError::UnknownAttachedConnector(
+                pipeline_id,
+                name.to_string()
+            ))),
+        }
     }
 
     async fn set_pipeline_deployed(
