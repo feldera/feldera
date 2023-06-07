@@ -13,7 +13,7 @@ export type UpdatePipelineRequest = {
   /**
    * New config YAML. If absent, existing YAML will be kept unmodified.
    */
-  config?: string
+  config?: string | null
   /**
    * Attached connectors.
    *
@@ -22,7 +22,7 @@ export type UpdatePipelineRequest = {
    * - If present all existing connectors will be replaced with the new
    * specified list.
    */
-  connectors?: Array<AttachedConnector>
+  connectors?: Array<AttachedConnector> | null
   /**
    * New config description.
    */
@@ -32,5 +32,5 @@ export type UpdatePipelineRequest = {
    */
   name: string
   pipeline_id: PipelineId
-  program_id?: ProgramId
+  program_id?: ProgramId | null
 }

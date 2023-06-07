@@ -11,7 +11,7 @@ export type UpdateConnectorRequest = {
   /**
    * New config YAML. If absent, existing YAML will be kept unmodified.
    */
-  config?: string
+  config?: string | null
   connector_id: ConnectorId
   /**
    * New connector description.

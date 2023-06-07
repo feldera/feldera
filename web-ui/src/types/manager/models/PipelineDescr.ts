@@ -14,12 +14,12 @@ import type { Version } from './Version'
 export type PipelineDescr = {
   attached_connectors: Array<AttachedConnector>
   config: string
-  created?: string
+  created?: string | null
   description: string
   name: string
   pipeline_id: PipelineId
   port: number
-  program_id?: ProgramId
+  program_id?: ProgramId | null
   status: PipelineStatus
   version: Version
 }

@@ -12,7 +12,10 @@ import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 import {
   ConnectorService,
+  PipelineDescr,
+  PipelineId,
   PipelineService,
+  PipelineStatus,
   ProgramCodeResponse,
   ProgramDescr,
   ProgramService,
@@ -72,6 +75,31 @@ export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: Updat
       }
     })
   )
+}
+
+// Updates the query cache for a pipeline status change.
+export const pipelineStatusQueryCacheUpdate = (
+  queryClient: QueryClient,
+  pipeline_id: PipelineId,
+  newStatus: PipelineStatus
+) => {
+  queryClient.setQueryData(['pipeline'], (oldData: PipelineDescr[] | undefined) =>
+    oldData?.map((config: PipelineDescr) => {
+      if (config.pipeline_id === pipeline_id) {
+        return { ...config, status: newStatus }
+      } else {
+        return config
+      }
+    })
+  )
+  queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipeline_id }], (oldData: PipelineDescr | undefined) => {
+    return oldData
+      ? {
+          ...oldData,
+          ...{ status: newStatus }
+        }
+      : oldData
+  })
 }
 
 export const defaultQueryFn = async (context: QueryFunctionContext) => {

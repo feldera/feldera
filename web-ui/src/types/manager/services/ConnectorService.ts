@@ -20,7 +20,7 @@ export class ConnectorService {
    * @returns ConnectorDescr connector status retrieved successfully.
    * @throws ApiError
    */
-  public static connectorStatus(id?: string, name?: string): CancelablePromise<ConnectorDescr> {
+  public static connectorStatus(id?: string | null, name?: string | null): CancelablePromise<ConnectorDescr> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/connector',

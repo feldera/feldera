@@ -228,7 +228,7 @@ impl LocalRunner {
                 self.db
                     .lock()
                     .await
-                    .set_pipeline_status(pipeline_id, PipelineStatus::FailedToDeploy)
+                    .set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
                     .await?;
                 Err(e)
             }
