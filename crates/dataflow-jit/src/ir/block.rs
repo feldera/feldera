@@ -1,6 +1,6 @@
 use crate::ir::{
     pretty::{DocAllocator, DocBuilder, Pretty},
-    BlockId, ColumnType, Expr, ExprId, LayoutId, RowLayoutCache, Terminator,
+    BlockId, Expr, ExprId, RowLayoutCache, RowOrScalar, Terminator,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ pub struct Block {
     id: BlockId,
     /// The parameters passed to this basic block
     #[serde(default)]
-    params: Vec<(ExprId, ParamType)>,
+    params: Vec<(ExprId, RowOrScalar)>,
     /// The ids of all expressions within the block
     body: Vec<(ExprId, Expr)>,
     /// The block's terminator
@@ -31,13 +31,13 @@ impl Block {
 
     /// Returns the block's parameters
     #[inline]
-    pub fn params(&self) -> &[(ExprId, ParamType)] {
+    pub fn params(&self) -> &[(ExprId, RowOrScalar)] {
         &self.params
     }
 
     /// Returns a mutable reference to the block's parameters
     #[inline]
-    pub fn params_mut(&mut self) -> &mut Vec<(ExprId, ParamType)> {
+    pub fn params_mut(&mut self) -> &mut Vec<(ExprId, RowOrScalar)> {
         &mut self.params
     }
 
@@ -136,7 +136,7 @@ where
 /// An unfinished basic block
 pub(crate) struct UnsealedBlock {
     pub(crate) id: BlockId,
-    pub(crate) params: Vec<(ExprId, ParamType)>,
+    pub(crate) params: Vec<(ExprId, RowOrScalar)>,
     pub(crate) body: Vec<(ExprId, Expr)>,
     pub(crate) terminator: Option<Terminator>,
 }
@@ -166,154 +166,6 @@ impl UnsealedBlock {
             params: self.params,
             body: self.body,
             terminator,
-        }
-    }
-}
-
-/// The type of a parameter, either a layout or a single column's type
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
-)]
-pub enum ParamType {
-    /// A row type consisting of a [`LayoutId`]
-    Row(LayoutId),
-    /// A scalar column consisting of a [`ColumnType`]
-    Column(ColumnType),
-}
-
-impl ParamType {
-    /// Returns `true` if the param type is a [`Row`].
-    ///
-    /// [`Row`]: ParamType::Row
-    #[must_use]
-    #[inline]
-    pub const fn is_row(&self) -> bool {
-        matches!(self, Self::Row(..))
-    }
-
-    /// Returns `true` if the param type is a [`Column`].
-    ///
-    /// [`Column`]: ParamType::Column
-    #[must_use]
-    #[inline]
-    pub const fn is_column(&self) -> bool {
-        matches!(self, Self::Column(..))
-    }
-
-    #[inline]
-    pub const fn as_row(&self) -> Option<&LayoutId> {
-        if let Self::Row(row) = self {
-            Some(row)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub const fn as_column(&self) -> Option<&ColumnType> {
-        if let Self::Column(column) = self {
-            Some(column)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub fn as_mut_row(&mut self) -> Option<&mut LayoutId> {
-        if let Self::Row(row) = self {
-            Some(row)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub fn as_mut_column(&mut self) -> Option<&mut ColumnType> {
-        if let Self::Column(column) = self {
-            Some(column)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub const fn try_into_row(self) -> Result<LayoutId, Self> {
-        if let Self::Row(row) = self {
-            Ok(row)
-        } else {
-            Err(self)
-        }
-    }
-
-    #[inline]
-    pub const fn try_into_column(self) -> Result<ColumnType, Self> {
-        if let Self::Column(column) = self {
-            Ok(column)
-        } else {
-            Err(self)
-        }
-    }
-
-    #[track_caller]
-    pub const fn unwrap_row(self) -> LayoutId {
-        if let Self::Row(row) = self {
-            row
-        } else {
-            panic!("called .unwrap_row() on a column type")
-        }
-    }
-
-    #[track_caller]
-    pub const fn unwrap_column(self) -> ColumnType {
-        if let Self::Column(column) = self {
-            column
-        } else {
-            panic!("called .unwrap_column() on a row type")
-        }
-    }
-
-    #[track_caller]
-    pub fn expect_row(self, message: &str) -> LayoutId {
-        if let Self::Row(row) = self {
-            row
-        } else {
-            panic!("called .expect_row() on a column type: {message}")
-        }
-    }
-
-    #[track_caller]
-    pub fn expect_column(self, message: &str) -> ColumnType {
-        if let Self::Column(column) = self {
-            column
-        } else {
-            panic!("called .expect_column() on a row type: {message}")
-        }
-    }
-}
-
-impl From<ColumnType> for ParamType {
-    #[inline]
-    fn from(column: ColumnType) -> Self {
-        Self::Column(column)
-    }
-}
-
-impl From<LayoutId> for ParamType {
-    #[inline]
-    fn from(row: LayoutId) -> Self {
-        Self::Row(row)
-    }
-}
-
-impl<'a, D, A> Pretty<'a, D, A> for ParamType
-where
-    A: 'a,
-    D: DocAllocator<'a, A> + ?Sized,
-{
-    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
-        match self {
-            Self::Row(row) => row.pretty(alloc, cache),
-            Self::Column(column) => column.pretty(alloc, cache),
         }
     }
 }

@@ -9,9 +9,9 @@ mod nullish;
 mod select;
 mod unary;
 
-pub use crate::ir::ExprId;
+pub use crate::ir::{ExprId, RowOrScalar};
 pub use binary::{BinaryOp, BinaryOpKind};
-pub use call::{ArgType, Call};
+pub use call::Call;
 pub use constant::Constant;
 pub use drop::Drop;
 pub use mem::{CopyRowTo, Load, Store};
@@ -439,20 +439,20 @@ where
 /// Creates an uninitialized scalar or row value
 #[derive(Debug, Clone, From, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Uninit {
-    value: ArgType,
+    value: RowOrScalar,
 }
 
 impl Uninit {
     /// Create a new null row
-    pub fn new(value: ArgType) -> Self {
+    pub fn new(value: RowOrScalar) -> Self {
         Self { value }
     }
 
-    pub const fn value(&self) -> ArgType {
+    pub const fn value(&self) -> RowOrScalar {
         self.value
     }
 
-    pub fn value_mut(&mut self) -> &mut ArgType {
+    pub fn value_mut(&mut self) -> &mut RowOrScalar {
         &mut self.value
     }
 

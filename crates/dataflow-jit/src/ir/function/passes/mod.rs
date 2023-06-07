@@ -1,7 +1,7 @@
 mod unit_ops;
 
 use crate::ir::{
-    exprs::{visit::MapExprIds, ArgType, Call, Nop},
+    exprs::{visit::MapExprIds, Call, Nop, RowOrScalar},
     function::FuncArg,
     layout_cache::RowLayoutCache,
     pretty::{Arena, Pretty},
@@ -155,7 +155,7 @@ impl Function {
                         *call = Call::new(
                             "dbsp.str.clear".to_owned(),
                             vec![string],
-                            vec![ArgType::Scalar(ColumnType::String)],
+                            vec![RowOrScalar::Scalar(ColumnType::String)],
                             ColumnType::Unit,
                         );
                     }

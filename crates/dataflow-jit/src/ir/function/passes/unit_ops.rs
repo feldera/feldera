@@ -1,6 +1,9 @@
 use crate::ir::{
-    block::ParamType, exprs::ArgType, layout_cache::RowLayoutCache, ColumnType, Constant, Expr,
-    Function, RValue, Return, Terminator,
+    exprs::{Constant, Expr, RValue, RowOrScalar},
+    function::Function,
+    layout_cache::RowLayoutCache,
+    terminator::{Return, Terminator},
+    ColumnType,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,13 +24,13 @@ impl Function {
             // Add all of the block's parameters
             for &(param_id, ty) in block.params() {
                 match ty {
-                    ParamType::Row(layout) => {
+                    RowOrScalar::Row(layout) => {
                         row_exprs.insert(param_id, layout);
                     }
-                    ParamType::Column(ColumnType::Unit) => {
+                    RowOrScalar::Scalar(ColumnType::Unit) => {
                         unit_exprs.insert(param_id);
                     }
-                    ParamType::Column(_) => {}
+                    RowOrScalar::Scalar(_) => {}
                 }
             }
 
@@ -89,16 +92,16 @@ impl Function {
                 Expr::CopyRowTo(copy_row) => !layout_cache.get(copy_row.layout()).is_zero_sized(),
 
                 Expr::Uninit(uninit) => match uninit.value() {
-                    ArgType::Row(layout) => {
+                    RowOrScalar::Row(layout) => {
                         row_exprs.insert(expr_id, layout);
                         !layout_cache.get(layout).is_zero_sized()
                     }
 
-                    ArgType::Scalar(ColumnType::Unit) => {
+                    RowOrScalar::Scalar(ColumnType::Unit) => {
                         unit_exprs.insert(expr_id);
                         false
                     }
-                    ArgType::Scalar(_) => true,
+                    RowOrScalar::Scalar(_) => true,
                 },
 
                 Expr::Drop(drop) => drop.as_scalar().map(|ty| !ty.is_unit()).unwrap_or(true),

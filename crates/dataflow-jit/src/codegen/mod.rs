@@ -25,14 +25,14 @@ use crate::{
         utils::{column_non_null, FunctionBuilderExt},
     },
     ir::{
-        block::ParamType,
         exprs::{
-            ArgType, BinaryOp, BinaryOpKind, Constant, CopyRowTo, Drop, Expr, ExprId, IsNull, Load,
-            NullRow, RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, Uninit,
+            BinaryOp, BinaryOpKind, Cast, Constant, Copy, CopyRowTo, Drop, Expr, ExprId, IsNull,
+            Load, NullRow, RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, Uninit, UninitRow,
         },
+        function::{Function, InputFlags},
         pretty::{Arena, Pretty, DEFAULT_WIDTH},
-        BlockId, Branch, Cast, ColumnType, Copy, Function, InputFlags, LayoutId, RowLayoutCache,
-        Signature, Terminator, UninitRow,
+        terminator::{Branch, Terminator},
+        BlockId, ColumnType, LayoutId, RowLayoutCache, RowOrScalar, Signature,
     },
     ThinStr,
 };
@@ -347,15 +347,15 @@ impl Codegen {
                     let current_block = builder.current_block().unwrap();
                     for &(param_id, ty) in block_contents.params() {
                         match ty {
-                            ParamType::Row(layout_id) => {
+                            RowOrScalar::Row(layout_id) => {
                                 let value =
                                     builder.append_block_param(current_block, ctx.pointer_type());
                                 ctx.add_expr(param_id, value, None, layout_id);
                             }
 
-                            ParamType::Column(ColumnType::Unit) => {}
+                            RowOrScalar::Scalar(ColumnType::Unit) => {}
 
-                            ParamType::Column(column_ty) => {
+                            RowOrScalar::Scalar(column_ty) => {
                                 let value = builder.append_block_param(
                                     current_block,
                                     column_ty
@@ -2196,7 +2196,7 @@ impl<'a> CodegenCtx<'a> {
     fn uninit(&mut self, expr_id: ExprId, uninit: &Uninit, builder: &mut FunctionBuilder<'_>) {
         match uninit.value() {
             // Create an uninit stack slot for row values
-            ArgType::Row(layout) => {
+            RowOrScalar::Row(layout) => {
                 let slot = self.stack_slot_for_layout(expr_id, layout, builder);
 
                 if let Some(writer) = self.comment_writer.as_deref() {
@@ -2211,7 +2211,7 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Create a "default" value for scalars
-            ArgType::Scalar(scalar_ty) => {
+            RowOrScalar::Scalar(scalar_ty) => {
                 let ty = scalar_ty
                     .native_type()
                     .unwrap()
@@ -2256,7 +2256,7 @@ impl<'a> CodegenCtx<'a> {
         let value = self.value(drop.value());
 
         let drop_inst = match drop.ty() {
-            ArgType::Row(layout) => {
+            RowOrScalar::Row(layout) => {
                 debug_assert!(!self.is_readonly(drop.value()));
 
                 let (layout, row_layout) = self.layout_cache.get_layouts(layout);
@@ -2313,7 +2313,7 @@ impl<'a> CodegenCtx<'a> {
                 first_inst.expect("already checked for needs_drop")
             }
 
-            ArgType::Scalar(ty) => self
+            RowOrScalar::Scalar(ty) => self
                 .drop_scalar(value, ty, builder)
                 .expect("already checked for needs_drop"),
         };

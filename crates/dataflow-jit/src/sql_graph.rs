@@ -210,7 +210,7 @@ mod tests {
     use crate::{
         dataflow::CompiledDataflow,
         ir::{
-            exprs::{ArgType, Call},
+            exprs::{Call, RowOrScalar},
             nodes::{FilterMap, FlatMap, Node, StreamLayout},
             ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
@@ -253,7 +253,7 @@ mod tests {
                     builder.add_expr(Call::new(
                         "dbsp.row.vec.push".into(),
                         vec![vec, value],
-                        vec![ArgType::Row(row_vec_layout), ArgType::Row(i32)],
+                        vec![RowOrScalar::Row(row_vec_layout), RowOrScalar::Row(i32)],
                         ColumnType::Unit,
                     ));
                 }

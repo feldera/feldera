@@ -1,11 +1,13 @@
 use crate::ir::{
-    block::Block,
-    block::{ParamType, UnsealedBlock},
-    function::FuncArg,
+    block::{Block, UnsealedBlock},
+    exprs::{
+        BinaryOp, BinaryOpKind, Cast, Constant, Copy, CopyRowTo, Expr, ExprId, IsNull, Load,
+        RValue, Select, SetNull, Store, UnaryOp, UnaryOpKind, UninitRow,
+    },
+    function::{FuncArg, Function, InputFlags},
     layout_cache::RowLayoutCache,
-    BinaryOp, BinaryOpKind, BlockId, BlockIdGen, Branch, Cast, ColumnType, Constant, Copy,
-    CopyRowTo, Expr, ExprId, ExprIdGen, Function, InputFlags, IsNull, Jump, LayoutId, Load, RValue,
-    Return, Select, SetNull, Store, Terminator, UnaryOp, UnaryOpKind, UninitRow,
+    terminator::{Branch, Jump, Return, Terminator},
+    BlockId, BlockIdGen, ColumnType, ExprIdGen, LayoutId, RowOrScalar,
 };
 use petgraph::prelude::DiGraphMap;
 use std::{collections::BTreeMap, mem::swap};
@@ -27,7 +29,7 @@ pub struct FunctionBuilder {
     block_id: BlockIdGen,
 
     layout_cache: RowLayoutCache,
-    expr_types: BTreeMap<ExprId, ParamType>,
+    expr_types: BTreeMap<ExprId, RowOrScalar>,
 }
 
 impl FunctionBuilder {
@@ -77,7 +79,7 @@ impl FunctionBuilder {
 
     pub fn add_block_param<P>(&mut self, block_id: BlockId, param_ty: P) -> ExprId
     where
-        P: Into<ParamType>,
+        P: Into<RowOrScalar>,
     {
         let param_ty = param_ty.into();
         let param_id = self.expr_id.next();
@@ -95,7 +97,7 @@ impl FunctionBuilder {
     }
 
     /// Returns the parameters of the given block
-    pub fn block_params(&self, block: BlockId) -> &[(ExprId, ParamType)] {
+    pub fn block_params(&self, block: BlockId) -> &[(ExprId, RowOrScalar)] {
         self.current
             .as_ref()
             .or_else(|| self.unsealed_blocks.get(&block))
@@ -108,7 +110,7 @@ impl FunctionBuilder {
             })
     }
 
-    fn set_expr_type(&mut self, expr_id: ExprId, ty: impl Into<ParamType>) {
+    fn set_expr_type(&mut self, expr_id: ExprId, ty: impl Into<RowOrScalar>) {
         let prev = self.expr_types.insert(expr_id, ty.into());
         debug_assert!(prev.is_none());
     }
@@ -163,7 +165,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect_column("attempted to call `Cast` on a row value");
+            .expect_scalar("attempted to call `Cast` on a row value");
         let expr = self.add_expr(Cast::new(value, value_ty, dest_ty));
         self.set_expr_type(expr, dest_ty);
         expr
@@ -174,7 +176,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect_column("attempted to call `Copy` on a row value");
+            .expect_scalar("attempted to call `Copy` on a row value");
         let expr = self.add_expr(Copy::new(value, value_ty));
         self.set_expr_type(expr, value_ty);
         expr
@@ -267,13 +269,13 @@ impl FunctionBuilder {
             .expr_types
             .get(&lhs)
             .unwrap_or_else(|| panic!("failed to get type of {lhs}"))
-            .expect_column("attempted to call a binary op on a row value");
+            .expect_scalar("attempted to call a binary op on a row value");
         if cfg!(debug_assertions) {
             let rhs_ty = self
                 .expr_types
                 .get(&rhs)
                 .unwrap_or_else(|| panic!("failed to get type of {rhs}"))
-                .expect_column("attempted to call a binary op on a row value");
+                .expect_scalar("attempted to call a binary op on a row value");
             assert_eq!(lhs_ty, rhs_ty);
         }
 
@@ -317,7 +319,7 @@ impl FunctionBuilder {
             .expr_types
             .get(&value)
             .unwrap_or_else(|| panic!("failed to get type of {value}"))
-            .expect_column("attempted to call a unary op on a row value");
+            .expect_scalar("attempted to call a unary op on a row value");
 
         let expr = self.add_expr(UnaryOp::new(value, value_ty, kind));
 

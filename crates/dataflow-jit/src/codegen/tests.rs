@@ -3,7 +3,7 @@
 use crate::{
     codegen::{Codegen, CodegenConfig},
     ir::{
-        exprs::{ArgType, Call},
+        exprs::{Call, RowOrScalar},
         ColumnType, Constant, FunctionBuilder, RowLayoutBuilder, RowLayoutCache,
     },
     row::UninitRow,
@@ -53,7 +53,7 @@ fn block_param_phi() {
         let year = builder.add_expr(Call::new(
             "dbsp.timestamp.year".into(),
             vec![timestamp],
-            vec![ArgType::Scalar(ColumnType::Timestamp)],
+            vec![RowOrScalar::Scalar(ColumnType::Timestamp)],
             ColumnType::I64,
         ));
         builder.jump(return_block, [year]);
@@ -244,7 +244,7 @@ fn concat_string() {
         let concatenated = builder.add_expr(Call::new(
             "dbsp.str.concat".into(),
             vec![first, second],
-            vec![ArgType::Scalar(ColumnType::String); 2],
+            vec![RowOrScalar::Scalar(ColumnType::String); 2],
             ColumnType::String,
         ));
         builder.store(string_output, 0, concatenated);
@@ -340,7 +340,7 @@ fn concat_many_strings() {
         let concatenated = builder.add_expr(Call::new(
             "dbsp.str.concat".into(),
             strings,
-            vec![ArgType::Scalar(ColumnType::String); 5],
+            vec![RowOrScalar::Scalar(ColumnType::String); 5],
             ColumnType::String,
         ));
         builder.store(string_output, 0, concatenated);
@@ -432,7 +432,7 @@ fn concat_clone_string() {
         let concatenated = builder.add_expr(Call::new(
             "dbsp.str.concat_clone".into(),
             vec![first, second],
-            vec![ArgType::Scalar(ColumnType::String); 2],
+            vec![RowOrScalar::Scalar(ColumnType::String); 2],
             ColumnType::String,
         ));
         builder.store(string_output, 0, concatenated);
@@ -526,7 +526,7 @@ fn concat_clone_many_strings() {
         let concatenated = builder.add_expr(Call::new(
             "dbsp.str.concat_clone".into(),
             strings,
-            vec![ArgType::Scalar(ColumnType::String); 5],
+            vec![RowOrScalar::Scalar(ColumnType::String); 5],
             ColumnType::String,
         ));
         builder.store(string_output, 0, concatenated);
@@ -610,7 +610,7 @@ fn clear_string() {
         builder.add_expr(Call::new(
             "dbsp.str.clear".into(),
             vec![string],
-            vec![ArgType::Scalar(ColumnType::String)],
+            vec![RowOrScalar::Scalar(ColumnType::String)],
             ColumnType::Unit,
         ));
         builder.ret_unit();
@@ -686,8 +686,8 @@ fn write_to_string() {
             "dbsp.str.write".into(),
             vec![string, u8_val],
             vec![
-                ArgType::Scalar(ColumnType::String),
-                ArgType::Scalar(ColumnType::U8),
+                RowOrScalar::Scalar(ColumnType::String),
+                RowOrScalar::Scalar(ColumnType::U8),
             ],
             ColumnType::String,
         ));
@@ -697,8 +697,8 @@ fn write_to_string() {
             "dbsp.str.write".into(),
             vec![string, true_val],
             vec![
-                ArgType::Scalar(ColumnType::String),
-                ArgType::Scalar(ColumnType::Bool),
+                RowOrScalar::Scalar(ColumnType::String),
+                RowOrScalar::Scalar(ColumnType::Bool),
             ],
             ColumnType::String,
         ));
@@ -708,8 +708,8 @@ fn write_to_string() {
             "dbsp.str.write".into(),
             vec![string, i32_val],
             vec![
-                ArgType::Scalar(ColumnType::String),
-                ArgType::Scalar(ColumnType::I32),
+                RowOrScalar::Scalar(ColumnType::String),
+                RowOrScalar::Scalar(ColumnType::I32),
             ],
             ColumnType::String,
         ));
@@ -719,8 +719,8 @@ fn write_to_string() {
             "dbsp.str.write".into(),
             vec![string, i16_val],
             vec![
-                ArgType::Scalar(ColumnType::String),
-                ArgType::Scalar(ColumnType::I16),
+                RowOrScalar::Scalar(ColumnType::String),
+                RowOrScalar::Scalar(ColumnType::I16),
             ],
             ColumnType::String,
         ));
