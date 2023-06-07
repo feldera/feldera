@@ -74,11 +74,13 @@ public class DBSPApplyExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         this.function.accept(visitor);
         for (DBSPExpression arg: this.arguments)
             arg.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

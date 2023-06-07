@@ -228,6 +228,7 @@ public class CalciteCompiler implements IModule {
                         EnumSet.of(SqlLibrary.STANDARD,
                                 SqlLibrary.MYSQL,
                                 SqlLibrary.POSTGRESQL,
+                                SqlLibrary.BIG_QUERY,
                                 // Geospatial functions
                                 SqlLibrary.SPATIAL)),
                 // Our custom division operation
@@ -323,7 +324,9 @@ public class CalciteCompiler implements IModule {
                 CoreRules.CALC_REDUCE_DECIMALS,
                 CoreRules.FILTER_VALUES_MERGE,
                 CoreRules.PROJECT_FILTER_VALUES_MERGE,
-                CoreRules.PROJECT_VALUES_MERGE,
+                // Rule is buggy; disabled due to
+                // https://github.com/feldera/dbsp/issues/217
+                //CoreRules.PROJECT_VALUES_MERGE
                 CoreRules.AGGREGATE_VALUES
         );
         // Remove empty collections

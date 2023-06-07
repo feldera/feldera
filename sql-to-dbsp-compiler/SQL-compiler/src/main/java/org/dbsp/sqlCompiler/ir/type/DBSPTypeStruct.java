@@ -68,7 +68,9 @@ public class DBSPTypeStruct extends DBSPType {
         @Override
         public void accept(InnerVisitor visitor) {
             if (!visitor.preorder(this)) return;
+            visitor.push(this);
             this.type.accept(visitor);
+            visitor.pop(this);
             visitor.postorder(this);
         }
     }
@@ -140,8 +142,10 @@ public class DBSPTypeStruct extends DBSPType {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (Field f: this.getFields())
             f.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

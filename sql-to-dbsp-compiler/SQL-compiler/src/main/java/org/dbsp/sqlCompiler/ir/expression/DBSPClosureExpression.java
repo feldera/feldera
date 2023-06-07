@@ -68,11 +68,13 @@ public class DBSPClosureExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         for (DBSPParameter param: this.parameters)
             param.accept(visitor);
         this.body.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

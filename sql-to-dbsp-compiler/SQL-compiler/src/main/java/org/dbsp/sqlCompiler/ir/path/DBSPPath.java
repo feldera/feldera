@@ -43,8 +43,10 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPPathSegment path: this.components)
             path.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

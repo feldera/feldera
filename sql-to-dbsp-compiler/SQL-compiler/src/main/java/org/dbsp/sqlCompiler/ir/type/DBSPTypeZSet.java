@@ -44,8 +44,10 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.elementType.accept(visitor);
         this.weightType.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

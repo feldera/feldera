@@ -46,9 +46,11 @@ public class DBSPTupleStructPattern extends DBSPPattern {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.path.accept(visitor);
         for (DBSPPattern pattern: this.arguments)
             pattern.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

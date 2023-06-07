@@ -48,8 +48,10 @@ public class DBSPMatchExpression extends DBSPExpression {
         @Override
         public void accept(InnerVisitor visitor) {
             if (!visitor.preorder(this)) return;
+            visitor.push(this);
             this.against.accept(visitor);
             this.result.accept(visitor);
+            visitor.pop(this);
             visitor.postorder(this);
         }
     }
@@ -73,9 +75,11 @@ public class DBSPMatchExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.matched.accept(visitor);
         for (Case c: this.cases)
             c.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

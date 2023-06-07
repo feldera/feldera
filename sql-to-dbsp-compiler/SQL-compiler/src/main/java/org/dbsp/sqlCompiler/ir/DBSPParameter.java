@@ -77,8 +77,10 @@ public class DBSPParameter extends DBSPNode implements IHasType, IDBSPInnerNode 
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.type.accept(visitor);
         this.pattern.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

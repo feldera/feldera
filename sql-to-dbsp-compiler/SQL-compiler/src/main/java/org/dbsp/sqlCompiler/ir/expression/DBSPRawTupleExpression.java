@@ -45,10 +45,12 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         for (DBSPExpression expression: this.fields)
             expression.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

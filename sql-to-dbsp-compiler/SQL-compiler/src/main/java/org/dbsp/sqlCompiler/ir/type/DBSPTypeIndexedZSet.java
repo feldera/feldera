@@ -43,9 +43,11 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.keyType.accept(visitor);
         this.elementType.accept(visitor);
         this.weightType.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

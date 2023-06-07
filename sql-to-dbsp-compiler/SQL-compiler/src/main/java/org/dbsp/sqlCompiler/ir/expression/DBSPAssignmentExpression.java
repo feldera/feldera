@@ -38,11 +38,12 @@ public class DBSPAssignmentExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         this.left.accept(visitor);
         this.right.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
-
 }

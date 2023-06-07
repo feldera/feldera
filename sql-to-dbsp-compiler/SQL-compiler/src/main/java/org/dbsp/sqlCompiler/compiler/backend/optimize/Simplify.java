@@ -25,9 +25,11 @@ package org.dbsp.sqlCompiler.compiler.backend.optimize;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -80,6 +82,16 @@ public class Simplify extends InnerRewriteVisitor {
             }
         }
         this.map(expression, expression);
+        return false;
+    }
+
+    @Override
+    public boolean preorder(DBSPFieldExpression expression) {
+        DBSPExpression result = expression;
+        if (expression.expression.is(DBSPBaseTupleExpression.class)) {
+            result = expression.expression.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+        }
+        this.map(expression, result);
         return false;
     }
 

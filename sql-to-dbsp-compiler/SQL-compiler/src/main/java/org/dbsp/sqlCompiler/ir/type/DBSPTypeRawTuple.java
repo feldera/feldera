@@ -82,8 +82,10 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPType type: this.tupFields)
             type.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

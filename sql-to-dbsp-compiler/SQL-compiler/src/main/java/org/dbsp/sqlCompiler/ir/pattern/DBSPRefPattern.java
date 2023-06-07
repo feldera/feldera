@@ -42,7 +42,9 @@ public class DBSPRefPattern extends DBSPPattern {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.pattern.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

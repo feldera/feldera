@@ -37,7 +37,9 @@ public class DBSPExpressionStatement extends DBSPStatement {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.expression.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

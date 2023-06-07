@@ -41,8 +41,10 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPType type: this.typeArgs)
             type.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 
