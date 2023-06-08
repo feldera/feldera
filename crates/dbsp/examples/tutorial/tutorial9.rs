@@ -84,9 +84,7 @@ fn main() -> Result<()> {
             .consolidate()
             .iter()
             .for_each(|(l, VaxMonthly { count, year, month }, w)| {
-                if w != 0 {
-                    println!("   {l:16} {year}-{month:02} {count:10}: {w:+}")
-                }
+                println!("   {l:16} {year}-{month:02} {count:10}: {w:+}")
             });
         println!();
     }
