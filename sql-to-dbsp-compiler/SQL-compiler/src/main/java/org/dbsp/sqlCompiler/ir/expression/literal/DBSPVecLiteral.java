@@ -106,8 +106,10 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPExpression expr: Objects.requireNonNull(this.data))
             expr.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

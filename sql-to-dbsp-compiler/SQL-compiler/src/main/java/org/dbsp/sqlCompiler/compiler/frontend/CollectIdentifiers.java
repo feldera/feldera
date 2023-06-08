@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitDelegateVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDelegateVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.InnerVisitor;

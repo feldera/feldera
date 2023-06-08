@@ -57,9 +57,11 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (Implementation impl: this.components) {
             impl.accept(visitor);
         }
+        visitor.pop(this);
         visitor.postorder(this);
     }
 
@@ -225,12 +227,14 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         @Override
         public void accept(InnerVisitor visitor) {
             if (!visitor.preorder(this)) return;
+            visitor.push(this);
             this.semigroup.accept(visitor);
             this.zero.accept(visitor);
             this.increment.accept(visitor);
             if (this.postProcess != null)
                 this.postProcess.accept(visitor);
             this.emptySetResult.accept(visitor);
+            visitor.pop(this);
             visitor.postorder(this);
         }
 

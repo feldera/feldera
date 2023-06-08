@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend.optimize;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -44,9 +44,16 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
+    public final boolean warn;
 
-    public DeadCodeVisitor(IErrorReporter reporter) {
+    /**
+     * Run the dead code visitor.
+     * @param reporter  Report errors here.
+     * @param warn      If set warn about unused tables.
+     */
+    public DeadCodeVisitor(IErrorReporter reporter, boolean warn) {
         super(reporter, true);
+        this.warn = warn;
     }
 
     public void keep(DBSPOperator operator) {
@@ -88,7 +95,7 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     @Override
     public void endVisit() {
         for (DBSPOperator source: this.getCircuit().circuit.inputOperators) {
-            if (!this.reachable.contains(source))
+            if (!this.reachable.contains(source) && this.warn)
                 this.errorReporter.reportError(source.getSourcePosition(), true,
                         "Unused", "Table " + Utilities.singleQuote(source.outputName) +
                                 " is not used");

@@ -48,7 +48,9 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.source.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

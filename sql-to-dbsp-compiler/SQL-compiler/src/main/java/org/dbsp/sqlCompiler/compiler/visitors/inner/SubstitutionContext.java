@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend.optimize;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.util.Utilities;
 

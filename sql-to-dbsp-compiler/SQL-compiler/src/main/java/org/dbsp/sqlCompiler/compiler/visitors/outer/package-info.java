@@ -21,26 +21,16 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend.optimize;
-
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegralOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
-
 /**
- * This visitor throws if a circuit contains an integration operator.
- * This is usually a sign that the optimizer didn't do its job properly
- * (but there are legit streaming query circuits which would have to include integrals).
+ * Package that doesn't allow null values as method parameters.
  */
-public class NoIntegralVisitor extends CircuitVisitor {
-    public NoIntegralVisitor(IErrorReporter reporter) {
-        super(reporter, false);
-    }
 
-    @Override
-    public boolean preorder(DBSPIntegralOperator node) {
-        ToDotVisitor.toDot(this.errorReporter, "circuit.png", "png", this.getCircuit());
-        throw new RuntimeException("Circuit contains an integration operator " + node);
-    }
-}
+@ParametersAreNonnullByDefault
+@FieldsAreNonnullByDefault
+@MethodsAreNonnullByDefault
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
+
+import org.dbsp.util.FieldsAreNonnullByDefault;
+import org.dbsp.util.MethodsAreNonnullByDefault;
+
+import javax.annotation.ParametersAreNonnullByDefault;

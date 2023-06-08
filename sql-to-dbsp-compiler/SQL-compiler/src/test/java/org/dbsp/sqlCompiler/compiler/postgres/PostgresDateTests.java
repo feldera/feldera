@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -38,6 +39,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.annotation.Nullable;
@@ -1439,11 +1442,16 @@ public class PostgresDateTests extends BaseSQLTests {
     //SELECT EXTRACT(TIMEZONE_H    FROM DATE '2020-08-11');
     //ERROR:  unit "timezone_h" not supported for type date
 
-    @Test(expected = RuntimeException.class)
-    // Calcite does not seem to know about DATE_TRUNC
+    @Test @Ignore("There are two bugs in Calcite; " +
+            "now waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5760")
     public void testDateTrunc() {
-        String query = "SELECT DATE_TRUNC('MILLENNIUM', DATE '1970-03-20')";
-        this.testQueryTwice(query, 0);
+        Logger.INSTANCE.setDebugLevel(CalciteCompiler.class, 4);
+        // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
+        String query = "SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM)";
+        DBSPZSetLiteral.Contents zset = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPDateLiteral("1001-01-01")));
+        this.testQuery(query, zset, false);
+        this.testQuery(query, zset, true);
     }
 
     // SELECT DATE_TRUNC('MILLENNIUM', DATE '1970-03-20'); -- 1001-01-01

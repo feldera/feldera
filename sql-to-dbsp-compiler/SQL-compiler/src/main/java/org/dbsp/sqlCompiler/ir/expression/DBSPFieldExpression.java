@@ -63,10 +63,8 @@ public class DBSPFieldExpression extends DBSPExpression {
     }
 
     public DBSPExpression simplify() {
-        if (this.expression.is(DBSPTupleExpression.class)) {
-            return this.expression.to(DBSPTupleExpression.class).get(this.fieldNo);
-        } else if (this.expression.is(DBSPRawTupleExpression.class)) {
-            return this.expression.to(DBSPRawTupleExpression.class).get(this.fieldNo);
+        if (this.expression.is(DBSPBaseTupleExpression.class)) {
+            return this.expression.to(DBSPBaseTupleExpression.class).get(this.fieldNo);
         }
         return this;
     }
@@ -74,9 +72,11 @@ public class DBSPFieldExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         this.expression.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

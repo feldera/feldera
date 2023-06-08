@@ -76,11 +76,13 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.returnType != null)
             this.returnType.accept(visitor);
         for (DBSPParameter argument: this.parameters)
             argument.accept(visitor);
         this.body.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

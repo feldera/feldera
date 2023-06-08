@@ -69,6 +69,8 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

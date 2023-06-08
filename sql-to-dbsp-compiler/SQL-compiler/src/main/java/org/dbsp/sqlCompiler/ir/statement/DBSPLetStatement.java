@@ -70,9 +70,11 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.type.accept(visitor);
         if (this.initializer != null)
             this.initializer.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

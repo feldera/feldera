@@ -37,7 +37,9 @@ public class DBSPLiteralPattern extends DBSPPattern {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.literal.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

@@ -51,12 +51,13 @@ public class DBSPIfExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         this.condition.accept(visitor);
         this.positive.accept(visitor);
         this.negative.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
-
 }

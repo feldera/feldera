@@ -30,10 +30,13 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ToRustJitLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSinkOperator;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
-import org.dbsp.sqlCompiler.compiler.backend.optimize.*;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.*;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCodeVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.NoIntegralVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeIncrementalVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperatorsVisitor;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -327,7 +330,7 @@ public class BaseSQLTests {
     }
 
     CircuitVisitor getOptimizer(DBSPCompiler compiler) {
-        DeadCodeVisitor dead = new DeadCodeVisitor(compiler);
+        DeadCodeVisitor dead = new DeadCodeVisitor(compiler, true);
         return new PassesVisitor(
                 compiler,
                 new OptimizeIncrementalVisitor(compiler),

@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.backend.visitors;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
