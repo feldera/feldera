@@ -342,12 +342,14 @@ where
                 let mut delta = <O::Builder>::with_capacity((), batch.key_count());
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
-                    let mut agg = HasZero::zero();
+                    let mut agg: O::R = HasZero::zero();
                     while cursor.val_valid() {
                         agg += f(cursor.key(), cursor.val()).mul_by_ref(&cursor.weight());
                         cursor.step_val();
                     }
-                    delta.push((O::item_from(cursor.key().clone(), ()), agg));
+                    if !agg.is_zero() {
+                        delta.push((O::item_from(cursor.key().clone(), ()), agg));
+                    }
                     cursor.step_key();
                 }
                 delta.done()
