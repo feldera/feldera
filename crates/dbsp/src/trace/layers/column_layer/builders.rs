@@ -209,6 +209,7 @@ where
         //      );
         // }
 
+        debug_assert!(!diff.is_zero());
         unsafe { self.assume_invariants() }
         self.keys.push(key);
         self.diffs.push(diff);
