@@ -83,7 +83,7 @@ mod tests {
     fn test_watermark_monotonic(workers: usize) {
         let mut expected_watermarks = vec![115, 115, 125, 145].into_iter();
 
-        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
+        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (stream, handle) = circuit.add_input_zset();
             stream
                 .watermark_monotonic(|ts| ts + 5)

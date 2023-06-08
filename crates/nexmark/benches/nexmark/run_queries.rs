@@ -63,7 +63,7 @@ macro_rules! run_queries {
     (@circuit q13) => {
         |circuit: &mut RootCircuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
-            let (side_stream, mut side_input_handle) =
+            let (side_stream, side_input_handle) =
                 circuit.add_input_zset::<(usize, String, u64), isize>();
 
             let output = q13(stream, side_stream);

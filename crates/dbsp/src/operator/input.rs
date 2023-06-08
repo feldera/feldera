@@ -664,7 +664,7 @@ where
     /// result in only a subset of the workers observing updates from this
     /// `append` operation.  The remaining updates will appear
     /// during subsequent logical clock cycles.
-    pub fn append(&mut self, vals: &mut Vec<(K, V)>) {
+    pub fn append(&self, vals: &mut Vec<(K, V)>) {
         let num_partitions = self.num_partitions();
         let next_worker = if num_partitions > 1 {
             self.next_worker.load(Ordering::Acquire)
@@ -1096,7 +1096,7 @@ mod test {
 
     #[test]
     fn zset_test_st() {
-        let (circuit, mut input_handle) =
+        let (circuit, input_handle) =
             RootCircuit::build(move |circuit| zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_vecs().into_iter() {
@@ -1121,7 +1121,7 @@ mod test {
     }
 
     fn zset_test_mt(workers: usize) {
-        let (mut dbsp, mut input_handle) =
+        let (mut dbsp, input_handle) =
             Runtime::init_circuit(workers, |circuit| zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_vecs().into_iter() {
@@ -1203,7 +1203,7 @@ mod test {
 
     #[test]
     fn indexed_zset_test_st() {
-        let (circuit, mut input_handle) =
+        let (circuit, input_handle) =
             RootCircuit::build(move |circuit| indexed_zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_indexed_vecs().into_iter() {
@@ -1222,7 +1222,7 @@ mod test {
     }
 
     fn indexed_zset_test_mt(workers: usize) {
-        let (mut dbsp, mut input_handle) =
+        let (mut dbsp, input_handle) =
             Runtime::init_circuit(workers, |circuit| indexed_zset_test_circuit(circuit)).unwrap();
 
         for mut vec in input_indexed_vecs().into_iter() {

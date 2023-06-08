@@ -952,7 +952,7 @@ mod test {
         let sum_weighted_output_clone = sum_weighted_output.clone();
         let sum_distinct_output_clone = sum_distinct_output.clone();
 
-        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
+        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset();
             input_stream
                 .weighted_count()

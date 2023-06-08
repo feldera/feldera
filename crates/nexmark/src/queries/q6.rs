@@ -176,7 +176,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![
@@ -253,7 +253,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
@@ -493,7 +493,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let mut expected_output = vec![
                 // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
@@ -611,7 +611,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![

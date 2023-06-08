@@ -1347,7 +1347,7 @@ mod test {
         let output = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
         let output_clone = output.clone();
 
-        let (mut circuit, (mut input1, mut input2)) = Runtime::init_circuit(4, move |circuit| {
+        let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
             let (input1, input_handle1) = circuit.add_input_indexed_zset::<usize, usize, isize>();
             let (input2, input_handle2) = circuit.add_input_indexed_zset::<usize, usize, isize>();
 
