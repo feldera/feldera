@@ -22,7 +22,7 @@ fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, i
 
 fn main() -> Result<()> {
     // Build circuit.
-    let (circuit, mut input_handle) = RootCircuit::build(build_circuit)?;
+    let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
 
     // Feed data into circuit.
     let path = format!(

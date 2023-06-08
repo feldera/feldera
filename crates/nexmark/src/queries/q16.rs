@@ -703,7 +703,7 @@ mod tests {
         ]
         .into_iter();
 
-        let (mut dbsp, mut input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
+        let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let mut expected_output = vec![

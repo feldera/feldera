@@ -90,7 +90,7 @@ fn spawn_dbsp_consumer(
 
 fn spawn_source_producer(
     nexmark_config: NexmarkConfig,
-    mut input_handle: CollectionHandle<Event, isize>,
+    input_handle: CollectionHandle<Event, isize>,
     step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
     source_exhausted_tx: mpsc::SyncSender<InputStats>,

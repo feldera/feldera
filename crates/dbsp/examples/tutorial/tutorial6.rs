@@ -55,7 +55,7 @@ fn build_circuit(
 }
 
 fn main() -> Result<()> {
-    let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+    let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 
     let path = format!(
         "{}/examples/tutorial/vaccinations.csv",

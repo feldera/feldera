@@ -62,7 +62,7 @@ fn build_circuit(
 }
 
 fn main() -> Result<()> {
-    let (circuit, (mut vax_handle, mut pop_handle, output_handle)) =
+    let (circuit, (vax_handle, pop_handle, output_handle)) =
         RootCircuit::build(build_circuit)?;
 
     let path = format!(
