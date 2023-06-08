@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bincode::{decode_from_slice, Decode, Encode};
+use rand::Rng;
 use rocksdb::compaction_filter::Decision;
 use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;
@@ -240,6 +241,14 @@ where
             lower_bound.clone()
         };
         self.lower_key_bound = Some(bound);
+    }
+
+    fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut Vec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+        RG: Rng,
+    {
+        todo!();
     }
 }
 
