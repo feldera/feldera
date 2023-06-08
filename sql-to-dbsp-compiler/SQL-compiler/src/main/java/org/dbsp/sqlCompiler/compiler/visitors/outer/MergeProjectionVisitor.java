@@ -20,7 +20,6 @@ public class MergeProjectionVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        DBSPOperator result = operator;
         DBSPOperator source = this.mapped(operator.input());
         if (source.is(DBSPJoinOperator.class) ||
             source.is(DBSPIncrementalJoinOperator.class)) {
@@ -29,9 +28,11 @@ public class MergeProjectionVisitor extends CircuitCloneVisitor {
             if (projection.isProjection) {
                 DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
                 DBSPClosureExpression joinFunction = projection.applyAfter(expression);
-                result = source.withFunction(joinFunction, operator.outputType);
+                DBSPOperator result = source.withFunction(joinFunction, operator.outputType);
+                this.map(operator, result);
+                return;
             }
         }
-        this.map(operator, result);
+        super.postorder(operator);
     }
 }
