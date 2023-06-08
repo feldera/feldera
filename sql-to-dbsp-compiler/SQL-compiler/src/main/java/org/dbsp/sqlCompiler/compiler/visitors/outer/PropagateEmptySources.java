@@ -184,11 +184,10 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
                 DBSPConstantOperator result = new DBSPConstantOperator(operator.getNode(), value, operator.isMultiset);
                 this.emptySources.add(result);
                 this.map(operator, result);
-                return;
             } else {
                 this.map(operator, left, false);
-                return;
             }
+            return;
         }
         super.postorder(operator);
     }

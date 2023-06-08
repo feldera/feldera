@@ -330,7 +330,7 @@ public class BaseSQLTests {
     }
 
     CircuitVisitor getOptimizer(DBSPCompiler compiler) {
-        DeadCodeVisitor dead = new DeadCodeVisitor(compiler);
+        DeadCodeVisitor dead = new DeadCodeVisitor(compiler, true);
         return new PassesVisitor(
                 compiler,
                 new OptimizeIncrementalVisitor(compiler),

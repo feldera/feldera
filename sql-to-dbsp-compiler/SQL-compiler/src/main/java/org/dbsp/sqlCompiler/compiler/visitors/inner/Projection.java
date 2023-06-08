@@ -12,7 +12,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 
+import javax.annotation.Nullable;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -21,6 +23,7 @@ import java.util.Set;
  * A conservative approximation.
  */
 public class Projection extends InnerVisitor {
+    @Nullable
     public DBSPClosureExpression expression;
     /**
      * Set to true if this is indeed a projection.
@@ -38,53 +41,62 @@ public class Projection extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPExpression expression) {
+    public boolean preorder(DBSPExpression expression) {
         // Any other expression makes this not be a projection.
         this.isProjection = false;
+        return false;
     }
 
     @Override
-    public void postorder(DBSPBlockExpression expression) {
+    public boolean preorder(DBSPBlockExpression expression) {
         if (!expression.contents.isEmpty()) {
             // Too hard.  Give up.
             this.isProjection = false;
+            return false;
         }
-        // True if the last expression is a projection.
+        return true;
     }
 
     @Override
-    public void postorder(DBSPVariablePath path) {
+    public boolean preorder(DBSPVariablePath path) {
         if (!this.parameters.contains(path.variable)) {
             this.isProjection = false;
+            return false;
         }
+        return true;
     }
 
     @Override
-    public void postorder(DBSPFieldExpression field) {
+    public boolean preorder(DBSPFieldExpression field) {
         if (!field.expression.is(DBSPVariablePath.class)) {
             this.isProjection = false;
-            return;
+            return false;
         }
+        return true;
     }
 
     @Override
-    public void postorder(DBSPTupleExpression expression) {
+    public boolean preorder(DBSPTupleExpression expression) {
         // Nothing
+        return true;
     }
 
     @Override
-    public void postorder(DBSPClosureExpression expression) {
+    public boolean preorder(DBSPClosureExpression expression) {
         if (!this.context.isEmpty()) {
             // We only allow closures in the outermost context.
             this.isProjection = false;
-            return;
+            return false;
         }
-        if (this.expression.parameters.length == 0) {
+        this.expression = expression;
+        if (expression.parameters.length == 0) {
             this.isProjection = false;
+            return false;
         }
-        for (DBSPParameter param: this.expression.parameters) {
+        for (DBSPParameter param: expression.parameters) {
             this.parameters.add(param.asVariableReference().variable);
         }
+        return true;
     }
 
     /**
@@ -94,6 +106,7 @@ public class Projection extends InnerVisitor {
      * @param before Closure to compose.
      */
     public DBSPClosureExpression applyAfter(DBSPClosureExpression before) {
+        Objects.requireNonNull(this.expression);
         if (this.expression.parameters.length != 1)
             throw new RuntimeException();
         DBSPExpression apply = new DBSPApplyExpression(this.expression, before.body);
