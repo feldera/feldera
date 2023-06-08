@@ -478,7 +478,8 @@ public class OtherTests extends BaseSQLTests implements IModule {
         File file = this.createInputScript(statements);
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null", "-alltables");
         Assert.assertEquals(messages.exitCode, 0);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(messages.warningCount(), 1);
+        Assert.assertEquals(messages.errorCount(), 0);
         CompilerMessages.Error error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
         Assert.assertTrue(error.message.contains("Table 'T' is not used"));
@@ -606,7 +607,7 @@ public class OtherTests extends BaseSQLTests implements IModule {
     }
 
     @SuppressWarnings("SqlDialectInspection")
-    // @Test
+    @Test @Ignore("Fails due to a bug in HSQLDB")
     public void HSQLDBDoubleNegTest() throws SQLException {
         // Reproduction for https://sourceforge.net/p/hsqldb/bugs/1680/
         // and https://sourceforge.net/p/hsqldb/bugs/1681/
