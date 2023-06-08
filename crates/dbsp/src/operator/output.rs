@@ -284,7 +284,7 @@ mod test {
 
     #[test]
     fn test_output_handle() {
-        let (mut dbsp, (mut input, output)) = Runtime::init_circuit(4, |circuit| {
+        let (mut dbsp, (input, output)) = Runtime::init_circuit(4, |circuit| {
             let (zset, zset_handle) = circuit.add_input_zset::<u64, isize>();
             let zset_output = zset.output();
 

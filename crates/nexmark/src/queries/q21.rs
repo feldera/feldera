@@ -121,7 +121,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q21(stream);

@@ -185,7 +185,7 @@
 //!
 //! fn main() -> Result<()> {
 //!     // Build circuit.
-//!     let (circuit, mut input_handle) = RootCircuit::build(build_circuit)?;
+//!     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
 //!
 //!     // ...feed data into circuit...
 //!     // ...execute circuit...
@@ -225,7 +225,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, mut input_handle) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
 //! #
 //!     // Feed data into circuit.
 //!     let path = format!(
@@ -293,7 +293,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, mut input_handle) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -367,7 +367,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -431,7 +431,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -498,7 +498,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //!     // Build circuit.
-//!     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -628,7 +628,7 @@
 //! }
 //! 
 //! fn main() -> Result<()> {
-//! #     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -772,7 +772,7 @@
 //! }
 //!
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -920,7 +920,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//!     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
 //! #         env!("CARGO_MANIFEST_DIR")
@@ -1073,7 +1073,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//! #     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1201,7 +1201,7 @@
 //! }
 //!
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (mut vax_handle, mut pop_handle, output_handle)) =
+//! #     let (circuit, (vax_handle, pop_handle, output_handle)) =
 //! #         RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
@@ -1303,7 +1303,7 @@
 //! # }
 //! #
 //! fn main() -> Result<()> {
-//!     let (circuit, (mut vax_handle, mut pop_handle, output_handle)) =
+//!     let (circuit, (vax_handle, pop_handle, output_handle)) =
 //!         RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
@@ -1476,7 +1476,7 @@
 //! # }
 //! # 
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (mut vax_handle, mut pop_handle, output_handle)) =
+//! #     let (circuit, (vax_handle, pop_handle, output_handle)) =
 //! #         RootCircuit::build(build_circuit)?;
 //! # 
 //! #     let path = format!(
@@ -1601,7 +1601,7 @@
 //! # }
 //! #
 //! fn main() -> Result<()> {
-//!     let (circuit, (mut input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //!
 //!     let path = format!(
 //!         "{}/examples/tutorial/vaccinations.csv",

@@ -123,7 +123,7 @@ mod tests {
         let proc_time_iter = RefCell::new(proc_times.into_iter());
         let process_time = move || -> u64 { proc_time_iter.borrow_mut().next().unwrap() };
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q12_for_process_time(stream, process_time);

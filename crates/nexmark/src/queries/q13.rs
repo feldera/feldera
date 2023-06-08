@@ -152,7 +152,7 @@ mod tests {
         ]]
         .into_iter();
 
-        let (circuit, (mut input_handle, mut side_input_handle)) = RootCircuit::build(move |circuit| {
+        let (circuit, (input_handle, side_input_handle)) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
             let (side_stream, side_input_handle) =
                 circuit.add_input_zset::<(usize, String, u64), isize>();

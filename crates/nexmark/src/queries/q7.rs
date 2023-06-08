@@ -166,7 +166,7 @@ mod tests {
                 .collect()
         });
 
-        let (circuit, mut input_handle) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
 
             let output = q7(stream);
