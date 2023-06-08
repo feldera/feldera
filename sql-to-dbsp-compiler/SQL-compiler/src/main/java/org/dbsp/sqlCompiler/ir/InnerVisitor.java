@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitDelegateVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDelegateVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -40,6 +40,10 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.util.Utilities;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Depth-first traversal of an DBSPInnerNode hierarchy.
@@ -49,10 +53,23 @@ public abstract class InnerVisitor {
     /// If true each visit call will visit by default the superclass.
     final boolean visitSuper;
     protected final IErrorReporter errorReporter;
+    protected final List<IDBSPInnerNode> context;
 
     public InnerVisitor(IErrorReporter reporter, boolean visitSuper) {
         this.visitSuper = visitSuper;
         this.errorReporter = reporter;
+        this.context = new ArrayList<>();
+    }
+
+    public void push(IDBSPInnerNode node) {
+        this.context.add(node);
+    }
+
+    public void pop(IDBSPInnerNode node) {
+        IDBSPInnerNode last = Utilities.removeLast(this.context);
+        if (node != last)
+            throw new RuntimeException("Corrupted visitor context: popping " + node
+                    + " instead of " + last);
     }
 
     /**

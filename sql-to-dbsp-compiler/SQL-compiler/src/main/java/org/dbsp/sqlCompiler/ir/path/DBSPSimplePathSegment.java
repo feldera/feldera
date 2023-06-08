@@ -39,8 +39,10 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPType arg: this.genericArgs)
             arg.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

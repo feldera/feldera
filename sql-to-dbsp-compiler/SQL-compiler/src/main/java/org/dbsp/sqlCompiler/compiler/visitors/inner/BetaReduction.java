@@ -21,10 +21,9 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend.optimize;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;

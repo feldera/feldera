@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.backend.visitors;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;

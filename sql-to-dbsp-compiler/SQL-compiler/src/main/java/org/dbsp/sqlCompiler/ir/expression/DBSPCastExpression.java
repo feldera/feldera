@@ -46,8 +46,10 @@ public class DBSPCastExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.source.accept(visitor);
         this.getNonVoidType().accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

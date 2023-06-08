@@ -54,12 +54,14 @@ public class DBSPRangeExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         if (this.left != null)
             this.left.accept(visitor);
         if (this.right != null)
             this.right.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

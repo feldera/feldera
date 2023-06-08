@@ -8,9 +8,8 @@ pub mod timestamp;
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use geopoint::GeoPoint;
-use num::{ToPrimitive,Signed};
+use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
-use rust_decimal_macros::dec;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Add;
@@ -1020,7 +1019,7 @@ pub fn floor_decimal(value: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn floor_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(|x| floor_decimal(x))
+    value.map(floor_decimal)
 }
 
 //////////////////// ceil /////////////////////
@@ -1032,7 +1031,7 @@ pub fn ceil_d(value: F64) -> F64 {
 
 #[inline(always)]
 pub fn ceil_dN(value: Option<F64>) -> Option<F64> {
-    value.map(|x| ceil_d(x))
+    value.map(ceil_d)
 }
 
 #[inline(always)]
@@ -1042,7 +1041,7 @@ pub fn ceil_f(value: F32) -> F32 {
 
 #[inline(always)]
 pub fn ceil_fN(value: Option<F32>) -> Option<F32> {
-    value.map(|x| ceil_f(x))
+    value.map(ceil_f)
 }
 
 #[inline(always)]
@@ -1052,7 +1051,7 @@ pub fn ceil_decimal(value: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn ceil_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(|x| ceil_decimal(x))
+    value.map(ceil_decimal)
 }
 
 ///////////////////// sign //////////////////////
@@ -1061,26 +1060,32 @@ pub fn ceil_decimalN(value: Option<Decimal>) -> Option<Decimal> {
 pub fn sign_d(value: F64) -> F64 {
     // Rust signum never returns 0
     let x = value.into_inner();
-    if x == 0f64 { value }
-    else { F64::new(x.signum()) }
+    if x == 0f64 {
+        value
+    } else {
+        F64::new(x.signum())
+    }
 }
 
 #[inline(always)]
 pub fn sign_dN(value: Option<F64>) -> Option<F64> {
-    value.map(|x| sign_d(x))
+    value.map(sign_d)
 }
 
 #[inline(always)]
 pub fn sign_f(value: F32) -> F32 {
     // Rust signum never returns 0
     let x = value.into_inner();
-    if x == 0f32 { value }
-    else { F32::new(x.signum()) }
+    if x == 0f32 {
+        value
+    } else {
+        F32::new(x.signum())
+    }
 }
 
 #[inline(always)]
 pub fn sign_fN(value: Option<F32>) -> Option<F32> {
-    value.map(|x| sign_f(x))
+    value.map(sign_f)
 }
 
 #[inline(always)]
@@ -1090,37 +1095,5 @@ pub fn sign_decimal(value: Decimal) -> Decimal {
 
 #[inline(always)]
 pub fn sign_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(|x| sign_decimal(x))
+    value.map(sign_decimal)
 }
-///////////////////// numeric_inc //////////////////////
-
-#[inline(always)]
-pub fn numeric_inc_d(value: F64) -> F64 {
-    F64::new(value.into_inner() + 1f64)
-}
-
-#[inline(always)]
-pub fn numeric_inc_dN(value: Option<F64>) -> Option<F64> {
-    value.map(|x| numeric_inc_d(x))
-}
-
-#[inline(always)]
-pub fn numeric_inc_f(value: F32) -> F32 {
-    F32::new(value.into_inner() + 1f32)
-}
-
-#[inline(always)]
-pub fn numeric_inc_fN(value: Option<F32>) -> Option<F32> {
-    value.map(|x| numeric_inc_f(x))
-}
-
-#[inline(always)]
-pub fn numeric_inc_decimal(value: Decimal) -> Decimal {
-    value + dec!(1)
-}
-
-#[inline(always)]
-pub fn numeric_inc_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(|x| numeric_inc_decimal(x))
-}
-

@@ -42,12 +42,12 @@ public class DBSPForExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this))
-            return;
+        if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.pattern.accept(visitor);
         this.iterated.accept(visitor);
         this.block.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
-
 }

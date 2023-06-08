@@ -21,13 +21,12 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.optimizer;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.optimize.*;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.*;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.CircuitVisitor;
 
 import java.util.ArrayList;
@@ -56,12 +55,16 @@ public class CircuitOptimizer implements ICompilerComponent {
 
         List<CircuitVisitor> passes = new ArrayList<>();
         passes.add(new PropagateEmptySources(this.getCompiler()));
+        DeadCodeVisitor dead = new DeadCodeVisitor(this.getCompiler(), true);
+        passes.add(dead);
+        passes.add(new RemoveOperatorsVisitor(this.getCompiler(), dead.toKeep));
+        passes.add(new MergeProjectionVisitor(this.getCompiler()));
         passes.add(new OptimizeDistinctVisitor(this.getCompiler()));
         if (this.getCompiler().options.optimizerOptions.incrementalize) {
             passes.add(new IncrementalizeVisitor(this.getCompiler()));
             passes.add(new OptimizeIncrementalVisitor(this.getCompiler()));
         }
-        DeadCodeVisitor dead = new DeadCodeVisitor(this.getCompiler());
+        dead = new DeadCodeVisitor(this.getCompiler(), false);
         passes.add(dead);
         passes.add(new RemoveOperatorsVisitor(this.getCompiler(), dead.toKeep));
         if (this.getCompiler().options.optimizerOptions.incrementalize)

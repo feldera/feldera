@@ -46,8 +46,10 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPType type: this.typeArgs)
             type.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

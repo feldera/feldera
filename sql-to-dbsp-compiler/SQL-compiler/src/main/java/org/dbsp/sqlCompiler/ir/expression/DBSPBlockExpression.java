@@ -43,12 +43,14 @@ public class DBSPBlockExpression extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
         for (DBSPStatement stat: this.contents)
             stat.accept(visitor);
         if (this.lastExpression != null)
             this.lastExpression.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

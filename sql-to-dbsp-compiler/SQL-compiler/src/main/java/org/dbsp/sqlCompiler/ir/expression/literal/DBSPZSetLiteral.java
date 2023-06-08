@@ -196,8 +196,10 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         for (DBSPExpression expr: this.data.data.keySet())
             expr.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

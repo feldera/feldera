@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.util.IModule;
 import org.dbsp.util.Linq;

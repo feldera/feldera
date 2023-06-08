@@ -70,8 +70,10 @@ public class DBSPVariablePath extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }

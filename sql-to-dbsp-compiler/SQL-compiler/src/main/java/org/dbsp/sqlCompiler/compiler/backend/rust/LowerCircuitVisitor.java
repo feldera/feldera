@@ -2,8 +2,8 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.optimize.BetaReduction;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;

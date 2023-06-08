@@ -59,6 +59,7 @@ public class DBSPFlatmap extends DBSPExpression {
     @Override
     public void accept(InnerVisitor visitor) {
         if (!visitor.preorder(this)) return;
+        visitor.push(this);
         this.inputElementType.accept(visitor);
         this.outputElementType.accept(visitor);
         if (this.indexType != null)
@@ -66,6 +67,7 @@ public class DBSPFlatmap extends DBSPExpression {
         this.collectionElementType.accept(visitor);
         if (this.type != null)
             this.type.accept(visitor);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 }
