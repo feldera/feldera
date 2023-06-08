@@ -1,7 +1,7 @@
 //! Support for SQL Timestamp and Date data types.
 
 use crate::interval::{LongInterval, ShortInterval};
-use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::{
@@ -547,9 +547,11 @@ impl<'de> Deserialize<'de> for Date {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let date = NaiveDate::parse_from_str(&str, "%Y-%m-%d")
+        let date = NaiveDate::parse_from_str(str, "%Y-%m-%d")
             .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
-        Ok(Self::new((date.and_time(NaiveTime::default()).timestamp() / 86400) as i32))
+        Ok(Self::new(
+            (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
+        ))
     }
 }
 
