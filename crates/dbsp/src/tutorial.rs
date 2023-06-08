@@ -626,7 +626,7 @@
 //!     // ...
 //!     Ok((input_handle, monthly_totals.output()))
 //! }
-//! 
+//!
 //! fn main() -> Result<()> {
 //! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
@@ -943,7 +943,7 @@
 //!     Ok(())
 //! }
 //! ```
-//! 
+//!
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!  
@@ -1424,14 +1424,14 @@
 //! # use serde::Deserialize;
 //! # use size_of::SizeOf;
 //! # use time::Date;
-//! # 
+//! #
 //! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
 //! # struct Record {
 //! #     location: String,
 //! #     date: Date,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
-//! # 
+//! #
 //! # fn build_circuit(
 //! #     circuit: &mut RootCircuit,
 //! # ) -> Result<(
@@ -1474,11 +1474,11 @@
 //! #         });
 //! #     Ok((vax_handle, pop_handle, vax_rates.output()))
 //! # }
-//! # 
+//! #
 //! # fn main() -> Result<()> {
 //! #     let (circuit, (vax_handle, pop_handle, output_handle)) =
 //! #         RootCircuit::build(build_circuit)?;
-//! # 
+//! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
 //! #         env!("CARGO_MANIFEST_DIR")
@@ -1488,7 +1488,7 @@
 //! #         .map(|result| result.map(|record| (record, 1)))
 //! #         .collect::<Result<Vec<(Record, isize)>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
-//! # 
+//! #
 //! #     let mut pop_records = vec![
 //! #         ("England".into(), (56286961, 1)),
 //! #         ("Northern Ireland".into(), (1893667, 1)),
@@ -1496,9 +1496,9 @@
 //! #         ("Wales".into(), (3152879, 1)),
 //! #     ];
 //! #     pop_handle.append(&mut pop_records);
-//! # 
+//! #
 //! #     circuit.step()?;
-//! # 
+//! #
 //!     output_handle
 //!         .consolidate()
 //!         .iter()

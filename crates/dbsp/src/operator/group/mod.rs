@@ -178,11 +178,17 @@ where
                     &mut CursorPair::new(input_delta, input_trace),
                     |v, w| {
                         while output_trace.key_valid() && output_trace.key() < &v {
-                            output_cb(output_trace.key().clone(), output_trace.weight().neg());
+                            let ow = output_trace.weight();
+                            if !ow.is_zero() {
+                                output_cb(output_trace.key().clone(), ow.neg());
+                            }
                             output_trace.step_key();
                         }
                         if output_trace.key_valid() && output_trace.key() == &v {
-                            output_cb(output_trace.key().clone(), w + output_trace.weight().neg());
+                            let w = w + output_trace.weight().neg();
+                            if !w.is_zero() {
+                                output_cb(output_trace.key().clone(), w);
+                            }
                             output_trace.step_key();
                         } else {
                             output_cb(v, w);
@@ -192,7 +198,10 @@ where
 
                 // Output remaining retractions in the output trace.
                 while output_trace.key_valid() {
-                    output_cb(output_trace.key().clone(), output_trace.weight().neg());
+                    let w = output_trace.weight();
+                    if !w.is_zero() {
+                        output_cb(output_trace.key().clone(), w.neg());
+                    }
                     output_trace.step_key();
                 }
             }
@@ -206,11 +215,17 @@ where
                     &mut CursorPair::new(input_delta, input_trace),
                     |v, w| {
                         while output_trace.key_valid() && output_trace.key() > &v {
-                            output_cb(output_trace.key().clone(), output_trace.weight().neg());
+                            let ow = output_trace.weight();
+                            if !ow.is_zero() {
+                                output_cb(output_trace.key().clone(), ow.neg());
+                            }
                             output_trace.step_key_reverse();
                         }
                         if output_trace.key_valid() && output_trace.key() == &v {
-                            output_cb(output_trace.key().clone(), w + output_trace.weight().neg());
+                            let w = w + output_trace.weight().neg();
+                            if !w.is_zero() {
+                                output_cb(output_trace.key().clone(), w);
+                            }
                             output_trace.step_key_reverse();
                         } else {
                             output_cb(v, w);
@@ -220,7 +235,10 @@ where
 
                 // Output remaining retractions in the output trace.
                 while output_trace.key_valid() {
-                    output_cb(output_trace.key().clone(), output_trace.weight().neg());
+                    let w = output_trace.weight();
+                    if !w.is_zero() {
+                        output_cb(output_trace.key().clone(), w.neg());
+                    }
                     output_trace.step_key_reverse();
                 }
             }
