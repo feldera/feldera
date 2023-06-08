@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.backend.optimize;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -93,11 +93,11 @@ public class Projection extends InnerVisitor {
      * parameter, while the before one can have multiple ones.
      * @param before Closure to compose.
      */
-    public DBSPClosureExpression applyAfter(Projection before) {
+    public DBSPClosureExpression applyAfter(DBSPClosureExpression before) {
         if (this.expression.parameters.length != 1)
             throw new RuntimeException();
-        DBSPExpression apply = new DBSPApplyExpression(this.expression, before.expression.body);
-        DBSPClosureExpression result = new DBSPClosureExpression(apply, before.expression.parameters);
+        DBSPExpression apply = new DBSPApplyExpression(this.expression, before.body);
+        DBSPClosureExpression result = new DBSPClosureExpression(apply, before.parameters);
         BetaReduction reduction = new BetaReduction(this.errorReporter);
         Simplify simplify = new Simplify(this.errorReporter);
         IDBSPInnerNode reduced = reduction.apply(result);

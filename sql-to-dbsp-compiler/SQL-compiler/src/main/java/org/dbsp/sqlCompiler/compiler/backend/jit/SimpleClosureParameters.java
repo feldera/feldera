@@ -25,8 +25,8 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.optimize.SubstitutionContext;
-import org.dbsp.sqlCompiler.compiler.backend.visitors.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.SubstitutionContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
