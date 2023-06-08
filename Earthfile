@@ -142,7 +142,7 @@ prepare-cache:
     ENV RUST_LOG=info
     RUN cargo chef prepare
 
-    SAVE ARTIFACT --keep-ts --keep-own recipe.json
+    SAVE ARTIFACT --keep-ts recipe.json
 
 build-cache:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -403,6 +403,12 @@ test-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
+    COPY demo/project_demo00-SimpleSelect/project.sql demo/project_demo00-SimpleSelect/project.sql
+    COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
+    COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
+    COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
+    COPY demo/project_demo04-SecOps/project.sql demo/project_demo04-SecOps/project.sql
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn test
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
