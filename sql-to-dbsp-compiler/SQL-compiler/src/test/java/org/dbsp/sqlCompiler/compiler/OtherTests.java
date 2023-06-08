@@ -70,6 +70,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 
@@ -312,6 +313,23 @@ public class OtherTests extends BaseSQLTests implements IModule {
         script.println(String.join(";\n", contents));
         script.close();
         return new File(inputScript);
+    }
+
+    @Test
+    public void projectTest() {
+        // Compiles all the programs in the tests directory
+        final String projectsDirectory = "../../demo/";
+        File dir = new File(projectsDirectory);
+        File[] subdirs = dir.listFiles(File::isDirectory);
+        Objects.requireNonNull(subdirs);
+        for (File subdir: subdirs) {
+            if (!subdir.getName().contains("project_"))
+                continue;
+            String path = subdir.getPath() + "/project.sql";
+            CompilerMessages messages = CompilerMain.execute("-o", "/dev/null", path);
+            System.out.println(messages);
+            Assert.assertEquals(0, messages.errorCount());
+        }
     }
 
     @Test

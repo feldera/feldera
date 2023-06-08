@@ -153,7 +153,11 @@ public class CompilerMessages {
     }
 
     public int errorCount() {
-        return this.messages.size();
+        return (int)this.messages.stream().filter(m -> !m.warning).count();
+    }
+
+    public int warningCount() {
+        return (int)this.messages.stream().filter(m -> m.warning).count();
     }
 
     public Error getError(int ct) {
