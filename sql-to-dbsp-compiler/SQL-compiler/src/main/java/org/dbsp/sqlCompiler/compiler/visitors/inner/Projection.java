@@ -2,8 +2,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -41,62 +41,61 @@ public class Projection extends InnerVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPExpression expression) {
+    public VisitDecision preorder(DBSPExpression expression) {
         // Any other expression makes this not be a projection.
         this.isProjection = false;
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBlockExpression expression) {
+    public VisitDecision preorder(DBSPBlockExpression expression) {
         if (!expression.contents.isEmpty()) {
             // Too hard.  Give up.
             this.isProjection = false;
-            return false;
+            return VisitDecision.STOP;
         }
-        return true;
+        return VisitDecision.CONTINUE;
     }
 
     @Override
-    public boolean preorder(DBSPVariablePath path) {
+    public VisitDecision preorder(DBSPVariablePath path) {
         if (!this.parameters.contains(path.variable)) {
             this.isProjection = false;
-            return false;
         }
-        return true;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFieldExpression field) {
+    public VisitDecision preorder(DBSPFieldExpression field) {
         if (!field.expression.is(DBSPVariablePath.class)) {
             this.isProjection = false;
-            return false;
+            return VisitDecision.STOP;
         }
-        return true;
+        return VisitDecision.CONTINUE;
     }
 
     @Override
-    public boolean preorder(DBSPTupleExpression expression) {
+    public VisitDecision preorder(DBSPTupleExpression expression) {
         // Nothing
-        return true;
+        return VisitDecision.CONTINUE;
     }
 
     @Override
-    public boolean preorder(DBSPClosureExpression expression) {
+    public VisitDecision preorder(DBSPClosureExpression expression) {
         if (!this.context.isEmpty()) {
             // We only allow closures in the outermost context.
             this.isProjection = false;
-            return false;
+            return VisitDecision.STOP;
         }
         this.expression = expression;
         if (expression.parameters.length == 0) {
             this.isProjection = false;
-            return false;
+            return VisitDecision.STOP;
         }
         for (DBSPParameter param: expression.parameters) {
             this.parameters.add(param.asVariableReference().variable);
         }
-        return true;
+        return VisitDecision.CONTINUE;
     }
 
     /**

@@ -5,9 +5,9 @@ import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import javax.annotation.Nullable;
 
@@ -50,7 +50,7 @@ public class CircuitDelegateVisitor extends CircuitVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         for (IDBSPNode node : circuit.getAllOperators()) {
             DBSPOperator op = node.as(DBSPOperator.class);
             if (op != null)
@@ -60,7 +60,7 @@ public class CircuitDelegateVisitor extends CircuitVisitor {
                 inode.accept(this.innerVisitor);
             }
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override

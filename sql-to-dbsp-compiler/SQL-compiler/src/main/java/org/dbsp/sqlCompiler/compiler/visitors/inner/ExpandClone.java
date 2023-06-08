@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -18,12 +19,12 @@ public class ExpandClone extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPCloneExpression expression) {
+    public VisitDecision preorder(DBSPCloneExpression expression) {
         DBSPType type = expression.getNonVoidType();
         DBSPTypeTuple tuple = type.as(DBSPTypeTuple.class);
         if (tuple == null) {
             this.map(expression, expression);
-            return false;
+            return VisitDecision.STOP;
         }
         DBSPExpression[] fields = new DBSPExpression[tuple.size()];
         for (int i = 0; i < fields.length; i++) {
@@ -31,6 +32,6 @@ public class ExpandClone extends InnerRewriteVisitor {
         }
         DBSPExpression result = new DBSPTupleExpression(fields);
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 }

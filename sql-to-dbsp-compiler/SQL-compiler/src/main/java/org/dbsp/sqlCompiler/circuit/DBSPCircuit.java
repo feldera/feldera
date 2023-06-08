@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
@@ -47,7 +47,7 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         this.circuit.accept(visitor);
         visitor.postorder(this);
     }

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 public class DBSPWildcardPattern extends DBSPPattern {
     public static final DBSPWildcardPattern INSTANCE =new DBSPWildcardPattern();
@@ -34,7 +34,7 @@ public class DBSPWildcardPattern extends DBSPPattern {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);

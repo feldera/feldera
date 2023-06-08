@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -266,10 +267,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         for (DBSPOperator node : circuit.getAllOperators())
             node.accept(this);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override

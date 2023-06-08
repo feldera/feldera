@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITTupleLiteral
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateMulWeight;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandClone;
@@ -46,7 +47,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPassesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -239,11 +240,11 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceOperator operator) {
         JITRowType type = this.getTypeCatalog().convertTupleType(operator.getOutputZSetElementType(), this);
         JITSourceOperator source = new JITSourceOperator(operator.id, type, operator.outputName);
         this.program.add(source);
-        return false;
+        return VisitDecision.STOP;
     }
 
     public boolean isScalarType(@Nullable DBSPType type) {
@@ -255,16 +256,16 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPFilterOperator operator) {
+    public VisitDecision preorder(DBSPFilterOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITFilterOperator result = new JITFilterOperator(operator.id, conversion.type,
                 conversion.inputs, conversion.getFunction());
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPMapIndexOperator operator) {
+    public VisitDecision preorder(DBSPMapIndexOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITRowType keyType = this.getTypeCatalog().convertTupleType(operator.keyType, this);
         JITRowType valueType = this.getTypeCatalog().convertTupleType(operator.valueType, this);
@@ -272,70 +273,70 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
                 new JITKVType(keyType, valueType), conversion.type,
                 conversion.inputs, conversion.getFunction());
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPMapOperator operator) {
+    public VisitDecision preorder(DBSPMapOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         DBSPType inputType = operator.input().outputType;
         IJitKvOrRowType jitInputType = this.convertType(inputType);
         JITOperator result = new JITMapOperator(operator.id, conversion.type, jitInputType,
                 conversion.inputs, conversion.getFunction());
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFlatMapOperator operator) {
+    public VisitDecision preorder(DBSPFlatMapOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITFlatMapOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSumOperator operator) {
+    public VisitDecision preorder(DBSPSumOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITSumOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPDistinctOperator operator) {
+    public VisitDecision preorder(DBSPDistinctOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITDistinctOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSubtractOperator operator) {
+    public VisitDecision preorder(DBSPSubtractOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITSubtractOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIntegralOperator operator) {
+    public VisitDecision preorder(DBSPIntegralOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITIntegrateOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPDifferentialOperator operator) {
+    public VisitDecision preorder(DBSPDifferentialOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITDifferentiateOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIndexOperator operator) {
+    public VisitDecision preorder(DBSPIndexOperator operator) {
         DBSPExpression func = operator.getFunction();
         JITFunction function = ToJitVisitor.this.convertFunction(func.to(DBSPClosureExpression.class), true);
         List<JITOperatorReference> inputs = Linq.map(operator.inputs, i -> new JITOperatorReference(i.id));
@@ -345,18 +346,18 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         JITOperator result = new JITIndexWithOperator(operator.id,
                 keyType, valueType, inputs, function);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPJoinOperator operator) {
+    public VisitDecision preorder(DBSPJoinOperator operator) {
         JITRowType keyType = this.getTypeCatalog().convertTupleType(operator.elementResultType, this);
         JITRowType valueType = this.getTypeCatalog().convertTupleType(new DBSPTypeTuple(new DBSPTypeTuple()), this);
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITJoinOperator(operator.id, keyType, valueType, conversion.type,
                 conversion.inputs, conversion.getFunction());
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     /**
@@ -395,7 +396,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPAggregateOperator operator) {
+    public VisitDecision preorder(DBSPAggregateOperator operator) {
         if (operator.function != null)
             throw new RuntimeException("Didn't expect the Aggregate to have a function");
 
@@ -425,28 +426,28 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
                 inputs, init, stepFn, finishFn);
         this.program.add(result);
 
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPNegateOperator operator) {
+    public VisitDecision preorder(DBSPNegateOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITNegOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSinkOperator operator) {
+    public VisitDecision preorder(DBSPSinkOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITSinkOperator(operator.id, conversion.type, conversion.inputs,
                 operator.outputName, operator.query);
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPConstantOperator operator) {
+    public VisitDecision preorder(DBSPConstantOperator operator) {
         JITRowType type = this.getTypeCatalog().convertTupleType(operator.getOutputZSetElementType(), this);
         DBSPZSetLiteral setValue = Objects.requireNonNull(operator.function)
                 .to(DBSPZSetLiteral.class);
@@ -454,11 +455,11 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         JITOperator result = new JITConstantOperator(
                 operator.id, type, setLiteral, operator.getFunction().toString());
         this.program.add(result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPOperator operator) {
         throw new Unimplemented(operator);
     }
 

@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IModule;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -72,13 +72,13 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceOperator operator) {
         this.keep(operator);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSinkOperator operator) {
+    public VisitDecision preorder(DBSPSinkOperator operator) {
         List<DBSPOperator> r = new ArrayList<>();
         r.add(operator);
         while (!r.isEmpty()) {
@@ -89,7 +89,7 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
             this.keep(op);
             r.addAll(op.inputs);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -104,7 +104,7 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPOperator operator) {
-        return false;
+    public VisitDecision preorder(DBSPOperator operator) {
+        return VisitDecision.STOP;
     }
 }

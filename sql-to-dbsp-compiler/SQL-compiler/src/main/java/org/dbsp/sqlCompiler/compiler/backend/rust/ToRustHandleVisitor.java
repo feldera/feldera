@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
@@ -61,7 +62,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceOperator operator) {
         this.writeComments(operator)
                 .append("let (")
                 .append(operator.outputName)
@@ -73,11 +74,11 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         this.builder.append(", ");
         type.weightType.accept(this.innerVisitor);
         this.builder.append(">();");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSinkOperator operator) {
+    public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator.query);
         this.writeComments(operator)
                 .append("let handle")
@@ -85,18 +86,18 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append(" = ")
                 .append(operator.input().getName())
                 .append(".output();");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPCircuit circuit) {
+    public VisitDecision preorder(DBSPCircuit circuit) {
         this.setCircuit(circuit);
         circuit.circuit.accept(this);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         this.outputHandleIndex = circuit.getInputCount();
         this.builder.append("pub fn ")
                 .append(this.functionName)
@@ -144,7 +145,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .decrease()
                 .append("}")
                 .newline();
-        return false;
+        return VisitDecision.STOP;
     }
 
     public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node, String functionName) {

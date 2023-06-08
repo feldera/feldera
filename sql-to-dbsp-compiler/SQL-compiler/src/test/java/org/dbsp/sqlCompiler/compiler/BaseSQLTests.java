@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.NoIntegralVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeIncrementalVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperatorsVisitor;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
